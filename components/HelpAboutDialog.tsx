@@ -427,7 +427,7 @@ export const HelpAboutDialog: React.FC<HelpAboutDialogProps> = ({
                 <div className="space-y-3 text-slate-700 dark:text-slate-300">
                   <p className="text-sm">
                     {appName} exposes a Model Context Protocol (MCP) server so Cursor, Claude Desktop, and other LLM clients can list spaces, search links, and create or edit bookmarks using the same permissions as the token’s user.
-                    Create a write-enabled token in <strong>Admin → MCP / AI</strong>, then wire the client as below. Check <strong>Admin (users, roles, LDAP / SAML, Device Presets, database)</strong> only when the bound user is an administrator. Copy-ready chat statements live on <strong>Admin → MCP / AI → Example prompts</strong>. Full walkthrough: <strong>Guides → MCP / AI</strong>.
+                    Create a write-enabled token in <strong>Admin → MCP / AI</strong>, then wire the client as below. Check <strong>Admin (users, roles, LDAP / SAML, database)</strong> only when the bound user is an administrator and you want user / LDAP / database tools. Device Presets appear for an administrator bound user without that checkbox. Copy-ready chat statements live on <strong>Admin → MCP / AI → Example prompts</strong>. Full walkthrough: <strong>Guides → MCP / AI</strong>.
                   </p>
                   <div className="bg-sky-50 dark:bg-sky-900/20 rounded-lg p-4 space-y-2 border border-sky-200 dark:border-sky-800">
                     <p className="font-medium text-sky-900 dark:text-sky-100">Configure Cursor (HTTP)</p>
@@ -496,7 +496,7 @@ export const HelpAboutDialog: React.FC<HelpAboutDialogProps> = ({
                     <ul className="list-disc list-inside space-y-1 ml-2 text-sm">
                       <li><strong>Read:</strong> whoami, list spaces, get one space, search links, list categories, list notes</li>
                       <li><strong>Write</strong> (if the token allows it): create/update/delete spaces, add/update/delete links, create/update notes</li>
-                      <li><strong>Admin</strong> (admin user + admin scope): full user management, LDAP/SAML, Access Manager, Device Presets, database info/export, and (with write) database import. Import needs confirm=true and replaces all data. Never paste export JSON into chat.</li>
+                      <li><strong>Admin</strong> (admin user + admin scope): full user management, LDAP/SAML, Access Manager, database info/export, and (with write) database import. Import needs confirm=true and replaces all data. Never paste export JSON into chat. Device Presets use list_device_presets / manage_device_presets when the bound user is an administrator (Admin checkbox not required).</li>
                       <li>Write follows the same edit rules as the web app (owner, admin, or explicit edit permission)</li>
                     </ul>
                   </div>

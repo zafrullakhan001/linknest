@@ -62,7 +62,7 @@ Add these links:
     id: 'approve-user',
     title: 'Approve a pending user',
     need: 'admin-write',
-    prompt: 'List pending LinkNest users and approve jane.doe.',
+    prompt: 'Use admin_query with tool list_pending_users, then admin_manage with tool set_user_status to approve jane.doe.',
   },
   {
     id: 'create-local-user',
@@ -112,15 +112,15 @@ Add these links:
   {
     id: 'list-device-presets',
     title: 'List device presets',
-    need: 'admin-read',
+    need: 'write',
     prompt:
-      'List LinkNest Device Preview presets. Summarize by group with width × height, and say whether the catalog is custom or built-in defaults. Then show which ids are on the quick bar.',
+      'Use the LinkNest MCP. Call whoami, then list_device_presets. Summarize by group with width × height, and say whether the catalog is custom or built-in defaults. Then show which ids are on the quick bar.',
   },
   {
     id: 'add-device-preset',
     title: 'Add a device preset',
-    need: 'admin-write',
+    need: 'write',
     prompt:
-      'Add a LinkNest Device Preview preset: id iphone-17, label iPhone 17, width 402, height 874, group iPhone, variant iphone-island. Put it on the quick bar.',
+      'Add a LinkNest Device Preview preset using manage_device_presets action add: id iphone-17, label iPhone 17, width 402, height 874, group iPhone, variant iphone-island. Put it on the quick bar.',
   },
 ];

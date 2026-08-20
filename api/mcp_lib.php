@@ -125,7 +125,7 @@ function mcpHandleMessage(array $message, array $user): ?array {
                     'title' => 'LinkNest',
                     'version' => mcpAppVersion(),
                 ],
-                'instructions' => 'LinkNest organizes links into spaces (tiles), each with tabs and sections. Start with whoami. Use list_spaces and search_links for bookmarks. Write tools need the write scope. Admin tokens (admin user + admin scope) can call get_auth_status, list_users, list_roles, list_device_presets, get_database_info, export_database, and guarded LDAP/SAML, Access Manager, and Device Presets tools. import_database is destructive and needs write plus confirm=true. replace_device_presets and reset_device_presets also need confirm=true. Assign tools default to mode add so they do not wipe existing grants.',
+                'instructions' => 'LinkNest organizes links into spaces (tiles), each with tabs and sections. Start with whoami. Use list_spaces and search_links for bookmarks. Write tools need the write scope. Administrators with write scope also get admin_query and admin_manage (pass tool: list_users, create_local_user, etc.). Device Presets: list_device_presets / manage_device_presets. Collapsed admin tools keep Cursor under its tool limit. Assign actions default to mode add.',
             ]);
 
         case 'notifications/initialized':
@@ -205,7 +205,7 @@ function mcpToolsList(array $user): array {
     $read = [
         [
             'name' => 'whoami',
-            'description' => 'Return the LinkNest user bound to this MCP token (id, username, admin flag, token scopes including admin, hasAdminTools).',
+            'description' => 'Return the LinkNest user bound to this MCP token (id, username, admin flag, token scopes, hasAdminTools, hasDevicePresetTools).',
             'inputSchema' => ['type' => 'object', 'properties' => new stdClass(), 'additionalProperties' => false],
         ],
         [
@@ -265,6 +265,9 @@ function mcpToolsList(array $user): array {
     ];
 
     $tools = $read;
+    if (function_exists('mcpHasDevicePresetsAccess') && mcpHasDevicePresetsAccess($user) && function_exists('mcpDevicePresetsReadTools')) {
+        $tools = array_merge($tools, mcpDevicePresetsReadTools());
+    }
     if (function_exists('mcpHasAdminScope') && mcpHasAdminScope($user)) {
         $tools = array_merge($tools, mcpAdminReadTools());
     }
@@ -409,6 +412,9 @@ function mcpToolsList(array $user): array {
     ];
 
     $tools = array_merge($tools, $write);
+    if (function_exists('mcpHasDevicePresetsAccess') && mcpHasDevicePresetsAccess($user) && function_exists('mcpDevicePresetsWriteTools')) {
+        $tools = array_merge($tools, mcpDevicePresetsWriteTools());
+    }
     if (function_exists('mcpHasAdminScope') && mcpHasAdminScope($user)) {
         $tools = array_merge($tools, mcpAdminWriteTools());
     }
@@ -419,9 +425,14 @@ function mcpCallTool($id, string $name, array $args, array $user): array {
     $writeTools = [
         'create_space', 'update_space', 'add_link', 'update_link',
         'delete_link', 'delete_space', 'create_note', 'update_note',
+        'manage_device_presets', 'admin_manage',
     ];
     if (in_array($name, $writeTools, true) && !mcpHasWriteScope($user)) {
         return mcpTextResult($id, ['error' => 'This token is read-only. Create a token with write scope.'], true);
+    }
+    if (in_array($name, ['list_device_presets', 'manage_device_presets'], true)
+        && function_exists('mcpHasDevicePresetsAccess') && !mcpHasDevicePresetsAccess($user)) {
+        return mcpTextResult($id, ['error' => 'Device Presets require a token bound to an administrator user.'], true);
     }
 
     try {
@@ -454,6 +465,15 @@ function mcpCallTool($id, string $name, array $args, array $user): array {
                 return mcpTextResult($id, mcpToolCreateNote($user, $args));
             case 'update_note':
                 return mcpTextResult($id, mcpToolUpdateNote($user, $args));
+            case 'list_device_presets':
+            case 'manage_device_presets':
+                if (function_exists('mcpDevicePresetsDispatch')) {
+                    $device = mcpDevicePresetsDispatch($name, $args, $user);
+                    if ($device !== null) {
+                        return mcpTextResult($id, $device, isset($device['error']));
+                    }
+                }
+                return mcpError($id, -32602, 'Unknown tool: ' . $name);
             default:
                 if (function_exists('mcpHasAdminScope') && mcpHasAdminScope($user) && function_exists('mcpAdminDispatch')) {
                     $admin = mcpAdminDispatch($name, $args, $user);
@@ -673,15 +693,24 @@ function mcpIsSafeUrl(string $url): bool {
 }
 
 function mcpToolWhoami(array $user): array {
-    return [
+    $hasAdminTools = function_exists('mcpHasAdminScope') && mcpHasAdminScope($user);
+    $hasDevicePresetTools = function_exists('mcpHasDevicePresetsAccess') && mcpHasDevicePresetsAccess($user);
+    $out = [
         'id' => (int)$user['id'],
         'username' => $user['username'],
         'displayName' => $user['display_name'] ?? null,
         'isAdmin' => !empty($user['is_admin']),
         'scopes' => $user['_mcp_scopes'] ?? ['read'],
-        'hasAdminTools' => function_exists('mcpHasAdminScope') && mcpHasAdminScope($user),
+        'hasAdminTools' => $hasAdminTools,
+        'hasDevicePresetTools' => $hasDevicePresetTools,
         'server' => ['name' => MCP_SERVER_NAME, 'version' => mcpAppVersion()],
     ];
+    if (!empty($user['is_admin']) && !$hasAdminTools) {
+        $out['note'] = 'Enable write on this token to use admin_query and admin_manage (administrator bound user). Device Presets still work for admins on read-only tokens.';
+    } elseif (!empty($user['is_admin']) && $hasAdminTools) {
+        $out['note'] = 'Admin tools: admin_query and admin_manage (pass tool such as list_users or create_local_user). Device Presets: list_device_presets / manage_device_presets.';
+    }
+    return $out;
 }
 
 function mcpToolListSpaces(array $user, array $args): array {

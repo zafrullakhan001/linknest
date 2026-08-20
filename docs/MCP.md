@@ -18,16 +18,13 @@ Ask an LLM in plain language. With a **write** token it can:
 - Update space title, description, emoji, category, or visibility
 - Soft-delete a space (recycle bin)
 - Read and write personal Notes widget items
+- **Device Presets** (bound user is an administrator): list Device Preview sizes, or add/update/delete/import/reset them with `manage_device_presets`
 
 Without write scope, the client can only read.
 
-With an **admin** token (bound user is an administrator **and** the token has the `admin` scope), the client can also:
+With an **admin** token (bound user is an administrator **and** the token has **write** or explicit `admin` scope), the client can also:
 
-- Read LDAP/SAML status (no bind passwords; IdP cert as fingerprint only)
-- Test LDAP and SAML; search LDAP directory; add LDAP users
-- **Full user management:** list/create/update/delete users, approve/disable/enable/reject, reset local passwords, promote/demote admin, bulk actions, transfer space ownership, purge LDAP settings (requires `confirm: true`)
-- Manage Access Manager roles, widgets, nav tabs, teams, and space editors
-- **Device Presets:** list, add, update, or delete Device Preview sizes; set the quick-select bar; import a full catalog; or reset to built-in defaults (`replace_device_presets` / `reset_device_presets` need `confirm: true`)
+- **admin_query** / **admin_manage** — collapsed admin tools for Cursor (pass `action`: `list_users`, `create_local_user`, `assign_user_roles`, …). Full action list in Admin → MCP / AI.
 - **Database export / import:** write a JSON backup to `data/exports`, list those files, or restore one (import is destructive and needs `confirm: true`)
 
 Assign tools default to `mode: add` (merge). Use `replace` or `remove` only when you intend to.
@@ -41,7 +38,7 @@ Assign tools default to `mode: add` (merge). Use `replace` or `remove` only when
 3. Name the token (for example `Cursor on laptop`)
 4. Choose which LinkNest **user** it acts as
 5. Enable **write** if the LLM should create or edit spaces and links
-6. Enable **Admin (users, roles, LDAP / SAML, Device Presets, database)** only if the bound user is an administrator and you want Access Manager / auth setup / Device Presets / database export-import tools
+6. Enable **Admin (users, roles, LDAP / SAML, database)** only if the bound user is an administrator and you want Access Manager / auth setup / database export-import tools. Device Presets do **not** need this checkbox — they appear when the bound user is an administrator.
 7. Create the token and **copy it once** — the secret is not shown again
 8. Copy the generated **Cursor (HTTP)** or **Claude Desktop** snippet
 
@@ -204,6 +201,8 @@ Refresh the LinkNest home grid (or reload the page) to see the new tile.
 - “Search my spaces for Workday, then add this QA URL to that space.”
 - “Summarize the links in PeopleSoft ERP.”
 - “List categories, then list spaces in BUSINESS IT SERVICES.”
+- “List Device Preview presets by group. Then add iPhone 17 (id `iphone-17`, 402×874, variant `iphone-island`) and put it on the quick bar.”
+- “Reset device presets to built-in defaults. Confirm that custom devices in the database will be removed.”
 
 ### Admin prompts (admin user + admin scope)
 
@@ -220,8 +219,6 @@ Start with `whoami` (check `hasAdminTools` and `scopes`). Then:
 - “Create role Helpdesk, assign nav tabs public and favorites, widgets clock and notes, and spaces PeopleSoft ERP and PAM. Then assign that role to user jsmith.”
 - “Export the database to a JSON backup. Tell me the filename and row counts. Do not print the file contents.”
 - “List database exports, then import the latest JSON file. Confirm that this replaces all data, and keep a backup first.”
-- “List Device Preview presets by group. Then add iPhone 17 (id `iphone-17`, 402×874, variant `iphone-island`) and put it on the quick bar.”
-- “Reset device presets to built-in defaults. Confirm that custom devices in the database will be removed.”
 
 LDAP bind passwords and SAML IdP certificates are write-only. Status returns `has_bind_password` and `idp_cert_present` plus a fingerprint — never the secret.
 
@@ -307,6 +304,7 @@ Renaming the folder later means updating `url` / `LINKNEST_URL` again. The MCP t
 | `search_links` | Find links by label, URL, notes, or space title |
 | `list_categories` | Category names |
 | `list_notes` | Personal notes widget |
+| `list_device_presets` | Device Preview catalog (administrator bound user). Optional `id` / `group` / `query` |
 
 **Write** (token must include the `write` scope)
 
@@ -319,52 +317,31 @@ Renaming the folder later means updating `url` / `LINKNEST_URL` again. The MCP t
 | `update_link` | Label, URL, notes |
 | `delete_link` | Remove a link |
 | `create_note` / `update_note` | Personal notes |
+| `manage_device_presets` | Add/update/delete/replace/reset Device Preview devices (administrator + write). `replace` / `reset` need `confirm: true` |
 
-**Admin read** (bound user `is_admin` **and** token `admin` scope). Non-admin tokens never see these in `tools/list`.
-
-| Tool | Purpose |
-|------|---------|
-| `get_auth_status` | LDAP/SAML flags, hosts/DNs/filters, cert fingerprint; no secrets |
-| `test_ldap` | Connect/bind test (optional user bind). Passwords never echoed |
-| `test_saml` | `test_configuration`, `test_metadata`, `test_idp_connectivity`, `validate_certificate` |
-| `list_users` / `get_user` / `list_pending_users` | Users and role assignments; no password hashes |
-| `search_ldap_users` | Directory search before adding LDAP users |
-| `list_roles` / `get_role` | Roles plus assigned spaces, widgets, nav tabs |
-| `list_teams` | Access Manager teams (user groups) |
-| `list_space_editors` | Per-space editor grants |
-| `get_database_info` | SQLite size, pragmas, table row counts (no row data) |
-| `list_database_exports` | JSON backups in `data/exports` |
-| `export_database` | Write Admin-format JSON backup to `data/exports`; returns path and counts, never file contents |
-| `list_device_presets` | Device Preview catalog (id, label, size, group, variant, quick bar). Optional `group` / `query` |
-| `get_device_preset` | One preset by id |
-| `list_device_preset_options` | Allowed groups and mockup variants |
-
-**Admin write** (`admin` + `write`)
+**Admin read** (administrator + **write** scope, or explicit `admin` on a read-only token). Collapsed for Cursor’s tool limit.
 
 | Tool | Purpose |
 |------|---------|
-| `update_ldap` / `update_saml` / `purge_ldap_settings` | Guarded auth setup. `purge_ldap_settings` needs `confirm: true` |
-| `create_local_user` / `add_ldap_user` | Create local (pending) or verified LDAP users |
-| `update_user` | Username, email, display_name, notes, `auth_source` |
-| `set_user_status` | `approve` / `disable` / `enable` / `reject` |
-| `reset_user_password` | Non-admin local users only. Password write-only |
-| `change_admin_password` | Bound admin only (`current_password` + `new_password`) |
-| `delete_user` | Non-admin accounts |
-| `set_user_admin` | Promote or demote (`is_admin`). Cannot demote yourself |
-| `bulk_user_action` | Bulk approve/disable/enable/reject/promote/demote/set_auth_source |
-| `transfer_space_ownership` | Move a space to another user |
-| `create_role` / `update_role` | Role name, description, guest flag |
-| `assign_user_roles` | `mode`: `add` (default), `replace`, `remove` |
-| `set_role_spaces` / `set_role_widgets` / `set_role_tabs` | Same merge modes. Tabs are app nav tabs, not space content tabs |
-| `assign_team_roles` / `add_team_members` | Teams |
-| `set_space_editor` | Grant or revoke editor access (`can_edit: false` removes) |
-| `import_database` | **Destructive.** Restore a JSON file from `data/exports`. Requires `confirm: true`. Default `backup_first: true` |
-| `add_device_preset` | Add a Device Preview device (seeds built-ins into the DB if still on defaults) |
-| `update_device_preset` | Label, size, group, variant, or id |
-| `delete_device_preset` | Remove one device (keep at least one) |
-| `set_device_quick_presets` | Quick-select bar. `mode`: `add` (default), `replace`, `remove` |
-| `replace_device_presets` | Full catalog replace (Admin Import JSON). Requires `confirm: true` |
-| `reset_device_presets` | Clear custom catalog so built-ins apply. Requires `confirm: true` |
+| `admin_query` | Pass `tool`: `get_auth_status`, `list_users`, `list_pending_users`, `get_user`, `search_ldap_users`, `list_roles`, `get_role`, `list_teams`, `list_space_editors`, `get_database_info`, `list_database_exports`, `export_database`, `test_ldap`, `test_saml` |
+
+**Admin write** (administrator + **write** scope)
+
+| Tool | Purpose |
+|------|---------|
+| `admin_manage` | Pass `tool`: user management, LDAP/SAML, Access Manager, `import_database`, etc. (see Admin → MCP / AI). `import_database` / `purge_ldap_settings` need `confirm: true` |
+
+**Admin actions** (via `admin_query` / `admin_manage` `tool` parameter — not separate Cursor tools)
+
+| Examples | Purpose |
+|----------|---------|
+| `update_ldap` / `update_saml` / `purge_ldap_settings` | Guarded auth setup |
+| `create_local_user` / `add_ldap_user` | Create users |
+| `update_user` / `set_user_status` / `delete_user` | Manage accounts |
+| `reset_user_password` / `change_admin_password` | Passwords (write-only) |
+| `set_user_admin` / `bulk_user_action` | Promote, demote, bulk |
+| `assign_user_roles` / `set_role_*` / `assign_team_roles` | Access Manager |
+| `transfer_space_ownership` / `import_database` | Spaces / database |
 
 Resources: `linknest://catalog`, `linknest://space/{id}`.
 
@@ -386,17 +363,18 @@ Prompts: `find_a_link`, `add_bookmark`, `summarize_space`.
 
 Same JSON format as **Admin → Database Export & Import**. Files are written under `data/exports/` (not served over HTTP). The MCP result is metadata only (filename, size, row counts). Do not paste export JSON into chat — it contains password hashes and other secrets.
 
-To restore a file downloaded from the Admin UI, copy it into `data/exports/` first, then call `list_database_exports` and `import_database` with `confirm: true`. Import replaces users, spaces, settings, and related tables. MCP tokens are not included in the JSON; call `whoami` afterward.
+To restore a file downloaded from the Admin UI, copy it into `data/exports/` first, then use `admin_query` with `tool: list_database_exports` and `admin_manage` with `tool: import_database` and `confirm: true`. Import replaces users, spaces, settings, and related tables. MCP tokens are not included in the JSON; call `whoami` afterward.
 
 ### Device Presets
 
-Same catalog as **Admin → Device Presets** (Device Preview mockup sizes). If nothing is saved in settings, `list_device_presets` returns the built-in defaults with `isCustom: false`. Adding or editing a device copies that catalog into the database.
+Same catalog as **Admin → Device Presets** (Device Preview mockup sizes). These two tools appear when the **bound user is an administrator** — the token does not need the Admin checkbox. Cursor’s MCP tool budget is limited (~40 across all servers); admin and Device Presets are collapsed into a few tools so they stay visible.
+
+If nothing is saved in settings, `list_device_presets` returns the built-in defaults with `isCustom: false`. Adding or editing a device copies that catalog into the database.
 
 | Tool | Notes |
 |------|--------|
-| `add_device_preset` | `id`, `label`, `width`, `height`; optional `group` (default iPhone), `variant` (default from group), `add_to_quick` (default true) |
-| `replace_device_presets` | Full replace like Import JSON. Requires `confirm: true` |
-| `reset_device_presets` | Clears custom settings. Requires `confirm: true` |
+| `list_device_presets` | Optional `id`, `group`, `query`. Response includes `options` (allowed groups and variants) |
+| `manage_device_presets` | `action`: `add`, `update`, `delete`, `set_quick`, `replace`, `reset`. `replace` and `reset` require `confirm: true` |
 
 See [`DEVICE_PRESETS.md`](DEVICE_PRESETS.md) for field values (groups and mockup variants).
 
@@ -408,6 +386,7 @@ See [`DEVICE_PRESETS.md`](DEVICE_PRESETS.md) for field values (groups and mockup
 - Listing and search honor space visibility, staging, unpublished content, shares, and role assignments.
 - Write tools require owner, admin, or explicit edit permission — not “any logged-in user”.
 - Admin tools require an administrator bound user **and** the `admin` token scope. Write admin tools also need `write`.
+- Device Presets (`list_device_presets`, `manage_device_presets`) require an administrator bound user. Write is required to change them. They do not use the Admin token checkbox.
 - `javascript:` and `data:` URLs are rejected.
 - Revoking a token takes effect immediately.
 

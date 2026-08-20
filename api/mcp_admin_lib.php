@@ -15,7 +15,58 @@ function mcpHasAdminScope(array $user): bool {
         return false;
     }
     $scopes = $user['_mcp_scopes'] ?? [];
-    return in_array('admin', $scopes, true);
+    if (in_array('admin', $scopes, true)) {
+        return true;
+    }
+    // Administrators with write scope get admin MCP (same as Device Presets — no extra checkbox required).
+    return in_array('write', $scopes, true);
+}
+
+function mcpAdminReadActionNames(): array {
+    return [
+        'get_auth_status',
+        'test_ldap',
+        'test_saml',
+        'list_users',
+        'list_pending_users',
+        'get_user',
+        'search_ldap_users',
+        'list_roles',
+        'get_role',
+        'list_teams',
+        'list_space_editors',
+        'get_database_info',
+        'list_database_exports',
+        'export_database',
+    ];
+}
+
+function mcpAdminWriteActionNames(): array {
+    return [
+        'update_ldap',
+        'update_saml',
+        'purge_ldap_settings',
+        'create_local_user',
+        'add_ldap_user',
+        'update_user',
+        'set_user_status',
+        'reset_user_password',
+        'change_admin_password',
+        'delete_user',
+        'set_user_admin',
+        'bulk_user_action',
+        'transfer_space_ownership',
+        'create_role',
+        'update_role',
+        'assign_user_roles',
+        'set_role_spaces',
+        'set_role_widgets',
+        'set_role_tabs',
+        'assign_team_roles',
+        'add_team_members',
+        'set_space_editor',
+        'import_database',
+    ];
 }
 
 function mcpAdminNavTabIds(): array {
@@ -256,6 +307,41 @@ function mcpAdminValidWidgetIds(PDO $db): array {
 }
 
 function mcpAdminReadTools(): array {
+    return [
+        [
+            'name' => 'admin_query',
+            'description' => 'Admin read (administrator + write scope, or explicit admin scope). tool: get_auth_status, test_ldap, test_saml, list_users, list_pending_users, get_user, search_ldap_users, list_roles, get_role, list_teams, list_space_editors, get_database_info, list_database_exports, export_database. Pass tool plus that handler\'s normal fields. Secrets are never returned.',
+            'inputSchema' => [
+                'type' => 'object',
+                'properties' => [
+                    'tool' => ['type' => 'string', 'enum' => mcpAdminReadActionNames()],
+                ],
+                'required' => ['tool'],
+                'additionalProperties' => true,
+            ],
+        ],
+    ];
+}
+
+function mcpAdminWriteTools(): array {
+    return [
+        [
+            'name' => 'admin_manage',
+            'description' => 'Admin write (administrator + write scope). tool: update_ldap, update_saml, purge_ldap_settings, create_local_user, add_ldap_user, update_user, set_user_status, reset_user_password, change_admin_password, delete_user, set_user_admin, bulk_user_action, transfer_space_ownership, create_role, update_role, assign_user_roles, set_role_spaces, set_role_widgets, set_role_tabs, assign_team_roles, add_team_members, set_space_editor, import_database. Pass tool plus that handler\'s fields. Passwords write-only. import_database and purge_ldap_settings need confirm=true.',
+            'inputSchema' => [
+                'type' => 'object',
+                'properties' => [
+                    'tool' => ['type' => 'string', 'enum' => mcpAdminWriteActionNames()],
+                ],
+                'required' => ['tool'],
+                'additionalProperties' => true,
+            ],
+        ],
+    ];
+}
+
+/** @deprecated Internal list only — Cursor uses collapsed admin_query / admin_manage. */
+function mcpAdminReadToolsDetailed(): array {
     $empty = ['type' => 'object', 'properties' => new stdClass(), 'additionalProperties' => false];
     $tools = [
         [
@@ -381,13 +467,11 @@ function mcpAdminReadTools(): array {
     if (function_exists('mcpAdminUserReadToolsExtra')) {
         $tools = array_merge($tools, mcpAdminUserReadToolsExtra());
     }
-    if (function_exists('mcpAdminDevicePresetsReadToolsExtra')) {
-        $tools = array_merge($tools, mcpAdminDevicePresetsReadToolsExtra());
-    }
     return $tools;
 }
 
-function mcpAdminWriteTools(): array {
+/** @deprecated Internal list only — Cursor uses collapsed admin_query / admin_manage. */
+function mcpAdminWriteToolsDetailed(): array {
     $tools = [
         [
             'name' => 'update_ldap',
@@ -630,27 +714,47 @@ function mcpAdminWriteTools(): array {
     if (function_exists('mcpAdminUserWriteToolsExtra')) {
         $tools = array_merge($tools, mcpAdminUserWriteToolsExtra());
     }
-    if (function_exists('mcpAdminDevicePresetsWriteToolsExtra')) {
-        $tools = array_merge($tools, mcpAdminDevicePresetsWriteToolsExtra());
-    }
     return $tools;
+}
+
+function mcpAdminQueryTool(array $args, array $user): array {
+    $tool = strtolower(trim((string)($args['tool'] ?? $args['action'] ?? '')));
+    if ($tool === '') {
+        return ['error' => 'tool is required. Examples: list_users, get_auth_status, list_roles.'];
+    }
+    unset($args['tool'], $args['action']);
+    if (!in_array($tool, mcpAdminReadActionNames(), true)) {
+        return ['error' => 'Unknown admin read tool: ' . $tool];
+    }
+    return mcpAdminDispatch($tool, $args, $user);
+}
+
+function mcpAdminManageTool(array $args, array $user): array {
+    $tool = strtolower(trim((string)($args['tool'] ?? $args['action'] ?? '')));
+    if ($tool === '') {
+        return ['error' => 'tool is required. Examples: create_local_user, update_user, assign_user_roles.'];
+    }
+    unset($args['tool'], $args['action']);
+    if (!in_array($tool, mcpAdminWriteActionNames(), true)) {
+        return ['error' => 'Unknown admin write tool: ' . $tool];
+    }
+    return mcpAdminDispatch($tool, $args, $user);
 }
 
 function mcpAdminDispatch(string $name, array $args, array $user): array {
     if (!mcpHasAdminScope($user)) {
-        return ['error' => 'Admin MCP tools require an administrator user and a token with the admin scope.'];
+        return ['error' => 'Admin MCP tools require an administrator bound user and write scope (or explicit admin scope on the token).'];
     }
-    $write = [
-        'update_ldap', 'update_saml', 'update_user', 'set_user_status',
-        'create_local_user', 'add_ldap_user', 'reset_user_password', 'change_admin_password',
-        'delete_user', 'set_user_admin', 'bulk_user_action', 'transfer_space_ownership', 'purge_ldap_settings',
-        'create_role', 'update_role', 'assign_user_roles',
-        'set_role_spaces', 'set_role_widgets', 'set_role_tabs',
-        'assign_team_roles', 'add_team_members', 'set_space_editor',
-        'import_database',
-        'add_device_preset', 'update_device_preset', 'delete_device_preset',
-        'set_device_quick_presets', 'replace_device_presets', 'reset_device_presets',
-    ];
+    if ($name === 'admin_query') {
+        return mcpAdminQueryTool($args, $user);
+    }
+    if ($name === 'admin_manage') {
+        if (!mcpHasWriteScope($user)) {
+            return ['error' => 'admin_manage requires write scope on the token.'];
+        }
+        return mcpAdminManageTool($args, $user);
+    }
+    $write = array_merge(mcpAdminWriteActionNames(), ['admin_manage']);
     if (in_array($name, $write, true) && !mcpHasWriteScope($user)) {
         return ['error' => 'This token cannot write admin settings. Enable write plus admin on the token.'];
     }
@@ -713,12 +817,6 @@ function mcpAdminDispatch(string $name, array $args, array $user): array {
                 $userResult = mcpAdminUserDispatch($name, $args, $user);
                 if ($userResult !== null) {
                     return $userResult;
-                }
-            }
-            if (function_exists('mcpAdminDevicePresetsDispatch')) {
-                $deviceResult = mcpAdminDevicePresetsDispatch($name, $args, $user);
-                if ($deviceResult !== null) {
-                    return $deviceResult;
                 }
             }
             return ['error' => 'Unknown admin tool: ' . $name];

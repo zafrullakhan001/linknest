@@ -1,19 +1,28 @@
 <?php
 /**
- * Admin MCP tools for Device Preview presets (Admin → Device Presets).
+ * Device Preview presets MCP tools (Admin → Device Presets).
+ *
+ * Shown when the bound user is an administrator. The Admin token checkbox is
+ * not required (that checkbox is for users / LDAP / database tools).
+ * Collapsed to two tools so Cursor's ~40-tool budget can still see them.
  */
 
 require_once __DIR__ . '/device_presets_lib.php';
 
-function mcpAdminDevicePresetsReadToolsExtra(): array {
-    $empty = ['type' => 'object', 'properties' => new stdClass(), 'additionalProperties' => false];
+function mcpHasDevicePresetsAccess(array $user): bool {
+    return !empty($user['is_admin']);
+}
+
+function mcpDevicePresetsReadTools(): array {
     return [
         [
             'name' => 'list_device_presets',
-            'description' => 'List Device Preview presets (same catalog as Admin → Device Presets). Returns sizes, mockup variants, quick-bar ids, and whether the catalog is custom or built-in defaults. Optional group or query filter.',
+            'description' => 'List Device Preview presets (Admin → Device Presets). Returns devices, quick-bar ids, allowed groups/variants, and whether the catalog is custom or built-in. Pass id to get one device. Bound user must be an administrator.',
             'inputSchema' => [
                 'type' => 'object',
                 'properties' => [
+                    'id' => ['type' => 'string', 'description' => 'Optional preset id (e.g. iphone-14) to return one device'],
+                    'preset_id' => ['type' => 'string', 'description' => 'Alias of id'],
                     'query' => ['type' => 'string', 'description' => 'Optional filter on id or label'],
                     'group' => [
                         'type' => 'string',
@@ -24,55 +33,25 @@ function mcpAdminDevicePresetsReadToolsExtra(): array {
                 'additionalProperties' => false,
             ],
         ],
-        [
-            'name' => 'get_device_preset',
-            'description' => 'Get one Device Preview preset by id (for example iphone-14).',
-            'inputSchema' => [
-                'type' => 'object',
-                'properties' => [
-                    'id' => ['type' => 'string', 'description' => 'Preset id slug'],
-                    'preset_id' => ['type' => 'string', 'description' => 'Alias of id'],
-                ],
-                'additionalProperties' => false,
-            ],
-        ],
-        [
-            'name' => 'list_device_preset_options',
-            'description' => 'Allowed Device Preview groups and mockup variants. Use before add_device_preset if you need the enum values.',
-            'inputSchema' => $empty,
-        ],
     ];
 }
 
-function mcpAdminDevicePresetsWriteToolsExtra(): array {
+function mcpDevicePresetsWriteTools(): array {
     $groupEnum = devicePresetsAllowedGroups();
     $variantEnum = devicePresetsAllowedVariants();
     return [
         [
-            'name' => 'add_device_preset',
-            'description' => 'Add a Device Preview device. If the catalog is still built-in defaults, those defaults are copied into the database first (same as Admin → Add & save). New devices are added to the quick bar unless add_to_quick is false. Reuse an existing variant (e.g. iphone-island) for new phones.',
+            'name' => 'manage_device_presets',
+            'description' => 'Change Device Preview presets. action: add, update, delete, set_quick, replace, reset. Same as Admin → Device Presets. Bound user must be an administrator with write scope. replace and reset require confirm=true. New phones can reuse variant iphone-island.',
             'inputSchema' => [
                 'type' => 'object',
                 'properties' => [
-                    'id' => ['type' => 'string', 'description' => 'Unique slug, e.g. iphone-17'],
-                    'label' => ['type' => 'string', 'description' => 'Dropdown label'],
-                    'width' => ['type' => 'integer', 'minimum' => 120, 'maximum' => 4096],
-                    'height' => ['type' => 'integer', 'minimum' => 120, 'maximum' => 4096],
-                    'group' => ['type' => 'string', 'enum' => $groupEnum, 'description' => 'Default iPhone'],
-                    'variant' => ['type' => 'string', 'enum' => $variantEnum, 'description' => 'Mockup shell; default from group'],
-                    'add_to_quick' => ['type' => 'boolean', 'description' => 'Add to the quick-select bar (default true)'],
-                ],
-                'required' => ['id', 'label', 'width', 'height'],
-                'additionalProperties' => false,
-            ],
-        ],
-        [
-            'name' => 'update_device_preset',
-            'description' => 'Update an existing Device Preview preset (label, size, group, variant, or id). Seeds built-in defaults into the database if they are not saved yet.',
-            'inputSchema' => [
-                'type' => 'object',
-                'properties' => [
-                    'id' => ['type' => 'string'],
+                    'action' => [
+                        'type' => 'string',
+                        'enum' => ['add', 'update', 'delete', 'set_quick', 'replace', 'reset'],
+                        'description' => 'add (default when id+label+width+height are set), update, delete, set_quick, replace, reset',
+                    ],
+                    'id' => ['type' => 'string', 'description' => 'Preset id slug (add/update/delete)'],
                     'preset_id' => ['type' => 'string'],
                     'new_id' => ['type' => 'string'],
                     'label' => ['type' => 'string'],
@@ -80,43 +59,12 @@ function mcpAdminDevicePresetsWriteToolsExtra(): array {
                     'height' => ['type' => 'integer', 'minimum' => 120, 'maximum' => 4096],
                     'group' => ['type' => 'string', 'enum' => $groupEnum],
                     'variant' => ['type' => 'string', 'enum' => $variantEnum],
-                ],
-                'additionalProperties' => false,
-            ],
-        ],
-        [
-            'name' => 'delete_device_preset',
-            'description' => 'Remove a Device Preview preset by id. At least one preset must remain. Also removes it from the quick bar.',
-            'inputSchema' => [
-                'type' => 'object',
-                'properties' => [
-                    'id' => ['type' => 'string'],
-                    'preset_id' => ['type' => 'string'],
-                ],
-                'additionalProperties' => false,
-            ],
-        ],
-        [
-            'name' => 'set_device_quick_presets',
-            'description' => 'Change the Device Preview quick-select bar. mode defaults to add (merge). Use replace for the exact list, remove to take ids off the bar. Unknown ids are skipped.',
-            'inputSchema' => [
-                'type' => 'object',
-                'properties' => [
-                    'preset_ids' => ['type' => 'array', 'items' => ['type' => 'string']],
-                    'mode' => ['type' => 'string', 'enum' => ['add', 'replace', 'remove']],
-                ],
-                'required' => ['preset_ids'],
-                'additionalProperties' => false,
-            ],
-        ],
-        [
-            'name' => 'replace_device_presets',
-            'description' => 'Replace the full Device Preview catalog (same as Admin → Import JSON). Requires confirm=true. Pass presets as an array of {id, label, width, height, group, variant}. Optional quick_presets ids.',
-            'inputSchema' => [
-                'type' => 'object',
-                'properties' => [
+                    'add_to_quick' => ['type' => 'boolean', 'description' => 'For add: put on the quick bar (default true)'],
+                    'preset_ids' => ['type' => 'array', 'items' => ['type' => 'string'], 'description' => 'For set_quick'],
+                    'mode' => ['type' => 'string', 'enum' => ['add', 'replace', 'remove'], 'description' => 'For set_quick (default add)'],
                     'presets' => [
                         'type' => 'array',
+                        'description' => 'For replace: full catalog of {id, label, width, height, group, variant}',
                         'items' => [
                             'type' => 'object',
                             'properties' => [
@@ -127,59 +75,65 @@ function mcpAdminDevicePresetsWriteToolsExtra(): array {
                                 'group' => ['type' => 'string', 'enum' => $groupEnum],
                                 'variant' => ['type' => 'string', 'enum' => $variantEnum],
                             ],
-                            'required' => ['id', 'label', 'width', 'height', 'group', 'variant'],
                         ],
                     ],
                     'quick_presets' => ['type' => 'array', 'items' => ['type' => 'string']],
-                    'confirm' => [
-                        'type' => 'boolean',
-                        'description' => 'Must be true. Replaces the saved catalog for all users.',
-                    ],
+                    'confirm' => ['type' => 'boolean', 'description' => 'Required true for replace and reset'],
                 ],
-                'required' => ['presets', 'confirm'],
-                'additionalProperties' => false,
-            ],
-        ],
-        [
-            'name' => 'reset_device_presets',
-            'description' => 'Clear custom Device Preview presets so built-in defaults apply again (same as Admin → Reset defaults). Requires confirm=true.',
-            'inputSchema' => [
-                'type' => 'object',
-                'properties' => [
-                    'confirm' => [
-                        'type' => 'boolean',
-                        'description' => 'Must be true. Removes the custom catalog from the database.',
-                    ],
-                ],
-                'required' => ['confirm'],
                 'additionalProperties' => false,
             ],
         ],
     ];
 }
 
-function mcpAdminDevicePresetsDispatch(string $name, array $args, array $user): ?array {
+function mcpDevicePresetsDispatch(string $name, array $args, array $user): ?array {
+    if (!mcpHasDevicePresetsAccess($user)) {
+        return ['error' => 'Device Presets require a token bound to an administrator user.'];
+    }
     switch ($name) {
         case 'list_device_presets':
             return mcpAdminListDevicePresets($args);
-        case 'get_device_preset':
-            return mcpAdminGetDevicePreset($args);
-        case 'list_device_preset_options':
-            return mcpAdminListDevicePresetOptions();
-        case 'add_device_preset':
-            return mcpAdminAddDevicePreset($args, $user);
-        case 'update_device_preset':
-            return mcpAdminUpdateDevicePreset($args, $user);
-        case 'delete_device_preset':
-            return mcpAdminDeleteDevicePreset($args, $user);
-        case 'set_device_quick_presets':
-            return mcpAdminSetDeviceQuickPresets($args, $user);
-        case 'replace_device_presets':
-            return mcpAdminReplaceDevicePresets($args, $user);
-        case 'reset_device_presets':
-            return mcpAdminResetDevicePresets($args, $user);
+        case 'manage_device_presets':
+            return mcpManageDevicePresets($args, $user);
         default:
             return null;
+    }
+}
+
+function mcpManageDevicePresets(array $args, array $user): array {
+    $action = strtolower(trim((string)($args['action'] ?? '')));
+    if ($action === '') {
+        if (isset($args['presets'])) {
+            $action = 'replace';
+        } elseif (isset($args['preset_ids'])) {
+            $action = 'set_quick';
+        } elseif (isset($args['id']) || isset($args['preset_id'])) {
+            if (isset($args['label']) && isset($args['width']) && isset($args['height'])) {
+                $action = 'add';
+            } elseif (isset($args['new_id']) || isset($args['label']) || isset($args['width']) || isset($args['height']) || isset($args['group']) || isset($args['variant'])) {
+                $action = 'update';
+            } else {
+                $action = 'delete';
+            }
+        } else {
+            return ['error' => 'action is required: add, update, delete, set_quick, replace, or reset.'];
+        }
+    }
+    switch ($action) {
+        case 'add':
+            return mcpAdminAddDevicePreset($args, $user);
+        case 'update':
+            return mcpAdminUpdateDevicePreset($args, $user);
+        case 'delete':
+            return mcpAdminDeleteDevicePreset($args, $user);
+        case 'set_quick':
+            return mcpAdminSetDeviceQuickPresets($args, $user);
+        case 'replace':
+            return mcpAdminReplaceDevicePresets($args, $user);
+        case 'reset':
+            return mcpAdminResetDevicePresets($args, $user);
+        default:
+            return ['error' => 'Unknown action. Use add, update, delete, set_quick, replace, or reset.'];
     }
 }
 
@@ -251,6 +205,19 @@ function mcpAdminListDevicePresets(array $args): array {
     $summary = mcpDevicePresetsSummary($effective);
     $summary['count'] = count($presets);
     $summary['presets'] = mcpDevicePresetsDecorate($effective, $presets);
+    $summary['options'] = mcpAdminListDevicePresetOptions();
+    $id = mcpDevicePresetIdArg($args);
+    if ($id !== '') {
+        $preset = devicePresetsFind($effective['presets'], $id);
+        if ($preset === null) {
+            return ['error' => 'Device preset not found: ' . $id];
+        }
+        $quick = array_flip($effective['quickPresets'] ?? []);
+        $preset['in_quick'] = isset($quick[$id]);
+        $summary['preset'] = $preset;
+        $summary['count'] = 1;
+        $summary['presets'] = mcpDevicePresetsDecorate($effective, [$preset]);
+    }
     if ($group !== '') {
         $summary['filter_group'] = $group;
     }
@@ -310,7 +277,7 @@ function mcpAdminAddDevicePreset(array $args, array $user): array {
         $variant = devicePresetsSuggestVariant($group);
     }
     if (!in_array($variant, devicePresetsAllowedVariants(), true)) {
-        return ['error' => 'Invalid variant. Call list_device_preset_options for allowed values.'];
+        return ['error' => 'Invalid variant. Allowed values are in list_device_presets → options.variants.'];
     }
 
     $effective = devicePresetsGetEffective();
@@ -405,7 +372,7 @@ function mcpAdminUpdateDevicePreset(array $args, array $user): array {
         if (isset($args['variant'])) {
             $variant = trim((string)$args['variant']);
             if (!in_array($variant, devicePresetsAllowedVariants(), true)) {
-                return ['error' => 'Invalid variant. Call list_device_preset_options for allowed values.'];
+                return ['error' => 'Invalid variant. Allowed values are in list_device_presets → options.variants.'];
             }
             $preset['variant'] = $variant;
         }
