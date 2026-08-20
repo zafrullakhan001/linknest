@@ -1408,18 +1408,26 @@ export const MobileTileEdit: React.FC<MobileTileEditProps> = ({
                                                                             {isEditing ? (
                                                                                 /* Edit Link Form */
                                                                                 <div className="p-3 bg-brand-50 dark:bg-brand-900/20 border-2 border-brand-500 dark:border-brand-500/50 rounded-lg space-y-3">
-                                                                                    <div className="flex items-center justify-between mb-2">
+                                                                                    <div className="flex items-center justify-between gap-2 mb-2">
                                                                                         <h4 className="text-sm font-semibold text-slate-700 dark:text-slate-300">Edit Link</h4>
-                                                                                        <button
-                                                                                            onClick={handleCancelEditLink}
-                                                                                            className="text-slate-400 hover:text-slate-600 dark:hover:text-slate-300 p-1 rounded transition-colors touch-manipulation"
-                                                                                            style={{ minHeight: '44px', minWidth: '44px' }}
-                                                                                            title="Cancel editing"
-                                                                                        >
-                                                                                            <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" strokeWidth={2} stroke="currentColor" className="w-5 h-5">
-                                                                                                <path strokeLinecap="round" strokeLinejoin="round" d="M6 18L18 6M6 6l12 12" />
-                                                                                            </svg>
-                                                                                        </button>
+                                                                                        <div className="flex items-center gap-2 shrink-0">
+                                                                                            <button
+                                                                                                type="button"
+                                                                                                onClick={handleCancelEditLink}
+                                                                                                className="px-3 py-2 text-xs font-semibold bg-slate-200 dark:bg-slate-700 hover:bg-slate-300 dark:hover:bg-slate-600 text-slate-700 dark:text-slate-300 rounded-lg touch-manipulation"
+                                                                                                style={{ minHeight: '44px' }}
+                                                                                            >
+                                                                                                Cancel
+                                                                                            </button>
+                                                                                            <button
+                                                                                                type="button"
+                                                                                                onClick={() => handleSaveEditLink(tab.id, section.id, link.id)}
+                                                                                                className="px-3 py-2 text-xs font-semibold bg-brand-600 hover:bg-brand-500 text-white rounded-lg active:bg-brand-700 touch-manipulation"
+                                                                                                style={{ minHeight: '44px' }}
+                                                                                            >
+                                                                                                Save
+                                                                                            </button>
+                                                                                        </div>
                                                                                     </div>
                                                                                     <LinkLabelField
                                                                                         key={link.id}

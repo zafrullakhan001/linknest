@@ -23,6 +23,8 @@
     "@xterm/addon-fit": "^0.11.0",
     "@xterm/addon-web-links": "^0.12.0",
     "@xterm/xterm": "^6.0.0",
+    "lucide-react": "^0.556.0",
+    "node-forge": "^1.3.3",
     "qrcode.react": "^4.2.0",
     "react": "^19.2.0",
     "react-dom": "^19.2.0",
@@ -34,6 +36,7 @@
   },
   "devDependencies": {
     "@types/node": "^22.14.0",
+    "@types/node-forge": "^1.3.14",
     "@vitejs/plugin-react": "^5.0.0",
     "autoprefixer": "^10.4.22",
     "baseline-browser-mapping": "^2.9.17",

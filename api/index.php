@@ -131,6 +131,18 @@ if ($path === '/') {
         $_SERVER['PATH_INFO'] = ($remainingPath[0] === '/') ? $remainingPath : '/' . $remainingPath;
     }
     require __DIR__ . '/linkhealth.php';
+} elseif (strpos($path, '/ssl-check') === 0) {
+    require __DIR__ . '/ssl-check.php';
+    exit;
+} elseif (strpos($path, '/whois-lookup') === 0) {
+    require __DIR__ . '/whois-lookup.php';
+    exit;
+} elseif (strpos($path, '/ct-lookup') === 0) {
+    require __DIR__ . '/ct-lookup.php';
+    exit;
+} elseif (strpos($path, '/ocsp-crl') === 0) {
+    require __DIR__ . '/ocsp-crl.php';
+    exit;
 } elseif (strpos($path, '/framecheck') === 0) {
     require __DIR__ . '/framecheck.php';
 } elseif (strpos($path, '/styles') === 0) {

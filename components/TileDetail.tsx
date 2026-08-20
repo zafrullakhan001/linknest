@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useCallback, useRef } from 'react';
+import React, { useState, useEffect, useCallback, useRef, lazy, Suspense } from 'react';
 import { createPortal } from 'react-dom';
 import { Tile, Link, LinkSection, Tab, LinkVisibility, TileVisibility, COLOR_STYLES, THEME_COLORS, ThemeColor, TileMessage, AccessRestrictions, LinkRedirectHop } from '../types';
 import { linkHealthService, LinkHealthMap } from '../services/linkHealthService';
@@ -71,6 +71,9 @@ import { tryHandleSshLinkClick, isSshLinkUrl } from '../utils/sshLink';
 import { tryHandleVncLinkClick, isVncLinkUrl } from '../utils/vncLink';
 import { printQrView } from '../utils/printQrView';
 import { rolesService, LINK_ACTION_IDS, type LinkActionId } from '../services/rolesService';
+
+const SslCheckerDialog = lazy(() => import('./ssl/SslCheckerDialog'));
+const WhoisDialog = lazy(() => import('./ssl/WhoisDialog'));
 
 type ViewLayoutMode = 'stacked' | 'side-by-side' | 'grid' | 'compact' | 'qr';
 
@@ -428,6 +431,8 @@ const UrlProbeBadges: React.FC<{ url: string }> = ({ url }) => {
     const [redirectCount, setRedirectCount] = useState(0);
     const [redirectChain, setRedirectChain] = useState<LinkRedirectHop[]>([]);
     const [chainOpen, setChainOpen] = useState(false);
+    const [sslOpen, setSslOpen] = useState(false);
+    const [whoisOpen, setWhoisOpen] = useState(false);
     const [healthStatus, setHealthStatus] = useState<string>('');
     const [error, setError] = useState<string>('');
     const abortRef = useRef<AbortController | null>(null);
@@ -741,7 +746,49 @@ const UrlProbeBadges: React.FC<{ url: string }> = ({ url }) => {
                     )}
                 </>
             )}
+            {(scheme === 'http' || scheme === 'https' || isHttpOrHttpsUrl((url || '').trim())) && (
+                <>
+                    <button
+                        type="button"
+                        onClick={() => setSslOpen(true)}
+                        className="inline-flex items-center gap-1 text-[10px] font-semibold px-2 py-0.5 rounded-full border bg-violet-100 text-violet-800 dark:bg-violet-900/50 dark:text-violet-200 border-violet-200 dark:border-violet-700 hover:bg-violet-200/80 dark:hover:bg-violet-800/60 cursor-pointer"
+                        title="Open SSL URL checker for this link (on demand)"
+                        aria-haspopup="dialog"
+                    >
+                        <span aria-hidden>🔐</span>
+                        SSL
+                    </button>
+                    <button
+                        type="button"
+                        onClick={() => setWhoisOpen(true)}
+                        className="inline-flex items-center gap-1 text-[10px] font-semibold px-2 py-0.5 rounded-full border bg-emerald-100 text-emerald-800 dark:bg-emerald-900/50 dark:text-emerald-200 border-emerald-200 dark:border-emerald-700 hover:bg-emerald-200/80 dark:hover:bg-emerald-800/60 cursor-pointer"
+                        title="Look up domain ownership (WHOIS / RDAP) on demand"
+                        aria-haspopup="dialog"
+                    >
+                        <span aria-hidden>🏢</span>
+                        WHOIS
+                    </button>
+                </>
+            )}
             {chainDialog}
+            {sslOpen && (
+                <Suspense fallback={null}>
+                    <SslCheckerDialog
+                        isOpen={sslOpen}
+                        onClose={() => setSslOpen(false)}
+                        url={(url || '').trim()}
+                    />
+                </Suspense>
+            )}
+            {whoisOpen && (
+                <Suspense fallback={null}>
+                    <WhoisDialog
+                        isOpen={whoisOpen}
+                        onClose={() => setWhoisOpen(false)}
+                        url={(url || '').trim()}
+                    />
+                </Suspense>
+            )}
         </div>
     );
 };
@@ -9716,6 +9763,26 @@ export const TileDetail: React.FC<TileDetailProps> = ({
                                                                                                         Organize access, content, and display options below
                                                                                                     </p>
                                                                                                 </div>
+                                                                                            </div>
+                                                                                            <div className="flex items-center gap-2 shrink-0">
+                                                                                                <button
+                                                                                                    type="button"
+                                                                                                    onClick={handleCancelEditLink}
+                                                                                                    className="px-4 py-2 text-xs font-medium text-slate-600 dark:text-slate-300 hover:text-slate-900 dark:hover:text-white hover:bg-slate-100 dark:hover:bg-slate-700 rounded-lg border border-slate-200 dark:border-slate-600 transition-all"
+                                                                                                >
+                                                                                                    Cancel
+                                                                                                </button>
+                                                                                                <button
+                                                                                                    type="button"
+                                                                                                    onClick={() => handleUpdateLink(tab.id, section.id, link.id)}
+                                                                                                    disabled={!editLinkState[link.id]?.label?.trim() || !editLinkState[link.id]?.url?.trim()}
+                                                                                                    className="px-4 py-2 text-xs font-semibold bg-brand-600 hover:bg-brand-500 disabled:opacity-50 disabled:cursor-not-allowed text-white rounded-lg transition-all shadow-md hover:shadow-lg shadow-brand-500/30 flex items-center gap-1.5"
+                                                                                                >
+                                                                                                    <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" strokeWidth={2} stroke="currentColor" className="w-3.5 h-3.5">
+                                                                                                        <path strokeLinecap="round" strokeLinejoin="round" d="M9 12.75L11.25 15 15 9.75M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
+                                                                                                    </svg>
+                                                                                                    Save
+                                                                                                </button>
                                                                                             </div>
                                                                                         </div>
 
