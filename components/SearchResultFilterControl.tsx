@@ -20,6 +20,8 @@ export type SearchMatchingLink = {
   maintenanceVideoUrl?: string;
   notes?: string;
   tooltip?: string;
+  notesEnabled?: boolean;
+  tooltipStyle?: 'rich' | 'classic';
   shortUrl?: string;
   match?: SearchMatchScore;
   tile: {
@@ -221,6 +223,8 @@ export function collectMatchingSearchLinks(
         maintenanceVideoUrl?: string;
         notes?: string;
         tooltip?: string;
+        notesEnabled?: boolean;
+        tooltipStyle?: 'rich' | 'classic';
         shortUrl?: string;
       }) => {
         const uniqueKey = `${(link.label || '').toLowerCase()}|${(link.url || '').toLowerCase()}`;
@@ -248,6 +252,8 @@ export function collectMatchingSearchLinks(
           maintenanceVideoUrl: link.maintenanceVideoUrl,
           notes: link.notes,
           tooltip: link.tooltip,
+          notesEnabled: link.notesEnabled,
+          tooltipStyle: link.tooltipStyle,
           shortUrl: link.shortUrl,
           tile: {
             id: tile.id,

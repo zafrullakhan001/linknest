@@ -12,6 +12,9 @@ import { AccessRestrictionsEditor } from './AccessRestrictionsEditor';
 import { SectionEditActionToolbar, TabEditActionToolbar, type HierarchyToolbarHandlers } from './EditHierarchyToolbar';
 import { hasVisibleRichText } from '../utils/richTextDisplay';
 import { isInfoContentEnabled, isNotesTooltipEnabled } from '../utils/linkFeatureToggles';
+import { LinkTooltipStyleToggle } from './LinkTooltipStyleToggle';
+import { HoverTooltipEditor } from './HoverTooltipEditor';
+import { normalizeLinkTooltipStyle, type LinkTooltipStyle } from '../utils/linkTooltipPreference';
 
 interface MobileTileEditProps {
     tile: Tile;
@@ -109,6 +112,7 @@ export const MobileTileEdit: React.FC<MobileTileEditProps> = ({
         allowedUsers: number[];
         notes: string;
         tooltip: string;
+        tooltipStyle: LinkTooltipStyle;
         notesEnabled: boolean;
         browser: string;
         richTextContent: string;
@@ -127,6 +131,7 @@ export const MobileTileEdit: React.FC<MobileTileEditProps> = ({
         allowedUsers: number[];
         notes: string;
         tooltip: string;
+        tooltipStyle: LinkTooltipStyle;
         notesEnabled: boolean;
         browser: string;
         richTextContent: string;
@@ -243,6 +248,7 @@ export const MobileTileEdit: React.FC<MobileTileEditProps> = ({
             allowedUsers: state.allowedUsers || [],
             notes: hasVisibleRichText(state.notes) ? state.notes : undefined,
             tooltip: hasVisibleRichText(state.tooltip) ? state.tooltip : undefined,
+            tooltipStyle: normalizeLinkTooltipStyle(state.tooltipStyle),
             notesEnabled: state.notesEnabled === true,
             browser: state.browser || 'default',
             richTextContent: state.richTextContent || undefined,
@@ -276,6 +282,7 @@ export const MobileTileEdit: React.FC<MobileTileEditProps> = ({
                 allowedUsers: [],
                 notes: '',
                 tooltip: '',
+                tooltipStyle: 'classic',
                 notesEnabled: false,
                 browser: 'default',
                 richTextContent: '',
@@ -305,6 +312,7 @@ export const MobileTileEdit: React.FC<MobileTileEditProps> = ({
                     allowedUsers: link.allowedUsers || [],
                     notes: link.notes || '',
                     tooltip: link.tooltip || '',
+                    tooltipStyle: normalizeLinkTooltipStyle(link.tooltipStyle),
                     notesEnabled: isNotesTooltipEnabled(link),
                     browser: link.browser || 'default',
                     richTextContent: link.richTextContent || '',
@@ -346,6 +354,7 @@ export const MobileTileEdit: React.FC<MobileTileEditProps> = ({
                                             allowedUsers: state.allowedUsers || [],
                                             notes: hasVisibleRichText(state.notes) ? state.notes : undefined,
                                             tooltip: hasVisibleRichText(state.tooltip) ? state.tooltip : undefined,
+                                            tooltipStyle: normalizeLinkTooltipStyle(state.tooltipStyle),
                                             notesEnabled: state.notesEnabled === true,
                                             browser: state.browser || 'default',
                                             richTextContent: state.richTextContent || undefined,
@@ -392,6 +401,7 @@ export const MobileTileEdit: React.FC<MobileTileEditProps> = ({
         allowedUsers: [],
         notes: '',
         tooltip: '',
+        tooltipStyle: 'classic',
         notesEnabled: false,
         browser: 'default',
         richTextContent: '',
@@ -414,6 +424,7 @@ export const MobileTileEdit: React.FC<MobileTileEditProps> = ({
         allowedUsers: state.allowedUsers || [],
         notes: hasVisibleRichText(state.notes) ? state.notes : undefined,
         tooltip: hasVisibleRichText(state.tooltip) ? state.tooltip : undefined,
+        tooltipStyle: normalizeLinkTooltipStyle(state.tooltipStyle),
         notesEnabled: state.notesEnabled === true,
         browser: state.browser || 'default',
         richTextContent: state.richTextContent || undefined,
@@ -466,6 +477,7 @@ export const MobileTileEdit: React.FC<MobileTileEditProps> = ({
                 allowedUsers: state.allowedUsers || [],
                 notes: hasVisibleRichText(state.notes) ? state.notes : undefined,
                 tooltip: hasVisibleRichText(state.tooltip) ? state.tooltip : undefined,
+                tooltipStyle: normalizeLinkTooltipStyle(state.tooltipStyle),
                 notesEnabled: state.notesEnabled === true,
                 browser: state.browser || 'default',
                 richTextContent: state.richTextContent || undefined,
@@ -578,6 +590,7 @@ export const MobileTileEdit: React.FC<MobileTileEditProps> = ({
                     allowedUsers: [],
                     notes: '',
                     tooltip: '',
+                tooltipStyle: 'classic',
                     notesEnabled: false,
                     browser: 'default',
                     richTextContent: '',
@@ -604,6 +617,7 @@ export const MobileTileEdit: React.FC<MobileTileEditProps> = ({
                     allowedUsers: [],
                     notes: '',
                     tooltip: '',
+                tooltipStyle: 'classic',
                     notesEnabled: false,
                     browser: 'default',
                     richTextContent: '',
@@ -1301,12 +1315,21 @@ export const MobileTileEdit: React.FC<MobileTileEditProps> = ({
                                                                     />
                                                                 </div>
                                                                 <div>
-                                                                    <label className="block text-xs font-semibold uppercase tracking-wider text-slate-600 dark:text-slate-400 mb-1.5">
-                                                                        Hover Tooltip (Rich Text)
-                                                                    </label>
-                                                                    <MobileRichTextEditor
+                                                                    <div className="flex items-center justify-between gap-2 mb-1.5">
+                                                                        <label className="block text-xs font-semibold uppercase tracking-wider text-slate-600 dark:text-slate-400">
+                                                                            Hover Tooltip
+                                                                        </label>
+                                                                        <LinkTooltipStyleToggle
+                                                                            compact
+                                                                            value={normalizeLinkTooltipStyle(newLinkState[section.id]?.tooltipStyle)}
+                                                                            onChange={(style) => updateNewLinkState(section.id, 'tooltipStyle', style)}
+                                                                        />
+                                                                    </div>
+                                                                    <HoverTooltipEditor
+                                                                        variant="mobile"
                                                                         value={newLinkState[section.id]?.tooltip || ''}
                                                                         onChange={(value) => updateNewLinkState(section.id, 'tooltip', value)}
+                                                                        tooltipStyle={newLinkState[section.id]?.tooltipStyle}
                                                                         placeholder="Text shown on hover..."
                                                                     />
                                                                 </div>
@@ -1595,12 +1618,21 @@ export const MobileTileEdit: React.FC<MobileTileEditProps> = ({
                                                                                         />
                                                                                     </div>
                                                                                     <div>
-                                                                                        <label className="block text-xs font-semibold uppercase tracking-wider text-slate-600 dark:text-slate-400 mb-1.5">
-                                                                                            Hover Tooltip (Rich Text)
-                                                                                        </label>
-                                                                                        <MobileRichTextEditor
+                                                                                        <div className="flex items-center justify-between gap-2 mb-1.5">
+                                                                                            <label className="block text-xs font-semibold uppercase tracking-wider text-slate-600 dark:text-slate-400">
+                                                                                                Hover Tooltip
+                                                                                            </label>
+                                                                                            <LinkTooltipStyleToggle
+                                                                                                compact
+                                                                                                value={normalizeLinkTooltipStyle(editLinkState[link.id]?.tooltipStyle)}
+                                                                                                onChange={(style) => updateEditLinkState(link.id, 'tooltipStyle', style)}
+                                                                                            />
+                                                                                        </div>
+                                                                                        <HoverTooltipEditor
+                                                                                            variant="mobile"
                                                                                             value={editLinkState[link.id]?.tooltip || ''}
                                                                                             onChange={(value) => updateEditLinkState(link.id, 'tooltip', value)}
+                                                                                            tooltipStyle={editLinkState[link.id]?.tooltipStyle}
                                                                                             placeholder="Text shown on hover..."
                                                                                         />
                                                                                     </div>

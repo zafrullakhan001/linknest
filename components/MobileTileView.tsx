@@ -21,6 +21,7 @@ import { tryHandleSshLinkClick } from '../utils/sshLink';
 import { tryHandleVncLinkClick } from '../utils/vncLink';
 import { isLinkInMaintenance } from '../utils/linkMaintenance';
 import { LinkMaintenanceBadge } from './LinkMaintenanceBadge';
+import { LinkHoverTooltip } from './LinkHoverTooltip';
 import { LinkMaintenanceDialog } from './LinkMaintenanceDialog';
 import { QRCodeDialog } from './QRCodeDialog';
 import { UpdatesDialog } from './UpdatesDialog';
@@ -1162,8 +1163,8 @@ export const MobileTileView: React.FC<MobileTileViewProps> = ({
                 {favoriteLinks.map((link) => {
                   const host = viewerLinkDisplay(link, link.tile?.showShortUrls);
                   return (
+                    <LinkHoverTooltip key={link.id} link={link} fallbackTitle={host}>
                     <button
-                      key={link.id}
                       type="button"
                       onClick={async () => {
                         if (tryHandleSshLinkClick(link.url || '')) return;
@@ -1191,7 +1192,7 @@ export const MobileTileView: React.FC<MobileTileViewProps> = ({
                           {stripHtml(link.label)}
                         </div>
                         <LinkMaintenanceBadge link={link} className="mt-1" />
-                        <div className="text-xs text-slate-500 dark:text-slate-400 line-clamp-1 mt-0.5" title={link.url}>
+                        <div className="text-xs text-slate-500 dark:text-slate-400 line-clamp-1 mt-0.5 w-fit max-w-full" title={link.url} data-ln-tooltip-anchor="">
                           {host}
                         </div>
                         <div className="flex items-center gap-1.5 mt-1 overflow-hidden">
@@ -1205,6 +1206,7 @@ export const MobileTileView: React.FC<MobileTileViewProps> = ({
                         <path fillRule="evenodd" d="M5.22 14.78a.75.75 0 001.06 0l7.22-7.22v5.69a.75.75 0 001.5 0v-7.5a.75.75 0 00-.75-.75h-7.5a.75.75 0 000 1.5h5.69l-7.22 7.22a.75.75 0 000 1.06z" clipRule="evenodd" />
                       </svg>
                     </button>
+                    </LinkHoverTooltip>
                   );
                 })}
               </div>
@@ -1233,8 +1235,8 @@ export const MobileTileView: React.FC<MobileTileViewProps> = ({
                   }
                 }
                 return (
+                  <LinkHoverTooltip key={link.id} link={link} fallbackTitle={stripHtml(link.label)}>
                   <button
-                    key={link.id}
                     type="button"
                     onClick={async () => {
                       if (tryHandleSshLinkClick(link.url || '')) return;
@@ -1262,7 +1264,7 @@ export const MobileTileView: React.FC<MobileTileViewProps> = ({
                         {stripHtml(link.label)}
                       </div>
                       <LinkMaintenanceBadge link={link} className="mt-1" />
-                      <div className="text-xs text-slate-500 dark:text-slate-400 line-clamp-1 mt-0.5" title={viewerLinkUrl(link, link.tile?.showShortUrls)}>
+                      <div className="text-xs text-slate-500 dark:text-slate-400 line-clamp-1 mt-0.5 w-fit max-w-full" title={viewerLinkUrl(link, link.tile?.showShortUrls)} data-ln-tooltip-anchor="">
                         {host}
                       </div>
                       <div className="flex items-center gap-1.5 mt-1 overflow-hidden">
@@ -1276,6 +1278,7 @@ export const MobileTileView: React.FC<MobileTileViewProps> = ({
                       </div>
                     </div>
                   </button>
+                  </LinkHoverTooltip>
                 );
               })}
             </div>

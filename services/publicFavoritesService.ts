@@ -133,6 +133,7 @@ export interface PublicFavoriteLinkDetail {
   notes?: string;
   tooltip?: string;
   notesEnabled?: boolean;
+  tooltipStyle?: 'rich' | 'classic';
   browser?: string;
   richTextContent?: string;
   richTextEnabled?: boolean;
@@ -546,6 +547,7 @@ const normalizeLinkFavoriteDetails = (
       notes: typeof detail.notes === 'string' ? detail.notes : undefined,
       tooltip: typeof detail.tooltip === 'string' ? detail.tooltip : undefined,
       notesEnabled: detail.notesEnabled === true,
+      tooltipStyle: detail.tooltipStyle === 'rich' ? 'rich' : (detail.tooltipStyle === 'classic' ? 'classic' : undefined),
       browser: typeof detail.browser === 'string' ? detail.browser : undefined,
       richTextContent: typeof detail.richTextContent === 'string' ? detail.richTextContent : undefined,
       richTextEnabled: detail.richTextEnabled === true,
@@ -625,6 +627,7 @@ export const buildPublicFavoritesExportData = (
         notes: link.notes,
         tooltip: link.tooltip,
         notesEnabled: link.notesEnabled,
+        tooltipStyle: link.tooltipStyle,
         browser: link.browser,
         richTextContent: link.richTextContent,
         richTextEnabled: link.richTextEnabled,

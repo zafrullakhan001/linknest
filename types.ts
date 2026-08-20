@@ -81,7 +81,9 @@ export interface Link {
   allowedUsers?: number[]; // Array of user IDs for private links
   allowedGroups?: number[]; // Array of group IDs for private links
   notes?: string; // Optional notes/description for the link
-  tooltip?: string; // Optional custom hover tooltip text
+  tooltip?: string; // Optional custom hover tooltip (rich HTML — fonts, colors, and formatting are shown on hover)
+  /** Hover tooltip presentation for this link. classic = native Windows/browser title; rich = formatted overlay. */
+  tooltipStyle?: 'rich' | 'classic';
   /** When false, notes and hover tooltip are hidden. Content is kept. Unspecified infers from content. */
   notesEnabled?: boolean;
   richTextContent?: string; // Optional rich text HTML content - if present, shows dialog instead of opening URL

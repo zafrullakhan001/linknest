@@ -665,6 +665,9 @@ function ensureLinkFeatureToggleColumns(PDO $db): void {
         if (!in_array('rich_text_enabled', $names, true)) {
             $db->exec('ALTER TABLE links ADD COLUMN rich_text_enabled INTEGER');
         }
+        if (!in_array('tooltip_style', $names, true)) {
+            $db->exec("ALTER TABLE links ADD COLUMN tooltip_style TEXT DEFAULT 'classic'");
+        }
         $ensured = true;
     } catch (PDOException $e) {
         error_log('ensureLinkFeatureToggleColumns warning: ' . $e->getMessage());
@@ -700,6 +703,30 @@ function applyLinkFeatureTogglesToApi(array &$link, array $row): void {
     foreach (mapLinkFeatureTogglesFromRow($row) as $key => $value) {
         $link[$key] = $value;
     }
+    $link['tooltipStyle'] = normalizeLinkTooltipStyle($row['tooltip_style'] ?? ($link['tooltipStyle'] ?? null));
+}
+
+function normalizeLinkTooltipStyle($value): string {
+    return $value === 'rich' ? 'rich' : 'classic';
+}
+
+function linkTooltipStyleFromSource($source): string {
+    if (!is_array($source)) {
+        return 'classic';
+    }
+    if (array_key_exists('tooltipStyle', $source)) {
+        return normalizeLinkTooltipStyle($source['tooltipStyle']);
+    }
+    if (array_key_exists('tooltip_style', $source)) {
+        return normalizeLinkTooltipStyle($source['tooltip_style']);
+    }
+    return 'classic';
+}
+
+function persistLinkTooltipStyle(PDO $db, string $linkId, $source): void {
+    ensureLinkFeatureToggleColumns($db);
+    $stmt = $db->prepare('UPDATE links SET tooltip_style = ? WHERE id = ?');
+    $stmt->execute([linkTooltipStyleFromSource($source), $linkId]);
 }
 
 function linkToggleFromInput($link, string $jsKey, array $contentKeys): int {

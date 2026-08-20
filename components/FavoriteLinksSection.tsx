@@ -26,6 +26,7 @@ import { useAccessRestrictionGate } from '../contexts/AccessRestrictionContext';
 import { isLinkInMaintenance } from '../utils/linkMaintenance';
 import { shouldOpenInfoDialog, shouldShowLinkNotes } from '../utils/linkFeatureToggles';
 import { LinkMaintenanceBadge } from './LinkMaintenanceBadge';
+import { LinkHoverTooltip } from './LinkHoverTooltip';
 
 const stripHtml = (value: string): string =>
   String(value || '').replace(/<[^>]*>/g, '').trim();
@@ -212,6 +213,7 @@ const SortableFavoriteLinkCard: React.FC<{
 
   if (compact) {
     return (
+      <LinkHoverTooltip link={link} fallbackTitle={viewerLinkUrl(link, link.tile?.showShortUrls)}>
       <div
         ref={setNodeRef}
         style={style}
@@ -219,7 +221,6 @@ const SortableFavoriteLinkCard: React.FC<{
           isDragging ? 'ring-2 ring-amber-400 shadow-md' : ''
         }`}
         onClick={openLink}
-        title={viewerLinkUrl(link, link.tile?.showShortUrls)}
       >
         {healthResult && !skipHealth && (
           <div
@@ -299,10 +300,12 @@ const SortableFavoriteLinkCard: React.FC<{
           )}
         </div>
       </div>
+      </LinkHoverTooltip>
     );
   }
 
   return (
+    <LinkHoverTooltip link={link} fallbackTitle={viewerLinkUrl(link, link.tile?.showShortUrls)}>
     <div
       ref={setNodeRef}
       style={style}
@@ -343,9 +346,10 @@ const SortableFavoriteLinkCard: React.FC<{
         </div>
         <LinkMaintenanceBadge link={link} className="mt-1" />
         <div
-          className="text-xs text-slate-500 dark:text-slate-400 line-clamp-1 mt-0.5"
+          className="text-xs text-slate-500 dark:text-slate-400 line-clamp-1 mt-0.5 w-fit max-w-full"
           style={{ wordBreak: 'break-word', overflowWrap: 'break-word' }}
           title={viewerLinkUrl(link, link.tile?.showShortUrls)}
+          data-ln-tooltip-anchor=""
         >
           {viewerLinkDisplay(link, link.tile?.showShortUrls)}
         </div>
@@ -480,6 +484,7 @@ const SortableFavoriteLinkCard: React.FC<{
         </button>
       </div>
     </div>
+    </LinkHoverTooltip>
   );
 };
 

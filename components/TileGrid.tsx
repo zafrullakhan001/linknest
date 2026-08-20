@@ -41,6 +41,7 @@ import { tryHandleVncLinkClick, isVncLinkUrl } from '../utils/vncLink';
 import { isLinkInMaintenance } from '../utils/linkMaintenance';
 import { shouldOpenInfoDialog } from '../utils/linkFeatureToggles';
 import { LinkMaintenanceBadge } from './LinkMaintenanceBadge';
+import { LinkHoverTooltip } from './LinkHoverTooltip';
 import { MobileTileView } from './MobileTileView';
 import { PublicBookmarksPanel } from './PublicBookmarksPanel';
 import {
@@ -8354,8 +8355,8 @@ You may also wrap the array in an object: { "messages": [ ... ] }.
                   const tileAnimatedClass = animationClass ? 'linknest-tile-animated' : '';
 
                   return (
+                    <LinkHoverTooltip key={link.id} link={link} fallbackTitle={stripHtml(link.label)}>
                     <div
-                      key={link.id}
                       className={`group relative flex items-center gap-3 p-4 bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-xl hover:border-brand-300 dark:hover:border-brand-500/50 transition-all duration-200 shadow-sm hover:shadow-md cursor-pointer ${fullAnimationClass} ${tileAnimatedClass}`}
                       style={{ animationDelay: `${animationDelay}ms` }}
                       onClick={async (e) => {
@@ -8429,7 +8430,7 @@ You may also wrap the array in an object: { "messages": [ ... ] }.
                           {stripHtml(link.label)}
                         </div>
                         <LinkMaintenanceBadge link={link} className="mt-1" />
-                        <div className="text-xs text-slate-500 dark:text-slate-400 line-clamp-1 mt-0.5" style={{ wordBreak: 'break-word', overflowWrap: 'anywhere' }} title={viewerLinkUrl(link, link.tile.showShortUrls)}>
+                        <div className="text-xs text-slate-500 dark:text-slate-400 line-clamp-1 mt-0.5 w-fit max-w-full" style={{ wordBreak: 'break-word', overflowWrap: 'anywhere' }} title={viewerLinkUrl(link, link.tile.showShortUrls)} data-ln-tooltip-anchor="">
                           {viewerLinkDisplay(link, link.tile.showShortUrls)}
                         </div>
                         {/* Browser Indicator */}
@@ -8517,6 +8518,7 @@ You may also wrap the array in an object: { "messages": [ ... ] }.
                         </svg>
                       </button>
                     </div>
+                    </LinkHoverTooltip>
                   );
                 })}
               </div>

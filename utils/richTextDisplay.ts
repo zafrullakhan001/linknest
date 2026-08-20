@@ -30,19 +30,48 @@ function createLinkElement(doc: Document, href: string, text: string): HTMLAncho
   return a;
 }
 
-/** Keep editor font-family against theme CSS that uses !important. */
+const FONT_SIZE_ATTR_MAP: Record<string, string> = {
+  '1': '0.75rem',
+  '2': '0.875rem',
+  '3': '1rem',
+  '4': '1.125rem',
+  '5': '1.25rem',
+  '6': '1.5rem',
+  '7': '2rem',
+};
+
+/** Keep editor inline styles against theme CSS that uses !important. */
 function promoteEditorFonts(root: Element): void {
   const styled = root.querySelectorAll<HTMLElement>('[style]');
   styled.forEach((el) => {
     const family = el.style.fontFamily;
-    if (family) {
-      el.style.setProperty('font-family', family, 'important');
-    }
+    if (family) el.style.setProperty('font-family', family, 'important');
+    const color = el.style.color;
+    if (color) el.style.setProperty('color', color, 'important');
+    const size = el.style.fontSize;
+    if (size) el.style.setProperty('font-size', size, 'important');
+    const bg = el.style.backgroundColor;
+    if (bg) el.style.setProperty('background-color', bg, 'important');
+    const weight = el.style.fontWeight;
+    if (weight) el.style.setProperty('font-weight', weight, 'important');
+    const italic = el.style.fontStyle;
+    if (italic) el.style.setProperty('font-style', italic, 'important');
   });
   root.querySelectorAll('font[face]').forEach((fontEl) => {
     const face = fontEl.getAttribute('face');
     if (!face) return;
     (fontEl as HTMLElement).style.setProperty('font-family', face, 'important');
+  });
+  root.querySelectorAll('font[color]').forEach((fontEl) => {
+    const color = fontEl.getAttribute('color');
+    if (!color) return;
+    (fontEl as HTMLElement).style.setProperty('color', color, 'important');
+  });
+  root.querySelectorAll('font[size]').forEach((fontEl) => {
+    const size = fontEl.getAttribute('size');
+    if (!size) return;
+    const mapped = FONT_SIZE_ATTR_MAP[size] || size;
+    (fontEl as HTMLElement).style.setProperty('font-size', mapped, 'important');
   });
 }
 

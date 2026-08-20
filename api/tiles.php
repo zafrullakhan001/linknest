@@ -593,7 +593,7 @@ function handleGetTiles() {
                         l.id, l.label, l.url, l.icon, l.browser, l.notes, l.tooltip,
                         l.rich_text_content, l.visibility, l.allowed_users, l.allowed_groups,
                         l.published, l.health_status, l.health_http_code, l.health_error, l.health_checked_at,
-                        l.maintenance_enabled, l.maintenance_message, l.maintenance_video_url, l.notes_enabled, l.rich_text_enabled
+                        l.maintenance_enabled, l.maintenance_message, l.maintenance_video_url, l.notes_enabled, l.rich_text_enabled, l.tooltip_style
                  FROM sections s
                  INNER JOIN links l ON l.section_id = s.id
                  LEFT JOIN tabs t ON t.id = s.tab_id
@@ -2046,6 +2046,7 @@ function handleCreateTile() {
                                     ...linkFeatureToggleInsertValuesFromInput($link)
                                 ]);
                                 persistInheritShortUrls($db, 'links', $linkId, $link);
+                                persistLinkTooltipStyle($db, $linkId, $link);
                             } catch (PDOException $e) {
                                 error_log('Error inserting link: ' . $e->getMessage());
                                 error_log('Link data: ' . json_encode($link));
@@ -2067,6 +2068,7 @@ function handleCreateTile() {
                                         $link['browser'] ?? null,
                                         $linkPublished
                                     ]);
+                                    persistLinkTooltipStyle($db, $linkId, $link);
                                 } catch (PDOException $e2) {
                                     error_log('Error inserting link (fallback): ' . $e2->getMessage());
                                     throw $e2;
@@ -2666,6 +2668,7 @@ function handleCloneTile($tileId) {
                         ...linkMaintenanceInsertValuesFromRow($link),
                         ...linkFeatureToggleInsertValuesFromRow($link)
                     ]);
+                    persistLinkTooltipStyle($db, $newLinkId, $link);
                 }
                 
                 // Clone rich text content for legacy sections
@@ -2770,6 +2773,7 @@ function handleCloneTile($tileId) {
                         ...linkFeatureToggleInsertValuesFromRow($link)
                     ]);
                     persistInheritShortUrls($db, 'links', $newLinkId, $link);
+                    persistLinkTooltipStyle($db, $newLinkId, $link);
                 }
                 
                 // Clone rich text content for sections
@@ -3176,6 +3180,7 @@ function handleCloneCategory($categoryName) {
                                 ...linkMaintenanceInsertValuesFromRow($link),
                                 ...linkFeatureToggleInsertValuesFromRow($link)
                             ]);
+                            persistLinkTooltipStyle($db, $newLinkId, $link);
                         }
                     }
                 }
@@ -3247,6 +3252,7 @@ function handleCloneCategory($categoryName) {
                                 ...linkMaintenanceInsertValuesFromRow($link),
                                 ...linkFeatureToggleInsertValuesFromRow($link)
                             ]);
+                            persistLinkTooltipStyle($db, $newLinkId, $link);
                         }
                     }
                 }
@@ -6490,6 +6496,7 @@ function updateTileInternal($tileId, $data, $db, $user, $isRestore = false, $isF
                                     ...linkFeatureToggleInsertValuesFromInput($link)
                                 ]);
                                 persistInheritShortUrls($db, 'links', $linkId, $link);
+                                persistLinkTooltipStyle($db, $linkId, $link);
                             }
                         }
                         
@@ -6554,6 +6561,7 @@ function updateTileInternal($tileId, $data, $db, $user, $isRestore = false, $isF
                             ...linkMaintenanceInsertValuesFromInput($link),
                             ...linkFeatureToggleInsertValuesFromInput($link)
                         ]);
+                        persistLinkTooltipStyle($db, $linkId, $link);
                     }
                     if (isset($section['richTextContent']) && is_array($section['richTextContent'])) {
                         foreach ($section['richTextContent'] as $richText) {

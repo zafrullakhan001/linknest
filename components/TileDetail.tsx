@@ -44,8 +44,12 @@ import { LinkMaintenanceVideoField } from './LinkMaintenanceVideoField';
 import { LinkMaintenanceBadge } from './LinkMaintenanceBadge';
 import { isLinkInMaintenance } from '../utils/linkMaintenance';
 import { hasVisibleRichText, looksLikeHtml, plainNotesToHtml, prepareViewerHtml } from '../utils/richTextDisplay';
-import { isInfoContentEnabled, isNotesTooltipEnabled, linkHoverTitle, shouldOpenInfoDialog, shouldShowLinkNotes } from '../utils/linkFeatureToggles';
+import { isInfoContentEnabled, isNotesTooltipEnabled, shouldOpenInfoDialog, shouldShowLinkNotes } from '../utils/linkFeatureToggles';
 import { LinkNotesDialog } from './LinkNotesDialog';
+import { LinkHoverTooltip } from './LinkHoverTooltip';
+import { LinkTooltipStyleToggle } from './LinkTooltipStyleToggle';
+import { HoverTooltipEditor } from './HoverTooltipEditor';
+import { normalizeLinkTooltipStyle, type LinkTooltipStyle } from '../utils/linkTooltipPreference';
 import { QRCodeDialog } from './QRCodeDialog';
 import { MobilePreviewDialog } from './MobilePreviewDialog';
 import { BrandedQRCode } from './BrandedQRCode';
@@ -837,6 +841,7 @@ const cloneLinkItem = (link: Link, opts?: { appendCopyLabel?: boolean }): Link =
     notes: link.notes,
     tooltip: link.tooltip,
     notesEnabled: link.notesEnabled,
+    tooltipStyle: link.tooltipStyle,
     richTextContent: link.richTextContent,
     richTextEnabled: link.richTextEnabled,
     maintenanceEnabled: link.maintenanceEnabled,
@@ -1111,7 +1116,7 @@ export const TileDetail: React.FC<TileDetailProps> = ({
     const [editSections, setEditSections] = useState<LinkSection[]>(tile.sections || []);
 
     // Temporary State for Adding Links (keyed by section ID)
-    const [newLinkState, setNewLinkState] = useState<Record<string, { label: string, url: string, icon: string, textColor: string, visibility: LinkVisibility, published: boolean, inheritShortUrls: boolean, allowedUsers: number[], allowedGroups: number[], notes: string, tooltip: string, notesEnabled: boolean, browser: string, richTextContent: string, richTextEnabled: boolean, animation: string, accessRestrictions?: AccessRestrictions, maintenanceEnabled: boolean, maintenanceMessage: string, maintenanceVideoUrl: string }>>({});
+    const [newLinkState, setNewLinkState] = useState<Record<string, { label: string, url: string, icon: string, textColor: string, visibility: LinkVisibility, published: boolean, inheritShortUrls: boolean, allowedUsers: number[], allowedGroups: number[], notes: string, tooltip: string, tooltipStyle: LinkTooltipStyle, notesEnabled: boolean, browser: string, richTextContent: string, richTextEnabled: boolean, animation: string, accessRestrictions?: AccessRestrictions, maintenanceEnabled: boolean, maintenanceMessage: string, maintenanceVideoUrl: string }>>({});
 
     // Selection State for Bulk Actions
     const [selectedLinkIds, setSelectedLinkIds] = useState<string[]>([]);
@@ -1130,7 +1135,7 @@ export const TileDetail: React.FC<TileDetailProps> = ({
         | null
     >(null);
     const [convertingTabSectionToSpace, setConvertingTabSectionToSpace] = useState(false);
-    const [editLinkState, setEditLinkState] = useState<Record<string, { label: string, url: string, icon: string, textColor: string, visibility: LinkVisibility, published: boolean, inheritShortUrls: boolean, allowedUsers: number[], allowedGroups: number[], notes: string, tooltip: string, notesEnabled: boolean, browser: string, richTextContent: string, richTextEnabled: boolean, animation: string, accessRestrictions?: AccessRestrictions, maintenanceEnabled: boolean, maintenanceMessage: string, maintenanceVideoUrl: string }>>({});
+    const [editLinkState, setEditLinkState] = useState<Record<string, { label: string, url: string, icon: string, textColor: string, visibility: LinkVisibility, published: boolean, inheritShortUrls: boolean, allowedUsers: number[], allowedGroups: number[], notes: string, tooltip: string, tooltipStyle: LinkTooltipStyle, notesEnabled: boolean, browser: string, richTextContent: string, richTextEnabled: boolean, animation: string, accessRestrictions?: AccessRestrictions, maintenanceEnabled: boolean, maintenanceMessage: string, maintenanceVideoUrl: string }>>({});
 
     // Available browsers from BrowserLauncher API
     const [availableBrowsers, setAvailableBrowsers] = useState<string[]>([]);
@@ -2792,6 +2797,7 @@ export const TileDetail: React.FC<TileDetailProps> = ({
         allowedGroups: state.allowedGroups && state.allowedGroups.length > 0 ? state.allowedGroups : undefined,
         notes: hasVisibleRichText(state.notes) ? state.notes?.trim() : undefined,
         tooltip: hasVisibleRichText(state.tooltip) ? state.tooltip?.trim() : (stripHtmlTags(state.label).trim() || undefined),
+        tooltipStyle: normalizeLinkTooltipStyle(state.tooltipStyle),
         notesEnabled: state.notesEnabled === true,
         browser: state.browser && state.browser !== 'default' ? state.browser : undefined,
         richTextContent: state.richTextContent?.trim() || undefined,
@@ -2816,6 +2822,7 @@ export const TileDetail: React.FC<TileDetailProps> = ({
         allowedGroups: state.allowedGroups && state.allowedGroups.length > 0 ? state.allowedGroups : undefined,
         notes: hasVisibleRichText(state.notes) ? state.notes?.trim() : undefined,
         tooltip: hasVisibleRichText(state.tooltip) ? state.tooltip?.trim() : (stripHtmlTags(state.label).trim() || undefined),
+        tooltipStyle: normalizeLinkTooltipStyle(state.tooltipStyle),
         notesEnabled: state.notesEnabled === true,
         browser: state.browser && state.browser !== 'default' ? state.browser : undefined,
         richTextContent: state.richTextContent?.trim() || undefined,
@@ -2841,6 +2848,7 @@ export const TileDetail: React.FC<TileDetailProps> = ({
         allowedGroups: [],
         notes: '',
         tooltip: '',
+        tooltipStyle: 'classic',
         notesEnabled: false,
         browser: 'default',
         richTextContent: '',
@@ -3952,11 +3960,11 @@ export const TileDetail: React.FC<TileDetailProps> = ({
     };
 
     // Link Management
-    const updateNewLinkState = (sectionId: string, field: 'label' | 'url' | 'icon' | 'textColor' | 'visibility' | 'allowedUsers' | 'allowedGroups' | 'notes' | 'tooltip' | 'notesEnabled' | 'browser' | 'richTextContent' | 'richTextEnabled' | 'animation' | 'published' | 'inheritShortUrls' | 'maintenanceEnabled' | 'maintenanceMessage' | 'maintenanceVideoUrl', value: string | LinkVisibility | number[] | boolean) => {
+    const updateNewLinkState = (sectionId: string, field: 'label' | 'url' | 'icon' | 'textColor' | 'visibility' | 'allowedUsers' | 'allowedGroups' | 'notes' | 'tooltip' | 'tooltipStyle' | 'notesEnabled' | 'browser' | 'richTextContent' | 'richTextEnabled' | 'animation' | 'published' | 'inheritShortUrls' | 'maintenanceEnabled' | 'maintenanceMessage' | 'maintenanceVideoUrl', value: string | LinkVisibility | number[] | boolean) => {
         setNewLinkState(prev => ({
             ...prev,
             [sectionId]: {
-                ...(prev[sectionId] || { label: '', url: '', icon: '', textColor: '', visibility: 'public' as LinkVisibility, published: true, inheritShortUrls: true, allowedUsers: [], allowedGroups: [], notes: '', tooltip: '', notesEnabled: false, browser: 'default', richTextContent: '', richTextEnabled: false, animation: 'inherit', maintenanceEnabled: false, maintenanceMessage: '', maintenanceVideoUrl: '' }),
+                ...(prev[sectionId] || { label: '', url: '', icon: '', textColor: '', visibility: 'public' as LinkVisibility, published: true, inheritShortUrls: true, allowedUsers: [], allowedGroups: [], notes: '', tooltip: '', tooltipStyle: 'classic' as LinkTooltipStyle, notesEnabled: false, browser: 'default', richTextContent: '', richTextEnabled: false, animation: 'inherit', maintenanceEnabled: false, maintenanceMessage: '', maintenanceVideoUrl: '' }),
                 [field]: value
             }
         }));
@@ -4284,6 +4292,7 @@ export const TileDetail: React.FC<TileDetailProps> = ({
                 allowedGroups: link.allowedGroups || [],
                 notes: link.notes || '',
                 tooltip: link.tooltip || '',
+                tooltipStyle: normalizeLinkTooltipStyle(link.tooltipStyle),
                 notesEnabled: isNotesTooltipEnabled(link),
                 browser: link.browser || 'default',
                 richTextContent: link.richTextContent || '',
@@ -4359,7 +4368,7 @@ export const TileDetail: React.FC<TileDetailProps> = ({
         setLinkGroupSearch(prev => ({ ...prev, [linkId]: '' }));
     };
 
-    const updateEditLinkState = (linkId: string, field: 'label' | 'url' | 'icon' | 'textColor' | 'visibility' | 'allowedUsers' | 'allowedGroups' | 'notes' | 'tooltip' | 'notesEnabled' | 'browser' | 'richTextContent' | 'richTextEnabled' | 'animation' | 'published' | 'inheritShortUrls' | 'maintenanceEnabled' | 'maintenanceMessage' | 'maintenanceVideoUrl', value: string | LinkVisibility | number[] | boolean) => {
+    const updateEditLinkState = (linkId: string, field: 'label' | 'url' | 'icon' | 'textColor' | 'visibility' | 'allowedUsers' | 'allowedGroups' | 'notes' | 'tooltip' | 'tooltipStyle' | 'notesEnabled' | 'browser' | 'richTextContent' | 'richTextEnabled' | 'animation' | 'published' | 'inheritShortUrls' | 'maintenanceEnabled' | 'maintenanceMessage' | 'maintenanceVideoUrl', value: string | LinkVisibility | number[] | boolean) => {
         setEditLinkState(prev => ({
             ...prev,
             [linkId]: { ...prev[linkId], [field]: value }
@@ -4807,6 +4816,7 @@ export const TileDetail: React.FC<TileDetailProps> = ({
                         allowedGroups: linkToClone.allowedGroups ? [...linkToClone.allowedGroups] : undefined,
                         notes: linkToClone.notes,
                         tooltip: linkToClone.tooltip,
+                        tooltipStyle: linkToClone.tooltipStyle,
                         health: linkToClone.health,
                         browser: linkToClone.browser,
                         hasRoleAccess: linkToClone.hasRoleAccess === true,
@@ -7169,11 +7179,10 @@ export const TileDetail: React.FC<TileDetailProps> = ({
                                                         if (isQrView) {
                                                             const plainQrLabel = stripHtmlTags(link.label || '');
                                                             return (
+                                                                <LinkHoverTooltip key={link.id} link={link} fallbackTitle={plainQrLabel}>
                                                                 <div
-                                                                    key={link.id}
                                                                     className="linknest-qr-card flex flex-col items-center text-center gap-3 p-4 rounded-2xl bg-white dark:bg-slate-800/80 border border-slate-200 dark:border-slate-700/60 shadow-sm w-full min-w-0 max-w-full overflow-hidden"
                                                                     style={{ opacity: 1, position: 'relative', zIndex: 0 }}
-                                                                    title={linkHoverTitle(link, plainQrLabel)}
                                                                 >
                                                                     <div className="bg-white p-3 rounded-2xl border border-slate-100 shadow-sm w-full flex justify-center max-w-[280px]">
                                                                         <BrandedQRCode
@@ -7194,7 +7203,7 @@ export const TileDetail: React.FC<TileDetailProps> = ({
                                                                                 dangerouslySetInnerHTML={{ __html: labelHtml }}
                                                                             />
                                                                         </div>
-                                                                        <p className="text-[11px] sm:text-xs text-slate-500 dark:text-slate-400 font-mono truncate" title={viewerHref}>
+                                                                        <p className="text-[11px] sm:text-xs text-slate-500 dark:text-slate-400 font-mono truncate w-fit max-w-full mx-auto" title={viewerHref} data-ln-tooltip-anchor="">
                                                                             {viewerLinkDisplay({ ...link, shortUrl: shortOf('link', link.id, link.shortUrl) }, linkShowShortUrls)}
                                                                         </p>
                                                                     </div>
@@ -7244,12 +7253,13 @@ export const TileDetail: React.FC<TileDetailProps> = ({
                                                                         ) : null}
                                                                     </div>
                                                                 </div>
+                                                                </LinkHoverTooltip>
                                                             );
                                                         }
 
                                                         return (
+                                                            <LinkHoverTooltip key={link.id} link={link} fallbackTitle={stripHtmlTags(link.label || '')}>
                                                             <div
-                                                                key={link.id}
                                                                 style={{ animationDelay: `${animationDelay}ms` }}
                                                                 className={`
                                                     linknest-content-link group relative rounded-xl bg-white dark:bg-slate-800/80 border border-slate-200 dark:border-slate-700/60
@@ -7262,7 +7272,6 @@ export const TileDetail: React.FC<TileDetailProps> = ({
                                                             : 'flex items-center gap-4 p-4'}
                                                     ${getTileAnimationClass(resolveLinkAnimation(link.animation, tile.linksAnimation))}
                                                 `}
-                                                                title={linkHoverTitle(link, stripHtmlTags(link.label || ''))}
                                                             >
                                                                 {/* Icon + health (grid: alive dot centered above icon) */}
                                                                 <div className={`relative shrink-0 ${
@@ -7379,7 +7388,7 @@ export const TileDetail: React.FC<TileDetailProps> = ({
                                                                         isCompact ? 'hidden' : isGridCards ? 'mt-0.5 items-center' : 'mt-0.5'
                                                                     }`}>
                                                                         <div className="linknest-content-link-domain flex items-center gap-2 text-xs text-slate-400 dark:text-slate-500 group-hover:text-slate-500 dark:group-hover:text-slate-400 transition-colors overflow-hidden">
-                                                                            <span className="truncate max-w-full" title={viewerHref}>
+                                                                            <span className="truncate min-w-0 max-w-full w-fit" title={viewerHref} data-ln-tooltip-anchor="">
                                                                                 {viewerLinkDisplay({ ...link, shortUrl: shortOf('link', link.id, link.shortUrl) }, linkShowShortUrls)}
                                                                             </span>
                                                                             {link.visibility && link.visibility !== 'public' && (
@@ -7812,6 +7821,7 @@ export const TileDetail: React.FC<TileDetailProps> = ({
                                                                 </div>
                                                                 )}
                                                             </div>
+                                                            </LinkHoverTooltip>
                                                         );
                                                     });
                                                 })()}
@@ -9835,6 +9845,13 @@ export const TileDetail: React.FC<TileDetailProps> = ({
                                                                                                         <span className={`inline-block h-5 w-5 transform rounded-full bg-white shadow transition-transform ${editLinkPlain ? 'translate-x-1' : 'translate-x-6'}`} />
                                                                                                     </button>
                                                                                                 </div>
+                                                                                                <div className="flex items-center pr-2 mr-0.5 border-r border-slate-200 dark:border-slate-600">
+                                                                                                    <LinkTooltipStyleToggle
+                                                                                                        compact
+                                                                                                        value={normalizeLinkTooltipStyle(editLinkState[link.id]?.tooltipStyle)}
+                                                                                                        onChange={(style) => updateEditLinkState(link.id, 'tooltipStyle', style)}
+                                                                                                    />
+                                                                                                </div>
                                                                                                 <button
                                                                                                     type="button"
                                                                                                     onClick={handleCancelEditLink}
@@ -10258,13 +10275,23 @@ export const TileDetail: React.FC<TileDetailProps> = ({
                                                                                                 />
                                                                                             </div>
                                                                                             <div>
-                                                                                                <label className="block text-xs font-semibold uppercase tracking-wider text-slate-600 dark:text-slate-400 mb-1.5">Hover Tooltip (Rich Text)</label>
-                                                                                                <SelectableRichTextEditor
+                                                                                                <div className="flex items-center justify-between gap-2 mb-1.5 flex-wrap">
+                                                                                                    <label className="block text-xs font-semibold uppercase tracking-wider text-slate-600 dark:text-slate-400">Hover Tooltip</label>
+                                                                                                    <LinkTooltipStyleToggle
+                                                                                                        compact
+                                                                                                        value={normalizeLinkTooltipStyle(editLinkState[link.id]?.tooltipStyle)}
+                                                                                                        onChange={(style) => updateEditLinkState(link.id, 'tooltipStyle', style)}
+                                                                                                    />
+                                                                                                </div>
+                                                                                                <HoverTooltipEditor
                                                                                                     value={editLinkState[link.id]?.tooltip || ''}
                                                                                                     onChange={(html) => updateEditLinkState(link.id, 'tooltip', html)}
+                                                                                                    tooltipStyle={editLinkState[link.id]?.tooltipStyle}
                                                                                                     placeholder="Text shown on hover..."
-                                                                                                    className="min-h-[80px]"
                                                                                                 />
+                                                                                                <p className="text-[11px] text-slate-500 dark:text-slate-400 mt-1.5">
+                                                                                                    Yellow uses the normal Windows tooltip and a plain text box. Rich uses a formatted tooltip. This applies only to this link.
+                                                                                                </p>
                                                                                             </div>
                                                                                         </LinkEditSection>
 
@@ -11066,12 +11093,19 @@ export const TileDetail: React.FC<TileDetailProps> = ({
 
                                                                             {/* Hover Tooltip */}
                                                                             <div>
-                                                                                <label className="block text-xs font-semibold uppercase tracking-wider text-slate-600 dark:text-slate-400 mb-1.5">Hover Tooltip (Rich Text)</label>
-                                                                                <SelectableRichTextEditor
+                                                                                <div className="flex items-center justify-between gap-2 mb-1.5 flex-wrap">
+                                                                                    <label className="block text-xs font-semibold uppercase tracking-wider text-slate-600 dark:text-slate-400">Hover Tooltip</label>
+                                                                                    <LinkTooltipStyleToggle
+                                                                                        compact
+                                                                                        value={normalizeLinkTooltipStyle(newLinkState[section.id]?.tooltipStyle)}
+                                                                                        onChange={(style) => updateNewLinkState(section.id, 'tooltipStyle', style)}
+                                                                                    />
+                                                                                </div>
+                                                                                <HoverTooltipEditor
                                                                                     value={newLinkState[section.id]?.tooltip || ''}
                                                                                     onChange={(html) => updateNewLinkState(section.id, 'tooltip', html)}
+                                                                                    tooltipStyle={newLinkState[section.id]?.tooltipStyle}
                                                                                     placeholder="Text shown on hover..."
-                                                                                    className="min-h-[80px]"
                                                                                 />
                                                                             </div>
 

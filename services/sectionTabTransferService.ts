@@ -94,6 +94,7 @@ function normalizeImportedLink(raw: unknown): Link | null {
       : undefined,
     notes: typeof link.notes === 'string' ? link.notes : undefined,
     tooltip: typeof link.tooltip === 'string' ? link.tooltip : undefined,
+    tooltipStyle: link.tooltipStyle === 'rich' ? 'rich' : (link.tooltipStyle === 'classic' ? 'classic' : undefined),
     notesEnabled: link.notesEnabled === true,
     richTextContent: typeof link.richTextContent === 'string' ? link.richTextContent : undefined,
     richTextEnabled: link.richTextEnabled === true,

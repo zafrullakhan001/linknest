@@ -8337,3 +8337,62 @@ input[type="search"]::-ms-clear {
   border-bottom-color: #334155;
 }
 
+/* Custom link hover tooltip — portaled, so editor fonts/colors are not stripped by native title or tile theme !important. */
+.ln-hover-tooltip {
+  position: fixed;
+  z-index: 10060;
+  max-width: min(22rem, calc(100vw - 16px));
+  max-height: min(16rem, calc(100vh - 16px));
+  overflow: auto;
+  padding: 10px 12px;
+  border-radius: 10px;
+  background: #ffffff;
+  border: 1px solid #cbd5e1;
+  box-shadow: 0 12px 28px rgba(15, 23, 42, 0.18);
+  pointer-events: none;
+  color: #0f172a;
+}
+
+.dark .ln-hover-tooltip {
+  background: #ffffff;
+  border-color: #cbd5e1;
+  color: #0f172a;
+}
+
+.ln-hover-tooltip-body {
+  font-size: 13px;
+  line-height: 1.45;
+}
+
+.ln-hover-tooltip-body p {
+  margin: 0 0 0.35em;
+}
+
+.ln-hover-tooltip-body p:last-child {
+  margin-bottom: 0;
+}
+
+.ln-hover-tooltip-classic {
+  background: #facc15;
+  border: 1px solid #eab308;
+  color: #000000;
+  padding: 6px 10px;
+  max-width: min(20rem, calc(100vw - 16px));
+  box-shadow: 0 8px 18px rgba(15, 23, 42, 0.18);
+  font-family: system-ui, -apple-system, "Segoe UI", sans-serif;
+  font-size: 12px;
+  font-weight: 500;
+  line-height: 1.35;
+  white-space: pre-wrap;
+}
+
+.ln-hover-tooltip-classic,
+.ln-hover-tooltip-classic * {
+  color: #000000 !important;
+  font-family: system-ui, -apple-system, "Segoe UI", sans-serif !important;
+  font-size: 12px !important;
+  font-weight: 500 !important;
+  background: transparent !important;
+}
+
+

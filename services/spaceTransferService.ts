@@ -1,5 +1,6 @@
 import { Tile, LinkSection, Link } from '../types';
 import { generateUuid } from './idService';
+import { normalizeLinkTooltipStyle } from '../utils/linkTooltipPreference';
 import {
   uploadTileEmojiImage,
   uploadTileHeaderImage
@@ -334,6 +335,7 @@ const normalizeImportedLink = (link: any): Link => ({
   allowedGroups: asNumberArray(link.allowedGroups),
   notes: link.notes || undefined,
   tooltip: link.tooltip || undefined,
+  tooltipStyle: normalizeLinkTooltipStyle(link.tooltipStyle),
   notesEnabled: link.notesEnabled === true,
   richTextContent: typeof link.richTextContent === 'string' ? link.richTextContent : undefined,
   richTextEnabled: link.richTextEnabled === true,

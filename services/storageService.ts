@@ -109,7 +109,7 @@ const extractSearchLinks = (tile: Tile): Tile['searchLinks'] => {
   }
   const links: NonNullable<Tile['searchLinks']> = [];
   const seen = new Set<string>();
-  const addLinks = (sectionLinks?: { id: string; label: string; url: string; icon?: string; browser?: string; notes?: string; tooltip?: string; notesEnabled?: boolean; richTextContent?: string; richTextEnabled?: boolean; maintenanceEnabled?: boolean; maintenanceMessage?: string; maintenanceVideoUrl?: string; health?: any }[]) => {
+  const addLinks = (sectionLinks?: { id: string; label: string; url: string; icon?: string; browser?: string; notes?: string; tooltip?: string; notesEnabled?: boolean; tooltipStyle?: 'rich' | 'classic'; richTextContent?: string; richTextEnabled?: boolean; maintenanceEnabled?: boolean; maintenanceMessage?: string; maintenanceVideoUrl?: string; health?: any }[]) => {
     sectionLinks?.forEach((link) => {
       const key = `${(link.label || '').toLowerCase()}|${(link.url || '').toLowerCase()}`;
       if (seen.has(key)) return;
@@ -123,6 +123,7 @@ const extractSearchLinks = (tile: Tile): Tile['searchLinks'] => {
         notes: link.notes,
         tooltip: link.tooltip,
         notesEnabled: link.notesEnabled,
+        tooltipStyle: link.tooltipStyle,
         richTextContent: link.richTextContent,
         richTextEnabled: link.richTextEnabled,
         maintenanceEnabled: link.maintenanceEnabled,
@@ -667,6 +668,7 @@ export interface FavoriteLink {
   notes?: string;
   tooltip?: string;
   notesEnabled?: boolean;
+  tooltipStyle?: 'rich' | 'classic';
   browser?: string;
   richTextContent?: string;
   richTextEnabled?: boolean;
