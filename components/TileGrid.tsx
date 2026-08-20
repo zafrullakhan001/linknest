@@ -110,6 +110,18 @@ interface TileGridProps {
 
 const generateId = () => Math.random().toString(36).substring(2, 9);
 
+const toNumericUserId = (value: unknown): number | null => {
+  if (value == null || value === '') return null;
+  const id = typeof value === 'string' ? parseInt(value, 10) : Number(value);
+  return Number.isFinite(id) && id > 0 ? id : null;
+};
+
+const includeUserInAllowedList = (users: number[], userId: number | null | undefined): number[] => {
+  const id = toNumericUserId(userId);
+  if (id == null) return users;
+  return users.some((existing) => Number(existing) === id) ? users : [...users, id];
+};
+
 function getColorStyles(color: string | ThemeColor | undefined) {
   if (color && Object.prototype.hasOwnProperty.call(COLOR_STYLES, color)) {
     return COLOR_STYLES[color as ThemeColor];
@@ -2725,6 +2737,19 @@ export const TileGrid: React.FC<TileGridProps> = ({
   const [visibilityActiveTab, setVisibilityActiveTab] = useState<'users' | 'groups'>('users');
   const [newCreateInStaging, setNewCreateInStaging] = useState(false);
 
+  const privateOwnerId = toNumericUserId(isEditModalOpen ? editingTile?.userId : user?.id) ?? toNumericUserId(user?.id);
+  const effectiveAllowedUsers = useMemo(
+    () => (newVisibility === 'private' ? includeUserInAllowedList(newAllowedUsers, privateOwnerId) : newAllowedUsers),
+    [newAllowedUsers, newVisibility, privateOwnerId]
+  );
+  const hasPrivateAudience = effectiveAllowedUsers.length > 0 || newAllowedGroups.length > 0;
+  const selectPrivateVisibility = useCallback((ownerId?: number | null) => {
+    const id = toNumericUserId(ownerId) ?? toNumericUserId(isEditModalOpen ? editingTile?.userId : user?.id) ?? toNumericUserId(user?.id);
+    setNewVisibility('private');
+    setShowUserSelector(true);
+    setNewAllowedUsers((prev) => includeUserInAllowedList(prev, id));
+  }, [isEditModalOpen, editingTile?.userId, user?.id]);
+
   // Hyperlink state
   const [tileType, setTileType] = useState<'space' | 'hyperlink'>('space');
   const [hyperlinkUrl, setHyperlinkUrl] = useState('');
@@ -4694,13 +4719,10 @@ You may also wrap the array in an object: { "messages": [ ... ] }.
       return;
     }
 
-    // Ensure current user (owner) is always included in allowed users for private tiles
-    let finalAllowedUsers = newAllowedUsers;
-    if (newVisibility === 'private' && user) {
-      if (!finalAllowedUsers.includes(user.id)) {
-        finalAllowedUsers = [...finalAllowedUsers, user.id];
-      }
-    }
+    // Owner is always part of a private space, even if their checkbox is locked.
+    const finalAllowedUsers = newVisibility === 'private'
+      ? includeUserInAllowedList(newAllowedUsers, user?.id)
+      : newAllowedUsers;
 
     const newTile: Tile = {
       id: generateUuid(),
@@ -5467,7 +5489,7 @@ You may also wrap the array in an object: { "messages": [ ... ] }.
     if (tileType === 'hyperlink' && !hyperlinkUrl.trim()) return;
     if (editingTile.isHyperlink && tileType === 'space' && !hyperlinkUrl.trim()) return;
 
-    if (newVisibility === 'private' && newAllowedUsers.length === 0) return;
+    if (newVisibility === 'private' && !hasPrivateAudience) return;
 
     if (!isAuthenticated && onAuthRequired) {
       onAuthRequired();
@@ -5476,14 +5498,10 @@ You may also wrap the array in an object: { "messages": [ ... ] }.
 
     setIsUpdatingTile(true);
 
-    // Ensure owner is always included in allowed users for private tiles
-    let finalAllowedUsers = newAllowedUsers;
-    if (newVisibility === 'private' && editingTile.userId) {
-      const ownerIdNum = typeof editingTile.userId === 'string' ? parseInt(editingTile.userId, 10) : editingTile.userId;
-      if (!finalAllowedUsers.includes(ownerIdNum)) {
-        finalAllowedUsers = [...finalAllowedUsers, ownerIdNum];
-      }
-    }
+    // Owner is always part of a private space, even if their checkbox is locked.
+    const finalAllowedUsers = newVisibility === 'private'
+      ? includeUserInAllowedList(newAllowedUsers, editingTile.userId ?? user?.id)
+      : newAllowedUsers;
 
     // Check if visibility is changing
     const visibilityChanged = editingTile.visibility !== newVisibility;
@@ -5621,7 +5639,7 @@ You may also wrap the array in an object: { "messages": [ ... ] }.
     !newTitle.trim() ||
     (tileType === 'hyperlink' && !hyperlinkUrl.trim()) ||
     (convertingHyperlinkToSpace && !hyperlinkUrl.trim()) ||
-    (newVisibility === 'private' && newAllowedUsers.length === 0);
+    (newVisibility === 'private' && !hasPrivateAudience);
 
   const isPrivateScopeSave = activeTab === 'private' && !!user;
   const buildArrangementAndScope = useCallback(
@@ -7350,9 +7368,7 @@ You may also wrap the array in an object: { "messages": [ ... ] }.
                   onClick={() => {
                     setIsModalOpen(true);
                     if (user && !user.is_admin) {
-                      setNewVisibility('private');
-                      setNewAllowedUsers([user.id]);
-                      setShowUserSelector(true);
+                      selectPrivateVisibility(user.id);
                     }
                   }}
                   className="bg-gradient-to-r from-brand-600 to-brand-500 hover:from-brand-500 hover:to-brand-400 text-white px-6 py-3 rounded-xl text-sm font-semibold transition-all shadow-lg shadow-brand-500/30 hover:shadow-xl hover:shadow-brand-500/40 flex items-center justify-center gap-2 hover:scale-[1.02] active:scale-[0.98] whitespace-nowrap"
@@ -8645,7 +8661,7 @@ You may also wrap the array in an object: { "messages": [ ... ] }.
                               setNewEmoji('🔗'); // Set default link emoji
                               // Set default visibility: private for authenticated non-admin users, public for admins
                               if (user && !user.is_admin && isAuthenticated) {
-                                setNewVisibility('private');
+                                selectPrivateVisibility(user.id);
                               } else if (!user || user.is_admin) {
                                 setNewVisibility('public');
                               }
@@ -8765,10 +8781,7 @@ You may also wrap the array in an object: { "messages": [ ... ] }.
                               name="visibility-hyperlink"
                               value="private"
                               checked={newVisibility === 'private'}
-                              onChange={(e) => {
-                                setNewVisibility(e.target.value as TileVisibility);
-                                setShowUserSelector(true);
-                              }}
+                              onChange={() => selectPrivateVisibility()}
                               className="w-4 h-4 text-brand-600 focus:ring-brand-500 focus:ring-2"
                             />
                             <span className="text-sm text-slate-700 dark:text-slate-300">Private - Available for specific users only</span>
@@ -8788,7 +8801,7 @@ You may also wrap the array in an object: { "messages": [ ... ] }.
                                   : 'text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-slate-200'
                                   }`}
                               >
-                                USERS ({newAllowedUsers.length})
+                                USERS ({effectiveAllowedUsers.length})
                               </button>
                               <button
                                 type="button"
@@ -8952,7 +8965,7 @@ You may also wrap the array in an object: { "messages": [ ... ] }.
                               )}
                             </div>
 
-                            {newVisibility === 'private' && newAllowedUsers.length === 0 && newAllowedGroups.length === 0 && (
+                          {newVisibility === 'private' && !hasPrivateAudience && (
                               <p className="mt-2 text-xs text-amber-600 dark:text-amber-400 px-3 py-2 bg-amber-50 dark:bg-amber-900/20 rounded border border-amber-200 dark:border-amber-700">
                                 Please select at least one user or group for private hyperlinks
                               </p>
@@ -9574,10 +9587,7 @@ You may also wrap the array in an object: { "messages": [ ... ] }.
                             name="visibility"
                             value="private"
                             checked={newVisibility === 'private'}
-                            onChange={(e) => {
-                              setNewVisibility(e.target.value as TileVisibility);
-                              setShowUserSelector(true);
-                            }}
+                            onChange={() => selectPrivateVisibility()}
                             className="w-4 h-4 text-brand-600 focus:ring-brand-500 focus:ring-2"
                           />
                           <span className="text-sm text-slate-700 dark:text-slate-300">🔒 Private — specific users only</span>
@@ -9611,7 +9621,7 @@ You may also wrap the array in an object: { "messages": [ ... ] }.
                                 : 'text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-slate-200'
                                 }`}
                             >
-                              USERS ({newAllowedUsers.length})
+                              USERS ({effectiveAllowedUsers.length})
                             </button>
                             <button
                               type="button"
@@ -9775,7 +9785,7 @@ You may also wrap the array in an object: { "messages": [ ... ] }.
                             )}
                           </div>
 
-                          {newVisibility === 'private' && newAllowedUsers.length === 0 && newAllowedGroups.length === 0 && (
+                          {newVisibility === 'private' && !hasPrivateAudience && (
                             <p className="mt-2 text-xs text-amber-600 dark:text-amber-400 px-3 py-2 bg-amber-50 dark:bg-amber-900/20 rounded border border-amber-200 dark:border-amber-700">
                               Please select at least one user or group for private spaces
                             </p>
@@ -9837,7 +9847,7 @@ You may also wrap the array in an object: { "messages": [ ... ] }.
                       onClick={handleCreateTile}
                       disabled={
                         !newTitle.trim() ||
-                        (newVisibility === 'private' && newAllowedUsers.length === 0) ||
+                        (newVisibility === 'private' && !hasPrivateAudience) ||
                         (tileType === 'hyperlink' && !hyperlinkUrl.trim())
                       }
                       className="bg-gradient-to-r from-sky-600 to-indigo-500 hover:from-sky-500 hover:to-indigo-400 disabled:opacity-50 disabled:cursor-not-allowed text-white px-5 py-2 rounded-lg text-sm font-semibold transition-all shadow-md shadow-sky-500/20 hover:shadow-lg hover:shadow-sky-500/30 hover:scale-105 active:scale-95"
@@ -11065,10 +11075,7 @@ You may also wrap the array in an object: { "messages": [ ... ] }.
                               name="editVisibility-hyperlink"
                               value="private"
                               checked={newVisibility === 'private'}
-                              onChange={(e) => {
-                                setNewVisibility(e.target.value as TileVisibility);
-                                setShowUserSelector(true);
-                              }}
+                              onChange={() => selectPrivateVisibility(editingTile?.userId)}
                               className="w-4 h-4 text-brand-600 focus:ring-brand-500 focus:ring-2"
                             />
                             <span className="text-sm text-slate-700 dark:text-slate-300">Private - Available for specific users only</span>
@@ -11088,7 +11095,7 @@ You may also wrap the array in an object: { "messages": [ ... ] }.
                                   : 'text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-slate-200'
                                   }`}
                               >
-                                USERS ({newAllowedUsers.length})
+                                USERS ({effectiveAllowedUsers.length})
                               </button>
                               <button
                                 type="button"
@@ -11252,7 +11259,7 @@ You may also wrap the array in an object: { "messages": [ ... ] }.
                               )}
                             </div>
 
-                            {newVisibility === 'private' && newAllowedUsers.length === 0 && newAllowedGroups.length === 0 && (
+                          {newVisibility === 'private' && !hasPrivateAudience && (
                               <p className="mt-2 text-xs text-amber-600 dark:text-amber-400 px-3 py-2 bg-amber-50 dark:bg-amber-900/20 rounded border border-amber-200 dark:border-amber-700">
                                 Please select at least one user or group for private hyperlinks
                               </p>
@@ -11303,10 +11310,7 @@ You may also wrap the array in an object: { "messages": [ ... ] }.
                               name="editVisibility"
                               value="private"
                               checked={newVisibility === 'private'}
-                              onChange={(e) => {
-                                setNewVisibility(e.target.value as TileVisibility);
-                                setShowUserSelector(true);
-                              }}
+                              onChange={() => selectPrivateVisibility(editingTile?.userId)}
                               className="w-4 h-4 text-brand-600 focus:ring-brand-500 focus:ring-2"
                             />
                             <span className="text-sm text-slate-700 dark:text-slate-300">Private - Available for specific users only</span>
@@ -11326,7 +11330,7 @@ You may also wrap the array in an object: { "messages": [ ... ] }.
                                   : 'text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-slate-200'
                                   }`}
                               >
-                                USERS ({newAllowedUsers.length})
+                                USERS ({effectiveAllowedUsers.length})
                               </button>
                               <button
                                 type="button"
@@ -11490,7 +11494,7 @@ You may also wrap the array in an object: { "messages": [ ... ] }.
                               )}
                             </div>
 
-                            {newVisibility === 'private' && newAllowedUsers.length === 0 && newAllowedGroups.length === 0 && (
+                          {newVisibility === 'private' && !hasPrivateAudience && (
                               <p className="mt-2 text-xs text-amber-600 dark:text-amber-400 px-3 py-2 bg-amber-50 dark:bg-amber-900/20 rounded border border-amber-200 dark:border-amber-700">
                                 Please select at least one user or group for private spaces
                               </p>

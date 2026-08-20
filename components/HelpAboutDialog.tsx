@@ -3,6 +3,7 @@ import { createPortal } from 'react-dom';
 import { useSettings } from '../contexts/SettingsContext';
 import { HelpGuidesPanel } from './HelpGuidesPanel';
 import { HelpFingerprintPanel } from './HelpFingerprintPanel';
+import { MCP_EXAMPLE_NEED_LABEL, MCP_EXAMPLE_PROMPTS } from '../constants/mcpExamplePrompts';
 
 type TabType = 'help' | 'guides' | 'about' | 'fingerprint';
 
@@ -411,7 +412,7 @@ export const HelpAboutDialog: React.FC<HelpAboutDialogProps> = ({
                     <li><strong>Enrich:</strong> Add rich text or boxed content, scheduling, browser preferences, or visibility settings</li>
                     <li><strong>Test on mobile:</strong> Hover a Quick Link and click the phone icon to preview the URL on phone, tablet, or watch sizes</li>
                     <li><strong>Share:</strong> Use QR codes or Share with a user when you want others to open the space quickly</li>
-                    <li><strong>Or ask an LLM:</strong> Admins can create an MCP token and let Cursor or Claude create the space with a list of links — see Help → MCP / AI and <strong>Guides → MCP / AI</strong></li>
+                    <li><strong>Or ask an LLM:</strong> Admins can create an MCP token and paste a statement from Admin → MCP / AI → Example prompts (or Help → MCP / AI / Guides → MCP / AI)</li>
                   </ol>
                 </div>
               </section>
@@ -426,7 +427,7 @@ export const HelpAboutDialog: React.FC<HelpAboutDialogProps> = ({
                 <div className="space-y-3 text-slate-700 dark:text-slate-300">
                   <p className="text-sm">
                     {appName} exposes a Model Context Protocol (MCP) server so Cursor, Claude Desktop, and other LLM clients can list spaces, search links, and create or edit bookmarks using the same permissions as the token’s user.
-                    Create a write-enabled token in <strong>Admin → MCP / AI</strong>, then wire the client as below. Full walkthrough: <strong>Guides → MCP / AI</strong>.
+                    Create a write-enabled token in <strong>Admin → MCP / AI</strong>, then wire the client as below. Check <strong>Admin (users, roles, LDAP / SAML)</strong> only when the bound user is an administrator. Copy-ready chat statements live on <strong>Admin → MCP / AI → Example prompts</strong>. Full walkthrough: <strong>Guides → MCP / AI</strong>.
                   </p>
                   <div className="bg-sky-50 dark:bg-sky-900/20 rounded-lg p-4 space-y-2 border border-sky-200 dark:border-sky-800">
                     <p className="font-medium text-sky-900 dark:text-sky-100">Configure Cursor (HTTP)</p>
@@ -470,17 +471,24 @@ export const HelpAboutDialog: React.FC<HelpAboutDialogProps> = ({
                       Cursor uses HTTP. Claude Desktop uses this stdio adapter — do not paste the Cursor JSON into Claude, or the Claude JSON into Cursor.
                     </p>
                   </div>
-                  <div className="bg-brand-50 dark:bg-brand-900/20 rounded-lg p-4 space-y-2">
-                    <p className="font-medium text-brand-900 dark:text-brand-100">Example prompt (create a space with links)</p>
-                    <p className="text-sm">Paste this into a new Cursor Agent or Claude chat after MCP is connected:</p>
-                    <pre className="p-2 text-[11px] font-mono bg-white dark:bg-slate-900 rounded border border-brand-200 dark:border-brand-800 overflow-x-auto whitespace-pre-wrap">{`Create a LinkNest space titled Helpdesk Tools in category BUSINESS IT SERVICES, visibility public, emoji 🎫.
-
-Add these links:
-- ServiceNow — https://servicenow.adventhealth.com/now/sdw/home (tab Production, section Portals)
-- Hub — https://hub.adventhealth.com/ (tab Production, section Portals)
-- PAM — https://pam.adventhealth.com/webconsole/login (tab Production, section Security)`}</pre>
+                  <div className="bg-brand-50 dark:bg-brand-900/20 rounded-lg p-4 space-y-3">
+                    <p className="font-medium text-brand-900 dark:text-brand-100">Example MCP statements</p>
                     <p className="text-sm">
-                      The model should call <code className="text-xs bg-white dark:bg-slate-800 px-1 rounded">create_space</code> with a <code className="text-xs">links</code> array. Refresh the home grid to see the tile. More prompts and the exact tool JSON: <strong>Guides → MCP / AI</strong>.
+                      Paste into a new Cursor Agent or Claude chat after MCP is connected. The same list is on <strong>Admin → MCP / AI → Example prompts</strong> (with copy buttons).
+                    </p>
+                    <div className="space-y-3">
+                      {MCP_EXAMPLE_PROMPTS.map((example) => (
+                        <div key={example.id} className="space-y-1">
+                          <p className="text-xs font-semibold text-brand-800 dark:text-brand-200">
+                            {example.title}
+                            <span className="ml-2 font-normal text-brand-700/80 dark:text-brand-300/80">({MCP_EXAMPLE_NEED_LABEL[example.need]})</span>
+                          </p>
+                          <pre className="p-2 text-[11px] font-mono bg-white dark:bg-slate-900 rounded border border-brand-200 dark:border-brand-800 overflow-x-auto whitespace-pre-wrap">{example.prompt}</pre>
+                        </div>
+                      ))}
+                    </div>
+                    <p className="text-sm">
+                      Create-space calls should use a <code className="text-xs bg-white dark:bg-slate-800 px-1 rounded">links</code> array. Refresh the home grid to see new tiles. More detail: <strong>Guides → MCP / AI</strong>.
                     </p>
                   </div>
                   <div className="bg-slate-50 dark:bg-slate-900/50 rounded-lg p-4 space-y-2">
@@ -488,12 +496,22 @@ Add these links:
                     <ul className="list-disc list-inside space-y-1 ml-2 text-sm">
                       <li><strong>Read:</strong> whoami, list spaces, get one space, search links, list categories, list notes</li>
                       <li><strong>Write</strong> (if the token allows it): create/update/delete spaces, add/update/delete links, create/update notes</li>
+                      <li><strong>Admin</strong> (admin user + admin scope): LDAP/SAML status and tests, users, Access Manager roles/widgets/nav tabs/teams/space editors. Write admin tools also need write. Assign tools merge by default.</li>
                       <li>Write follows the same edit rules as the web app (owner, admin, or explicit edit permission)</li>
                     </ul>
                   </div>
                   <div className="bg-amber-50 dark:bg-amber-900/20 rounded-lg p-4 border border-amber-200 dark:border-amber-800">
                     <p className="text-sm text-amber-800 dark:text-amber-200">
                       Treat MCP tokens like passwords. They are shown once. Revoking a token disconnects every LLM using it immediately. Do not commit tokens to git.
+                    </p>
+                  </div>
+                  <div className="bg-slate-50 dark:bg-slate-900/50 rounded-lg p-4 space-y-2 border border-slate-200 dark:border-slate-700">
+                    <p className="font-medium text-slate-900 dark:text-white">Cloned instance with a new name</p>
+                    <p className="text-sm">
+                      MCP ships with the clone, but Cursor/Claude must use the <strong>new folder</strong> in the URL
+                      (for example <code className="text-xs bg-white dark:bg-slate-800 px-1 rounded">http://localhost/ERP3/api/mcp</code>, not <code className="text-xs bg-white dark:bg-slate-800 px-1 rounded">/linknest/api/mcp</code>).
+                      Open the clone → <strong>Admin → MCP / AI</strong> for the correct snippet. Create a <strong>new token on the clone</strong> unless you did a full mirror and intentionally share the same secret.
+                      Details: <strong>Guides → MCP / AI</strong> (Cloned instances).
                     </p>
                   </div>
                 </div>
@@ -612,7 +630,7 @@ Add these links:
                   <div className="bg-slate-50 dark:bg-slate-900/50 rounded-lg p-4">
                     <h4 className="font-semibold text-slate-900 dark:text-white mb-2">MCP / AI</h4>
                     <p className="text-sm text-slate-700 dark:text-slate-300">
-                      Connect Cursor or Claude Desktop so an LLM can list spaces, search links, and create a space with a bunch of bookmarks in one prompt. Create tokens in Admin → MCP / AI. Full guide: <strong>Guides → MCP / AI</strong>.
+                      Connect Cursor or Claude Desktop so an LLM can list spaces, search links, create a space with bookmarks, and (with an admin token) inspect LDAP/SAML and Access Manager. Copy-ready statements: Admin → MCP / AI → Example prompts. Full guide: <strong>Guides → MCP / AI</strong>.
                     </p>
                   </div>
                   <div className="bg-slate-50 dark:bg-slate-900/50 rounded-lg p-4">
@@ -1835,7 +1853,7 @@ docker\\docker-sync-database.bat -Direction Out -HostBasePath "/ArchLinks"`}</pr
                     <li>Assign space editor privileges to people or teams with fine-tune permission control (admin only)</li>
                     <li>Manage roles and assign them to users and groups for streamlined access control (admin only)</li>
                     <li>Track tile changes with version control — view, compare, and restore versions</li>
-                    <li>Ask Cursor or Claude to create a space with a list of links after you create an MCP token — Help → MCP / AI / Guides → MCP / AI (admin)</li>
+                    <li>Ask Cursor or Claude to create a space with a list of links after you create an MCP token — copy statements from Admin → MCP / AI → Example prompts, or Help → MCP / AI / Guides → MCP / AI (admin)</li>
                     <li>Apply App Updates from the admin bell, with DB backup and rollback (admin, XAMPP installs). For ArchLinks + ERP3 use one portable Release — Help → In-app App Updates / Guides → App Updates</li>
                     <li>Upgrade XAMPP PHP (e.g. to 8.5) with <code className="text-xs">scripts/upgrade-xampp-php.ps1</code> — see Guides → Upgrade PHP in XAMPP (admin / server ops)</li>
                     <li>Vanilla Apache + PHP 8.5 (Windows, not XAMPP): after install, edit <code className="text-xs">D:\Apache\conf\httpd.conf</code> and <code className="text-xs">D:\php\php.ini</code> — Help → Vanilla Apache + PHP 8.5 (Windows) / Guides → Vanilla Apache + PHP 8.5 (Windows)</li>
@@ -1935,7 +1953,7 @@ docker\\docker-sync-database.bat -Direction Out -HostBasePath "/ArchLinks"`}</pr
                       <li><strong>Database Management:</strong> Export/import backups, cleanup orphaned records, duplicate-tile cleanup</li>
                       <li><strong>Space Management:</strong> Bulk import/export spaces, manage all spaces</li>
                       <li><strong>Staging:</strong> Admin sandbox with AI Offline Kit (CSV → JSON → Staging → Public)</li>
-                      <li><strong>MCP / AI:</strong> Tokens so Cursor, Claude Desktop, and other LLMs can list, search, and edit spaces and links — Help → MCP / AI / Guides → MCP / AI</li>
+                      <li><strong>MCP / AI:</strong> Tokens so Cursor, Claude Desktop, and other LLMs can list, search, and edit spaces and links, plus admin LDAP/SAML and Access Manager tools. Example prompts: Admin → MCP / AI → Example prompts — Help → MCP / AI / Guides → MCP / AI</li>
                       <li><strong>Tab Visibility:</strong> Control which tabs are visible in the application</li>
                       <li><strong>Custom Widgets:</strong> Create, enable/disable, and manage custom widgets</li>
                       <li><strong>Broadcast Messages:</strong> Display scrolling messages across the application</li>
@@ -1970,7 +1988,7 @@ docker\\docker-sync-database.bat -Direction Out -HostBasePath "/ArchLinks"`}</pr
                 <h3 className="text-xl font-semibold text-slate-900 dark:text-white mb-3">What&apos;s New in 2.2.0</h3>
                 <div className="bg-emerald-50 dark:bg-emerald-900/20 rounded-lg p-4 space-y-2 text-sm text-slate-700 dark:text-slate-300">
                   <ul className="list-disc list-inside space-y-1 ml-2">
-                    <li><strong>MCP / AI:</strong> Admin tokens let Cursor, Claude Desktop, and other MCP clients list spaces, search links, and create or edit bookmarks (including a new space with many links in one prompt) — Help → MCP / AI / Guides → MCP / AI</li>
+                    <li><strong>MCP / AI:</strong> Admin tokens let Cursor, Claude Desktop, and other MCP clients list spaces, search links, create or edit bookmarks, and (with admin scope) manage users, roles, LDAP/SAML. Copy-ready statements: Admin → MCP / AI → Example prompts — Help → MCP / AI / Guides → MCP / AI</li>
                     <li><strong>Mobile Link Preview:</strong> Phone action on Quick Links opens an in-app device mockup (phone / tablet / watch) or a device-sized window for DevTools testing</li>
                     <li><strong>In-app App Updates:</strong> Check GitHub commits/releases, preview changes, apply with DB backup, and roll back from Admin (XAMPP installs). Office tip: publish a <strong>portable Release</strong> (default relative base) and apply the same Release on ArchLinks and ERP3 — see Help → In-app App Updates</li>
                     <li><strong>XAMPP PHP upgrade:</strong> PowerShell script to move to PHP 8.5+ with LDAP verification — see Guides → Upgrade PHP in XAMPP</li>

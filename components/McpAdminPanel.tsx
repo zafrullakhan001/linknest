@@ -3,6 +3,9 @@ import { useAuth } from '../contexts/AuthContext';
 import { authService, AllUser } from '../services/authService';
 import { mcpService, McpToken } from '../services/mcpService';
 import { getAppBasePath } from '../services/apiHelpers';
+import { MCP_EXAMPLE_NEED_LABEL, MCP_EXAMPLE_PROMPTS } from '../constants/mcpExamplePrompts';
+
+type McpAdminTab = 'tokens' | 'examples';
 
 const ADMIN_SECTION_CARD =
   'bg-white dark:bg-slate-800 border border-sky-200/70 dark:border-sky-800/40 rounded-xl overflow-hidden shadow-sm shadow-sky-500/5';
@@ -77,11 +80,13 @@ export const McpAdminPanel: React.FC = () => {
   const [error, setError] = useState('');
   const [name, setName] = useState('Cursor');
   const [allowWrite, setAllowWrite] = useState(true);
+  const [allowAdmin, setAllowAdmin] = useState(false);
   const [userId, setUserId] = useState<number>(user?.id ? Number(user.id) : 0);
   const [expiresInDays, setExpiresInDays] = useState<number>(0);
   const [createdToken, setCreatedToken] = useState<McpToken | null>(null);
   const [copied, setCopied] = useState('');
   const [showRevoked, setShowRevoked] = useState(false);
+  const [mcpTab, setMcpTab] = useState<McpAdminTab>('tokens');
 
   const endpoint = useMemo(() => mcpEndpointUrl(), []);
 
@@ -124,9 +129,12 @@ export const McpAdminPanel: React.FC = () => {
     setSaving(true);
     setError('');
     try {
+      const scopes: Array<'read' | 'write' | 'admin'> = ['read'];
+      if (allowWrite) scopes.push('write');
+      if (allowAdmin) scopes.push('admin');
       const created = await mcpService.createToken({
         name: name.trim() || 'MCP token',
-        scopes: allowWrite ? ['read', 'write'] : ['read'],
+        scopes,
         userId: userId || undefined,
         expiresInDays: expiresInDays > 0 ? expiresInDays : null,
       });
@@ -172,11 +180,35 @@ export const McpAdminPanel: React.FC = () => {
           </p>
           <p>
             Create a token below, then paste the generated config into your LLM client. Tokens act as the selected user and obey the same space visibility and edit permissions as the web app.
+            An <strong>admin</strong> token (administrator user plus the Admin checkbox) can also inspect LDAP/SAML, manage users, and change Access Manager roles, widgets, nav tabs, teams, and space editors. Assign tools merge by default so they do not wipe grants.
           </p>
           <p>
-            Full walkthrough (Cursor, Claude Desktop, and example prompts to create a space with links):{' '}
-            <strong>Help → Guides → MCP / AI</strong>.
+            Full walkthrough: <strong>Help → Guides → MCP / AI</strong>. Copy-ready chat statements are on the{' '}
+            <strong>Example prompts</strong> tab.
           </p>
+        </div>
+      </div>
+
+      <div className="bg-white dark:bg-slate-800 border border-sky-200/70 dark:border-sky-800/40 rounded-xl p-1 shadow-sm shadow-sky-500/5">
+        <div className="flex flex-wrap gap-1">
+          {([
+            { id: 'tokens' as const, label: 'Tokens', emoji: '🔑' },
+            { id: 'examples' as const, label: 'Example prompts', emoji: '💬' },
+          ]).map((item) => (
+            <button
+              key={item.id}
+              type="button"
+              onClick={() => setMcpTab(item.id)}
+              className={`flex-1 min-w-[7rem] px-3 py-2 text-sm font-medium transition-colors rounded-lg ${
+                mcpTab === item.id
+                  ? 'bg-sky-600 text-white shadow-sm shadow-sky-500/25'
+                  : 'text-sky-800/80 dark:text-sky-200/80 hover:bg-sky-50 dark:hover:bg-sky-950/40'
+              }`}
+            >
+              <span aria-hidden className="mr-1">{item.emoji}</span>
+              {item.label}
+            </button>
+          ))}
         </div>
       </div>
 
@@ -186,7 +218,7 @@ export const McpAdminPanel: React.FC = () => {
         </div>
       )}
 
-      {createdToken?.token && (
+      {mcpTab === 'tokens' && createdToken?.token && (
         <div className="rounded-xl border border-amber-200 dark:border-amber-900/40 bg-amber-50 dark:bg-amber-950/20 p-5 space-y-3">
           <h4 className="text-sm font-semibold text-amber-900 dark:text-amber-200">Copy this token now — it is shown only once</h4>
           <div className="flex flex-col sm:flex-row gap-2">
@@ -224,10 +256,12 @@ export const McpAdminPanel: React.FC = () => {
         </div>
       )}
 
+      {mcpTab === 'tokens' && (
+        <>
       <div className={ADMIN_SECTION_CARD}>
         <div className={ADMIN_SECTION_HEADER}>
           <h3 className={ADMIN_SECTION_TITLE}><span aria-hidden>🔑</span> Create token</h3>
-          <p className={ADMIN_SECTION_SUBTITLE}>Bind the token to a user. Write scope is required to create or edit spaces and links.</p>
+          <p className={ADMIN_SECTION_SUBTITLE}>Bind the token to a user. Write is for spaces and links. Admin is for users, roles, LDAP, and SAML (bound user must be an administrator).</p>
         </div>
         <form onSubmit={handleCreate} className="p-6 grid grid-cols-1 md:grid-cols-2 gap-4">
           <div>
@@ -261,7 +295,21 @@ export const McpAdminPanel: React.FC = () => {
                 onChange={(e) => setAllowWrite(e.target.checked)}
                 className="rounded border-slate-300 text-sky-600 focus:ring-sky-500"
               />
-              <span className="text-sm text-slate-700 dark:text-slate-300">Allow write (create / edit / delete)</span>
+              <span className="text-sm text-slate-700 dark:text-slate-300">Allow write (create / edit / delete spaces and links)</span>
+            </label>
+          </div>
+          <div className="flex items-end md:col-span-2">
+            <label className={`flex items-center gap-2 pb-2 ${users.find((u) => Number(u.id) === userId)?.is_admin ? 'cursor-pointer' : 'opacity-60'}`}>
+              <input
+                type="checkbox"
+                checked={allowAdmin}
+                disabled={!users.find((u) => Number(u.id) === userId)?.is_admin}
+                onChange={(e) => setAllowAdmin(e.target.checked)}
+                className="rounded border-slate-300 text-sky-600 focus:ring-sky-500"
+              />
+              <span className="text-sm text-slate-700 dark:text-slate-300">
+                Admin (users, roles, LDAP / SAML). Bound user must be an administrator.
+              </span>
             </label>
           </div>
           <div className="md:col-span-2">
@@ -337,7 +385,7 @@ export const McpAdminPanel: React.FC = () => {
       <div className={ADMIN_SECTION_CARD}>
         <div className={ADMIN_SECTION_HEADER}>
           <h3 className={ADMIN_SECTION_TITLE}><span aria-hidden>🛠️</span> Tools</h3>
-          <p className={ADMIN_SECTION_SUBTITLE}>What connected LLMs can call once a token is configured.</p>
+          <p className={ADMIN_SECTION_SUBTITLE}>Space tools for every token. Admin tools appear only when the bound user is an administrator and the token has the Admin scope.</p>
         </div>
         <div className="p-6 grid grid-cols-1 md:grid-cols-2 gap-4 text-sm">
           <div>
@@ -355,12 +403,66 @@ export const McpAdminPanel: React.FC = () => {
               <li><code>create_note</code>, <code>update_note</code></li>
             </ul>
           </div>
+          <div>
+            <h4 className="font-semibold text-slate-800 dark:text-slate-100 mb-2">Admin read (admin user + admin scope)</h4>
+            <ul className="list-disc pl-5 space-y-1 text-slate-600 dark:text-slate-300">
+              <li><code>get_auth_status</code>, <code>test_ldap</code>, <code>test_saml</code></li>
+              <li><code>list_users</code>, <code>get_user</code>, <code>list_roles</code>, <code>get_role</code></li>
+              <li><code>list_teams</code>, <code>list_space_editors</code></li>
+            </ul>
+          </div>
+          <div>
+            <h4 className="font-semibold text-slate-800 dark:text-slate-100 mb-2">Admin write (also needs write)</h4>
+            <ul className="list-disc pl-5 space-y-1 text-slate-600 dark:text-slate-300">
+              <li><code>update_ldap</code>, <code>update_saml</code></li>
+              <li><code>update_user</code>, <code>set_user_status</code></li>
+              <li><code>create_role</code>, <code>update_role</code>, <code>assign_user_roles</code></li>
+              <li><code>set_role_spaces</code>, <code>set_role_widgets</code>, <code>set_role_tabs</code></li>
+              <li><code>assign_team_roles</code>, <code>add_team_members</code>, <code>set_space_editor</code></li>
+            </ul>
+          </div>
         </div>
         <div className="px-6 pb-6 text-xs text-slate-500 dark:text-slate-400">
           Sample HTTP config (replace the token):
           <pre className="mt-2 text-[11px] leading-relaxed overflow-x-auto rounded-lg bg-slate-900 text-slate-100 p-3">{cursorHttpConfig(endpoint, sampleToken)}</pre>
         </div>
       </div>
+        </>
+      )}
+
+      {mcpTab === 'examples' && (
+        <div className={ADMIN_SECTION_CARD}>
+          <div className={ADMIN_SECTION_HEADER}>
+            <h3 className={ADMIN_SECTION_TITLE}><span aria-hidden>💬</span> Example prompts</h3>
+            <p className={ADMIN_SECTION_SUBTITLE}>
+              Paste these into a new Cursor Agent or Claude chat after MCP is green. Admin statements need an administrator user plus the Admin checkbox on the token.
+            </p>
+          </div>
+          <div className="p-6 grid grid-cols-1 gap-4">
+            {MCP_EXAMPLE_PROMPTS.map((example) => (
+              <div
+                key={example.id}
+                className="rounded-xl border border-sky-100 dark:border-sky-900/40 bg-slate-50 dark:bg-slate-900/40 p-4 space-y-2"
+              >
+                <div className="flex flex-wrap items-center justify-between gap-2">
+                  <div>
+                    <h4 className="text-sm font-semibold text-slate-800 dark:text-slate-100">{example.title}</h4>
+                    <p className="text-xs text-sky-700 dark:text-sky-300 mt-0.5">{MCP_EXAMPLE_NEED_LABEL[example.need]}</p>
+                  </div>
+                  <button
+                    type="button"
+                    onClick={() => copyText(example.id, example.prompt)}
+                    className="text-xs font-semibold text-sky-700 dark:text-sky-300 hover:text-sky-500"
+                  >
+                    {copied === example.id ? 'Copied' : 'Copy'}
+                  </button>
+                </div>
+                <pre className="text-[11px] leading-relaxed whitespace-pre-wrap overflow-x-auto rounded-lg bg-slate-900 text-slate-100 p-3">{example.prompt}</pre>
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
     </div>
   );
 };

@@ -21,6 +21,15 @@ Ask an LLM in plain language. With a **write** token it can:
 
 Without write scope, the client can only read.
 
+With an **admin** token (bound user is an administrator **and** the token has the `admin` scope), the client can also:
+
+- Read LDAP/SAML status (no bind passwords; IdP cert as fingerprint only)
+- Test LDAP and SAML
+- List and update users (approve / disable / enable / reject pending). Not included: password reset, delete approved users, promote/demote admin, transfer ownership, LDAP purge
+- Manage Access Manager roles, widgets, nav tabs, teams, and space editors
+
+Assign tools default to `mode: add` (merge). Use `replace` or `remove` only when you intend to.
+
 ---
 
 ## 1. Create a token
@@ -30,8 +39,9 @@ Without write scope, the client can only read.
 3. Name the token (for example `Cursor on laptop`)
 4. Choose which LinkNest **user** it acts as
 5. Enable **write** if the LLM should create or edit spaces and links
-6. Create the token and **copy it once** — the secret is not shown again
-7. Copy the generated **Cursor (HTTP)** or **Claude Desktop** snippet
+6. Enable **Admin (users, roles, LDAP / SAML)** only if the bound user is an administrator and you want Access Manager / auth setup tools
+7. Create the token and **copy it once** — the secret is not shown again
+8. Copy the generated **Cursor (HTTP)** or **Claude Desktop** snippet
 
 Tokens are stored as SHA-256 hashes. Revoking a token takes effect immediately.
 
@@ -137,7 +147,7 @@ Repo example: `mcp/claude_desktop_config.example.json`
 
 ## 4. Example: create a space with a bunch of links
 
-In **Cursor Agent** or **Claude Desktop**, paste a prompt like this (after MCP is green):
+In **Cursor Agent** or **Claude Desktop**, paste a prompt like this (after MCP is green). Admins can also copy the same statements from **Admin → MCP / AI → Example prompts**.
 
 ```
 Create a LinkNest space titled Helpdesk Tools in category BUSINESS IT SERVICES, visibility public, emoji 🎫.
@@ -193,6 +203,85 @@ Refresh the LinkNest home grid (or reload the page) to see the new tile.
 - “Summarize the links in PeopleSoft ERP.”
 - “List categories, then list spaces in BUSINESS IT SERVICES.”
 
+### Admin prompts (admin user + admin scope)
+
+Start with `whoami` (check `hasAdminTools` and `scopes`). Then:
+
+- “Show LDAP/SAML status and whether the PHP LDAP extension is loaded.”
+- “Set LDAP host to `dc.corp.example.com` port 389, bind DN `CN=svc,OU=…`, search base `DC=corp,DC=example,DC=com`, then test the connection. Do not print the bind password.”
+- “List pending users and approve jane.doe.”
+- “Create role Helpdesk, assign nav tabs public and favorites, widgets clock and notes, and spaces PeopleSoft ERP and PAM. Then assign that role to user jsmith.”
+
+LDAP bind passwords and SAML IdP certificates are write-only. Status returns `has_bind_password` and `idp_cert_present` plus a fingerprint — never the secret.
+
+---
+
+## 5. Cloned instances (new folder name)
+
+The MCP **feature is copied** with every clone (`api/mcp.php`, Admin → MCP / AI). It does **not** keep working against the clone until you change the **URL** (and usually the **token**) in Cursor / Claude.
+
+The endpoint always includes the install folder:
+
+| Instance | MCP URL |
+|----------|---------|
+| Source | `http://localhost/linknest/api/mcp` |
+| Clone named `ERP3` | `http://localhost/ERP3/api/mcp` |
+| Clone named `ArchLinks` | `http://localhost/ArchLinks/api/mcp` |
+
+Open the **clone** in the browser, then **Admin → MCP / AI**. The page shows the correct URL for that folder. Do not keep pointing Cursor at `/linknest/api/mcp` if you mean to edit the clone — that still talks to the original instance.
+
+### Tokens vs clone preset
+
+| Preset | Database | MCP tokens |
+|--------|----------|------------|
+| **full** (mirror) | Copied | Token **hashes** copy. The same `lnmcp_…` secret can work on the clone **if** you change the URL. It also still works on the source. Prefer a **new token on the clone** so you can revoke them independently. |
+| **structure** | Tiles copied; users reset to `admin` / `admin123` | Do **not** reuse the source token. Create a new token on the clone. |
+| **empty** / **demo** | Fresh (or demo) DB | No source tokens. Create a new token on the clone. |
+
+### Cursor (clone)
+
+Keep a **separate** server id per instance (recommended):
+
+```json
+{
+  "mcpServers": {
+    "linknest": {
+      "url": "http://localhost/linknest/api/mcp",
+      "headers": {
+        "Authorization": "Bearer lnmcp_SOURCE_TOKEN"
+      }
+    },
+    "linknest-erp3": {
+      "url": "http://localhost/ERP3/api/mcp",
+      "headers": {
+        "Authorization": "Bearer lnmcp_CLONE_TOKEN"
+      }
+    }
+  }
+}
+```
+
+### Claude Desktop (clone)
+
+Point `LINKNEST_URL` at the clone origin (no `/api/mcp` suffix). `args` can stay the source `mcp/server.mjs` or the clone’s copy — the adapter only uses the env URL:
+
+```json
+{
+  "mcpServers": {
+    "linknest-erp3": {
+      "command": "node",
+      "args": ["C:/xampp/htdocs/ERP3/mcp/server.mjs"],
+      "env": {
+        "LINKNEST_URL": "http://localhost/ERP3",
+        "LINKNEST_TOKEN": "lnmcp_CLONE_TOKEN"
+      }
+    }
+  }
+}
+```
+
+Renaming the folder later means updating `url` / `LINKNEST_URL` again. The MCP tools themselves do not store the instance name.
+
 ---
 
 ## Tools
@@ -220,6 +309,31 @@ Refresh the LinkNest home grid (or reload the page) to see the new tile.
 | `delete_link` | Remove a link |
 | `create_note` / `update_note` | Personal notes |
 
+**Admin read** (bound user `is_admin` **and** token `admin` scope). Non-admin tokens never see these in `tools/list`.
+
+| Tool | Purpose |
+|------|---------|
+| `get_auth_status` | LDAP/SAML flags, hosts/DNs/filters, cert fingerprint; no secrets |
+| `test_ldap` | Connect/bind test (optional user bind). Passwords never echoed |
+| `test_saml` | `test_configuration`, `test_metadata`, `test_idp_connectivity`, `validate_certificate` |
+| `list_users` / `get_user` | Users and role assignments; no password hashes |
+| `list_roles` / `get_role` | Roles plus assigned spaces, widgets, nav tabs |
+| `list_teams` | Access Manager teams (user groups) |
+| `list_space_editors` | Per-space editor grants |
+
+**Admin write** (`admin` + `write`)
+
+| Tool | Purpose |
+|------|---------|
+| `update_ldap` / `update_saml` | Guarded auth setup. Blank bind password / cert keeps the stored value |
+| `update_user` | Username, email, notes, `auth_source` |
+| `set_user_status` | `approve` / `disable` / `enable` / `reject` |
+| `create_role` / `update_role` | Role name, description, guest flag |
+| `assign_user_roles` | `mode`: `add` (default), `replace`, `remove` |
+| `set_role_spaces` / `set_role_widgets` / `set_role_tabs` | Same merge modes. Tabs are app nav tabs, not space content tabs |
+| `assign_team_roles` / `add_team_members` | Teams |
+| `set_space_editor` | Grant or revoke editor access (`can_edit: false` removes) |
+
 Resources: `linknest://catalog`, `linknest://space/{id}`.
 
 Prompts: `find_a_link`, `add_bookmark`, `summarize_space`.
@@ -243,6 +357,7 @@ Prompts: `find_a_link`, `add_bookmark`, `summarize_space`.
 - Tokens act as the selected LinkNest user (not a separate “bot” role).
 - Listing and search honor space visibility, staging, unpublished content, shares, and role assignments.
 - Write tools require owner, admin, or explicit edit permission — not “any logged-in user”.
+- Admin tools require an administrator bound user **and** the `admin` token scope. Write admin tools also need `write`.
 - `javascript:` and `data:` URLs are rejected.
 - Revoking a token takes effect immediately.
 
@@ -280,7 +395,8 @@ Then call `tools/list` and `tools/call` with `{"name":"whoami","arguments":{}}`.
 | Path | Role |
 |------|------|
 | `api/mcp.php` | HTTP transport |
-| `api/mcp_lib.php` | JSON-RPC methods and tools |
+| `api/mcp_lib.php` | JSON-RPC methods and space/link/note tools |
+| `api/mcp_admin_lib.php` | Admin LDAP/SAML, users, Access Manager tools |
 | `api/mcp_tokens.php` | Admin token CRUD |
 | `mcp/server.mjs` | stdio → HTTP adapter |
 | `components/McpAdminPanel.tsx` | Admin UI |

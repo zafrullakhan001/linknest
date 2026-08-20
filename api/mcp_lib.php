@@ -67,6 +67,8 @@ function mcpHasWriteScope(array $user): bool {
     return in_array('write', $scopes, true);
 }
 
+require_once __DIR__ . '/mcp_admin_lib.php';
+
 function mcpAppVersion(): string {
     $pkg = dirname(__DIR__) . DIRECTORY_SEPARATOR . 'package.json';
     if (is_readable($pkg)) {
@@ -123,7 +125,7 @@ function mcpHandleMessage(array $message, array $user): ?array {
                     'title' => 'LinkNest',
                     'version' => mcpAppVersion(),
                 ],
-                'instructions' => 'LinkNest organizes links into spaces (tiles), each with tabs and sections. Start with whoami and list_spaces. Use search_links to find URLs. Write tools require a token with the write scope and follow the same visibility/edit permissions as the web app.',
+                'instructions' => 'LinkNest organizes links into spaces (tiles), each with tabs and sections. Start with whoami. Use list_spaces and search_links for bookmarks. Write tools need the write scope. Admin tokens (admin user + admin scope) can call get_auth_status, list_users, list_roles, and guarded LDAP/SAML and Access Manager tools. Assign tools default to mode add so they do not wipe existing grants.',
             ]);
 
         case 'notifications/initialized':
@@ -203,7 +205,7 @@ function mcpToolsList(array $user): array {
     $read = [
         [
             'name' => 'whoami',
-            'description' => 'Return the LinkNest user bound to this MCP token (id, username, admin flag, token scopes).',
+            'description' => 'Return the LinkNest user bound to this MCP token (id, username, admin flag, token scopes including admin, hasAdminTools).',
             'inputSchema' => ['type' => 'object', 'properties' => new stdClass(), 'additionalProperties' => false],
         ],
         [
@@ -262,8 +264,13 @@ function mcpToolsList(array $user): array {
         ],
     ];
 
+    $tools = $read;
+    if (function_exists('mcpHasAdminScope') && mcpHasAdminScope($user)) {
+        $tools = array_merge($tools, mcpAdminReadTools());
+    }
+
     if (!mcpHasWriteScope($user)) {
-        return $read;
+        return $tools;
     }
 
     $write = [
@@ -401,7 +408,11 @@ function mcpToolsList(array $user): array {
         ],
     ];
 
-    return array_merge($read, $write);
+    $tools = array_merge($tools, $write);
+    if (function_exists('mcpHasAdminScope') && mcpHasAdminScope($user)) {
+        $tools = array_merge($tools, mcpAdminWriteTools());
+    }
+    return $tools;
 }
 
 function mcpCallTool($id, string $name, array $args, array $user): array {
@@ -444,6 +455,13 @@ function mcpCallTool($id, string $name, array $args, array $user): array {
             case 'update_note':
                 return mcpTextResult($id, mcpToolUpdateNote($user, $args));
             default:
+                if (function_exists('mcpHasAdminScope') && mcpHasAdminScope($user) && function_exists('mcpAdminDispatch')) {
+                    $admin = mcpAdminDispatch($name, $args, $user);
+                    if (!isset($admin['error']) || $admin['error'] !== 'Unknown admin tool: ' . $name) {
+                        $isErr = isset($admin['error']);
+                        return mcpTextResult($id, $admin, $isErr);
+                    }
+                }
                 return mcpError($id, -32602, 'Unknown tool: ' . $name);
         }
     } catch (Throwable $e) {
@@ -661,6 +679,7 @@ function mcpToolWhoami(array $user): array {
         'displayName' => $user['display_name'] ?? null,
         'isAdmin' => !empty($user['is_admin']),
         'scopes' => $user['_mcp_scopes'] ?? ['read'],
+        'hasAdminTools' => function_exists('mcpHasAdminScope') && mcpHasAdminScope($user),
         'server' => ['name' => MCP_SERVER_NAME, 'version' => mcpAppVersion()],
     ];
 }

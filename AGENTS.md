@@ -12,7 +12,7 @@ LinkNest is a **link and space organization platform** built with a React fronte
 - Role-based access control and user groups
 - Floating widgets (clock, weather, calculator, notes, etc.)
 - AI-powered content generation via Google Gemini
-- MCP interface so LLMs can list, search, and edit spaces and links
+- MCP interface so LLMs can list, search, and edit spaces and links (admin-scoped tokens can also manage users, roles, LDAP/SAML)
 - Email notifications and broadcast messaging
 - Browser integration for direct link opening
 

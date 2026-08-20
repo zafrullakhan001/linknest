@@ -2,7 +2,7 @@ import { resolveApiBase } from './apiHelpers';
 
 const API_BASE = resolveApiBase();
 
-export type McpTokenScope = 'read' | 'write';
+export type McpTokenScope = 'read' | 'write' | 'admin';
 
 export interface McpToken {
   id: number;

@@ -29,7 +29,7 @@ function mcpTokensNormalizeScopes($raw): string {
     $out = [];
     foreach ($parts as $p) {
         $p = strtolower(trim((string)$p));
-        if ($p === 'read' || $p === 'write') {
+        if ($p === 'read' || $p === 'write' || $p === 'admin') {
             $out[] = $p;
         }
     }
@@ -90,7 +90,7 @@ switch ($method) {
         if ($userId < 1) {
             $userId = (int)$admin['id'];
         }
-        $userStmt = $db->prepare('SELECT id, username, is_approved, COALESCE(is_disabled, 0) AS is_disabled FROM users WHERE id = ?');
+        $userStmt = $db->prepare('SELECT id, username, is_admin, is_approved, COALESCE(is_disabled, 0) AS is_disabled FROM users WHERE id = ?');
         $userStmt->execute([$userId]);
         $target = $userStmt->fetch(PDO::FETCH_ASSOC);
         if (!$target || empty($target['is_approved'])) {
@@ -101,6 +101,9 @@ switch ($method) {
         }
 
         $scopes = mcpTokensNormalizeScopes($data['scopes'] ?? ['read']);
+        if (strpos($scopes, 'admin') !== false && empty($target['is_admin'])) {
+            sendJSON(['error' => 'Admin MCP scope can only be granted to an administrator user'], 400);
+        }
         $expiresAt = null;
         if (isset($data['expiresInDays']) && is_numeric($data['expiresInDays'])) {
             $days = (int)$data['expiresInDays'];
