@@ -8,6 +8,7 @@ RewriteEngine On
 Header always set Access-Control-Allow-Origin "*"
 Header always set Access-Control-Allow-Methods "POST, GET, OPTIONS"
 Header always set Access-Control-Allow-Headers "Content-Type"
+Header always set X-Robots-Tag "noindex, nofollow, noarchive, nosnippet"
 
 # Handle OPTIONS preflight requests
 RewriteCond %{REQUEST_METHOD} OPTIONS

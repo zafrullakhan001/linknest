@@ -33,9 +33,22 @@ AddDefaultCharset UTF-8
     Header set Content-Type "application/javascript; charset=utf-8"
 </FilesMatch>
 
+# Pass Authorization to PHP so MCP Bearer tokens survive CGI/FastCGI/rewrite.
+<IfModule mod_setenvif.c>
+    SetEnvIf Authorization "(.+)" HTTP_AUTHORIZATION=$1
+</IfModule>
+<IfModule mod_cgi.c>
+    CGIPassAuth On
+</IfModule>
+
 # Enable PHP for API routes
 <IfModule mod_rewrite.c>
     RewriteEngine On
+    RewriteCond %{HTTP:Authorization} .
+    RewriteRule .* - [E=HTTP_AUTHORIZATION:%{HTTP:Authorization}]
+    
+    # robots.txt must never fall through to the SPA
+    RewriteRule (^|/)robots\.txt$ robots.txt [L]
     
     # Allow SSH/VNC gateway WebSocket proxy paths (handled in VirtualHost)
     RewriteCond %{REQUEST_URI} ^/_ln_sshgw/
@@ -183,6 +196,7 @@ AddDefaultCharset UTF-8
 
 # Prevent browsers / proxies from sticking on an old SPA shell after deploy.
 <IfModule mod_headers.c>
+    Header always set X-Robots-Tag "noindex, nofollow, noarchive, nosnippet"
     <FilesMatch "(?i)^(index\.html|BUILD_INFO\.json|sw-cache-first\.php)$">
         Header set Cache-Control "no-cache, no-store, must-revalidate"
         Header set Pragma "no-cache"

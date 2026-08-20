@@ -299,6 +299,24 @@ if ($path === '/') {
     }
     require __DIR__ . '/updater.php';
     exit;
+} elseif (strpos($path, '/mcp-tokens') === 0) {
+    $remainingPath = substr($path, 11); // Remove '/mcp-tokens'
+    if (empty($remainingPath) || $remainingPath === '/') {
+        $_SERVER['PATH_INFO'] = '/';
+    } else {
+        $_SERVER['PATH_INFO'] = ($remainingPath[0] === '/') ? $remainingPath : '/' . $remainingPath;
+    }
+    require __DIR__ . '/mcp_tokens.php';
+    exit;
+} elseif (strpos($path, '/mcp') === 0) {
+    $remainingPath = substr($path, 4); // Remove '/mcp'
+    if (empty($remainingPath) || $remainingPath === '/') {
+        $_SERVER['PATH_INFO'] = '/';
+    } else {
+        $_SERVER['PATH_INFO'] = ($remainingPath[0] === '/') ? $remainingPath : '/' . $remainingPath;
+    }
+    require __DIR__ . '/mcp.php';
+    exit;
 } elseif (strpos($path, '/docs') === 0) {
     $remainingPath = substr($path, 5); // Remove '/docs'
     if (empty($remainingPath) || $remainingPath === '/') {

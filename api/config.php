@@ -1,4 +1,9 @@
 <?php
+// Search engines must not crawl or index LinkNest (API, short URLs, HTML).
+if (!headers_sent()) {
+    header('X-Robots-Tag: noindex, nofollow, noarchive, nosnippet');
+}
+
 // Disable error display, log errors instead
 ini_set('display_errors', 0);
 ini_set('log_errors', 1);
@@ -133,7 +138,7 @@ if (!defined('SYSTEM_TOKEN')) {
 
 // Bump when schema/migrations in initDatabase() change. Enables fast-path getDB().
 if (!defined('LINKNEST_SCHEMA_VERSION')) {
-    define('LINKNEST_SCHEMA_VERSION', 92);
+    define('LINKNEST_SCHEMA_VERSION', 93);
 }
 
 function getSchemaPatchFlagPath(): string {
@@ -193,7 +198,8 @@ if (!file_exists(DB_DIR)) {
 if (!defined('ANALYTICS_API_MODE') || !ANALYTICS_API_MODE) {
     header('Access-Control-Allow-Origin: *');
     header('Access-Control-Allow-Methods: GET, POST, PUT, DELETE, OPTIONS');
-    header('Access-Control-Allow-Headers: Content-Type, Authorization');
+    header('Access-Control-Allow-Headers: Content-Type, Authorization, Mcp-Session-Id, MCP-Protocol-Version, Last-Event-ID');
+    header('Access-Control-Expose-Headers: Mcp-Session-Id, MCP-Protocol-Version');
     
     // Handle preflight requests
     if (isset($_SERVER['REQUEST_METHOD']) && $_SERVER['REQUEST_METHOD'] === 'OPTIONS') {
@@ -982,6 +988,138 @@ function ensureUserAuditLogTable($db): void {
 }
 
 /**
+ * Personal access tokens for the MCP (LLM) interface. Safe to call on every connection.
+ */
+function ensureMcpTokensTable($db): void {
+    static $ensured = false;
+    if ($ensured) {
+        return;
+    }
+    try {
+        $db->exec('CREATE TABLE IF NOT EXISTS mcp_tokens (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            user_id INTEGER NOT NULL,
+            name TEXT NOT NULL,
+            token_hash TEXT NOT NULL UNIQUE,
+            token_prefix TEXT NOT NULL,
+            scopes TEXT NOT NULL DEFAULT \'read\',
+            last_used_at INTEGER,
+            expires_at INTEGER,
+            created_at INTEGER NOT NULL,
+            revoked_at INTEGER,
+            FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE
+        )');
+        $db->exec('CREATE INDEX IF NOT EXISTS idx_mcp_tokens_hash ON mcp_tokens(token_hash)');
+        $db->exec('CREATE INDEX IF NOT EXISTS idx_mcp_tokens_user ON mcp_tokens(user_id)');
+        $ensured = true;
+    } catch (PDOException $e) {
+        error_log('ensureMcpTokensTable warning: ' . $e->getMessage());
+    }
+}
+
+/**
+ * Read a LinkNest MCP bearer token (lnmcp_…) from Authorization, if present.
+ */
+function getMcpBearerTokenFromRequest(): string {
+    $headers = function_exists('getallheaders') ? @getallheaders() : [];
+    if (!is_array($headers)) {
+        $headers = [];
+    }
+    $authHeader = $headers['Authorization'] ?? $headers['authorization']
+        ?? $_SERVER['HTTP_AUTHORIZATION'] ?? $_SERVER['REDIRECT_HTTP_AUTHORIZATION']
+        ?? $_SERVER['HTTP_X_AUTHORIZATION'] ?? '';
+    if (is_array($authHeader)) {
+        $authHeader = (string)reset($authHeader);
+    }
+    if (preg_match('/Bearer\s+(lnmcp_[A-Za-z0-9]+)/i', (string)$authHeader, $matches)) {
+        return $matches[1];
+    }
+    return '';
+}
+
+/**
+ * Resolve the user bound to a valid (non-revoked, non-expired) MCP token.
+ * Cached per request. Returns null when no MCP token is present.
+ *
+ * @return array<string, mixed>|null
+ */
+function getMcpTokenUser(): ?array {
+    static $cached = false;
+    static $user = null;
+    if ($cached) {
+        return $user;
+    }
+
+    $token = getMcpBearerTokenFromRequest();
+    if ($token === '') {
+        $cached = true;
+        return null;
+    }
+
+    static $inProgress = false;
+    if ($inProgress) {
+        return null;
+    }
+    $inProgress = true;
+
+    try {
+        $db = getDB();
+        ensureMcpTokensTable($db);
+        $hash = hash('sha256', $token);
+        $stmt = $db->prepare('SELECT id, user_id, scopes, expires_at, revoked_at FROM mcp_tokens WHERE token_hash = ? LIMIT 1');
+        $stmt->execute([$hash]);
+        $row = $stmt->fetch(PDO::FETCH_ASSOC);
+        if (!$row || !empty($row['revoked_at'])) {
+            $cached = true;
+            return null;
+        }
+        if (!empty($row['expires_at']) && (int)$row['expires_at'] < time()) {
+            $cached = true;
+            return null;
+        }
+
+        $userStmt = $db->prepare('SELECT id, username, email, is_admin, is_approved, COALESCE(is_disabled, 0) AS is_disabled, auth_source, display_name, notes FROM users WHERE id = ?');
+        $userStmt->execute([(int)$row['user_id']]);
+        $found = $userStmt->fetch(PDO::FETCH_ASSOC);
+        if (!$found) {
+            $cached = true;
+            return null;
+        }
+        $found['is_admin'] = (bool)$found['is_admin'];
+        $found['is_approved'] = (bool)$found['is_approved'];
+        $found['is_disabled'] = !empty($found['is_disabled']);
+        if (!$found['is_approved'] || ($found['is_disabled'] && !$found['is_admin'])) {
+            $cached = true;
+            return null;
+        }
+        $found['auth_source'] = $found['auth_source'] ?? 'local';
+        $found['impersonating'] = false;
+        $scopes = array_values(array_filter(array_map('trim', explode(',', strtolower((string)$row['scopes'])))));
+        if (!in_array('read', $scopes, true)) {
+            $scopes[] = 'read';
+        }
+        $found['_mcp_token_id'] = (int)$row['id'];
+        $found['_mcp_scopes'] = $scopes;
+
+        $lastUsed = (int)($row['last_used_at'] ?? 0);
+        if ($lastUsed < time() - 60) {
+            $upd = $db->prepare('UPDATE mcp_tokens SET last_used_at = ? WHERE id = ?');
+            $upd->execute([time(), (int)$row['id']]);
+        }
+
+        $user = $found;
+        $cached = true;
+        return $user;
+    } catch (Throwable $e) {
+        error_log('getMcpTokenUser error: ' . $e->getMessage());
+        $cached = true;
+        return null;
+    } finally {
+        $inProgress = false;
+    }
+}
+
+/**
  * Clone Instance preset (empty / structure / full / demo) on the clones tracking table.
  */
 function ensureClonesPresetColumn(PDO $db): void {
@@ -1033,6 +1171,7 @@ function initDatabase() {
             ensureInheritShortUrlsColumns($db);
             ensureLinkMaintenanceColumns($db);
             ensureLinkFeatureToggleColumns($db);
+            ensureMcpTokensTable($db);
             if (!schemaPatchesAlreadyApplied()) {
                 ensureTilesHeaderImageColumns($db);
                 ensureTilesSearchTagsColumn($db);
@@ -1063,6 +1202,7 @@ function initDatabase() {
             ensureInheritShortUrlsColumns($db);
             ensureLinkMaintenanceColumns($db);
             ensureLinkFeatureToggleColumns($db);
+            ensureMcpTokensTable($db);
             if (!schemaPatchesAlreadyApplied()) {
                 ensureTilesHeaderImageColumns($db);
                 ensureTilesSearchTagsColumn($db);
@@ -3294,6 +3434,7 @@ function initDatabase() {
         )');
 
         ensureUserAuditLogTable($db);
+        ensureMcpTokensTable($db);
 
         // Tile visit / hit tracking (visitor hits + unique visitors per tile)
         $db->exec('CREATE TABLE IF NOT EXISTS tile_visits (
@@ -3530,6 +3671,11 @@ function getDB($clear = false) {
 // Helper function to get authenticated user (never throws - returns null on DB/session errors)
 function getAuthenticatedUser() {
     try {
+        $mcpUser = getMcpTokenUser();
+        if ($mcpUser) {
+            return $mcpUser;
+        }
+
         if (session_status() === PHP_SESSION_NONE) {
             @session_start();
         }

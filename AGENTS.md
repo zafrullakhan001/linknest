@@ -12,6 +12,7 @@ LinkNest is a **link and space organization platform** built with a React fronte
 - Role-based access control and user groups
 - Floating widgets (clock, weather, calculator, notes, etc.)
 - AI-powered content generation via Google Gemini
+- MCP interface so LLMs can list, search, and edit spaces and links
 - Email notifications and broadcast messaging
 - Browser integration for direct link opening
 
@@ -72,10 +73,15 @@ linknest/
 │   └── useMobile.ts        # Mobile detection hook
 ├── api/                    # PHP backend endpoints
 │   ├── index.php           # API router
+│   ├── mcp.php             # MCP (LLM) JSON-RPC endpoint
+│   ├── mcp_lib.php         # MCP tools (spaces, links, notes)
+│   ├── mcp_tokens.php      # MCP token admin API
 │   ├── tiles.php           # Tile CRUD API
 │   ├── auth.php            # Authentication API
 │   ├── settings.php        # Settings API
 │   └── ...                 # 50+ endpoint files
+├── mcp/                    # MCP stdio adapter (Claude Desktop / local Cursor)
+│   └── server.mjs          # Forwards stdin JSON-RPC to POST /api/mcp
 ├── docker/                 # Docker deployment files
 │   ├── Dockerfile          # Multi-stage build
 │   ├── docker-compose.yml  # Service orchestration
@@ -134,6 +140,7 @@ VITE_API_BASE=/linknest/api              # Optional, API base path
 | `npm run build` | Build for production (outputs to `dist/`) |
 | `npm run build:prod` | Production build with production mode |
 | `npm run preview` | Preview production build locally |
+| `npm run mcp` | Run the MCP stdio adapter (`LINKNEST_URL` + `LINKNEST_TOKEN`) |
 
 ---
 
@@ -349,6 +356,7 @@ Default credentials:
 
 - `docs/YOUR_BOOKMARKS.md` - Guest Your Bookmarks, Favorite Links compact view, Rewrite tools
 - `docs/BOOKMARK_SYNC_EXTENSION.md` - LinkNest Bookmark Sync extension (handshake, origin allowlist, per-profile sync, mass deploy)
+- `docs/MCP.md` - MCP interface so LLMs (Cursor, Claude Desktop) can list spaces, search links, and edit bookmarks
 - `docs/APP_UPDATES.md` - In-app App Updates (portable Releases for ArchLinks / ERP3)
 - `docs/SETUP.md` - Detailed setup instructions
 - `docs/VANILLA_APACHE_PHP85_WINDOWS.md` - Vanilla Apache + PHP 8.5 on Windows (`D:\Apache` + `D:\php`, post-install `httpd.conf` / `php.ini`)

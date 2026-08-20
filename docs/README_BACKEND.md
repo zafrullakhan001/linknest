@@ -70,6 +70,15 @@ location / {
 - `PUT /api/tiles/{id}` - Update a tile (requires authentication)
 - `DELETE /api/tiles/{id}` - Delete a tile (requires authentication)
 
+### MCP (LLM tools)
+
+- `POST /api/mcp` - Model Context Protocol JSON-RPC (Bearer `lnmcp_` token)
+- `GET /api/mcp-tokens` - List MCP tokens (admin)
+- `POST /api/mcp-tokens` - Create an MCP token (admin; secret returned once)
+- `DELETE /api/mcp-tokens/{id}` - Revoke an MCP token (admin)
+
+See [MCP.md](MCP.md) for Cursor / Claude Desktop setup.
+
 ## Environment Variables
 
 Create a `.env` file in the root directory:

@@ -8,6 +8,7 @@
     "build": "node scripts/copy-tinymce-assets.mjs && vite build",
     "build:prod": "node scripts/copy-tinymce-assets.mjs && vite build --mode production",
     "preview": "vite preview",
+    "mcp": "node mcp/server.mjs",
     "postinstall": "node scripts/copy-tinymce-assets.mjs",
     "copy:tinymce": "node scripts/copy-tinymce-assets.mjs"
   },

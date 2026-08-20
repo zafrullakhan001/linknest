@@ -1968,6 +1968,9 @@ class CloneService {
         $ht = "# LinkNest Docker clone — subdirectory at /{$folderName}/\n";
         $ht .= "Options -Indexes -MultiViews +FollowSymLinks\n";
         $ht .= "DirectoryIndex dist/index.html index.html\n";
+        $ht .= "<IfModule mod_headers.c>\n";
+        $ht .= "    Header always set X-Robots-Tag \"noindex, nofollow, noarchive, nosnippet\"\n";
+        $ht .= "</IfModule>\n";
         $ht .= "<IfModule mod_rewrite.c>\n";
         $ht .= "    RewriteEngine On\n";
         $ht .= "    RewriteCond %{REQUEST_FILENAME} -f [OR]\n";
@@ -1975,6 +1978,7 @@ class CloneService {
         $ht .= "    RewriteRule ^ - [L]\n";
         $ht .= "    RewriteRule ^api/(.*)\$ api/index.php?path=\$1 [BCTLS,L,QSA]\n";
         $ht .= "    RewriteRule ^s/([A-Za-z0-9]+)\$ s.php?code=\$1 [L,QSA]\n";
+        $ht .= "    RewriteRule (^|/)robots\\.txt\$ robots.txt [L]\n";
         $ht .= "    RewriteRule ^assets/(.*)\$ dist/assets/\$1 [L]\n";
         $ht .= "    RewriteRule (^|/)tinymce/(.*)\$ dist/tinymce/\$2 [L]\n";
         $ht .= "    RewriteRule (^|/)ssh-session-shared-worker\\.js\$ dist/ssh-session-shared-worker.js [L]\n";

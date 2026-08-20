@@ -35,6 +35,7 @@ import { DevicePresetsAdmin } from './DevicePresetsAdmin';
 import { LinkCheckExceptionsAdmin } from './LinkCheckExceptionsAdmin';
 import { IframeBlockDomainsAdmin } from './IframeBlockDomainsAdmin';
 import { UserAuditLog } from './UserAuditLog';
+import { McpAdminPanel } from './McpAdminPanel';
 import {
   AccessManagerPanel,
   AccessSubTab,
@@ -142,6 +143,7 @@ type AdminNavTabId =
   | 'access'
   | 'clone'
   | 'browser'
+  | 'mcp'
   | 'broadcast'
   | 'maintenanceScripts'
   | 'maintenance'
@@ -186,6 +188,7 @@ const ADMIN_NAV_SECTIONS: Array<{
     label: 'Integrations',
     items: [
       { id: 'browser', label: 'Browser Extn Integration', emoji: '🌐' },
+      { id: 'mcp', label: 'MCP / AI', emoji: '🤖' },
       { id: 'broadcast', label: 'Broadcast Message', emoji: '📢' },
       { id: 'clone', label: 'Clone', emoji: '🧬' },
     ],
@@ -336,7 +339,7 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({ onUserApproved }) => {
     if (savedTab === 'footer') return 'settings';
     const validTabs: Array<AdminNavTabId | 'footer'> = [
       'pending', 'all', 'userAudit', 'settings', 'database', 'spaces', 'ldap', 'saml', 'footer',
-      'tabVisibility', 'devicePresets', 'linkCheckExceptions', 'iframeBlockDomains', 'access', 'clone', 'browser', 'broadcast',
+      'tabVisibility', 'devicePresets', 'linkCheckExceptions', 'iframeBlockDomains', 'access', 'clone', 'browser', 'mcp', 'broadcast',
       'maintenanceScripts', 'maintenance', 'widgets', 'addons', 'appUpdates', 'loadTest',
     ];
     return (savedTab && validTabs.includes(savedTab as AdminNavTabId | 'footer'))
@@ -5628,6 +5631,8 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({ onUserApproved }) => {
 
               {/* User Audit Log Tab */}
               {activeTab === 'userAudit' && <UserAuditLog />}
+
+              {activeTab === 'mcp' && <McpAdminPanel />}
 
               {/* Database Tab */}
               {activeTab === 'database' && (

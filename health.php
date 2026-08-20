@@ -12,7 +12,7 @@
  */
 declare(strict_types=1);
 
-header('X-Robots-Tag: noindex, nofollow');
+header('X-Robots-Tag: noindex, nofollow, noarchive, nosnippet');
 
 $wantJson = isset($_GET['format']) && strtolower((string)$_GET['format']) === 'json';
 if (!$wantJson && isset($_SERVER['HTTP_ACCEPT']) && str_contains((string)$_SERVER['HTTP_ACCEPT'], 'application/json')

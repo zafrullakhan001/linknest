@@ -11,6 +11,7 @@ flowchart TB
   subgraph Clients["Clients"]
     Browser["🌐 Browser SPA"]
     Land["🔗 land/ launcher"]
+    Mcp["🤖 MCP clients"]
   end
 
   subgraph App["LinkNest application"]
@@ -30,6 +31,7 @@ flowchart TB
 
   Browser --> Vite
   Land --> Vite
+  Mcp -->|"POST /api/mcp Bearer token"| API
   Vite -->|"fetch /api/*"| API
   API --> DB
   API --> Uploads

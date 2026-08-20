@@ -56,6 +56,7 @@ const UPDATER_ZIP_ALLOW_ROOT_FILES = [
     'package-lock.json',
     'BUILD_INFO.json',
     '.htaccess',
+    'robots.txt',
     'sw.js',
     'sw-cache-first.php',
     'manifest.webmanifest',
