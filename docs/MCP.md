@@ -37,9 +37,28 @@ Tokens are stored as SHA-256 hashes. Revoking a token takes effect immediately.
 
 ---
 
-## 2. Connect Cursor
+## 2. Configure Cursor (HTTP MCP)
 
-Cursor Settings → **MCP** (or add the same JSON to `~/.cursor/mcp.json` and/or this project’s `.cursor/mcp.json`).
+Cursor talks to LinkNest over **Streamable HTTP**. You do **not** run `node mcp/server.mjs` for Cursor.
+
+### Option A — Settings UI (easiest)
+
+1. Keep Apache / XAMPP (or Docker) running so `http://localhost/linknest` loads
+2. In Cursor: **Settings → MCP** (or **Cursor Settings → Tools & MCP**)
+3. Click **Add new MCP server** / **Open mcp.json**
+4. Paste the JSON below (replace `lnmcp_YOUR_TOKEN` with the token from Admin → MCP / AI)
+5. Save. Toggle **linknest** on if it is off
+6. Wait for a **green** status (tools loaded). If it stays red, reload the window (**Developer: Reload Window**)
+7. Open a **new Agent chat** (existing chats started before the server was added will not see the tools)
+
+### Option B — Edit the config files
+
+| Scope | Windows path |
+|-------|----------------|
+| **Global** (all projects) | `C:\Users\<you>\.cursor\mcp.json` |
+| **This project only** | `<repo>\.cursor\mcp.json` (gitignored — do not commit the token) |
+
+If the file already has other servers (`MCP_DOCKER`, `headroom`, …), **add** `linknest` next to them. Do not replace the whole `mcpServers` object.
 
 ```json
 {
@@ -54,60 +73,125 @@ Cursor Settings → **MCP** (or add the same JSON to `~/.cursor/mcp.json` and/or
 }
 ```
 
-Use your real origin and folder (`/ArchLinks`, `/ERP3`, `/linknest`, and so on). The Admin page copies a ready-to-paste snippet after you create a token.
+Use your real origin and folder (`http://localhost/ArchLinks/api/mcp`, `http://localhost/ERP3/api/mcp`, Docker `http://localhost:8090/api/mcp`, and so on). **Admin → MCP / AI** copies a ready-to-paste snippet after you create a token.
 
-Then:
+Repo example: `mcp/cursor.mcp.json.example`
 
-1. Keep Apache (or Docker) running so the URL is reachable
-2. Confirm **linknest** is enabled and green in Cursor MCP settings
-3. Start a **new Agent chat** so the tools load
-4. Ask the model to use LinkNest (examples below)
+### Check that Cursor can see LinkNest
 
-Example file in the repo: `mcp/cursor.mcp.json.example`
+In a **new Agent chat**, ask:
+
+> Use the LinkNest MCP. Call whoami, then list_spaces.
+
+You should see the token user (for example `admin`) and your spaces. Then try the create-space prompt in section 4.
 
 ---
 
-## 3. Connect Claude Desktop (stdio)
+## 3. Configure Claude Desktop (stdio MCP)
 
-Claude Desktop prefers a local process. From the repo root:
+Claude Desktop prefers a **local process**. Cursor’s HTTP JSON will not work there. Point Claude at `mcp/server.mjs`, which forwards JSON-RPC to `POST /api/mcp`.
 
-```bash
-node mcp/server.mjs
+### Steps
+
+1. Install [Claude Desktop](https://claude.ai/download) and Node.js 20+
+2. Create a write-enabled token in **Admin → MCP / AI**
+3. Open Claude’s config file (create it if missing):
+
+| OS | Path |
+|----|------|
+| Windows | `%APPDATA%\Claude\claude_desktop_config.json` (`C:\Users\<you>\AppData\Roaming\Claude\claude_desktop_config.json`) |
+| macOS | `~/Library/Application Support/Claude/claude_desktop_config.json` |
+
+4. Paste this JSON. Fix the `args` path if LinkNest is not at `C:\xampp\htdocs\linknest`, and replace the token:
+
+```json
+{
+  "mcpServers": {
+    "linknest": {
+      "command": "node",
+      "args": ["C:/xampp/htdocs/linknest/mcp/server.mjs"],
+      "env": {
+        "LINKNEST_URL": "http://localhost/linknest",
+        "LINKNEST_TOKEN": "lnmcp_YOUR_TOKEN"
+      }
+    }
+  }
+}
 ```
+
+5. Fully quit Claude Desktop (tray icon too) and reopen it
+6. In a chat, click the **tools / MCP** indicator and confirm **linknest** is connected
+7. Ask Claude the same prompts as in section 4
 
 | Variable | Required | Meaning |
 |----------|----------|---------|
-| `LINKNEST_URL` | yes | App origin including folder, e.g. `http://localhost/linknest` |
-| `LINKNEST_TOKEN` | yes | Token from Admin → MCP / AI |
-| `LINKNEST_INSECURE_TLS` | no | Set to `1` for self-signed HTTPS |
+| `LINKNEST_URL` | yes | App origin **including folder**, no trailing slash — e.g. `http://localhost/linknest` |
+| `LINKNEST_TOKEN` | yes | Token from Admin → MCP / AI (`lnmcp_…`) |
+| `LINKNEST_INSECURE_TLS` | no | Set to `1` only for self-signed HTTPS |
 
-Example: `mcp/claude_desktop_config.example.json`
+From the repo you can also run `node mcp/server.mjs` or `npm run mcp` (same env vars) to test the adapter.
 
-`npm run mcp` runs the same adapter (still needs the env vars).
+Repo example: `mcp/claude_desktop_config.example.json`
 
 ---
 
-## 4. Ask the LLM to create a space with links
+## 4. Example: create a space with a bunch of links
 
-In Cursor Agent or Claude, describe the space and list the URLs. Be specific about category, tabs, and sections.
+In **Cursor Agent** or **Claude Desktop**, paste a prompt like this (after MCP is green):
 
-Example prompt:
+```
+Create a LinkNest space titled Helpdesk Tools in category BUSINESS IT SERVICES, visibility public, emoji 🎫.
 
-> Create a LinkNest space titled **Helpdesk Tools** in category **BUSINESS IT SERVICES**, visibility public.  
-> Add these links:  
-> - ServiceNow — https://servicenow.example.com (tab Production, section Portals)  
-> - Hub — https://hub.example.com (tab Production, section Portals)  
-> - PAM — https://pam.example.com (tab Production, section Security)
+Add these links:
+- ServiceNow — https://servicenow.adventhealth.com/now/sdw/home (tab Production, section Portals)
+- Hub — https://hub.adventhealth.com/ (tab Production, section Portals)
+- PAM — https://pam.adventhealth.com/webconsole/login (tab Production, section Security)
+```
 
 The model should call `create_space` with a `links` array. If you omit tab/section, new links go in **General / Links**.
 
-Follow-ups:
+What the tool call looks like:
+
+```json
+{
+  "name": "create_space",
+  "arguments": {
+    "title": "Helpdesk Tools",
+    "emoji": "🎫",
+    "group": "BUSINESS IT SERVICES",
+    "visibility": "public",
+    "links": [
+      {
+        "label": "ServiceNow",
+        "url": "https://servicenow.adventhealth.com/now/sdw/home",
+        "tab": "Production",
+        "section": "Portals"
+      },
+      {
+        "label": "Hub",
+        "url": "https://hub.adventhealth.com/",
+        "tab": "Production",
+        "section": "Portals"
+      },
+      {
+        "label": "PAM",
+        "url": "https://pam.adventhealth.com/webconsole/login",
+        "tab": "Production",
+        "section": "Security"
+      }
+    ]
+  }
+}
+```
+
+Refresh the LinkNest home grid (or reload the page) to see the new tile.
+
+### Follow-up prompts
 
 - “Add this URL to Helpdesk Tools under tab Production, section Portals.”
 - “Search my spaces for Workday, then add this QA URL to that space.”
 - “Summarize the links in PeopleSoft ERP.”
-
-Refresh the LinkNest home grid (or reload the page) to see the new tile.
+- “List categories, then list spaces in BUSINESS IT SERVICES.”
 
 ---
 

@@ -426,17 +426,62 @@ export const HelpAboutDialog: React.FC<HelpAboutDialogProps> = ({
                 <div className="space-y-3 text-slate-700 dark:text-slate-300">
                   <p className="text-sm">
                     {appName} exposes a Model Context Protocol (MCP) server so Cursor, Claude Desktop, and other LLM clients can list spaces, search links, and create or edit bookmarks using the same permissions as the token’s user.
-                    Full guide: <strong>Guides → MCP / AI</strong>. Admins create tokens in <strong>Admin → MCP / AI</strong>.
+                    Create a write-enabled token in <strong>Admin → MCP / AI</strong>, then wire the client as below. Full walkthrough: <strong>Guides → MCP / AI</strong>.
                   </p>
-                  <div className="bg-brand-50 dark:bg-brand-900/20 rounded-lg p-4 space-y-2">
-                    <p className="font-medium text-brand-900 dark:text-brand-100">Create a space with a bunch of links:</p>
+                  <div className="bg-sky-50 dark:bg-sky-900/20 rounded-lg p-4 space-y-2 border border-sky-200 dark:border-sky-800">
+                    <p className="font-medium text-sky-900 dark:text-sky-100">Configure Cursor (HTTP)</p>
                     <ol className="list-decimal list-inside space-y-1 ml-2 text-sm">
-                      <li>Admin → MCP / AI → create a token with <strong>write</strong> enabled (copy it once)</li>
-                      <li>Paste the Cursor HTTP snippet into Cursor Settings → MCP (keep Apache running)</li>
-                      <li>Confirm <strong>linknest</strong> is green, then open a <strong>new Agent chat</strong></li>
-                      <li>Ask in plain language, for example: “Create a space titled Helpdesk Tools in category BUSINESS IT SERVICES. Add ServiceNow, Hub, and PAM with these URLs…”</li>
-                      <li>Refresh the home grid to see the new tile</li>
+                      <li>Keep Apache running so <code className="text-xs bg-white dark:bg-slate-800 px-1 rounded">http://localhost/linknest</code> loads</li>
+                      <li>Cursor <strong>Settings → MCP</strong> → add / edit <code className="text-xs bg-white dark:bg-slate-800 px-1 rounded">mcp.json</code></li>
+                      <li>Global file: <code className="text-xs bg-white dark:bg-slate-800 px-1 rounded">C:\Users\&lt;you&gt;\.cursor\mcp.json</code> (merge into existing <code className="text-xs">mcpServers</code>; do not wipe other servers)</li>
+                      <li>Save, wait for <strong>linknest</strong> to turn green, then open a <strong>new Agent chat</strong></li>
                     </ol>
+                    <pre className="mt-2 p-2 text-[11px] font-mono bg-white dark:bg-slate-900 rounded border border-sky-200 dark:border-sky-800 overflow-x-auto whitespace-pre">{`{
+  "mcpServers": {
+    "linknest": {
+      "url": "http://localhost/linknest/api/mcp",
+      "headers": {
+        "Authorization": "Bearer lnmcp_YOUR_TOKEN"
+      }
+    }
+  }
+}`}</pre>
+                  </div>
+                  <div className="bg-violet-50 dark:bg-violet-900/20 rounded-lg p-4 space-y-2 border border-violet-200 dark:border-violet-800">
+                    <p className="font-medium text-violet-900 dark:text-violet-100">Configure Claude Desktop (stdio)</p>
+                    <ol className="list-decimal list-inside space-y-1 ml-2 text-sm">
+                      <li>Edit <code className="text-xs bg-white dark:bg-slate-800 px-1 rounded">%APPDATA%\Claude\claude_desktop_config.json</code></li>
+                      <li>Point <code className="text-xs">args</code> at this install’s <code className="text-xs">mcp/server.mjs</code> and set <code className="text-xs">LINKNEST_URL</code> + <code className="text-xs">LINKNEST_TOKEN</code></li>
+                      <li>Quit Claude completely (tray icon too) and reopen; confirm <strong>linknest</strong> in the MCP tools list</li>
+                    </ol>
+                    <pre className="mt-2 p-2 text-[11px] font-mono bg-white dark:bg-slate-900 rounded border border-violet-200 dark:border-violet-800 overflow-x-auto whitespace-pre">{`{
+  "mcpServers": {
+    "linknest": {
+      "command": "node",
+      "args": ["C:/xampp/htdocs/linknest/mcp/server.mjs"],
+      "env": {
+        "LINKNEST_URL": "http://localhost/linknest",
+        "LINKNEST_TOKEN": "lnmcp_YOUR_TOKEN"
+      }
+    }
+  }
+}`}</pre>
+                    <p className="text-xs text-violet-800 dark:text-violet-200">
+                      Cursor uses HTTP. Claude Desktop uses this stdio adapter — do not paste the Cursor JSON into Claude, or the Claude JSON into Cursor.
+                    </p>
+                  </div>
+                  <div className="bg-brand-50 dark:bg-brand-900/20 rounded-lg p-4 space-y-2">
+                    <p className="font-medium text-brand-900 dark:text-brand-100">Example prompt (create a space with links)</p>
+                    <p className="text-sm">Paste this into a new Cursor Agent or Claude chat after MCP is connected:</p>
+                    <pre className="p-2 text-[11px] font-mono bg-white dark:bg-slate-900 rounded border border-brand-200 dark:border-brand-800 overflow-x-auto whitespace-pre-wrap">{`Create a LinkNest space titled Helpdesk Tools in category BUSINESS IT SERVICES, visibility public, emoji 🎫.
+
+Add these links:
+- ServiceNow — https://servicenow.adventhealth.com/now/sdw/home (tab Production, section Portals)
+- Hub — https://hub.adventhealth.com/ (tab Production, section Portals)
+- PAM — https://pam.adventhealth.com/webconsole/login (tab Production, section Security)`}</pre>
+                    <p className="text-sm">
+                      The model should call <code className="text-xs bg-white dark:bg-slate-800 px-1 rounded">create_space</code> with a <code className="text-xs">links</code> array. Refresh the home grid to see the tile. More prompts and the exact tool JSON: <strong>Guides → MCP / AI</strong>.
+                    </p>
                   </div>
                   <div className="bg-slate-50 dark:bg-slate-900/50 rounded-lg p-4 space-y-2">
                     <p className="font-medium text-slate-900 dark:text-white">What the LLM can call</p>
