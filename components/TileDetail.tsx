@@ -82,6 +82,25 @@ const isViewLayoutMode = (value: string | null | undefined): value is ViewLayout
 
 const sectionLinkLayoutsStorageKey = (tileId: string) => `linknest_section_link_layouts_${tileId}`;
 const GENERAL_SETTINGS_EXPANDED_KEY = 'linknest_edit_general_settings_expanded';
+const EDIT_LINK_PLAIN_COLORS_KEY = 'linknest_edit_link_plain_colors';
+
+const readEditLinkPlainColors = (): boolean => {
+    try {
+        return localStorage.getItem(EDIT_LINK_PLAIN_COLORS_KEY) === '1';
+    } catch {
+        return false;
+    }
+};
+
+const writeEditLinkPlainColors = (plain: boolean): void => {
+    try {
+        localStorage.setItem(EDIT_LINK_PLAIN_COLORS_KEY, plain ? '1' : '0');
+    } catch {
+        // ignore quota / private mode
+    }
+};
+
+const LINK_EDIT_NEUTRAL_CARD = 'border-slate-300 dark:border-slate-600 bg-slate-50 dark:bg-slate-900/50';
 
 const readGeneralSettingsExpanded = (): boolean => {
     try {
@@ -308,12 +327,20 @@ const LinkEditSection: React.FC<{
     subtitle?: string;
     accent?: LinkEditSectionAccent;
     defaultOpen?: boolean;
+    foldNonce?: number;
+    foldOpen?: boolean;
+    plain?: boolean;
     badge?: React.ReactNode;
     headerAction?: React.ReactNode;
     children: React.ReactNode;
-}> = ({ emoji, title, subtitle, accent = 'slate', defaultOpen = false, badge, headerAction, children }) => {
+}> = ({ emoji, title, subtitle, accent = 'slate', defaultOpen = false, foldNonce, foldOpen, plain = false, badge, headerAction, children }) => {
     const [open, setOpen] = useState(defaultOpen);
-    const styles = LINK_EDIT_SECTION_ACCENTS[accent];
+    const styles = LINK_EDIT_SECTION_ACCENTS[plain ? 'slate' : accent];
+
+    useEffect(() => {
+        if (!foldNonce) return;
+        setOpen(!!foldOpen);
+    }, [foldNonce, foldOpen]);
 
     return (
         <div className={`rounded-xl border-2 overflow-hidden shadow-sm ${styles.border}`}>
@@ -1093,6 +1120,8 @@ export const TileDetail: React.FC<TileDetailProps> = ({
 
     // State for Editing Links (keyed by link ID)
     const [editingLinkId, setEditingLinkId] = useState<string | null>(null);
+    const [editLinkPlainColors, setEditLinkPlainColors] = useState<Record<string, boolean>>({});
+    const [editLinkSectionFold, setEditLinkSectionFold] = useState<{ nonce: number; open: boolean }>({ nonce: 0, open: true });
     const [convertLinkDialog, setConvertLinkDialog] = useState<{ tabId: string; sectionId: string; link: Link } | null>(null);
     const [convertingLinkToTile, setConvertingLinkToTile] = useState(false);
     const [convertTabSectionDialog, setConvertTabSectionDialog] = useState<
@@ -4242,6 +4271,7 @@ export const TileDetail: React.FC<TileDetailProps> = ({
 
     const handleStartEditLink = (link: Link) => {
         setEditingLinkId(link.id);
+        setEditLinkSectionFold({ nonce: 0, open: true });
         setEditLinkState({
             [link.id]: {
                 label: link.label,
@@ -9750,11 +9780,15 @@ export const TileDetail: React.FC<TileDetailProps> = ({
                                                                                     ? link.label.toLowerCase().includes(linkSearchTerm.toLowerCase())
                                                                                     : true;
                                                                                 const isHovered = hoveredLinkId === link.id;
+                                                                                const editLinkPlain = editLinkPlainColors[link.id] ?? readEditLinkPlainColors();
 
                                                                                 return editingLinkId === link.id ? (
                                                                                     // Edit Mode — organized & collapsible
-                                                                                    <div key={link.id} className="bg-gradient-to-br from-white via-slate-50 to-brand-50/40 dark:from-slate-800 dark:via-slate-800 dark:to-slate-900 border-2 border-brand-500 dark:border-brand-500/50 rounded-xl p-4 shadow-lg space-y-3">
-                                                                                        <div className="flex items-center justify-between gap-2 pb-1">
+                                                                                    <div key={link.id} className={`${editLinkPlain
+                                                                                        ? 'bg-white dark:bg-slate-800 border-2 border-slate-300 dark:border-slate-600'
+                                                                                        : 'bg-gradient-to-br from-white via-slate-50 to-brand-50/40 dark:from-slate-800 dark:via-slate-800 dark:to-slate-900 border-2 border-brand-500 dark:border-brand-500/50'
+                                                                                    } rounded-xl p-4 shadow-lg space-y-3`}>
+                                                                                        <div className="flex items-center justify-between gap-2 pb-1 flex-wrap">
                                                                                             <div className="flex items-center gap-2 min-w-0">
                                                                                                 <span className="text-xl shrink-0" aria-hidden>✏️</span>
                                                                                                 <div className="min-w-0">
@@ -9764,7 +9798,43 @@ export const TileDetail: React.FC<TileDetailProps> = ({
                                                                                                     </p>
                                                                                                 </div>
                                                                                             </div>
-                                                                                            <div className="flex items-center gap-2 shrink-0">
+                                                                                            <div className="flex items-center gap-2 shrink-0 flex-wrap justify-end">
+                                                                                                <div className="flex items-center gap-1.5 pr-2 mr-0.5 border-r border-slate-200 dark:border-slate-600">
+                                                                                                    <button
+                                                                                                        type="button"
+                                                                                                        onClick={() => setEditLinkSectionFold((prev) => ({ nonce: prev.nonce + 1, open: false }))}
+                                                                                                        className="px-2.5 py-2 text-xs font-medium text-slate-600 dark:text-slate-300 hover:text-slate-900 dark:hover:text-white hover:bg-slate-100 dark:hover:bg-slate-700 rounded-lg border border-slate-200 dark:border-slate-600 transition-all"
+                                                                                                        title="Collapse all sections"
+                                                                                                    >
+                                                                                                        Collapse all
+                                                                                                    </button>
+                                                                                                    <button
+                                                                                                        type="button"
+                                                                                                        onClick={() => setEditLinkSectionFold((prev) => ({ nonce: prev.nonce + 1, open: true }))}
+                                                                                                        className="px-2.5 py-2 text-xs font-medium text-slate-600 dark:text-slate-300 hover:text-slate-900 dark:hover:text-white hover:bg-slate-100 dark:hover:bg-slate-700 rounded-lg border border-slate-200 dark:border-slate-600 transition-all"
+                                                                                                        title="Expand all sections"
+                                                                                                    >
+                                                                                                        Expand all
+                                                                                                    </button>
+                                                                                                </div>
+                                                                                                <div className="flex items-center gap-1.5 pr-2 mr-0.5 border-r border-slate-200 dark:border-slate-600">
+                                                                                                    <span className="text-[11px] font-medium text-slate-600 dark:text-slate-300 whitespace-nowrap">Colors</span>
+                                                                                                    <button
+                                                                                                        type="button"
+                                                                                                        role="switch"
+                                                                                                        aria-checked={!editLinkPlain}
+                                                                                                        aria-label={editLinkPlain ? 'Turn section colors on' : 'Turn section colors off'}
+                                                                                                        title={editLinkPlain ? 'Show section colors' : 'Hide section colors'}
+                                                                                                        onClick={() => {
+                                                                                                            const nextPlain = !editLinkPlain;
+                                                                                                            setEditLinkPlainColors((prev) => ({ ...prev, [link.id]: nextPlain }));
+                                                                                                            writeEditLinkPlainColors(nextPlain);
+                                                                                                        }}
+                                                                                                        className={`relative inline-flex h-7 w-12 shrink-0 items-center rounded-full transition-colors ${editLinkPlain ? 'bg-slate-400 dark:bg-slate-600' : 'bg-brand-600'}`}
+                                                                                                    >
+                                                                                                        <span className={`inline-block h-5 w-5 transform rounded-full bg-white shadow transition-transform ${editLinkPlain ? 'translate-x-1' : 'translate-x-6'}`} />
+                                                                                                    </button>
+                                                                                                </div>
                                                                                                 <button
                                                                                                     type="button"
                                                                                                     onClick={handleCancelEditLink}
@@ -9790,9 +9860,11 @@ export const TileDetail: React.FC<TileDetailProps> = ({
                                                                                         <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
                                                                                             {user?.is_admin && (
                                                                                                 <div className={`flex items-center justify-between gap-3 p-3.5 rounded-xl border-2 ${
-                                                                                                    (editLinkState[link.id]?.published !== false)
-                                                                                                        ? 'border-emerald-300 dark:border-emerald-700 bg-emerald-50 dark:bg-emerald-950/40'
-                                                                                                        : 'border-slate-300 dark:border-slate-600 bg-slate-100 dark:bg-slate-900/60'
+                                                                                                    editLinkPlain
+                                                                                                        ? LINK_EDIT_NEUTRAL_CARD
+                                                                                                        : (editLinkState[link.id]?.published !== false)
+                                                                                                            ? 'border-emerald-300 dark:border-emerald-700 bg-emerald-50 dark:bg-emerald-950/40'
+                                                                                                            : 'border-slate-300 dark:border-slate-600 bg-slate-100 dark:bg-slate-900/60'
                                                                                                 }`}>
                                                                                                     <div className="flex items-center gap-2.5 min-w-0">
                                                                                                         <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg bg-white/80 dark:bg-slate-800 text-lg shadow-sm" aria-hidden>
@@ -9801,7 +9873,7 @@ export const TileDetail: React.FC<TileDetailProps> = ({
                                                                                                         <div className="min-w-0">
                                                                                                             <div className="text-[10px] font-semibold uppercase tracking-wider text-slate-500 dark:text-slate-400">Publish</div>
                                                                                                             <div className={`text-sm font-semibold ${
-                                                                                                                (editLinkState[link.id]?.published !== false)
+                                                                                                                !editLinkPlain && (editLinkState[link.id]?.published !== false)
                                                                                                                     ? 'text-emerald-700 dark:text-emerald-300'
                                                                                                                     : 'text-slate-600 dark:text-slate-300'
                                                                                                             }`}>
@@ -9814,18 +9886,20 @@ export const TileDetail: React.FC<TileDetailProps> = ({
                                                                                                         role="switch"
                                                                                                         aria-checked={editLinkState[link.id]?.published !== false}
                                                                                                         onClick={() => updateEditLinkState(link.id, 'published', editLinkState[link.id]?.published === false)}
-                                                                                                        className={`relative inline-flex h-7 w-12 shrink-0 items-center rounded-full transition-colors ${(editLinkState[link.id]?.published !== false) ? 'bg-emerald-500' : 'bg-slate-400 dark:bg-slate-600'}`}
+                                                                                                        className={`relative inline-flex h-7 w-12 shrink-0 items-center rounded-full transition-colors ${(editLinkState[link.id]?.published !== false) ? (editLinkPlain ? 'bg-slate-600' : 'bg-emerald-500') : 'bg-slate-400 dark:bg-slate-600'}`}
                                                                                                     >
                                                                                                         <span className={`inline-block h-5 w-5 transform rounded-full bg-white shadow transition-transform ${(editLinkState[link.id]?.published !== false) ? 'translate-x-6' : 'translate-x-1'}`} />
                                                                                                     </button>
                                                                                                 </div>
                                                                                             )}
                                                                                             <div className={`p-3.5 rounded-xl border-2 ${
-                                                                                                editLinkState[link.id]?.visibility === 'private'
-                                                                                                    ? 'border-rose-300 dark:border-rose-800 bg-rose-50 dark:bg-rose-950/30'
-                                                                                                    : editLinkState[link.id]?.visibility === 'authenticated'
-                                                                                                        ? 'border-amber-300 dark:border-amber-800 bg-amber-50 dark:bg-amber-950/30'
-                                                                                                        : 'border-sky-300 dark:border-sky-800 bg-sky-50 dark:bg-sky-950/30'
+                                                                                                editLinkPlain
+                                                                                                    ? LINK_EDIT_NEUTRAL_CARD
+                                                                                                    : editLinkState[link.id]?.visibility === 'private'
+                                                                                                        ? 'border-rose-300 dark:border-rose-800 bg-rose-50 dark:bg-rose-950/30'
+                                                                                                        : editLinkState[link.id]?.visibility === 'authenticated'
+                                                                                                            ? 'border-amber-300 dark:border-amber-800 bg-amber-50 dark:bg-amber-950/30'
+                                                                                                            : 'border-sky-300 dark:border-sky-800 bg-sky-50 dark:bg-sky-950/30'
                                                                                             } ${!user?.is_admin ? 'sm:col-span-2' : ''}`}>
                                                                                                 <div className="flex items-center gap-2.5 mb-2">
                                                                                                     <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg bg-white/80 dark:bg-slate-800 text-lg shadow-sm" aria-hidden>
@@ -9850,8 +9924,14 @@ export const TileDetail: React.FC<TileDetailProps> = ({
 
                                                                                         {/* Private access pickers */}
                                                                                         {editLinkState[link.id]?.visibility === 'private' && (
-                                                                                            <div className="p-3.5 bg-rose-50/80 dark:bg-rose-950/20 rounded-xl border-2 border-rose-200 dark:border-rose-800/60 space-y-3">
-                                                                                                <div className="flex items-center gap-2 text-sm font-semibold text-rose-800 dark:text-rose-200">
+                                                                                            <div className={`p-3.5 rounded-xl border-2 space-y-3 ${
+                                                                                                editLinkPlain
+                                                                                                    ? LINK_EDIT_NEUTRAL_CARD
+                                                                                                    : 'bg-rose-50/80 dark:bg-rose-950/20 border-rose-200 dark:border-rose-800/60'
+                                                                                            }`}>
+                                                                                                <div className={`flex items-center gap-2 text-sm font-semibold ${
+                                                                                                    editLinkPlain ? 'text-slate-800 dark:text-slate-200' : 'text-rose-800 dark:text-rose-200'
+                                                                                                }`}>
                                                                                                     <span aria-hidden>👥</span>
                                                                                                     Allowed users & groups
                                                                                                 </div>
@@ -10008,9 +10088,11 @@ export const TileDetail: React.FC<TileDetailProps> = ({
                                                                                         )}
 
                                                                                         <div className={`flex items-center justify-between gap-3 p-3.5 rounded-xl border-2 ${
-                                                                                            (editLinkState[link.id]?.inheritShortUrls !== false)
-                                                                                                ? 'border-orange-300 dark:border-orange-800 bg-orange-50 dark:bg-orange-950/30'
-                                                                                                : 'border-slate-300 dark:border-slate-600 bg-slate-100 dark:bg-slate-900/60'
+                                                                                            editLinkPlain
+                                                                                                ? LINK_EDIT_NEUTRAL_CARD
+                                                                                                : (editLinkState[link.id]?.inheritShortUrls !== false)
+                                                                                                    ? 'border-orange-300 dark:border-orange-800 bg-orange-50 dark:bg-orange-950/30'
+                                                                                                    : 'border-slate-300 dark:border-slate-600 bg-slate-100 dark:bg-slate-900/60'
                                                                                         }`}>
                                                                                             <div className="min-w-0">
                                                                                                 <div className="text-[10px] font-semibold uppercase tracking-wider text-slate-500 dark:text-slate-400">Short URLs</div>
@@ -10023,7 +10105,7 @@ export const TileDetail: React.FC<TileDetailProps> = ({
                                                                                                 role="switch"
                                                                                                 aria-checked={editLinkState[link.id]?.inheritShortUrls !== false}
                                                                                                 onClick={() => updateEditLinkState(link.id, 'inheritShortUrls', editLinkState[link.id]?.inheritShortUrls === false)}
-                                                                                                className={`relative inline-flex h-7 w-12 shrink-0 items-center rounded-full transition-colors ${(editLinkState[link.id]?.inheritShortUrls !== false) ? 'bg-orange-500' : 'bg-slate-400 dark:bg-slate-600'}`}
+                                                                                                className={`relative inline-flex h-7 w-12 shrink-0 items-center rounded-full transition-colors ${(editLinkState[link.id]?.inheritShortUrls !== false) ? (editLinkPlain ? 'bg-slate-600' : 'bg-orange-500') : 'bg-slate-400 dark:bg-slate-600'}`}
                                                                                                 title="On: inherit short URLs from the section/tab/space. Off: show the original URL."
                                                                                             >
                                                                                                 <span className={`inline-block h-5 w-5 transform rounded-full bg-white shadow transition-transform ${(editLinkState[link.id]?.inheritShortUrls !== false) ? 'translate-x-6' : 'translate-x-1'}`} />
@@ -10037,6 +10119,9 @@ export const TileDetail: React.FC<TileDetailProps> = ({
                                                                                             subtitle="Label, URL, emoji & color"
                                                                                             accent="sky"
                                                                                             defaultOpen
+                                                                                            foldNonce={editLinkSectionFold.nonce}
+                                                                                            foldOpen={editLinkSectionFold.open}
+                                                                                            plain={editLinkPlain}
                                                                                         >
                                                                                             <LinkLabelField
                                                                                                 key={link.id}
@@ -10126,16 +10211,23 @@ export const TileDetail: React.FC<TileDetailProps> = ({
                                                                                             subtitle="Owner info, support details, hover text"
                                                                                             accent="amber"
                                                                                             defaultOpen={!!(editLinkState[link.id]?.notesEnabled || hasVisibleRichText(editLinkState[link.id]?.notes) || hasVisibleRichText(editLinkState[link.id]?.tooltip) || hasVisibleRichText(link.notes) || hasVisibleRichText(link.tooltip))}
+                                                                                            foldNonce={editLinkSectionFold.nonce}
+                                                                                            foldOpen={editLinkSectionFold.open}
+                                                                                            plain={editLinkPlain}
                                                                                             badge={
                                                                                                 (editLinkState[link.id]?.notesEnabled ?? isNotesTooltipEnabled(link)) ? (
-                                                                                                    <span className="text-[10px] px-2 py-0.5 rounded-full bg-amber-200/80 dark:bg-amber-800/50 text-amber-800 dark:text-amber-200 font-medium shrink-0">On</span>
+                                                                                                    <span className={`text-[10px] px-2 py-0.5 rounded-full font-medium shrink-0 ${
+                                                                                                        editLinkPlain
+                                                                                                            ? 'bg-slate-200 dark:bg-slate-700 text-slate-700 dark:text-slate-200'
+                                                                                                            : 'bg-amber-200/80 dark:bg-amber-800/50 text-amber-800 dark:text-amber-200'
+                                                                                                    }`}>On</span>
                                                                                                 ) : undefined
                                                                                             }
                                                                                             headerAction={
                                                                                                 <LinkEditHeaderSwitch
                                                                                                     enabled={!!(editLinkState[link.id]?.notesEnabled ?? isNotesTooltipEnabled(link))}
                                                                                                     onToggle={() => updateEditLinkState(link.id, 'notesEnabled', !(editLinkState[link.id]?.notesEnabled ?? isNotesTooltipEnabled(link)))}
-                                                                                                    onClassName="bg-amber-500"
+                                                                                                    onClassName={editLinkPlain ? 'bg-slate-600' : 'bg-amber-500'}
                                                                                                     labelOn="Disable notes and tooltip"
                                                                                                     labelOff="Enable notes and tooltip"
                                                                                                 />
@@ -10183,16 +10275,23 @@ export const TileDetail: React.FC<TileDetailProps> = ({
                                                                                             subtitle="Rich text dialog instead of opening the URL"
                                                                                             accent="violet"
                                                                                             defaultOpen={!!(editLinkState[link.id]?.richTextEnabled || editLinkState[link.id]?.richTextContent || link.richTextContent)}
+                                                                                            foldNonce={editLinkSectionFold.nonce}
+                                                                                            foldOpen={editLinkSectionFold.open}
+                                                                                            plain={editLinkPlain}
                                                                                             badge={
                                                                                                 (editLinkState[link.id]?.richTextEnabled ?? isInfoContentEnabled(link)) ? (
-                                                                                                    <span className="text-[10px] px-2 py-0.5 rounded-full bg-violet-200/80 dark:bg-violet-800/50 text-violet-800 dark:text-violet-200 font-medium shrink-0">On</span>
+                                                                                                    <span className={`text-[10px] px-2 py-0.5 rounded-full font-medium shrink-0 ${
+                                                                                                        editLinkPlain
+                                                                                                            ? 'bg-slate-200 dark:bg-slate-700 text-slate-700 dark:text-slate-200'
+                                                                                                            : 'bg-violet-200/80 dark:bg-violet-800/50 text-violet-800 dark:text-violet-200'
+                                                                                                    }`}>On</span>
                                                                                                 ) : undefined
                                                                                             }
                                                                                             headerAction={
                                                                                                 <LinkEditHeaderSwitch
                                                                                                     enabled={!!(editLinkState[link.id]?.richTextEnabled ?? isInfoContentEnabled(link))}
                                                                                                     onToggle={() => updateEditLinkState(link.id, 'richTextEnabled', !(editLinkState[link.id]?.richTextEnabled ?? isInfoContentEnabled(link)))}
-                                                                                                    onClassName="bg-violet-500"
+                                                                                                    onClassName={editLinkPlain ? 'bg-slate-600' : 'bg-violet-500'}
                                                                                                     labelOn="Disable information content"
                                                                                                     labelOff="Enable information content"
                                                                                                 />
@@ -10236,7 +10335,9 @@ export const TileDetail: React.FC<TileDetailProps> = ({
                                                                                                             }
                                                                                                         });
                                                                                                     }}
-                                                                                                    className="px-3 py-1 text-xs bg-amber-500 hover:bg-amber-600 text-white rounded-lg font-medium transition-colors shrink-0"
+                                                                                                    className={`px-3 py-1 text-xs text-white rounded-lg font-medium transition-colors shrink-0 ${
+                                                                                                        editLinkPlain ? 'bg-slate-600 hover:bg-slate-500' : 'bg-amber-500 hover:bg-amber-600'
+                                                                                                    }`}
                                                                                                 >
                                                                                                     Demo Fill
                                                                                                 </button>
@@ -10284,16 +10385,25 @@ export const TileDetail: React.FC<TileDetailProps> = ({
                                                                                             subtitle="Show a maintenance dialog instead of opening the URL"
                                                                                             accent="amber"
                                                                                             defaultOpen={!!(editLinkState[link.id]?.maintenanceEnabled || editLinkState[link.id]?.maintenanceMessage || editLinkState[link.id]?.maintenanceVideoUrl)}
+                                                                                            foldNonce={editLinkSectionFold.nonce}
+                                                                                            foldOpen={editLinkSectionFold.open}
+                                                                                            plain={editLinkPlain}
                                                                                             badge={
                                                                                                 editLinkState[link.id]?.maintenanceEnabled ? (
-                                                                                                    <span className="text-[10px] px-2 py-0.5 rounded-full bg-amber-200/80 dark:bg-amber-800/50 text-amber-800 dark:text-amber-200 font-medium shrink-0">On</span>
+                                                                                                    <span className={`text-[10px] px-2 py-0.5 rounded-full font-medium shrink-0 ${
+                                                                                                        editLinkPlain
+                                                                                                            ? 'bg-slate-200 dark:bg-slate-700 text-slate-700 dark:text-slate-200'
+                                                                                                            : 'bg-amber-200/80 dark:bg-amber-800/50 text-amber-800 dark:text-amber-200'
+                                                                                                    }`}>On</span>
                                                                                                 ) : undefined
                                                                                             }
                                                                                         >
                                                                                             <div className={`flex items-center justify-between gap-3 p-3.5 rounded-xl border-2 ${
-                                                                                                editLinkState[link.id]?.maintenanceEnabled
-                                                                                                    ? 'border-amber-300 dark:border-amber-700 bg-amber-50 dark:bg-amber-950/40'
-                                                                                                    : 'border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-900/50'
+                                                                                                editLinkPlain
+                                                                                                    ? LINK_EDIT_NEUTRAL_CARD
+                                                                                                    : editLinkState[link.id]?.maintenanceEnabled
+                                                                                                        ? 'border-amber-300 dark:border-amber-700 bg-amber-50 dark:bg-amber-950/40'
+                                                                                                        : 'border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-900/50'
                                                                                             }`}>
                                                                                                 <div>
                                                                                                     <div className="text-xs font-semibold uppercase tracking-wider text-slate-600 dark:text-slate-400">Maintenance window</div>
@@ -10306,7 +10416,7 @@ export const TileDetail: React.FC<TileDetailProps> = ({
                                                                                                     role="switch"
                                                                                                     aria-checked={!!editLinkState[link.id]?.maintenanceEnabled}
                                                                                                     onClick={() => updateEditLinkState(link.id, 'maintenanceEnabled', !editLinkState[link.id]?.maintenanceEnabled)}
-                                                                                                    className={`relative inline-flex h-7 w-12 shrink-0 items-center rounded-full transition-colors ${editLinkState[link.id]?.maintenanceEnabled ? 'bg-amber-500' : 'bg-slate-400 dark:bg-slate-600'}`}
+                                                                                                    className={`relative inline-flex h-7 w-12 shrink-0 items-center rounded-full transition-colors ${editLinkState[link.id]?.maintenanceEnabled ? (editLinkPlain ? 'bg-slate-600' : 'bg-amber-500') : 'bg-slate-400 dark:bg-slate-600'}`}
                                                                                                 >
                                                                                                     <span className={`inline-block h-5 w-5 transform rounded-full bg-white shadow transition-transform ${editLinkState[link.id]?.maintenanceEnabled ? 'translate-x-6' : 'translate-x-1'}`} />
                                                                                                 </button>
@@ -10333,6 +10443,9 @@ export const TileDetail: React.FC<TileDetailProps> = ({
                                                                                             subtitle="Browser target & entrance animation"
                                                                                             accent="slate"
                                                                                             defaultOpen={false}
+                                                                                            foldNonce={editLinkSectionFold.nonce}
+                                                                                            foldOpen={editLinkSectionFold.open}
+                                                                                            plain={editLinkPlain}
                                                                                         >
                                                                                             {settings.browser_specific_links_enabled === '1' && (user?.is_admin || tile.canChangeBrowser === true) && (
                                                                                                 <div>
@@ -10403,6 +10516,9 @@ export const TileDetail: React.FC<TileDetailProps> = ({
                                                                                             subtitle="Optional extra gate when opening this link"
                                                                                             accent="slate"
                                                                                             defaultOpen={hasAccessRestrictions(editLinkState[link.id]?.accessRestrictions)}
+                                                                                            foldNonce={editLinkSectionFold.nonce}
+                                                                                            foldOpen={editLinkSectionFold.open}
+                                                                                            plain={editLinkPlain}
                                                                                             badge={<AccessRestrictionsBadge rules={editLinkState[link.id]?.accessRestrictions} />}
                                                                                         >
                                                                                             <AccessRestrictionsEditor
