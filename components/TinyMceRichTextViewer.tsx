@@ -70,13 +70,20 @@ export const TinyMceRichTextViewer: React.FC<TinyMceRichTextViewerProps> = ({
       )}
       <iframe
         ref={iframeRef}
-        title="Rich text viewer"
+        title="TinyMCE viewer"
         src={iframeSrc}
         className={`h-full w-full min-h-0 border-0 bg-transparent ${ready ? 'opacity-100' : 'opacity-0'}`}
         onLoad={() => {
           postToViewer({ type: 'set', html: htmlRef.current });
         }}
       />
+      <span
+        className="pointer-events-none absolute bottom-2 right-2 z-10 rounded-md border border-slate-200/90 bg-white/90 px-1.5 py-0.5 text-[10px] font-semibold uppercase tracking-wide text-slate-500 shadow-sm dark:border-slate-600/90 dark:bg-slate-800/90 dark:text-slate-400"
+        title="Rendered with TinyMCE (same engine as the editor)"
+        aria-label="TinyMCE viewer"
+      >
+        TinyMCE viewer
+      </span>
     </div>
   );
 };
