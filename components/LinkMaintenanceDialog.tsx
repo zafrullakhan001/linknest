@@ -3,6 +3,7 @@ import { createPortal } from 'react-dom';
 import { linkifyHtml } from '../utils/richTextDisplay';
 import { toSpeakableText, useReadAloud } from '../hooks/useReadAloud';
 import { ReadAloudButtons, ReadAloudVoiceSelect } from './ReadAloudControls';
+import { TinyMceRichTextViewer } from './TinyMceRichTextViewer';
 
 interface LinkMaintenanceDialogProps {
   isOpen: boolean;
@@ -106,22 +107,21 @@ export const LinkMaintenanceDialog: React.FC<LinkMaintenanceDialogProps> = ({
             <ReadAloudVoiceSelect readAloud={readAloud} id="link-maintenance-voice" theme="amber" />
           </div>
 
-          <div className="flex-1 overflow-y-auto bg-slate-50 dark:bg-slate-900/50 px-5 py-4 space-y-4">
+          <div className={`flex-1 min-h-0 flex flex-col bg-slate-50 dark:bg-slate-900/50 ${hasVideo ? 'overflow-y-auto' : 'overflow-hidden'}`}>
             {hasVideo && (
               <video
                 src={maintenanceVideoUrl}
                 controls
                 playsInline
-                className="w-full max-h-72 rounded-lg bg-black"
+                className="w-full max-h-72 rounded-lg bg-black shrink-0 mx-auto mt-4 px-5"
               />
             )}
             {hasMessage ? (
-              <div
-                className="link-info-viewer ln-tinymce-content text-slate-700 dark:text-slate-200"
-                dangerouslySetInnerHTML={{ __html: displayHtml }}
-              />
+              <div className={hasVideo ? 'min-h-[220px] h-[280px] shrink-0 mt-3' : 'flex-1 min-h-0'}>
+                <TinyMceRichTextViewer html={displayHtml} onEscape={onClose} />
+              </div>
             ) : (
-              <p className="text-sm text-slate-600 dark:text-slate-300">
+              <p className="text-sm text-slate-600 dark:text-slate-300 px-5 py-4">
                 {DEFAULT_MAINTENANCE_TEXT}
               </p>
             )}

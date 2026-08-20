@@ -3,6 +3,7 @@ import { createPortal } from 'react-dom';
 import { linkifyHtml, looksLikeHtml, stripHtmlToPlainText, hasVisibleRichText } from '../utils/richTextDisplay';
 import { toSpeakableText, useReadAloud } from '../hooks/useReadAloud';
 import { ReadAloudButtons, ReadAloudVoiceSelect } from './ReadAloudControls';
+import { TinyMceRichTextViewer } from './TinyMceRichTextViewer';
 
 interface LinkNotesDialogProps {
   isOpen: boolean;
@@ -383,13 +384,10 @@ export const LinkNotesDialog: React.FC<LinkNotesDialogProps> = ({
           <ReadAloudVoiceSelect readAloud={readAloud} id="link-notes-voice" theme="slate" />
         </div>
 
-        {/* Body — document-style like Info click */}
-        <div className="flex-1 overflow-y-auto px-5 py-4 bg-slate-50 dark:bg-slate-900/50">
+        {/* Body — TinyMCE viewer, same engine as the editor */}
+        <div className="flex-1 overflow-hidden min-h-0 bg-slate-50 dark:bg-slate-900/50">
           {displayHtml ? (
-            <div
-              className="link-notes-viewer ln-tinymce-content text-slate-700 dark:text-slate-200"
-              dangerouslySetInnerHTML={{ __html: displayHtml }}
-            />
+            <TinyMceRichTextViewer html={displayHtml} onEscape={onClose} />
           ) : (
             <div className="h-full min-h-[120px] flex flex-col items-center justify-center text-center gap-2 text-slate-400">
               <p className="text-sm">No notes for this link yet.</p>

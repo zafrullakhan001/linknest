@@ -8,6 +8,7 @@ import { linkifyHtml } from '../utils/richTextDisplay';
 import { useAccessRestrictionGate } from '../contexts/AccessRestrictionContext';
 import { toSpeakableText, useReadAloud } from '../hooks/useReadAloud';
 import { ReadAloudButtons, ReadAloudVoiceSelect } from './ReadAloudControls';
+import { TinyMceRichTextViewer } from './TinyMceRichTextViewer';
 
 interface LinkInfoDialogProps {
   isOpen: boolean;
@@ -332,12 +333,9 @@ export const LinkInfoDialog: React.FC<LinkInfoDialogProps> = ({
         </div>
 
         {/* Content */}
-        <div className="flex-1 overflow-y-auto bg-slate-50 dark:bg-slate-900/50 px-5 py-4">
+        <div className="flex-1 overflow-hidden min-h-0 bg-slate-50 dark:bg-slate-900/50">
           {displayHtml ? (
-            <div
-              className="link-info-viewer ln-tinymce-content text-slate-700 dark:text-slate-200"
-              dangerouslySetInnerHTML={{ __html: displayHtml }}
-            />
+            <TinyMceRichTextViewer html={displayHtml} onEscape={onClose} />
           ) : (
             <div className="h-full min-h-[120px] flex items-center justify-center text-sm text-slate-400">
               No information available for this link.

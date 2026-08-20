@@ -10,6 +10,16 @@
     body { background: #fff; }
     body.dark { background: #0f172a; }
     #wrap { height: 100%; box-sizing: border-box; padding: 8px; }
+    body.view { background: #f8fafc; }
+    body.view.dark { background: #0f172a; }
+    body.view #wrap { padding: 0; }
+    body.view .tox-tinymce { border: none !important; height: 100% !important; }
+    body.view .tox-editor-header,
+    body.view .tox-statusbar { display: none !important; }
+    body.view .tox-edit-area { border: none !important; }
+    body.view .tox-sidebar-wrap,
+    body.view .tox-edit-area,
+    body.view .tox-edit-area__iframe { height: 100% !important; }
     .error { font-family: system-ui, sans-serif; padding: 16px; color: #b91c1c; }
   </style>
   <!-- Keep in sync with utils/richTextFonts.ts -->
@@ -24,7 +34,10 @@
       var MSG = 'linknest-tinymce';
       var params = new URLSearchParams(location.search);
       var dark = params.get('dark') === '1';
+      var viewMode = params.get('mode') === 'view';
+      var iframeMode = viewMode ? 'view' : 'edit';
       if (dark) document.body.classList.add('dark');
+      if (viewMode) document.body.classList.add('view');
 
       function tinymceUiOpen() {
         return !!(
@@ -35,13 +48,23 @@
         );
       }
 
+      function postToParent(type, extra) {
+        var payload = { source: MSG, type: type, mode: iframeMode };
+        if (extra) {
+          Object.keys(extra).forEach(function (key) {
+            payload[key] = extra[key];
+          });
+        }
+        window.parent.postMessage(payload, '*');
+      }
+
       function requestClose() {
-        window.parent.postMessage({ source: MSG, type: 'close' }, '*');
+        postToParent(viewMode ? 'escape' : 'close');
       }
 
       document.addEventListener('keydown', function (e) {
         if (e.key !== 'Escape' && e.key !== 'Esc') return;
-        if (tinymceUiOpen()) return;
+        if (!viewMode && tinymceUiOpen()) return;
         e.preventDefault();
         e.stopPropagation();
         requestClose();
@@ -129,50 +152,66 @@
           document.body.innerHTML = '<p class="error">TinyMCE loaded but window.tinymce is missing.</p>';
           return;
         }
-        window.tinymce.init({
+        var contentStyle =
+          '@import url("' + googleFontsHref + '"); ' +
+          'body { font-family: Georgia, "Times New Roman", Times, serif; font-size: 16px; line-height: 1.5; } ' +
+          (viewMode ? 'body { padding: 16px 20px; } ' : '') +
+          'body.mce-content-body li.ln-li-space, body.mce-content-body li.ln-li-space-1, body.mce-content-body li[data-ln-space="1"] { margin-bottom: 1em !important; } ' +
+          'body.mce-content-body li.ln-li-space-2, body.mce-content-body li[data-ln-space="2"] { margin-bottom: 2em !important; } ' +
+          'body.mce-content-body li.ln-li-space-3, body.mce-content-body li[data-ln-space="3"] { margin-bottom: 3em !important; } ' +
+          'body.mce-content-body li.ln-li-space-4, body.mce-content-body li[data-ln-space="4"] { margin-bottom: 4em !important; } ' +
+          'body.mce-content-body li.ln-li-space-5, body.mce-content-body li[data-ln-space="5"] { margin-bottom: 5em !important; }';
+        var initConfig = {
           selector: '#editor',
           license_key: 'gpl',
           base_url: tinymceBase,
           suffix: '.min',
           height: '100%',
-          menubar: 'edit insert view format table tools help',
           branding: false,
           promotion: false,
           plugins:
             'accordion advlist anchor autolink autosave charmap code codesample directionality ' +
             'emoticons help image importcss insertdatetime link lists media nonbreaking pagebreak ' +
             'preview quickbars searchreplace table visualblocks visualchars wordcount',
-          toolbar_mode: 'wrap',
-          toolbar: [
-            'undo redo | bold italic underline strikethrough | alignleft aligncenter alignright alignjustify | lineheight | listitemspace | styles | blocks fontfamily fontsize | searchreplace',
-            'bullist numlist listitemspace accordion | outdent indent | link unlink anchor image | code | forecolor backcolor | table | subscript superscript',
-            'charmap emoticons media hr ltr rtl | pastetext | visualchars visualblocks nonbreaking blockquote | preview codesample insertdatetime pagebreak removeformat | help'
-          ],
-          quickbars_selection_toolbar: 'bold italic underline | quicklink h2 h3 blockquote',
-          quickbars_insert_toolbar: 'quickimage quicktable hr',
-          contextmenu: 'link image table',
           skin: dark ? 'oxide-dark' : 'oxide',
           content_css: dark ? 'dark' : 'default',
           font_css: googleFontsHref,
           font_family_formats: fontFamilyFormats,
-          content_style:
-            '@import url("' + googleFontsHref + '"); ' +
-            'body { font-family: Georgia, "Times New Roman", Times, serif; font-size: 16px; line-height: 1.5; } ' +
-            'body.mce-content-body li.ln-li-space, body.mce-content-body li.ln-li-space-1, body.mce-content-body li[data-ln-space="1"] { margin-bottom: 1em !important; } ' +
-            'body.mce-content-body li.ln-li-space-2, body.mce-content-body li[data-ln-space="2"] { margin-bottom: 2em !important; } ' +
-            'body.mce-content-body li.ln-li-space-3, body.mce-content-body li[data-ln-space="3"] { margin-bottom: 3em !important; } ' +
-            'body.mce-content-body li.ln-li-space-4, body.mce-content-body li[data-ln-space="4"] { margin-bottom: 4em !important; } ' +
-            'body.mce-content-body li.ln-li-space-5, body.mce-content-body li[data-ln-space="5"] { margin-bottom: 5em !important; }',
+          content_style: contentStyle,
           convert_urls: false,
           relative_urls: false,
-          browser_spellcheck: true,
+          browser_spellcheck: !viewMode,
           resize: false,
           image_advtab: true,
           table_use_colgroups: true,
           extended_valid_elements: '+li[data-ln-space|class|style]',
-          setup: function (editor) {
+          highlight_on_focus: !viewMode,
+          object_resizing: !viewMode
+        };
+        if (viewMode) {
+          initConfig.readonly = true;
+          initConfig.menubar = false;
+          initConfig.toolbar = false;
+          initConfig.statusbar = false;
+          initConfig.quickbars_selection_toolbar = false;
+          initConfig.quickbars_insert_toolbar = false;
+          initConfig.contextmenu = false;
+        } else {
+          initConfig.menubar = 'edit insert view format table tools help';
+          initConfig.toolbar_mode = 'wrap';
+          initConfig.toolbar = [
+            'undo redo | bold italic underline strikethrough | alignleft aligncenter alignright alignjustify | lineheight | listitemspace | styles | blocks fontfamily fontsize | searchreplace',
+            'bullist numlist listitemspace accordion | outdent indent | link unlink anchor image | code | forecolor backcolor | table | subscript superscript',
+            'charmap emoticons media hr ltr rtl | pastetext | visualchars visualblocks nonbreaking blockquote | preview codesample insertdatetime pagebreak removeformat | help'
+          ];
+          initConfig.quickbars_selection_toolbar = 'bold italic underline | quicklink h2 h3 blockquote';
+          initConfig.quickbars_insert_toolbar = 'quickimage quicktable hr';
+          initConfig.contextmenu = 'link image table';
+        }
+        initConfig.setup = function (editor) {
             var emit = function () {
-              window.parent.postMessage({ source: MSG, type: 'change', html: editor.getContent() }, '*');
+              if (viewMode) return;
+              postToParent('change', { html: editor.getContent() });
             };
             var LI_SPACE_LEGACY = 'ln-li-space';
             var currentListItem = function () {
@@ -237,32 +276,55 @@
               }
               return items;
             };
-            editor.ui.registry.addMenuButton('listitemspace', {
-              tooltip: 'Space after list item',
-              text: 'List space',
-              icon: 'line-height',
-              fetch: function (callback) {
-                callback(listSpaceMenuItems());
-              },
-              onSetup: function (api) {
-                var update = function () {
-                  api.setEnabled(!!currentListItem());
-                };
-                editor.on('NodeChange', update);
-                update();
-                return function () {
-                  editor.off('NodeChange', update);
-                };
-              }
-            });
+            if (!viewMode) {
+              editor.ui.registry.addMenuButton('listitemspace', {
+                tooltip: 'Space after list item',
+                text: 'List space',
+                icon: 'line-height',
+                fetch: function (callback) {
+                  callback(listSpaceMenuItems());
+                },
+                onSetup: function (api) {
+                  var update = function () {
+                    api.setEnabled(!!currentListItem());
+                  };
+                  editor.on('NodeChange', update);
+                  update();
+                  return function () {
+                    editor.off('NodeChange', update);
+                  };
+                }
+              });
+              editor.on('change input undo redo KeyUp', emit);
+            } else {
+              editor.on('click', function (e) {
+                var target = e.target;
+                if (editor.dom.getParent(target, 'summary, details, button, [data-mce-accordion]')) return;
+                var anchor = editor.dom.getParent(target, 'a');
+                if (!anchor) return;
+                var href = editor.dom.getAttrib(anchor, 'href') || anchor.href || '';
+                if (!href || /^\s*javascript:/i.test(href)) return;
+                e.preventDefault();
+                e.stopPropagation();
+                if (/^(mailto:|tel:)/i.test(href)) {
+                  window.open(href, '_blank');
+                  return;
+                }
+                if (/^https?:/i.test(href)) {
+                  window.open(href, '_blank', 'noopener,noreferrer');
+                }
+              });
+            }
             editor.on('SetContent', syncListItemSpacesFromMarkup);
             editor.on('init', function () {
-              window.parent.postMessage({ source: MSG, type: 'ready' }, '*');
+              if (viewMode && editor.mode && typeof editor.mode.set === 'function') {
+                editor.mode.set('readonly');
+              }
+              postToParent('ready');
             });
-            editor.on('change input undo redo KeyUp', emit);
-          }
-        });
-      };
+          };
+          window.tinymce.init(initConfig);
+        };
       document.head.appendChild(script);
 
       window.addEventListener('message', function (e) {
@@ -273,7 +335,7 @@
           ed.setContent(e.data.html || '');
         }
         if (e.data.type === 'get') {
-          window.parent.postMessage({ source: MSG, type: 'content', html: ed.getContent() }, '*');
+          postToParent('content', { html: ed.getContent() });
         }
       });
     })();

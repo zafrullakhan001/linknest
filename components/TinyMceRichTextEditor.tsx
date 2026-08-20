@@ -42,7 +42,7 @@ export const TinyMceRichTextEditor: React.FC<TinyMceRichTextEditorProps> = ({
   const iframeSrc = useMemo(() => {
     const base = (import.meta.env.BASE_URL || '/').replace(/\/?$/, '/');
     const dark = typeof document !== 'undefined' && document.documentElement.classList.contains('dark');
-    return `${base}tinymce-editor.html?v=fonts1&dark=${dark ? '1' : '0'}`;
+    return `${base}tinymce-editor.html?v=view1&dark=${dark ? '1' : '0'}`;
   }, []);
 
   const postToEditor = useCallback((payload: Record<string, unknown>) => {
@@ -53,6 +53,7 @@ export const TinyMceRichTextEditor: React.FC<TinyMceRichTextEditorProps> = ({
     const onMessage = (e: MessageEvent) => {
       if (e.origin !== window.location.origin) return;
       if (!e.data || e.data.source !== MSG) return;
+      if (e.data.mode === 'view') return;
       if (e.data.type === 'ready') {
         readyRef.current = true;
         postToEditor({ type: 'set', html: htmlRef.current });
