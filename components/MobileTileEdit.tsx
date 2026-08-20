@@ -9,6 +9,7 @@ import { LinkMaintenanceBadge } from './LinkMaintenanceBadge';
 import { TitleEmojiPicker } from './TitleEmojiPicker';
 import { HierarchyExpandControls } from './TileHierarchyViews';
 import { AccessRestrictionsEditor } from './AccessRestrictionsEditor';
+import { SectionEditActionToolbar, TabEditActionToolbar, type HierarchyToolbarHandlers } from './EditHierarchyToolbar';
 import { hasVisibleRichText } from '../utils/richTextDisplay';
 import { isInfoContentEnabled, isNotesTooltipEnabled } from '../utils/linkFeatureToggles';
 
@@ -46,6 +47,7 @@ interface MobileTileEditProps {
     settings?: Partial<AppSettings>;
     availableBrowsers?: string[];
     user?: User | null;
+    hierarchyToolbar?: HierarchyToolbarHandlers;
 }
 
 /**
@@ -90,7 +92,8 @@ export const MobileTileEdit: React.FC<MobileTileEditProps> = ({
     setShowTileUserSelector,
     settings = {},
     availableBrowsers = [],
-    user
+    user,
+    hierarchyToolbar
 }) => {
     const [activeSection, setActiveSection] = useState<string | null>(null);
     const [editingIntro, setEditingIntro] = useState(false);
@@ -207,6 +210,20 @@ export const MobileTileEdit: React.FC<MobileTileEditProps> = ({
         );
         onTabsChange(updatedTabs);
         setExpandedSections(prev => new Set(prev).add(newSection.id));
+    };
+
+    const updateTab = (tabId: string, patch: Partial<Tab>) => {
+        onTabsChange(editTabs.map((t) => (t.id === tabId ? { ...t, ...patch } : t)));
+    };
+
+    const updateSection = (tabId: string, sectionId: string, patch: Partial<LinkSection>) => {
+        onTabsChange(editTabs.map((t) => {
+            if (t.id !== tabId) return t;
+            return {
+                ...t,
+                sections: (t.sections || []).map((s) => (s.id === sectionId ? { ...s, ...patch } : s))
+            };
+        }));
     };
 
     const handleAddLink = (tabId: string, sectionId: string) => {
@@ -617,7 +634,7 @@ export const MobileTileEdit: React.FC<MobileTileEditProps> = ({
     return (
         <div className="mobile-tile-edit min-h-screen bg-slate-50 dark:bg-slate-900 pb-20">
             {/* Sticky Header */}
-            <div className="sticky top-0 z-50 bg-white dark:bg-slate-800 border-b border-slate-200 dark:border-slate-700 shadow-sm">
+            <div className="sticky top-0 z-40 bg-white dark:bg-slate-800 border-b border-slate-200 dark:border-slate-700 shadow-sm">
                 <div className="px-4 py-3">
                     <div className="flex items-center justify-between mb-3">
                         <h1 className="text-xl font-bold text-slate-900 dark:text-white">Edit Page</h1>
@@ -986,40 +1003,56 @@ export const MobileTileEdit: React.FC<MobileTileEditProps> = ({
                         {filteredTabs.map((tab, tabIndex) => (
                             <div key={tab.id} className="border-b border-slate-200 dark:border-slate-700 last:border-b-0">
                                 {/* Tab Header */}
-                                <button
-                                    onClick={() => toggleTab(tab.id)}
-                                    className="w-full px-4 py-3 flex items-center justify-between text-left active:bg-slate-50 dark:active:bg-slate-800 touch-manipulation"
-                                    style={{ minHeight: '44px' }}
-                                >
-                                    <div className="flex items-center gap-3">
-                                        <span className="w-8 h-8 rounded-full bg-brand-100 dark:bg-brand-900/30 text-brand-600 dark:text-brand-400 text-xs font-bold flex items-center justify-center">
+                                <div className="bg-white dark:bg-slate-800">
+                                    <div className="px-4 py-2 flex items-center gap-2">
+                                        <button
+                                            type="button"
+                                            onClick={() => toggleTab(tab.id)}
+                                            className="shrink-0 p-2 rounded-lg text-slate-400 hover:text-slate-600 dark:hover:text-slate-300 active:bg-slate-50 dark:active:bg-slate-800 touch-manipulation"
+                                            style={{ minHeight: '44px', minWidth: '44px' }}
+                                            title={expandedTabs.has(tab.id) ? 'Collapse tab' : 'Expand tab'}
+                                            aria-expanded={expandedTabs.has(tab.id)}
+                                        >
+                                            <svg
+                                                xmlns="http://www.w3.org/2000/svg"
+                                                fill="none"
+                                                viewBox="0 0 24 24"
+                                                strokeWidth={2}
+                                                stroke="currentColor"
+                                                className={`w-5 h-5 transition-transform ${expandedTabs.has(tab.id) ? 'rotate-180' : ''}`}
+                                            >
+                                                <path strokeLinecap="round" strokeLinejoin="round" d="M19.5 8.25l-7.5 7.5-7.5-7.5" />
+                                            </svg>
+                                        </button>
+                                        <span className="w-8 h-8 rounded-full bg-brand-100 dark:bg-brand-900/30 text-brand-600 dark:text-brand-400 text-xs font-bold flex items-center justify-center shrink-0">
                                             {tabIndex + 1}
                                         </span>
-                                        <span onClick={(e) => e.stopPropagation()}>
-                                            <TitleEmojiPicker
-                                                value={tab.emoji || ''}
-                                                onChange={(emoji) => {
-                                                    onTabsChange(editTabs.map(t => t.id === tab.id ? { ...t, emoji: emoji.trim() || undefined } : t));
-                                                }}
-                                                size="sm"
-                                                title="Tab emoji"
-                                            />
-                                        </span>
-                                        <span className="font-semibold text-slate-900 dark:text-white">
-                                            {tab.title || 'Untitled Tab'}
-                                        </span>
+                                        <TitleEmojiPicker
+                                            value={tab.emoji || ''}
+                                            onChange={(emoji) => updateTab(tab.id, { emoji: emoji.trim() || undefined })}
+                                            size="sm"
+                                            title="Tab emoji"
+                                        />
+                                        <input
+                                            type="text"
+                                            value={tab.title}
+                                            onChange={(e) => updateTab(tab.id, { title: e.target.value })}
+                                            placeholder="Tab title"
+                                            className="flex-1 min-w-0 bg-transparent border-none font-semibold text-slate-900 dark:text-white focus:ring-0 placeholder-slate-400 py-2"
+                                            style={{ minHeight: '44px' }}
+                                        />
                                     </div>
-                                    <svg
-                                        xmlns="http://www.w3.org/2000/svg"
-                                        fill="none"
-                                        viewBox="0 0 24 24"
-                                        strokeWidth={2}
-                                        stroke="currentColor"
-                                        className={`w-5 h-5 text-slate-400 transition-transform ${expandedTabs.has(tab.id) ? 'rotate-180' : ''}`}
-                                    >
-                                        <path strokeLinecap="round" strokeLinejoin="round" d="M19.5 8.25l-7.5 7.5-7.5-7.5" />
-                                    </svg>
-                                </button>
+                                    {hierarchyToolbar && (
+                                        <TabEditActionToolbar
+                                            tab={tab}
+                                            tabCount={editTabs.length}
+                                            isAdmin={!!user?.is_admin}
+                                            handlers={hierarchyToolbar}
+                                            onInheritShortUrls={(inherit) => updateTab(tab.id, { inheritShortUrls: inherit })}
+                                            onColorChange={(color) => updateTab(tab.id, { textColor: color && color.trim() ? color : undefined })}
+                                        />
+                                    )}
+                                </div>
 
                                 {/* Tab Content */}
                                 {expandedTabs.has(tab.id) && (
@@ -1037,37 +1070,55 @@ export const MobileTileEdit: React.FC<MobileTileEditProps> = ({
                                         {tab.sections?.map((section, sectionIndex) => (
                                             <div key={section.id} className="bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-lg overflow-hidden">
                                                 {/* Section Header */}
-                                                <button
-                                                    onClick={() => toggleSection(section.id)}
-                                                    className="w-full px-3 py-2 flex items-center justify-between text-left active:bg-slate-50 dark:active:bg-slate-700 touch-manipulation"
-                                                    style={{ minHeight: '44px' }}
-                                                >
-                                                    <span className="text-sm font-medium text-slate-900 dark:text-white flex items-center gap-2">
-                                                        <span onClick={(e) => e.stopPropagation()}>
-                                                            <TitleEmojiPicker
-                                                                value={section.emoji || ''}
-                                                                onChange={(emoji) => {
-                                                                    onTabsChange(editTabs.map(t => t.id === tab.id
-                                                                        ? { ...t, sections: (t.sections || []).map(s => s.id === section.id ? { ...s, emoji: emoji.trim() || undefined } : s) }
-                                                                        : t));
-                                                                }}
-                                                                size="sm"
-                                                                title="Section emoji"
-                                                            />
-                                                        </span>
-                                                        #{sectionIndex + 1} {section.title || 'Untitled Section'}
-                                                    </span>
-                                                    <svg
-                                                        xmlns="http://www.w3.org/2000/svg"
-                                                        fill="none"
-                                                        viewBox="0 0 24 24"
-                                                        strokeWidth={2}
-                                                        stroke="currentColor"
-                                                        className={`w-4 h-4 text-slate-400 transition-transform ${expandedSections.has(section.id) ? 'rotate-180' : ''}`}
-                                                    >
-                                                        <path strokeLinecap="round" strokeLinejoin="round" d="M19.5 8.25l-7.5 7.5-7.5-7.5" />
-                                                    </svg>
-                                                </button>
+                                                <div>
+                                                    <div className="px-3 py-1.5 flex items-center gap-2">
+                                                        <button
+                                                            type="button"
+                                                            onClick={() => toggleSection(section.id)}
+                                                            className="shrink-0 p-2 rounded-lg text-slate-400 hover:text-slate-600 dark:hover:text-slate-300 active:bg-slate-50 dark:active:bg-slate-700 touch-manipulation"
+                                                            style={{ minHeight: '44px', minWidth: '44px' }}
+                                                            title={expandedSections.has(section.id) ? 'Collapse section' : 'Expand section'}
+                                                            aria-expanded={expandedSections.has(section.id)}
+                                                        >
+                                                            <svg
+                                                                xmlns="http://www.w3.org/2000/svg"
+                                                                fill="none"
+                                                                viewBox="0 0 24 24"
+                                                                strokeWidth={2}
+                                                                stroke="currentColor"
+                                                                className={`w-4 h-4 transition-transform ${expandedSections.has(section.id) ? 'rotate-180' : ''}`}
+                                                            >
+                                                                <path strokeLinecap="round" strokeLinejoin="round" d="M19.5 8.25l-7.5 7.5-7.5-7.5" />
+                                                            </svg>
+                                                        </button>
+                                                        <TitleEmojiPicker
+                                                            value={section.emoji || ''}
+                                                            onChange={(emoji) => updateSection(tab.id, section.id, { emoji: emoji.trim() || undefined })}
+                                                            size="sm"
+                                                            title="Section emoji"
+                                                        />
+                                                        <span className="text-xs font-mono text-slate-400 shrink-0">#{sectionIndex + 1}</span>
+                                                        <input
+                                                            type="text"
+                                                            value={section.title}
+                                                            onChange={(e) => updateSection(tab.id, section.id, { title: e.target.value })}
+                                                            placeholder="Section title"
+                                                            className="flex-1 min-w-0 bg-transparent border-none text-sm font-medium text-slate-900 dark:text-white focus:ring-0 placeholder-slate-400 py-2"
+                                                            style={{ minHeight: '44px' }}
+                                                        />
+                                                    </div>
+                                                    {hierarchyToolbar && (
+                                                        <SectionEditActionToolbar
+                                                            tab={tab}
+                                                            section={section}
+                                                            isAdmin={!!user?.is_admin}
+                                                            handlers={hierarchyToolbar}
+                                                            onInheritShortUrls={(inherit) => updateSection(tab.id, section.id, { inheritShortUrls: inherit })}
+                                                            onColorChange={(color) => updateSection(tab.id, section.id, { textColor: color && color.trim() ? color : undefined })}
+                                                            onForceStackedChange={(value) => updateSection(tab.id, section.id, { forceStackedView: value })}
+                                                        />
+                                                    )}
+                                                </div>
 
                                                 {/* Section Content */}
                                                 {expandedSections.has(section.id) && (

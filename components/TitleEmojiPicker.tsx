@@ -26,7 +26,7 @@ export const TitleEmojiPicker: React.FC<TitleEmojiPickerProps> = ({
         ref={btnRef}
         type="button"
         onClick={() => setOpen((v) => !v)}
-        className={`${btnSize} rounded-lg border-2 flex items-center justify-center transition-all ${
+        className={`ln-icon-btn ${btnSize} p-0 appearance-none rounded-lg border-2 flex items-center justify-center transition-all ${
           emoji
             ? 'bg-white dark:bg-slate-800 border-slate-200 dark:border-slate-600 hover:border-brand-400'
             : 'bg-slate-50 dark:bg-slate-900/50 border-dashed border-slate-300 dark:border-slate-600 hover:border-brand-400 text-slate-400'
@@ -45,7 +45,7 @@ export const TitleEmojiPicker: React.FC<TitleEmojiPickerProps> = ({
             onChange('');
             setOpen(false);
           }}
-          className="absolute -top-1.5 -right-1.5 w-4 h-4 rounded-full bg-slate-500 hover:bg-red-500 text-white text-[10px] leading-none flex items-center justify-center z-10"
+          className="ln-icon-btn absolute -top-1 -right-1 w-3.5 h-3.5 p-0 appearance-none min-h-0 min-w-0 rounded-full bg-slate-500 hover:bg-red-500 text-white text-[9px] leading-none flex items-center justify-center z-10"
           title="Clear emoji"
         >
           ×

@@ -7801,55 +7801,76 @@ export const TileDetail: React.FC<TileDetailProps> = ({
 
     // EDIT MODE - Only show if user has edit permission
     if (isEditing && tile.canEdit) {
-        // Use mobile-optimized edit page on mobile devices
-        if (isMobile) {
-            return (
-                <MobileTileEdit
-                    tile={tile}
-                    editTitle={editTitle}
-                    editDesc={editDesc}
-                    editHtml={editHtml}
-                    editEmoji={editEmoji}
-                    editColor={editColor}
-                    editVisibility={editVisibility}
-                    editPublished={editPublished}
-                    editAllowedUsers={editAllowedUsers}
-                    editAccessRestrictions={editAccessRestrictions}
-                    editTabs={editTabs}
-                    onTitleChange={setEditTitle}
-                    onDescChange={setEditDesc}
-                    onHtmlChange={setEditHtml}
-                    onEmojiChange={setEditEmoji}
-                    onColorChange={setEditColor}
-                    onVisibilityChange={setEditVisibility}
-                    onPublishedChange={setEditPublished}
-                    onAllowedUsersChange={setEditAllowedUsers}
-                    onAccessRestrictionsChange={setEditAccessRestrictions}
-                    onTabsChange={setEditTabs}
-                    onSave={(tabs) => handleSaveChanges(tabs)}
-                    onCancel={() => {
-                        const confirmed = window.confirm('Are you sure you want to cancel? All unsaved changes will be lost.');
-                        if (confirmed) {
-                            setEditingMode(false);
-                        }
-                    }}
-                    isAuthenticated={isAuthenticated}
-                    usersList={usersList}
-                    loadingUsers={loadingUsers}
-                    showEmojiPicker={showEmojiPicker}
-                    setShowEmojiPicker={setShowEmojiPicker}
-                    showTileUserSelector={showTileUserSelector}
-                    setShowTileUserSelector={setShowTileUserSelector}
-                    settings={settings}
-                    availableBrowsers={availableBrowsers}
-                    user={user}
-                />
-            );
-        }
+        const hierarchyToolbar = {
+            showShortUrls,
+            canRecycleShortUrl,
+            canConvert: tile.canEdit === true,
+            canDeleteTabs: tile.canDeleteTabs !== false && (tile.canDeleteTabs !== undefined || tile.canEdit),
+            canDeleteSections: tile.canDeleteSections !== false && (tile.canDeleteSections !== undefined || tile.canEdit),
+            shortOf: (type: 'tab' | 'section', id: string, current?: string) => shortOf(type, id, current),
+            onRecycledShortUrl: (type: 'tab' | 'section', id: string, shortUrl: string) => applyRecycledShortUrl(type, id, shortUrl),
+            onConvertTabToSpace: openConvertTabToSpaceDialog,
+            onConvertSectionToSpace: openConvertSectionToSpaceDialog,
+            onCloneTab: handleCloneTab,
+            onCloneSection: handleCloneSection,
+            onRemoveTab: handleRemoveTab,
+            onRemoveSection: handleRemoveSection,
+            onImportTab: openTabJsonImport,
+            onImportSection: openSectionLinksImport,
+            onScheduleTab: (tabId: string) => setSchedulingDialogTab(tabId),
+            onScheduleSection: (tabId: string, sectionId: string) => setSchedulingDialogSection({ tabId, sectionId }),
+            onVisibilityTab: (tabId: string) => setVisibilityDialogTab(tabId),
+            onVisibilitySection: (tabId: string, sectionId: string) => setVisibilityDialogSection({ tabId, sectionId }),
+            onRestrictionsTab: (tabId: string) => setRestrictionsDialogTab(tabId),
+            importingSectionLinks,
+        };
 
-        // Desktop edit mode
         return (
             <>
+                {isMobile && (
+                    <MobileTileEdit
+                        tile={tile}
+                        editTitle={editTitle}
+                        editDesc={editDesc}
+                        editHtml={editHtml}
+                        editEmoji={editEmoji}
+                        editColor={editColor}
+                        editVisibility={editVisibility}
+                        editPublished={editPublished}
+                        editAllowedUsers={editAllowedUsers}
+                        editAccessRestrictions={editAccessRestrictions}
+                        editTabs={editTabs}
+                        onTitleChange={setEditTitle}
+                        onDescChange={setEditDesc}
+                        onHtmlChange={setEditHtml}
+                        onEmojiChange={setEditEmoji}
+                        onColorChange={setEditColor}
+                        onVisibilityChange={setEditVisibility}
+                        onPublishedChange={setEditPublished}
+                        onAllowedUsersChange={setEditAllowedUsers}
+                        onAccessRestrictionsChange={setEditAccessRestrictions}
+                        onTabsChange={setEditTabs}
+                        onSave={(tabs) => handleSaveChanges(tabs)}
+                        onCancel={() => {
+                            const confirmed = window.confirm('Are you sure you want to cancel? All unsaved changes will be lost.');
+                            if (confirmed) {
+                                setEditingMode(false);
+                            }
+                        }}
+                        isAuthenticated={isAuthenticated}
+                        usersList={usersList}
+                        loadingUsers={loadingUsers}
+                        showEmojiPicker={showEmojiPicker}
+                        setShowEmojiPicker={setShowEmojiPicker}
+                        showTileUserSelector={showTileUserSelector}
+                        setShowTileUserSelector={setShowTileUserSelector}
+                        settings={settings}
+                        availableBrowsers={availableBrowsers}
+                        user={user}
+                        hierarchyToolbar={hierarchyToolbar}
+                    />
+                )}
+                {!isMobile && (
                 <div className="animate-in fade-in zoom-in duration-300 w-full">
                     {/* Enhanced Header */}
                     <div className="bg-gradient-to-r from-slate-50 to-white dark:from-slate-900 dark:to-slate-800 border-b border-slate-200 dark:border-slate-700 -mx-6 px-6 py-5 mb-8 rounded-b-xl shadow-sm">
@@ -8975,22 +8996,6 @@ export const TileDetail: React.FC<TileDetailProps> = ({
                             )}
 
                             <div className="space-y-6">
-                                <input
-                                    ref={sectionLinksImportInputRef}
-                                    type="file"
-                                    accept=".json,.csv,application/json,text/csv"
-                                    className="hidden"
-                                    aria-hidden={true}
-                                    onChange={handleSectionLinksImportFile}
-                                />
-                                <input
-                                    ref={tabJsonInputRef}
-                                    type="file"
-                                    accept=".json,application/json"
-                                    className="hidden"
-                                    aria-hidden={true}
-                                    onChange={handleTabJsonFile}
-                                />
                                 {/* Render tabs if available, otherwise fall back to sections (backward compatibility) */}
                                 {editTabs.length > 0 ? (
                                     hierarchyView !== 'cards' ? (
@@ -9138,7 +9143,7 @@ export const TileDetail: React.FC<TileDetailProps> = ({
                                                         style={tab.textColor ? { color: tab.textColor } : { color: 'inherit' }}
                                                     />
                                                     </div>
-                                                    <div className="flex items-center gap-1 flex-wrap justify-end max-w-full min-w-0 [&>*]:shrink-0">
+                                                    <div className="flex items-center gap-1 flex-wrap justify-end w-full min-w-0 flex-[1_1_18rem] [&>*]:shrink-0">
                                                     {tile.canEdit && (
                                                     <button
                                                         type="button"
@@ -9393,7 +9398,7 @@ export const TileDetail: React.FC<TileDetailProps> = ({
                                                                         className="flex-1 min-w-0 bg-transparent border-none text-slate-900 dark:text-white font-semibold focus:ring-0 placeholder-slate-400"
                                                                     />
                                                                     </div>
-                                                                    <div className="flex items-center gap-1 flex-wrap justify-end max-w-full min-w-0 [&>*]:shrink-0">
+                                                                    <div className="flex items-center gap-1 flex-wrap justify-end w-full min-w-0 flex-[1_1_18rem] [&>*]:shrink-0">
                                                                     {tile.canEdit && (
                                                                     <button
                                                                         type="button"
@@ -11330,6 +11335,27 @@ export const TileDetail: React.FC<TileDetailProps> = ({
                                 )}
                             </div>
                         </div>
+                    </div>
+                </div>
+                )}
+
+                <div className="relative z-[80]">
+                <input
+                    ref={sectionLinksImportInputRef}
+                    type="file"
+                    accept=".json,.csv,application/json,text/csv"
+                    className="hidden"
+                    aria-hidden={true}
+                    onChange={handleSectionLinksImportFile}
+                />
+                <input
+                    ref={tabJsonInputRef}
+                    type="file"
+                    accept=".json,application/json"
+                    className="hidden"
+                    aria-hidden={true}
+                    onChange={handleTabJsonFile}
+                />
 
                         {/* Tab Visibility Dialog */}
                         {visibilityDialogTab && (() => {
@@ -12187,8 +12213,6 @@ export const TileDetail: React.FC<TileDetailProps> = ({
                                 </div>
                             );
                         })()}
-
-                    </div>
                 </div>
 
                 {/* Notes Preset Form Dialog */}

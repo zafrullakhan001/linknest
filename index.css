@@ -202,6 +202,13 @@ html:not(.ln-branding-ready) nav.linknest-nav {
     min-width: 44px;
   }
 
+  /* Compact icon controls (emoji clear, inline toolbars) keep their own size */
+  button.ln-icon-btn,
+  a.ln-icon-btn {
+    min-height: 0;
+    min-width: 0;
+  }
+
   /* Prevent text selection on tap */
   .mobile-tile {
     -webkit-tap-highlight-color: transparent;
