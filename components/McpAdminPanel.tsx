@@ -173,6 +173,10 @@ export const McpAdminPanel: React.FC = () => {
           <p>
             Create a token below, then paste the generated config into your LLM client. Tokens act as the selected user and obey the same space visibility and edit permissions as the web app.
           </p>
+          <p>
+            Full walkthrough (Cursor, Claude Desktop, and example prompts to create a space with links):{' '}
+            <strong>Help → Guides → MCP / AI</strong>.
+          </p>
         </div>
       </div>
 

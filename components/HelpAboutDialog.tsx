@@ -387,7 +387,7 @@ export const HelpAboutDialog: React.FC<HelpAboutDialogProps> = ({
                   <div className="bg-emerald-50 dark:bg-emerald-900/20 rounded-lg p-4 space-y-2 border border-emerald-200 dark:border-emerald-800">
                     <p className="font-medium text-emerald-900 dark:text-emerald-100">Guides tab:</p>
                     <p className="text-sm">
-                      Open the <strong>Guides</strong> tab in this dialog for searchable in-app docs (Your Bookmarks, Bookmark Sync Extension, setup, architecture, App Updates, Docker deployment &amp; database, SSH / VNC, Package for Deployment, Vanilla Apache + PHP 8.5, and more). Start with <strong>Your Bookmarks</strong> or <strong>Bookmark Sync Extension</strong> for guest bookmark Sync / OutSync, or App Updates / Docker Deployment / Architecture for admin workflows.
+                      Open the <strong>Guides</strong> tab in this dialog for searchable in-app docs (MCP / AI, Your Bookmarks, Bookmark Sync Extension, setup, architecture, App Updates, Docker deployment &amp; database, SSH / VNC, Package for Deployment, Vanilla Apache + PHP 8.5, and more). Start with <strong>MCP / AI</strong> to let Cursor or Claude create spaces and links, <strong>Your Bookmarks</strong> or <strong>Bookmark Sync Extension</strong> for guest bookmark Sync / OutSync, or App Updates / Docker Deployment / Architecture for admin workflows.
                     </p>
                   </div>
                 </div>
@@ -411,7 +411,46 @@ export const HelpAboutDialog: React.FC<HelpAboutDialogProps> = ({
                     <li><strong>Enrich:</strong> Add rich text or boxed content, scheduling, browser preferences, or visibility settings</li>
                     <li><strong>Test on mobile:</strong> Hover a Quick Link and click the phone icon to preview the URL on phone, tablet, or watch sizes</li>
                     <li><strong>Share:</strong> Use QR codes or Share with a user when you want others to open the space quickly</li>
+                    <li><strong>Or ask an LLM:</strong> Admins can create an MCP token and let Cursor or Claude create the space with a list of links — see Help → MCP / AI and <strong>Guides → MCP / AI</strong></li>
                   </ol>
+                </div>
+              </section>
+
+              <section>
+                <h3 className="text-xl font-semibold text-slate-900 dark:text-white mb-3 flex items-center gap-2">
+                  <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor" className="w-5 h-5 text-brand-600 dark:text-brand-400">
+                    <path fillRule="evenodd" d="M10.362 1.093a.75.75 0 00-.724 0L2.523 5.018 10 9.143l7.477-4.125-7.115-3.925zM18 6.443l-7.25 4v8.25l6.862-3.79A.75.75 0 0018 14.25V6.443zM9.25 18.693v-8.25l-7.25-4v7.807a.75.75 0 00.388.657l6.862 3.786z" clipRule="evenodd" />
+                  </svg>
+                  MCP / AI (talk to {appName} from an LLM)
+                </h3>
+                <div className="space-y-3 text-slate-700 dark:text-slate-300">
+                  <p className="text-sm">
+                    {appName} exposes a Model Context Protocol (MCP) server so Cursor, Claude Desktop, and other LLM clients can list spaces, search links, and create or edit bookmarks using the same permissions as the token’s user.
+                    Full guide: <strong>Guides → MCP / AI</strong>. Admins create tokens in <strong>Admin → MCP / AI</strong>.
+                  </p>
+                  <div className="bg-brand-50 dark:bg-brand-900/20 rounded-lg p-4 space-y-2">
+                    <p className="font-medium text-brand-900 dark:text-brand-100">Create a space with a bunch of links:</p>
+                    <ol className="list-decimal list-inside space-y-1 ml-2 text-sm">
+                      <li>Admin → MCP / AI → create a token with <strong>write</strong> enabled (copy it once)</li>
+                      <li>Paste the Cursor HTTP snippet into Cursor Settings → MCP (keep Apache running)</li>
+                      <li>Confirm <strong>linknest</strong> is green, then open a <strong>new Agent chat</strong></li>
+                      <li>Ask in plain language, for example: “Create a space titled Helpdesk Tools in category BUSINESS IT SERVICES. Add ServiceNow, Hub, and PAM with these URLs…”</li>
+                      <li>Refresh the home grid to see the new tile</li>
+                    </ol>
+                  </div>
+                  <div className="bg-slate-50 dark:bg-slate-900/50 rounded-lg p-4 space-y-2">
+                    <p className="font-medium text-slate-900 dark:text-white">What the LLM can call</p>
+                    <ul className="list-disc list-inside space-y-1 ml-2 text-sm">
+                      <li><strong>Read:</strong> whoami, list spaces, get one space, search links, list categories, list notes</li>
+                      <li><strong>Write</strong> (if the token allows it): create/update/delete spaces, add/update/delete links, create/update notes</li>
+                      <li>Write follows the same edit rules as the web app (owner, admin, or explicit edit permission)</li>
+                    </ul>
+                  </div>
+                  <div className="bg-amber-50 dark:bg-amber-900/20 rounded-lg p-4 border border-amber-200 dark:border-amber-800">
+                    <p className="text-sm text-amber-800 dark:text-amber-200">
+                      Treat MCP tokens like passwords. They are shown once. Revoking a token disconnects every LLM using it immediately. Do not commit tokens to git.
+                    </p>
+                  </div>
                 </div>
               </section>
 
@@ -523,6 +562,12 @@ export const HelpAboutDialog: React.FC<HelpAboutDialogProps> = ({
                     <h4 className="font-semibold text-slate-900 dark:text-white mb-2">Staging &amp; AI Offline Kit</h4>
                     <p className="text-sm text-slate-700 dark:text-slate-300">
                       Admin-only sandbox for preparing spaces before they go live. Use the AI Offline Kit to download a CSV template and prompt guide, convert CSV to JSON, and import into Staging — then Move to Public when ready. Staging content is never visible to normal users.
+                    </p>
+                  </div>
+                  <div className="bg-slate-50 dark:bg-slate-900/50 rounded-lg p-4">
+                    <h4 className="font-semibold text-slate-900 dark:text-white mb-2">MCP / AI</h4>
+                    <p className="text-sm text-slate-700 dark:text-slate-300">
+                      Connect Cursor or Claude Desktop so an LLM can list spaces, search links, and create a space with a bunch of bookmarks in one prompt. Create tokens in Admin → MCP / AI. Full guide: <strong>Guides → MCP / AI</strong>.
                     </p>
                   </div>
                   <div className="bg-slate-50 dark:bg-slate-900/50 rounded-lg p-4">
@@ -1745,6 +1790,7 @@ docker\\docker-sync-database.bat -Direction Out -HostBasePath "/ArchLinks"`}</pr
                     <li>Assign space editor privileges to people or teams with fine-tune permission control (admin only)</li>
                     <li>Manage roles and assign them to users and groups for streamlined access control (admin only)</li>
                     <li>Track tile changes with version control — view, compare, and restore versions</li>
+                    <li>Ask Cursor or Claude to create a space with a list of links after you create an MCP token — Help → MCP / AI / Guides → MCP / AI (admin)</li>
                     <li>Apply App Updates from the admin bell, with DB backup and rollback (admin, XAMPP installs). For ArchLinks + ERP3 use one portable Release — Help → In-app App Updates / Guides → App Updates</li>
                     <li>Upgrade XAMPP PHP (e.g. to 8.5) with <code className="text-xs">scripts/upgrade-xampp-php.ps1</code> — see Guides → Upgrade PHP in XAMPP (admin / server ops)</li>
                     <li>Vanilla Apache + PHP 8.5 (Windows, not XAMPP): after install, edit <code className="text-xs">D:\Apache\conf\httpd.conf</code> and <code className="text-xs">D:\php\php.ini</code> — Help → Vanilla Apache + PHP 8.5 (Windows) / Guides → Vanilla Apache + PHP 8.5 (Windows)</li>
@@ -1844,6 +1890,7 @@ docker\\docker-sync-database.bat -Direction Out -HostBasePath "/ArchLinks"`}</pr
                       <li><strong>Database Management:</strong> Export/import backups, cleanup orphaned records, duplicate-tile cleanup</li>
                       <li><strong>Space Management:</strong> Bulk import/export spaces, manage all spaces</li>
                       <li><strong>Staging:</strong> Admin sandbox with AI Offline Kit (CSV → JSON → Staging → Public)</li>
+                      <li><strong>MCP / AI:</strong> Tokens so Cursor, Claude Desktop, and other LLMs can list, search, and edit spaces and links — Help → MCP / AI / Guides → MCP / AI</li>
                       <li><strong>Tab Visibility:</strong> Control which tabs are visible in the application</li>
                       <li><strong>Custom Widgets:</strong> Create, enable/disable, and manage custom widgets</li>
                       <li><strong>Broadcast Messages:</strong> Display scrolling messages across the application</li>
@@ -1878,6 +1925,7 @@ docker\\docker-sync-database.bat -Direction Out -HostBasePath "/ArchLinks"`}</pr
                 <h3 className="text-xl font-semibold text-slate-900 dark:text-white mb-3">What&apos;s New in 2.2.0</h3>
                 <div className="bg-emerald-50 dark:bg-emerald-900/20 rounded-lg p-4 space-y-2 text-sm text-slate-700 dark:text-slate-300">
                   <ul className="list-disc list-inside space-y-1 ml-2">
+                    <li><strong>MCP / AI:</strong> Admin tokens let Cursor, Claude Desktop, and other MCP clients list spaces, search links, and create or edit bookmarks (including a new space with many links in one prompt) — Help → MCP / AI / Guides → MCP / AI</li>
                     <li><strong>Mobile Link Preview:</strong> Phone action on Quick Links opens an in-app device mockup (phone / tablet / watch) or a device-sized window for DevTools testing</li>
                     <li><strong>In-app App Updates:</strong> Check GitHub commits/releases, preview changes, apply with DB backup, and roll back from Admin (XAMPP installs). Office tip: publish a <strong>portable Release</strong> (default relative base) and apply the same Release on ArchLinks and ERP3 — see Help → In-app App Updates</li>
                     <li><strong>XAMPP PHP upgrade:</strong> PowerShell script to move to PHP 8.5+ with LDAP verification — see Guides → Upgrade PHP in XAMPP</li>
@@ -1885,7 +1933,7 @@ docker\\docker-sync-database.bat -Direction Out -HostBasePath "/ArchLinks"`}</pr
                     <li><strong>Package for Deployment:</strong> <code className="text-xs bg-slate-200 dark:bg-slate-800 px-1 rounded">package-for-deployment.bat</code> builds a full XAMPP ZIP with SQLite runtime, remote-widget binaries, and optional DB/uploads flags</li>
                     <li><strong>Docker database sync:</strong> <code className="text-xs bg-slate-200 dark:bg-slate-800 px-1 rounded">docker\docker-sync-database.bat</code> copies SQLite + uploads in or out of the container (<code className="text-xs">-Direction Out</code>, <code className="text-xs">-DatabaseOnly</code>, <code className="text-xs">-UploadsOnly</code>)</li>
                     <li><strong>Bookmark Sync extension:</strong> Origin allowlist, Bookmark sync Off by default, same-origin messages, per-browser-profile isolation, and OutSync (app → Other Bookmarks → LinkNest) — Help → Guides → Bookmark Sync Extension</li>
-                    <li><strong>Guides tab:</strong> Searchable in-app documentation (Your Bookmarks, Bookmark Sync Extension, Architecture, App Updates, Docker Deployment, Package for Deployment, Vanilla Apache + PHP 8.5, XAMPP PHP upgrade, SSH / VNC Manual Deployment, SSH Session Shared Worker, Remote Widgets Setup, and more)</li>
+                    <li><strong>Guides tab:</strong> Searchable in-app documentation (MCP / AI, Your Bookmarks, Bookmark Sync Extension, Architecture, App Updates, Docker Deployment, Package for Deployment, Vanilla Apache + PHP 8.5, XAMPP PHP upgrade, SSH / VNC Manual Deployment, SSH Session Shared Worker, Remote Widgets Setup, and more)</li>
                     <li><strong>SSH sessions across refresh:</strong> SharedWorker in browser memory keeps live SSH sockets through page reload; close the widget to disconnect — Help → SSH sessions across refresh / Guides → SSH Session Shared Worker</li>
                     <li><strong>SSH / VNC manual deploy:</strong> Online, air-gapped runtime pack, HTTPS WSS proxy, Easy mode, <code className="text-xs bg-slate-200 dark:bg-slate-800 px-1 rounded">ssh://</code> / <code className="text-xs bg-slate-200 dark:bg-slate-800 px-1 rounded">vnc://</code> space links — Help and Guides</li>
                     <li><strong>QR sharing:</strong> Branded QR codes for the app URL and spaces (desktop + mobile)</li>
@@ -1913,7 +1961,7 @@ docker\\docker-sync-database.bat -Direction Out -HostBasePath "/ArchLinks"`}</pr
                 <p className="text-slate-700 dark:text-slate-300">
                   {appName} helps you create beautiful, organized landing pages for your important links.
                   Organize links into visual tiles, customize their appearance (including header images and boxed rich text), and share them with your team — via roles, space editors, user shares, or QR codes.
-                  With <strong>Access Manager</strong>, <strong>Staging &amp; AI Offline Kit</strong>, <strong>version control</strong>, <strong>mobile link preview</strong> for small-screen testing, <strong>in-app App Updates</strong>, browser integration, scheduling, link health monitoring, visitor insights,
+                  With <strong>Access Manager</strong>, <strong>Staging &amp; AI Offline Kit</strong>, <strong>MCP / AI</strong> for Cursor and Claude, <strong>version control</strong>, <strong>mobile link preview</strong> for small-screen testing, <strong>in-app App Updates</strong>, browser integration, scheduling, link health monitoring, visitor insights,
                   style management, system monitoring and optional add-ons, email notifications, floating widgets, SAML/SSO, and 200+ tile animations,
                   {appName} makes managing and sharing links simple, powerful, and elegant.
                 </p>
@@ -1984,6 +2032,7 @@ docker\\docker-sync-database.bat -Direction Out -HostBasePath "/ArchLinks"`}</pr
                     'Version Comparison & Restore',
                     'Access Manager',
                     'Staging & AI Offline Kit',
+                    'MCP / AI (Cursor / Claude)',
                     'In-app App Updates & Rollback',
                     'XAMPP PHP Runtime Upgrade Script',
                     'Vanilla Apache + PHP 8.5 (Windows)',
