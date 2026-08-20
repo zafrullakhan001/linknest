@@ -171,8 +171,8 @@
           promotion: false,
           plugins:
             'accordion advlist anchor autolink autosave charmap code codesample directionality ' +
-            'emoticons help image importcss insertdatetime link lists media nonbreaking pagebreak ' +
-            'preview quickbars searchreplace table visualblocks visualchars wordcount',
+            'emoticons fullscreen help image importcss insertdatetime link lists media nonbreaking ' +
+            'pagebreak preview quickbars searchreplace table visualblocks visualchars wordcount',
           skin: dark ? 'oxide-dark' : 'oxide',
           content_css: dark ? 'dark' : 'default',
           font_css: googleFontsHref,
@@ -183,7 +183,57 @@
           browser_spellcheck: !viewMode,
           resize: false,
           image_advtab: true,
+          image_caption: true,
+          image_title: true,
+          image_description: true,
+          media_live_embeds: true,
+          link_context_toolbar: true,
+          link_default_target: '_blank',
+          link_assume_external_targets: true,
           table_use_colgroups: true,
+          table_toolbar:
+            'tableprops tabledelete | tableinsertrowbefore tableinsertrowafter tabledeleterow | ' +
+            'tableinsertcolbefore tableinsertcolafter tabledeletecol | tablemergecells tablesplitcells | ' +
+            'tablecellprops tablerowprops',
+          table_appearance_options: true,
+          table_grid: true,
+          table_resize_bars: true,
+          table_style_by_css: true,
+          advlist_bullet_styles: 'default,circle,square',
+          advlist_number_styles: 'default,lower-alpha,lower-greek,lower-roman,upper-alpha,upper-roman',
+          fontsize_formats: '8pt 9pt 10pt 11pt 12pt 14pt 16pt 18pt 20pt 22pt 24pt 26pt 28pt 36pt 48pt 60pt 72pt',
+          line_height_formats: '0.8 1 1.1 1.2 1.3 1.4 1.5 1.6 1.8 2 2.5 3',
+          block_formats:
+            'Paragraph=p; Heading 1=h1; Heading 2=h2; Heading 3=h3; Heading 4=h4; Heading 5=h5; Heading 6=h6; ' +
+            'Preformatted=pre; Blockquote=blockquote; Div=div',
+          style_formats_merge: true,
+          insertdatetime_formats: ['%Y-%m-%d', '%H:%M:%S', '%I:%M %p', '%D', '%Y-%m-%d %H:%M', '%b %d, %Y'],
+          insertdatetime_element: true,
+          nonbreaking_force_tab: true,
+          pagebreak_separator: '<div style="page-break-before: always;"></div>',
+          codesample_languages: [
+            { text: 'HTML/XML', value: 'markup' },
+            { text: 'JavaScript', value: 'javascript' },
+            { text: 'TypeScript', value: 'typescript' },
+            { text: 'CSS', value: 'css' },
+            { text: 'PHP', value: 'php' },
+            { text: 'SQL', value: 'sql' },
+            { text: 'Python', value: 'python' },
+            { text: 'Java', value: 'java' },
+            { text: 'C', value: 'c' },
+            { text: 'C++', value: 'cpp' },
+            { text: 'C#', value: 'csharp' },
+            { text: 'JSON', value: 'json' },
+            { text: 'Bash', value: 'bash' },
+            { text: 'PowerShell', value: 'powershell' },
+            { text: 'Markdown', value: 'markdown' },
+            { text: 'Plain text', value: 'plaintext' }
+          ],
+          autosave_ask_before_unload: true,
+          autosave_interval: '30s',
+          autosave_retention: '30m',
+          visualblocks_default_state: false,
+          visualchars_default_state: false,
           extended_valid_elements: '+li[data-ln-space|class|style]',
           highlight_on_focus: !viewMode,
           object_resizing: !viewMode
@@ -197,16 +247,56 @@
           initConfig.quickbars_insert_toolbar = false;
           initConfig.contextmenu = false;
         } else {
-          initConfig.menubar = 'edit insert view format table tools help';
+          initConfig.menubar = 'file edit insert view format tools table help';
+          initConfig.menu = {
+            file: {
+              title: 'File',
+              items: 'newdocument restoredraft | preview print'
+            },
+            edit: {
+              title: 'Edit',
+              items: 'undo redo | cut copy paste pastetext | selectall | searchreplace'
+            },
+            insert: {
+              title: 'Insert',
+              items:
+                'image link media codesample inserttable | charmap emoticons hr | ' +
+                'pagebreak nonbreaking anchor | insertdatetime | accordion accordiontoggle accordionremove'
+            },
+            view: {
+              title: 'View',
+              items: 'code | visualaid visualchars visualblocks | preview fullscreen'
+            },
+            format: {
+              title: 'Format',
+              items:
+                'bold italic underline strikethrough superscript subscript | ' +
+                'styles blocks fontfamily fontsize align lineheight | forecolor backcolor | removeformat'
+            },
+            tools: {
+              title: 'Tools',
+              items: 'code wordcount | restoredraft'
+            },
+            table: {
+              title: 'Table',
+              items: 'inserttable | cell row column | tableprops deletetable'
+            },
+            help: { title: 'Help', items: 'help' }
+          };
           initConfig.toolbar_mode = 'wrap';
           initConfig.toolbar = [
-            'undo redo | bold italic underline strikethrough | alignleft aligncenter alignright alignjustify | lineheight | listitemspace | styles | blocks fontfamily fontsize | searchreplace',
-            'bullist numlist listitemspace accordion | outdent indent | link unlink anchor image | code | forecolor backcolor | table | subscript superscript',
-            'charmap emoticons media hr ltr rtl | pastetext | visualchars visualblocks nonbreaking blockquote | preview codesample insertdatetime pagebreak removeformat | help'
+            'undo redo | cut copy paste pastetext | selectall remove | print newdocument restoredraft | searchreplace',
+            'bold italic underline strikethrough | superscript subscript | forecolor backcolor | removeformat',
+            'alignleft aligncenter alignright alignjustify alignnone | lineheight | ltr rtl | outdent indent',
+            'styles blocks fontfamily fontsize fontsizeinput | h1 h2 h3 h4 h5 h6 | blockquote hr',
+            'bullist numlist listitemspace | accordion accordiontoggle accordionremove | link unlink openlink anchor image media table',
+            'charmap emoticons codesample insertdatetime nonbreaking pagebreak | code fullscreen preview visualblocks visualchars wordcount help'
           ];
-          initConfig.quickbars_selection_toolbar = 'bold italic underline | quicklink h2 h3 blockquote';
-          initConfig.quickbars_insert_toolbar = 'quickimage quicktable hr';
-          initConfig.contextmenu = 'link image table';
+          initConfig.quickbars_selection_toolbar =
+            'bold italic underline strikethrough | quicklink h2 h3 blockquote | removeformat';
+          initConfig.quickbars_insert_toolbar = 'quickimage quicktable media hr accordion codesample';
+          initConfig.contextmenu = 'link image table lists accordion';
+          initConfig.statusbar = true;
         }
         initConfig.setup = function (editor) {
             var emit = function () {
