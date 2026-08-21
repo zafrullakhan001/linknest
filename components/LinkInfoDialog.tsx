@@ -7,8 +7,9 @@ import { tryHandleVncLinkClick } from '../utils/vncLink';
 import { linkifyHtml } from '../utils/richTextDisplay';
 import { useAccessRestrictionGate } from '../contexts/AccessRestrictionContext';
 import { toSpeakableText, useReadAloud } from '../hooks/useReadAloud';
-import { ReadAloudButtons, ReadAloudVoiceSelect } from './ReadAloudControls';
-import { TinyMceRichTextViewer } from './TinyMceRichTextViewer';
+import { useEscapeToClose } from '../hooks/useEscapeToClose';
+import { ReadAloudButtons, ReadAloudVoiceSelect, ReadAloudSpeedSelect, ReadAloudOutputSelect } from './ReadAloudControls';
+import { TinyMceRichTextViewer, type TinyMceRichTextViewerHandle } from './TinyMceRichTextViewer';
 
 interface LinkInfoDialogProps {
   isOpen: boolean;
@@ -93,6 +94,7 @@ export const LinkInfoDialog: React.FC<LinkInfoDialogProps> = ({
   const { settings } = useSettings();
   const { assertCanOpen } = useAccessRestrictionGate();
   const dialogRef = useRef<HTMLDivElement>(null);
+  const viewerRef = useRef<TinyMceRichTextViewerHandle>(null);
   const [position, setPosition] = useState({ x: 0, y: 0 });
   const [size, setSize] = useState({ width: 0, height: 0 });
   const [isDragging, setIsDragging] = useState(false);
@@ -113,6 +115,21 @@ export const LinkInfoDialog: React.FC<LinkInfoDialogProps> = ({
     active: isOpen,
     autoStart: false,
   });
+
+  useEscapeToClose(isOpen, onClose);
+
+  useEffect(() => {
+    if (!readAloud.isSpeaking) {
+      viewerRef.current?.setSelectionHighlight(false);
+      return;
+    }
+    if (readAloud.speakProgress) {
+      viewerRef.current?.setSpeakProgress(
+        readAloud.speakProgress.charIndex,
+        readAloud.speakProgress.charLength
+      );
+    }
+  }, [readAloud.isSpeaking, readAloud.speakProgress]);
 
   const formatBrowserName = (browserId: string | null | undefined): string => {
     if (!browserId || browserId === 'default') return '';
@@ -172,19 +189,6 @@ export const LinkInfoDialog: React.FC<LinkInfoDialogProps> = ({
       sizeRef.current = size;
     }
   }, [position, size, isDragging, isResizing]);
-
-  useEffect(() => {
-    if (!isOpen) return;
-    const onKey = (e: KeyboardEvent) => {
-      if (e.key === 'Escape' || e.key === 'Esc') {
-        e.preventDefault();
-        e.stopPropagation();
-        onClose();
-      }
-    };
-    window.addEventListener('keydown', onKey, true);
-    return () => window.removeEventListener('keydown', onKey, true);
-  }, [isOpen, onClose]);
 
   const handleDragStart = (e: React.MouseEvent) => {
     const target = e.target as HTMLElement;
@@ -315,7 +319,12 @@ export const LinkInfoDialog: React.FC<LinkInfoDialogProps> = ({
               </div>
             </div>
             <div className="flex items-center gap-0.5 shrink-0">
-              <ReadAloudButtons readAloud={readAloud} theme="slate" />
+              <ReadAloudButtons
+                readAloud={readAloud}
+                theme="slate"
+                resolveText={() => viewerRef.current?.getSelectedText() || undefined}
+                onBeforeSpeak={() => viewerRef.current?.setSelectionHighlight(true)}
+              />
               <button
                 type="button"
                 onClick={onClose}
@@ -330,12 +339,14 @@ export const LinkInfoDialog: React.FC<LinkInfoDialogProps> = ({
             </div>
           </div>
           <ReadAloudVoiceSelect readAloud={readAloud} id="link-info-voice" theme="slate" />
+          <ReadAloudSpeedSelect readAloud={readAloud} id="link-info-speed" theme="slate" />
+          <ReadAloudOutputSelect readAloud={readAloud} id="link-info-output" theme="slate" />
         </div>
 
         {/* Content */}
         <div className="flex-1 overflow-hidden min-h-0 bg-slate-50 dark:bg-slate-900/50">
           {displayHtml ? (
-            <TinyMceRichTextViewer html={displayHtml} onEscape={onClose} />
+            <TinyMceRichTextViewer ref={viewerRef} html={displayHtml} onEscape={onClose} />
           ) : (
             <div className="h-full min-h-[120px] flex items-center justify-center text-sm text-slate-400">
               No information available for this link.
@@ -344,7 +355,10 @@ export const LinkInfoDialog: React.FC<LinkInfoDialogProps> = ({
         </div>
 
         {/* Footer */}
-        <div className="shrink-0 px-5 py-3 border-t border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 flex items-center justify-between gap-3">
+        <div
+          className="shrink-0 px-5 pt-3 pb-10 border-t border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 flex items-center justify-between gap-3"
+          onMouseDown={handleDragStart}
+        >
           <div className="flex items-center gap-3 min-w-0">
             {linkUrl && (
               <>
@@ -390,9 +404,27 @@ export const LinkInfoDialog: React.FC<LinkInfoDialogProps> = ({
           </button>
         </div>
 
+        {/* Bottom drag strip — reachable if the header is off-screen */}
+        <div
+          onMouseDown={handleDragStart}
+          className={`absolute left-0 right-6 bottom-0 h-7 cursor-move flex items-center justify-center gap-1.5 select-none border-t border-slate-200/80 dark:border-slate-700/80 ${
+            isDragging
+              ? 'bg-sky-100/90 dark:bg-sky-950/50'
+              : 'bg-slate-50/95 dark:bg-slate-800/95 hover:bg-slate-100 dark:hover:bg-slate-700/80'
+          }`}
+          title="Drag to move"
+          role="presentation"
+        >
+          <span className="w-8 h-1 rounded-full bg-slate-300 dark:bg-slate-500" aria-hidden />
+          <span className="text-[10px] font-medium text-slate-400 dark:text-slate-500 uppercase tracking-wide">
+            Drag
+          </span>
+          <span className="w-8 h-1 rounded-full bg-slate-300 dark:bg-slate-500" aria-hidden />
+        </div>
+
         {/* Resize handle */}
         <div
-          className={`absolute bottom-0 right-0 w-5 h-5 cursor-nwse-resize flex items-end justify-end p-0.5 rounded-br-xl ${
+          className={`absolute bottom-0 right-0 w-5 h-5 cursor-nwse-resize flex items-end justify-end p-0.5 rounded-br-xl z-10 ${
             isResizing ? 'bg-slate-200/80 dark:bg-slate-600/50' : 'hover:bg-slate-100 dark:hover:bg-slate-700'
           }`}
           onMouseDown={handleResizeStart}

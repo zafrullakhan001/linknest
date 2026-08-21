@@ -8309,6 +8309,47 @@ input[type="search"]::-ms-clear {
   text-decoration: line-through;
 }
 
+/* Read-aloud: progressive trail + current word */
+::highlight(ln-read-aloud) {
+  background-color: rgba(250, 204, 21, 0.35);
+  color: inherit;
+}
+
+::highlight(ln-read-aloud-trail) {
+  background-color: rgba(250, 204, 21, 0.35);
+  color: inherit;
+}
+
+::highlight(ln-read-aloud-current) {
+  background-color: rgba(250, 204, 21, 0.75);
+  color: inherit;
+  box-decoration-break: clone;
+}
+
+.dark ::highlight(ln-read-aloud),
+.dark ::highlight(ln-read-aloud-trail) {
+  background-color: rgba(250, 204, 21, 0.28);
+}
+
+.dark ::highlight(ln-read-aloud-current) {
+  background-color: rgba(250, 204, 21, 0.55);
+}
+
+@keyframes ln-read-aloud-speak-pulse {
+  0%, 100% { transform: scale(1); opacity: 1; }
+  50% { transform: scale(1.18); opacity: 0.85; }
+}
+
+.ln-read-aloud-speaking-emoji {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 1.05rem;
+  line-height: 1;
+  animation: ln-read-aloud-speak-pulse 1s ease-in-out infinite;
+  user-select: none;
+}
+
 /* Accordion plugin (details/summary) */
 .ln-tinymce-content details {
   margin: 0.75em 0;

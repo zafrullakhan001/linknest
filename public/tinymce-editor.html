@@ -62,6 +62,231 @@
         postToParent(viewMode ? 'escape' : 'close');
       }
 
+      /** Last non-empty selection in the editor (kept across blur so read-aloud can use it). */
+      var cachedSelectedText = '';
+
+      function readEditorSelectionText(editor) {
+        try {
+          if (!editor || !editor.selection) return '';
+          var text = editor.selection.getContent({ format: 'text' }) || '';
+          return String(text).replace(/\s+/g, ' ').trim();
+        } catch (err) {
+          return '';
+        }
+      }
+
+      function bindEditorEscape(editor) {
+        function onEscapeKey(e) {
+          if (e.key !== 'Escape' && e.key !== 'Esc') return;
+          if (!viewMode && tinymceUiOpen()) return;
+          e.preventDefault();
+          e.stopPropagation();
+          requestClose();
+        }
+        // Outer iframe document already has a listener; bind the nested content doc/win.
+        try {
+          var doc = editor.getDoc && editor.getDoc();
+          if (doc) doc.addEventListener('keydown', onEscapeKey, true);
+        } catch (err) { /* ignore */ }
+        try {
+          var win = editor.getWin && editor.getWin();
+          if (win) win.addEventListener('keydown', onEscapeKey, true);
+        } catch (err2) { /* ignore */ }
+      }
+
+      function bindSelectionCache(editor) {
+        if (!viewMode) return;
+        var highlightStyleId = 'ln-read-aloud-highlight-style';
+        var cachedRange = null;
+        var speakMap = null;
+
+        function ensureHighlightStyle(doc) {
+          if (!doc || doc.getElementById(highlightStyleId)) return;
+          var style = doc.createElement('style');
+          style.id = highlightStyleId;
+          style.textContent =
+            '::highlight(ln-read-aloud){background-color:rgba(250,204,21,0.35);color:inherit;}' +
+            '::highlight(ln-read-aloud-trail){background-color:rgba(250,204,21,0.35);color:inherit;}' +
+            '::highlight(ln-read-aloud-current){background-color:rgba(250,204,21,0.75);color:inherit;}' +
+            'mark.ln-read-aloud-mark{background-color:rgba(250,204,21,0.55);color:inherit;padding:0 1px;border-radius:2px;}';
+          (doc.head || doc.documentElement).appendChild(style);
+        }
+
+        function clearDomMarks(doc) {
+          if (!doc) return;
+          var marks = doc.querySelectorAll('mark.ln-read-aloud-mark');
+          marks.forEach(function (mark) {
+            var parent = mark.parentNode;
+            if (!parent) return;
+            while (mark.firstChild) parent.insertBefore(mark.firstChild, mark);
+            parent.removeChild(mark);
+            parent.normalize();
+          });
+        }
+
+        function clearCssHighlights(win) {
+          if (!win || !win.CSS || !win.CSS.highlights) return;
+          win.CSS.highlights.delete('ln-read-aloud');
+          win.CSS.highlights.delete('ln-read-aloud-trail');
+          win.CSS.highlights.delete('ln-read-aloud-current');
+        }
+
+        function clearHighlight() {
+          cachedRange = null;
+          speakMap = null;
+          try {
+            var doc = editor.getDoc && editor.getDoc();
+            clearCssHighlights(doc && doc.defaultView);
+            clearDomMarks(doc);
+          } catch (err) { /* ignore */ }
+        }
+
+        function buildSpeakMap(limitRange) {
+          var doc = editor.getDoc && editor.getDoc();
+          var body = editor.getBody && editor.getBody();
+          if (!doc || !body) return null;
+          var walker = doc.createTreeWalker(body, NodeFilter.SHOW_TEXT);
+          var positions = [];
+          var text = '';
+          var pendingSpace = false;
+          var started = false;
+
+          function inLimit(node, offset) {
+            if (!limitRange) return true;
+            try {
+              var probe = doc.createRange();
+              probe.setStart(node, offset);
+              probe.setEnd(node, Math.min(offset + 1, node.data.length));
+              return (
+                probe.compareBoundaryPoints(Range.START_TO_START, limitRange) >= 0 &&
+                probe.compareBoundaryPoints(Range.END_TO_START, limitRange) < 0
+              );
+            } catch (err) {
+              return true;
+            }
+          }
+
+          var node = walker.nextNode();
+          while (node) {
+            var value = node.data || '';
+            for (var i = 0; i < value.length; i++) {
+              if (!inLimit(node, i)) continue;
+              var ch = value.charAt(i);
+              if (/\s/.test(ch)) {
+                if (started) pendingSpace = true;
+                continue;
+              }
+              if (pendingSpace) {
+                text += ' ';
+                positions.push({ node: node, offset: i });
+                pendingSpace = false;
+              }
+              text += ch;
+              positions.push({ node: node, offset: i });
+              started = true;
+            }
+            node = walker.nextNode();
+          }
+          return text ? { text: text, positions: positions } : null;
+        }
+
+        function rangeFromMap(map, start, end) {
+          if (!map || !map.positions.length) return null;
+          var lo = Math.max(0, Math.min(start, map.positions.length - 1));
+          var hiExclusive = Math.max(lo + 1, Math.min(end, map.positions.length));
+          var hi = hiExclusive - 1;
+          var a = map.positions[lo];
+          var b = map.positions[hi];
+          if (!a || !b) return null;
+          try {
+            var doc = a.node.ownerDocument;
+            var range = doc.createRange();
+            range.setStart(a.node, a.offset);
+            range.setEnd(b.node, Math.min(b.offset + 1, b.node.data.length));
+            return range;
+          } catch (err) {
+            return null;
+          }
+        }
+
+        function applyTrail(charIndex, charLength) {
+          try {
+            var doc = editor.getDoc && editor.getDoc();
+            if (!doc) return;
+            ensureHighlightStyle(doc);
+            var win = doc.defaultView;
+            if (!speakMap) {
+              speakMap = buildSpeakMap(cachedRange);
+            }
+            if (!speakMap) return;
+            var idx = Math.max(0, Math.min(charIndex || 0, speakMap.text.length));
+            var len = Math.max(1, charLength || 1);
+            var wordEnd = Math.min(idx + len, speakMap.text.length);
+            var trail = rangeFromMap(speakMap, 0, Math.max(1, wordEnd));
+            var current = rangeFromMap(speakMap, idx, wordEnd);
+            clearCssHighlights(win);
+            clearDomMarks(doc);
+            if (win && win.CSS && win.CSS.highlights && typeof win.Highlight === 'function') {
+              if (trail) win.CSS.highlights.set('ln-read-aloud-trail', new win.Highlight(trail));
+              if (current) win.CSS.highlights.set('ln-read-aloud-current', new win.Highlight(current));
+              return;
+            }
+            if (current) {
+              try {
+                var mark = doc.createElement('mark');
+                mark.className = 'ln-read-aloud-mark';
+                current.surroundContents(mark);
+              } catch (err2) { /* ignore */ }
+            }
+          } catch (err) { /* ignore */ }
+        }
+
+        function applyHighlight() {
+          try {
+            var rng = editor.selection && editor.selection.getRng ? editor.selection.getRng() : null;
+            var text = readEditorSelectionText(editor);
+            if ((!rng || rng.collapsed) && cachedRange) {
+              rng = cachedRange;
+            } else if (rng && !rng.collapsed && text) {
+              cachedRange = rng.cloneRange();
+            }
+            speakMap = buildSpeakMap(rng && !rng.collapsed ? rng : cachedRange);
+            if (!speakMap) speakMap = buildSpeakMap(null);
+            applyTrail(0, 1);
+          } catch (err) { /* ignore */ }
+        }
+
+        editor.on('SelectionChange', function () {
+          var text = readEditorSelectionText(editor);
+          var hasFocus = false;
+          try {
+            hasFocus = !!editor.hasFocus && editor.hasFocus();
+          } catch (err) { /* ignore */ }
+          if (text) {
+            cachedSelectedText = text;
+            try {
+              var rng = editor.selection.getRng();
+              if (rng && !rng.collapsed) cachedRange = rng.cloneRange();
+            } catch (err2) { /* ignore */ }
+          } else if (hasFocus) {
+            cachedSelectedText = '';
+            cachedRange = null;
+          }
+        });
+        window.__linknestGetSelectedText = function () {
+          var live = readEditorSelectionText(editor);
+          if (live) return live;
+          return cachedSelectedText || '';
+        };
+        window.__linknestSetSelectionHighlight = function (on) {
+          if (on) applyHighlight();
+          else clearHighlight();
+        };
+        window.__linknestSetSpeakProgress = function (charIndex, charLength) {
+          applyTrail(charIndex || 0, charLength || 1);
+        };
+      }
+
       document.addEventListener('keydown', function (e) {
         if (e.key !== 'Escape' && e.key !== 'Esc') return;
         if (!viewMode && tinymceUiOpen()) return;
@@ -410,6 +635,8 @@
               if (viewMode && editor.mode && typeof editor.mode.set === 'function') {
                 editor.mode.set('readonly');
               }
+              bindEditorEscape(editor);
+              bindSelectionCache(editor);
               postToParent('ready');
             });
           };
@@ -422,6 +649,7 @@
         var ed = window.tinymce && window.tinymce.get('editor');
         if (!ed) return;
         if (e.data.type === 'set') {
+          cachedSelectedText = '';
           ed.setContent(e.data.html || '');
         }
         if (e.data.type === 'get') {

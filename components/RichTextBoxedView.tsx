@@ -1,5 +1,14 @@
-import React from 'react';
+import React, { useCallback, useEffect, useId, useMemo, useRef } from 'react';
 import { linkifyHtml } from '../utils/richTextDisplay';
+import { toSpeakableText, useReadAloud } from '../hooks/useReadAloud';
+import {
+  applyReadAloudTrail,
+  buildSpeakableDomMap,
+  clearReadAloudHighlight,
+  cloneSelectionRangeInRoot,
+  type DomCharMap,
+} from '../utils/readAloudHighlight';
+import { ReadAloudButtons, ReadAloudOutputSelect, ReadAloudSpeedSelect } from './ReadAloudControls';
 import {
   getImportanceStyle,
   type BoxFontSize,
@@ -63,6 +72,7 @@ function footerFontSizePx(size?: BoxFontSize | null): number {
 /**
  * Renders section rich text with optional styled header/footer box.
  * Always linkifies bare URLs/emails. Display styles match TinyMCE via .ln-tinymce-content.
+ * Includes read-aloud (selection-aware) + speed controls in the header / toolbar.
  */
 export const RichTextBoxedView: React.FC<RichTextBoxedViewProps> = ({
   content,
@@ -83,15 +93,129 @@ export const RichTextBoxedView: React.FC<RichTextBoxedViewProps> = ({
   className = '',
   bodyClassName = '',
 }) => {
+  const bodyRef = useRef<HTMLDivElement>(null);
+  const cachedSelectionRef = useRef('');
+  const speakingRangeRef = useRef<Range | null>(null);
+  const speakMapRef = useRef<DomCharMap | null>(null);
+  const speedSelectId = useId();
+  const outputSelectId = useId();
   const html = linkifyHtml(content || '');
+  const speakableText = useMemo(() => toSpeakableText(content || ''), [content]);
+  const readAloud = useReadAloud({
+    text: speakableText,
+    active: true,
+    autoStart: false,
+  });
+
+  const getSelectionInBody = useCallback((): string => {
+    const body = bodyRef.current;
+    if (!body || typeof window === 'undefined') return '';
+    const selection = window.getSelection();
+    if (!selection || selection.rangeCount === 0 || selection.isCollapsed) return '';
+    const range = selection.getRangeAt(0);
+    const common = range.commonAncestorContainer;
+    const node = common.nodeType === Node.TEXT_NODE ? common.parentNode : common;
+    if (!node || !body.contains(node)) return '';
+    return (selection.toString() || '').replace(/\s+/g, ' ').trim();
+  }, []);
+
+  useEffect(() => {
+    const onSelectionChange = () => {
+      const live = getSelectionInBody();
+      if (live) cachedSelectionRef.current = live;
+    };
+    const onMouseUp = (e: MouseEvent) => {
+      const body = bodyRef.current;
+      if (!body || !(e.target instanceof Node) || !body.contains(e.target)) return;
+      if (!getSelectionInBody()) cachedSelectionRef.current = '';
+    };
+    document.addEventListener('selectionchange', onSelectionChange);
+    document.addEventListener('mouseup', onMouseUp);
+    return () => {
+      document.removeEventListener('selectionchange', onSelectionChange);
+      document.removeEventListener('mouseup', onMouseUp);
+    };
+  }, [getSelectionInBody]);
+
+  useEffect(() => {
+    cachedSelectionRef.current = '';
+    speakingRangeRef.current = null;
+    speakMapRef.current = null;
+    clearReadAloudHighlight();
+  }, [content]);
+
+  const captureHighlightBeforeSpeak = useCallback(() => {
+    const range = cloneSelectionRangeInRoot(bodyRef.current);
+    speakingRangeRef.current = range;
+    speakMapRef.current = buildSpeakableDomMap(bodyRef.current, range);
+    if (!speakMapRef.current) {
+      speakMapRef.current = buildSpeakableDomMap(bodyRef.current, null);
+    }
+  }, []);
+
+  useEffect(() => {
+    if (!readAloud.isSpeaking || !readAloud.speakProgress) {
+      clearReadAloudHighlight();
+      if (!readAloud.isSpeaking) {
+        speakingRangeRef.current = null;
+        speakMapRef.current = null;
+      }
+      return;
+    }
+    const map = speakMapRef.current || buildSpeakableDomMap(bodyRef.current, speakingRangeRef.current);
+    speakMapRef.current = map;
+    applyReadAloudTrail(
+      map,
+      readAloud.speakProgress.charIndex,
+      readAloud.speakProgress.charLength
+    );
+  }, [readAloud.isSpeaking, readAloud.speakProgress]);
+
+  useEffect(() => () => clearReadAloudHighlight(), []);
+
+  const resolveSelectedText = useCallback(() => {
+    const live = getSelectionInBody();
+    if (live) return live;
+    return cachedSelectionRef.current || undefined;
+  }, [getSelectionInBody]);
+
   const bodyBg = boxBodyBg || '#ffffff';
   const bodyStyle: React.CSSProperties = {
     wordBreak: 'break-word',
     color: contrastText(bodyBg),
   };
 
+  const readAloudControls = (
+    <div
+      className="flex items-center gap-0.5 shrink-0"
+      onMouseDown={(e) => e.preventDefault()}
+      style={{ marginLeft: 'auto' }}
+    >
+      <ReadAloudButtons
+        readAloud={readAloud}
+        theme="slate"
+        resolveText={resolveSelectedText}
+        onBeforeSpeak={captureHighlightBeforeSpeak}
+        hideReplay
+      />
+      <ReadAloudSpeedSelect
+        readAloud={readAloud}
+        id={speedSelectId}
+        theme="slate"
+        compact
+      />
+      <ReadAloudOutputSelect
+        readAloud={readAloud}
+        id={outputSelectId}
+        theme="slate"
+        compact
+      />
+    </div>
+  );
+
   const body = (
     <div
+      ref={bodyRef}
       className={`rich-text-content ln-tinymce-content ${bodyClassName}`}
       style={bodyStyle}
       dangerouslySetInnerHTML={{ __html: html || '' }}
@@ -99,7 +223,12 @@ export const RichTextBoxedView: React.FC<RichTextBoxedViewProps> = ({
   );
 
   if (!boxed) {
-    return <div className={className}>{body}</div>;
+    return (
+      <div className={className}>
+        <div className="flex items-center justify-end gap-1 mb-1.5 -mt-0.5">{readAloudControls}</div>
+        {body}
+      </div>
+    );
   }
 
   const title = (boxTitle || '').trim() || 'Notes';
@@ -168,7 +297,6 @@ export const RichTextBoxedView: React.FC<RichTextBoxedViewProps> = ({
               display: 'inline-flex',
               alignItems: 'center',
               gap: 4,
-              marginLeft: headerAlign === 'left' ? 'auto' : undefined,
               padding: '2px 8px',
               borderRadius: 999,
               fontSize: 11,
@@ -184,6 +312,7 @@ export const RichTextBoxedView: React.FC<RichTextBoxedViewProps> = ({
             <span aria-hidden>{importance.emoji}</span>
             {importance.label}
           </span>
+          {readAloudControls}
         </div>
       </div>
       <div style={{ padding: '12px 16px', background: bodyBg }}>{body}</div>

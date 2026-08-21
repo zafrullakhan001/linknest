@@ -1,5 +1,5 @@
 import React from 'react';
-import type { ReadAloudController } from '../hooks/useReadAloud';
+import { READ_ALOUD_RATES, type ReadAloudController, type ReadAloudRate } from '../hooks/useReadAloud';
 
 type ReadAloudTheme = 'slate' | 'amber';
 
@@ -26,32 +26,76 @@ const THEME: Record<ReadAloudTheme, {
 interface ReadAloudButtonsProps {
   readAloud: ReadAloudController;
   theme?: ReadAloudTheme;
+  /** When set, play/replay speak this text if non-empty; otherwise the full document. */
+  resolveText?: () => string | undefined;
+  /** Called just before speaking starts (e.g. capture selection highlight). */
+  onBeforeSpeak?: () => void;
+  /** Hide the replay button (compact toolbars). */
+  hideReplay?: boolean;
 }
 
 export const ReadAloudButtons: React.FC<ReadAloudButtonsProps> = ({
   readAloud,
   theme = 'slate',
+  resolveText,
+  onBeforeSpeak,
+  hideReplay = false,
 }) => {
   const colors = THEME[theme];
   const { isSpeaking, playbackDisabled, toggle, replay } = readAloud;
 
+  const resolveOverride = () => {
+    const text = resolveText?.()?.trim();
+    return text || undefined;
+  };
+
+  /** Avoid stealing focus / collapsing selection before we read it. */
+  const preserveSelection = (e: React.MouseEvent) => {
+    e.preventDefault();
+  };
+
+  const speak = (fn: (override?: string) => void) => {
+    onBeforeSpeak?.();
+    fn(resolveOverride());
+  };
+
   return (
     <>
+      {isSpeaking && (
+        <span
+          className="ln-read-aloud-speaking-emoji"
+          title="Reading aloud…"
+          aria-live="polite"
+          aria-label="Reading aloud"
+        >
+          🗣️
+        </span>
+      )}
+      {!hideReplay && (
+        <button
+          type="button"
+          onMouseDown={preserveSelection}
+          onClick={() => speak(replay)}
+          disabled={playbackDisabled}
+          className={`p-1.5 rounded-lg transition-colors ${colors.iconIdle} disabled:opacity-40 disabled:cursor-not-allowed`}
+          title="Replay"
+          aria-label="Replay message aloud"
+        >
+          <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" strokeWidth={1.8} stroke="currentColor" className="w-5 h-5">
+            <path strokeLinecap="round" strokeLinejoin="round" d="M16.023 9.348h4.992v-.001M2.985 19.644v-4.992m0 0h4.992m-4.993 0l3.181 3.183a8.25 8.25 0 0013.803-3.7M4.031 9.865a8.25 8.25 0 0113.803-3.7l3.181 3.182m0-4.991v4.99" />
+          </svg>
+        </button>
+      )}
       <button
         type="button"
-        onClick={replay}
-        disabled={playbackDisabled}
-        className={`p-1.5 rounded-lg transition-colors ${colors.iconIdle} disabled:opacity-40 disabled:cursor-not-allowed`}
-        title="Replay"
-        aria-label="Replay message aloud"
-      >
-        <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" strokeWidth={1.8} stroke="currentColor" className="w-5 h-5">
-          <path strokeLinecap="round" strokeLinejoin="round" d="M16.023 9.348h4.992v-.001M2.985 19.644v-4.992m0 0h4.992m-4.993 0l3.181 3.183a8.25 8.25 0 0013.803-3.7M4.031 9.865a8.25 8.25 0 0113.803-3.7l3.181 3.182m0-4.991v4.99" />
-        </svg>
-      </button>
-      <button
-        type="button"
-        onClick={toggle}
+        onMouseDown={preserveSelection}
+        onClick={() => {
+          if (isSpeaking) {
+            toggle();
+            return;
+          }
+          speak(toggle);
+        }}
         disabled={playbackDisabled}
         className={`p-1.5 rounded-lg transition-colors ${
           isSpeaking ? colors.iconActive : colors.iconIdle
@@ -71,6 +115,125 @@ export const ReadAloudButtons: React.FC<ReadAloudButtonsProps> = ({
         )}
       </button>
     </>
+  );
+};
+
+interface ReadAloudSpeedSelectProps {
+  readAloud: ReadAloudController;
+  id: string;
+  theme?: ReadAloudTheme;
+  compact?: boolean;
+}
+
+export const ReadAloudSpeedSelect: React.FC<ReadAloudSpeedSelectProps> = ({
+  readAloud,
+  id,
+  theme = 'slate',
+  compact = false,
+}) => {
+  const colors = THEME[theme];
+  const { canSpeak, rate, setRate, playbackDisabled } = readAloud;
+
+  if (!canSpeak) return null;
+
+  return (
+    <div className={`flex items-center gap-1.5 ${compact ? '' : 'mt-2.5'}`}>
+      {!compact && (
+        <label htmlFor={id} className={`text-[11px] font-semibold uppercase tracking-wider shrink-0 ${colors.label}`}>
+          Speed
+        </label>
+      )}
+      <select
+        id={id}
+        value={rate}
+        onMouseDown={(e) => e.stopPropagation()}
+        onChange={(e) => setRate(parseFloat(e.target.value) as ReadAloudRate)}
+        disabled={playbackDisabled}
+        className={`${compact ? 'w-[4.5rem]' : 'min-w-0 max-w-[8rem]'} rounded-lg border px-1.5 py-1 text-xs focus:outline-none focus:ring-2 disabled:opacity-50 ${colors.select}`}
+        aria-label="Read aloud speed"
+        title="Read aloud speed"
+      >
+        {READ_ALOUD_RATES.map((value) => (
+          <option key={value} value={value}>
+            {value === 1 ? '1×' : `${value}×`}
+          </option>
+        ))}
+      </select>
+    </div>
+  );
+};
+
+interface ReadAloudOutputSelectProps {
+  readAloud: ReadAloudController;
+  id: string;
+  theme?: ReadAloudTheme;
+  compact?: boolean;
+}
+
+export const ReadAloudOutputSelect: React.FC<ReadAloudOutputSelectProps> = ({
+  readAloud,
+  id,
+  theme = 'slate',
+  compact = false,
+}) => {
+  const colors = THEME[theme];
+  const {
+    canSpeak,
+    audioOutputs,
+    selectedSinkId,
+    audioOutputSupported,
+    setAudioOutput,
+    pickAudioOutput,
+    refreshAudioOutputs,
+  } = readAloud;
+
+  if (!canSpeak || !audioOutputSupported) return null;
+
+  const hasLabeledDevices = audioOutputs.some((d) => d.label && !/^Speaker \d+$/i.test(d.label));
+
+  return (
+    <div className={`flex items-center gap-1.5 ${compact ? '' : 'mt-2.5'}`}>
+      {!compact && (
+        <label htmlFor={id} className={`text-[11px] font-semibold uppercase tracking-wider shrink-0 ${colors.label}`}>
+          Speaker
+        </label>
+      )}
+      {hasLabeledDevices || audioOutputs.length > 0 ? (
+        <select
+          id={id}
+          value={selectedSinkId}
+          onMouseDown={(e) => {
+            e.stopPropagation();
+            void refreshAudioOutputs();
+          }}
+          onChange={(e) => {
+            void setAudioOutput(e.target.value);
+          }}
+          className={`${compact ? 'max-w-[7.5rem]' : 'min-w-0 flex-1 max-w-full'} rounded-lg border px-1.5 py-1 text-xs focus:outline-none focus:ring-2 ${colors.select}`}
+          aria-label="Read aloud speaker / headphones"
+          title="Choose headphones or speakers. Browser TTS often follows the OS default output."
+        >
+          <option value="">System default</option>
+          {audioOutputs.map((device) => (
+            <option key={device.deviceId || 'default'} value={device.deviceId}>
+              {device.label}
+            </option>
+          ))}
+        </select>
+      ) : null}
+      <button
+        type="button"
+        onMouseDown={(e) => e.preventDefault()}
+        onClick={() => {
+          void pickAudioOutput();
+        }}
+        className={`p-1.5 rounded-lg transition-colors shrink-0 ${colors.iconIdle}`}
+        title="Pick headphones or speakers"
+        aria-label="Pick audio output device"
+      >
+        <span aria-hidden>🎧</span>
+      </button>
+    </div>
   );
 };
 
