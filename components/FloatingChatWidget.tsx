@@ -6,6 +6,7 @@ type Size = { width: number; height: number };
 const STORAGE_KEY = 'linknest.floatingChatWidget.position.v1';
 const SIZE_STORAGE_KEY = 'linknest.floatingChatWidget.size.v1';
 const MIN_VISIBLE = 48; // keep at least this many pixels visible on-screen
+const FOOTER_DRAG_HEIGHT = 32;
 const MIN_WIDTH = 320;
 const MIN_HEIGHT = 400;
 const MAX_WIDTH = 800;
@@ -110,10 +111,10 @@ export const FloatingChatWidget: React.FC<{
     const layoutViewportWidth = vvW / zoom;
     const layoutViewportHeight = vvH / zoom;
 
-    // Allow moving "all over" while keeping a small portion visible for recovery
+    // Allow moving "all over" while keeping the footer drag bar reachable for recovery
     const minX = -width + MIN_VISIBLE;
     const maxX = layoutViewportWidth - MIN_VISIBLE;
-    const minY = -height + MIN_VISIBLE;
+    const minY = -(height - FOOTER_DRAG_HEIGHT);
     const maxY = layoutViewportHeight - MIN_VISIBLE;
 
     return {
@@ -312,16 +313,16 @@ export const FloatingChatWidget: React.FC<{
         zIndex: 2147483647, // stay above everything
       }}
     >
-      <div className="relative w-full h-full">
+      <div className="relative w-full h-full flex flex-col">
         {/* Drag handle (bigger + easier to grab, doesn't change layout) */}
         <button
           type="button"
-          className={`absolute -top-3 left-1/2 -translate-x-1/2 w-16 h-7 rounded-full shadow-md border border-blue-300/70 dark:border-blue-600/60 bg-brand-500 dark:bg-brand-600 backdrop-blur flex items-center justify-center text-white ${
+          className={`absolute -top-3 left-1/2 -translate-x-1/2 z-20 w-16 h-7 rounded-full shadow-md border border-blue-300/70 dark:border-blue-600/60 bg-brand-500 dark:bg-brand-600 backdrop-blur flex items-center justify-center text-white ${
             isDragging ? 'cursor-grabbing' : 'cursor-grab'
           }`}
           onPointerDown={startDrag}
           title="Drag chat widget (grab here)"
-          aria-label="Drag chat widget"
+          aria-label="Drag chat widget from top"
         >
           <span className="text-[14px] leading-none flex items-center gap-0.5">💬 <span className="tracking-widest">⋮</span></span>
           {hasUnread && (
@@ -331,28 +332,54 @@ export const FloatingChatWidget: React.FC<{
 
         {/* Resize handles */}
         <div
-          className="absolute top-0 right-0 w-3 h-3 cursor-ne-resize opacity-0 hover:opacity-100 transition-opacity"
+          className="absolute top-0 right-0 w-3 h-3 cursor-ne-resize z-30 opacity-0 hover:opacity-100 transition-opacity"
           onPointerDown={(e) => startResize(e, 'ne')}
           style={{ background: 'linear-gradient(135deg, transparent 50%, rgba(59, 130, 246, 0.5) 50%)' }}
         />
         <div
-          className="absolute bottom-0 right-0 w-3 h-3 cursor-se-resize opacity-0 hover:opacity-100 transition-opacity"
+          className="absolute bottom-0 right-0 w-3 h-3 cursor-se-resize z-30 opacity-0 hover:opacity-100 transition-opacity"
           onPointerDown={(e) => startResize(e, 'se')}
           style={{ background: 'linear-gradient(45deg, transparent 50%, rgba(59, 130, 246, 0.5) 50%)' }}
         />
         <div
-          className="absolute bottom-0 left-0 w-3 h-3 cursor-sw-resize opacity-0 hover:opacity-100 transition-opacity"
+          className="absolute bottom-0 left-0 w-3 h-3 cursor-sw-resize z-30 opacity-0 hover:opacity-100 transition-opacity"
           onPointerDown={(e) => startResize(e, 'sw')}
           style={{ background: 'linear-gradient(-45deg, transparent 50%, rgba(59, 130, 246, 0.5) 50%)' }}
         />
         <div
-          className="absolute top-0 left-0 w-3 h-3 cursor-nw-resize opacity-0 hover:opacity-100 transition-opacity"
+          className="absolute top-0 left-0 w-3 h-3 cursor-nw-resize z-30 opacity-0 hover:opacity-100 transition-opacity"
           onPointerDown={(e) => startResize(e, 'nw')}
           style={{ background: 'linear-gradient(-135deg, transparent 50%, rgba(59, 130, 246, 0.5) 50%)' }}
         />
 
-        <div className="w-full h-full overflow-hidden">
+        <div className="flex-1 min-h-0 overflow-hidden">
           {children}
+        </div>
+
+        {/* Footer drag bar — stays reachable if the top handle slides under the browser chrome */}
+        <div
+          role="button"
+          tabIndex={0}
+          className={`shrink-0 z-20 flex items-center justify-center gap-2 rounded-b-2xl border-t border-brand-300/50 dark:border-brand-500/40 bg-gradient-to-r from-brand-600 via-brand-500 to-indigo-600 text-white shadow-inner ${
+            isDragging ? 'cursor-grabbing brightness-110' : 'cursor-grab hover:brightness-105'
+          }`}
+          style={{ height: FOOTER_DRAG_HEIGHT }}
+          onPointerDown={startDrag}
+          onKeyDown={(e) => {
+            if (e.key === 'Enter' || e.key === ' ') e.preventDefault();
+          }}
+          title="Drag chat widget from the bottom bar"
+          aria-label="Drag chat widget from footer"
+        >
+          <span className="text-[14px] leading-none tracking-widest opacity-90" aria-hidden>
+            ⋮⋮⋮
+          </span>
+          <span className="text-[10px] font-semibold tracking-wide uppercase">
+            {isDragging ? 'Moving…' : 'Drag to move'}
+          </span>
+          <span className="text-[14px] leading-none tracking-widest opacity-90" aria-hidden>
+            ⋮⋮⋮
+          </span>
         </div>
       </div>
     </div>

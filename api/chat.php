@@ -30,7 +30,9 @@ switch ($method) {
         break;
         
     case 'DELETE':
-        if (preg_match('#^/([^/]+)$#', $path, $matches)) {
+        if (preg_match('#^/conversation/([0-9]+)$#', $path, $matches)) {
+            handleClearConversation($matches[1]);
+        } elseif (preg_match('#^/([^/]+)$#', $path, $matches)) {
             handleDeleteMessage($matches[1]);
         } else {
             sendJSON(['error' => 'Invalid endpoint'], 404);
@@ -52,6 +54,8 @@ function formatChatMessage(array $message): array {
     $ts = isset($message['created_at']) ? (int) $message['created_at'] : 0;
     $message['created_at'] = $ts;
     $message['created_at_iso'] = date('c', $ts);
+    $message['id'] = isset($message['id']) ? (int) $message['id'] : 0;
+    $message['user_id'] = isset($message['user_id']) ? (int) $message['user_id'] : 0;
 
     if (!array_key_exists('recipient_user_id', $message) || $message['recipient_user_id'] === null || $message['recipient_user_id'] === '') {
         $message['recipient_user_id'] = null;
@@ -237,5 +241,31 @@ function handleDeleteMessage($messageId) {
     } catch (Exception $e) {
         error_log('Error deleting chat message: ' . $e->getMessage());
         sendJSON(['error' => 'Failed to delete message: ' . $e->getMessage()], 500);
+    }
+}
+
+function handleClearConversation($recipientId) {
+    try {
+        $user = requireAuth();
+        $recipientId = (int) $recipientId;
+        if ($recipientId <= 0) {
+            sendJSON(['error' => 'Invalid recipient'], 400);
+        }
+        if ($recipientId === (int) $user['id']) {
+            sendJSON(['error' => 'Cannot clear a chat with yourself'], 400);
+        }
+
+        $db = getDB();
+        $stmt = $db->prepare(
+            'DELETE FROM chat_messages
+             WHERE recipient_user_id IS NOT NULL
+               AND ((user_id = ? AND recipient_user_id = ?) OR (user_id = ? AND recipient_user_id = ?))'
+        );
+        $stmt->execute([$user['id'], $recipientId, $recipientId, $user['id']]);
+
+        sendJSON(['success' => true, 'deleted' => $stmt->rowCount()]);
+    } catch (Exception $e) {
+        error_log('Error clearing chat conversation: ' . $e->getMessage());
+        sendJSON(['error' => 'Failed to clear conversation: ' . $e->getMessage()], 500);
     }
 }

@@ -98,6 +98,23 @@ export const deleteMessage = async (messageId: number): Promise<void> => {
   }
 };
 
+export const clearConversation = async (recipientId: number): Promise<void> => {
+  try {
+    const response = await fetch(`${API_BASE}/chat/conversation/${recipientId}`, {
+      method: 'DELETE',
+      credentials: 'include'
+    });
+
+    if (!response.ok) {
+      const errorData = await response.json().catch(() => ({ error: 'Failed to clear conversation' }));
+      throw new Error(errorData.error || 'Failed to clear conversation');
+    }
+  } catch (e) {
+    console.error("Failed to clear chat conversation", e);
+    throw e;
+  }
+};
+
 export const sendTile = async (tile: any, recipientId?: number | null): Promise<ChatMessage> => {
   try {
     if (!tile?.id) {

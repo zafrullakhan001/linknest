@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useRef, useMemo } from 'react';
-import { ChatMessage, getMessages, sendMessage, sendTile, deleteMessage } from '../services/chatService';
+import { ChatMessage, getMessages, sendMessage, sendTile, deleteMessage, clearConversation } from '../services/chatService';
 import { Tile } from '../types';
 import { useAuth } from '../contexts/AuthContext';
 import { authService, UserListItem } from '../services/authService';
@@ -796,6 +796,22 @@ export const ChatWidget: React.FC<ChatWidgetProps> = ({ tiles, onTileShared, onT
     }
   };
 
+  const handleClearPrivateChat = async () => {
+    if (selectedRecipient === null) return;
+    const name = getRecipientName();
+    if (!confirm(`Clear this private chat with ${name}? All messages in this conversation will be deleted so you can start a new session.`)) {
+      return;
+    }
+
+    try {
+      await clearConversation(selectedRecipient);
+      setMessages([]);
+    } catch (error) {
+      console.error('Failed to clear conversation:', error);
+      alert('Failed to clear this private chat. Please try again.');
+    }
+  };
+
   const handleImportTile = async (tileData: any, action?: 'duplicate' | 'overwrite' | 'merge') => {
     try {
       // Ensure tileData has required structure
@@ -1305,7 +1321,7 @@ export const ChatWidget: React.FC<ChatWidgetProps> = ({ tiles, onTileShared, onT
   };
 
   return (
-    <div className={`w-full h-full rounded-2xl shadow-2xl flex overflow-hidden ${t.shell}`}>
+    <div className={`w-full h-full rounded-t-2xl shadow-2xl flex overflow-hidden ${t.shell}`}>
       {/* User Panel */}
       {showUserPanel && (
         <div className={`w-64 flex flex-col ${t.sidebar}`}>
@@ -1454,6 +1470,17 @@ export const ChatWidget: React.FC<ChatWidgetProps> = ({ tiles, onTileShared, onT
                   💼 Indigo
                 </button>
               </div>
+              {selectedRecipient !== null && (
+                <button
+                  type="button"
+                  onClick={handleClearPrivateChat}
+                  disabled={conversationMessages.length === 0}
+                  className="px-2 py-1 text-[11px] font-semibold rounded-md text-rose-600 hover:text-white hover:bg-rose-500 dark:text-rose-300 dark:hover:bg-rose-600 border border-rose-200 dark:border-rose-700/60 transition-all disabled:opacity-40 disabled:hover:bg-transparent disabled:hover:text-rose-600 dark:disabled:hover:text-rose-300"
+                  title="Clear this private chat and start a new session"
+                >
+                  🧹 Clear chat
+                </button>
+              )}
               {onClose && (
                 <button
                   onClick={onClose}
@@ -1502,10 +1529,11 @@ export const ChatWidget: React.FC<ChatWidgetProps> = ({ tiles, onTileShared, onT
           </div>
         ) : (
           filteredMessages.map((message) => {
-            const isOwn = message.user_id === user?.id;
+            const isOwn = Number(message.user_id) === Number(user?.id);
+            const canDelete = isOwn || user?.is_admin === true;
             const messageUser = isOwn && user
               ? user
-              : users.find(u => u.id === message.user_id);
+              : users.find(u => Number(u.id) === Number(message.user_id));
             const senderLabel = isOwn
               ? '🙋 You'
               : getPersonDisplayName(messageUser || { username: message.username });
@@ -1523,6 +1551,16 @@ export const ChatWidget: React.FC<ChatWidgetProps> = ({ tiles, onTileShared, onT
                     {renderAccountPills(messageUser)}
                     {renderDestinationPill(message)}
                     <span>🕒 {formatTime(message.created_at)}</span>
+                    {canDelete && (
+                      <button
+                        type="button"
+                        onClick={() => handleDeleteMessage(message.id)}
+                        className="px-1.5 py-0.5 text-[10px] font-semibold rounded-full whitespace-nowrap bg-rose-50 text-rose-600 hover:bg-rose-500 hover:text-white dark:bg-rose-900/40 dark:text-rose-200 dark:hover:bg-rose-600"
+                        title="Delete this sent message"
+                      >
+                        🗑️ Delete
+                      </button>
+                    )}
                   </div>
                   <div
                     className={`rounded-2xl px-4 py-2 shadow-sm ${
@@ -1542,14 +1580,6 @@ export const ChatWidget: React.FC<ChatWidgetProps> = ({ tiles, onTileShared, onT
                       <div className="whitespace-pre-wrap break-words">{message.message}</div>
                     )}
                   </div>
-                  {isOwn && (
-                    <button
-                      onClick={() => handleDeleteMessage(message.id)}
-                      className="mt-1 text-xs text-slate-400 hover:text-rose-500 transition-colors"
-                    >
-                      🗑️ Delete
-                    </button>
-                  )}
                 </div>
               </div>
             );
