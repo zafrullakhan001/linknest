@@ -99,7 +99,7 @@ const ShareTileDialog = lazy(() => import('./ShareTileDialog').then(m => ({ defa
 
 interface TileGridProps {
   tiles: Tile[];
-  onUpdateTiles: (tiles: Tile[], skipReload?: boolean, isFinal?: boolean) => void;
+  onUpdateTiles: (tiles: Tile[], skipReload?: boolean, isFinal?: boolean, localOnly?: boolean) => void;
   onCreateTile?: (tile: Tile) => Promise<void>;
   onDeleteTile?: (tileId: string) => Promise<void>;
   onCloneTile?: (tileId: string) => Promise<void>;
@@ -1740,6 +1740,8 @@ const SortableTile: React.FC<SortableTileProps> = ({
               {onMoveToCategory && (user?.is_admin || tile.visibility === 'private') && (
                 <>
                   <button
+                    type="button"
+                    onPointerDown={(e) => e.stopPropagation()}
                     onClick={(e) => {
                       e.preventDefault();
                       e.stopPropagation();
@@ -1755,7 +1757,11 @@ const SortableTile: React.FC<SortableTileProps> = ({
 
                   {/* Move to Category Dialog */}
                   {showCategoryDialog && createPortal(
-                    <div className="fixed inset-0 z-[100] flex items-center justify-center p-4 bg-black/60 backdrop-blur-sm" onClick={() => setShowCategoryDialog(false)}>
+                    <div
+                      className="fixed inset-0 z-[100] flex items-center justify-center p-4 bg-black/60 backdrop-blur-sm"
+                      onPointerDown={(e) => e.stopPropagation()}
+                      onClick={() => setShowCategoryDialog(false)}
+                    >
                       <div
                         className="bg-white dark:bg-[#1e1e1e] rounded-2xl shadow-2xl border border-slate-200 dark:border-[#333] w-full max-w-2xl max-h-[85vh] overflow-hidden flex flex-col animate-in fade-in zoom-in duration-200"
                         onClick={(e) => e.stopPropagation()}
@@ -1789,7 +1795,9 @@ const SortableTile: React.FC<SortableTileProps> = ({
                           <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 gap-3">
                             {availableCategories.map((category) => (
                               <button
+                                type="button"
                                 key={category}
+                                onPointerDown={(e) => e.stopPropagation()}
                                 onClick={(e) => {
                                   e.preventDefault();
                                   e.stopPropagation();
@@ -2255,6 +2263,7 @@ const SortableTile: React.FC<SortableTileProps> = ({
         {(onMoveLeft || onMoveRight) ? (
           <div className="absolute bottom-2 left-1/2 -translate-x-1/2 opacity-0 group-hover:opacity-100 transition-opacity flex items-center gap-0.5 z-10">
             <button
+              type="button"
               onClick={(e) => {
                 e.preventDefault();
                 e.stopPropagation();
@@ -2274,6 +2283,7 @@ const SortableTile: React.FC<SortableTileProps> = ({
               </svg>
             </button>
             <button
+              type="button"
               onClick={(e) => {
                 e.preventDefault();
                 e.stopPropagation();
@@ -2488,6 +2498,10 @@ export const TileGrid: React.FC<TileGridProps> = ({
   const [shareTileDialog, setShareTileDialog] = useState<Tile | null>(null);
   const [favNotesDialogState, setFavNotesDialogState] = useState<{ linkId: string; notes: string; linkLabel: string } | null>(null);
   const [stagingTiles, setStagingTiles] = useState<Tile[]>([]);
+  const tilesRef = useRef(tiles);
+  const stagingTilesRef = useRef(stagingTiles);
+  tilesRef.current = tiles;
+  stagingTilesRef.current = stagingTiles;
   const [stagingTilesLoading, setStagingTilesLoading] = useState(false);
   const [activeTab, setActiveTab] = useState<TabType>(() => {
     try {
@@ -4529,6 +4543,8 @@ You may also wrap the array in an object: { "messages": [ ... ] }.
     if (!refineSearchTerm.trim()) return categoryGroups;
     return filterGroupedTilesBySearch(categoryGroups, refineSearchTerm, searchWordMode, searchFuzzy, searchIncludeUrls);
   }, [baseGroupedTiles, selectedCategoryFilter, refineSearchTerm, searchWordMode, searchFuzzy, searchIncludeUrls]);
+  const groupedTilesRef = useRef(groupedTiles);
+  groupedTilesRef.current = groupedTiles;
 
   const matchingSearchLinks = useMemo(() => {
     const links = collectMatchingSearchLinks(groupedTiles, searchTerm, searchWordMode, searchFuzzy, searchIncludeUrls);
@@ -5693,66 +5709,79 @@ You may also wrap the array in an object: { "messages": [ ... ] }.
   const handleMoveTileToCategory = useCallback(async (tileId: string, categoryName: string) => {
     if (!isAuthenticated) return;
 
-    const sourceTiles = activeTab === 'staging' ? stagingTiles : tiles;
+    const sourceTiles = activeTab === 'staging' ? stagingTilesRef.current : tilesRef.current;
+    const targetTile = sourceTiles.find((t) => t.id === tileId);
+    if (!targetTile) return;
+    const previousGroup = targetTile.group || 'General';
+    if (previousGroup === categoryName) return;
+
+    const updatedTiles = sourceTiles.map(tile =>
+      tile.id === tileId
+        ? { ...tile, group: categoryName }
+        : tile
+    );
+
+    const visibleGroups = groupedTilesRef.current;
+    const fromGroup = (visibleGroups[previousGroup] || []).filter((t) => t.id !== tileId);
+    const moved = { ...targetTile, group: categoryName };
+    const toGroup = [...(visibleGroups[categoryName] || []), moved];
+    groupedTilesRef.current = {
+      ...visibleGroups,
+      [previousGroup]: fromGroup,
+      [categoryName]: toGroup,
+    };
+
+    if (activeTab === 'staging') {
+      stagingTilesRef.current = updatedTiles;
+      setStagingTiles(updatedTiles);
+    } else {
+      tilesRef.current = updatedTiles;
+      // skipReload + localOnly: a GET here races the arrangement save and
+      // snaps the tile back to the old category (first pick "blip").
+      onUpdateTiles(updatedTiles, true, false, true);
+    }
+
     try {
-      const updatedTiles = sourceTiles.map(tile =>
-        tile.id === tileId
-          ? { ...tile, group: categoryName }
-          : tile
-      );
+      const grouped: Record<string, Tile[]> = {};
+      updatedTiles.forEach(tile => {
+        const group = tile.group || 'General';
+        if (!grouped[group]) {
+          grouped[group] = [];
+        }
+        grouped[group].push(tile);
+      });
 
-      // Update local state (staging vs main)
-      if (activeTab === 'staging') {
-        setStagingTiles(updatedTiles);
-      } else {
-        onUpdateTiles(updatedTiles);
-      }
-
-      // Save arrangement to backend - preserve order within each category
-      try {
-        // Group tiles by category and assign positions within each category
-        const grouped: Record<string, Tile[]> = {};
-        updatedTiles.forEach(tile => {
-          const group = tile.group || 'General';
-          if (!grouped[group]) {
-            grouped[group] = [];
+      const orderedCategories: string[] = [];
+      const seenCats = new Set<string>();
+      if (categoryOrder.length > 0) {
+        categoryOrder.forEach((c) => {
+          if (grouped[c] && !seenCats.has(c)) {
+            orderedCategories.push(c);
+            seenCats.add(c);
           }
-          grouped[group].push(tile);
         });
-
-        const orderedCategories: string[] = [];
-        const seenCats = new Set<string>();
-        if (categoryOrder.length > 0) {
-          categoryOrder.forEach((c) => {
-            if (grouped[c] && !seenCats.has(c)) {
-              orderedCategories.push(c);
-              seenCats.add(c);
-            }
-          });
-        }
-        Object.keys(grouped).forEach((c) => {
-          if (!seenCats.has(c)) orderedCategories.push(c);
-        });
-        const flat: Tile[] = [];
-        orderedCategories.forEach((cat) => flat.push(...(grouped[cat] || [])));
-        const { arrangement, scope } = buildArrangementAndScope(flat);
-        await saveTileArrangement(arrangement, scope);
-      } catch (error) {
-        console.error('Failed to save tile arrangement:', error);
-        // Revert on error
-        const errorMsg = error instanceof Error ? error.message : 'Failed to save tile arrangement. Please try again.';
-        alert(errorMsg);
-        if (activeTab === 'staging') {
-          setStagingTiles(stagingTiles);
-        } else {
-          onUpdateTiles(tiles);
-        }
       }
+      Object.keys(grouped).forEach((c) => {
+        if (!seenCats.has(c)) orderedCategories.push(c);
+      });
+      const flat: Tile[] = [];
+      orderedCategories.forEach((cat) => flat.push(...(grouped[cat] || [])));
+      const { arrangement, scope } = buildArrangementAndScope(flat);
+      await saveTileArrangement(arrangement, scope);
     } catch (error) {
       console.error('Failed to move tile to category:', error);
-      alert('Failed to move tile. Please try again.');
+      groupedTilesRef.current = visibleGroups;
+      if (activeTab === 'staging') {
+        stagingTilesRef.current = sourceTiles;
+        setStagingTiles(sourceTiles);
+      } else {
+        tilesRef.current = sourceTiles;
+        onUpdateTiles(sourceTiles, true, false, true);
+      }
+      const errorMsg = error instanceof Error ? error.message : 'Failed to save tile arrangement. Please try again.';
+      alert(errorMsg);
     }
-  }, [tiles, stagingTiles, activeTab, isAuthenticated, onUpdateTiles, categoryOrder, buildArrangementAndScope]);
+  }, [activeTab, isAuthenticated, onUpdateTiles, categoryOrder, buildArrangementAndScope]);
 
   const handleMoveCategory = useCallback(async (categoryName: string, direction: 'up' | 'down') => {
     if (!isAuthenticated) return;
@@ -6761,12 +6790,15 @@ You may also wrap the array in an object: { "messages": [ ... ] }.
   }, [editingCategorySchedule, categoryVisibleFrom, categoryExpiresAt, categoryMetadata, categoryOrder, isAuthenticated]);
 
   const handleMoveTile = useCallback(async (tileId: string, direction: 'left' | 'right') => {
+    const visibleGroups = groupedTilesRef.current;
+    const sourceTiles = activeTab === 'staging' ? stagingTilesRef.current : tilesRef.current;
+
     if (!isAuthenticated) {
       if (activeTab !== 'public-favorites') return;
-      const currentTile = tiles.find(t => t.id === tileId);
+      const currentTile = sourceTiles.find(t => t.id === tileId);
       if (!currentTile) return;
       const currentGroup = currentTile.group || 'General';
-      const groupTiles = groupedTiles[currentGroup] || [];
+      const groupTiles = visibleGroups[currentGroup] || [];
       const indexInGroup = groupTiles.findIndex(t => t.id === tileId);
       if (indexInGroup === -1) return;
       const targetIndexInGroup = direction === 'left' ? indexInGroup - 1 : indexInGroup + 1;
@@ -6775,60 +6807,68 @@ You may also wrap the array in an object: { "messages": [ ... ] }.
       const next = swapPublicFavoriteIds(getPublicFavorites(), tileId, neighborId);
       writePublicFavorites(next);
       setPublicFavorites(next);
+      const nextGroup = [...groupTiles];
+      [nextGroup[indexInGroup], nextGroup[targetIndexInGroup]] = [nextGroup[targetIndexInGroup], nextGroup[indexInGroup]];
+      groupedTilesRef.current = { ...visibleGroups, [currentGroup]: nextGroup };
       return;
     }
 
-    const sourceTiles = activeTab === 'staging' ? stagingTiles : tiles;
-    const currentIndex = sourceTiles.findIndex(t => t.id === tileId);
-    if (currentIndex === -1) return;
-
-    const currentTile = sourceTiles[currentIndex];
+    const currentTile = sourceTiles.find(t => t.id === tileId);
+    if (!currentTile) return;
     const currentGroup = currentTile.group || 'General';
 
-    // Find all tiles in this group to determine the target
-    const groupTiles = sourceTiles.filter(t => (t.group || 'General') === currentGroup);
+    // Neighbors must come from the visible category grid, not the unfiltered
+    // tiles list. Hidden tiles (other tabs/visibility) in the same category
+    // sit between visible ones and made the first click look like a no-op.
+    const groupTiles = visibleGroups[currentGroup] || [];
     const indexInGroup = groupTiles.findIndex(t => t.id === tileId);
-
     if (indexInGroup === -1) return;
 
-    // Calculate target index within the group
     const targetIndexInGroup = direction === 'left' ? indexInGroup - 1 : indexInGroup + 1;
-
-    // Boundary checks within the group
     if (targetIndexInGroup < 0 || targetIndexInGroup >= groupTiles.length) {
       return;
     }
 
-    // Find the target tile in the main array
-    const targetTile = groupTiles[targetIndexInGroup];
-    const targetIndex = sourceTiles.findIndex(t => t.id === targetTile.id);
+    const neighborId = groupTiles[targetIndexInGroup].id;
+    const currentIndex = sourceTiles.findIndex(t => t.id === tileId);
+    const targetIndex = sourceTiles.findIndex(t => t.id === neighborId);
+    if (currentIndex === -1 || targetIndex === -1) return;
 
-    if (targetIndex === -1) return;
-
-    // Swap the two tiles in the flat array
     const reorderedTiles = [...sourceTiles];
     [reorderedTiles[currentIndex], reorderedTiles[targetIndex]] = [
       reorderedTiles[targetIndex],
       reorderedTiles[currentIndex],
     ];
 
-    // Update local state immediately for visual feedback (staging vs main)
+    const nextGroup = [...groupTiles];
+    [nextGroup[indexInGroup], nextGroup[targetIndexInGroup]] = [nextGroup[targetIndexInGroup], nextGroup[indexInGroup]];
+    groupedTilesRef.current = { ...visibleGroups, [currentGroup]: nextGroup };
+
     if (activeTab === 'staging') {
+      stagingTilesRef.current = reorderedTiles;
       setStagingTiles(reorderedTiles);
     } else {
-      onUpdateTiles(reorderedTiles);
+      tilesRef.current = reorderedTiles;
+      // skipReload + localOnly: a GET after this would race the arrangement
+      // save and snap the tile back (first click "blip", second click works).
+      onUpdateTiles(reorderedTiles, true, false, true);
     }
 
-    // Auto-save is kept for convenience, but manual save button provides reassurance
     try {
       const { arrangement, scope } = buildArrangementAndScope(reorderedTiles);
       await saveTileArrangement(arrangement, scope);
     } catch (error) {
       console.error('Failed to save tile arrangement:', error);
-      // Don't alert on auto-save failure to avoid annoying popups,
-      // let the user use the manual save button if needed.
+      groupedTilesRef.current = visibleGroups;
+      if (activeTab === 'staging') {
+        stagingTilesRef.current = sourceTiles;
+        setStagingTiles(sourceTiles);
+      } else {
+        tilesRef.current = sourceTiles;
+        onUpdateTiles(sourceTiles, true, false, true);
+      }
     }
-  }, [tiles, stagingTiles, activeTab, isAuthenticated, onUpdateTiles, buildArrangementAndScope, groupedTiles]);
+  }, [activeTab, isAuthenticated, onUpdateTiles, buildArrangementAndScope]);
 
   const handleReorderFavoriteLinks = useCallback(async (orderedLinks: FavoriteLink[]) => {
     setFavoriteLinks(orderedLinks);
