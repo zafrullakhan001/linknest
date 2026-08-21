@@ -59,6 +59,7 @@ function paintRangeOverlays(
   const scrollLeft = container.scrollLeft || 0;
   const scrollTop = container.scrollTop || 0;
   let first: DOMRect | null = null;
+  const underline = className.includes('current') || className.includes('underline');
 
   const rects = Array.from(range.getClientRects());
   for (const rect of rects) {
@@ -66,9 +67,16 @@ function paintRangeOverlays(
     const el = container.ownerDocument.createElement('div');
     el.className = className;
     el.style.left = `${rect.left - cRect.left + scrollLeft}px`;
-    el.style.top = `${rect.top - cRect.top + scrollTop}px`;
-    el.style.width = `${rect.width}px`;
-    el.style.height = `${Math.max(rect.height, 2)}px`;
+    if (underline) {
+      const thickness = Math.max(2, Math.min(3, Math.round(rect.height * 0.12)));
+      el.style.top = `${rect.bottom - cRect.top + scrollTop - thickness}px`;
+      el.style.width = `${rect.width}px`;
+      el.style.height = `${thickness}px`;
+    } else {
+      el.style.top = `${rect.top - cRect.top + scrollTop}px`;
+      el.style.width = `${rect.width}px`;
+      el.style.height = `${Math.max(rect.height, 2)}px`;
+    }
     layer.appendChild(el);
     if (!first) first = rect;
   }

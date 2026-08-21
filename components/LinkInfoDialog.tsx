@@ -8,7 +8,7 @@ import { linkifyHtml } from '../utils/richTextDisplay';
 import { useAccessRestrictionGate } from '../contexts/AccessRestrictionContext';
 import { toSpeakableText, useReadAloud } from '../hooks/useReadAloud';
 import { useEscapeToClose } from '../hooks/useEscapeToClose';
-import { ReadAloudButtons, ReadAloudVoiceSelect, ReadAloudSpeedSelect, ReadAloudOutputSelect } from './ReadAloudControls';
+import { ReadAloudButtons, ReadAloudSettingsRow } from './ReadAloudControls';
 import { TinyMceRichTextViewer, type TinyMceRichTextViewerHandle } from './TinyMceRichTextViewer';
 
 interface LinkInfoDialogProps {
@@ -338,9 +338,7 @@ export const LinkInfoDialog: React.FC<LinkInfoDialogProps> = ({
               </button>
             </div>
           </div>
-          <ReadAloudVoiceSelect readAloud={readAloud} id="link-info-voice" theme="slate" />
-          <ReadAloudSpeedSelect readAloud={readAloud} id="link-info-speed" theme="slate" />
-          <ReadAloudOutputSelect readAloud={readAloud} id="link-info-output" theme="slate" />
+          <ReadAloudSettingsRow readAloud={readAloud} idPrefix="link-info" className="mt-2.5" />
         </div>
 
         {/* Content */}

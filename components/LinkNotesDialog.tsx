@@ -3,7 +3,7 @@ import { createPortal } from 'react-dom';
 import { linkifyHtml, looksLikeHtml, stripHtmlToPlainText, hasVisibleRichText } from '../utils/richTextDisplay';
 import { toSpeakableText, useReadAloud } from '../hooks/useReadAloud';
 import { useEscapeToClose } from '../hooks/useEscapeToClose';
-import { ReadAloudButtons, ReadAloudVoiceSelect, ReadAloudSpeedSelect, ReadAloudOutputSelect } from './ReadAloudControls';
+import { ReadAloudButtons, ReadAloudSettingsRow } from './ReadAloudControls';
 import { TinyMceRichTextViewer, type TinyMceRichTextViewerHandle } from './TinyMceRichTextViewer';
 
 interface LinkNotesDialogProps {
@@ -390,9 +390,7 @@ export const LinkNotesDialog: React.FC<LinkNotesDialogProps> = ({
               </button>
             </div>
           </div>
-          <ReadAloudVoiceSelect readAloud={readAloud} id="link-notes-voice" theme="slate" />
-          <ReadAloudSpeedSelect readAloud={readAloud} id="link-notes-speed" theme="slate" />
-          <ReadAloudOutputSelect readAloud={readAloud} id="link-notes-output" theme="slate" />
+          <ReadAloudSettingsRow readAloud={readAloud} idPrefix="link-notes" className="mt-2.5" />
         </div>
 
         {/* Body — TinyMCE viewer, same engine as the editor */}

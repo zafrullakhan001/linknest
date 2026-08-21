@@ -2,7 +2,7 @@ import React, { useEffect, useMemo } from 'react';
 import { createPortal } from 'react-dom';
 import { linkifyHtml } from '../utils/richTextDisplay';
 import { toSpeakableText, useReadAloud } from '../hooks/useReadAloud';
-import { ReadAloudButtons, ReadAloudVoiceSelect } from './ReadAloudControls';
+import { ReadAloudButtons, ReadAloudSettingsRow } from './ReadAloudControls';
 import { TinyMceRichTextViewer } from './TinyMceRichTextViewer';
 
 interface LinkMaintenanceDialogProps {
@@ -104,7 +104,7 @@ export const LinkMaintenanceDialog: React.FC<LinkMaintenanceDialogProps> = ({
                 </button>
               </div>
             </div>
-            <ReadAloudVoiceSelect readAloud={readAloud} id="link-maintenance-voice" theme="amber" />
+            <ReadAloudSettingsRow readAloud={readAloud} idPrefix="link-maintenance" className="mt-2.5" />
           </div>
 
           <div className={`flex-1 min-h-0 flex flex-col bg-slate-50 dark:bg-slate-900/50 ${hasVideo ? 'overflow-y-auto' : 'overflow-hidden'}`}>

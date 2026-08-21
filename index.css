@@ -8309,19 +8309,24 @@ input[type="search"]::-ms-clear {
   text-decoration: line-through;
 }
 
-/* Read-aloud: current word only (moves forward; no trail left behind) */
+/* Read-aloud: orange underline under the current spoken word */
 ::highlight(ln-read-aloud),
 ::highlight(ln-read-aloud-current) {
-  background-color: rgba(250, 204, 21, 0.75);
+  background-color: transparent;
   color: inherit;
+  text-decoration: underline;
+  text-decoration-color: #f97316;
+  text-decoration-thickness: 0.15em;
+  text-underline-offset: 0.12em;
 }
 
 .dark ::highlight(ln-read-aloud),
 .dark ::highlight(ln-read-aloud-current) {
-  background-color: rgba(250, 204, 21, 0.55);
+  background-color: transparent;
+  text-decoration-color: #fb923c;
 }
 
-/* Overlay highlights — reliably visible over custom / script fonts */
+/* Overlay underlines — reliably visible over custom / script fonts */
 .ln-read-aloud-host {
   position: relative;
 }
@@ -8336,16 +8341,15 @@ input[type="search"]::-ms-clear {
 
 .ln-read-aloud-overlay-current {
   position: absolute;
-  border-radius: 2px;
+  border-radius: 1px;
   pointer-events: none;
-  mix-blend-mode: multiply;
-  background-color: rgba(250, 204, 21, 0.85);
-  box-shadow: 0 0 0 1px rgba(202, 138, 4, 0.35);
+  background-color: #f97316;
+  box-shadow: none;
 }
 
 .dark .ln-read-aloud-overlay-current {
-  mix-blend-mode: screen;
-  background-color: rgba(250, 204, 21, 0.65);
+  mix-blend-mode: normal;
+  background-color: #fb923c;
 }
 
 @keyframes ln-read-aloud-speak-pulse {

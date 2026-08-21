@@ -8,7 +8,7 @@ import {
   cloneSelectionRangeInRoot,
   type DomCharMap,
 } from '../utils/readAloudHighlight';
-import { ReadAloudButtons, ReadAloudOutputSelect, ReadAloudSpeedSelect } from './ReadAloudControls';
+import { ReadAloudButtons, ReadAloudSettingsRow } from './ReadAloudControls';
 import {
   getImportanceStyle,
   type BoxFontSize,
@@ -98,8 +98,7 @@ export const RichTextBoxedView: React.FC<RichTextBoxedViewProps> = ({
   const cachedSelectionRef = useRef('');
   const speakingRangeRef = useRef<Range | null>(null);
   const speakMapRef = useRef<DomCharMap | null>(null);
-  const speedSelectId = useId();
-  const outputSelectId = useId();
+  const settingsIdPrefix = useId();
   const html = linkifyHtml(content || '');
   const speakableText = useMemo(() => toSpeakableText(content || ''), [content]);
   const readAloud = useReadAloud({
@@ -190,12 +189,8 @@ export const RichTextBoxedView: React.FC<RichTextBoxedViewProps> = ({
     color: contrastText(bodyBg),
   };
 
-  const readAloudControls = (
-    <div
-      className="flex items-center gap-0.5 shrink-0"
-      onMouseDown={(e) => e.preventDefault()}
-      style={{ marginLeft: 'auto' }}
-    >
+  const readAloudButtons = (
+    <div className="flex items-center gap-0.5 shrink-0" onMouseDown={(e) => e.preventDefault()}>
       <ReadAloudButtons
         readAloud={readAloud}
         theme="slate"
@@ -203,19 +198,15 @@ export const RichTextBoxedView: React.FC<RichTextBoxedViewProps> = ({
         onBeforeSpeak={captureHighlightBeforeSpeak}
         hideReplay
       />
-      <ReadAloudSpeedSelect
-        readAloud={readAloud}
-        id={speedSelectId}
-        theme="slate"
-        compact
-      />
-      <ReadAloudOutputSelect
-        readAloud={readAloud}
-        id={outputSelectId}
-        theme="slate"
-        compact
-      />
     </div>
+  );
+
+  const readAloudSettings = (
+    <ReadAloudSettingsRow
+      readAloud={readAloud}
+      idPrefix={settingsIdPrefix}
+      className="w-full min-w-0"
+    />
   );
 
   const body = (
@@ -232,7 +223,10 @@ export const RichTextBoxedView: React.FC<RichTextBoxedViewProps> = ({
   if (!boxed) {
     return (
       <div className={className}>
-        <div className="flex items-center justify-end gap-1 mb-1.5 -mt-0.5">{readAloudControls}</div>
+        <div className="flex flex-col items-stretch gap-1 mb-1.5 -mt-0.5">
+          <div className="flex items-center justify-end">{readAloudButtons}</div>
+          {readAloudSettings}
+        </div>
         {body}
       </div>
     );
@@ -277,49 +271,58 @@ export const RichTextBoxedView: React.FC<RichTextBoxedViewProps> = ({
         <div
           style={{
             display: 'flex',
-            alignItems: 'center',
-            justifyContent: titleRowJustify,
-            gap: 8,
-            flexWrap: 'wrap',
+            flexDirection: 'column',
+            gap: 6,
           }}
         >
-          {emoji ? (
-            <span style={{ fontSize: Math.max(16, headerFontSizePx(boxHeaderFontSize) + 2), lineHeight: 1 }} aria-hidden>
-              {emoji}
-            </span>
-          ) : null}
-          <h4
+          <div
             style={{
-              margin: 0,
-              fontSize: headerFontSizePx(boxHeaderFontSize),
-              fontWeight: headerWeight,
-              letterSpacing: '-0.01em',
-              color: headerColor,
-            }}
-          >
-            {title}
-          </h4>
-          <span
-            style={{
-              display: 'inline-flex',
+              display: 'flex',
               alignItems: 'center',
-              gap: 4,
-              padding: '2px 8px',
-              borderRadius: 999,
-              fontSize: 11,
-              fontWeight: 700,
-              letterSpacing: '0.02em',
-              textTransform: 'uppercase',
-              background: importance.bg,
-              color: importance.text,
-              border: `1px solid ${importance.border}`,
-              whiteSpace: 'nowrap',
+              justifyContent: titleRowJustify,
+              gap: 8,
+              flexWrap: 'wrap',
             }}
           >
-            <span aria-hidden>{importance.emoji}</span>
-            {importance.label}
-          </span>
-          {readAloudControls}
+            {emoji ? (
+              <span style={{ fontSize: Math.max(16, headerFontSizePx(boxHeaderFontSize) + 2), lineHeight: 1 }} aria-hidden>
+                {emoji}
+              </span>
+            ) : null}
+            <h4
+              style={{
+                margin: 0,
+                fontSize: headerFontSizePx(boxHeaderFontSize),
+                fontWeight: headerWeight,
+                letterSpacing: '-0.01em',
+                color: headerColor,
+              }}
+            >
+              {title}
+            </h4>
+            <span
+              style={{
+                display: 'inline-flex',
+                alignItems: 'center',
+                gap: 4,
+                padding: '2px 8px',
+                borderRadius: 999,
+                fontSize: 11,
+                fontWeight: 700,
+                letterSpacing: '0.02em',
+                textTransform: 'uppercase',
+                background: importance.bg,
+                color: importance.text,
+                border: `1px solid ${importance.border}`,
+                whiteSpace: 'nowrap',
+              }}
+            >
+              <span aria-hidden>{importance.emoji}</span>
+              {importance.label}
+            </span>
+            <div style={{ marginLeft: 'auto' }}>{readAloudButtons}</div>
+          </div>
+          {readAloudSettings}
         </div>
       </div>
       <div style={{ padding: '12px 16px', background: bodyBg }}>{body}</div>

@@ -302,12 +302,14 @@ interface ReadAloudVoiceSelectProps {
   readAloud: ReadAloudController;
   id: string;
   theme?: ReadAloudTheme;
+  compact?: boolean;
 }
 
 export const ReadAloudVoiceSelect: React.FC<ReadAloudVoiceSelectProps> = ({
   readAloud,
   id,
   theme = 'slate',
+  compact = false,
 }) => {
   const colors = THEME[theme];
   const {
@@ -323,17 +325,21 @@ export const ReadAloudVoiceSelect: React.FC<ReadAloudVoiceSelectProps> = ({
   if (!canSpeak) return null;
 
   return (
-    <div className="mt-2.5 flex items-center gap-2">
-      <label htmlFor={id} className={`text-[11px] font-semibold uppercase tracking-wider shrink-0 ${colors.label}`}>
-        Voice
-      </label>
+    <div className={`flex items-center gap-1.5 ${compact ? '' : 'mt-2.5'}`}>
+      {!compact && (
+        <label htmlFor={id} className={`text-[11px] font-semibold uppercase tracking-wider shrink-0 ${colors.label}`}>
+          Voice
+        </label>
+      )}
       <select
         id={id}
         value={selectedVoiceUri}
+        onMouseDown={(e) => e.stopPropagation()}
         onChange={(e) => setVoice(e.target.value)}
         disabled={playbackDisabled || usVoices.length === 0}
-        className={`min-w-0 flex-1 max-w-full rounded-lg border px-2.5 py-1.5 text-xs focus:outline-none focus:ring-2 disabled:opacity-50 ${colors.select}`}
+        className={`${compact ? 'min-w-0 max-w-[10rem]' : 'min-w-0 flex-1 max-w-full'} rounded-lg border px-2 py-1 text-xs focus:outline-none focus:ring-2 disabled:opacity-50 ${colors.select}`}
         aria-label="Select read aloud voice"
+        title="Read aloud voice"
       >
         {usVoices.length > 0 ? (
           <>
@@ -360,6 +366,165 @@ export const ReadAloudVoiceSelect: React.FC<ReadAloudVoiceSelectProps> = ({
           <option value="">Loading US voices...</option>
         )}
       </select>
+    </div>
+  );
+};
+
+const CHIP =
+  'flex items-center gap-1 min-w-0 rounded-lg border px-1.5 py-0.5';
+const CHIP_SELECT =
+  'min-w-0 border-0 bg-transparent py-0.5 pl-0 pr-1 text-xs text-slate-700 dark:text-slate-200 focus:outline-none focus:ring-0 disabled:opacity-50';
+
+interface ReadAloudSettingsRowProps {
+  readAloud: ReadAloudController;
+  idPrefix: string;
+  className?: string;
+}
+
+/** One compact row: voice / speed / speaker with mild colors + emoji. */
+export const ReadAloudSettingsRow: React.FC<ReadAloudSettingsRowProps> = ({
+  readAloud,
+  idPrefix,
+  className = '',
+}) => {
+  const {
+    canSpeak,
+    selectedVoiceUri,
+    usVoices,
+    femaleVoices,
+    maleVoices,
+    playbackDisabled,
+    setVoice,
+    rate,
+    setRate,
+    audioOutputs,
+    selectedSinkId,
+    audioOutputSupported,
+    setAudioOutput,
+    pickAudioOutput,
+    refreshAudioOutputs,
+  } = readAloud;
+
+  if (!canSpeak) return null;
+
+  const voiceId = `${idPrefix}-voice`;
+  const speedId = `${idPrefix}-speed`;
+  const outputId = `${idPrefix}-output`;
+  const hasLabeledDevices = audioOutputs.some((d) => d.label && !/^Speaker \d+$/i.test(d.label));
+
+  return (
+    <div
+      className={`flex flex-wrap items-center gap-1.5 ${className}`}
+      onMouseDown={(e) => e.stopPropagation()}
+    >
+      <div
+        className={`${CHIP} flex-[1.4] bg-sky-50/90 border-sky-100 dark:bg-sky-950/35 dark:border-sky-900/50`}
+        title="Voice"
+      >
+        <label htmlFor={voiceId} className="text-sm leading-none shrink-0 cursor-default" aria-hidden>
+          🗣️
+        </label>
+        <select
+          id={voiceId}
+          value={selectedVoiceUri}
+          onChange={(e) => setVoice(e.target.value)}
+          disabled={playbackDisabled || usVoices.length === 0}
+          className={`${CHIP_SELECT} flex-1`}
+          aria-label="Read aloud voice"
+        >
+          {usVoices.length > 0 ? (
+            <>
+              {femaleVoices.length > 0 && (
+                <optgroup label="US Female">
+                  {femaleVoices.map(({ voice }) => (
+                    <option key={voice.voiceURI} value={voice.voiceURI}>
+                      {voice.name} (Female)
+                    </option>
+                  ))}
+                </optgroup>
+              )}
+              {maleVoices.length > 0 && (
+                <optgroup label="US Male">
+                  {maleVoices.map(({ voice }) => (
+                    <option key={voice.voiceURI} value={voice.voiceURI}>
+                      {voice.name} (Male)
+                    </option>
+                  ))}
+                </optgroup>
+              )}
+            </>
+          ) : (
+            <option value="">Loading…</option>
+          )}
+        </select>
+      </div>
+
+      <div
+        className={`${CHIP} shrink-0 bg-amber-50/90 border-amber-100 dark:bg-amber-950/35 dark:border-amber-900/50`}
+        title="Speed"
+      >
+        <label htmlFor={speedId} className="text-sm leading-none shrink-0 cursor-default" aria-hidden>
+          ⚡
+        </label>
+        <select
+          id={speedId}
+          value={rate}
+          onChange={(e) => setRate(parseFloat(e.target.value) as ReadAloudRate)}
+          disabled={playbackDisabled}
+          className={`${CHIP_SELECT} w-[3.25rem]`}
+          aria-label="Read aloud speed"
+        >
+          {READ_ALOUD_RATES.map((value) => (
+            <option key={value} value={value}>
+              {value === 1 ? '1×' : `${value}×`}
+            </option>
+          ))}
+        </select>
+      </div>
+
+      {audioOutputSupported && (
+        <div
+          className={`${CHIP} flex-1 bg-emerald-50/90 border-emerald-100 dark:bg-emerald-950/35 dark:border-emerald-900/50`}
+          title="Speaker / headphones"
+        >
+          <span className="text-sm leading-none shrink-0" aria-hidden>
+            🔊
+          </span>
+          {(hasLabeledDevices || audioOutputs.length > 0) && (
+            <select
+              id={outputId}
+              value={selectedSinkId}
+              onMouseDown={() => {
+                void refreshAudioOutputs();
+              }}
+              onChange={(e) => {
+                void setAudioOutput(e.target.value);
+              }}
+              className={`${CHIP_SELECT} flex-1`}
+              aria-label="Read aloud speaker / headphones"
+            >
+              <option value="">System default</option>
+              {audioOutputs.map((device) => (
+                <option key={device.deviceId || 'default'} value={device.deviceId}>
+                  {device.label}
+                </option>
+              ))}
+            </select>
+          )}
+          <button
+            type="button"
+            onMouseDown={(e) => e.preventDefault()}
+            onClick={() => {
+              void pickAudioOutput();
+            }}
+            className="p-0.5 rounded-md shrink-0 text-sm leading-none hover:bg-emerald-100/80 dark:hover:bg-emerald-900/50 transition-colors"
+            title="Pick headphones or speakers"
+            aria-label="Pick audio output device"
+          >
+            🎧
+          </button>
+        </div>
+      )}
     </div>
   );
 };

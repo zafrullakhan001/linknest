@@ -105,9 +105,12 @@
           var style = doc.createElement('style');
           style.id = highlightStyleId;
           style.textContent =
-            '::highlight(ln-read-aloud){background-color:rgba(250,204,21,0.75);color:inherit;}' +
-            '::highlight(ln-read-aloud-current){background-color:rgba(250,204,21,0.75);color:inherit;}' +
-            'mark.ln-read-aloud-mark{background-color:rgba(250,204,21,0.55);color:inherit;padding:0 1px;border-radius:2px;}';
+            '::highlight(ln-read-aloud),::highlight(ln-read-aloud-current){' +
+            'background-color:transparent;color:inherit;' +
+            'text-decoration:underline;text-decoration-color:#f97316;' +
+            'text-decoration-thickness:0.15em;text-underline-offset:0.12em;}' +
+            'mark.ln-read-aloud-mark{background:transparent;color:inherit;' +
+            'border-bottom:2px solid #f97316;padding:0;}';
           (doc.head || doc.documentElement).appendChild(style);
         }
 
@@ -252,14 +255,15 @@
           for (var i = 0; i < rects.length; i++) {
             var rect = rects[i];
             if (rect.width < 0.5 || rect.height < 0.5) continue;
+            var thickness = Math.max(2, Math.min(3, Math.round(rect.height * 0.12)));
             var el = doc.createElement('div');
             el.style.cssText =
-              'position:absolute;pointer-events:none;border-radius:2px;mix-blend-mode:multiply;' +
+              'position:absolute;pointer-events:none;border-radius:1px;' +
               'left:' + (rect.left - cRect.left + (host.scrollLeft || 0)) + 'px;' +
-              'top:' + (rect.top - cRect.top + (host.scrollTop || 0)) + 'px;' +
+              'top:' + (rect.bottom - cRect.top + (host.scrollTop || 0) - thickness) + 'px;' +
               'width:' + rect.width + 'px;' +
-              'height:' + Math.max(rect.height, 2) + 'px;' +
-              'background:' + bg + ';' + (extra || '');
+              'height:' + thickness + 'px;' +
+              'background:' + (bg || '#f97316') + ';' + (extra || '');
             layer.appendChild(el);
           }
         }
@@ -283,8 +287,8 @@
             clearCssHighlights(win);
             clearDomMarks(doc);
             clearOverlayLayer(doc, body);
-            // Only the current spoken word — no trail left behind.
-            paintOverlays(doc, body, current, 'rgba(250,204,21,0.85)', 'box-shadow:0 0 0 1px rgba(202,138,4,0.35);');
+            // Orange underline under the current spoken word only.
+            paintOverlays(doc, body, current, '#f97316');
             if (win && win.CSS && win.CSS.highlights && typeof win.Highlight === 'function') {
               if (current) win.CSS.highlights.set('ln-read-aloud-current', new win.Highlight(current));
             }
