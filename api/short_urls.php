@@ -15,6 +15,10 @@ if ($path === '') {
 
 if ($method === 'POST' && ($path === '/recycle' || $path === 'recycle')) {
     handleRecycleShortUrl();
+} elseif ($method === 'GET' && ($path === '/rotation' || $path === 'rotation')) {
+    handleShortUrlRotationOverview();
+} elseif ($method === 'POST' && ($path === '/rotate-all' || $path === 'rotate-all')) {
+    handleRotateAllShortUrls();
 } else {
     sendJSON(['error' => 'Invalid endpoint'], 404);
 }
@@ -51,5 +55,43 @@ function handleRecycleShortUrl(): void {
     } catch (Throwable $e) {
         error_log('handleRecycleShortUrl: ' . $e->getMessage());
         sendJSON(['error' => 'Failed to recycle short URL'], 500);
+    }
+}
+
+function handleShortUrlRotationOverview(): void {
+    requireAdmin();
+    $db = getDB();
+    $page = max(1, (int)($_GET['page'] ?? 1));
+    $perPage = (int)($_GET['per_page'] ?? $_GET['perPage'] ?? 25);
+    $listed = listShortUrlRotationLogs($db, $page, $perPage);
+    sendJSON([
+        'stats' => getShortUrlRotationStats($db),
+        'logs' => $listed['logs'],
+        'total' => $listed['total'],
+        'page' => $listed['page'],
+        'perPage' => $listed['perPage'],
+    ]);
+}
+
+function handleRotateAllShortUrls(): void {
+    $user = requireAdmin();
+    $db = getDB();
+    try {
+        $result = rotateAllActiveShortUrls($db, $user);
+        $payload = [
+            'run' => $result['run'],
+            'rotatedCount' => $result['rotatedCount'],
+            'stats' => getShortUrlRotationStats($db),
+        ];
+        if (($result['run']['status'] ?? '') === 'failed') {
+            sendJSON([
+                'error' => $result['run']['errorMessage'] ?: 'Failed to rotate short URLs',
+            ] + $payload, 500);
+            return;
+        }
+        sendJSON($payload);
+    } catch (Throwable $e) {
+        error_log('handleRotateAllShortUrls: ' . $e->getMessage());
+        sendJSON(['error' => 'Failed to rotate short URLs'], 500);
     }
 }

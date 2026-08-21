@@ -1817,6 +1817,7 @@ class CloneService {
                 'tile_messages',
                 'email_outbox',
                 'user_audit_log',
+                'short_url_rotation_logs',
                 'clones',
             ];
             foreach ($clearTables as $table) {

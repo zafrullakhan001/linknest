@@ -36,6 +36,7 @@ import { LinkCheckExceptionsAdmin } from './LinkCheckExceptionsAdmin';
 import { IframeBlockDomainsAdmin } from './IframeBlockDomainsAdmin';
 import { UserAuditLog } from './UserAuditLog';
 import { McpAdminPanel } from './McpAdminPanel';
+import { ShortUrlRotationAdmin } from './ShortUrlRotationAdmin';
 import {
   AccessManagerPanel,
   AccessSubTab,
@@ -472,11 +473,11 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({ onUserApproved }) => {
   });
   const [settingsLoading, setSettingsLoading] = useState(false);
   const [settingsSaving, setSettingsSaving] = useState(false);
-  const [settingsSubTab, setSettingsSubTab] = useState<'branding' | 'hero' | 'access'>(() => {
+  const [settingsSubTab, setSettingsSubTab] = useState<'branding' | 'hero' | 'access' | 'shortUrls'>(() => {
     if (localStorage.getItem('adminPanelActiveTab') === 'footer') return 'branding';
     const saved = localStorage.getItem('adminSettingsSubTab');
     if (saved === 'general') return 'hero'; // migrate old General tab id
-    return saved === 'hero' || saved === 'access' || saved === 'branding' ? saved : 'branding';
+    return saved === 'hero' || saved === 'access' || saved === 'branding' || saved === 'shortUrls' ? saved : 'branding';
   });
   const [adminPasswordModal, setAdminPasswordModal] = useState(false);
   const [currentPassword, setCurrentPassword] = useState('');
@@ -11104,6 +11105,7 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({ onUserApproved }) => {
                           { id: 'branding' as const, label: 'Branding', emoji: '🎨' },
                           { id: 'hero' as const, label: 'Hero', emoji: '🦸' },
                           { id: 'access' as const, label: 'Access', emoji: '🔓' },
+                          { id: 'shortUrls' as const, label: 'Short URLs', emoji: '🔁' },
                         ]).map((item) => (
                           <button
                             key={item.id}
@@ -12758,6 +12760,8 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({ onUserApproved }) => {
                           </div>
                         </div>
                       )}
+
+                      {settingsSubTab === 'shortUrls' && <ShortUrlRotationAdmin />}
                     </>
                   )}
                 </div>

@@ -588,3 +588,417 @@ function resolveShortUrlTargetOwnerTileId(PDO $db, string $targetType, string $t
     }
     return null;
 }
+
+const SHORT_URL_ROTATION_LOG_KEEP = 100;
+
+/**
+ * Allocate unique short-URL codes without per-code DB round trips.
+ *
+ * @param array<string, true> $usedCodes
+ * @return array<int, string>
+ */
+function allocateShortUrlCodes(int $count, array &$usedCodes): array {
+    if ($count <= 0) {
+        return [];
+    }
+    $alphabet = SHORT_URL_CODE_ALPHABET;
+    $len = strlen($alphabet);
+    $codes = [];
+    $maxAttempts = $count * 80 + 200;
+    $attempts = 0;
+    while (count($codes) < $count && $attempts < $maxAttempts) {
+        $attempts++;
+        $code = '';
+        for ($i = 0; $i < SHORT_URL_CODE_LENGTH; $i++) {
+            $code .= $alphabet[random_int(0, $len - 1)];
+        }
+        if (isset($usedCodes[$code])) {
+            continue;
+        }
+        $usedCodes[$code] = true;
+        $codes[] = $code;
+    }
+    if (count($codes) < $count) {
+        throw new RuntimeException('Unable to allocate enough unique short URL codes');
+    }
+    return $codes;
+}
+
+/**
+ * @return array<string, mixed>
+ */
+function mapShortUrlRotationLogRow(array $row): array {
+    $byType = ['tile' => 0, 'tab' => 0, 'section' => 0, 'link' => 0];
+    $raw = $row['by_type_json'] ?? '';
+    if (is_string($raw) && $raw !== '') {
+        $decoded = json_decode($raw, true);
+        if (is_array($decoded)) {
+            foreach ($byType as $type => $_) {
+                $byType[$type] = (int)($decoded[$type] ?? 0);
+            }
+        }
+    }
+    return [
+        'id' => (int)($row['id'] ?? 0),
+        'startedAt' => (int)($row['started_at'] ?? 0),
+        'finishedAt' => (int)($row['finished_at'] ?? 0),
+        'durationMs' => (int)($row['duration_ms'] ?? 0),
+        'rotatedBy' => isset($row['rotated_by']) && $row['rotated_by'] !== null && $row['rotated_by'] !== ''
+            ? (int)$row['rotated_by']
+            : null,
+        'rotatedByUsername' => $row['rotated_by_username'] !== null && $row['rotated_by_username'] !== ''
+            ? (string)$row['rotated_by_username']
+            : null,
+        'ipAddress' => $row['ip_address'] !== null && $row['ip_address'] !== ''
+            ? (string)$row['ip_address']
+            : null,
+        'scope' => (string)($row['scope'] ?? 'all'),
+        'activeBefore' => (int)($row['active_before'] ?? 0),
+        'rotatedCount' => (int)($row['rotated_count'] ?? 0),
+        'skippedCount' => (int)($row['skipped_count'] ?? 0),
+        'errorCount' => (int)($row['error_count'] ?? 0),
+        'byType' => $byType,
+        'status' => (string)($row['status'] ?? 'completed'),
+        'errorMessage' => $row['error_message'] !== null && $row['error_message'] !== ''
+            ? (string)$row['error_message']
+            : null,
+    ];
+}
+
+function pruneShortUrlRotationLogs(PDO $db, int $keep = SHORT_URL_ROTATION_LOG_KEEP): void {
+    $keep = max(10, $keep);
+    try {
+        $db->exec(
+            'DELETE FROM short_url_rotation_logs WHERE id NOT IN (
+                SELECT id FROM (
+                    SELECT id FROM short_url_rotation_logs ORDER BY id DESC LIMIT ' . (int)$keep . '
+                )
+            )'
+        );
+    } catch (PDOException $e) {
+        error_log('pruneShortUrlRotationLogs: ' . $e->getMessage());
+    }
+}
+
+/**
+ * @return array<string, mixed>
+ */
+function insertShortUrlRotationLog(PDO $db, array $fields): array {
+    $stmt = $db->prepare(
+        'INSERT INTO short_url_rotation_logs (
+            started_at, finished_at, duration_ms, rotated_by, rotated_by_username, ip_address,
+            scope, active_before, rotated_count, skipped_count, error_count, by_type_json, status, error_message
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)'
+    );
+    $byType = $fields['by_type'] ?? ['tile' => 0, 'tab' => 0, 'section' => 0, 'link' => 0];
+    $stmt->execute([
+        (int)($fields['started_at'] ?? time()),
+        (int)($fields['finished_at'] ?? time()),
+        (int)($fields['duration_ms'] ?? 0),
+        $fields['rotated_by'] ?? null,
+        $fields['rotated_by_username'] ?? null,
+        $fields['ip_address'] ?? null,
+        (string)($fields['scope'] ?? 'all'),
+        (int)($fields['active_before'] ?? 0),
+        (int)($fields['rotated_count'] ?? 0),
+        (int)($fields['skipped_count'] ?? 0),
+        (int)($fields['error_count'] ?? 0),
+        json_encode($byType, JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES),
+        (string)($fields['status'] ?? 'completed'),
+        $fields['error_message'] ?? null,
+    ]);
+    $id = (int)$db->lastInsertId();
+    $rowStmt = $db->prepare('SELECT * FROM short_url_rotation_logs WHERE id = ? LIMIT 1');
+    $rowStmt->execute([$id]);
+    $row = $rowStmt->fetch(PDO::FETCH_ASSOC) ?: array_merge($fields, ['id' => $id, 'by_type_json' => json_encode($byType)]);
+    return mapShortUrlRotationLogRow($row);
+}
+
+/**
+ * Rotate every currently active short URL. Old codes stay revoked and never reveal the destination.
+ *
+ * @param array<string, mixed>|null $user
+ * @return array{run: array<string, mixed>, rotatedCount: int}
+ */
+function rotateAllActiveShortUrls(PDO $db, $user = null): array {
+    if (function_exists('ensureShortUrlRotationLogsTable')) {
+        ensureShortUrlRotationLogsTable($db);
+    }
+    if (function_exists('ensureShortUrlsSchema')) {
+        ensureShortUrlsSchema($db);
+    }
+
+    $startedAt = time();
+    $t0 = function_exists('hrtime') ? hrtime(true) : (int) round(microtime(true) * 1e9);
+
+    $actorId = null;
+    $actorUsername = null;
+    if (is_array($user)) {
+        $actorId = isset($user['id']) ? (int)$user['id'] : null;
+        $actorUsername = isset($user['username']) ? (string)$user['username'] : null;
+        if (!empty($user['impersonating']) && !empty($user['impersonating_admin_id'])) {
+            $actorId = (int)$user['impersonating_admin_id'];
+            if (!empty($user['impersonating_admin_username'])) {
+                $actorUsername = (string)$user['impersonating_admin_username'];
+            }
+        }
+    }
+    $ip = function_exists('getClientIpAddress') ? getClientIpAddress() : (string)($_SERVER['REMOTE_ADDR'] ?? '');
+    if ($ip === '') {
+        $ip = null;
+    }
+
+    $byType = ['tile' => 0, 'tab' => 0, 'section' => 0, 'link' => 0];
+    $rotated = 0;
+    $skipped = 0;
+    $activeBefore = 0;
+
+    try {
+        $active = $db->query(
+            'SELECT id, code, target_type, target_id, tile_id FROM short_urls WHERE revoked = 0 ORDER BY id ASC'
+        )->fetchAll(PDO::FETCH_ASSOC) ?: [];
+        $activeBefore = count($active);
+
+        $usedCodes = [];
+        $codeStmt = $db->query('SELECT code FROM short_urls');
+        if ($codeStmt) {
+            while ($codeRow = $codeStmt->fetch(PDO::FETCH_NUM)) {
+                if (!empty($codeRow[0])) {
+                    $usedCodes[(string)$codeRow[0]] = true;
+                }
+            }
+        }
+
+        $now = time();
+        $startedTxn = false;
+        if (!$db->inTransaction()) {
+            $db->beginTransaction();
+            $startedTxn = true;
+        }
+
+        if ($activeBefore > 0) {
+            $newCodes = allocateShortUrlCodes($activeBefore, $usedCodes);
+            $revokeStmt = $db->prepare('UPDATE short_urls SET revoked = 1, revoked_at = ? WHERE id = ? AND revoked = 0');
+            $insertStmt = $db->prepare(
+                'INSERT INTO short_urls (code, target_type, target_id, tile_id, revoked, created_at, created_by) VALUES (?, ?, ?, ?, 0, ?, ?)'
+            );
+            foreach ($active as $index => $row) {
+                $type = (string)($row['target_type'] ?? '');
+                $targetId = (string)($row['target_id'] ?? '');
+                $tileId = (string)($row['tile_id'] ?? '');
+                if (!isValidShortUrlTargetType($type) || $targetId === '' || $tileId === '') {
+                    $skipped++;
+                    continue;
+                }
+                $code = $newCodes[$index] ?? null;
+                if (!is_string($code) || $code === '') {
+                    $skipped++;
+                    continue;
+                }
+                $revokeStmt->execute([$now, (int)$row['id']]);
+                $insertStmt->execute([$code, $type, $targetId, $tileId, $now, $actorId]);
+                if (!isset($byType[$type])) {
+                    $byType[$type] = 0;
+                }
+                $byType[$type]++;
+                $rotated++;
+            }
+        }
+
+        $finishedAt = time();
+        $durationMs = (int) max(0, round(((function_exists('hrtime') ? hrtime(true) : (int) round(microtime(true) * 1e9)) - $t0) / 1e6));
+        $run = insertShortUrlRotationLog($db, [
+            'started_at' => $startedAt,
+            'finished_at' => $finishedAt,
+            'duration_ms' => $durationMs,
+            'rotated_by' => $actorId,
+            'rotated_by_username' => $actorUsername,
+            'ip_address' => $ip,
+            'scope' => 'all',
+            'active_before' => $activeBefore,
+            'rotated_count' => $rotated,
+            'skipped_count' => $skipped,
+            'error_count' => 0,
+            'by_type' => $byType,
+            'status' => 'completed',
+        ]);
+        pruneShortUrlRotationLogs($db);
+        if ($startedTxn && $db->inTransaction()) {
+            $db->commit();
+        }
+        return ['run' => $run, 'rotatedCount' => $rotated];
+    } catch (Throwable $e) {
+        if ($db->inTransaction()) {
+            $db->rollBack();
+        }
+        $finishedAt = time();
+        $durationMs = (int) max(0, round(((function_exists('hrtime') ? hrtime(true) : (int) round(microtime(true) * 1e9)) - $t0) / 1e6));
+        $run = [
+            'id' => 0,
+            'startedAt' => $startedAt,
+            'finishedAt' => $finishedAt,
+            'durationMs' => $durationMs,
+            'rotatedBy' => $actorId,
+            'rotatedByUsername' => $actorUsername,
+            'ipAddress' => $ip,
+            'scope' => 'all',
+            'activeBefore' => $activeBefore,
+            'rotatedCount' => 0,
+            'skippedCount' => 0,
+            'errorCount' => 1,
+            'byType' => $byType,
+            'status' => 'failed',
+            'errorMessage' => $e->getMessage(),
+        ];
+        try {
+            $run = insertShortUrlRotationLog($db, [
+                'started_at' => $startedAt,
+                'finished_at' => $finishedAt,
+                'duration_ms' => $durationMs,
+                'rotated_by' => $actorId,
+                'rotated_by_username' => $actorUsername,
+                'ip_address' => $ip,
+                'scope' => 'all',
+                'active_before' => $activeBefore,
+                'rotated_count' => 0,
+                'skipped_count' => 0,
+                'error_count' => 1,
+                'by_type' => $byType,
+                'status' => 'failed',
+                'error_message' => substr($e->getMessage(), 0, 1000),
+            ]);
+        } catch (Throwable $logError) {
+            error_log('rotateAllActiveShortUrls log failed: ' . $logError->getMessage());
+        }
+        error_log('rotateAllActiveShortUrls: ' . $e->getMessage());
+        return ['run' => $run, 'rotatedCount' => 0];
+    }
+}
+
+/**
+ * @return array<string, mixed>
+ */
+function getShortUrlRotationStats(PDO $db): array {
+    if (function_exists('ensureShortUrlRotationLogsTable')) {
+        ensureShortUrlRotationLogsTable($db);
+    }
+    if (function_exists('ensureShortUrlsSchema')) {
+        ensureShortUrlsSchema($db);
+    }
+
+    $active = ['total' => 0, 'tile' => 0, 'tab' => 0, 'section' => 0, 'link' => 0];
+    $revoked = 0;
+    $oldestActiveAt = null;
+    $newestActiveAt = null;
+    try {
+        $stmt = $db->query(
+            "SELECT
+                COUNT(*) AS total,
+                SUM(CASE WHEN revoked = 0 THEN 1 ELSE 0 END) AS active_total,
+                SUM(CASE WHEN revoked = 1 THEN 1 ELSE 0 END) AS revoked_total,
+                SUM(CASE WHEN revoked = 0 AND target_type = 'tile' THEN 1 ELSE 0 END) AS active_tile,
+                SUM(CASE WHEN revoked = 0 AND target_type = 'tab' THEN 1 ELSE 0 END) AS active_tab,
+                SUM(CASE WHEN revoked = 0 AND target_type = 'section' THEN 1 ELSE 0 END) AS active_section,
+                SUM(CASE WHEN revoked = 0 AND target_type = 'link' THEN 1 ELSE 0 END) AS active_link,
+                MIN(CASE WHEN revoked = 0 THEN created_at END) AS oldest_active_at,
+                MAX(CASE WHEN revoked = 0 THEN created_at END) AS newest_active_at
+             FROM short_urls"
+        );
+        $row = $stmt ? $stmt->fetch(PDO::FETCH_ASSOC) : null;
+        if ($row) {
+            $active['total'] = (int)($row['active_total'] ?? 0);
+            $active['tile'] = (int)($row['active_tile'] ?? 0);
+            $active['tab'] = (int)($row['active_tab'] ?? 0);
+            $active['section'] = (int)($row['active_section'] ?? 0);
+            $active['link'] = (int)($row['active_link'] ?? 0);
+            $revoked = (int)($row['revoked_total'] ?? 0);
+            $oldestActiveAt = $row['oldest_active_at'] !== null ? (int)$row['oldest_active_at'] : null;
+            $newestActiveAt = $row['newest_active_at'] !== null ? (int)$row['newest_active_at'] : null;
+        }
+    } catch (PDOException $e) {
+        error_log('getShortUrlRotationStats inventory: ' . $e->getMessage());
+    }
+
+    $spacesShowing = 0;
+    try {
+        $spacesShowing = (int)$db->query(
+            'SELECT COUNT(*) FROM tiles WHERE show_short_urls = 1'
+        )->fetchColumn();
+    } catch (PDOException $e) {
+        $spacesShowing = 0;
+    }
+
+    $lifetimeRuns = 0;
+    $lifetimeRotated = 0;
+    $avgDurationMs = null;
+    $lastRun = null;
+    try {
+        $agg = $db->query(
+            "SELECT COUNT(*) AS run_count,
+                    COALESCE(SUM(rotated_count), 0) AS lifetime_rotated,
+                    AVG(CASE WHEN status = 'completed' THEN duration_ms END) AS avg_duration_ms
+             FROM short_url_rotation_logs"
+        )->fetch(PDO::FETCH_ASSOC);
+        if ($agg) {
+            $lifetimeRuns = (int)($agg['run_count'] ?? 0);
+            $lifetimeRotated = (int)($agg['lifetime_rotated'] ?? 0);
+            $avgDurationMs = $agg['avg_duration_ms'] !== null ? (int) round((float)$agg['avg_duration_ms']) : null;
+        }
+        $last = $db->query('SELECT * FROM short_url_rotation_logs ORDER BY id DESC LIMIT 1')->fetch(PDO::FETCH_ASSOC);
+        if ($last) {
+            $lastRun = mapShortUrlRotationLogRow($last);
+        }
+    } catch (PDOException $e) {
+        error_log('getShortUrlRotationStats logs: ' . $e->getMessage());
+    }
+
+    $now = time();
+    $oldestActiveAgeSeconds = $oldestActiveAt ? max(0, $now - $oldestActiveAt) : null;
+    $newestActiveAgeSeconds = $newestActiveAt ? max(0, $now - $newestActiveAt) : null;
+
+    return [
+        'active' => $active,
+        'revoked' => $revoked,
+        'spacesShowingShortUrls' => $spacesShowing,
+        'oldestActiveAt' => $oldestActiveAt,
+        'newestActiveAt' => $newestActiveAt,
+        'oldestActiveAgeSeconds' => $oldestActiveAgeSeconds,
+        'newestActiveAgeSeconds' => $newestActiveAgeSeconds,
+        'lifetimeRuns' => $lifetimeRuns,
+        'lifetimeRotated' => $lifetimeRotated,
+        'avgDurationMs' => $avgDurationMs,
+        'lastRun' => $lastRun,
+    ];
+}
+
+/**
+ * @return array{logs: array<int, array<string, mixed>>, total: int, page: int, perPage: int}
+ */
+function listShortUrlRotationLogs(PDO $db, int $page = 1, int $perPage = 25): array {
+    if (function_exists('ensureShortUrlRotationLogsTable')) {
+        ensureShortUrlRotationLogsTable($db);
+    }
+    $page = max(1, $page);
+    $perPage = max(1, min(100, $perPage));
+    $total = 0;
+    try {
+        $total = (int)$db->query('SELECT COUNT(*) FROM short_url_rotation_logs')->fetchColumn();
+    } catch (PDOException $e) {
+        return ['logs' => [], 'total' => 0, 'page' => $page, 'perPage' => $perPage];
+    }
+    $offset = ($page - 1) * $perPage;
+    $stmt = $db->prepare(
+        'SELECT * FROM short_url_rotation_logs ORDER BY id DESC LIMIT ' . (int)$perPage . ' OFFSET ' . (int)$offset
+    );
+    $stmt->execute();
+    $logs = [];
+    while ($row = $stmt->fetch(PDO::FETCH_ASSOC)) {
+        $logs[] = mapShortUrlRotationLogRow($row);
+    }
+    return [
+        'logs' => $logs,
+        'total' => $total,
+        'page' => $page,
+        'perPage' => $perPage,
+    ];
+}

@@ -138,7 +138,7 @@ if (!defined('SYSTEM_TOKEN')) {
 
 // Bump when schema/migrations in initDatabase() change. Enables fast-path getDB().
 if (!defined('LINKNEST_SCHEMA_VERSION')) {
-    define('LINKNEST_SCHEMA_VERSION', 93);
+    define('LINKNEST_SCHEMA_VERSION', 94);
 }
 
 function getSchemaPatchFlagPath(): string {
@@ -555,12 +555,98 @@ function ensureShortUrlsSchema(PDO $db): void {
             revoked_at INTEGER,
             created_by INTEGER
         )');
-        $db->exec('CREATE UNIQUE INDEX IF NOT EXISTS idx_short_urls_active_target ON short_urls(target_type, target_id) WHERE revoked = 0');
-        $db->exec('CREATE INDEX IF NOT EXISTS idx_short_urls_code ON short_urls(code)');
-        $db->exec('CREATE INDEX IF NOT EXISTS idx_short_urls_tile ON short_urls(tile_id)');
+        ensureShortUrlIndexes($db);
+        ensureShortUrlRotationLogsTable($db);
         $ensured = true;
     } catch (PDOException $e) {
         error_log('ensureShortUrlsSchema warning: ' . $e->getMessage());
+    }
+}
+
+/**
+ * Indexes for /s/{code} resolve, space attach, global rotation, and admin stats.
+ * Safe to call repeatedly (IF NOT EXISTS). Runs on the getDB() fast path.
+ */
+function ensureShortUrlIndexes(PDO $db): void {
+    static $ensured = false;
+    if ($ensured) {
+        return;
+    }
+    try {
+        $needAnalyze = false;
+        try {
+            $needAnalyze = !$db->query(
+                "SELECT 1 FROM sqlite_master WHERE type = 'index' AND name = 'idx_short_urls_active_cover' LIMIT 1"
+            )->fetchColumn();
+        } catch (PDOException $e) {
+            $needAnalyze = true;
+        }
+
+        // One active alias per target (recycle / attach by type+id).
+        $db->exec('CREATE UNIQUE INDEX IF NOT EXISTS idx_short_urls_active_target ON short_urls(target_type, target_id) WHERE revoked = 0');
+        // Covering for SELECT target_type, target_id, code WHERE revoked = 0 AND type = ? AND id IN (...)
+        $db->exec('CREATE INDEX IF NOT EXISTS idx_short_urls_active_cover ON short_urls(target_type, target_id, code) WHERE revoked = 0');
+        // Rotation: scan current aliases without walking retired rows.
+        $db->exec('CREATE INDEX IF NOT EXISTS idx_short_urls_active_id ON short_urls(id, code, target_type, target_id, tile_id) WHERE revoked = 0');
+        // Active aliases for one space (tile_id filter after many rotations).
+        $db->exec('CREATE INDEX IF NOT EXISTS idx_short_urls_tile_active ON short_urls(tile_id, target_type, target_id, code) WHERE revoked = 0');
+        // Admin stats: COUNT/SUM by revoked + type, MIN/MAX created_at.
+        $db->exec('CREATE INDEX IF NOT EXISTS idx_short_urls_revoked_type_created ON short_urls(revoked, target_type, created_at)');
+        // All codes (active + retired) for uniqueness checks during rotation. UNIQUE(code) already exists; this is a named lookup index.
+        $db->exec('CREATE INDEX IF NOT EXISTS idx_short_urls_code ON short_urls(code)');
+        $db->exec('CREATE INDEX IF NOT EXISTS idx_short_urls_tile ON short_urls(tile_id)');
+        // Spaces that display short URLs (admin stats). Query must use show_short_urls = 1 (no COALESCE).
+        try {
+            $db->exec('CREATE INDEX IF NOT EXISTS idx_tiles_show_short_urls ON tiles(show_short_urls) WHERE show_short_urls = 1');
+        } catch (PDOException $e) {
+            // tiles table may not exist yet during very early bootstrap
+        }
+        if ($needAnalyze) {
+            try {
+                $db->exec('ANALYZE short_urls');
+                $db->exec('ANALYZE tiles');
+            } catch (PDOException $e) {
+                // ANALYZE is optional
+            }
+        }
+        $ensured = true;
+    } catch (PDOException $e) {
+        error_log('ensureShortUrlIndexes warning: ' . $e->getMessage());
+    }
+}
+
+/**
+ * Admin global short-URL rotation history (counts, timing, actor).
+ * Safe to call on the getDB() fast path when user_version already matches SCHEMA_VERSION.
+ */
+function ensureShortUrlRotationLogsTable(PDO $db): void {
+    static $ensured = false;
+    if ($ensured) {
+        return;
+    }
+    try {
+        $db->exec('CREATE TABLE IF NOT EXISTS short_url_rotation_logs (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            started_at INTEGER NOT NULL,
+            finished_at INTEGER NOT NULL,
+            duration_ms INTEGER NOT NULL DEFAULT 0,
+            rotated_by INTEGER,
+            rotated_by_username TEXT,
+            ip_address TEXT,
+            scope TEXT NOT NULL DEFAULT \'all\',
+            active_before INTEGER NOT NULL DEFAULT 0,
+            rotated_count INTEGER NOT NULL DEFAULT 0,
+            skipped_count INTEGER NOT NULL DEFAULT 0,
+            error_count INTEGER NOT NULL DEFAULT 0,
+            by_type_json TEXT,
+            status TEXT NOT NULL DEFAULT \'completed\',
+            error_message TEXT
+        )');
+        $db->exec('DROP INDEX IF EXISTS idx_short_url_rotation_logs_started');
+        $db->exec('CREATE INDEX IF NOT EXISTS idx_short_url_rotation_logs_started ON short_url_rotation_logs(started_at DESC, id DESC)');
+        $ensured = true;
+    } catch (PDOException $e) {
+        error_log('ensureShortUrlRotationLogsTable warning: ' . $e->getMessage());
     }
 }
 
@@ -3569,9 +3655,8 @@ function createDatabaseIndexes($db) {
         }
 
         try {
-            $db->exec('CREATE UNIQUE INDEX IF NOT EXISTS idx_short_urls_active_target ON short_urls(target_type, target_id) WHERE revoked = 0');
-            $db->exec('CREATE INDEX IF NOT EXISTS idx_short_urls_code ON short_urls(code)');
-            $db->exec('CREATE INDEX IF NOT EXISTS idx_short_urls_tile ON short_urls(tile_id)');
+            ensureShortUrlIndexes($db);
+            $db->exec('CREATE INDEX IF NOT EXISTS idx_short_url_rotation_logs_started ON short_url_rotation_logs(started_at DESC, id DESC)');
         } catch (PDOException $e) {
             // Table might not exist yet, ignore
         }

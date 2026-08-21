@@ -1944,7 +1944,7 @@ docker\\docker-sync-database.bat -Direction Out -HostBasePath "/ArchLinks"`}</pr
                       <li><strong>Space editors:</strong> Let people or teams edit specific spaces without full admin rights</li>
                       <li><strong>Fine-tune permissions:</strong> Control what space editors can add, edit, or delete</li>
                       <li><strong>Assign access:</strong> Add, replace, or remove roles for people or teams in bulk</li>
-                      <li><strong>Branding &amp; Settings:</strong> App name, logos, favicon, header logo, fonts, QR branding, footer, and guest access</li>
+                      <li><strong>Branding &amp; Settings:</strong> App name, logos, favicon, header logo, fonts, QR branding, footer, guest access, and global short URL rotation</li>
                       <li><strong>Style Management:</strong> Create style profiles, page backgrounds, and switch themes instantly</li>
                       <li><strong>App Updates:</strong> Check GitHub commits/releases, preview changes, apply with DB backup, and roll back</li>
                       <li><strong>Add-ons:</strong> Enable Performance Analytics and Monitorv2 (PostgreSQL), test connections, and manage retention</li>
