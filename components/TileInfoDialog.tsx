@@ -148,13 +148,19 @@ const API_BASE = import.meta.env.VITE_API_BASE || '/api';
 const InfoRow: React.FC<{
   label: string;
   labelEmoji?: string;
+  hint?: string;
   children: React.ReactNode;
   stack?: boolean;
-}> = ({ label, labelEmoji, children, stack }) => (
+}> = ({ label, labelEmoji, hint, children, stack }) => (
   <div className={`flex gap-3 ${stack ? 'flex-col items-stretch' : 'justify-between items-center gap-4'}`}>
-    <span className="text-slate-600 dark:text-slate-400 font-medium text-sm shrink-0 flex items-center gap-1.5">
-      {labelEmoji && <span className="text-base leading-none" aria-hidden="true">{labelEmoji}</span>}
-      {label}
+    <span className="text-slate-600 dark:text-slate-400 font-medium text-sm min-w-0 flex items-start gap-1.5">
+      {labelEmoji && <span className="text-base leading-none shrink-0 mt-0.5" aria-hidden="true">{labelEmoji}</span>}
+      <span className="leading-snug">
+        <span className="block">{label}</span>
+        {hint ? (
+          <span className="block font-normal text-xs text-slate-500 dark:text-slate-400 mt-0.5">({hint})</span>
+        ) : null}
+      </span>
     </span>
     <div className={`${stack ? 'w-full' : 'text-right min-w-0 flex-1 flex justify-end items-center'} text-slate-900 dark:text-white`}>
       {children}
@@ -690,12 +696,12 @@ const TileInfoView: React.FC<{
       </SectionCard>
 
       <SectionCard emoji="📈" title="Visitors" accent="rose">
-        <InfoRow label="Total Hits" labelEmoji="👆">
+        <InfoRow label="Total Hits" labelEmoji="👆" hint="all times this space was opened — the same person can count more than once">
           <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-xs font-semibold bg-rose-100 text-rose-800 dark:bg-rose-900/40 dark:text-rose-300">
             {(tileInfo.stats?.hitCount ?? 0).toLocaleString()}
           </span>
         </InfoRow>
-        <InfoRow label="Unique Visitors" labelEmoji="👥">
+        <InfoRow label="Unique Visitors" labelEmoji="👥" hint="how many different people opened it — logged-in users and guests, each counted once">
           <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-xs font-semibold bg-rose-100 text-rose-800 dark:bg-rose-900/40 dark:text-rose-300">
             {(tileInfo.stats?.uniqueVisitors ?? 0).toLocaleString()}
           </span>
