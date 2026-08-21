@@ -147,53 +147,179 @@ function formatTimeForUtcOffset(date: Date, utcOffsetMinutes: number) {
   });
 }
 
-function playBeep(pattern: { count: number; durationMs: number; gapMs: number } = { count: 2, durationMs: 140, gapMs: 120 }) {
-  try {
-    const AudioCtx = (window.AudioContext || (window as any).webkitAudioContext) as typeof AudioContext | undefined;
-    if (!AudioCtx) return;
-    const ctx = new AudioCtx();
-    const now = ctx.currentTime;
+type SoundId = 'beep' | 'chime' | 'bell' | 'digital' | 'pulse' | 'siren' | 'silent';
 
-    const beepOnce = (t: number) => {
+type SoundProfile = {
+  soundId: SoundId;
+  volume: number; // 0–100
+};
+
+type SoundProfilesState = {
+  timer: SoundProfile;
+  alarm: SoundProfile;
+};
+
+const SOUND_OPTIONS: { id: SoundId; label: string }[] = [
+  { id: 'beep', label: 'Beep' },
+  { id: 'chime', label: 'Chime' },
+  { id: 'bell', label: 'Bell' },
+  { id: 'digital', label: 'Digital' },
+  { id: 'pulse', label: 'Pulse' },
+  { id: 'siren', label: 'Siren' },
+  { id: 'silent', label: 'Silent' },
+];
+
+const DEFAULT_SOUND_PROFILES: SoundProfilesState = {
+  timer: { soundId: 'beep', volume: 70 },
+  alarm: { soundId: 'bell', volume: 70 },
+};
+
+const SOUND_IDS = new Set<SoundId>(SOUND_OPTIONS.map((o) => o.id));
+
+function clampVolume(n: unknown): number {
+  const v = typeof n === 'number' ? n : Number(n);
+  if (!Number.isFinite(v)) return 70;
+  return Math.max(0, Math.min(100, Math.round(v)));
+}
+
+function normalizeSoundId(id: unknown, fallback: SoundId): SoundId {
+  return typeof id === 'string' && SOUND_IDS.has(id as SoundId) ? (id as SoundId) : fallback;
+}
+
+function normalizeSoundProfile(raw: unknown, fallback: SoundProfile): SoundProfile {
+  if (!raw || typeof raw !== 'object') return { ...fallback };
+  const o = raw as Record<string, unknown>;
+  return {
+    soundId: normalizeSoundId(o.soundId, fallback.soundId),
+    volume: clampVolume(o.volume ?? fallback.volume),
+  };
+}
+
+type ToneNote = {
+  freq: number;
+  durationMs: number;
+  type: OscillatorType;
+  gapMs?: number;
+  slideTo?: number;
+};
+
+function getSoundNotes(soundId: SoundId): ToneNote[] {
+  switch (soundId) {
+    case 'beep':
+      return [
+        { freq: 880, durationMs: 180, type: 'sine', gapMs: 120 },
+        { freq: 880, durationMs: 180, type: 'sine', gapMs: 120 },
+        { freq: 880, durationMs: 180, type: 'sine' },
+      ];
+    case 'chime':
+      return [
+        { freq: 523, durationMs: 160, type: 'triangle', gapMs: 70 },
+        { freq: 659, durationMs: 160, type: 'triangle', gapMs: 70 },
+        { freq: 784, durationMs: 220, type: 'triangle' },
+      ];
+    case 'bell':
+      return [
+        { freq: 660, durationMs: 280, type: 'sine', gapMs: 40 },
+        { freq: 880, durationMs: 360, type: 'sine' },
+      ];
+    case 'digital':
+      return [
+        { freq: 1200, durationMs: 80, type: 'square', gapMs: 60 },
+        { freq: 900, durationMs: 80, type: 'square', gapMs: 60 },
+        { freq: 1200, durationMs: 80, type: 'square', gapMs: 60 },
+        { freq: 900, durationMs: 100, type: 'square' },
+      ];
+    case 'pulse':
+      return [
+        { freq: 440, durationMs: 100, type: 'sine', gapMs: 90 },
+        { freq: 440, durationMs: 100, type: 'sine', gapMs: 90 },
+        { freq: 440, durationMs: 100, type: 'sine', gapMs: 90 },
+        { freq: 440, durationMs: 100, type: 'sine' },
+      ];
+    case 'siren':
+      return [
+        { freq: 500, durationMs: 350, type: 'sawtooth', slideTo: 900, gapMs: 40 },
+        { freq: 900, durationMs: 350, type: 'sawtooth', slideTo: 500 },
+      ];
+    case 'silent':
+    default:
+      return [];
+  }
+}
+
+function soundCycleDurationMs(soundId: SoundId): number {
+  const notes = getSoundNotes(soundId);
+  if (notes.length === 0) return 800;
+  let total = 0;
+  notes.forEach((n, i) => {
+    total += n.durationMs;
+    if (i < notes.length - 1) total += n.gapMs ?? 0;
+  });
+  return total + 200;
+}
+
+let clockAudioCtx: AudioContext | null = null;
+
+function getClockAudio(): AudioContext | null {
+  try {
+    const AC =
+      window.AudioContext ||
+      (window as typeof window & { webkitAudioContext?: typeof AudioContext }).webkitAudioContext;
+    if (!AC) return null;
+    if (!clockAudioCtx) clockAudioCtx = new AC();
+    if (clockAudioCtx.state === 'suspended') void clockAudioCtx.resume();
+    return clockAudioCtx;
+  } catch {
+    return null;
+  }
+}
+
+function playSoundProfile(profile: SoundProfile): void {
+  if (profile.soundId === 'silent' || profile.volume <= 0) return;
+  const ctx = getClockAudio();
+  if (!ctx) return;
+
+  try {
+    const notes = getSoundNotes(profile.soundId);
+    if (notes.length === 0) return;
+
+    const peak = Math.max(0.0001, (profile.volume / 100) * 0.28);
+    let t = ctx.currentTime;
+
+    notes.forEach((note) => {
       const osc = ctx.createOscillator();
       const gain = ctx.createGain();
-      osc.type = 'sine';
-      osc.frequency.value = 880;
-      gain.gain.value = 0.0001;
+      osc.type = note.type;
+      osc.frequency.setValueAtTime(note.freq, t);
+      if (note.slideTo != null) {
+        osc.frequency.exponentialRampToValueAtTime(Math.max(1, note.slideTo), t + note.durationMs / 1000);
+      }
+      gain.gain.setValueAtTime(0.0001, t);
+      gain.gain.exponentialRampToValueAtTime(peak, t + 0.01);
+      gain.gain.exponentialRampToValueAtTime(0.0001, t + note.durationMs / 1000);
       osc.connect(gain);
       gain.connect(ctx.destination);
-
-      // quick attack/decay to avoid clicks
-      gain.gain.setValueAtTime(0.0001, t);
-      gain.gain.exponentialRampToValueAtTime(0.25, t + 0.01);
-      gain.gain.exponentialRampToValueAtTime(0.0001, t + pattern.durationMs / 1000);
-
       osc.start(t);
-      osc.stop(t + pattern.durationMs / 1000 + 0.02);
-    };
-
-    for (let i = 0; i < pattern.count; i++) {
-      const t = now + i * (pattern.durationMs + pattern.gapMs) / 1000;
-      beepOnce(t);
-    }
-
-    const total = (pattern.count * pattern.durationMs + (pattern.count - 1) * pattern.gapMs) / 1000 + 0.25;
-    setTimeout(() => ctx.close().catch(() => undefined), total * 1000);
+      osc.stop(t + note.durationMs / 1000 + 0.02);
+      t += (note.durationMs + (note.gapMs ?? 0)) / 1000;
+    });
   } catch {
     // ignore (autoplay restrictions, etc.)
   }
 }
 
-function startBeepLoop(
-  pattern: { count: number; durationMs: number; gapMs: number },
-  loopGapMs: number,
-): () => void {
+function startSoundLoop(profile: SoundProfile): () => void {
+  if (profile.soundId === 'silent' || profile.volume <= 0) {
+    return () => undefined;
+  }
+
   let stopped = false;
   let timeoutId: number | null = null;
+  const loopGapMs = Math.max(900, soundCycleDurationMs(profile.soundId) + 200);
 
   const loop = () => {
     if (stopped) return;
-    playBeep(pattern);
+    playSoundProfile(profile);
     timeoutId = window.setTimeout(loop, loopGapMs);
   };
 
@@ -391,6 +517,11 @@ export const TimezoneDisplay: React.FC<TimezoneDisplayProps> = ({ onClose }) => 
   const [timerRinging, setTimerRinging] = useState(false);
   const [alarmRingingId, setAlarmRingingId] = useState<string | null>(null);
   const stopBeepRef = React.useRef<(() => void) | null>(null);
+
+  // Sound profiles (Timer / Alarm)
+  const [soundProfiles, setSoundProfiles] = useState<SoundProfilesState>(DEFAULT_SOUND_PROFILES);
+  const soundProfilesRef = React.useRef(soundProfiles);
+  soundProfilesRef.current = soundProfiles;
 
   useEffect(() => {
     // Update time every second
@@ -600,6 +731,13 @@ export const TimezoneDisplay: React.FC<TimezoneDisplayProps> = ({ onClose }) => 
           .filter((t) => Number.isFinite(t.utcOffsetMinutes));
         setCustomTimezones(cleaned);
       }
+
+      if (stored.soundProfiles && typeof stored.soundProfiles === 'object') {
+        setSoundProfiles({
+          timer: normalizeSoundProfile(stored.soundProfiles.timer, DEFAULT_SOUND_PROFILES.timer),
+          alarm: normalizeSoundProfile(stored.soundProfiles.alarm, DEFAULT_SOUND_PROFILES.alarm),
+        });
+      }
     };
 
     loadToolsState();
@@ -673,6 +811,7 @@ export const TimezoneDisplay: React.FC<TimezoneDisplayProps> = ({ onClose }) => 
       timer: { running: timerRunning, durationMs: timerDurationMs, remainingMs: timerRemainingMs, endAt: timerEndAt },
       alarms,
       customTimezones,
+      soundProfiles,
     };
 
     if (isAuthenticated) {
@@ -688,7 +827,7 @@ export const TimezoneDisplay: React.FC<TimezoneDisplayProps> = ({ onClose }) => 
         // ignore
       }
     }
-  }, [mode, swRunning, swElapsedMs, swStartAt, timerRunning, timerDurationMs, timerRemainingMs, timerEndAt, alarms, customTimezones, isAuthenticated]);
+  }, [mode, swRunning, swElapsedMs, swStartAt, timerRunning, timerDurationMs, timerRemainingMs, timerEndAt, alarms, customTimezones, soundProfiles, isAuthenticated]);
 
   // Cleanup beep loop on unmount
   useEffect(() => {
@@ -706,15 +845,83 @@ export const TimezoneDisplay: React.FC<TimezoneDisplayProps> = ({ onClose }) => 
     stopBeepRef.current?.();
     stopBeepRef.current = null;
 
+    const profile = soundProfilesRef.current[kind];
     if (kind === 'timer') {
       setTimerRinging(true);
       setAlarmRingingId(null);
-      stopBeepRef.current = startBeepLoop({ count: 3, durationMs: 180, gapMs: 120 }, 1200);
+      stopBeepRef.current = startSoundLoop(profile);
     } else {
       setAlarmRingingId(alarmId || null);
       setTimerRinging(false);
-      stopBeepRef.current = startBeepLoop({ count: 4, durationMs: 200, gapMs: 140 }, 1400);
+      stopBeepRef.current = startSoundLoop(profile);
     }
+  };
+
+  const updateSoundProfile = (kind: 'timer' | 'alarm', patch: Partial<SoundProfile>) => {
+    setSoundProfiles((prev) => ({
+      ...prev,
+      [kind]: {
+        soundId: patch.soundId != null ? normalizeSoundId(patch.soundId, prev[kind].soundId) : prev[kind].soundId,
+        volume: patch.volume != null ? clampVolume(patch.volume) : prev[kind].volume,
+      },
+    }));
+  };
+
+  const previewSoundProfile = (kind: 'timer' | 'alarm') => {
+    playSoundProfile(soundProfiles[kind]);
+  };
+
+  const renderSoundProfileControls = (kind: 'timer' | 'alarm') => {
+    const profile = soundProfiles[kind];
+    const isSilent = profile.soundId === 'silent';
+    return (
+      <div className="w-full flex flex-col gap-1.5 px-2 py-1.5 rounded-lg bg-slate-50/80 dark:bg-slate-900/30 border border-slate-200/60 dark:border-slate-700/50">
+        <div className="flex items-center gap-2 w-full">
+          <span className="text-[10px] font-semibold uppercase tracking-wider opacity-70 shrink-0">Sound</span>
+          <select
+            value={profile.soundId}
+            onChange={(e) => updateSoundProfile(kind, { soundId: e.target.value as SoundId })}
+            className="flex-1 min-w-0 px-1.5 py-1 rounded-md border border-slate-200 dark:border-slate-700 bg-white/80 dark:bg-slate-900/40 text-slate-800 dark:text-slate-100 text-[11px]"
+            title={`${kind === 'timer' ? 'Timer' : 'Alarm'} sound`}
+            aria-label={`${kind === 'timer' ? 'Timer' : 'Alarm'} sound`}
+          >
+            {SOUND_OPTIONS.map((opt) => (
+              <option key={opt.id} value={opt.id}>
+                {opt.label}
+              </option>
+            ))}
+          </select>
+          <button
+            type="button"
+            onClick={() => previewSoundProfile(kind)}
+            disabled={isSilent || profile.volume <= 0}
+            className="px-2 py-1 rounded-md text-[11px] font-semibold bg-slate-100 dark:bg-slate-700/60 hover:bg-slate-200 dark:hover:bg-slate-700 transition-colors disabled:opacity-50 disabled:cursor-not-allowed shrink-0"
+            title="Preview sound"
+            aria-label="Preview sound"
+          >
+            ▶
+          </button>
+        </div>
+        <div className="flex items-center gap-2 w-full">
+          <span className="text-[10px] opacity-70 shrink-0 w-10">Vol</span>
+          <input
+            type="range"
+            min={0}
+            max={100}
+            step={1}
+            value={isSilent ? 0 : profile.volume}
+            disabled={isSilent}
+            onChange={(e) => updateSoundProfile(kind, { volume: Number.parseInt(e.target.value, 10) })}
+            className="flex-1 accent-brand-500 disabled:opacity-40"
+            title="Volume"
+            aria-label={`${kind === 'timer' ? 'Timer' : 'Alarm'} volume`}
+          />
+          <span className="text-[10px] font-mono opacity-70 w-7 text-right tabular-nums">
+            {isSilent ? '—' : profile.volume}
+          </span>
+        </div>
+      </div>
+    );
   };
 
   const dismissRinging = () => {
@@ -1748,6 +1955,8 @@ export const TimezoneDisplay: React.FC<TimezoneDisplayProps> = ({ onClose }) => 
             </button>
           </div>
 
+          {renderSoundProfileControls('timer')}
+
           {/* Start/Pause and Reset Buttons */}
           <div className="flex items-center gap-2 w-full">
             <button
@@ -1819,6 +2028,8 @@ export const TimezoneDisplay: React.FC<TimezoneDisplayProps> = ({ onClose }) => 
               Add
             </button>
           </div>
+
+          {renderSoundProfileControls('alarm')}
 
           <div className="max-h-40 overflow-y-auto w-full space-y-1">
             {alarms.length === 0 ? (
