@@ -38,6 +38,7 @@ import { useEscapeToClose } from '../hooks/useEscapeToClose';
 import { viewerLinkDisplay, viewerLinkUrl } from '../utils/urlDisplay';
 import { tryHandleSshLinkClick, isSshLinkUrl } from '../utils/sshLink';
 import { tryHandleVncLinkClick, isVncLinkUrl } from '../utils/vncLink';
+import { isUrlExcludedFromLinkCheck, parseExceptionsSetting } from '../services/linkCheckExceptionsService';
 import { isLinkInMaintenance } from '../utils/linkMaintenance';
 import { shouldOpenInfoDialog } from '../utils/linkFeatureToggles';
 import { LinkMaintenanceBadge } from './LinkMaintenanceBadge';
@@ -2329,6 +2330,10 @@ export const TileGrid: React.FC<TileGridProps> = ({
   onHelpClick = () => { }
 }) => {
   const { settings } = useSettings();
+  const linkCheckExceptions = useMemo(
+    () => parseExceptionsSetting(settings.link_check_exceptions),
+    [settings.link_check_exceptions]
+  );
   const { styles } = useStyles();
   const { user } = useAuth();
   const { assertCanOpen } = useAccessRestrictionGate();
@@ -3722,7 +3727,7 @@ You may also wrap the array in an object: { "messages": [ ... ] }.
       setIsCheckingHealth(true);
 
       const linksToCheck = favoriteLinks
-        .filter(link => typeof link.url === 'string' && !isSshLinkUrl(link.url) && !isVncLinkUrl(link.url))
+        .filter(link => typeof link.url === 'string' && !isSshLinkUrl(link.url) && !isVncLinkUrl(link.url) && !isUrlExcludedFromLinkCheck(link.url, linkCheckExceptions))
         .map(link => ({
           id: link.id,
           url: link.url
@@ -3772,14 +3777,14 @@ You may also wrap the array in an object: { "messages": [ ... ] }.
       favoriteLinkHealthService.cancelCheck();
       setIsCheckingHealth(false);
     };
-  }, [activeTab, favoriteLinks]);
+  }, [activeTab, favoriteLinks, linkCheckExceptions]);
 
   const handleForceRefresh = useCallback(async () => {
     if (favoriteLinks.length === 0 || isCheckingHealth) return;
 
     setIsCheckingHealth(true);
     const linksToCheck = favoriteLinks
-      .filter(link => typeof link.url === 'string' && !isSshLinkUrl(link.url) && !isVncLinkUrl(link.url))
+      .filter(link => typeof link.url === 'string' && !isSshLinkUrl(link.url) && !isVncLinkUrl(link.url) && !isUrlExcludedFromLinkCheck(link.url, linkCheckExceptions))
       .map(link => ({
         id: link.id,
         url: link.url
@@ -3808,7 +3813,7 @@ You may also wrap the array in an object: { "messages": [ ... ] }.
     } finally {
       setIsCheckingHealth(false);
     }
-  }, [favoriteLinks, isCheckingHealth, autoRefreshInterval]);
+  }, [favoriteLinks, isCheckingHealth, autoRefreshInterval, linkCheckExceptions]);
 
   // Handle auto-refresh of link health with countdown
   useEffect(() => {
@@ -5970,7 +5975,7 @@ You may also wrap the array in an object: { "messages": [ ... ] }.
     const rows: string[][] = [];
 
     favoriteLinks.forEach(link => {
-      if (isSshLinkUrl(link.url) || isVncLinkUrl(link.url)) return;
+      if (isSshLinkUrl(link.url) || isVncLinkUrl(link.url) || isUrlExcludedFromLinkCheck(link.url, linkCheckExceptions)) return;
       const healthResult = linkHealthResults.get(link.id);
       const status = healthResult?.health?.status || 'unknown';
       const httpCode = healthResult?.health?.httpCode || '';
@@ -8450,7 +8455,7 @@ You may also wrap the array in an object: { "messages": [ ... ] }.
                       }}
                     >
                       {/* Health Status Indicator (HTTP(S) only — skip ssh:// / vnc://) */}
-                      {link.health && !isSshLinkUrl(link.url) && !isVncLinkUrl(link.url) && (
+                      {link.health && !isSshLinkUrl(link.url) && !isVncLinkUrl(link.url) && !isUrlExcludedFromLinkCheck(link.url, linkCheckExceptions) && (
                         <div className="shrink-0">
                           <div
                             className={`w-2 h-2 rounded-full ${linkHealthService.getHealthColor(link.health.status)}`}

@@ -9,8 +9,9 @@
  *  1. Empty / still-typing → no issues
  *  2. Copy/paste junk (wrappers, spaces, backslashes, invisible chars)
  *  3. Scheme grammar (typos, missing colon, one vs two vs three slashes)
- *  4. Missing scheme on a domain-like value
- *  5. Host / port once a URL can be parsed
+ *  4. A second http(s):// glued into the host (https://label+https://host/path)
+ *  5. Missing scheme on a domain-like value
+ *  6. Host / port once a URL can be parsed
  */
 
 export type UrlIssueSeverity = 'error' | 'warning';
@@ -167,6 +168,53 @@ function looksLikeBareWebAddress(value: string): boolean {
   );
 }
 
+function looksLikeUsableHttpUrl(value: string): boolean {
+  try {
+    const parsed = new URL(value);
+    if (parsed.protocol !== 'http:' && parsed.protocol !== 'https:') return false;
+    const host = parsed.hostname || '';
+    if (!host || host.includes('+') || host.includes('..')) return false;
+    if (host === 'localhost' || host.endsWith('.localhost')) return true;
+    if (/^\d{1,3}(?:\.\d{1,3}){3}$/.test(host)) return true;
+    return host.includes('.');
+  } catch {
+    return false;
+  }
+}
+
+/**
+ * Label or search text glued onto a real website, e.g.
+ * https://workday+ipad+https://impl.example.com/path
+ * Browsers also swallow the inner colon (https://junk+https//host/path).
+ */
+function extractEmbeddedHttpUrl(value: string): { suggested: string; junk: string } | null {
+  const outer = value.match(/^(https?:\/\/)(.+)$/i);
+  if (!outer) return null;
+  const rest = outer[2];
+
+  const inner = rest.match(/https?:\/\/[^\s]+/i);
+  if (inner && inner.index != null) {
+    const junk = rest.slice(0, inner.index);
+    if (!/[/?#]/.test(junk)) {
+      const suggested = inner[0].replace(/[.,;]+$/g, '');
+      if (looksLikeUsableHttpUrl(suggested)) return { suggested, junk };
+    }
+  }
+
+  const swallowed = rest.match(
+    /(https?)\/\/((?:www\.)?[a-z0-9](?:[a-z0-9-]*[a-z0-9])?(?:\.[a-z0-9](?:[a-z0-9-]*[a-z0-9])?)+(?::\d{1,5})?(?:[/?#][^\s]*)?)/i
+  );
+  if (swallowed && swallowed.index != null) {
+    const junk = rest.slice(0, swallowed.index);
+    if (!/[/?#]/.test(junk)) {
+      const suggested = `${swallowed[1].toLowerCase()}://${swallowed[2]}`;
+      if (looksLikeUsableHttpUrl(suggested)) return { suggested, junk };
+    }
+  }
+
+  return null;
+}
+
 function stripWrappers(value: string): { next: string; stripped: boolean; found?: string } {
   let next = value;
   let stripped = false;
@@ -276,9 +324,14 @@ function mechanicalFix(raw: string): string {
   s = s.replace(/[,\s]+$/g, '');
   s = s.replace(/^[,\s]+/g, '');
 
-  const dup = s.match(/^(https?:\/\/)https?:\/\//i);
-  if (dup) {
-    s = s.replace(/^https?:\/\/https?:\/\//i, dup[1].toLowerCase().startsWith('http:') ? 'http://' : 'https://');
+  const embedded = extractEmbeddedHttpUrl(s);
+  if (embedded) {
+    s = embedded.suggested;
+  } else {
+    const dup = s.match(/^(https?:\/\/)https?:\/\//i);
+    if (dup) {
+      s = s.replace(/^https?:\/\/https?:\/\//i, dup[1].toLowerCase().startsWith('http:') ? 'http://' : 'https://');
+    }
   }
 
   const schemeMatch = matchSchemePrefix(s);
@@ -392,7 +445,18 @@ export function diagnoseLinkUrl(url: string, opts?: { suggest?: boolean }): UrlD
 
   const work = wrapped.next;
 
-  if (/^https?:\/\/https?:\/\//i.test(work)) {
+  const embedded = extractEmbeddedHttpUrl(work);
+  if (embedded && embedded.junk) {
+    issues.push(
+      issue(
+        'embedded-url',
+        'Another URL is stuck in this address',
+        'Text was joined with a second http:// or https://. The website you want is usually the second URL.',
+        'Keep only the real website address.',
+        { found: embedded.junk, expected: embedded.suggested }
+      )
+    );
+  } else if (/^https?:\/\/https?:\/\//i.test(work)) {
     issues.push(
       issue(
         'duplicate-scheme',

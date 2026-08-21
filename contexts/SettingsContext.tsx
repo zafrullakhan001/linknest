@@ -107,6 +107,7 @@ interface SettingsContextType {
   settings: AppSettings;
   loading: boolean;
   refreshSettings: () => Promise<void>;
+  patchSettings: (partial: Partial<AppSettings>) => void;
   clearCache: () => Promise<void>;
   setBrandingPreview: (partial: Partial<AppSettings>) => void;
   clearBrandingPreview: () => void;
@@ -498,6 +499,10 @@ export const SettingsProvider: React.FC<{ children: ReactNode }> = ({ children }
     [settings, previewOverrides]
   );
 
+  const patchSettings = useCallback((partial: Partial<AppSettings>) => {
+    setSettings((prev) => ({ ...prev, ...partial }));
+  }, []);
+
   const setBrandingPreview = useCallback((partial: Partial<AppSettings>) => {
     const patch: Partial<AppSettings> = {};
     for (const key of BRANDING_PREVIEW_KEYS) {
@@ -623,6 +628,7 @@ export const SettingsProvider: React.FC<{ children: ReactNode }> = ({ children }
       settings: effectiveSettings,
       loading,
       refreshSettings: loadSettings,
+      patchSettings,
       clearCache,
       setBrandingPreview,
       clearBrandingPreview
@@ -644,6 +650,7 @@ export const useSettings = () => {
       },
       loading: false,
       refreshSettings: async () => { },
+      patchSettings: () => { },
       clearCache: async () => { },
       setBrandingPreview: () => { },
       clearBrandingPreview: () => { }

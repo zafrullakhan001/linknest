@@ -27,6 +27,8 @@ import { isLinkInMaintenance } from '../utils/linkMaintenance';
 import { shouldOpenInfoDialog, shouldShowLinkNotes } from '../utils/linkFeatureToggles';
 import { LinkMaintenanceBadge } from './LinkMaintenanceBadge';
 import { LinkHoverTooltip } from './LinkHoverTooltip';
+import { useSettings } from '../contexts/SettingsContext';
+import { isUrlExcludedFromLinkCheck, parseExceptionsSetting } from '../services/linkCheckExceptionsService';
 
 const stripHtml = (value: string): string =>
   String(value || '').replace(/<[^>]*>/g, '').trim();
@@ -139,6 +141,11 @@ const SortableFavoriteLinkCard: React.FC<{
     isDragging,
   } = useSortable({ id: link.id, disabled: !canDrag });
   const { assertCanOpen } = useAccessRestrictionGate();
+  const { settings } = useSettings();
+  const linkCheckExceptions = useMemo(
+    () => parseExceptionsSetting(settings.link_check_exceptions),
+    [settings.link_check_exceptions]
+  );
 
   const parentTile = tiles.find((t) => t.id === link.tile.id);
   const browserToUse =
@@ -150,7 +157,7 @@ const SortableFavoriteLinkCard: React.FC<{
 
   const fullAnimationClass = `${animationClass} ${decorationClass}`.trim();
   const tileAnimatedClass = animationClass ? 'linknest-tile-animated' : '';
-  const skipHealth = isSshLinkUrl(link.url) || isVncLinkUrl(link.url);
+  const skipHealth = isSshLinkUrl(link.url) || isVncLinkUrl(link.url) || isUrlExcludedFromLinkCheck(link.url, linkCheckExceptions);
   const healthStatus = skipHealth ? 'unknown' : healthResult?.health?.status || 'unknown';
   const latency = healthResult?.latency;
   const httpCode = healthResult?.health?.httpCode;
@@ -518,6 +525,11 @@ export const FavoriteLinksSection: React.FC<FavoriteLinksSectionProps> = ({
 }) => {
   const [savingOrder, setSavingOrder] = useState(false);
   const [linksCompact, setLinksCompact] = useState(() => readFavLinksCompactPref());
+  const { settings } = useSettings();
+  const linkCheckExceptions = useMemo(
+    () => parseExceptionsSetting(settings.link_check_exceptions),
+    [settings.link_check_exceptions]
+  );
   const sensors = useSensors(
     useSensor(PointerSensor, { activationConstraint: { distance: 8 } })
   );
@@ -797,7 +809,7 @@ export const FavoriteLinksSection: React.FC<FavoriteLinksSectionProps> = ({
                   formatBrowserName={formatBrowserName}
                   openLinkInBrowser={openLinkInBrowser}
                   healthResult={
-                    isSshLinkUrl(link.url) || isVncLinkUrl(link.url)
+                    isSshLinkUrl(link.url) || isVncLinkUrl(link.url) || isUrlExcludedFromLinkCheck(link.url, linkCheckExceptions)
                       ? undefined
                       : linkHealthResults.get(link.id)
                   }

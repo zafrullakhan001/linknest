@@ -1108,6 +1108,11 @@ function handleCheckUrls() {
             $parts = parse_url($url);
             $scheme = strtolower((string)($parts['scheme'] ?? ''));
             if ($scheme !== 'http' && $scheme !== 'https') continue;
+            if (isLinkCheckExceptionUrl($url) || shouldSkipLinkHealthCheck($url)) {
+                $urls[] = $url;
+                if (count($urls) >= 20) break;
+                continue;
+            }
             if (!filter_var($url, FILTER_VALIDATE_URL)) continue;
             $urls[] = $url;
             if (count($urls) >= 20) break;
@@ -1205,6 +1210,17 @@ function handleCheckUrl() {
             return;
         }
 
+        if (isLinkCheckExceptionUrl($url)) {
+            sendJSON([
+                'success' => true,
+                'url' => $url,
+                'scheme' => $scheme,
+                'skipped' => true,
+                'health' => null
+            ]);
+            return;
+        }
+
         if (!filter_var($url, FILTER_VALIDATE_URL)) {
             sendJSON([
                 'success' => true,
@@ -1217,17 +1233,6 @@ function handleCheckUrl() {
                     'serverLatency' => 0,
                     'checkedAt' => time()
                 ]
-            ]);
-            return;
-        }
-
-        if (isLinkCheckExceptionUrl($url)) {
-            sendJSON([
-                'success' => true,
-                'url' => $url,
-                'scheme' => $scheme,
-                'skipped' => true,
-                'health' => null
             ]);
             return;
         }

@@ -175,6 +175,45 @@ export function isUrlExcludedFromLinkCheck(url: string, exceptions: string[]): b
   return exceptions.some((p) => urlMatchesLinkCheckException(url, p));
 }
 
+export function urlIsExactLinkCheckException(url: string, exceptions: string[]): boolean {
+  const pattern = normalizeExceptionPattern(url);
+  if (!pattern) return false;
+  return parseExceptionPatterns(exceptions).includes(pattern);
+}
+
+export function coveringLinkCheckException(url: string, exceptions: string[]): string | null {
+  for (const pattern of parseExceptionPatterns(exceptions)) {
+    if (urlMatchesLinkCheckException(url, pattern)) return pattern;
+  }
+  return null;
+}
+
+/** Add or remove this exact URL from the admin Link Check Exceptions list. */
+export async function persistUrlLinkCheckException(
+  currentSetting: string | undefined | null,
+  url: string,
+  exclude: boolean
+): Promise<string> {
+  const { settingsService } = await import('./settingsService');
+  const current = parseExceptionsSetting(currentSetting);
+  const pattern = normalizeExceptionPattern(url);
+  if (!pattern) {
+    throw new Error('Enter a URL first');
+  }
+  let next: string[];
+  if (exclude) {
+    next = parseExceptionPatterns([...current, pattern]);
+    if (next.length > MAX_LINK_CHECK_EXCEPTIONS) {
+      throw new Error(`Maximum ${MAX_LINK_CHECK_EXCEPTIONS} exceptions allowed`);
+    }
+  } else {
+    next = current.filter((p) => p !== pattern);
+  }
+  const value = exceptionsToSettingValue(next);
+  await settingsService.updateSettings({ link_check_exceptions: value });
+  return value;
+}
+
 function extractHost(normalized: string): string {
   try {
     const withScheme = /^[a-z][a-z0-9+.-]*:/i.test(normalized)

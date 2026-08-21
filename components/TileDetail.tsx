@@ -15,6 +15,7 @@ import { cloneTile, createTile, getTiles, saveTile, toggleLinkFavorite, createTe
 import { generateUuid } from '../services/idService';
 import { removeSharedTile } from '../services/tileShareService';
 import { useSettings } from '../contexts/SettingsContext';
+import { useAuth } from '../contexts/AuthContext';
 import { useAccessRestrictionGate } from '../contexts/AccessRestrictionContext';
 import { hasAccessRestrictions } from '../services/accessRestrictionService';
 import { AccessRestrictionsEditor, AccessRestrictionsBadge } from './AccessRestrictionsEditor';
@@ -76,6 +77,13 @@ import { diagnoseLinkUrl, hasBlockingUrlIssues } from '../utils/urlDiagnostics';
 import { UrlFormDiagnostics, UrlNeedsFixBadge } from './UrlFormDiagnostics';
 import { tryHandleSshLinkClick, isSshLinkUrl } from '../utils/sshLink';
 import { tryHandleVncLinkClick, isVncLinkUrl } from '../utils/vncLink';
+import {
+    coveringLinkCheckException,
+    isUrlExcludedFromLinkCheck,
+    parseExceptionsSetting,
+    persistUrlLinkCheckException,
+    urlIsExactLinkCheckException,
+} from '../services/linkCheckExceptionsService';
 import { printQrView } from '../utils/printQrView';
 import { rolesService, LINK_ACTION_IDS, type LinkActionId } from '../services/rolesService';
 
@@ -457,7 +465,7 @@ const hopStatusColor = (code: number): string => {
     return 'bg-slate-100 text-slate-700 dark:bg-slate-800 dark:text-slate-300 border-slate-200 dark:border-slate-600';
 };
 
-const UrlProbeBadges: React.FC<{ url: string }> = ({ url }) => {
+const UrlProbeBadges: React.FC<{ url: string; excluded?: boolean }> = ({ url, excluded }) => {
     const diagnosis = useMemo(() => diagnoseLinkUrl(url), [url]);
     const blocking = hasBlockingUrlIssues(diagnosis);
     const [phase, setPhase] = useState<'idle' | 'checking' | 'done' | 'error'>('idle');
@@ -484,7 +492,7 @@ const UrlProbeBadges: React.FC<{ url: string }> = ({ url }) => {
         browserAbortRef.current?.abort();
         browserAbortRef.current = null;
 
-        if (blocking || !isProbableUrl(trimmed)) {
+        if (excluded || blocking || !isProbableUrl(trimmed)) {
             setPhase('idle');
             setBrowserPhase('idle');
             setScheme('');
@@ -584,7 +592,7 @@ const UrlProbeBadges: React.FC<{ url: string }> = ({ url }) => {
             abortRef.current?.abort();
             browserAbortRef.current?.abort();
         };
-    }, [url, blocking]);
+    }, [url, blocking, excluded]);
 
     useEffect(() => {
         if (!chainOpen) return;
@@ -599,6 +607,19 @@ const UrlProbeBadges: React.FC<{ url: string }> = ({ url }) => {
             document.body.style.overflow = prevOverflow;
         };
     }, [chainOpen]);
+
+    if (excluded) {
+        return (
+            <span
+                className="inline-flex items-center gap-1 text-[10px] font-semibold px-2 py-0.5 rounded-full border bg-slate-100 text-slate-700 dark:bg-slate-800 dark:text-slate-200 border-slate-300 dark:border-slate-600"
+                title="This URL is on Link Check Exceptions. Check Links will skip it and will not mark it Broken."
+                role="status"
+            >
+                <span aria-hidden>🚫</span>
+                Ignored
+            </span>
+        );
+    }
 
     if (blocking) {
         const errorCount = diagnosis.issues.filter((item) => item.severity === 'error').length;
@@ -910,12 +931,43 @@ const LinkUrlField: React.FC<{
     const diagnosis = useMemo(() => diagnoseLinkUrl(value), [value]);
     const blocking = hasBlockingUrlIssues(diagnosis);
     const issuesId = useId();
+    const { settings, patchSettings } = useSettings();
+    const { user } = useAuth();
+    const isAdmin = !!user?.is_admin;
+    const [savingException, setSavingException] = useState(false);
+    const [exceptionError, setExceptionError] = useState('');
+
+    const exceptions = useMemo(
+        () => parseExceptionsSetting(settings.link_check_exceptions),
+        [settings.link_check_exceptions]
+    );
+    const trimmedUrl = (value || '').trim();
+    const isHttpUrl = /^https?:\/\//i.test(trimmedUrl);
+    const excluded = isHttpUrl && isUrlExcludedFromLinkCheck(trimmedUrl, exceptions);
+    const exactException = isHttpUrl && urlIsExactLinkCheckException(trimmedUrl, exceptions);
+    const coveringPattern = excluded ? coveringLinkCheckException(trimmedUrl, exceptions) : null;
+    const canToggle = isAdmin && isHttpUrl && !savingException && (exactException || !excluded || !coveringPattern);
+
+    const handleIgnoreChange = async (next: boolean) => {
+        if (!isAdmin || !isHttpUrl) return;
+        if (!next && !exactException) return;
+        setSavingException(true);
+        setExceptionError('');
+        try {
+            const stored = await persistUrlLinkCheckException(settings.link_check_exceptions, trimmedUrl, next);
+            patchSettings({ link_check_exceptions: stored });
+        } catch (err: unknown) {
+            setExceptionError(err instanceof Error ? err.message : 'Failed to update Link Check Exceptions');
+        } finally {
+            setSavingException(false);
+        }
+    };
 
     return (
         <div>
             <div className="flex items-center justify-between gap-2 mb-1.5 flex-wrap">
                 <label className="block text-xs font-semibold uppercase tracking-wider text-slate-600 dark:text-slate-400">URL</label>
-                <UrlProbeBadges url={value} />
+                <UrlProbeBadges url={value} excluded={excluded} />
             </div>
             <input
                 type="text"
@@ -930,6 +982,39 @@ const LinkUrlField: React.FC<{
                         : 'border-slate-200 dark:border-slate-700 focus:border-brand-500 focus:ring-brand-500/50'
                 }`}
             />
+            {isHttpUrl && (isAdmin || excluded) && (
+                <label
+                    className={`mt-2 flex items-start gap-2 select-none ${canToggle ? 'cursor-pointer' : 'cursor-default'}`}
+                    title={
+                        !isAdmin
+                            ? 'This URL is on Link Check Exceptions. Ask an admin to change it.'
+                            : excluded && !exactException && coveringPattern
+                              ? `Covered by host exception "${coveringPattern}". Remove that pattern in Admin → Link Check Exceptions to check this URL.`
+                              : 'When checked, this URL is added to Link Check Exceptions and skipped by Check Links.'
+                    }
+                >
+                    <input
+                        type="checkbox"
+                        className="mt-0.5 w-4 h-4 rounded border-slate-300 text-sky-600 focus:ring-sky-500 dark:bg-slate-800 dark:border-slate-600"
+                        checked={excluded}
+                        disabled={!canToggle}
+                        onChange={(e) => void handleIgnoreChange(e.target.checked)}
+                    />
+                    <span className="text-xs text-slate-600 dark:text-slate-400 leading-snug">
+                        Ignore from Check Links
+                        <span className="block text-[11px] text-slate-500 dark:text-slate-500">
+                            {savingException
+                                ? 'Saving…'
+                                : excluded && !exactException && coveringPattern
+                                  ? `Covered by exception: ${coveringPattern}`
+                                  : 'Adds this URL to Link Check Exceptions so it is never marked Broken.'}
+                        </span>
+                    </span>
+                </label>
+            )}
+            {exceptionError && (
+                <p className="mt-1 text-[11px] text-red-600 dark:text-red-400">{exceptionError}</p>
+            )}
             {blocking && (
                 <UrlFormDiagnostics diagnosis={diagnosis} listId={issuesId} onApplyFix={onChange} />
             )}
@@ -1205,6 +1290,10 @@ export const TileDetail: React.FC<TileDetailProps> = ({
     const [visibilityActiveTab, setVisibilityActiveTab] = useState<'users' | 'groups'>('users');
 
     const { settings } = useSettings();
+    const linkCheckExceptions = useMemo(
+        () => parseExceptionsSetting(settings.link_check_exceptions),
+        [settings.link_check_exceptions]
+    );
     const isMobile = useMobile(768); // Use mobile layout below 768px
 
     // Tabs State (new structure)
@@ -1759,7 +1848,7 @@ export const TileDetail: React.FC<TileDetailProps> = ({
         const sectionsToCheck = tile.tabs ? tile.tabs.flatMap(tab => tab.sections) : (tile.sections || []);
         sectionsToCheck.forEach(section => {
             section.links?.forEach(link => {
-                if (link.health && !isSshLinkUrl(link.url || '') && !isVncLinkUrl(link.url || '')) {
+                if (link.health && !isSshLinkUrl(link.url || '') && !isVncLinkUrl(link.url || '') && !isUrlExcludedFromLinkCheck(link.url || '', linkCheckExceptions)) {
                     healthMap[link.id] = link.health;
                 }
             });
@@ -7257,7 +7346,9 @@ export const TileDetail: React.FC<TileDetailProps> = ({
                                                         // Render link (itemType === 'link')
                                                         const link = item as Link;
                                                         const skipHealth =
-                                                            isSshLinkUrl(link.url || '') || isVncLinkUrl(link.url || '');
+                                                            isSshLinkUrl(link.url || '') ||
+                                                            isVncLinkUrl(link.url || '') ||
+                                                            isUrlExcludedFromLinkCheck(link.url || '', linkCheckExceptions);
                                                         const health = skipHealth ? undefined : linkHealth[link.id];
                                                         const isBroken = !skipHealth && health?.status === 'broken';
                                                         const isGridCards = sectionLinkLayout === 'grid';
