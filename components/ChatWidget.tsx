@@ -264,8 +264,10 @@ export const ChatWidget: React.FC<ChatWidgetProps> = ({ tiles, onTileShared, onT
   const [chatTheme, setChatTheme] = useState<ChatThemeId>(readChatTheme);
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const chatContainerRef = useRef<HTMLDivElement>(null);
+  const messageInputRef = useRef<HTMLInputElement>(null);
   const { user } = useAuth();
   const t = CHAT_THEMES[chatTheme];
+  const lastNotifiedMessageIdRef = useRef<number>(0);
 
   const applyChatTheme = (id: ChatThemeId) => {
     setChatTheme(id);
@@ -476,9 +478,9 @@ export const ChatWidget: React.FC<ChatWidgetProps> = ({ tiles, onTileShared, onT
     return () => clearInterval(interval);
   }, [selectedRecipient]);
 
-  // Mark existing messages as read when widget first opens or recipient changes
+  // Mark existing messages as read when widget first opens or recipient changes (only if tab is visible)
   useEffect(() => {
-    if (messages.length > 0 && user && onUnreadChange) {
+    if (messages.length > 0 && user && onUnreadChange && document.visibilityState === 'visible') {
       const maxId = Math.max(...messages.map(m => m.id));
       if (maxId > lastSeenMessageIdRef.current) {
         lastSeenMessageIdRef.current = maxId;
@@ -493,39 +495,84 @@ export const ChatWidget: React.FC<ChatWidgetProps> = ({ tiles, onTileShared, onT
     scrollToBottom();
   }, [messages]);
 
-  // Track unread messages and notify parent
+  const showNewMessageBrowserNotification = (msg: ChatMessage) => {
+    if (!('Notification' in window) || Notification.permission !== 'granted') return;
+    // Avoid notifying while the user is actively looking at this chat
+    if (document.visibilityState === 'visible') return;
+    if (msg.id <= lastNotifiedMessageIdRef.current) return;
+    lastNotifiedMessageIdRef.current = msg.id;
+    try {
+      const preview =
+        msg.message_type === 'tile'
+          ? 'Shared a tile'
+          : msg.message_type === 'json'
+            ? 'Shared JSON'
+            : (msg.message || 'New message').slice(0, 120);
+      const n = new Notification('New chat message', {
+        body: `${msg.username}: ${preview}`,
+        tag: 'linknest-chat-new',
+      });
+      n.onclick = () => {
+        window.focus();
+        n.close();
+      };
+    } catch {
+      // ignore (unsupported / blocked)
+    }
+  };
+
+  // Track unread messages and notify parent; browser-notify when tab is hidden
   useEffect(() => {
     if (!user || !onUnreadChange) return;
-    
-    // Check for unread messages (messages from other users that are newer than last seen)
-    const unreadMessages = messages.filter(msg => 
-      msg.user_id !== user.id && 
-      msg.id > lastSeenMessageIdRef.current
+
+    const unreadMessages = messages.filter(
+      (msg) => msg.user_id !== user.id && msg.id > lastSeenMessageIdRef.current
     );
-    
+
     const hasUnread = unreadMessages.length > 0;
     onUnreadChange(hasUnread);
+
+    if (hasUnread && document.visibilityState === 'hidden') {
+      const newest = unreadMessages.reduce((a, b) => (a.id > b.id ? a : b));
+      showNewMessageBrowserNotification(newest);
+    }
   }, [messages, user, onUnreadChange]);
 
-  // Mark new messages as read when they arrive while widget is open
+  // Mark new messages as read when they arrive while widget is open AND tab is visible
   useEffect(() => {
-    if (messages.length > 0 && user) {
-      const maxId = Math.max(...messages.map(m => m.id));
+    if (messages.length === 0 || !user) return;
+    if (document.visibilityState !== 'visible') return;
+
+    const maxId = Math.max(...messages.map((m) => m.id));
+    if (maxId > lastSeenMessageIdRef.current) {
+      lastSeenMessageIdRef.current = maxId;
+      setLastSeenMessageId(maxId);
+      if (onUnreadChange) {
+        onUnreadChange(false);
+      }
+    }
+  }, [messages, user, onUnreadChange]);
+
+  // When tab becomes visible again with chat open, mark current messages as read
+  useEffect(() => {
+    const onVisibility = () => {
+      if (document.visibilityState !== 'visible' || !user || messages.length === 0) return;
+      const maxId = Math.max(...messages.map((m) => m.id));
       if (maxId > lastSeenMessageIdRef.current) {
         lastSeenMessageIdRef.current = maxId;
         setLastSeenMessageId(maxId);
-        // Clear unread status since we're viewing the messages
-        if (onUnreadChange) {
-          onUnreadChange(false);
-        }
       }
-    }
+      onUnreadChange?.(false);
+    };
+    document.addEventListener('visibilitychange', onVisibility);
+    return () => document.removeEventListener('visibilitychange', onVisibility);
   }, [messages, user, onUnreadChange]);
   
   // Initialize last seen message ID from localStorage on mount
   useEffect(() => {
     if (user) {
       lastSeenMessageIdRef.current = getLastSeenMessageId();
+      lastNotifiedMessageIdRef.current = lastSeenMessageIdRef.current;
     }
   }, [user]);
 
@@ -578,6 +625,10 @@ export const ChatWidget: React.FC<ChatWidgetProps> = ({ tiles, onTileShared, onT
       alert('Failed to send message. Please try again.');
     } finally {
       setIsLoading(false);
+      // Keep typing focus in the message box after send
+      requestAnimationFrame(() => {
+        messageInputRef.current?.focus();
+      });
     }
   };
 
@@ -1624,6 +1675,7 @@ export const ChatWidget: React.FC<ChatWidgetProps> = ({ tiles, onTileShared, onT
           </button>
           <div className="flex-1 flex flex-col">
             <input
+              ref={messageInputRef}
               type="text"
               value={inputMessage}
               onChange={(e) => {
@@ -1636,7 +1688,7 @@ export const ChatWidget: React.FC<ChatWidgetProps> = ({ tiles, onTileShared, onT
               placeholder="Type a message… ✨"
               maxLength={10000}
               className={`w-full px-4 py-2.5 rounded-2xl text-slate-900 dark:text-white focus:outline-none focus:ring-2 ${t.input}`}
-              disabled={isLoading || selectedTile !== null || showJsonInput}
+              disabled={selectedTile !== null || showJsonInput}
             />
             {inputMessage.length > 0 && (
               <div className={`text-xs mt-1 px-1 ${inputMessage.length >= 9500 ? 'text-red-500' : 'text-slate-500 dark:text-slate-400'}`}>

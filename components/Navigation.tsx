@@ -370,8 +370,8 @@ export const Navigation: React.FC<NavigationProps> = ({ darkMode, showClock, tog
                   <path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2"></path>
                   <circle cx="12" cy="7" r="4"></circle>
                 </svg>
-                {hasUnreadChatMessages && !showChat && (
-                  <span className="absolute top-0 right-0 w-2 h-2 bg-red-500 rounded-full"></span>
+                {hasUnreadChatMessages && (
+                  <span className="absolute top-0 right-0 w-2.5 h-2.5 bg-red-500 rounded-full ring-2 ring-white dark:ring-slate-800"></span>
                 )}
               </button>
             )}

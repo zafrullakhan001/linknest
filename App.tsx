@@ -287,24 +287,72 @@ const AppContent: React.FC = () => {
 
   // Chat unread messages state
   const [hasUnreadChatMessages, setHasUnreadChatMessages] = useState(false);
+  const lastChatNotifiedIdRef = useRef<number>(0);
 
   // Widget Quick Access Menu State
   const [showWidgetQuickAccess, setShowWidgetQuickAccess] = useState(false);
+
+  // Request browser notification permission once after login (for chat alerts)
+  useEffect(() => {
+    if (!isAuthenticated || !user) return;
+    if (!('Notification' in window)) return;
+    if (Notification.permission !== 'default') return;
+    // Soft request — browsers only show the prompt from a user gesture in some cases;
+    // still try so permission is ready when a message arrives.
+    const t = window.setTimeout(() => {
+      void Notification.requestPermission().catch(() => undefined);
+    }, 2500);
+    return () => window.clearTimeout(t);
+  }, [isAuthenticated, user]);
 
   // Poll for unread messages when widget is closed
   useEffect(() => {
     if (!isAuthenticated || showChat || !user) return;
 
+    const showBrowserNotification = (msg: { id: number; username: string; message?: string; message_type: string }) => {
+      if (!('Notification' in window) || Notification.permission !== 'granted') return;
+      if (msg.id <= lastChatNotifiedIdRef.current) return;
+      lastChatNotifiedIdRef.current = msg.id;
+      try {
+        const preview =
+          msg.message_type === 'tile'
+            ? 'Shared a tile'
+            : msg.message_type === 'json'
+              ? 'Shared JSON'
+              : (msg.message || 'New message').slice(0, 120);
+        const n = new Notification('New chat message', {
+          body: `${msg.username}: ${preview}`,
+          tag: 'linknest-chat-new',
+        });
+        n.onclick = () => {
+          window.focus();
+          n.close();
+        };
+      } catch {
+        // ignore
+      }
+    };
+
     const checkUnreadMessages = async () => {
       try {
-        const messages = await getMessages(1, 0, null); // Get latest message
-        if (messages.length > 0) {
-          const lastSeenId = parseInt(localStorage.getItem(`linknest_last_seen_message_${user.id}`) || '0', 10);
-          const hasUnread = messages.some(msg =>
-            msg.user_id !== user.id &&
-            msg.id > lastSeenId
-          );
-          setHasUnreadChatMessages(hasUnread);
+        // Fetch a batch so we don't miss unread when the latest message is from yourself
+        const messages = await getMessages(30, 0, null);
+        if (messages.length === 0) {
+          setHasUnreadChatMessages(false);
+          return;
+        }
+        const lastSeenId = parseInt(localStorage.getItem(`linknest_last_seen_message_${user.id}`) || '0', 10);
+        if (lastChatNotifiedIdRef.current < lastSeenId) {
+          lastChatNotifiedIdRef.current = lastSeenId;
+        }
+        const unreadFromOthers = messages.filter(
+          (msg) => msg.user_id !== user.id && msg.id > lastSeenId
+        );
+        const hasUnread = unreadFromOthers.length > 0;
+        setHasUnreadChatMessages(hasUnread);
+        if (hasUnread) {
+          const newest = unreadFromOthers.reduce((a, b) => (a.id > b.id ? a : b));
+          showBrowserNotification(newest);
         }
       } catch (error) {
         // Silently fail - don't spam console
@@ -633,7 +681,14 @@ const AppContent: React.FC = () => {
   };
 
   const toggleChat = () => {
-    setShowChat(!showChat);
+    setShowChat((prev) => {
+      const next = !prev;
+      // User gesture: request browser notification permission for chat alerts
+      if (next && 'Notification' in window && Notification.permission === 'default') {
+        void Notification.requestPermission().catch(() => undefined);
+      }
+      return next;
+    });
   };
 
   const toggleSnakeGame = () => {
@@ -1543,7 +1598,7 @@ const AppContent: React.FC = () => {
             </FloatingFavOrganizerWidget>
           )}
           {showChat && isAuthenticated && isWidgetAllowed('chat') && (
-            <FloatingChatWidget>
+            <FloatingChatWidget hasUnread={hasUnreadChatMessages}>
               <ChatWidget
                 tiles={tiles}
                 onClose={toggleChat}
@@ -1774,6 +1829,7 @@ const AppContent: React.FC = () => {
                 isVisible: showChat,
                 onToggle: toggleChat,
                 requiresAuth: true,
+                hasBadge: hasUnreadChatMessages,
               },
               {
                 id: 'snake-game',

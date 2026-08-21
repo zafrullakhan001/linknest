@@ -9,6 +9,7 @@ interface WidgetQuickAccessProps {
     isVisible: boolean;
     onToggle: () => void;
     requiresAuth?: boolean;
+    hasBadge?: boolean;
   }>;
   user: { id: number; username: string; email: string; is_admin?: boolean } | null;
 }
@@ -176,13 +177,16 @@ export const WidgetQuickAccess: React.FC<WidgetQuickAccessProps> = ({
                 } ${widget.isVisible ? 'bg-brand-50/50 dark:bg-brand-900/20' : ''}`}
               >
                 <div
-                  className={`flex-shrink-0 w-9 h-9 rounded-lg flex items-center justify-center ${
+                  className={`relative flex-shrink-0 w-9 h-9 rounded-lg flex items-center justify-center ${
                     widget.isVisible
                       ? 'bg-brand-500 text-white'
                       : 'bg-slate-100 dark:bg-slate-700 text-slate-600 dark:text-slate-400'
                   }`}
                 >
                   {widget.icon}
+                  {widget.hasBadge && (
+                    <span className="absolute -top-0.5 -right-0.5 w-2.5 h-2.5 bg-red-500 rounded-full ring-2 ring-white dark:ring-slate-800" />
+                  )}
                 </div>
                 <div className="flex-1 text-left min-w-0">
                   <div className="text-sm font-medium text-slate-900 dark:text-white truncate">{widget.name}</div>

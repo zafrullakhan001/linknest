@@ -73,7 +73,8 @@ function safeParseSize(raw: string | null): Size | null {
 export const FloatingChatWidget: React.FC<{
   children: React.ReactNode;
   defaultPosition?: Point;
-}> = ({ children, defaultPosition }) => {
+  hasUnread?: boolean;
+}> = ({ children, defaultPosition, hasUnread = false }) => {
   const containerRef = useRef<HTMLDivElement | null>(null);
 
   const initialPos = useMemo<Point>(() => {
@@ -323,6 +324,9 @@ export const FloatingChatWidget: React.FC<{
           aria-label="Drag chat widget"
         >
           <span className="text-[14px] leading-none flex items-center gap-0.5">💬 <span className="tracking-widest">⋮</span></span>
+          {hasUnread && (
+            <span className="absolute -top-0.5 -right-0.5 w-2.5 h-2.5 bg-red-500 rounded-full ring-2 ring-white dark:ring-slate-800" aria-label="New messages" />
+          )}
         </button>
 
         {/* Resize handles */}
