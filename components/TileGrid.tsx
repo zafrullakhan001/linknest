@@ -19,6 +19,7 @@ import { useAuth } from '../contexts/AuthContext';
 import { useAccessRestrictionGate } from '../contexts/AccessRestrictionContext';
 import { AccessRestrictionsEditor, AccessRestrictionsBadge } from './AccessRestrictionsEditor';
 import { userPreferencesService } from '../services/userPreferencesService';
+import { categoryPresetService, groupDbCategoryPresets, flattenCategoryPresetsForSync } from '../services/categoryPresetService';
 import { getPublicFavorites, togglePublicFavorite, isPublicFavorite, getPublicActiveTab, setPublicActiveTab, exportPublicFavorites, importPublicFavorites, clearPublicFavorites, getPublicLinkFavorites, togglePublicLinkFavorite, clearPublicLinkFavorites, getPublicLinkFavoriteDetails, syncPublicLinkFavoriteDetails, upsertPublicLinkFavoriteDetail, removePublicLinkFavoriteDetail, getPublicFavoritesInstanceLabel, setPublicFavorites as writePublicFavorites, setPublicLinkFavorites as writePublicLinkFavorites, swapPublicFavoriteIds, getPublicFavoritesLayout, setPublicFavoritesLayout } from '../services/publicFavoritesService';
 import { linkHealthService } from '../services/linkHealthService';
 import { favoriteLinkHealthService, LinkHealthCheckResult } from '../services/favoriteLinkHealthService';
@@ -3023,7 +3024,10 @@ export const TileGrid: React.FC<TileGridProps> = ({
       delete next[activeTab];
       return next;
     });
-  }, [activeTab]);
+    if (isAuthenticated) {
+      categoryPresetService.setActive(activeTab, null).catch(() => { });
+    }
+  }, [activeTab, isAuthenticated]);
 
   const showAllCategoriesOnMainPage = useCallback(() => {
     setHiddenCategoriesByTab((prev) => {
@@ -3039,7 +3043,10 @@ export const TileGrid: React.FC<TileGridProps> = ({
       delete next[activeTab];
       return next;
     });
-  }, [activeTab]);
+    if (isAuthenticated) {
+      categoryPresetService.setActive(activeTab, null).catch(() => { });
+    }
+  }, [activeTab, isAuthenticated]);
 
   const hideAllCategoriesOnMainPage = useCallback((categoryNames: string[]) => {
     setHiddenCategoriesByTab((prev) => ({
@@ -3053,7 +3060,10 @@ export const TileGrid: React.FC<TileGridProps> = ({
       delete next[activeTab];
       return next;
     });
-  }, [activeTab]);
+    if (isAuthenticated) {
+      categoryPresetService.setActive(activeTab, null).catch(() => { });
+    }
+  }, [activeTab, isAuthenticated]);
 
   const [categoryPresetsByTab, setCategoryPresetsByTab] = useState<Record<string, CategoryVisibilityPreset[]>>(() => {
     if (typeof window === 'undefined') return {};
@@ -3101,6 +3111,43 @@ export const TileGrid: React.FC<TileGridProps> = ({
     }
   }, [activePresetIdByTab]);
 
+  useEffect(() => {
+    if (!isAuthenticated) return;
+    let cancelled = false;
+    (async () => {
+      try {
+        let data = await categoryPresetService.list();
+        if (cancelled) return;
+        if (data.presets.length === 0) {
+          const local = parseCategoryPresetsByTab(localStorage.getItem(CATEGORY_PRESETS_STORAGE_KEY));
+          const localActive = parseActivePresetIds(localStorage.getItem(CATEGORY_PRESET_ACTIVE_STORAGE_KEY));
+          const importPayload: Array<{ tab_key: string; name: string; visible: string[]; is_active?: boolean }> = [];
+          Object.entries(local).forEach(([tabKey, list]) => {
+            list.forEach((preset) => {
+              importPayload.push({
+                tab_key: tabKey,
+                name: preset.name,
+                visible: preset.visible,
+                is_active: localActive[tabKey] === preset.id
+              });
+            });
+          });
+          if (importPayload.length > 0) {
+            data = await categoryPresetService.importLocal(importPayload);
+          }
+        }
+        if (cancelled) return;
+        setCategoryPresetsByTab(groupDbCategoryPresets(data.presets));
+        setActivePresetIdByTab(data.activeByTab || {});
+      } catch (error) {
+        console.debug('Could not load category presets from the database:', error);
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [isAuthenticated]);
+
   const tabCategoryPresets = categoryPresetsByTab[activeTab] || [];
   const activeCategoryPresetId = activePresetIdByTab[activeTab] || '';
   const activeCategoryPreset = tabCategoryPresets.find((preset) => preset.id === activeCategoryPresetId) || null;
@@ -3118,9 +3165,14 @@ export const TileGrid: React.FC<TileGridProps> = ({
     setActivePresetIdByTab((prev) => ({ ...prev, [activeTab]: preset.id }));
     setSelectedCategoryFilter(null);
     setPresetNameDraft(preset.name);
-  }, [activeTab]);
+    if (isAuthenticated && /^\d+$/.test(preset.id)) {
+      categoryPresetService.apply(preset.id).catch((error) => {
+        console.error('Failed to apply category preset', error);
+      });
+    }
+  }, [activeTab, isAuthenticated]);
 
-  const saveCategoryPreset = useCallback((name: string, visibleNames: string[]) => {
+  const saveCategoryPreset = useCallback(async (name: string, visibleNames: string[]) => {
     const trimmed = name.trim().slice(0, 60);
     if (!trimmed) return;
     const existing = (categoryPresetsByTab[activeTab] || []).find(
@@ -3132,6 +3184,32 @@ export const TileGrid: React.FC<TileGridProps> = ({
       const replace = window.confirm(`A preset named "${existing.name}" already exists. Replace it with the current selection?`);
       if (!replace) return;
     }
+
+    if (isAuthenticated) {
+      try {
+        const saved = await categoryPresetService.save(activeTab, existing?.name || trimmed, visibleNames);
+        const nextPreset: CategoryVisibilityPreset = {
+          id: String(saved.id),
+          name: saved.name,
+          visible: Array.isArray(saved.visible) ? saved.visible : [...visibleNames]
+        };
+        setCategoryPresetsByTab((prev) => {
+          const list = [...(prev[activeTab] || [])].filter((preset) => {
+            if (preset.id === nextPreset.id) return false;
+            if (existing && preset.id === existing.id) return false;
+            return preset.name.toLowerCase() !== nextPreset.name.toLowerCase();
+          });
+          list.push(nextPreset);
+          return { ...prev, [activeTab]: list };
+        });
+        setActivePresetIdByTab((prev) => ({ ...prev, [activeTab]: nextPreset.id }));
+        setPresetNameDraft(nextPreset.name);
+      } catch (error) {
+        alert(error instanceof Error ? error.message : 'Failed to save preset to the database.');
+      }
+      return;
+    }
+
     const id = existing?.id || generateUuid();
     const nextPreset: CategoryVisibilityPreset = { id, name: existing?.name || trimmed, visible: [...visibleNames] };
     setCategoryPresetsByTab((prev) => {
@@ -3143,12 +3221,22 @@ export const TileGrid: React.FC<TileGridProps> = ({
     });
     setActivePresetIdByTab((prev) => ({ ...prev, [activeTab]: id }));
     setPresetNameDraft(nextPreset.name);
-  }, [activeTab, categoryPresetsByTab]);
+  }, [activeTab, categoryPresetsByTab, isAuthenticated]);
 
-  const deleteCategoryPreset = useCallback((presetId: string) => {
+  const deleteCategoryPreset = useCallback(async (presetId: string) => {
     const preset = (categoryPresetsByTab[activeTab] || []).find((item) => item.id === presetId);
     if (!preset) return;
     if (!window.confirm(`Delete preset "${preset.name}"?`)) return;
+
+    if (isAuthenticated && /^\d+$/.test(presetId)) {
+      try {
+        await categoryPresetService.remove(presetId);
+      } catch (error) {
+        alert(error instanceof Error ? error.message : 'Failed to delete preset from the database.');
+        return;
+      }
+    }
+
     setCategoryPresetsByTab((prev) => {
       const list = (prev[activeTab] || []).filter((item) => item.id !== presetId);
       const next = { ...prev };
@@ -3163,7 +3251,22 @@ export const TileGrid: React.FC<TileGridProps> = ({
       return next;
     });
     if (presetNameDraft === preset.name) setPresetNameDraft('');
-  }, [activeTab, categoryPresetsByTab, presetNameDraft]);
+  }, [activeTab, categoryPresetsByTab, presetNameDraft, isAuthenticated]);
+
+  const persistCategoryPresetsToDb = useCallback((
+    byTab: Record<string, CategoryVisibilityPreset[]>,
+    activeByTab: Record<string, string>
+  ) => {
+    if (!isAuthenticated) return;
+    categoryPresetService.sync(flattenCategoryPresetsForSync(byTab, activeByTab))
+      .then((data) => {
+        setCategoryPresetsByTab(groupDbCategoryPresets(data.presets));
+        setActivePresetIdByTab(data.activeByTab || {});
+      })
+      .catch((error) => {
+        console.error('Failed to sync category presets to the database', error);
+      });
+  }, [isAuthenticated]);
 
   // Edit Modal Tab State
   const [editModalActiveTab, setEditModalActiveTab] = useState<'general' | 'decoration' | 'messages'>('general');
@@ -4262,14 +4365,6 @@ You may also wrap the array in an object: { "messages": [ ... ] }.
             setHiddenCategoriesByTab(parseHiddenCategoriesByTab(String(prefs.hiddenCategories ?? '')));
           }
 
-          if (Object.prototype.hasOwnProperty.call(prefs, 'categoryPresets')) {
-            setCategoryPresetsByTab(parseCategoryPresetsByTab(String(prefs.categoryPresets ?? '')));
-          }
-
-          if (Object.prototype.hasOwnProperty.call(prefs, 'categoryPresetActive')) {
-            setActivePresetIdByTab(parseActivePresetIds(String(prefs.categoryPresetActive ?? '')));
-          }
-
           setPreferencesLoaded(true);
         })
         .catch(error => {
@@ -4365,27 +4460,7 @@ You may also wrap the array in an object: { "messages": [ ... ] }.
     }
   }, [hiddenCategoriesByTab, isAuthenticated, preferencesLoaded]);
 
-  useEffect(() => {
-    if (isAuthenticated && preferencesLoaded) {
-      const timeoutId = setTimeout(() => {
-        const hasAny = Object.keys(categoryPresetsByTab).some((tab) => (categoryPresetsByTab[tab] || []).length > 0);
-        userPreferencesService.updatePreference('categoryPresets', hasAny ? JSON.stringify(categoryPresetsByTab) : '')
-          .catch(() => { });
-      }, 300);
-      return () => clearTimeout(timeoutId);
-    }
-  }, [categoryPresetsByTab, isAuthenticated, preferencesLoaded]);
-
-  useEffect(() => {
-    if (isAuthenticated && preferencesLoaded) {
-      const timeoutId = setTimeout(() => {
-        const hasAny = Object.keys(activePresetIdByTab).some((tab) => Boolean(activePresetIdByTab[tab]));
-        userPreferencesService.updatePreference('categoryPresetActive', hasAny ? JSON.stringify(activePresetIdByTab) : '')
-          .catch(() => { });
-      }, 300);
-      return () => clearTimeout(timeoutId);
-    }
-  }, [activePresetIdByTab, isAuthenticated, preferencesLoaded]);
+  // Category presets are stored in category_visibility_presets (not user_preferences)
 
   // Load user list when on Private tab (for owner filter labels)
   useEffect(() => {
@@ -6820,7 +6895,11 @@ You may also wrap the array in an object: { "messages": [ ... ] }.
       );
       setCategoryOrder(newCategoryOrder);
       setHiddenCategoriesByTab((prev) => remapHiddenCategoryKey(prev, oldName, trimmedNewName));
-      setCategoryPresetsByTab((prev) => remapPresetCategoryKey(prev, oldName, trimmedNewName));
+      setCategoryPresetsByTab((prev) => {
+        const next = remapPresetCategoryKey(prev, oldName, trimmedNewName);
+        persistCategoryPresetsToDb(next, activePresetIdByTab);
+        return next;
+      });
 
       // Save updated arrangements
       try {
@@ -6848,14 +6927,18 @@ You may also wrap the array in an object: { "messages": [ ... ] }.
         }
         setCategoryOrder(categoryOrder);
         setHiddenCategoriesByTab((prev) => remapHiddenCategoryKey(prev, trimmedNewName, oldName));
-        setCategoryPresetsByTab((prev) => remapPresetCategoryKey(prev, trimmedNewName, oldName));
+        setCategoryPresetsByTab((prev) => {
+          const next = remapPresetCategoryKey(prev, trimmedNewName, oldName);
+          persistCategoryPresetsToDb(next, activePresetIdByTab);
+          return next;
+        });
         alert('Failed to save category rename. Please try again.');
       }
     } catch (error) {
       console.error('Failed to rename category:', error);
       alert('Failed to rename category. Please try again.');
     }
-  }, [tiles, stagingTiles, activeTab, isAuthenticated, onUpdateTiles, categoryOrder, categoryMetadata, buildArrangementAndScope, styles.categoryTextTransform]);
+  }, [tiles, stagingTiles, activeTab, isAuthenticated, onUpdateTiles, categoryOrder, categoryMetadata, buildArrangementAndScope, styles.categoryTextTransform, persistCategoryPresetsToDb, activePresetIdByTab]);
 
   // Convert stored category names when they do not match the Style Manager text case.
   useEffect(() => {
@@ -6903,7 +6986,11 @@ You may also wrap the array in an object: { "messages": [ ... ] }.
     setCategoryMetadata(newMetadata);
     setSelectedCategoryFilter((current) => (current ? applyName(current) : current));
     setHiddenCategoriesByTab((prev) => remapHiddenCategoryNames(prev, applyName));
-    setCategoryPresetsByTab((prev) => remapPresetCategoryNames(prev, applyName));
+    setCategoryPresetsByTab((prev) => {
+      const next = remapPresetCategoryNames(prev, applyName);
+      if (next !== prev) persistCategoryPresetsToDb(next, activePresetIdByTab);
+      return next;
+    });
 
     const persist = async () => {
       try {
@@ -6945,7 +7032,9 @@ You may also wrap the array in an object: { "messages": [ ... ] }.
     stagingTiles,
     styles.categoryTextTransform,
     tiles,
-    user?.is_admin
+    user?.is_admin,
+    persistCategoryPresetsToDb,
+    activePresetIdByTab
   ]);
 
   const handleArchiveCategory = useCallback(async (categoryName: string) => {

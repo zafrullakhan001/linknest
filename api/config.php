@@ -138,7 +138,7 @@ if (!defined('SYSTEM_TOKEN')) {
 
 // Bump when schema/migrations in initDatabase() change. Enables fast-path getDB().
 if (!defined('LINKNEST_SCHEMA_VERSION')) {
-    define('LINKNEST_SCHEMA_VERSION', 94);
+    define('LINKNEST_SCHEMA_VERSION', 95);
 }
 
 function getSchemaPatchFlagPath(): string {
@@ -1131,6 +1131,34 @@ function ensureMcpTokensTable($db): void {
 }
 
 /**
+ * Named category-visibility presets (checked categories on the main page). Safe on every connection.
+ */
+function ensureCategoryVisibilityPresetsTable($db): void {
+    static $ensured = false;
+    if ($ensured) {
+        return;
+    }
+    try {
+        $db->exec('CREATE TABLE IF NOT EXISTS category_visibility_presets (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            user_id INTEGER NOT NULL,
+            tab_key TEXT NOT NULL,
+            name TEXT NOT NULL COLLATE NOCASE,
+            visible_json TEXT NOT NULL DEFAULT \'[]\',
+            is_active INTEGER NOT NULL DEFAULT 0,
+            created_at INTEGER NOT NULL,
+            updated_at INTEGER NOT NULL,
+            FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE
+        )');
+        $db->exec('CREATE INDEX IF NOT EXISTS idx_category_visibility_presets_user ON category_visibility_presets(user_id)');
+        $db->exec('CREATE UNIQUE INDEX IF NOT EXISTS idx_category_visibility_presets_user_tab_name ON category_visibility_presets(user_id, tab_key, name)');
+        $ensured = true;
+    } catch (PDOException $e) {
+        error_log('ensureCategoryVisibilityPresetsTable warning: ' . $e->getMessage());
+    }
+}
+
+/**
  * Read a LinkNest MCP bearer token (lnmcp_…) from Authorization, if present.
  */
 function getMcpBearerTokenFromRequest(): string {
@@ -1285,6 +1313,7 @@ function initDatabase() {
             ensureLinkMaintenanceColumns($db);
             ensureLinkFeatureToggleColumns($db);
             ensureMcpTokensTable($db);
+            ensureCategoryVisibilityPresetsTable($db);
             if (!schemaPatchesAlreadyApplied()) {
                 ensureTilesHeaderImageColumns($db);
                 ensureTilesSearchTagsColumn($db);
@@ -1316,6 +1345,7 @@ function initDatabase() {
             ensureLinkMaintenanceColumns($db);
             ensureLinkFeatureToggleColumns($db);
             ensureMcpTokensTable($db);
+            ensureCategoryVisibilityPresetsTable($db);
             if (!schemaPatchesAlreadyApplied()) {
                 ensureTilesHeaderImageColumns($db);
                 ensureTilesSearchTagsColumn($db);
@@ -2688,6 +2718,8 @@ function initDatabase() {
             PRIMARY KEY (user_id, preference_key),
             FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE
         )');
+
+        ensureCategoryVisibilityPresetsTable($db);
 
         // Create user_custom_timezones table for storing user-specific custom UTC offset timezones
         $db->exec('CREATE TABLE IF NOT EXISTS user_custom_timezones (

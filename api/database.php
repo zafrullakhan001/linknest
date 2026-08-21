@@ -106,6 +106,7 @@ function handleGetDatabaseInfo() {
                     'user_preferences',
                     'user_custom_timezones',
                     'user_alarms',
+                    'category_visibility_presets',
                     'clones',
                     'user_audit_log',
                 ];

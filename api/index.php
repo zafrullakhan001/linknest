@@ -219,6 +219,11 @@ if ($path === '/') {
 } elseif (strpos($path, '/alarms') === 0) {
     $_SERVER['PATH_INFO'] = substr($path, 7); // Remove '/alarms'
     require __DIR__ . '/alarms.php';
+} elseif (strpos($path, '/category-presets') === 0) {
+    $remainingPath = substr($path, 17); // Remove '/category-presets'
+    $_SERVER['PATH_INFO'] = (empty($remainingPath) || $remainingPath === '/') ? '/' : (($remainingPath[0] === '/') ? $remainingPath : '/' . $remainingPath);
+    require __DIR__ . '/category_presets.php';
+    exit;
 } elseif (strpos($path, '/ssh-connections') === 0) {
     $remainingPath = substr($path, 16); // Remove '/ssh-connections'
     if (empty($remainingPath) || $remainingPath === '/') {

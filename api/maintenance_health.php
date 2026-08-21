@@ -39,7 +39,7 @@ try {
     $journalMode = $db->query('PRAGMA journal_mode')->fetchColumn();
 
     // Table row counts (main app tables)
-    $tables = ['users', 'tiles', 'tabs', 'sections', 'links', 'tile_arrangements', 'category_arrangements', 'user_tile_permissions', 'settings', 'user_preferences'];
+    $tables = ['users', 'tiles', 'tabs', 'sections', 'links', 'tile_arrangements', 'category_arrangements', 'user_tile_permissions', 'settings', 'user_preferences', 'category_visibility_presets'];
     $tableCounts = [];
     foreach ($tables as $table) {
         try {

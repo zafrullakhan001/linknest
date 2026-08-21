@@ -1801,6 +1801,7 @@ class CloneService {
                 'user_preferences',
                 'user_custom_timezones',
                 'user_alarms',
+                'category_visibility_presets',
                 'user_ssh_connections',
                 'user_vnc_connections',
                 'user_notes',
