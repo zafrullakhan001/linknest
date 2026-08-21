@@ -51,16 +51,16 @@ const OS_LABELS: Record<AccessOsName, string> = {
 
 type PaneId = 'time-host' | 'network-vpn' | 'device' | 'browser' | 'os' | 'country' | 'date' | 'referrer' | 'fingerprint';
 
-const PANES: { id: PaneId; label: string }[] = [
-  { id: 'time-host', label: 'Time & host' },
-  { id: 'network-vpn', label: 'Network / VPN' },
-  { id: 'device', label: 'Device' },
-  { id: 'browser', label: 'Browser' },
-  { id: 'os', label: 'OS' },
-  { id: 'country', label: 'Country' },
-  { id: 'date', label: 'Date range' },
-  { id: 'referrer', label: 'Referrer' },
-  { id: 'fingerprint', label: 'Fingerprint' },
+const PANES: { id: PaneId; emoji: string; label: string }[] = [
+  { id: 'time-host', emoji: '⏰', label: 'Time & host' },
+  { id: 'network-vpn', emoji: '🌐', label: 'Network / VPN' },
+  { id: 'device', emoji: '💻', label: 'Device' },
+  { id: 'browser', emoji: '🧭', label: 'Browser' },
+  { id: 'os', emoji: '🖥️', label: 'OS' },
+  { id: 'country', emoji: '🌍', label: 'Country' },
+  { id: 'date', emoji: '📅', label: 'Date range' },
+  { id: 'referrer', emoji: '🔗', label: 'Referrer' },
+  { id: 'fingerprint', emoji: '🔏', label: 'Fingerprint' },
 ];
 
 function formatTimeRules(rules: AccessTimeRule[] | undefined, mode: 'allow' | 'deny'): string {
@@ -304,14 +304,14 @@ export const AccessRestrictionsEditor: React.FC<AccessRestrictionsEditorProps> =
       onClick={clearRestrictions}
       className="text-xs font-medium text-rose-600 dark:text-rose-400 hover:underline disabled:opacity-50"
     >
-      Clear all restrictions
+      🧹 Clear all restrictions
     </button>
   ) : null;
 
   const fields = (
     <>
       <div className="flex flex-wrap gap-1.5 mb-3" role="tablist" aria-label="Restriction sections">
-        {PANES.map((p, idx) => {
+        {PANES.map((p) => {
           const active = pane === p.id;
           const marked = paneHasValues(p.id, current);
           return (
@@ -328,14 +328,19 @@ export const AccessRestrictionsEditor: React.FC<AccessRestrictionsEditorProps> =
                   : 'bg-white dark:bg-slate-800 text-slate-600 dark:text-slate-300 border-slate-200 dark:border-slate-600 hover:border-brand-400'
               } ${disabled ? 'opacity-60 cursor-not-allowed' : ''}`}
             >
-              <span className={`inline-flex items-center justify-center w-4 h-4 rounded-full text-[10px] ${active ? 'bg-white/20' : 'bg-slate-100 dark:bg-slate-700'}`}>
-                {idx + 1}
+              <span className="text-sm leading-none" aria-hidden>
+                {p.emoji}
               </span>
               {p.label}
               {marked ? <span className="w-1.5 h-1.5 rounded-full bg-rose-500" title="Has values" /> : null}
             </button>
           );
         })}
+      </div>
+
+      <div className="mb-2 flex items-center gap-2 text-sm font-semibold text-slate-800 dark:text-slate-100">
+        <span aria-hidden>{PANES.find((p) => p.id === pane)?.emoji}</span>
+        <span>{PANES.find((p) => p.id === pane)?.label}</span>
       </div>
 
       {pane === 'time-host' && (

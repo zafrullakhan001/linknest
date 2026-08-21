@@ -50,7 +50,7 @@ export const SslCheckerDialog: React.FC<SslCheckerDialogProps> = ({ isOpen, onCl
   return createPortal(
     <>
       <div
-        className="fixed inset-0 z-[100060] flex items-center justify-center p-2 sm:p-4"
+        className="fixed inset-0 z-[100075] flex items-center justify-center p-2 sm:p-4"
         role="presentation"
       >
         <button

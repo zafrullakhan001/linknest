@@ -134,7 +134,7 @@ export const SpaceModalHeader: React.FC<{
 export const EditModalTabButton: React.FC<{
   active: boolean;
   emoji: string;
-  label: string;
+  label: React.ReactNode;
   onClick: () => void;
 }> = ({ active, emoji, label, onClick }) => (
   <button

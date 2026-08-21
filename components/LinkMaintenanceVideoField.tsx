@@ -23,6 +23,7 @@ const MIRROR_STORAGE_KEY = 'linknest.maintenanceVideo.mirror';
 const NOISE_STORAGE_KEY = 'linknest.maintenanceVideo.noiseSuppression';
 const EDGE_CHOKE_STORAGE_KEY = 'linknest.maintenanceVideo.edgeChoke';
 const ZOOM_STORAGE_KEY = 'linknest.maintenanceVideo.zoom';
+const SETTINGS_EXPANDED_KEY = 'linknest.maintenanceVideo.settingsExpanded';
 const DEFAULT_BRIGHTNESS = 1;
 const DEFAULT_CONTRAST = 1;
 const DEFAULT_SATURATION = 1;
@@ -364,6 +365,7 @@ export const LinkMaintenanceVideoField: React.FC<LinkMaintenanceVideoFieldProps>
   const [quality, setQuality] = useState<QualityId>(() => readStoredQuality());
   const [mirror, setMirror] = useState(() => readStoredFlag(MIRROR_STORAGE_KEY, false));
   const [noiseSuppression, setNoiseSuppression] = useState(() => readStoredFlag(NOISE_STORAGE_KEY, true));
+  const [settingsExpanded, setSettingsExpanded] = useState(() => readStoredFlag(SETTINGS_EXPANDED_KEY, false));
   const [brandBackgroundName, setBrandBackgroundName] = useState<string | null>(null);
   const [brandBackgroundPreview, setBrandBackgroundPreview] = useState<string | null>(null);
 
@@ -1026,262 +1028,337 @@ export const LinkMaintenanceVideoField: React.FC<LinkMaintenanceVideoFieldProps>
       ) : (
         <>
           {isPreviewing && (
-            <div className="space-y-2">
-              <div className="relative mx-auto w-full max-w-sm overflow-hidden rounded-lg bg-black aspect-[4/3]">
-                <video
-                  ref={liveVideoRef}
-                  autoPlay
-                  muted
-                  playsInline
-                  className="pointer-events-none absolute inset-0 h-full w-full object-contain opacity-0"
-                />
-                <canvas
-                  ref={previewCanvasRef}
-                  className="absolute inset-0 h-full w-full object-contain bg-black"
-                />
-                {isRecording && (
-                  <div className="pointer-events-none absolute top-2 left-2 z-10 flex items-center gap-1.5 rounded-full bg-red-600 px-2.5 py-1 text-[11px] font-semibold uppercase tracking-wide text-white shadow-md">
-                    <span className="h-2 w-2 rounded-full bg-white animate-pulse" />
-                    Rec {formatRecordingTime(recordingElapsed)}
+            <div className="grid grid-cols-1 lg:grid-cols-[minmax(0,1.15fr)_minmax(220px,0.85fr)] gap-3 items-start">
+              {/* Preview + mic meter + record controls */}
+              <div className="space-y-2 min-w-0">
+                <div className="relative w-full overflow-hidden rounded-lg bg-black aspect-[4/3]">
+                  <video
+                    ref={liveVideoRef}
+                    autoPlay
+                    muted
+                    playsInline
+                    className="pointer-events-none absolute inset-0 h-full w-full object-contain opacity-0"
+                  />
+                  <canvas
+                    ref={previewCanvasRef}
+                    className="absolute inset-0 h-full w-full object-contain bg-black"
+                  />
+                  {isRecording && (
+                    <div className="pointer-events-none absolute top-2 left-2 z-10 flex items-center gap-1.5 rounded-full bg-red-600 px-2.5 py-1 text-[11px] font-semibold uppercase tracking-wide text-white shadow-md">
+                      <span className="h-2 w-2 rounded-full bg-white animate-pulse" />
+                      Rec {formatRecordingTime(recordingElapsed)}
+                    </div>
+                  )}
+                </div>
+                <div>
+                  <div className="mb-0.5 flex items-center justify-between text-[11px] font-medium text-slate-600 dark:text-slate-400">
+                    <span>Microphone</span>
+                    <span>Speak to test the mic</span>
                   </div>
-                )}
-              </div>
-              <div className="mx-auto w-full max-w-sm">
-                <div className="mb-0.5 flex items-center justify-between text-[11px] font-medium text-slate-600 dark:text-slate-400">
-                  <span>Microphone</span>
-                  <span>Speak to test the mic</span>
-                </div>
-                <canvas
-                  ref={waveformCanvasRef}
-                  className="h-12 w-full rounded-md bg-slate-950"
-                  aria-hidden="true"
-                />
-              </div>
-              <div className="space-y-2 rounded-lg border border-slate-200 dark:border-slate-600 p-2.5">
-                <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
-                  <label className="block">
-                    <span className="mb-0.5 block text-[11px] font-semibold uppercase tracking-wider text-slate-600 dark:text-slate-400">
-                      Camera
-                    </span>
-                    <select
-                      value={selectedCameraId}
-                      disabled={deviceSelectsDisabled}
-                      onChange={(e) => handleCameraChange(e.target.value)}
-                      className="w-full rounded-md border border-slate-300 dark:border-slate-600 bg-white dark:bg-slate-800 px-2 py-1.5 text-xs text-slate-700 dark:text-slate-200 disabled:opacity-50"
-                    >
-                      {cameras.length === 0 && (
-                        <option value={selectedCameraId || ''}>Default camera</option>
-                      )}
-                      {selectedCameraId && !cameras.some((device) => device.deviceId === selectedCameraId) && (
-                        <option value={selectedCameraId}>Current camera</option>
-                      )}
-                      {cameras.map((device, index) => (
-                        <option key={device.deviceId || `camera-${index}`} value={device.deviceId}>
-                          {deviceLabel(device, index, 'camera')}
-                        </option>
-                      ))}
-                    </select>
-                  </label>
-                  <label className="block">
-                    <span className="mb-0.5 block text-[11px] font-semibold uppercase tracking-wider text-slate-600 dark:text-slate-400">
-                      Microphone
-                    </span>
-                    <select
-                      value={selectedMicId}
-                      disabled={deviceSelectsDisabled}
-                      onChange={(e) => handleMicChange(e.target.value)}
-                      className="w-full rounded-md border border-slate-300 dark:border-slate-600 bg-white dark:bg-slate-800 px-2 py-1.5 text-xs text-slate-700 dark:text-slate-200 disabled:opacity-50"
-                    >
-                      {mics.length === 0 && (
-                        <option value={selectedMicId || ''}>Default microphone</option>
-                      )}
-                      {selectedMicId && !mics.some((device) => device.deviceId === selectedMicId) && (
-                        <option value={selectedMicId}>Current microphone</option>
-                      )}
-                      {mics.map((device, index) => (
-                        <option key={device.deviceId || `mic-${index}`} value={device.deviceId}>
-                          {deviceLabel(device, index, 'mic')}
-                        </option>
-                      ))}
-                    </select>
-                  </label>
-                </div>
-                <label className="block">
-                  <span className="mb-0.5 block text-[11px] font-semibold uppercase tracking-wider text-slate-600 dark:text-slate-400">
-                    Quality &amp; compression
-                  </span>
-                  <select
-                    value={quality}
-                    disabled={deviceSelectsDisabled}
-                    onChange={(e) => handleQualityChange(e.target.value as QualityId)}
-                    className="w-full rounded-md border border-slate-300 dark:border-slate-600 bg-white dark:bg-slate-800 px-2 py-1.5 text-xs text-slate-700 dark:text-slate-200 disabled:opacity-50"
-                  >
-                    {(Object.keys(QUALITY_PRESETS) as QualityId[]).map((id) => (
-                      <option key={id} value={id}>
-                        {QUALITY_PRESETS[id].label}
-                      </option>
-                    ))}
-                  </select>
-                  <p className="mt-0.5 text-[11px] text-slate-500 dark:text-slate-400">
-                    {QUALITY_PRESETS[quality].hint}
-                  </p>
-                </label>
-                <div className="flex flex-wrap gap-x-4 gap-y-1">
-                  <label className="inline-flex items-center gap-2 text-[11px] font-medium text-slate-600 dark:text-slate-400">
-                    <input
-                      type="checkbox"
-                      className="accent-amber-600"
-                      checked={mirror}
-                      onChange={(e) => handleMirrorChange(e.target.checked)}
-                    />
-                    Mirror image
-                  </label>
-                  <label className="inline-flex items-center gap-2 text-[11px] font-medium text-slate-600 dark:text-slate-400">
-                    <input
-                      type="checkbox"
-                      className="accent-amber-600"
-                      checked={noiseSuppression}
-                      disabled={deviceSelectsDisabled}
-                      onChange={(e) => handleNoiseSuppressionChange(e.target.checked)}
-                    />
-                    Noise suppression
-                  </label>
-                </div>
-                <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
-                  <AvSlider
-                    label="Brightness"
-                    value={brightness}
-                    min={0.5}
-                    max={2}
-                    onChange={updateBrightness}
-                  />
-                  <AvSlider
-                    label="Contrast"
-                    value={contrast}
-                    min={0.5}
-                    max={2}
-                    onChange={updateContrast}
-                  />
-                  <AvSlider
-                    label="Saturation"
-                    value={saturation}
-                    min={0.5}
-                    max={2}
-                    onChange={updateSaturation}
-                  />
-                  <AvSlider
-                    label="Mic volume"
-                    value={micGain}
-                    min={0.5}
-                    max={3}
-                    onChange={updateMicGain}
-                  />
-                  <AvSlider
-                    label="Zoom"
-                    value={zoom}
-                    min={1}
-                    max={2.5}
-                    step={0.05}
-                    onChange={updateZoom}
+                  <canvas
+                    ref={waveformCanvasRef}
+                    className="h-12 w-full rounded-md bg-slate-950"
+                    aria-hidden="true"
                   />
                 </div>
-                <div className="flex flex-wrap items-center justify-between gap-2">
-                  <label className="inline-flex items-center gap-2 text-[11px] font-medium text-slate-600 dark:text-slate-400">
-                    <input
-                      type="checkbox"
-                      className="accent-amber-600"
-                      checked={backgroundBlur}
-                      disabled={blurLoading || !!brandBackgroundName}
-                      onChange={(e) => void setBackgroundBlurEnabled(e.target.checked)}
-                    />
-                    Background blur
-                    {blurLoading ? <span className="text-slate-400">Loading…</span> : null}
-                  </label>
-                </div>
-                <AvSlider
-                  label="Blur amount"
-                  value={blurAmount}
-                  min={4}
-                  max={24}
-                  step={1}
-                  disabled={!backgroundBlur || blurLoading || !!brandBackgroundName}
-                  formatValue={(value) => `${Math.round(value)}`}
-                  onChange={updateBlurAmount}
-                />
-                <AvSlider
-                  label="Ghost edge"
-                  value={edgeChoke}
-                  min={0}
-                  max={10}
-                  step={1}
-                  disabled={(!backgroundBlur && !brandBackgroundName) || blurLoading}
-                  formatValue={(value) => `${Math.round(value)}`}
-                  onChange={updateEdgeChoke}
-                />
-                <p className="text-[11px] text-slate-500 dark:text-slate-400">
-                  Ghost edge: 0 keeps more hair; higher tightens the cutout and removes the outline.
-                </p>
-                <div className="space-y-1.5 rounded-md border border-slate-200 dark:border-slate-600 p-2">
-                  <div className="text-[11px] font-semibold uppercase tracking-wider text-slate-600 dark:text-slate-400">
-                    Brand background
-                  </div>
-                  <p className="text-[11px] text-slate-500 dark:text-slate-400">
-                    Upload a JPG or PNG (logo, office, or branded backdrop). It stays un-mirrored so text stays readable.
-                  </p>
-                  <div className="flex flex-wrap items-center gap-2">
-                    {brandBackgroundPreview ? (
-                      <img
-                        src={brandBackgroundPreview}
-                        alt=""
-                        className="h-12 w-20 rounded object-cover bg-slate-200 dark:bg-slate-700"
-                      />
-                    ) : null}
+                <div className="flex flex-wrap gap-2">
+                  {isRecording ? (
                     <button
                       type="button"
-                      onClick={() => brandBgInputRef.current?.click()}
-                      disabled={blurLoading}
-                      className="px-2.5 py-1 text-[11px] font-medium rounded-md bg-slate-200 dark:bg-slate-700 text-slate-700 dark:text-slate-200 hover:bg-slate-300 dark:hover:bg-slate-600 disabled:opacity-50"
+                      onClick={stopRecording}
+                      className="px-3 py-1.5 text-xs font-medium rounded-lg bg-red-600 hover:bg-red-500 text-white"
                     >
-                      {brandBackgroundName ? 'Replace image' : 'Upload JPG/PNG'}
+                      Stop recording
                     </button>
-                    {brandBackgroundName ? (
-                      <button
-                        type="button"
-                        onClick={clearBrandBackground}
-                        className="px-2.5 py-1 text-[11px] font-medium rounded-md bg-slate-200 dark:bg-slate-700 text-slate-700 dark:text-slate-200 hover:bg-slate-300 dark:hover:bg-slate-600"
-                      >
-                        Remove
-                      </button>
-                    ) : null}
-                  </div>
-                  {brandBackgroundName ? (
-                    <p className="truncate text-[11px] text-slate-500 dark:text-slate-400">{brandBackgroundName}</p>
-                  ) : null}
-                  <input
-                    ref={brandBgInputRef}
-                    type="file"
-                    accept="image/jpeg,image/png,.jpg,.jpeg,.png"
-                    className="hidden"
-                    onChange={(e) => void handleBrandBackground(e.target.files?.[0])}
-                  />
+                  ) : (
+                    <button
+                      type="button"
+                      onClick={startRecording}
+                      disabled={isSwitching}
+                      className="px-3 py-1.5 text-xs font-medium rounded-lg bg-red-600 hover:bg-red-500 disabled:opacity-50 text-white"
+                    >
+                      Start recording
+                    </button>
+                  )}
+                  <button
+                    type="button"
+                    onClick={cancelCamera}
+                    className="px-3 py-1.5 text-xs font-medium rounded-lg bg-slate-200 dark:bg-slate-700 text-slate-700 dark:text-slate-200"
+                  >
+                    Cancel camera
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => fileInputRef.current?.click()}
+                    disabled={isUploading || isRecording}
+                    className="px-3 py-1.5 text-xs font-medium rounded-lg bg-slate-200 dark:bg-slate-700 hover:bg-slate-300 dark:hover:bg-slate-600 disabled:opacity-50 text-slate-700 dark:text-slate-200"
+                  >
+                    {isUploading ? 'Uploading…' : 'Upload video file'}
+                  </button>
                 </div>
+              </div>
+
+              {/* Collapsed-by-default camera / AV controls */}
+              <div className="rounded-lg border border-slate-200 dark:border-slate-600 overflow-hidden min-w-0">
                 <button
                   type="button"
-                  onClick={resetAdjustments}
-                  className="px-2.5 py-1 text-[11px] font-medium rounded-md bg-slate-200 dark:bg-slate-700 text-slate-700 dark:text-slate-200 hover:bg-slate-300 dark:hover:bg-slate-600"
+                  aria-expanded={settingsExpanded}
+                  onClick={() => {
+                    const next = !settingsExpanded;
+                    setSettingsExpanded(next);
+                    storeFlag(SETTINGS_EXPANDED_KEY, next);
+                  }}
+                  className="w-full flex items-center gap-2 px-3 py-2.5 text-left bg-slate-50 dark:bg-slate-800/60 hover:bg-slate-100 dark:hover:bg-slate-800 transition-colors"
                 >
-                  Reset adjustments
+                  <svg
+                    className={`w-3.5 h-3.5 shrink-0 text-slate-400 transition-transform ${settingsExpanded ? 'rotate-90' : ''}`}
+                    viewBox="0 0 20 20"
+                    fill="currentColor"
+                    aria-hidden
+                  >
+                    <path
+                      fillRule="evenodd"
+                      d="M7.21 14.77a.75.75 0 01.02-1.06L11.168 10 7.23 6.29a.75.75 0 111.04-1.08l4.5 4.25a.75.75 0 010 1.08l-4.5 4.25a.75.75 0 01-1.06-.02z"
+                      clipRule="evenodd"
+                    />
+                  </svg>
+                  <span className="min-w-0 flex-1">
+                    <span className="block text-xs font-semibold text-slate-800 dark:text-slate-100">Camera &amp; settings</span>
+                    <span className="block text-[11px] text-slate-500 dark:text-slate-400 truncate">
+                      {settingsExpanded
+                        ? 'Hide device, quality, and look controls'
+                        : 'Camera, mic, quality, and adjustments'}
+                    </span>
+                  </span>
                 </button>
-                {lookNotBakedIn && (
-                  <p className="text-[11px] text-amber-700 dark:text-amber-400">
-                    Video look (brightness, contrast, saturation, background blur, brand background) may not be saved in this browser. Mic volume still applies.
-                  </p>
+                {settingsExpanded && (
+                  <div className="space-y-2 p-2.5 border-t border-slate-200 dark:border-slate-600 max-h-[min(28rem,55vh)] overflow-y-auto">
+                    <div className="grid grid-cols-1 gap-2">
+                      <label className="block">
+                        <span className="mb-0.5 block text-[11px] font-semibold uppercase tracking-wider text-slate-600 dark:text-slate-400">
+                          Camera
+                        </span>
+                        <select
+                          value={selectedCameraId}
+                          disabled={deviceSelectsDisabled}
+                          onChange={(e) => handleCameraChange(e.target.value)}
+                          className="w-full rounded-md border border-slate-300 dark:border-slate-600 bg-white dark:bg-slate-800 px-2 py-1.5 text-xs text-slate-700 dark:text-slate-200 disabled:opacity-50"
+                        >
+                          {cameras.length === 0 && (
+                            <option value={selectedCameraId || ''}>Default camera</option>
+                          )}
+                          {selectedCameraId && !cameras.some((device) => device.deviceId === selectedCameraId) && (
+                            <option value={selectedCameraId}>Current camera</option>
+                          )}
+                          {cameras.map((device, index) => (
+                            <option key={device.deviceId || `camera-${index}`} value={device.deviceId}>
+                              {deviceLabel(device, index, 'camera')}
+                            </option>
+                          ))}
+                        </select>
+                      </label>
+                      <label className="block">
+                        <span className="mb-0.5 block text-[11px] font-semibold uppercase tracking-wider text-slate-600 dark:text-slate-400">
+                          Microphone
+                        </span>
+                        <select
+                          value={selectedMicId}
+                          disabled={deviceSelectsDisabled}
+                          onChange={(e) => handleMicChange(e.target.value)}
+                          className="w-full rounded-md border border-slate-300 dark:border-slate-600 bg-white dark:bg-slate-800 px-2 py-1.5 text-xs text-slate-700 dark:text-slate-200 disabled:opacity-50"
+                        >
+                          {mics.length === 0 && (
+                            <option value={selectedMicId || ''}>Default microphone</option>
+                          )}
+                          {selectedMicId && !mics.some((device) => device.deviceId === selectedMicId) && (
+                            <option value={selectedMicId}>Current microphone</option>
+                          )}
+                          {mics.map((device, index) => (
+                            <option key={device.deviceId || `mic-${index}`} value={device.deviceId}>
+                              {deviceLabel(device, index, 'mic')}
+                            </option>
+                          ))}
+                        </select>
+                      </label>
+                    </div>
+                    <label className="block">
+                      <span className="mb-0.5 block text-[11px] font-semibold uppercase tracking-wider text-slate-600 dark:text-slate-400">
+                        Quality &amp; compression
+                      </span>
+                      <select
+                        value={quality}
+                        disabled={deviceSelectsDisabled}
+                        onChange={(e) => handleQualityChange(e.target.value as QualityId)}
+                        className="w-full rounded-md border border-slate-300 dark:border-slate-600 bg-white dark:bg-slate-800 px-2 py-1.5 text-xs text-slate-700 dark:text-slate-200 disabled:opacity-50"
+                      >
+                        {(Object.keys(QUALITY_PRESETS) as QualityId[]).map((id) => (
+                          <option key={id} value={id}>
+                            {QUALITY_PRESETS[id].label}
+                          </option>
+                        ))}
+                      </select>
+                      <p className="mt-0.5 text-[11px] text-slate-500 dark:text-slate-400">
+                        {QUALITY_PRESETS[quality].hint}
+                      </p>
+                    </label>
+                    <div className="flex flex-wrap gap-x-4 gap-y-1">
+                      <label className="inline-flex items-center gap-2 text-[11px] font-medium text-slate-600 dark:text-slate-400">
+                        <input
+                          type="checkbox"
+                          className="accent-amber-600"
+                          checked={mirror}
+                          onChange={(e) => handleMirrorChange(e.target.checked)}
+                        />
+                        Mirror image
+                      </label>
+                      <label className="inline-flex items-center gap-2 text-[11px] font-medium text-slate-600 dark:text-slate-400">
+                        <input
+                          type="checkbox"
+                          className="accent-amber-600"
+                          checked={noiseSuppression}
+                          disabled={deviceSelectsDisabled}
+                          onChange={(e) => handleNoiseSuppressionChange(e.target.checked)}
+                        />
+                        Noise suppression
+                      </label>
+                    </div>
+                    <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-1 xl:grid-cols-2 gap-2">
+                      <AvSlider
+                        label="Brightness"
+                        value={brightness}
+                        min={0.5}
+                        max={2}
+                        onChange={updateBrightness}
+                      />
+                      <AvSlider
+                        label="Contrast"
+                        value={contrast}
+                        min={0.5}
+                        max={2}
+                        onChange={updateContrast}
+                      />
+                      <AvSlider
+                        label="Saturation"
+                        value={saturation}
+                        min={0.5}
+                        max={2}
+                        onChange={updateSaturation}
+                      />
+                      <AvSlider
+                        label="Mic volume"
+                        value={micGain}
+                        min={0.5}
+                        max={3}
+                        onChange={updateMicGain}
+                      />
+                      <AvSlider
+                        label="Zoom"
+                        value={zoom}
+                        min={1}
+                        max={2.5}
+                        step={0.05}
+                        onChange={updateZoom}
+                      />
+                    </div>
+                    <div className="flex flex-wrap items-center justify-between gap-2">
+                      <label className="inline-flex items-center gap-2 text-[11px] font-medium text-slate-600 dark:text-slate-400">
+                        <input
+                          type="checkbox"
+                          className="accent-amber-600"
+                          checked={backgroundBlur}
+                          disabled={blurLoading || !!brandBackgroundName}
+                          onChange={(e) => void setBackgroundBlurEnabled(e.target.checked)}
+                        />
+                        Background blur
+                        {blurLoading ? <span className="text-slate-400">Loading…</span> : null}
+                      </label>
+                    </div>
+                    <AvSlider
+                      label="Blur amount"
+                      value={blurAmount}
+                      min={4}
+                      max={24}
+                      step={1}
+                      disabled={!backgroundBlur || blurLoading || !!brandBackgroundName}
+                      formatValue={(value) => `${Math.round(value)}`}
+                      onChange={updateBlurAmount}
+                    />
+                    <AvSlider
+                      label="Ghost edge"
+                      value={edgeChoke}
+                      min={0}
+                      max={10}
+                      step={1}
+                      disabled={(!backgroundBlur && !brandBackgroundName) || blurLoading}
+                      formatValue={(value) => `${Math.round(value)}`}
+                      onChange={updateEdgeChoke}
+                    />
+                    <p className="text-[11px] text-slate-500 dark:text-slate-400">
+                      Ghost edge: 0 keeps more hair; higher tightens the cutout and removes the outline.
+                    </p>
+                    <div className="space-y-1.5 rounded-md border border-slate-200 dark:border-slate-600 p-2">
+                      <div className="text-[11px] font-semibold uppercase tracking-wider text-slate-600 dark:text-slate-400">
+                        Brand background
+                      </div>
+                      <p className="text-[11px] text-slate-500 dark:text-slate-400">
+                        Upload a JPG or PNG (logo, office, or branded backdrop). It stays un-mirrored so text stays readable.
+                      </p>
+                      <div className="flex flex-wrap items-center gap-2">
+                        {brandBackgroundPreview ? (
+                          <img
+                            src={brandBackgroundPreview}
+                            alt=""
+                            className="h-12 w-20 rounded object-cover bg-slate-200 dark:bg-slate-700"
+                          />
+                        ) : null}
+                        <button
+                          type="button"
+                          onClick={() => brandBgInputRef.current?.click()}
+                          disabled={blurLoading}
+                          className="px-2.5 py-1 text-[11px] font-medium rounded-md bg-slate-200 dark:bg-slate-700 text-slate-700 dark:text-slate-200 hover:bg-slate-300 dark:hover:bg-slate-600 disabled:opacity-50"
+                        >
+                          {brandBackgroundName ? 'Replace image' : 'Upload JPG/PNG'}
+                        </button>
+                        {brandBackgroundName ? (
+                          <button
+                            type="button"
+                            onClick={clearBrandBackground}
+                            className="px-2.5 py-1 text-[11px] font-medium rounded-md bg-slate-200 dark:bg-slate-700 text-slate-700 dark:text-slate-200 hover:bg-slate-300 dark:hover:bg-slate-600"
+                          >
+                            Remove
+                          </button>
+                        ) : null}
+                      </div>
+                      {brandBackgroundName ? (
+                        <p className="truncate text-[11px] text-slate-500 dark:text-slate-400">{brandBackgroundName}</p>
+                      ) : null}
+                      <input
+                        ref={brandBgInputRef}
+                        type="file"
+                        accept="image/jpeg,image/png,.jpg,.jpeg,.png"
+                        className="hidden"
+                        onChange={(e) => void handleBrandBackground(e.target.files?.[0])}
+                      />
+                    </div>
+                    <button
+                      type="button"
+                      onClick={resetAdjustments}
+                      className="px-2.5 py-1 text-[11px] font-medium rounded-md bg-slate-200 dark:bg-slate-700 text-slate-700 dark:text-slate-200 hover:bg-slate-300 dark:hover:bg-slate-600"
+                    >
+                      Reset adjustments
+                    </button>
+                    {lookNotBakedIn && (
+                      <p className="text-[11px] text-amber-700 dark:text-amber-400">
+                        Video look (brightness, contrast, saturation, background blur, brand background) may not be saved in this browser. Mic volume still applies.
+                      </p>
+                    )}
+                  </div>
                 )}
               </div>
             </div>
           )}
-          <div className="flex flex-wrap gap-2">
-            {!isPreviewing ? (
+          {!isPreviewing && (
+            <div className="flex flex-wrap gap-2">
               <button
                 type="button"
                 onClick={() => void startCamera()}
@@ -1290,42 +1367,16 @@ export const LinkMaintenanceVideoField: React.FC<LinkMaintenanceVideoFieldProps>
               >
                 Record with webcam
               </button>
-            ) : isRecording ? (
               <button
                 type="button"
-                onClick={stopRecording}
-                className="px-3 py-1.5 text-xs font-medium rounded-lg bg-red-600 hover:bg-red-500 text-white"
+                onClick={() => fileInputRef.current?.click()}
+                disabled={isUploading || isRecording}
+                className="px-3 py-1.5 text-xs font-medium rounded-lg bg-slate-200 dark:bg-slate-700 hover:bg-slate-300 dark:hover:bg-slate-600 disabled:opacity-50 text-slate-700 dark:text-slate-200"
               >
-                Stop recording
+                {isUploading ? 'Uploading…' : 'Upload video file'}
               </button>
-            ) : (
-              <button
-                type="button"
-                onClick={startRecording}
-                disabled={isSwitching}
-                className="px-3 py-1.5 text-xs font-medium rounded-lg bg-red-600 hover:bg-red-500 disabled:opacity-50 text-white"
-              >
-                Start recording
-              </button>
-            )}
-            {isPreviewing && (
-              <button
-                type="button"
-                onClick={cancelCamera}
-                className="px-3 py-1.5 text-xs font-medium rounded-lg bg-slate-200 dark:bg-slate-700 text-slate-700 dark:text-slate-200"
-              >
-                Cancel camera
-              </button>
-            )}
-            <button
-              type="button"
-              onClick={() => fileInputRef.current?.click()}
-              disabled={isUploading || isRecording}
-              className="px-3 py-1.5 text-xs font-medium rounded-lg bg-slate-200 dark:bg-slate-700 hover:bg-slate-300 dark:hover:bg-slate-600 disabled:opacity-50 text-slate-700 dark:text-slate-200"
-            >
-              {isUploading ? 'Uploading…' : 'Upload video file'}
-            </button>
-          </div>
+            </div>
+          )}
         </>
       )}
       <input
