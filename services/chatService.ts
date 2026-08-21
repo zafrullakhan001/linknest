@@ -12,6 +12,7 @@ export interface ChatMessage {
   message_type: 'text' | 'json' | 'tile';
   tile_data?: any; // Full tile object when message_type is 'tile'
   recipient_user_id?: number | null; // null for public messages
+  recipient_username?: string | null; // set when recipient_user_id is a direct message
   created_at: number;
   created_at_iso?: string; // ISO date string
 }

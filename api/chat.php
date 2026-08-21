@@ -37,8 +37,32 @@ switch ($method) {
         }
         break;
         
-    default:
-        sendJSON(['error' => 'Method not allowed'], 405);
+        default:
+            sendJSON(['error' => 'Method not allowed'], 405);
+}
+
+function formatChatMessage(array $message): array {
+    if (!empty($message['tile_data']) && is_string($message['tile_data'])) {
+        $decoded = json_decode($message['tile_data'], true);
+        if (is_array($decoded)) {
+            $message['tile_data'] = $decoded;
+        }
+    }
+
+    $ts = isset($message['created_at']) ? (int) $message['created_at'] : 0;
+    $message['created_at'] = $ts;
+    $message['created_at_iso'] = date('c', $ts);
+
+    if (!array_key_exists('recipient_user_id', $message) || $message['recipient_user_id'] === null || $message['recipient_user_id'] === '') {
+        $message['recipient_user_id'] = null;
+        $message['recipient_username'] = null;
+    } else {
+        $message['recipient_user_id'] = (int) $message['recipient_user_id'];
+        $username = $message['recipient_username'] ?? null;
+        $message['recipient_username'] = ($username !== null && $username !== '') ? (string) $username : null;
+    }
+
+    return $message;
 }
 
 function handleGetMessages() {
@@ -59,11 +83,11 @@ function handleGetMessages() {
         // Fetch messages: public messages (recipient_user_id IS NULL) OR messages sent to/from current user
         if ($recipientId !== null) {
             // Direct messages between current user and recipient
-            $stmt = $db->prepare('SELECT * FROM chat_messages WHERE (user_id = ? AND recipient_user_id = ?) OR (user_id = ? AND recipient_user_id = ?) OR (recipient_user_id IS NULL) ORDER BY created_at DESC LIMIT ? OFFSET ?');
+            $stmt = $db->prepare('SELECT m.*, r.username AS recipient_username FROM chat_messages m LEFT JOIN users r ON r.id = m.recipient_user_id WHERE (m.user_id = ? AND m.recipient_user_id = ?) OR (m.user_id = ? AND m.recipient_user_id = ?) OR (m.recipient_user_id IS NULL) ORDER BY m.created_at DESC LIMIT ? OFFSET ?');
             $stmt->execute([$user['id'], $recipientId, $recipientId, $user['id'], $limit, $offset]);
         } else {
             // All public messages or messages sent to/from current user
-            $stmt = $db->prepare('SELECT * FROM chat_messages WHERE recipient_user_id IS NULL OR user_id = ? OR recipient_user_id = ? ORDER BY created_at DESC LIMIT ? OFFSET ?');
+            $stmt = $db->prepare('SELECT m.*, r.username AS recipient_username FROM chat_messages m LEFT JOIN users r ON r.id = m.recipient_user_id WHERE m.recipient_user_id IS NULL OR m.user_id = ? OR m.recipient_user_id = ? ORDER BY m.created_at DESC LIMIT ? OFFSET ?');
             $stmt->execute([$user['id'], $user['id'], $limit, $offset]);
         }
         $messages = $stmt->fetchAll(PDO::FETCH_ASSOC);
@@ -71,16 +95,10 @@ function handleGetMessages() {
         // Reverse to show oldest first in UI
         $messages = array_reverse($messages);
         
-        // Parse tile_data JSON if present
         foreach ($messages as &$message) {
-            if (!empty($message['tile_data'])) {
-                $message['tile_data'] = json_decode($message['tile_data'], true);
-            }
-            // Convert timestamps to ISO strings (PHP 8.1+ requires int for date())
-            $ts = isset($message['created_at']) ? (int) $message['created_at'] : 0;
-            $message['created_at_iso'] = date('c', $ts);
+            $message = formatChatMessage($message);
         }
-        unset($message); // break reference
+        unset($message);
 
         sendJSON($messages);
     } catch (PDOException $e) {
@@ -101,21 +119,15 @@ function handleGetMessage($messageId) {
         }
         
         $db = getDB();
-        $stmt = $db->prepare('SELECT * FROM chat_messages WHERE id = ?');
+        $stmt = $db->prepare('SELECT m.*, r.username AS recipient_username FROM chat_messages m LEFT JOIN users r ON r.id = m.recipient_user_id WHERE m.id = ?');
         $stmt->execute([$messageId]);
         $message = $stmt->fetch(PDO::FETCH_ASSOC);
         
         if (!$message) {
             sendJSON(['error' => 'Message not found'], 404);
         }
-        
-        // Parse tile_data JSON if present
-        if ($message['tile_data']) {
-            $message['tile_data'] = json_decode($message['tile_data'], true);
-        }
-        $message['created_at_iso'] = date('c', $message['created_at']);
-        
-        sendJSON($message);
+
+        sendJSON(formatChatMessage($message));
     } catch (Exception $e) {
         error_log('Error fetching chat message: ' . $e->getMessage());
         sendJSON(['error' => 'Failed to fetch message: ' . $e->getMessage()], 500);
@@ -181,17 +193,11 @@ function handleCreateMessage() {
         $messageId = $db->lastInsertId();
         
         // Fetch created message
-        $stmt = $db->prepare('SELECT * FROM chat_messages WHERE id = ?');
+        $stmt = $db->prepare('SELECT m.*, r.username AS recipient_username FROM chat_messages m LEFT JOIN users r ON r.id = m.recipient_user_id WHERE m.id = ?');
         $stmt->execute([$messageId]);
         $createdMessage = $stmt->fetch(PDO::FETCH_ASSOC);
-        
-        // Parse tile_data JSON if present
-        if ($createdMessage['tile_data']) {
-            $createdMessage['tile_data'] = json_decode($createdMessage['tile_data'], true);
-        }
-        $createdMessage['created_at_iso'] = date('c', $createdMessage['created_at']);
-        
-        sendJSON($createdMessage, 201);
+
+        sendJSON(formatChatMessage($createdMessage), 201);
     } catch (Exception $e) {
         error_log('Error creating chat message: ' . $e->getMessage());
         sendJSON(['error' => 'Failed to create message: ' . $e->getMessage()], 500);

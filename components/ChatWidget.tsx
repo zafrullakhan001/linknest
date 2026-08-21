@@ -163,6 +163,44 @@ const ADMIN_PILL = {
   pill: 'bg-amber-100 text-amber-800 dark:bg-amber-900/50 dark:text-amber-200',
 };
 
+const PUBLIC_DESTINATION_PILL = {
+  label: 'Public',
+  emoji: '🌍',
+  pill: 'bg-emerald-100 text-emerald-800 dark:bg-emerald-900/50 dark:text-emerald-200',
+  title: 'Sent to Public Chat',
+};
+
+const getMessageRecipientId = (message: ChatMessage): number | null => {
+  const raw = message.recipient_user_id as unknown;
+  if (raw === null || raw === undefined || raw === '') return null;
+  const id = Number(raw);
+  return Number.isFinite(id) && id > 0 ? id : null;
+};
+
+const getMessageDestinationMeta = (
+  message: ChatMessage,
+  currentUserId?: number,
+  people: UserListItem[] = []
+) => {
+  const recipientId = getMessageRecipientId(message);
+  if (recipientId === null) {
+    return PUBLIC_DESTINATION_PILL;
+  }
+
+  const isToSelf = currentUserId != null && recipientId === Number(currentUserId);
+  const listed = people.find((person) => Number(person.id) === recipientId);
+  const name = isToSelf
+    ? 'You'
+    : (message.recipient_username?.trim() || listed?.username || 'someone');
+
+  return {
+    label: `to ${name}`,
+    emoji: '💬',
+    pill: 'bg-violet-100 text-violet-800 dark:bg-violet-900/50 dark:text-violet-200',
+    title: isToSelf ? 'Sent privately to you' : `Sent privately to ${name}`,
+  };
+};
+
 type ShareTabId = 'private' | 'public' | 'authenticated' | 'staging';
 type ShareTabFilter = 'all' | ShareTabId;
 
@@ -362,13 +400,17 @@ export const ChatWidget: React.FC<ChatWidgetProps> = ({ tiles, onTileShared, onT
       return messages;
     }
     const searchLower = messageSearchTerm.toLowerCase();
-    return messages.filter(m => 
-      m.username.toLowerCase().includes(searchLower) ||
-      m.message?.toLowerCase().includes(searchLower) ||
-      m.tile_data?.title?.toLowerCase().includes(searchLower) ||
-      m.tile_data?.description?.toLowerCase().includes(searchLower)
-    );
-  }, [messages, messageSearchTerm]);
+    return messages.filter(m => {
+      const destination = getMessageDestinationMeta(m, user?.id, users).label.toLowerCase();
+      return (
+        m.username.toLowerCase().includes(searchLower) ||
+        m.message?.toLowerCase().includes(searchLower) ||
+        destination.includes(searchLower) ||
+        m.tile_data?.title?.toLowerCase().includes(searchLower) ||
+        m.tile_data?.description?.toLowerCase().includes(searchLower)
+      );
+    });
+  }, [messages, messageSearchTerm, user?.id, users]);
 
   // Filter tiles based on sharing permissions:
   // - Regular users: can only share tiles from their private tab (visibility === 'private' && user has access)
@@ -1141,6 +1183,18 @@ export const ChatWidget: React.FC<ChatWidgetProps> = ({ tiles, onTileShared, onT
     );
   };
 
+  const renderDestinationPill = (message: ChatMessage) => {
+    const dest = getMessageDestinationMeta(message, user?.id, users);
+    return (
+      <span
+        className={`px-1.5 py-0.5 text-[10px] font-semibold rounded-full whitespace-nowrap ${dest.pill}`}
+        title={dest.title}
+      >
+        {dest.emoji} {dest.label}
+      </span>
+    );
+  };
+
   return (
     <div className={`w-full h-full rounded-2xl shadow-2xl flex overflow-hidden ${t.shell}`}>
       {/* User Panel */}
@@ -1352,6 +1406,7 @@ export const ChatWidget: React.FC<ChatWidgetProps> = ({ tiles, onTileShared, onT
                       {isOwn ? '🙋 You' : message.username}
                     </span>
                     {renderAccountPills(messageUser)}
+                    {renderDestinationPill(message)}
                     <span>🕒 {formatTime(message.created_at)}</span>
                   </div>
                   <div
