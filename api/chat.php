@@ -78,17 +78,23 @@ function handleGetMessages() {
         $limit = isset($_GET['limit']) ? (int)$_GET['limit'] : 100;
         $offset = isset($_GET['offset']) ? (int)$_GET['offset'] : 0;
         $recipientId = isset($_GET['recipient_id']) ? (int)$_GET['recipient_id'] : null;
+        $scope = isset($_GET['scope']) ? strtolower(trim((string)$_GET['scope'])) : '';
         $limit = min($limit, 500); // Cap at 500 messages
-        
-        // Fetch messages: public messages (recipient_user_id IS NULL) OR messages sent to/from current user
-        if ($recipientId !== null) {
-            // Direct messages between current user and recipient
-            $stmt = $db->prepare('SELECT m.*, r.username AS recipient_username FROM chat_messages m LEFT JOIN users r ON r.id = m.recipient_user_id WHERE (m.user_id = ? AND m.recipient_user_id = ?) OR (m.user_id = ? AND m.recipient_user_id = ?) OR (m.recipient_user_id IS NULL) ORDER BY m.created_at DESC LIMIT ? OFFSET ?');
+
+        $select = 'SELECT m.*, r.username AS recipient_username FROM chat_messages m LEFT JOIN users r ON r.id = m.recipient_user_id';
+
+        if ($scope === 'inbox') {
+            // Unread polling: public messages plus DMs sent to/from the current user
+            $stmt = $db->prepare($select . ' WHERE m.recipient_user_id IS NULL OR m.user_id = ? OR m.recipient_user_id = ? ORDER BY m.created_at DESC LIMIT ? OFFSET ?');
+            $stmt->execute([$user['id'], $user['id'], $limit, $offset]);
+        } elseif ($recipientId !== null && $recipientId > 0) {
+            // 1-to-1 only: messages between current user and this recipient (no public)
+            $stmt = $db->prepare($select . ' WHERE ((m.user_id = ? AND m.recipient_user_id = ?) OR (m.user_id = ? AND m.recipient_user_id = ?)) AND m.recipient_user_id IS NOT NULL ORDER BY m.created_at DESC LIMIT ? OFFSET ?');
             $stmt->execute([$user['id'], $recipientId, $recipientId, $user['id'], $limit, $offset]);
         } else {
-            // All public messages or messages sent to/from current user
-            $stmt = $db->prepare('SELECT m.*, r.username AS recipient_username FROM chat_messages m LEFT JOIN users r ON r.id = m.recipient_user_id WHERE m.recipient_user_id IS NULL OR m.user_id = ? OR m.recipient_user_id = ? ORDER BY m.created_at DESC LIMIT ? OFFSET ?');
-            $stmt->execute([$user['id'], $user['id'], $limit, $offset]);
+            // Public chat only
+            $stmt = $db->prepare($select . ' WHERE m.recipient_user_id IS NULL ORDER BY m.created_at DESC LIMIT ? OFFSET ?');
+            $stmt->execute([$limit, $offset]);
         }
         $messages = $stmt->fetchAll(PDO::FETCH_ASSOC);
         

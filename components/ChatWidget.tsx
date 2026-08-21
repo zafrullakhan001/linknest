@@ -177,6 +177,22 @@ const getMessageRecipientId = (message: ChatMessage): number | null => {
   return Number.isFinite(id) && id > 0 ? id : null;
 };
 
+const isMessageInConversation = (
+  message: ChatMessage,
+  recipientId: number | null,
+  currentUserId?: number
+): boolean => {
+  const destId = getMessageRecipientId(message);
+  if (recipientId === null) {
+    return destId === null;
+  }
+  if (destId === null || currentUserId == null) return false;
+  const senderId = Number(message.user_id);
+  const me = Number(currentUserId);
+  const other = Number(recipientId);
+  return (senderId === me && destId === other) || (senderId === other && destId === me);
+};
+
 const getMessageDestinationMeta = (
   message: ChatMessage,
   currentUserId?: number,
@@ -189,9 +205,7 @@ const getMessageDestinationMeta = (
 
   const isToSelf = currentUserId != null && recipientId === Number(currentUserId);
   const listed = people.find((person) => Number(person.id) === recipientId);
-  const name = isToSelf
-    ? 'You'
-    : (message.recipient_username?.trim() || listed?.username || 'someone');
+  const name = isToSelf ? 'You' : getPersonDisplayName(listed || { username: message.recipient_username || 'someone' });
 
   return {
     label: `to ${name}`,
@@ -270,6 +284,28 @@ const nameFromEmail = (email?: string): string => {
   return parts.map(titleCaseToken).join(' ');
 };
 
+type PersonNameFields = {
+  username?: string;
+  email?: string;
+  display_name?: string | null;
+};
+
+const getPersonDisplayName = (person?: PersonNameFields | null): string => {
+  const display = person?.display_name?.trim();
+  if (display) return display;
+  const fromEmail = nameFromEmail(person?.email);
+  if (fromEmail) return fromEmail;
+  const username = person?.username?.trim();
+  return username || 'Unknown';
+};
+
+const getPersonLoginId = (person?: PersonNameFields | null): string => {
+  const username = person?.username?.trim() || '';
+  if (!username) return '';
+  if (username.toLowerCase() === getPersonDisplayName(person).toLowerCase()) return '';
+  return username;
+};
+
 interface ChatWidgetProps {
   tiles: Tile[];
   onTileShared?: (tile: Tile) => void;
@@ -306,6 +342,8 @@ export const ChatWidget: React.FC<ChatWidgetProps> = ({ tiles, onTileShared, onT
   const { user } = useAuth();
   const t = CHAT_THEMES[chatTheme];
   const lastNotifiedMessageIdRef = useRef<number>(0);
+  const conversationKeyRef = useRef<number | null>(null);
+  const stickToBottomRef = useRef(true);
 
   const applyChatTheme = (id: ChatThemeId) => {
     setChatTheme(id);
@@ -377,30 +415,38 @@ export const ChatWidget: React.FC<ChatWidgetProps> = ({ tiles, onTileShared, onT
   
   const lastSeenMessageIdRef = useRef<number>(getLastSeenMessageId());
 
-  // Filter users based on search term
+  // Filter users based on search term, showing first/last name first
   const filteredUsers = useMemo(() => {
-    if (!userSearchTerm.trim()) {
-      return users;
-    }
     const searchLower = userSearchTerm.trim().toLowerCase();
     const searchDigits = searchLower.replace(/^#/, '');
-    return users.filter((u) => {
-      if (u.username.toLowerCase().includes(searchLower)) return true;
-      if (u.email && u.email.toLowerCase().includes(searchLower)) return true;
-      if (String(u.id) === searchDigits || String(u.id).includes(searchDigits)) return true;
-      const derivedName = nameFromEmail(u.email);
-      if (derivedName && derivedName.toLowerCase().includes(searchLower)) return true;
-      return false;
-    });
+    const list = !searchLower
+      ? users
+      : users.filter((u) => {
+          if (u.username.toLowerCase().includes(searchLower)) return true;
+          if (u.display_name && u.display_name.toLowerCase().includes(searchLower)) return true;
+          if (u.email && u.email.toLowerCase().includes(searchLower)) return true;
+          if (String(u.id) === searchDigits || String(u.id).includes(searchDigits)) return true;
+          const displayName = getPersonDisplayName(u);
+          if (displayName.toLowerCase().includes(searchLower)) return true;
+          return false;
+        });
+    return [...list].sort((a, b) =>
+      getPersonDisplayName(a).localeCompare(getPersonDisplayName(b), undefined, { sensitivity: 'base' })
+    );
   }, [users, userSearchTerm]);
 
-  // Filter messages based on search term
+  // Filter messages based on the open conversation, then the search term
+  const conversationMessages = useMemo(
+    () => messages.filter((m) => isMessageInConversation(m, selectedRecipient, user?.id)),
+    [messages, selectedRecipient, user?.id]
+  );
+
   const filteredMessages = useMemo(() => {
     if (!messageSearchTerm.trim()) {
-      return messages;
+      return conversationMessages;
     }
     const searchLower = messageSearchTerm.toLowerCase();
-    return messages.filter(m => {
+    return conversationMessages.filter(m => {
       const destination = getMessageDestinationMeta(m, user?.id, users).label.toLowerCase();
       return (
         m.username.toLowerCase().includes(searchLower) ||
@@ -410,7 +456,7 @@ export const ChatWidget: React.FC<ChatWidgetProps> = ({ tiles, onTileShared, onT
         m.tile_data?.description?.toLowerCase().includes(searchLower)
       );
     });
-  }, [messages, messageSearchTerm, user?.id, users]);
+  }, [conversationMessages, messageSearchTerm, user?.id, users]);
 
   // Filter tiles based on sharing permissions:
   // - Regular users: can only share tiles from their private tab (visibility === 'private' && user has access)
@@ -514,9 +560,13 @@ export const ChatWidget: React.FC<ChatWidgetProps> = ({ tiles, onTileShared, onT
 
   // Load messages when chat widget is rendered or recipient changes
   useEffect(() => {
-    loadMessages();
-    // Poll for new messages every 3 seconds
-    const interval = setInterval(loadMessages, 3000);
+    conversationKeyRef.current = selectedRecipient;
+    stickToBottomRef.current = true;
+    setMessages([]);
+    void loadMessages(selectedRecipient);
+    const interval = setInterval(() => {
+      void loadMessages(selectedRecipient);
+    }, 3000);
     return () => clearInterval(interval);
   }, [selectedRecipient]);
 
@@ -532,10 +582,13 @@ export const ChatWidget: React.FC<ChatWidgetProps> = ({ tiles, onTileShared, onT
     }
   }, [selectedRecipient, messages, user, onUnreadChange]); // Run when recipient changes or messages load
 
-  // Auto-scroll to bottom when new messages arrive
+  // Auto-scroll only when the user is already at (or near) the latest message
   useEffect(() => {
-    scrollToBottom();
-  }, [messages]);
+    if (!stickToBottomRef.current) return;
+    const el = chatContainerRef.current;
+    if (!el) return;
+    el.scrollTop = el.scrollHeight;
+  }, [filteredMessages]);
 
   const showNewMessageBrowserNotification = (msg: ChatMessage) => {
     if (!('Notification' in window) || Notification.permission !== 'granted') return;
@@ -563,22 +616,37 @@ export const ChatWidget: React.FC<ChatWidgetProps> = ({ tiles, onTileShared, onT
     }
   };
 
-  // Track unread messages and notify parent; browser-notify when tab is hidden
+  // Track unread across public + DMs (current pane is conversation-scoped)
   useEffect(() => {
     if (!user || !onUnreadChange) return;
+    let cancelled = false;
 
-    const unreadMessages = messages.filter(
-      (msg) => msg.user_id !== user.id && msg.id > lastSeenMessageIdRef.current
-    );
+    const checkInboxUnread = async () => {
+      try {
+        const inbox = await getMessages(50, 0, null, { scope: 'inbox' });
+        if (cancelled) return;
+        const unreadMessages = inbox.filter(
+          (msg) => Number(msg.user_id) !== Number(user.id) && msg.id > lastSeenMessageIdRef.current
+        );
+        onUnreadChange(unreadMessages.length > 0);
+        if (unreadMessages.length > 0 && document.visibilityState === 'hidden') {
+          const newest = unreadMessages.reduce((a, b) => (a.id > b.id ? a : b));
+          showNewMessageBrowserNotification(newest);
+        }
+      } catch {
+        // ignore — unread check must not disrupt chat
+      }
+    };
 
-    const hasUnread = unreadMessages.length > 0;
-    onUnreadChange(hasUnread);
-
-    if (hasUnread && document.visibilityState === 'hidden') {
-      const newest = unreadMessages.reduce((a, b) => (a.id > b.id ? a : b));
-      showNewMessageBrowserNotification(newest);
-    }
-  }, [messages, user, onUnreadChange]);
+    void checkInboxUnread();
+    const interval = setInterval(() => {
+      void checkInboxUnread();
+    }, 8000);
+    return () => {
+      cancelled = true;
+      clearInterval(interval);
+    };
+  }, [user, onUnreadChange, messages, selectedRecipient]);
 
   // Mark new messages as read when they arrive while widget is open AND tab is visible
   useEffect(() => {
@@ -618,17 +686,50 @@ export const ChatWidget: React.FC<ChatWidgetProps> = ({ tiles, onTileShared, onT
     }
   }, [user]);
 
-  const loadMessages = async () => {
+  const loadMessages = async (recipientId: number | null = conversationKeyRef.current) => {
     try {
-      const fetchedMessages = await getMessages(100, 0, selectedRecipient);
-      setMessages(fetchedMessages);
+      const fetchedMessages = await getMessages(100, 0, recipientId);
+      if (conversationKeyRef.current !== recipientId) return;
+      setMessages((prev) => {
+        if (
+          prev.length === fetchedMessages.length &&
+          prev.every((msg, index) => msg.id === fetchedMessages[index].id)
+        ) {
+          return prev;
+        }
+        return fetchedMessages;
+      });
     } catch (error) {
       console.error('Failed to load messages:', error);
     }
   };
 
+  const selectConversation = (recipientId: number | null) => {
+    if (recipientId === selectedRecipient) return;
+    conversationKeyRef.current = recipientId;
+    stickToBottomRef.current = true;
+    setSelectedRecipient(recipientId);
+    setMessages([]);
+    setMessageSearchTerm('');
+  };
+
+  const isChatNearBottom = () => {
+    const el = chatContainerRef.current;
+    if (!el) return true;
+    return el.scrollHeight - el.scrollTop - el.clientHeight <= 96;
+  };
+
+  const handleChatScroll = () => {
+    stickToBottomRef.current = isChatNearBottom();
+  };
+
   const scrollToBottom = () => {
-    messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
+    const el = chatContainerRef.current;
+    if (el) {
+      el.scrollTop = el.scrollHeight;
+      return;
+    }
+    messagesEndRef.current?.scrollIntoView({ block: 'end' });
   };
 
   const handleSendMessage = async () => {
@@ -661,7 +762,9 @@ export const ChatWidget: React.FC<ChatWidgetProps> = ({ tiles, onTileShared, onT
         await sendMessage(inputMessage, undefined, selectedRecipient);
         setInputMessage('');
       }
+      stickToBottomRef.current = true;
       await loadMessages();
+      scrollToBottom();
     } catch (error) {
       console.error('Failed to send message:', error);
       alert('Failed to send message. Please try again.');
@@ -1143,7 +1246,13 @@ export const ChatWidget: React.FC<ChatWidgetProps> = ({ tiles, onTileShared, onT
   const getRecipientName = () => {
     if (selectedRecipient === null) return 'Public Chat';
     const recipient = users.find(u => u.id === selectedRecipient);
-    return recipient ? recipient.username : 'Unknown';
+    return recipient ? getPersonDisplayName(recipient) : 'Unknown';
+  };
+
+  const getRecipientLoginId = () => {
+    if (selectedRecipient === null) return '';
+    const recipient = users.find(u => u.id === selectedRecipient);
+    return getPersonLoginId(recipient);
   };
 
   const insertEmoji = (emoji: string) => {
@@ -1212,7 +1321,7 @@ export const ChatWidget: React.FC<ChatWidgetProps> = ({ tiles, onTileShared, onT
               </button>
             </div>
             <button
-              onClick={() => setSelectedRecipient(null)}
+              onClick={() => selectConversation(null)}
               className={`w-full text-left px-3 py-2.5 rounded-xl text-sm transition-all ${
                 selectedRecipient === null ? t.publicOn : t.publicOff
               }`}
@@ -1241,32 +1350,31 @@ export const ChatWidget: React.FC<ChatWidgetProps> = ({ tiles, onTileShared, onT
             ) : (
               filteredUsers.map((userItem) => {
                 const isSelected = selectedRecipient === userItem.id;
-                const derivedName = nameFromEmail(userItem.email);
-                const showDerivedName =
-                  !!derivedName && derivedName.toLowerCase() !== userItem.username.toLowerCase();
+                const displayName = getPersonDisplayName(userItem);
+                const loginId = getPersonLoginId(userItem);
                 return (
                   <button
                     key={userItem.id}
-                    onClick={() => setSelectedRecipient(userItem.id)}
-                    title={[userItem.username, derivedName, userItem.email, `ID ${userItem.id}`].filter(Boolean).join(' · ')}
+                    onClick={() => selectConversation(userItem.id)}
+                    title={[displayName, loginId, userItem.email, `ID ${userItem.id}`].filter(Boolean).join(' · ')}
                     className={`w-full text-left px-3 py-2 rounded-xl text-sm transition-all mb-1 ${
                       isSelected ? t.userOn : t.userOff
                     }`}
                   >
                     <div className="flex items-center gap-2">
-                      {renderAvatar(userItem.username)}
+                      {renderAvatar(displayName)}
                       <div className="flex-1 min-w-0">
                         <div className="flex items-center gap-1.5 min-w-0">
-                          <span className="font-semibold truncate">{userItem.username}</span>
+                          <span className="font-semibold truncate">{displayName}</span>
                         </div>
+                        {loginId && (
+                          <div className={`text-[11px] truncate ${isSelected ? 'text-white/80' : 'text-slate-500 dark:text-slate-400'}`}>
+                            {loginId}
+                          </div>
+                        )}
                         <div className="flex items-center gap-1 mt-0.5 min-w-0">
                           {renderAccountPills(userItem)}
                         </div>
-                        {showDerivedName && (
-                          <div className={`text-[11px] truncate ${isSelected ? 'text-white/80' : 'text-slate-500 dark:text-slate-400'}`}>
-                            {derivedName}
-                          </div>
-                        )}
                       </div>
                     </div>
                   </button>
@@ -1308,13 +1416,7 @@ export const ChatWidget: React.FC<ChatWidgetProps> = ({ tiles, onTileShared, onT
                   <p className={`text-xs font-medium ${t.subtitle}`}>
                     {selectedRecipient === null
                       ? '💬 Everyone can see this'
-                      : (() => {
-                          const recipient = users.find((u) => u.id === selectedRecipient);
-                          const derived = nameFromEmail(recipient?.email);
-                          return derived && derived.toLowerCase() !== (recipient?.username || '').toLowerCase()
-                            ? `💌 ${derived}`
-                            : '💌 Direct message';
-                        })()}
+                      : `💌 Direct message${getRecipientLoginId() ? ` · ${getRecipientLoginId()}` : ''}`}
                   </p>
                 </div>
               </div>
@@ -1375,16 +1477,26 @@ export const ChatWidget: React.FC<ChatWidgetProps> = ({ tiles, onTileShared, onT
         </div>
 
       {/* Messages */}
-      <div ref={chatContainerRef} className="flex-1 overflow-y-auto p-4 space-y-4">
+      <div
+        ref={chatContainerRef}
+        className="flex-1 overflow-y-auto p-4 space-y-4"
+        onScroll={handleChatScroll}
+      >
         {filteredMessages.length === 0 ? (
           <div className="text-center py-10 px-4">
             <div className="text-4xl mb-2" aria-hidden>{messageSearchTerm ? '🔎' : '✨'}</div>
             <p className={`text-sm font-semibold ${t.emptyTitle}`}>
-              {messageSearchTerm ? 'No matching messages' : 'No messages yet'}
+              {messageSearchTerm
+                ? 'No matching messages'
+                : selectedRecipient === null
+                  ? 'No messages yet'
+                  : 'No private messages yet'}
             </p>
             {!messageSearchTerm && (
               <p className="text-xs text-slate-500 dark:text-slate-400 mt-1">
-                Say hello 👋 or drop a 🎉 to start the conversation
+                {selectedRecipient === null
+                  ? 'Say hello 👋 or drop a 🎉 to start the conversation'
+                  : `Start a private chat with ${getRecipientName()}`}
               </p>
             )}
           </div>
@@ -1394,16 +1506,19 @@ export const ChatWidget: React.FC<ChatWidgetProps> = ({ tiles, onTileShared, onT
             const messageUser = isOwn && user
               ? user
               : users.find(u => u.id === message.user_id);
+            const senderLabel = isOwn
+              ? '🙋 You'
+              : getPersonDisplayName(messageUser || { username: message.username });
             return (
               <div
                 key={message.id}
                 className={`flex gap-2 ${isOwn ? 'justify-end' : 'justify-start'}`}
               >
-                {!isOwn && renderAvatar(message.username)}
+                {!isOwn && renderAvatar(senderLabel)}
                 <div className={`max-w-[80%] ${isOwn ? 'items-end' : 'items-start'} flex flex-col`}>
                   <div className="text-xs text-slate-500 dark:text-slate-400 mb-1 px-1 flex items-center gap-1.5 flex-wrap">
                     <span className={isOwn ? t.ownName : t.otherName}>
-                      {isOwn ? '🙋 You' : message.username}
+                      {senderLabel}
                     </span>
                     {renderAccountPills(messageUser)}
                     {renderDestinationPill(message)}

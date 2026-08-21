@@ -89,6 +89,7 @@ export interface UserListItem {
   email?: string;
   auth_source?: string;
   is_admin?: boolean;
+  display_name?: string | null;
 }
 
 const API_BASE = resolveApiBase();

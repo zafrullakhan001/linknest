@@ -17,10 +17,17 @@ export interface ChatMessage {
   created_at_iso?: string; // ISO date string
 }
 
-export const getMessages = async (limit: number = 100, offset: number = 0, recipientId?: number | null): Promise<ChatMessage[]> => {
+export const getMessages = async (
+  limit: number = 100,
+  offset: number = 0,
+  recipientId?: number | null,
+  options?: { scope?: 'inbox' }
+): Promise<ChatMessage[]> => {
   try {
     let url = `${API_BASE}/chat?limit=${limit}&offset=${offset}`;
-    if (recipientId !== null && recipientId !== undefined) {
+    if (options?.scope === 'inbox') {
+      url += '&scope=inbox';
+    } else if (recipientId !== null && recipientId !== undefined) {
       url += `&recipient_id=${recipientId}`;
     }
     

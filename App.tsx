@@ -336,7 +336,7 @@ const AppContent: React.FC = () => {
     const checkUnreadMessages = async () => {
       try {
         // Fetch a batch so we don't miss unread when the latest message is from yourself
-        const messages = await getMessages(30, 0, null);
+        const messages = await getMessages(30, 0, null, { scope: 'inbox' });
         if (messages.length === 0) {
           setHasUnreadChatMessages(false);
           return;

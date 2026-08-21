@@ -1203,8 +1203,8 @@ function handleGetUsers() {
     requireAuth(); // Any authenticated user can see the user list for selecting private link recipients
     
     $db = getDB();
-    // Return only approved users (id, username, email, auth_source, and is_admin) for privacy
-    $stmt = $db->prepare('SELECT id, username, email, auth_source, is_admin FROM users WHERE is_approved = 1 ORDER BY username ASC');
+    // Return only approved users for privacy (include display_name for chat/people lists)
+    $stmt = $db->prepare('SELECT id, username, email, auth_source, is_admin, display_name FROM users WHERE is_approved = 1 ORDER BY username ASC');
     $stmt->execute();
     $users = $stmt->fetchAll();
     
@@ -1212,6 +1212,8 @@ function handleGetUsers() {
     foreach ($users as &$user) {
         $user['auth_source'] = $user['auth_source'] ?? 'local';
         $user['is_admin'] = (bool)$user['is_admin'];
+        $displayName = isset($user['display_name']) ? trim((string)$user['display_name']) : '';
+        $user['display_name'] = $displayName !== '' ? $displayName : null;
     }
     
     sendJSON(['users' => $users]);
