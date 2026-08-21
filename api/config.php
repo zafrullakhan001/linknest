@@ -3529,6 +3529,7 @@ function initDatabase() {
             ['logo_type', 'icon', time()], // 'icon' or 'image'
             ['logo_icon', '🔗', time()], // emoji or icon identifier
             ['logo_image', '', time()], // URL or base64 image
+            ['public_tile_animation', 'fade-in', time()],
         ];
         
         foreach ($defaultSettings as $setting) {

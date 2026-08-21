@@ -799,6 +799,7 @@ function handleUpdateSettings() {
                 'qr_branding_emoji',
                 'footer_text',
                 'guest_access_enabled',
+                'public_tile_animation',
                 'show_database_path_in_footer',
                 'disabled_tabs',
                 'device_presets', 'device_quick_presets',
@@ -999,6 +1000,16 @@ function handleUpdateSettings() {
             // Normalize favicon URL before storing (remove any base path prefix)
             if ($key === 'favicon' && !empty($value)) {
                 $value = preg_replace('#^/[^/]+/uploads/#', '/uploads/', $value);
+            }
+
+            // Public first-visit tile animation (guests persist their own choice in the browser)
+            if ($key === 'public_tile_animation') {
+                $trimmedAnim = is_string($value) ? strtolower(trim($value)) : '';
+                if ($trimmedAnim === '' || !preg_match('/^[a-z0-9][a-z0-9-]{0,62}$/', $trimmedAnim)) {
+                    $value = 'fade-in';
+                } else {
+                    $value = $trimmedAnim;
+                }
             }
 
             // QR branding: mode whitelist + bounded emoji

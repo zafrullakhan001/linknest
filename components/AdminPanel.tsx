@@ -38,6 +38,12 @@ import { UserAuditLog } from './UserAuditLog';
 import { McpAdminPanel } from './McpAdminPanel';
 import { ShortUrlRotationAdmin } from './ShortUrlRotationAdmin';
 import {
+  TileAnimationSelector,
+  getAnimationOption,
+  normalizeTileAnimation,
+  DEFAULT_TILE_ANIMATION,
+} from './TileAnimationSelector';
+import {
   AccessManagerPanel,
   AccessSubTab,
   ACCESS_SUB_TAB_STORAGE_KEY,
@@ -462,6 +468,7 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({ onUserApproved }) => {
     qr_branding_emoji: '❤️',
     footer_text: '© 2025 Adventhealth - Designed and developed by AIT Architecture team',
     show_database_path_in_footer: '1',
+    public_tile_animation: DEFAULT_TILE_ANIMATION,
     disabled_tabs: '[]',
     device_presets: '',
     device_quick_presets: '',
@@ -1210,7 +1217,8 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({ onUserApproved }) => {
         maintenance_message: loadedSettings.maintenance_message || '',
         semi_pwa_enabled: loadedSettings.semi_pwa_enabled || '0',
         semi_pwa_include_paths: loadedSettings.semi_pwa_include_paths || '',
-        semi_pwa_exclude_paths: loadedSettings.semi_pwa_exclude_paths || SEMI_PWA_EXCLUDE_PATHS_DEFAULT
+        semi_pwa_exclude_paths: loadedSettings.semi_pwa_exclude_paths || SEMI_PWA_EXCLUDE_PATHS_DEFAULT,
+        public_tile_animation: loadedSettings.public_tile_animation || DEFAULT_TILE_ANIMATION,
       };
       setSettings(settingsWithDefaults);
 
@@ -12687,6 +12695,35 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({ onUserApproved }) => {
                                   </button>
                                 </div>
                               </label>
+                            </div>
+
+                            <div className="pt-4 border-t border-slate-200 dark:border-slate-700">
+                              <div className="flex flex-col sm:flex-row sm:items-start sm:justify-between gap-4">
+                                <div className="flex-1 min-w-0">
+                                  <span className="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-1">
+                                    Public tile animation
+                                  </span>
+                                  <span className="block text-xs text-slate-500 dark:text-slate-400">
+                                    Default entrance style for first-time visitors. After they choose their own animation, it is saved in their browser.
+                                  </span>
+                                </div>
+                                <div className="flex items-center gap-3 shrink-0">
+                                  <TileAnimationSelector
+                                    animationsOnly
+                                    persistGlobal={false}
+                                    value={normalizeTileAnimation(settings.public_tile_animation)}
+                                    onAnimationChange={(animation) => {
+                                      setSettings((prev) => ({ ...prev, public_tile_animation: animation }));
+                                    }}
+                                    scopeLabel="Public default"
+                                    scopeHint="Used until a visitor picks their own animation"
+                                    buttonTitle="Select public default tile animation"
+                                  />
+                                </div>
+                              </div>
+                              <p className="mt-2 text-xs text-slate-500 dark:text-slate-400">
+                                Currently: {getAnimationOption(normalizeTileAnimation(settings.public_tile_animation)).name}
+                              </p>
                             </div>
 
                             <div className="pt-4 border-t border-slate-200 dark:border-slate-700">

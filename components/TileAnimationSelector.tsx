@@ -2,6 +2,7 @@ import React, { useState, useEffect, useRef, useMemo } from 'react';
 import { createPortal } from 'react-dom';
 import { preferenceService } from '../services/preferenceService';
 import { useAuth } from '../contexts/AuthContext';
+import { useSettings } from '../contexts/SettingsContext';
 
 export type TileAnimation =
     | 'inherit'
@@ -474,8 +475,37 @@ const DECORATION_OPTIONS: DecorationOption[] = [
     { id: 'summer', name: 'Summer', description: 'Sun decoration', icon: '☀️' },
 ];
 
+export const DEFAULT_TILE_ANIMATION: TileAnimation = 'fade-in';
 const ANIMATION_STORAGE_KEY = 'linknest_tile_animation';
 const DECORATION_STORAGE_KEY = 'linknest_tile_decoration';
+
+export function isTileAnimationId(value: string | null | undefined): value is TileAnimation {
+    return !!value && value !== 'inherit' && ANIMATION_OPTIONS.some(opt => opt.id === value);
+}
+
+export function normalizeTileAnimation(value: string | null | undefined): TileAnimation {
+    return isTileAnimationId(value) ? value : DEFAULT_TILE_ANIMATION;
+}
+
+function readLocalTileAnimation(): TileAnimation | null {
+    try {
+        if (typeof localStorage === 'undefined') return null;
+        const stored = localStorage.getItem(ANIMATION_STORAGE_KEY);
+        return isTileAnimationId(stored) ? stored : null;
+    } catch {
+        return null;
+    }
+}
+
+export function resolveViewerTileAnimation(
+    userPref: string | null | undefined,
+    stored: string | null | undefined,
+    publicDefault: string | null | undefined
+): TileAnimation {
+    if (isTileAnimationId(userPref)) return userPref;
+    if (isTileAnimationId(stored)) return stored;
+    return normalizeTileAnimation(publicDefault);
+}
 
 interface TileAnimationSelectorProps {
     onAnimationChange?: (animation: TileAnimation) => void;
@@ -516,7 +546,7 @@ export const TileAnimationSelector: React.FC<TileAnimationSelectorProps> = ({
     hideTrigger = false,
 }) => {
     const [selectedAnimation, setSelectedAnimation] = useState<TileAnimation>(
-        value || (includeInherit ? 'inherit' : 'fade-in')
+        value || (includeInherit ? 'inherit' : DEFAULT_TILE_ANIMATION)
     );
     const [selectedDecoration, setSelectedDecoration] = useState<TileDecoration>('none');
     const [activeTab, setActiveTab] = useState<'animations' | 'decorations'>('animations');
@@ -536,6 +566,8 @@ export const TileAnimationSelector: React.FC<TileAnimationSelectorProps> = ({
     const [dragOffset, setDragOffset] = useState({ x: 0, y: 0 });
     const [previewKey, setPreviewKey] = useState(0);
     const { user } = useAuth();
+    const { settings } = useSettings();
+    const publicDefaultAnimation = normalizeTileAnimation(settings.public_tile_animation);
 
     const replayPreview = () => setPreviewKey((k) => k + 1);
 
@@ -574,8 +606,8 @@ export const TileAnimationSelector: React.FC<TileAnimationSelectorProps> = ({
                 // Try to load from database first
                 try {
                     const prefs = await preferenceService.getPreferences();
-                    if (prefs[ANIMATION_STORAGE_KEY]) {
-                        anim = prefs[ANIMATION_STORAGE_KEY] as TileAnimation;
+                    if (isTileAnimationId(prefs[ANIMATION_STORAGE_KEY])) {
+                        anim = prefs[ANIMATION_STORAGE_KEY];
                     }
                     if (prefs[DECORATION_STORAGE_KEY]) {
                         decor = prefs[DECORATION_STORAGE_KEY] as TileDecoration;
@@ -586,17 +618,19 @@ export const TileAnimationSelector: React.FC<TileAnimationSelectorProps> = ({
             }
 
             // Fallback to localStorage if not in database or guest
+            const stored = readLocalTileAnimation();
             if (!anim) {
-                anim = localStorage.getItem(ANIMATION_STORAGE_KEY) as TileAnimation | null;
+                anim = stored;
             }
             if (!decor) {
                 decor = localStorage.getItem(DECORATION_STORAGE_KEY) as TileDecoration | null;
             }
 
-            // Apply loaded values
-            if (anim && ANIMATION_OPTIONS.find(opt => opt.id === anim)) {
-                setSelectedAnimation(anim);
-                onAnimationChange?.(anim);
+            // Personal choice wins; otherwise use the admin public default (do not persist it yet)
+            const resolved = resolveViewerTileAnimation(anim, stored, publicDefaultAnimation);
+            setSelectedAnimation(resolved);
+            if (anim) {
+                onAnimationChange?.(resolved);
             }
 
             if (decor && DECORATION_OPTIONS.find(opt => opt.id === decor)) {
@@ -627,7 +661,7 @@ export const TileAnimationSelector: React.FC<TileAnimationSelectorProps> = ({
             window.removeEventListener('linknest-tile-animation-change', handleCustomAnimChange);
             window.removeEventListener('linknest-tile-decoration-change', handleCustomDecorChange);
         };
-    }, [user, onAnimationChange, onDecorationChange, persistGlobal, value]);
+    }, [user, onAnimationChange, onDecorationChange, persistGlobal, value, publicDefaultAnimation]);
 
     // Update dropdown position when opened — clamp so the full panel (incl. Done) stays on-screen
     useEffect(() => {
@@ -1036,30 +1070,36 @@ export const TileAnimationSelector: React.FC<TileAnimationSelectorProps> = ({
 
 // Hook to get the current animation and decoration
 export const useTileAnimation = () => {
-    const [animation, setAnimation] = useState<TileAnimation>('fade-in');
-    const [decoration, setDecoration] = useState<TileDecoration>('none');
-
+    const { settings } = useSettings();
+    const publicDefaultAnimation = normalizeTileAnimation(settings.public_tile_animation);
     const { user } = useAuth();
+
+    const [animation, setAnimation] = useState<TileAnimation>(() => (
+        readLocalTileAnimation() ?? publicDefaultAnimation
+    ));
+    const [decoration, setDecoration] = useState<TileDecoration>('none');
 
     useEffect(() => {
         const loadPreferences = async () => {
-            let anim: TileAnimation | null = null;
+            let userPref: TileAnimation | null = null;
             let decor: TileDecoration | null = null;
 
             if (user) {
                 try {
                     const prefs = await preferenceService.getPreferences();
-                    if (prefs[ANIMATION_STORAGE_KEY]) anim = prefs[ANIMATION_STORAGE_KEY] as TileAnimation;
+                    if (isTileAnimationId(prefs[ANIMATION_STORAGE_KEY])) {
+                        userPref = prefs[ANIMATION_STORAGE_KEY];
+                    }
                     if (prefs[DECORATION_STORAGE_KEY]) decor = prefs[DECORATION_STORAGE_KEY] as TileDecoration;
                 } catch (error) {
                     console.error('Failed to load preferences from database:', error);
                 }
             }
 
-            if (!anim) anim = localStorage.getItem(ANIMATION_STORAGE_KEY) as TileAnimation | null;
+            const stored = readLocalTileAnimation();
             if (!decor) decor = localStorage.getItem(DECORATION_STORAGE_KEY) as TileDecoration | null;
 
-            if (anim) setAnimation(anim);
+            setAnimation(resolveViewerTileAnimation(userPref, stored, publicDefaultAnimation));
             if (decor) setDecoration(decor);
         };
 
@@ -1087,7 +1127,7 @@ export const useTileAnimation = () => {
             window.removeEventListener('linknest-tile-animation-change' as any, handleCustomAnimChange);
             window.removeEventListener('linknest-tile-decoration-change' as any, handleCustomDecorChange);
         };
-    }, [user]);
+    }, [user, publicDefaultAnimation]);
 
     return { animation, decoration };
 };
