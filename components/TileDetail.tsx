@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useCallback, useRef, lazy, Suspense } from 'react';
+import React, { useState, useEffect, useCallback, useRef, useMemo, useId, lazy, Suspense } from 'react';
 import { createPortal } from 'react-dom';
 import { Tile, Link, LinkSection, Tab, LinkVisibility, TileVisibility, COLOR_STYLES, THEME_COLORS, ThemeColor, TileMessage, AccessRestrictions, LinkRedirectHop } from '../types';
 import { linkHealthService, LinkHealthMap } from '../services/linkHealthService';
@@ -71,6 +71,8 @@ import { VersionDiffViewer } from './VersionDiffViewer';
 import { TileAnimationSelector, getTileAnimationClass, TileAnimation, getAnimationOption, resolveLinkAnimation } from './TileAnimationSelector';
 import { AuthSourceBadge } from './AuthSourceBadge';
 import { getDisplayUrl, isHttpOrHttpsUrl, normalizeStoredLinkUrl, rewriteHtmlAnchorHrefs, viewerLinkDisplay, viewerLinkUrl, effectiveShowShortUrls } from '../utils/urlDisplay';
+import { diagnoseLinkUrl, hasBlockingUrlIssues } from '../utils/urlDiagnostics';
+import { UrlFormDiagnostics, UrlNeedsFixBadge } from './UrlFormDiagnostics';
 import { tryHandleSshLinkClick, isSshLinkUrl } from '../utils/sshLink';
 import { tryHandleVncLinkClick, isVncLinkUrl } from '../utils/vncLink';
 import { printQrView } from '../utils/printQrView';
@@ -455,6 +457,8 @@ const hopStatusColor = (code: number): string => {
 };
 
 const UrlProbeBadges: React.FC<{ url: string }> = ({ url }) => {
+    const diagnosis = useMemo(() => diagnoseLinkUrl(url), [url]);
+    const blocking = hasBlockingUrlIssues(diagnosis);
     const [phase, setPhase] = useState<'idle' | 'checking' | 'done' | 'error'>('idle');
     const [scheme, setScheme] = useState<string>('');
     const [httpCode, setHttpCode] = useState<number | null>(null);
@@ -474,7 +478,7 @@ const UrlProbeBadges: React.FC<{ url: string }> = ({ url }) => {
         abortRef.current?.abort();
         abortRef.current = null;
 
-        if (!isProbableUrl(trimmed)) {
+        if (blocking || !isProbableUrl(trimmed)) {
             setPhase('idle');
             setScheme('');
             setHttpCode(null);
@@ -537,7 +541,7 @@ const UrlProbeBadges: React.FC<{ url: string }> = ({ url }) => {
             window.clearTimeout(timer);
             abortRef.current?.abort();
         };
-    }, [url]);
+    }, [url, blocking]);
 
     useEffect(() => {
         if (!chainOpen) return;
@@ -552,6 +556,11 @@ const UrlProbeBadges: React.FC<{ url: string }> = ({ url }) => {
             document.body.style.overflow = prevOverflow;
         };
     }, [chainOpen]);
+
+    if (blocking) {
+        const errorCount = diagnosis.issues.filter((item) => item.severity === 'error').length;
+        return <UrlNeedsFixBadge count={errorCount} />;
+    }
 
     if (phase === 'idle') return null;
 
@@ -819,6 +828,40 @@ const UrlProbeBadges: React.FC<{ url: string }> = ({ url }) => {
                         url={(url || '').trim()}
                     />
                 </Suspense>
+            )}
+        </div>
+    );
+};
+
+const LinkUrlField: React.FC<{
+    value: string;
+    onChange: (value: string) => void;
+}> = ({ value, onChange }) => {
+    const diagnosis = useMemo(() => diagnoseLinkUrl(value), [value]);
+    const blocking = hasBlockingUrlIssues(diagnosis);
+    const issuesId = useId();
+
+    return (
+        <div>
+            <div className="flex items-center justify-between gap-2 mb-1.5 flex-wrap">
+                <label className="block text-xs font-semibold uppercase tracking-wider text-slate-600 dark:text-slate-400">URL</label>
+                <UrlProbeBadges url={value} />
+            </div>
+            <input
+                type="text"
+                value={value}
+                onChange={(e) => onChange(e.target.value)}
+                placeholder="https://…  http://…  ssh://user@host:22  or vnc://host:5900"
+                aria-invalid={blocking}
+                aria-describedby={blocking ? issuesId : undefined}
+                className={`w-full bg-slate-50 dark:bg-slate-900 border-2 rounded-lg px-3 py-2 text-sm text-slate-900 dark:text-white focus:outline-none focus:ring-2 transition-all font-mono ${
+                    blocking
+                        ? 'border-amber-400 dark:border-amber-600 focus:border-amber-500 focus:ring-amber-500/40'
+                        : 'border-slate-200 dark:border-slate-700 focus:border-brand-500 focus:ring-brand-500/50'
+                }`}
+            />
+            {blocking && (
+                <UrlFormDiagnostics diagnosis={diagnosis} listId={issuesId} onApplyFix={onChange} />
             )}
         </div>
     );
@@ -10145,19 +10188,10 @@ export const TileDetail: React.FC<TileDetailProps> = ({
                                                                                                 value={editLinkState[link.id]?.label || ''}
                                                                                                 onChange={(value) => updateEditLinkState(link.id, 'label', value)}
                                                                                             />
-                                                                                            <div>
-                                                                                                <div className="flex items-center justify-between gap-2 mb-1.5 flex-wrap">
-                                                                                                    <label className="block text-xs font-semibold uppercase tracking-wider text-slate-600 dark:text-slate-400">URL</label>
-                                                                                                    <UrlProbeBadges url={editLinkState[link.id]?.url || ''} />
-                                                                                                </div>
-                                                                                                <input
-                                                                                                    type="text"
-                                                                                                    value={editLinkState[link.id]?.url || ''}
-                                                                                                    onChange={(e) => updateEditLinkState(link.id, 'url', e.target.value)}
-                                                                                                    placeholder="https://…  http://…  ssh://user@host:22  or vnc://host:5900"
-                                                                                                    className="w-full bg-slate-50 dark:bg-slate-900 border-2 border-slate-200 dark:border-slate-700 rounded-lg px-3 py-2 text-sm text-slate-900 dark:text-white focus:border-brand-500 focus:outline-none focus:ring-2 focus:ring-brand-500/50 transition-all font-mono"
-                                                                                                />
-                                                                                            </div>
+                                                                                            <LinkUrlField
+                                                                                                value={editLinkState[link.id]?.url || ''}
+                                                                                                onChange={(value) => updateEditLinkState(link.id, 'url', value)}
+                                                                                            />
                                                                                             <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
                                                                                                 <div className="relative">
                                                                                                     <label className="block text-xs font-semibold uppercase tracking-wider text-slate-600 dark:text-slate-400 mb-1.5">Emoji</label>
@@ -10800,19 +10834,10 @@ export const TileDetail: React.FC<TileDetailProps> = ({
                                                                                     value={newLinkState[section.id]?.label || ''}
                                                                                     onChange={(value) => updateNewLinkState(section.id, 'label', value)}
                                                                                 />
-                                                                                <div>
-                                                                                    <div className="flex items-center justify-between gap-2 mb-1.5 flex-wrap">
-                                                                                        <label className="block text-xs font-semibold uppercase tracking-wider text-slate-600 dark:text-slate-400">URL</label>
-                                                                                        <UrlProbeBadges url={newLinkState[section.id]?.url || ''} />
-                                                                                    </div>
-                                                                                    <input
-                                                                                        type="text"
-                                                                                        value={newLinkState[section.id]?.url || ''}
-                                                                                        onChange={(e) => updateNewLinkState(section.id, 'url', e.target.value)}
-                                                                                        placeholder="https://…  http://…  ssh://user@host:22  or vnc://host:5900"
-                                                                                        className="w-full bg-slate-50 dark:bg-slate-900 border-2 border-slate-200 dark:border-slate-700 rounded-lg px-3 py-2 text-sm text-slate-900 dark:text-white focus:border-brand-500 focus:outline-none focus:ring-2 focus:ring-brand-500/50 transition-all font-mono"
-                                                                                    />
-                                                                                </div>
+                                                                                <LinkUrlField
+                                                                                    value={newLinkState[section.id]?.url || ''}
+                                                                                    onChange={(value) => updateNewLinkState(section.id, 'url', value)}
+                                                                                />
                                                                             </div>
 
                                                                             {/* Emoji Selection */}
