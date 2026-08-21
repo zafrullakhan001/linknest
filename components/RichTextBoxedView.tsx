@@ -94,6 +94,7 @@ export const RichTextBoxedView: React.FC<RichTextBoxedViewProps> = ({
   bodyClassName = '',
 }) => {
   const bodyRef = useRef<HTMLDivElement>(null);
+  const hostRef = useRef<HTMLDivElement>(null);
   const cachedSelectionRef = useRef('');
   const speakingRangeRef = useRef<Range | null>(null);
   const speakMapRef = useRef<DomCharMap | null>(null);
@@ -141,7 +142,7 @@ export const RichTextBoxedView: React.FC<RichTextBoxedViewProps> = ({
     cachedSelectionRef.current = '';
     speakingRangeRef.current = null;
     speakMapRef.current = null;
-    clearReadAloudHighlight();
+    clearReadAloudHighlight(hostRef.current);
   }, [content]);
 
   const captureHighlightBeforeSpeak = useCallback(() => {
@@ -155,23 +156,27 @@ export const RichTextBoxedView: React.FC<RichTextBoxedViewProps> = ({
 
   useEffect(() => {
     if (!readAloud.isSpeaking || !readAloud.speakProgress) {
-      clearReadAloudHighlight();
+      clearReadAloudHighlight(hostRef.current);
       if (!readAloud.isSpeaking) {
         speakingRangeRef.current = null;
         speakMapRef.current = null;
       }
       return;
     }
-    const map = speakMapRef.current || buildSpeakableDomMap(bodyRef.current, speakingRangeRef.current);
+    // Rebuild map each tick so custom-font DOM stays valid across re-renders.
+    const map = buildSpeakableDomMap(bodyRef.current, speakingRangeRef.current)
+      || speakMapRef.current
+      || buildSpeakableDomMap(bodyRef.current, null);
     speakMapRef.current = map;
     applyReadAloudTrail(
+      hostRef.current,
       map,
       readAloud.speakProgress.charIndex,
       readAloud.speakProgress.charLength
     );
   }, [readAloud.isSpeaking, readAloud.speakProgress]);
 
-  useEffect(() => () => clearReadAloudHighlight(), []);
+  useEffect(() => () => clearReadAloudHighlight(hostRef.current), []);
 
   const resolveSelectedText = useCallback(() => {
     const live = getSelectionInBody();
@@ -214,12 +219,14 @@ export const RichTextBoxedView: React.FC<RichTextBoxedViewProps> = ({
   );
 
   const body = (
-    <div
-      ref={bodyRef}
-      className={`rich-text-content ln-tinymce-content ${bodyClassName}`}
-      style={bodyStyle}
-      dangerouslySetInnerHTML={{ __html: html || '' }}
-    />
+    <div ref={hostRef} className="ln-read-aloud-host relative">
+      <div
+        ref={bodyRef}
+        className={`rich-text-content ln-tinymce-content ${bodyClassName}`}
+        style={bodyStyle}
+        dangerouslySetInnerHTML={{ __html: html || '' }}
+      />
+    </div>
   );
 
   if (!boxed) {

@@ -136,8 +136,10 @@
           speakMap = null;
           try {
             var doc = editor.getDoc && editor.getDoc();
+            var body = editor.getBody && editor.getBody();
             clearCssHighlights(doc && doc.defaultView);
             clearDomMarks(doc);
+            clearOverlayLayer(doc, body);
           } catch (err) { /* ignore */ }
         }
 
@@ -209,15 +211,71 @@
           }
         }
 
+        function ensureOverlayLayer(doc, body) {
+          if (!doc || !body) return null;
+          var layer = body.parentNode && body.parentNode.querySelector
+            ? body.parentNode.querySelector('[data-ln-read-aloud-overlay]')
+            : null;
+          if (layer) return layer;
+          var host = body.parentNode;
+          if (!host) return null;
+          if (host.style && (!host.style.position || host.style.position === 'static')) {
+            var pos = doc.defaultView && doc.defaultView.getComputedStyle
+              ? doc.defaultView.getComputedStyle(host).position
+              : '';
+            if (!pos || pos === 'static') host.style.position = 'relative';
+          }
+          layer = doc.createElement('div');
+          layer.setAttribute('data-ln-read-aloud-overlay', '1');
+          layer.setAttribute('aria-hidden', 'true');
+          layer.style.cssText = 'position:absolute;inset:0;pointer-events:none;z-index:5;overflow:visible;';
+          host.appendChild(layer);
+          return layer;
+        }
+
+        function clearOverlayLayer(doc, body) {
+          try {
+            var host = body && body.parentNode;
+            var layer = host && host.querySelector
+              ? host.querySelector('[data-ln-read-aloud-overlay]')
+              : null;
+            if (layer) layer.innerHTML = '';
+          } catch (err) { /* ignore */ }
+        }
+
+        function paintOverlays(doc, body, range, bg, extra) {
+          if (!doc || !body || !range) return;
+          var layer = ensureOverlayLayer(doc, body);
+          if (!layer) return;
+          var host = layer.parentNode;
+          var cRect = host.getBoundingClientRect();
+          var rects = range.getClientRects();
+          for (var i = 0; i < rects.length; i++) {
+            var rect = rects[i];
+            if (rect.width < 0.5 || rect.height < 0.5) continue;
+            var el = doc.createElement('div');
+            el.style.cssText =
+              'position:absolute;pointer-events:none;border-radius:2px;mix-blend-mode:multiply;' +
+              'left:' + (rect.left - cRect.left + (host.scrollLeft || 0)) + 'px;' +
+              'top:' + (rect.top - cRect.top + (host.scrollTop || 0)) + 'px;' +
+              'width:' + rect.width + 'px;' +
+              'height:' + Math.max(rect.height, 2) + 'px;' +
+              'background:' + bg + ';' + (extra || '');
+            layer.appendChild(el);
+          }
+        }
+
         function applyTrail(charIndex, charLength) {
           try {
             var doc = editor.getDoc && editor.getDoc();
-            if (!doc) return;
+            var body = editor.getBody && editor.getBody();
+            if (!doc || !body) return;
             ensureHighlightStyle(doc);
             var win = doc.defaultView;
             if (!speakMap) {
               speakMap = buildSpeakMap(cachedRange);
             }
+            if (!speakMap) speakMap = buildSpeakMap(null);
             if (!speakMap) return;
             var idx = Math.max(0, Math.min(charIndex || 0, speakMap.text.length));
             var len = Math.max(1, charLength || 1);
@@ -226,17 +284,21 @@
             var current = rangeFromMap(speakMap, idx, wordEnd);
             clearCssHighlights(win);
             clearDomMarks(doc);
+            clearOverlayLayer(doc, body);
+            // Overlays work reliably with custom fonts; CSS highlights are a bonus.
+            paintOverlays(doc, body, trail, 'rgba(250,204,21,0.4)');
+            paintOverlays(doc, body, current, 'rgba(250,204,21,0.85)', 'box-shadow:0 0 0 1px rgba(202,138,4,0.35);');
             if (win && win.CSS && win.CSS.highlights && typeof win.Highlight === 'function') {
               if (trail) win.CSS.highlights.set('ln-read-aloud-trail', new win.Highlight(trail));
               if (current) win.CSS.highlights.set('ln-read-aloud-current', new win.Highlight(current));
-              return;
             }
-            if (current) {
+            if (current && current.startContainer) {
               try {
-                var mark = doc.createElement('mark');
-                mark.className = 'ln-read-aloud-mark';
-                current.surroundContents(mark);
-              } catch (err2) { /* ignore */ }
+                var n = current.startContainer.nodeType === 3
+                  ? current.startContainer.parentElement
+                  : current.startContainer;
+                if (n && n.scrollIntoView) n.scrollIntoView({ block: 'nearest', inline: 'nearest' });
+              } catch (errScroll) { /* ignore */ }
             }
           } catch (err) { /* ignore */ }
         }

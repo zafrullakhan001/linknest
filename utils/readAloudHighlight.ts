@@ -1,7 +1,9 @@
-/** Soft trail (already read) + current word highlights. */
+/** Soft trail (already read) + current word highlights via DOM overlays (works with custom fonts). */
 export const READ_ALOUD_HIGHLIGHT_NAME = 'ln-read-aloud';
 export const READ_ALOUD_TRAIL_NAME = 'ln-read-aloud-trail';
 export const READ_ALOUD_CURRENT_NAME = 'ln-read-aloud-current';
+
+const OVERLAY_LAYER_ATTR = 'data-ln-read-aloud-overlay';
 
 export type DomCharMap = {
   text: string;
@@ -13,42 +15,64 @@ export function supportsCssHighlight(): boolean {
   return typeof CSS !== 'undefined' && 'highlights' in CSS && typeof Highlight !== 'undefined';
 }
 
-function setHighlight(name: string, range: Range | null | undefined): void {
-  if (!range || typeof window === 'undefined') return;
+function clearCssHighlights(): void {
+  if (typeof window === 'undefined' || !supportsCssHighlight()) return;
   try {
-    if (supportsCssHighlight()) {
-      CSS.highlights.set(name, new Highlight(range));
-      return;
-    }
-  } catch {
-    // Fall through
-  }
-  try {
-    const selection =
-      range.startContainer.ownerDocument?.defaultView?.getSelection?.() || window.getSelection();
-    if (!selection) return;
-    selection.removeAllRanges();
-    selection.addRange(range);
-  } catch {
-    // Ignore invalid ranges
-  }
-}
-
-export function applyReadAloudHighlight(range: Range | null | undefined): void {
-  setHighlight(READ_ALOUD_HIGHLIGHT_NAME, range);
-}
-
-export function clearReadAloudHighlight(): void {
-  if (typeof window === 'undefined') return;
-  try {
-    if (supportsCssHighlight()) {
-      CSS.highlights.delete(READ_ALOUD_HIGHLIGHT_NAME);
-      CSS.highlights.delete(READ_ALOUD_TRAIL_NAME);
-      CSS.highlights.delete(READ_ALOUD_CURRENT_NAME);
-    }
+    CSS.highlights.delete(READ_ALOUD_HIGHLIGHT_NAME);
+    CSS.highlights.delete(READ_ALOUD_TRAIL_NAME);
+    CSS.highlights.delete(READ_ALOUD_CURRENT_NAME);
   } catch {
     // Ignore
   }
+}
+
+function ensureOverlayLayer(container: HTMLElement): HTMLElement {
+  let layer = container.querySelector<HTMLElement>(`:scope > [${OVERLAY_LAYER_ATTR}]`);
+  if (!layer) {
+    const computed = window.getComputedStyle(container);
+    if (computed.position === 'static') {
+      container.style.position = 'relative';
+    }
+    layer = container.ownerDocument.createElement('div');
+    layer.setAttribute(OVERLAY_LAYER_ATTR, '1');
+    layer.className = 'ln-read-aloud-overlay-layer';
+    layer.setAttribute('aria-hidden', 'true');
+    container.appendChild(layer);
+  }
+  return layer;
+}
+
+function clearOverlayLayer(container: HTMLElement | null | undefined): void {
+  if (!container) return;
+  const layer = container.querySelector<HTMLElement>(`:scope > [${OVERLAY_LAYER_ATTR}]`);
+  if (layer) layer.replaceChildren();
+}
+
+function paintRangeOverlays(
+  container: HTMLElement,
+  range: Range | null,
+  className: string
+): DOMRect | null {
+  if (!range) return null;
+  const layer = ensureOverlayLayer(container);
+  const cRect = container.getBoundingClientRect();
+  const scrollLeft = container.scrollLeft || 0;
+  const scrollTop = container.scrollTop || 0;
+  let first: DOMRect | null = null;
+
+  const rects = Array.from(range.getClientRects());
+  for (const rect of rects) {
+    if (rect.width < 0.5 || rect.height < 0.5) continue;
+    const el = container.ownerDocument.createElement('div');
+    el.className = className;
+    el.style.left = `${rect.left - cRect.left + scrollLeft}px`;
+    el.style.top = `${rect.top - cRect.top + scrollTop}px`;
+    el.style.width = `${rect.width}px`;
+    el.style.height = `${Math.max(rect.height, 2)}px`;
+    layer.appendChild(el);
+    if (!first) first = rect;
+  }
+  return first;
 }
 
 /** Clone the current selection range if it is non-empty and inside `root`. */
@@ -90,9 +114,7 @@ export function buildSpeakableDomMap(
       const probe = doc.createRange();
       probe.setStart(node, offset);
       probe.setEnd(node, Math.min(offset + 1, node.data.length));
-      // Compare endpoints: character is inside if after start and before end.
-      const afterStart =
-        probe.compareBoundaryPoints(Range.START_TO_START, limitRange) >= 0;
+      const afterStart = probe.compareBoundaryPoints(Range.START_TO_START, limitRange) >= 0;
       const beforeEnd = probe.compareBoundaryPoints(Range.END_TO_START, limitRange) < 0;
       return afterStart && beforeEnd;
     } catch {
@@ -103,6 +125,11 @@ export function buildSpeakableDomMap(
   let node: Node | null = walker.nextNode();
   while (node) {
     const textNode = node as Text;
+    // Skip text inside our own overlay layer if walker ever hits it (shouldn't).
+    if (textNode.parentElement?.closest(`[${OVERLAY_LAYER_ATTR}]`)) {
+      node = walker.nextNode();
+      continue;
+    }
     const value = textNode.data || '';
     for (let i = 0; i < value.length; i++) {
       if (!inLimit(textNode, i)) continue;
@@ -113,7 +140,6 @@ export function buildSpeakableDomMap(
       }
       if (pendingSpace) {
         text += ' ';
-        // Space maps to the upcoming non-space char's position (visual trail continuity).
         positions.push({ node: textNode, offset: i });
         pendingSpace = false;
       }
@@ -143,7 +169,6 @@ export function rangeFromDomMap(
     const doc = a.node.ownerDocument || document;
     const range = doc.createRange();
     range.setStart(a.node, a.offset);
-    // End after the last included character
     range.setEnd(b.node, Math.min(b.offset + 1, b.node.data.length));
     return range;
   } catch {
@@ -151,19 +176,25 @@ export function rangeFromDomMap(
   }
 }
 
+export function clearReadAloudHighlight(container?: HTMLElement | null): void {
+  clearCssHighlights();
+  if (container) clearOverlayLayer(container);
+}
+
 /**
- * Apply progressive trail (0 → current) and current-word highlight.
- * `charIndex` / `charLength` come from SpeechSynthesis boundary events.
+ * Apply progressive trail + current-word highlight using overlays so custom fonts still show yellow.
  */
 export function applyReadAloudTrail(
+  container: HTMLElement | null | undefined,
   map: DomCharMap | null | undefined,
   charIndex: number,
   charLength: number
 ): void {
-  if (!map || !map.text) {
-    clearReadAloudHighlight();
+  if (!container || !map || !map.text) {
+    clearReadAloudHighlight(container);
     return;
   }
+
   const idx = Math.max(0, Math.min(charIndex, map.text.length));
   const len = Math.max(1, charLength || 1);
   const wordEnd = Math.min(idx + len, map.text.length);
@@ -171,7 +202,41 @@ export function applyReadAloudTrail(
   const trail = rangeFromDomMap(map, 0, Math.max(1, wordEnd));
   const current = rangeFromDomMap(map, idx, wordEnd);
 
-  clearReadAloudHighlight();
-  if (trail) setHighlight(READ_ALOUD_TRAIL_NAME, trail);
-  if (current) setHighlight(READ_ALOUD_CURRENT_NAME, current);
+  clearOverlayLayer(container);
+  paintRangeOverlays(container, trail, 'ln-read-aloud-overlay-trail');
+  const currentRect = paintRangeOverlays(container, current, 'ln-read-aloud-overlay-current');
+
+  // Also set CSS highlights when supported (harmless; overlays are the reliable paint).
+  clearCssHighlights();
+  try {
+    if (supportsCssHighlight()) {
+      if (trail) CSS.highlights.set(READ_ALOUD_TRAIL_NAME, new Highlight(trail));
+      if (current) CSS.highlights.set(READ_ALOUD_CURRENT_NAME, new Highlight(current));
+    }
+  } catch {
+    // Ignore
+  }
+
+  if (currentRect && typeof current?.startContainer !== 'undefined') {
+    try {
+      const node = current.startContainer.nodeType === Node.TEXT_NODE
+        ? current.startContainer.parentElement
+        : (current.startContainer as Element);
+      node?.scrollIntoView?.({ block: 'nearest', inline: 'nearest', behavior: 'smooth' });
+    } catch {
+      // Ignore
+    }
+  }
+}
+
+/** @deprecated Use applyReadAloudTrail(container, ...) */
+export function applyReadAloudHighlight(range: Range | null | undefined): void {
+  if (!range || typeof window === 'undefined') return;
+  try {
+    if (supportsCssHighlight()) {
+      CSS.highlights.set(READ_ALOUD_HIGHLIGHT_NAME, new Highlight(range));
+    }
+  } catch {
+    // Ignore
+  }
 }

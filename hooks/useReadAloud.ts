@@ -607,6 +607,8 @@ export function useReadAloud({ text, active = true, autoStart = false }: UseRead
 
   useEffect(() => () => stop(), [stop]);
 
+  const getText = useCallback(() => textRef.current.trim(), []);
+
   return {
     canSpeak,
     isSpeaking,
@@ -620,6 +622,7 @@ export function useReadAloud({ text, active = true, autoStart = false }: UseRead
     femaleVoices,
     maleVoices,
     playbackDisabled,
+    getText,
     start,
     stop,
     toggle,

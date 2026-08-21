@@ -1,5 +1,27 @@
-import React from 'react';
+import React, { useState } from 'react';
 import { READ_ALOUD_RATES, type ReadAloudController, type ReadAloudRate } from '../hooks/useReadAloud';
+import { openCopilotSummarize } from '../utils/openCopilotSummarize';
+import { useToast } from './Toast';
+
+/** Compact Microsoft Copilot mark (gradient spark) for the summarize action. */
+const CopilotIcon: React.FC<{ className?: string }> = ({ className = 'w-5 h-5' }) => {
+  const gradId = React.useId().replace(/:/g, '');
+  return (
+    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" className={className} aria-hidden>
+      <defs>
+        <linearGradient id={gradId} x1="2" y1="4" x2="22" y2="20" gradientUnits="userSpaceOnUse">
+          <stop offset="0%" stopColor="#0FAFFF" />
+          <stop offset="45%" stopColor="#9B6BFF" />
+          <stop offset="100%" stopColor="#FF6BCB" />
+        </linearGradient>
+      </defs>
+      <path
+        fill={`url(#${gradId})`}
+        d="M12.2 2.4c.4-.9 1.7-.9 2.1 0l1.1 2.5c.2.4.5.7.9.9l2.5 1.1c.9.4.9 1.7 0 2.1l-2.5 1.1c-.4.2-.7.5-.9.9l-1.1 2.5c-.4.9-1.7.9-2.1 0l-1.1-2.5a1.8 1.8 0 00-.9-.9L7.7 9c-.9-.4-.9-1.7 0-2.1l2.5-1.1c.4-.2.7-.5.9-.9l1.1-2.5zM6.3 13.2c.3-.6 1.1-.6 1.4 0l.6 1.4c.1.3.3.5.6.6l1.4.6c.6.3.6 1.1 0 1.4l-1.4.6a1.2 1.2 0 00-.6.6l-.6 1.4c-.3.6-1.1.6-1.4 0l-.6-1.4a1.2 1.2 0 00-.6-.6l-1.4-.6c-.6-.3-.6-1.1 0-1.4l1.4-.6c.3-.1.5-.3.6-.6l.6-1.4zM17.6 15.1c.2-.5.9-.5 1.1 0l.4 1c.1.2.2.3.4.4l1 .4c.5.2.5.9 0 1.1l-1 .4a.7.7 0 00-.4.4l-.4 1c-.2.5-.9.5-1.1 0l-.4-1a.7.7 0 00-.4-.4l-1-.4c-.5-.2-.5-.9 0-1.1l1-.4c.2-.1.3-.2.4-.4l.4-1z"
+      />
+    </svg>
+  );
+};
 
 type ReadAloudTheme = 'slate' | 'amber';
 
@@ -42,7 +64,9 @@ export const ReadAloudButtons: React.FC<ReadAloudButtonsProps> = ({
   hideReplay = false,
 }) => {
   const colors = THEME[theme];
-  const { isSpeaking, playbackDisabled, toggle, replay } = readAloud;
+  const toast = useToast();
+  const { isSpeaking, playbackDisabled, toggle, replay, getText } = readAloud;
+  const [copilotBusy, setCopilotBusy] = useState(false);
 
   const resolveOverride = () => {
     const text = resolveText?.()?.trim();
@@ -57,6 +81,26 @@ export const ReadAloudButtons: React.FC<ReadAloudButtonsProps> = ({
   const speak = (fn: (override?: string) => void) => {
     onBeforeSpeak?.();
     fn(resolveOverride());
+  };
+
+  const summarizeWithCopilot = async () => {
+    if (copilotBusy) return;
+    const body = resolveOverride() || getText();
+    setCopilotBusy(true);
+    try {
+      const result = await openCopilotSummarize(body);
+      if (result === 'empty') {
+        toast.info('Nothing to summarize');
+        return;
+      }
+      if (result === 'clipboard_failed') {
+        toast.info('Copilot opened — paste your text to summarize');
+        return;
+      }
+      toast.success('Text copied — paste into Copilot to summarize');
+    } finally {
+      setCopilotBusy(false);
+    }
   };
 
   return (
@@ -113,6 +157,19 @@ export const ReadAloudButtons: React.FC<ReadAloudButtonsProps> = ({
             <path strokeLinecap="round" strokeLinejoin="round" d="M19.114 5.636a9 9 0 010 12.728M16.463 8.288a5.25 5.25 0 010 7.424M6.75 8.25l4.72-4.72a.75.75 0 011.28.53v15.88a.75.75 0 01-1.28.53l-4.72-4.72H4.51c-.88 0-1.704-.507-1.938-1.354A9.01 9.01 0 012.25 12c0-.83.112-1.633.322-2.396C2.806 8.756 3.63 8.25 4.51 8.25H6.75z" />
           </svg>
         )}
+      </button>
+      <button
+        type="button"
+        onMouseDown={preserveSelection}
+        onClick={() => {
+          void summarizeWithCopilot();
+        }}
+        disabled={copilotBusy}
+        className={`p-1.5 rounded-lg transition-colors ${colors.iconIdle} disabled:opacity-40 disabled:cursor-not-allowed`}
+        title="Summarize with Microsoft Copilot (copies text, opens Copilot)"
+        aria-label="Summarize with Microsoft Copilot"
+      >
+        <CopilotIcon />
       </button>
     </>
   );
