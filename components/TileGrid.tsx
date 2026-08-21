@@ -2381,6 +2381,94 @@ function remapHiddenCategoryNames(
   return changed ? next : byTab;
 }
 
+interface CategoryVisibilityPreset {
+  id: string;
+  name: string;
+  visible: string[];
+}
+
+const CATEGORY_PRESETS_STORAGE_KEY = 'linknest_category_presets';
+const CATEGORY_PRESET_ACTIVE_STORAGE_KEY = 'linknest_category_preset_active';
+
+function parseCategoryPresetsByTab(raw: string | null | undefined): Record<string, CategoryVisibilityPreset[]> {
+  if (!raw || typeof raw !== 'string') return {};
+  try {
+    const parsed = JSON.parse(raw);
+    if (!parsed || typeof parsed !== 'object' || Array.isArray(parsed)) return {};
+    const out: Record<string, CategoryVisibilityPreset[]> = {};
+    for (const [tab, list] of Object.entries(parsed)) {
+      if (!Array.isArray(list)) continue;
+      const presets: CategoryVisibilityPreset[] = [];
+      for (const item of list) {
+        if (!item || typeof item !== 'object') continue;
+        const name = typeof (item as CategoryVisibilityPreset).name === 'string'
+          ? (item as CategoryVisibilityPreset).name.trim()
+          : '';
+        if (!name) continue;
+        const rawId = typeof (item as CategoryVisibilityPreset).id === 'string'
+          ? (item as CategoryVisibilityPreset).id.trim()
+          : '';
+        const visible = Array.isArray((item as CategoryVisibilityPreset).visible)
+          ? (item as CategoryVisibilityPreset).visible
+            .filter((n): n is string => typeof n === 'string' && n.trim().length > 0)
+            .map((n) => n.trim())
+          : [];
+        presets.push({
+          id: rawId || `preset-${tab}-${presets.length}-${name.toLowerCase()}`,
+          name,
+          visible
+        });
+      }
+      if (presets.length > 0) out[tab] = presets;
+    }
+    return out;
+  } catch {
+    return {};
+  }
+}
+
+function parseActivePresetIds(raw: string | null | undefined): Record<string, string> {
+  if (!raw || typeof raw !== 'string') return {};
+  try {
+    const parsed = JSON.parse(raw);
+    if (!parsed || typeof parsed !== 'object' || Array.isArray(parsed)) return {};
+    const out: Record<string, string> = {};
+    for (const [tab, id] of Object.entries(parsed)) {
+      if (typeof id === 'string' && id.trim()) out[tab] = id.trim();
+    }
+    return out;
+  } catch {
+    return {};
+  }
+}
+
+function remapPresetCategoryNames(
+  byTab: Record<string, CategoryVisibilityPreset[]>,
+  applyName: (name: string) => string
+): Record<string, CategoryVisibilityPreset[]> {
+  let changed = false;
+  const next: Record<string, CategoryVisibilityPreset[]> = {};
+  for (const [tab, presets] of Object.entries(byTab)) {
+    next[tab] = presets.map((preset) => {
+      const visible = preset.visible.map((n) => {
+        const mapped = applyName(n);
+        if (mapped !== n) changed = true;
+        return mapped;
+      });
+      return visible === preset.visible ? preset : { ...preset, visible };
+    });
+  }
+  return changed ? next : byTab;
+}
+
+function remapPresetCategoryKey(
+  byTab: Record<string, CategoryVisibilityPreset[]>,
+  oldName: string,
+  newName: string
+): Record<string, CategoryVisibilityPreset[]> {
+  return remapPresetCategoryNames(byTab, (name) => (name === oldName ? newName : name));
+}
+
 export const TileGrid: React.FC<TileGridProps> = ({
   tiles,
   onUpdateTiles,
@@ -2929,6 +3017,12 @@ export const TileGrid: React.FC<TileGridProps> = ({
     if (!visible) {
       setSelectedCategoryFilter((current) => (current === categoryName ? null : current));
     }
+    setActivePresetIdByTab((prev) => {
+      if (!prev[activeTab]) return prev;
+      const next = { ...prev };
+      delete next[activeTab];
+      return next;
+    });
   }, [activeTab]);
 
   const showAllCategoriesOnMainPage = useCallback(() => {
@@ -2939,6 +3033,12 @@ export const TileGrid: React.FC<TileGridProps> = ({
       delete next['*'];
       return next;
     });
+    setActivePresetIdByTab((prev) => {
+      if (!prev[activeTab]) return prev;
+      const next = { ...prev };
+      delete next[activeTab];
+      return next;
+    });
   }, [activeTab]);
 
   const hideAllCategoriesOnMainPage = useCallback((categoryNames: string[]) => {
@@ -2947,7 +3047,123 @@ export const TileGrid: React.FC<TileGridProps> = ({
       [activeTab]: [...new Set(categoryNames)]
     }));
     setSelectedCategoryFilter(null);
+    setActivePresetIdByTab((prev) => {
+      if (!prev[activeTab]) return prev;
+      const next = { ...prev };
+      delete next[activeTab];
+      return next;
+    });
   }, [activeTab]);
+
+  const [categoryPresetsByTab, setCategoryPresetsByTab] = useState<Record<string, CategoryVisibilityPreset[]>>(() => {
+    if (typeof window === 'undefined') return {};
+    try {
+      return parseCategoryPresetsByTab(localStorage.getItem(CATEGORY_PRESETS_STORAGE_KEY));
+    } catch {
+      return {};
+    }
+  });
+
+  const [activePresetIdByTab, setActivePresetIdByTab] = useState<Record<string, string>>(() => {
+    if (typeof window === 'undefined') return {};
+    try {
+      return parseActivePresetIds(localStorage.getItem(CATEGORY_PRESET_ACTIVE_STORAGE_KEY));
+    } catch {
+      return {};
+    }
+  });
+
+  const [presetNameDraft, setPresetNameDraft] = useState('');
+
+  useEffect(() => {
+    try {
+      const hasAny = Object.keys(categoryPresetsByTab).some((tab) => (categoryPresetsByTab[tab] || []).length > 0);
+      if (hasAny) {
+        localStorage.setItem(CATEGORY_PRESETS_STORAGE_KEY, JSON.stringify(categoryPresetsByTab));
+      } else {
+        localStorage.removeItem(CATEGORY_PRESETS_STORAGE_KEY);
+      }
+    } catch (e) {
+      console.error('Failed to save category presets', e);
+    }
+  }, [categoryPresetsByTab]);
+
+  useEffect(() => {
+    try {
+      const hasAny = Object.keys(activePresetIdByTab).some((tab) => Boolean(activePresetIdByTab[tab]));
+      if (hasAny) {
+        localStorage.setItem(CATEGORY_PRESET_ACTIVE_STORAGE_KEY, JSON.stringify(activePresetIdByTab));
+      } else {
+        localStorage.removeItem(CATEGORY_PRESET_ACTIVE_STORAGE_KEY);
+      }
+    } catch (e) {
+      console.error('Failed to save active category preset', e);
+    }
+  }, [activePresetIdByTab]);
+
+  const tabCategoryPresets = categoryPresetsByTab[activeTab] || [];
+  const activeCategoryPresetId = activePresetIdByTab[activeTab] || '';
+  const activeCategoryPreset = tabCategoryPresets.find((preset) => preset.id === activeCategoryPresetId) || null;
+
+  const applyCategoryPreset = useCallback((preset: CategoryVisibilityPreset, allCategoryNames: string[]) => {
+    const visible = new Set(preset.visible);
+    const hidden = allCategoryNames.filter((name) => !visible.has(name));
+    setHiddenCategoriesByTab((prev) => {
+      const next = { ...prev };
+      delete next['*'];
+      if (hidden.length === 0) delete next[activeTab];
+      else next[activeTab] = hidden;
+      return next;
+    });
+    setActivePresetIdByTab((prev) => ({ ...prev, [activeTab]: preset.id }));
+    setSelectedCategoryFilter(null);
+    setPresetNameDraft(preset.name);
+  }, [activeTab]);
+
+  const saveCategoryPreset = useCallback((name: string, visibleNames: string[]) => {
+    const trimmed = name.trim().slice(0, 60);
+    if (!trimmed) return;
+    const existing = (categoryPresetsByTab[activeTab] || []).find(
+      (preset) => preset.name.toLowerCase() === trimmed.toLowerCase()
+    );
+    const sameSelection = existing
+      && [...existing.visible].sort().join('\0') === [...visibleNames].sort().join('\0');
+    if (existing && !sameSelection) {
+      const replace = window.confirm(`A preset named "${existing.name}" already exists. Replace it with the current selection?`);
+      if (!replace) return;
+    }
+    const id = existing?.id || generateUuid();
+    const nextPreset: CategoryVisibilityPreset = { id, name: existing?.name || trimmed, visible: [...visibleNames] };
+    setCategoryPresetsByTab((prev) => {
+      const list = [...(prev[activeTab] || [])];
+      const idx = list.findIndex((preset) => preset.id === id);
+      if (idx >= 0) list[idx] = nextPreset;
+      else list.push(nextPreset);
+      return { ...prev, [activeTab]: list };
+    });
+    setActivePresetIdByTab((prev) => ({ ...prev, [activeTab]: id }));
+    setPresetNameDraft(nextPreset.name);
+  }, [activeTab, categoryPresetsByTab]);
+
+  const deleteCategoryPreset = useCallback((presetId: string) => {
+    const preset = (categoryPresetsByTab[activeTab] || []).find((item) => item.id === presetId);
+    if (!preset) return;
+    if (!window.confirm(`Delete preset "${preset.name}"?`)) return;
+    setCategoryPresetsByTab((prev) => {
+      const list = (prev[activeTab] || []).filter((item) => item.id !== presetId);
+      const next = { ...prev };
+      if (list.length === 0) delete next[activeTab];
+      else next[activeTab] = list;
+      return next;
+    });
+    setActivePresetIdByTab((prev) => {
+      if (prev[activeTab] !== presetId) return prev;
+      const next = { ...prev };
+      delete next[activeTab];
+      return next;
+    });
+    if (presetNameDraft === preset.name) setPresetNameDraft('');
+  }, [activeTab, categoryPresetsByTab, presetNameDraft]);
 
   // Edit Modal Tab State
   const [editModalActiveTab, setEditModalActiveTab] = useState<'general' | 'decoration' | 'messages'>('general');
@@ -4046,6 +4262,14 @@ You may also wrap the array in an object: { "messages": [ ... ] }.
             setHiddenCategoriesByTab(parseHiddenCategoriesByTab(String(prefs.hiddenCategories ?? '')));
           }
 
+          if (Object.prototype.hasOwnProperty.call(prefs, 'categoryPresets')) {
+            setCategoryPresetsByTab(parseCategoryPresetsByTab(String(prefs.categoryPresets ?? '')));
+          }
+
+          if (Object.prototype.hasOwnProperty.call(prefs, 'categoryPresetActive')) {
+            setActivePresetIdByTab(parseActivePresetIds(String(prefs.categoryPresetActive ?? '')));
+          }
+
           setPreferencesLoaded(true);
         })
         .catch(error => {
@@ -4140,6 +4364,28 @@ You may also wrap the array in an object: { "messages": [ ... ] }.
       return () => clearTimeout(timeoutId);
     }
   }, [hiddenCategoriesByTab, isAuthenticated, preferencesLoaded]);
+
+  useEffect(() => {
+    if (isAuthenticated && preferencesLoaded) {
+      const timeoutId = setTimeout(() => {
+        const hasAny = Object.keys(categoryPresetsByTab).some((tab) => (categoryPresetsByTab[tab] || []).length > 0);
+        userPreferencesService.updatePreference('categoryPresets', hasAny ? JSON.stringify(categoryPresetsByTab) : '')
+          .catch(() => { });
+      }, 300);
+      return () => clearTimeout(timeoutId);
+    }
+  }, [categoryPresetsByTab, isAuthenticated, preferencesLoaded]);
+
+  useEffect(() => {
+    if (isAuthenticated && preferencesLoaded) {
+      const timeoutId = setTimeout(() => {
+        const hasAny = Object.keys(activePresetIdByTab).some((tab) => Boolean(activePresetIdByTab[tab]));
+        userPreferencesService.updatePreference('categoryPresetActive', hasAny ? JSON.stringify(activePresetIdByTab) : '')
+          .catch(() => { });
+      }, 300);
+      return () => clearTimeout(timeoutId);
+    }
+  }, [activePresetIdByTab, isAuthenticated, preferencesLoaded]);
 
   // Load user list when on Private tab (for owner filter labels)
   useEffect(() => {
@@ -6574,6 +6820,7 @@ You may also wrap the array in an object: { "messages": [ ... ] }.
       );
       setCategoryOrder(newCategoryOrder);
       setHiddenCategoriesByTab((prev) => remapHiddenCategoryKey(prev, oldName, trimmedNewName));
+      setCategoryPresetsByTab((prev) => remapPresetCategoryKey(prev, oldName, trimmedNewName));
 
       // Save updated arrangements
       try {
@@ -6601,6 +6848,7 @@ You may also wrap the array in an object: { "messages": [ ... ] }.
         }
         setCategoryOrder(categoryOrder);
         setHiddenCategoriesByTab((prev) => remapHiddenCategoryKey(prev, trimmedNewName, oldName));
+        setCategoryPresetsByTab((prev) => remapPresetCategoryKey(prev, trimmedNewName, oldName));
         alert('Failed to save category rename. Please try again.');
       }
     } catch (error) {
@@ -6655,6 +6903,7 @@ You may also wrap the array in an object: { "messages": [ ... ] }.
     setCategoryMetadata(newMetadata);
     setSelectedCategoryFilter((current) => (current ? applyName(current) : current));
     setHiddenCategoriesByTab((prev) => remapHiddenCategoryNames(prev, applyName));
+    setCategoryPresetsByTab((prev) => remapPresetCategoryNames(prev, applyName));
 
     const persist = async () => {
       try {
@@ -8271,11 +8520,33 @@ You may also wrap the array in an object: { "messages": [ ... ] }.
         </div>
       )}
 
-      {!selectedCategoryFilter && viewMode === 'grid' && hiddenCategories.size > 0 && !(activeTab === 'private' && privateSubTab !== 'spaces') && (
+      {!selectedCategoryFilter && viewMode === 'grid' && (hiddenCategories.size > 0 || tabCategoryPresets.length > 0) && !(activeTab === 'private' && privateSubTab !== 'spaces') && (
         <div className="mb-4 flex flex-wrap items-center gap-2">
-          <span className="px-4 py-2 text-sm font-medium text-slate-600 dark:text-slate-400 bg-slate-100 dark:bg-slate-800 rounded-lg border border-slate-200 dark:border-slate-700">
-            Showing {Object.keys(mainPageGroupedTiles).length} of {Object.keys(groupedTiles).length} categories
-          </span>
+          {hiddenCategories.size > 0 && (
+            <span className="px-4 py-2 text-sm font-medium text-slate-600 dark:text-slate-400 bg-slate-100 dark:bg-slate-800 rounded-lg border border-slate-200 dark:border-slate-700">
+              Showing {Object.keys(mainPageGroupedTiles).length} of {Object.keys(groupedTiles).length} categories
+              {activeCategoryPreset ? ` · ${activeCategoryPreset.name}` : ''}
+            </span>
+          )}
+          {tabCategoryPresets.length > 0 && (
+            <select
+              value={activeCategoryPresetId}
+              onChange={(e) => {
+                const preset = tabCategoryPresets.find((item) => item.id === e.target.value);
+                if (preset) applyCategoryPreset(preset, Object.keys(groupedTiles));
+              }}
+              className="px-3 py-2 text-sm font-medium text-slate-700 dark:text-slate-200 bg-white dark:bg-slate-800 rounded-lg border border-slate-200 dark:border-slate-700"
+              title="Switch category preset"
+              aria-label="Category preset"
+            >
+              <option value="">Choose preset</option>
+              {tabCategoryPresets.map((preset) => (
+                <option key={preset.id} value={preset.id}>
+                  {preset.name}
+                </option>
+              ))}
+            </select>
+          )}
           <button
             type="button"
             onClick={() => {
@@ -8286,13 +8557,15 @@ You may also wrap the array in an object: { "messages": [ ... ] }.
           >
             Change selection
           </button>
-          <button
-            type="button"
-            onClick={showAllCategoriesOnMainPage}
-            className="px-3 py-2 text-sm font-medium text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-white hover:bg-slate-100 dark:hover:bg-slate-800 rounded-lg border border-slate-200 dark:border-slate-700 transition-colors"
-          >
-            Show all
-          </button>
+          {hiddenCategories.size > 0 && (
+            <button
+              type="button"
+              onClick={showAllCategoriesOnMainPage}
+              className="px-3 py-2 text-sm font-medium text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-white hover:bg-slate-100 dark:hover:bg-slate-800 rounded-lg border border-slate-200 dark:border-slate-700 transition-colors"
+            >
+              Show all
+            </button>
+          )}
         </div>
       )}
 
@@ -8408,6 +8681,64 @@ You may also wrap the array in an object: { "messages": [ ... ] }.
                 View on main page
               </button>
             </div>
+          </div>
+          <div className="flex flex-wrap items-center gap-2">
+            {tabCategoryPresets.length > 0 && (
+              <select
+                value={activeCategoryPresetId}
+                onChange={(e) => {
+                  const preset = tabCategoryPresets.find((item) => item.id === e.target.value);
+                  if (preset) applyCategoryPreset(preset, Object.keys(groupedTiles));
+                }}
+                className="px-3 py-1.5 text-sm font-medium text-slate-700 dark:text-slate-200 bg-white dark:bg-slate-800 rounded-lg border border-slate-200 dark:border-slate-700"
+                title="Switch category preset"
+                aria-label="Category preset"
+              >
+                <option value="">Choose preset</option>
+                {tabCategoryPresets.map((preset) => (
+                  <option key={preset.id} value={preset.id}>
+                    {preset.name}
+                  </option>
+                ))}
+              </select>
+            )}
+            <input
+              type="text"
+              value={presetNameDraft}
+              onChange={(e) => setPresetNameDraft(e.target.value)}
+              onKeyDown={(e) => {
+                if (e.key !== 'Enter') return;
+                e.preventDefault();
+                saveCategoryPreset(
+                  presetNameDraft,
+                  Object.keys(groupedTiles).filter((name) => !hiddenCategories.has(name))
+                );
+              }}
+              placeholder="Preset name"
+              maxLength={60}
+              className="px-3 py-1.5 text-sm w-44 rounded-lg border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 text-slate-800 dark:text-slate-200 placeholder:text-slate-400"
+              aria-label="Preset name"
+            />
+            <button
+              type="button"
+              onClick={() => saveCategoryPreset(
+                presetNameDraft,
+                Object.keys(groupedTiles).filter((name) => !hiddenCategories.has(name))
+              )}
+              disabled={!presetNameDraft.trim()}
+              className="px-3 py-1.5 text-sm font-medium text-white bg-brand-600 hover:bg-brand-700 disabled:opacity-50 disabled:cursor-not-allowed rounded-lg transition-colors"
+            >
+              Save preset
+            </button>
+            {activeCategoryPreset && (
+              <button
+                type="button"
+                onClick={() => deleteCategoryPreset(activeCategoryPreset.id)}
+                className="px-3 py-1.5 text-sm font-medium text-red-600 dark:text-red-400 hover:bg-red-50 dark:hover:bg-red-900/20 rounded-lg border border-red-200 dark:border-red-800 transition-colors"
+              >
+                Delete preset
+              </button>
+            )}
           </div>
         <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-4">
           {Object.keys(groupedTiles).map((groupName) => {
