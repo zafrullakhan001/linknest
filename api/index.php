@@ -311,6 +311,9 @@ if ($path === '/') {
     }
     require __DIR__ . '/updater.php';
     exit;
+} elseif (strpos($path, '/tts') === 0) {
+    require __DIR__ . '/tts.php';
+    exit;
 } elseif (strpos($path, '/mcp-tokens') === 0) {
     $remainingPath = substr($path, 11); // Remove '/mcp-tokens'
     if (empty($remainingPath) || $remainingPath === '/') {

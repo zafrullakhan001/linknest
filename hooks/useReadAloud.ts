@@ -1,4 +1,11 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import {
+  applySinkToElement,
+  ensureSinkPermission,
+  speakRoutable,
+  stopRoutableSpeech,
+  supportsSinkId,
+} from '../utils/routableSpeech';
 
 const VOICE_STORAGE_KEY = 'linknest_readaloud_voice';
 const LEGACY_VOICE_STORAGE_KEY = 'linknest_maintenance_readaloud_voice';
@@ -47,32 +54,6 @@ function persistSinkId(deviceId: string): void {
   } catch {
     // Ignore storage failures
   }
-}
-
-/** Best-effort route page audio to a chosen output (SpeechSynthesis cannot setSinkId). */
-async function applyAudioSinkId(deviceId: string): Promise<boolean> {
-  if (typeof window === 'undefined') return false;
-  try {
-    if (typeof AudioContext !== 'undefined' && 'setSinkId' in AudioContext.prototype) {
-      const ctx = new AudioContext(deviceId ? ({ sinkId: deviceId } as AudioContextOptions) : undefined);
-      if (deviceId && typeof (ctx as AudioContext & { setSinkId?: (id: string) => Promise<void> }).setSinkId === 'function') {
-        await (ctx as AudioContext & { setSinkId: (id: string) => Promise<void> }).setSinkId(deviceId);
-      }
-      // Brief silent buffer so the sink is actually engaged on some browsers.
-      const osc = ctx.createOscillator();
-      const gain = ctx.createGain();
-      gain.gain.value = 0;
-      osc.connect(gain);
-      gain.connect(ctx.destination);
-      osc.start();
-      osc.stop(ctx.currentTime + 0.01);
-      await ctx.close();
-      return true;
-    }
-  } catch {
-    // Fall through
-  }
-  return false;
 }
 
 const US_MALE_NAME_HINTS = new Set([
@@ -227,12 +208,17 @@ export function useReadAloud({ text, active = true, autoStart = false }: UseRead
   const rateRef = useRef(rate);
   const textRef = useRef(text);
   const lastSpokenTextRef = useRef('');
+  const selectedSinkIdRef = useRef(selectedSinkId);
+  const routableAbortRef = useRef<AbortController | null>(null);
+  const usVoicesRef = useRef<UsVoiceOption[]>([]);
   selectedVoiceUriRef.current = selectedVoiceUri;
   rateRef.current = rate;
   textRef.current = text;
+  selectedSinkIdRef.current = selectedSinkId;
 
-  const canSpeak = typeof window !== 'undefined' && 'speechSynthesis' in window;
+  const canSpeak = typeof window !== 'undefined' && ('speechSynthesis' in window || supportsSinkId());
   const usVoices = useMemo(() => getUsMaleFemaleVoices(voices), [voices]);
+  usVoicesRef.current = usVoices;
   const femaleVoices = useMemo(() => usVoices.filter((option) => option.gender === 'female'), [usVoices]);
   const maleVoices = useMemo(() => usVoices.filter((option) => option.gender === 'male'), [usVoices]);
   const playbackDisabled = !canSpeak || !text.trim();
@@ -255,6 +241,11 @@ export function useReadAloud({ text, active = true, autoStart = false }: UseRead
       keepAliveRef.current = null;
     }
     clearProgressTimers();
+    if (routableAbortRef.current) {
+      routableAbortRef.current.abort();
+      routableAbortRef.current = null;
+    }
+    stopRoutableSpeech();
     utteranceRef.current = null;
     const shouldCancel = ownsSpeechRef.current;
     ownsSpeechRef.current = false;
@@ -267,7 +258,9 @@ export function useReadAloud({ text, active = true, autoStart = false }: UseRead
 
   const start = useCallback((overrideText?: string) => {
     const speakable = (overrideText?.trim() || textRef.current).trim();
-    if (!canSpeak || !speakable) return;
+    if (!speakable) return;
+    if (!canSpeak && !supportsSinkId()) return;
+
     lastSpokenTextRef.current = speakable;
     boundarySeenRef.current = false;
     setSpeakProgress({ charIndex: 0, charLength: 1, text: speakable });
@@ -283,15 +276,90 @@ export function useReadAloud({ text, active = true, autoStart = false }: UseRead
       keepAliveRef.current = null;
     }
     clearProgressTimers();
-    if (window.speechSynthesis.speaking || window.speechSynthesis.pending) {
-      window.speechSynthesis.cancel();
+    if (routableAbortRef.current) {
+      routableAbortRef.current.abort();
+      routableAbortRef.current = null;
+    }
+    stopRoutableSpeech();
+    if (typeof window !== 'undefined' && 'speechSynthesis' in window) {
+      if (window.speechSynthesis.speaking || window.speechSynthesis.pending) {
+        window.speechSynthesis.cancel();
+      }
+    }
+
+    const sinkId = (selectedSinkIdRef.current || readStoredSinkId()).trim();
+    const useRoutable = !!sinkId && supportsSinkId();
+
+    const finish = () => {
+      if (speakGenerationRef.current !== generation) return;
+      if (keepAliveRef.current != null) {
+        window.clearInterval(keepAliveRef.current);
+        keepAliveRef.current = null;
+      }
+      clearProgressTimers();
+      utteranceRef.current = null;
+      ownsSpeechRef.current = false;
+      routableAbortRef.current = null;
+      setSpeakProgress(null);
+      setIsSpeaking(false);
+    };
+
+    if (useRoutable) {
+      ownsSpeechRef.current = true;
+      setIsSpeaking(true);
+      const abort = new AbortController();
+      routableAbortRef.current = abort;
+      const selected = usVoicesRef.current.find((o) => o.voice.voiceURI === selectedVoiceUriRef.current);
+      const gender = selected?.gender || '';
+
+      void speakRoutable(
+        {
+          text: speakable,
+          rate: rateRef.current,
+          sinkId,
+          gender,
+          signal: abort.signal,
+        },
+        {
+          onProgress: (charIndex, charLength, text) => {
+            if (speakGenerationRef.current !== generation) return;
+            setSpeakProgress({ charIndex, charLength, text });
+          },
+          onEnd: finish,
+          onError: () => {
+            // Fall back to browser speechSynthesis if routable TTS fails.
+            if (speakGenerationRef.current !== generation) return;
+            if (!('speechSynthesis' in window)) {
+              finish();
+              return;
+            }
+            const utterance = new SpeechSynthesisUtterance(speakable);
+            utterance.rate = rateRef.current;
+            utterance.onend = finish;
+            utterance.onerror = () => finish();
+            utteranceRef.current = utterance;
+            window.speechSynthesis.speak(utterance);
+          },
+        }
+      ).catch(() => {
+        if (speakGenerationRef.current === generation) finish();
+      });
+      return;
+    }
+
+    if (!('speechSynthesis' in window)) {
+      setIsSpeaking(false);
+      setSpeakProgress(null);
+      return;
     }
 
     const begin = () => {
       if (speakGenerationRef.current !== generation) return;
 
-      const availableUsVoices = (usVoices.length > 0 ? usVoices : getUsMaleFemaleVoices(window.speechSynthesis.getVoices()))
-        .map((option) => option.voice);
+      const availableUsVoices = (usVoicesRef.current.length > 0
+        ? usVoicesRef.current
+        : getUsMaleFemaleVoices(window.speechSynthesis.getVoices())
+      ).map((option) => option.voice);
       const selectedUri = selectedVoiceUriRef.current;
       const preferredVoice =
         availableUsVoices.find((voice) => voice.voiceURI === selectedUri) ||
@@ -306,19 +374,6 @@ export function useReadAloud({ text, active = true, autoStart = false }: UseRead
         utterance.voice = preferredVoice;
         utterance.lang = preferredVoice.lang;
       }
-
-      const finish = () => {
-        if (speakGenerationRef.current !== generation) return;
-        if (keepAliveRef.current != null) {
-          window.clearInterval(keepAliveRef.current);
-          keepAliveRef.current = null;
-        }
-        clearProgressTimers();
-        utteranceRef.current = null;
-        ownsSpeechRef.current = false;
-        setSpeakProgress(null);
-        setIsSpeaking(false);
-      };
 
       utterance.onboundary = (event) => {
         if (speakGenerationRef.current !== generation) return;
@@ -342,7 +397,6 @@ export function useReadAloud({ text, active = true, autoStart = false }: UseRead
       ownsSpeechRef.current = true;
       window.speechSynthesis.speak(utterance);
 
-      // Fallback trail when the engine does not fire boundary events (e.g. some voices).
       const cps = Math.max(8, 14 * rateRef.current);
       progressFallbackRef.current = window.setInterval(() => {
         if (speakGenerationRef.current !== generation) return;
@@ -367,14 +421,14 @@ export function useReadAloud({ text, active = true, autoStart = false }: UseRead
     ownsSpeechRef.current = true;
     setIsSpeaking(true);
     speakTimeoutRef.current = window.setTimeout(begin, 40);
-  }, [canSpeak, clearProgressTimers, usVoices]);
+  }, [canSpeak, clearProgressTimers]);
 
   const refreshAudioOutputs = useCallback(async () => {
     if (typeof navigator === 'undefined' || !navigator.mediaDevices?.enumerateDevices) {
-      setAudioOutputSupported(false);
+      setAudioOutputSupported(supportsSinkId());
       return;
     }
-    setAudioOutputSupported(true);
+    setAudioOutputSupported(supportsSinkId() || true);
     try {
       const devices = await navigator.mediaDevices.enumerateDevices();
       const outputs = devices
@@ -391,12 +445,35 @@ export function useReadAloud({ text, active = true, autoStart = false }: UseRead
 
   const setAudioOutput = useCallback(
     async (deviceId: string) => {
-      setSelectedSinkIdState(deviceId);
-      persistSinkId(deviceId);
-      await applyAudioSinkId(deviceId);
+      let nextId = deviceId;
+      if (nextId) {
+        try {
+          nextId = await ensureSinkPermission(nextId);
+        } catch {
+          // keep requested id
+        }
+      }
+      setSelectedSinkIdState(nextId);
+      selectedSinkIdRef.current = nextId;
+      persistSinkId(nextId);
+
+      if (nextId && supportsSinkId()) {
+        try {
+          const audio = new Audio();
+          await applySinkToElement(audio, nextId);
+        } catch (err) {
+          console.warn('Failed to set audio output device:', err);
+        }
+      }
+
       await refreshAudioOutputs();
+
+      // If currently speaking, restart on the newly selected device.
+      if (isSpeaking) {
+        start(lastSpokenTextRef.current || undefined);
+      }
     },
-    [refreshAudioOutputs]
+    [isSpeaking, refreshAudioOutputs, start]
   );
 
   const pickAudioOutput = useCallback(async () => {
@@ -419,11 +496,20 @@ export function useReadAloud({ text, active = true, autoStart = false }: UseRead
 
   const startWithSink = useCallback(
     async (overrideText?: string) => {
-      const sink = selectedSinkId || readStoredSinkId();
-      if (sink) await applyAudioSinkId(sink);
+      const sink = selectedSinkIdRef.current || readStoredSinkId();
+      if (sink && supportsSinkId()) {
+        try {
+          const permitted = await ensureSinkPermission(sink);
+          selectedSinkIdRef.current = permitted;
+          setSelectedSinkIdState(permitted);
+          persistSinkId(permitted);
+        } catch {
+          // continue with stored sink
+        }
+      }
       start(overrideText);
     },
-    [selectedSinkId, start]
+    [start]
   );
 
   useEffect(() => {

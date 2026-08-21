@@ -211,7 +211,7 @@ export const ReadAloudOutputSelect: React.FC<ReadAloudOutputSelectProps> = ({
           }}
           className={`${compact ? 'max-w-[7.5rem]' : 'min-w-0 flex-1 max-w-full'} rounded-lg border px-1.5 py-1 text-xs focus:outline-none focus:ring-2 ${colors.select}`}
           aria-label="Read aloud speaker / headphones"
-          title="Choose headphones or speakers. Browser TTS often follows the OS default output."
+          title="Choose headphones or speakers. Selected device overrides system default for read-aloud."
         >
           <option value="">System default</option>
           {audioOutputs.map((device) => (
