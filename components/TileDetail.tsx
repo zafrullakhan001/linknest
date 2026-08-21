@@ -464,6 +464,8 @@ const UrlProbeBadges: React.FC<{ url: string }> = ({ url }) => {
     const [scheme, setScheme] = useState<string>('');
     const [httpCode, setHttpCode] = useState<number | null>(null);
     const [latency, setLatency] = useState<number | null>(null);
+    const [browserLatency, setBrowserLatency] = useState<number | null>(null);
+    const [browserPhase, setBrowserPhase] = useState<'idle' | 'checking' | 'done' | 'error'>('idle');
     const [redirectCount, setRedirectCount] = useState(0);
     const [redirectChain, setRedirectChain] = useState<LinkRedirectHop[]>([]);
     const [chainOpen, setChainOpen] = useState(false);
@@ -472,18 +474,23 @@ const UrlProbeBadges: React.FC<{ url: string }> = ({ url }) => {
     const [healthStatus, setHealthStatus] = useState<string>('');
     const [error, setError] = useState<string>('');
     const abortRef = useRef<AbortController | null>(null);
+    const browserAbortRef = useRef<AbortController | null>(null);
     const requestIdRef = useRef(0);
 
     useEffect(() => {
         const trimmed = (url || '').trim();
         abortRef.current?.abort();
         abortRef.current = null;
+        browserAbortRef.current?.abort();
+        browserAbortRef.current = null;
 
         if (blocking || !isProbableUrl(trimmed)) {
             setPhase('idle');
+            setBrowserPhase('idle');
             setScheme('');
             setHttpCode(null);
             setLatency(null);
+            setBrowserLatency(null);
             setRedirectCount(0);
             setRedirectChain([]);
             setChainOpen(false);
@@ -499,14 +506,17 @@ const UrlProbeBadges: React.FC<{ url: string }> = ({ url }) => {
                 : '';
         if (!detectedScheme) {
             setPhase('idle');
+            setBrowserPhase('idle');
             return;
         }
         setScheme(detectedScheme);
         setPhase('checking');
+        setBrowserPhase('checking');
         setError('');
         setRedirectCount(0);
         setRedirectChain([]);
         setChainOpen(false);
+        setBrowserLatency(null);
 
         const requestId = ++requestIdRef.current;
         const timer = window.setTimeout(async () => {
@@ -538,9 +548,41 @@ const UrlProbeBadges: React.FC<{ url: string }> = ({ url }) => {
             }
         }, 650);
 
+        // Browser → URL RTT (direct from this device). Prefer HEAD so we don't download the page body.
+        let browserCancelled = false;
+        const browserTimer = window.setTimeout(async () => {
+            const controller = new AbortController();
+            browserAbortRef.current = controller;
+            const softTimeout = window.setTimeout(() => controller.abort(), 15000);
+            const started = performance.now();
+            try {
+                await fetch(trimmed, {
+                    method: 'HEAD',
+                    mode: 'cors',
+                    cache: 'no-store',
+                    credentials: 'omit',
+                    redirect: 'follow',
+                    signal: controller.signal,
+                });
+                if (browserCancelled || requestId !== requestIdRef.current) return;
+                setBrowserLatency(Math.round(performance.now() - started));
+                setBrowserPhase('done');
+            } catch {
+                if (browserCancelled || requestId !== requestIdRef.current) return;
+                // CORS / network / soft-timeout still reflect browser path timing in most cases
+                setBrowserLatency(Math.round(performance.now() - started));
+                setBrowserPhase('done');
+            } finally {
+                window.clearTimeout(softTimeout);
+            }
+        }, 650);
+
         return () => {
+            browserCancelled = true;
             window.clearTimeout(timer);
+            window.clearTimeout(browserTimer);
             abortRef.current?.abort();
+            browserAbortRef.current?.abort();
         };
     }, [url, blocking]);
 
@@ -576,12 +618,15 @@ const UrlProbeBadges: React.FC<{ url: string }> = ({ url }) => {
                         ? 'bg-amber-100 text-amber-800 dark:bg-amber-900/50 dark:text-amber-200 border-amber-200 dark:border-amber-700'
                         : 'bg-slate-100 text-slate-700 dark:bg-slate-800 dark:text-slate-300 border-slate-200 dark:border-slate-600';
 
-    const latencyColor =
-        latency !== null && latency < 300
+    const latencyBadgeClass = (ms: number | null) =>
+        ms !== null && ms < 300
             ? 'bg-emerald-100 text-emerald-800 dark:bg-emerald-900/50 dark:text-emerald-200 border-emerald-200 dark:border-emerald-700'
-            : latency !== null && latency < 1000
+            : ms !== null && ms < 1000
                 ? 'bg-amber-100 text-amber-800 dark:bg-amber-900/50 dark:text-amber-200 border-amber-200 dark:border-amber-700'
                 : 'bg-rose-100 text-rose-800 dark:bg-rose-900/50 dark:text-rose-200 border-rose-200 dark:border-rose-700';
+
+    const latencyColor = latencyBadgeClass(latency);
+    const browserLatencyColor = latencyBadgeClass(browserLatency);
 
     const schemeUpper = (scheme || 'https').toUpperCase();
     const statusLabel =
@@ -608,6 +653,7 @@ const UrlProbeBadges: React.FC<{ url: string }> = ({ url }) => {
             redirectCount,
             error: error || null,
             serverLatencyMs: latency,
+            browserLatencyMs: browserLatency,
             exportedAt: new Date().toISOString(),
             hops: redirectChain.map((hop, idx) => ({
                 hop: idx + 1,
@@ -749,19 +795,41 @@ const UrlProbeBadges: React.FC<{ url: string }> = ({ url }) => {
 
     return (
         <div className="flex flex-wrap items-center gap-1.5">
-            {phase === 'checking' ? (
+            {phase === 'checking' && browserPhase === 'checking' ? (
                 <span className="inline-flex items-center gap-1 text-[10px] font-medium px-2 py-0.5 rounded-full border bg-sky-100 text-sky-800 dark:bg-sky-900/50 dark:text-sky-200 border-sky-200 dark:border-sky-700 animate-pulse">
                     <span aria-hidden>⏳</span> Checking…
                 </span>
             ) : (
                 <>
-                    <span
-                        className={`inline-flex items-center gap-1 text-[10px] font-semibold px-2 py-0.5 rounded-full border ${latencyColor}`}
-                        title="Round-trip time (server probe latency)"
-                    >
-                        <span aria-hidden>⚡</span>
-                        RTT {formatProbeLatency(latency) || '—'}
-                    </span>
+                    {(phase === 'done' || phase === 'error' || latency !== null) && (
+                        <span
+                            className={`inline-flex items-center gap-1 text-[10px] font-semibold px-2 py-0.5 rounded-full border ${latencyColor}`}
+                            title="Server RTT — LinkNest server probe latency to this URL"
+                        >
+                            <span aria-hidden>⚡</span>
+                            RTT {formatProbeLatency(latency) || '—'}
+                        </span>
+                    )}
+                    {(browserPhase === 'done' || browserPhase === 'error' || browserLatency !== null) && (
+                        <span
+                            className={`inline-flex items-center gap-1 text-[10px] font-semibold px-2 py-0.5 rounded-full border ${browserLatencyColor}`}
+                            title="Browser RTT — latency from your browser to this URL"
+                        >
+                            <span aria-hidden>🌐</span>
+                            Browser {formatProbeLatency(browserLatency) || '—'}
+                        </span>
+                    )}
+                    {browserPhase === 'checking' && phase !== 'checking' && (
+                        <span className="inline-flex items-center gap-1 text-[10px] font-medium px-2 py-0.5 rounded-full border bg-sky-100 text-sky-800 dark:bg-sky-900/50 dark:text-sky-200 border-sky-200 dark:border-sky-700 animate-pulse">
+                            <span aria-hidden>🌐</span> Browser…
+                        </span>
+                    )}
+                    {phase === 'checking' && browserPhase !== 'checking' && (
+                        <span className="inline-flex items-center gap-1 text-[10px] font-medium px-2 py-0.5 rounded-full border bg-sky-100 text-sky-800 dark:bg-sky-900/50 dark:text-sky-200 border-sky-200 dark:border-sky-700 animate-pulse">
+                            <span aria-hidden>⚡</span> Server…
+                        </span>
+                    )}
+                    {(phase === 'done' || phase === 'error') && (
                     <span
                         className={`inline-flex items-center gap-1 text-[10px] font-semibold px-2 py-0.5 rounded-full border ${codeColor}`}
                         title={`${schemeUpper} status code${error ? `: ${error}` : ''}`}
@@ -769,6 +837,7 @@ const UrlProbeBadges: React.FC<{ url: string }> = ({ url }) => {
                         <span aria-hidden>{scheme === 'http' ? '🔓' : '🔒'}</span>
                         {schemeUpper} {statusLabel}
                     </span>
+                    )}
                     {showRedirectBadge && (
                         <button
                             type="button"
