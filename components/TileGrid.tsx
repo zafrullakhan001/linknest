@@ -2795,7 +2795,36 @@ export const TileGrid: React.FC<TileGridProps> = ({
     }
   }, [viewMode]);
 
-  const [selectedCategoryFilter, setSelectedCategoryFilter] = useState<string | null>(null);
+  const [selectedCategoryFilter, setSelectedCategoryFilter] = useState<string | null>(() => {
+    if (typeof window === 'undefined') return null;
+    try {
+      const saved = localStorage.getItem('linknest_category_filter');
+      const trimmed = saved?.trim();
+      return trimmed ? trimmed : null;
+    } catch {
+      return null;
+    }
+  });
+
+  // Persist category filter across refresh for guests and logged-in users
+  useEffect(() => {
+    try {
+      if (selectedCategoryFilter) {
+        localStorage.setItem('linknest_category_filter', selectedCategoryFilter);
+      } else {
+        localStorage.removeItem('linknest_category_filter');
+      }
+    } catch (e) {
+      console.error('Failed to save category filter', e);
+    }
+  }, [selectedCategoryFilter]);
+
+  // A restored category filter belongs in grid view (the filter bar is hidden in categories view)
+  useEffect(() => {
+    if (selectedCategoryFilter && viewMode === 'categories') {
+      setViewMode('grid');
+    }
+  }, [selectedCategoryFilter, viewMode]);
 
   // Edit Modal Tab State
   const [editModalActiveTab, setEditModalActiveTab] = useState<'general' | 'decoration' | 'messages'>('general');
@@ -3884,6 +3913,12 @@ You may also wrap the array in an object: { "messages": [ ... ] }.
             }
           }
 
+          // Restore category filter (empty string means "show all"; missing key keeps localStorage)
+          if (Object.prototype.hasOwnProperty.call(prefs, 'categoryFilter')) {
+            const savedCategory = String(prefs.categoryFilter ?? '').trim();
+            setSelectedCategoryFilter(savedCategory || null);
+          }
+
           setPreferencesLoaded(true);
         })
         .catch(error => {
@@ -3956,6 +3991,17 @@ You may also wrap the array in an object: { "messages": [ ... ] }.
       return () => clearTimeout(timeoutId);
     }
   }, [yourAppsFilter, isAuthenticated, preferencesLoaded]);
+
+  // Save category filter for authenticated users (server-side; localStorage is already persisted above)
+  useEffect(() => {
+    if (isAuthenticated && preferencesLoaded) {
+      const timeoutId = setTimeout(() => {
+        userPreferencesService.updatePreference('categoryFilter', selectedCategoryFilter || '')
+          .catch(() => { });
+      }, 300);
+      return () => clearTimeout(timeoutId);
+    }
+  }, [selectedCategoryFilter, isAuthenticated, preferencesLoaded]);
 
   // Load user list when on Private tab (for owner filter labels)
   useEffect(() => {
