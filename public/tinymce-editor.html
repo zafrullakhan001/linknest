@@ -105,8 +105,7 @@
           var style = doc.createElement('style');
           style.id = highlightStyleId;
           style.textContent =
-            '::highlight(ln-read-aloud){background-color:rgba(250,204,21,0.35);color:inherit;}' +
-            '::highlight(ln-read-aloud-trail){background-color:rgba(250,204,21,0.35);color:inherit;}' +
+            '::highlight(ln-read-aloud){background-color:rgba(250,204,21,0.75);color:inherit;}' +
             '::highlight(ln-read-aloud-current){background-color:rgba(250,204,21,0.75);color:inherit;}' +
             'mark.ln-read-aloud-mark{background-color:rgba(250,204,21,0.55);color:inherit;padding:0 1px;border-radius:2px;}';
           (doc.head || doc.documentElement).appendChild(style);
@@ -280,16 +279,13 @@
             var idx = Math.max(0, Math.min(charIndex || 0, speakMap.text.length));
             var len = Math.max(1, charLength || 1);
             var wordEnd = Math.min(idx + len, speakMap.text.length);
-            var trail = rangeFromMap(speakMap, 0, Math.max(1, wordEnd));
             var current = rangeFromMap(speakMap, idx, wordEnd);
             clearCssHighlights(win);
             clearDomMarks(doc);
             clearOverlayLayer(doc, body);
-            // Overlays work reliably with custom fonts; CSS highlights are a bonus.
-            paintOverlays(doc, body, trail, 'rgba(250,204,21,0.4)');
+            // Only the current spoken word — no trail left behind.
             paintOverlays(doc, body, current, 'rgba(250,204,21,0.85)', 'box-shadow:0 0 0 1px rgba(202,138,4,0.35);');
             if (win && win.CSS && win.CSS.highlights && typeof win.Highlight === 'function') {
-              if (trail) win.CSS.highlights.set('ln-read-aloud-trail', new win.Highlight(trail));
               if (current) win.CSS.highlights.set('ln-read-aloud-current', new win.Highlight(current));
             }
             if (current && current.startContainer) {

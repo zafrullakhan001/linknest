@@ -93,11 +93,15 @@ export const ReadAloudButtons: React.FC<ReadAloudButtonsProps> = ({
         toast.info('Nothing to summarize');
         return;
       }
-      if (result === 'clipboard_failed') {
-        toast.info('Copilot opened — paste your text to summarize');
+      if (result === 'truncated') {
+        toast.info('Opened Copilot with a shortened prompt (full text on clipboard)');
         return;
       }
-      toast.success('Text copied — paste into Copilot to summarize');
+      if (result === 'clipboard_failed') {
+        toast.success('Opened Copilot with your summarize prompt');
+        return;
+      }
+      toast.success('Opened Copilot with your summarize prompt');
     } finally {
       setCopilotBusy(false);
     }
@@ -166,7 +170,7 @@ export const ReadAloudButtons: React.FC<ReadAloudButtonsProps> = ({
         }}
         disabled={copilotBusy}
         className={`p-1.5 rounded-lg transition-colors ${colors.iconIdle} disabled:opacity-40 disabled:cursor-not-allowed`}
-        title="Summarize with Microsoft Copilot (copies text, opens Copilot)"
+        title="Summarize with Microsoft Copilot (opens Copilot with the prompt filled in)"
         aria-label="Summarize with Microsoft Copilot"
       >
         <CopilotIcon />

@@ -35,7 +35,7 @@ export const TinyMceRichTextViewer = forwardRef<TinyMceRichTextViewerHandle, Tin
     const iframeSrc = useMemo(() => {
       const base = (import.meta.env.BASE_URL || '/').replace(/\/?$/, '/');
       const dark = typeof document !== 'undefined' && document.documentElement.classList.contains('dark');
-      return `${base}tinymce-editor.html?v=toolsmax5&mode=view&dark=${dark ? '1' : '0'}`;
+      return `${base}tinymce-editor.html?v=toolsmax6&mode=view&dark=${dark ? '1' : '0'}`;
     }, []);
 
     const postToViewer = useCallback((payload: Record<string, unknown>) => {

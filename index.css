@@ -8309,27 +8309,14 @@ input[type="search"]::-ms-clear {
   text-decoration: line-through;
 }
 
-/* Read-aloud: progressive trail + current word (CSS Highlight + overlay fallback for custom fonts) */
-::highlight(ln-read-aloud) {
-  background-color: rgba(250, 204, 21, 0.35);
-  color: inherit;
-}
-
-::highlight(ln-read-aloud-trail) {
-  background-color: rgba(250, 204, 21, 0.35);
-  color: inherit;
-}
-
+/* Read-aloud: current word only (moves forward; no trail left behind) */
+::highlight(ln-read-aloud),
 ::highlight(ln-read-aloud-current) {
   background-color: rgba(250, 204, 21, 0.75);
   color: inherit;
 }
 
 .dark ::highlight(ln-read-aloud),
-.dark ::highlight(ln-read-aloud-trail) {
-  background-color: rgba(250, 204, 21, 0.28);
-}
-
 .dark ::highlight(ln-read-aloud-current) {
   background-color: rgba(250, 204, 21, 0.55);
 }
@@ -8347,33 +8334,17 @@ input[type="search"]::-ms-clear {
   overflow: visible;
 }
 
-.ln-read-aloud-overlay-trail,
 .ln-read-aloud-overlay-current {
   position: absolute;
   border-radius: 2px;
   pointer-events: none;
   mix-blend-mode: multiply;
-}
-
-.ln-read-aloud-overlay-trail {
-  background-color: rgba(250, 204, 21, 0.4);
-}
-
-.ln-read-aloud-overlay-current {
   background-color: rgba(250, 204, 21, 0.85);
   box-shadow: 0 0 0 1px rgba(202, 138, 4, 0.35);
 }
 
-.dark .ln-read-aloud-overlay-trail,
 .dark .ln-read-aloud-overlay-current {
   mix-blend-mode: screen;
-}
-
-.dark .ln-read-aloud-overlay-trail {
-  background-color: rgba(250, 204, 21, 0.35);
-}
-
-.dark .ln-read-aloud-overlay-current {
   background-color: rgba(250, 204, 21, 0.65);
 }
 

@@ -1,4 +1,4 @@
-/** Soft trail (already read) + current word highlights via DOM overlays (works with custom fonts). */
+/** Current-word highlight via DOM overlays (works with custom fonts). */
 export const READ_ALOUD_HIGHLIGHT_NAME = 'ln-read-aloud';
 export const READ_ALOUD_TRAIL_NAME = 'ln-read-aloud-trail';
 export const READ_ALOUD_CURRENT_NAME = 'ln-read-aloud-current';
@@ -182,7 +182,7 @@ export function clearReadAloudHighlight(container?: HTMLElement | null): void {
 }
 
 /**
- * Apply progressive trail + current-word highlight using overlays so custom fonts still show yellow.
+ * Highlight only the current spoken word/phrase (no trail left behind).
  */
 export function applyReadAloudTrail(
   container: HTMLElement | null | undefined,
@@ -198,20 +198,15 @@ export function applyReadAloudTrail(
   const idx = Math.max(0, Math.min(charIndex, map.text.length));
   const len = Math.max(1, charLength || 1);
   const wordEnd = Math.min(idx + len, map.text.length);
-
-  const trail = rangeFromDomMap(map, 0, Math.max(1, wordEnd));
   const current = rangeFromDomMap(map, idx, wordEnd);
 
   clearOverlayLayer(container);
-  paintRangeOverlays(container, trail, 'ln-read-aloud-overlay-trail');
   const currentRect = paintRangeOverlays(container, current, 'ln-read-aloud-overlay-current');
 
-  // Also set CSS highlights when supported (harmless; overlays are the reliable paint).
   clearCssHighlights();
   try {
-    if (supportsCssHighlight()) {
-      if (trail) CSS.highlights.set(READ_ALOUD_TRAIL_NAME, new Highlight(trail));
-      if (current) CSS.highlights.set(READ_ALOUD_CURRENT_NAME, new Highlight(current));
+    if (supportsCssHighlight() && current) {
+      CSS.highlights.set(READ_ALOUD_CURRENT_NAME, new Highlight(current));
     }
   } catch {
     // Ignore
