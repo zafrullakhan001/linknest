@@ -2318,6 +2318,69 @@ const SortableTile: React.FC<SortableTileProps> = ({
 
 type TabType = 'favorites' | 'public' | 'public-favorites' | 'your-apps' | 'staging' | 'private' | 'scheduled' | 'expired' | 'archive' | 'recycle-bin' | 'monitoring' | 'monitorv2';
 
+const HIDDEN_CATEGORIES_STORAGE_KEY = 'linknest_hidden_categories';
+
+function parseHiddenCategoriesByTab(raw: string | null | undefined): Record<string, string[]> {
+  if (!raw || typeof raw !== 'string') return {};
+  try {
+    const parsed = JSON.parse(raw);
+    if (!parsed || typeof parsed !== 'object') return {};
+    if (Array.isArray(parsed)) {
+      const names = parsed.filter((n): n is string => typeof n === 'string' && n.trim().length > 0).map((n) => n.trim());
+      return names.length ? { '*': names } : {};
+    }
+    const out: Record<string, string[]> = {};
+    for (const [tab, names] of Object.entries(parsed)) {
+      if (!Array.isArray(names)) continue;
+      const cleaned = names.filter((n): n is string => typeof n === 'string' && n.trim().length > 0).map((n) => n.trim());
+      if (cleaned.length > 0) out[tab] = cleaned;
+    }
+    return out;
+  } catch {
+    return {};
+  }
+}
+
+function hiddenNamesForTab(byTab: Record<string, string[]>, tab: string): Set<string> {
+  const names = [...(byTab[tab] || []), ...(byTab['*'] || [])];
+  return new Set(names);
+}
+
+function remapHiddenCategoryKey(
+  byTab: Record<string, string[]>,
+  oldName: string,
+  newName: string
+): Record<string, string[]> {
+  let changed = false;
+  const next: Record<string, string[]> = {};
+  for (const [tab, names] of Object.entries(byTab)) {
+    next[tab] = names.map((n) => {
+      if (n === oldName) {
+        changed = true;
+        return newName;
+      }
+      return n;
+    });
+  }
+  return changed ? next : byTab;
+}
+
+function remapHiddenCategoryNames(
+  byTab: Record<string, string[]>,
+  applyName: (name: string) => string
+): Record<string, string[]> {
+  let changed = false;
+  const next: Record<string, string[]> = {};
+  for (const [tab, names] of Object.entries(byTab)) {
+    next[tab] = names.map((n) => {
+      const mapped = applyName(n);
+      if (mapped !== n) changed = true;
+      return mapped;
+    });
+  }
+  return changed ? next : byTab;
+}
+
 export const TileGrid: React.FC<TileGridProps> = ({
   tiles,
   onUpdateTiles,
@@ -2825,6 +2888,66 @@ export const TileGrid: React.FC<TileGridProps> = ({
       setViewMode('grid');
     }
   }, [selectedCategoryFilter, viewMode]);
+
+  const [hiddenCategoriesByTab, setHiddenCategoriesByTab] = useState<Record<string, string[]>>(() => {
+    if (typeof window === 'undefined') return {};
+    try {
+      return parseHiddenCategoriesByTab(localStorage.getItem(HIDDEN_CATEGORIES_STORAGE_KEY));
+    } catch {
+      return {};
+    }
+  });
+
+  useEffect(() => {
+    try {
+      const hasAny = Object.keys(hiddenCategoriesByTab).some((tab) => (hiddenCategoriesByTab[tab] || []).length > 0);
+      if (hasAny) {
+        localStorage.setItem(HIDDEN_CATEGORIES_STORAGE_KEY, JSON.stringify(hiddenCategoriesByTab));
+      } else {
+        localStorage.removeItem(HIDDEN_CATEGORIES_STORAGE_KEY);
+      }
+    } catch (e) {
+      console.error('Failed to save hidden categories', e);
+    }
+  }, [hiddenCategoriesByTab]);
+
+  const hiddenCategories = useMemo(
+    () => hiddenNamesForTab(hiddenCategoriesByTab, activeTab),
+    [hiddenCategoriesByTab, activeTab]
+  );
+
+  const setCategoryVisibleOnMainPage = useCallback((categoryName: string, visible: boolean) => {
+    setHiddenCategoriesByTab((prev) => {
+      const current = new Set(prev[activeTab] || []);
+      if (visible) current.delete(categoryName);
+      else current.add(categoryName);
+      const next = { ...prev };
+      if (current.size === 0) delete next[activeTab];
+      else next[activeTab] = Array.from(current);
+      return next;
+    });
+    if (!visible) {
+      setSelectedCategoryFilter((current) => (current === categoryName ? null : current));
+    }
+  }, [activeTab]);
+
+  const showAllCategoriesOnMainPage = useCallback(() => {
+    setHiddenCategoriesByTab((prev) => {
+      if (!prev[activeTab] && !prev['*']) return prev;
+      const next = { ...prev };
+      delete next[activeTab];
+      delete next['*'];
+      return next;
+    });
+  }, [activeTab]);
+
+  const hideAllCategoriesOnMainPage = useCallback((categoryNames: string[]) => {
+    setHiddenCategoriesByTab((prev) => ({
+      ...prev,
+      [activeTab]: [...new Set(categoryNames)]
+    }));
+    setSelectedCategoryFilter(null);
+  }, [activeTab]);
 
   // Edit Modal Tab State
   const [editModalActiveTab, setEditModalActiveTab] = useState<'general' | 'decoration' | 'messages'>('general');
@@ -3919,6 +4042,10 @@ You may also wrap the array in an object: { "messages": [ ... ] }.
             setSelectedCategoryFilter(savedCategory || null);
           }
 
+          if (Object.prototype.hasOwnProperty.call(prefs, 'hiddenCategories')) {
+            setHiddenCategoriesByTab(parseHiddenCategoriesByTab(String(prefs.hiddenCategories ?? '')));
+          }
+
           setPreferencesLoaded(true);
         })
         .catch(error => {
@@ -4002,6 +4129,17 @@ You may also wrap the array in an object: { "messages": [ ... ] }.
       return () => clearTimeout(timeoutId);
     }
   }, [selectedCategoryFilter, isAuthenticated, preferencesLoaded]);
+
+  useEffect(() => {
+    if (isAuthenticated && preferencesLoaded) {
+      const timeoutId = setTimeout(() => {
+        const hasAny = Object.keys(hiddenCategoriesByTab).some((tab) => (hiddenCategoriesByTab[tab] || []).length > 0);
+        userPreferencesService.updatePreference('hiddenCategories', hasAny ? JSON.stringify(hiddenCategoriesByTab) : '')
+          .catch(() => { });
+      }, 300);
+      return () => clearTimeout(timeoutId);
+    }
+  }, [hiddenCategoriesByTab, isAuthenticated, preferencesLoaded]);
 
   // Load user list when on Private tab (for owner filter labels)
   useEffect(() => {
@@ -4597,8 +4735,19 @@ You may also wrap the array in an object: { "messages": [ ... ] }.
   const groupedTilesRef = useRef(groupedTiles);
   groupedTilesRef.current = groupedTiles;
 
+  const mainPageGroupedTiles = useMemo((): Record<string, Tile[]> => {
+    if (selectedCategoryFilter || hiddenCategories.size === 0) return groupedTiles;
+    const visible: Record<string, Tile[]> = {};
+    Object.keys(groupedTiles).forEach((name) => {
+      if (!hiddenCategories.has(name)) visible[name] = groupedTiles[name];
+    });
+    return visible;
+  }, [groupedTiles, selectedCategoryFilter, hiddenCategories]);
+
+  const displayGroupedTiles = viewMode === 'categories' ? groupedTiles : mainPageGroupedTiles;
+
   const matchingSearchLinks = useMemo(() => {
-    const links = collectMatchingSearchLinks(groupedTiles, searchTerm, searchWordMode, searchFuzzy, searchIncludeUrls);
+    const links = collectMatchingSearchLinks(displayGroupedTiles, searchTerm, searchWordMode, searchFuzzy, searchIncludeUrls);
     const searchWords = getSearchWords(searchTerm);
     const refineWords = getSearchWords(refineSearchTerm);
     const refined = refineWords.length
@@ -4614,14 +4763,14 @@ You may also wrap the array in an object: { "messages": [ ... ] }.
         return { ...link, match: combineSearchScores(primary, refine) };
       })
       .sort((a, b) => (b.match?.score || 0) - (a.match?.score || 0));
-  }, [groupedTiles, searchTerm, searchWordMode, searchFuzzy, searchIncludeUrls, refineSearchTerm]);
+  }, [displayGroupedTiles, searchTerm, searchWordMode, searchFuzzy, searchIncludeUrls, refineSearchTerm]);
 
   const tileSearchMatches = useMemo(() => {
     const matches: Record<string, SearchMatchScore> = {};
     if (!searchTerm.trim()) return matches;
     const searchWords = getSearchWords(searchTerm);
     const refineWords = getSearchWords(refineSearchTerm);
-    flattenGroupedTiles(groupedTiles).forEach((tile) => {
+    flattenGroupedTiles(displayGroupedTiles).forEach((tile) => {
       const primary = scoreTileSearch(tile, searchWords, searchWordMode, searchFuzzy, searchIncludeUrls);
       const refine = refineWords.length
         ? scoreTileSearch(tile, refineWords, searchWordMode, searchFuzzy, searchIncludeUrls)
@@ -4629,13 +4778,13 @@ You may also wrap the array in an object: { "messages": [ ... ] }.
       matches[tile.id] = combineSearchScores(primary, refine);
     });
     return matches;
-  }, [searchTerm, refineSearchTerm, groupedTiles, searchWordMode, searchFuzzy, searchIncludeUrls]);
+  }, [searchTerm, refineSearchTerm, displayGroupedTiles, searchWordMode, searchFuzzy, searchIncludeUrls]);
 
   const searchStats = useMemo<SearchStatsSummary | null>(() => {
     if (!searchTerm.trim()) return null;
     const searchWords = getSearchWords(searchTerm);
     const refineWords = getSearchWords(refineSearchTerm);
-    const resultTiles = flattenGroupedTiles(groupedTiles);
+    const resultTiles = flattenGroupedTiles(displayGroupedTiles);
     const tileScores = resultTiles.map((tile) => tileSearchMatches[tile.id]).filter(Boolean);
     const allScores = [...tileScores, ...matchingSearchLinks.map((link) => link.match).filter(Boolean)];
     const matchedScores = allScores.filter((item) => item && item.matched);
@@ -4673,7 +4822,7 @@ You may also wrap the array in an object: { "messages": [ ... ] }.
     return {
       query: searchTerm.trim(),
       refineQuery: refineSearchTerm.trim(),
-      categoryCount: Object.keys(groupedTiles).length,
+      categoryCount: Object.keys(displayGroupedTiles).length,
       tileCount: resultTiles.length,
       linkCount: matchingSearchLinks.length,
       exactCount,
@@ -4693,7 +4842,7 @@ You may also wrap the array in an object: { "messages": [ ... ] }.
         tileCount: item.tileCount
       }))
     };
-  }, [searchTerm, refineSearchTerm, groupedTiles, matchingSearchLinks, tileSearchMatches, searchWordMode, searchFuzzy, searchIncludeUrls]);
+  }, [searchTerm, refineSearchTerm, displayGroupedTiles, matchingSearchLinks, tileSearchMatches, searchWordMode, searchFuzzy, searchIncludeUrls]);
 
   const isSearching = Boolean(searchTerm.trim());
   const hideSearchTiles = isSearching && searchResultFilter === 'links';
@@ -6424,6 +6573,7 @@ You may also wrap the array in an object: { "messages": [ ... ] }.
         cat === oldName ? trimmedNewName : cat
       );
       setCategoryOrder(newCategoryOrder);
+      setHiddenCategoriesByTab((prev) => remapHiddenCategoryKey(prev, oldName, trimmedNewName));
 
       // Save updated arrangements
       try {
@@ -6450,6 +6600,7 @@ You may also wrap the array in an object: { "messages": [ ... ] }.
           onUpdateTiles(tiles);
         }
         setCategoryOrder(categoryOrder);
+        setHiddenCategoriesByTab((prev) => remapHiddenCategoryKey(prev, trimmedNewName, oldName));
         alert('Failed to save category rename. Please try again.');
       }
     } catch (error) {
@@ -6503,6 +6654,7 @@ You may also wrap the array in an object: { "messages": [ ... ] }.
     setCategoryOrder(newCategoryOrder);
     setCategoryMetadata(newMetadata);
     setSelectedCategoryFilter((current) => (current ? applyName(current) : current));
+    setHiddenCategoriesByTab((prev) => remapHiddenCategoryNames(prev, applyName));
 
     const persist = async () => {
       try {
@@ -7322,7 +7474,7 @@ You may also wrap the array in an object: { "messages": [ ... ] }.
         searchStats={searchStats}
         onTileClick={handleTileClick}
         activeTab={activeTab}
-        groupedTiles={groupedTiles}
+        groupedTiles={mainPageGroupedTiles}
         settings={settings}
         darkMode={darkMode}
         onHelpClick={onHelpClick}
@@ -8063,15 +8215,15 @@ You may also wrap the array in an object: { "messages": [ ... ] }.
         <div className="flex flex-wrap items-center gap-3 text-xs text-slate-500 dark:text-slate-400">
           <div className="flex items-center gap-1.5">
             <div className="w-1.5 h-1.5 rounded-full bg-emerald-500"></div>
-            <span>{Object.keys(groupedTiles).length} {Object.keys(groupedTiles).length === 1 ? 'Category' : 'Categories'}</span>
+            <span>{Object.keys(displayGroupedTiles).length} {Object.keys(displayGroupedTiles).length === 1 ? 'Category' : 'Categories'}</span>
           </div>
           <div className="flex items-center gap-1.5">
             <div className="w-1.5 h-1.5 rounded-full bg-brand-500"></div>
-            <span>{countGroupedTiles(groupedTiles)} {countGroupedTiles(groupedTiles) === 1 ? 'Space' : 'Spaces'}</span>
+            <span>{countGroupedTiles(displayGroupedTiles)} {countGroupedTiles(displayGroupedTiles) === 1 ? 'Space' : 'Spaces'}</span>
           </div>
           <div className="flex items-center gap-1.5">
             <div className="w-1.5 h-1.5 rounded-full bg-violet-500"></div>
-            <span>{flattenGroupedTiles(groupedTiles).reduce((acc: number, t: Tile) => {
+            <span>{flattenGroupedTiles(displayGroupedTiles).reduce((acc: number, t: Tile) => {
               if (t.isHyperlink) return acc;
               const uniqueLinks = new Set<string>();
               const processLink = (link: any) => {
@@ -8115,6 +8267,31 @@ You may also wrap the array in an object: { "messages": [ ... ] }.
             <span className="px-2 py-0.5 text-xs bg-slate-200 dark:bg-slate-700 rounded-full">
               Filtering: {applyCategoryTextCase(selectedCategoryFilter, styles.categoryTextTransform)}
             </span>
+          </button>
+        </div>
+      )}
+
+      {!selectedCategoryFilter && viewMode === 'grid' && hiddenCategories.size > 0 && !(activeTab === 'private' && privateSubTab !== 'spaces') && (
+        <div className="mb-4 flex flex-wrap items-center gap-2">
+          <span className="px-4 py-2 text-sm font-medium text-slate-600 dark:text-slate-400 bg-slate-100 dark:bg-slate-800 rounded-lg border border-slate-200 dark:border-slate-700">
+            Showing {Object.keys(mainPageGroupedTiles).length} of {Object.keys(groupedTiles).length} categories
+          </span>
+          <button
+            type="button"
+            onClick={() => {
+              setSelectedCategoryFilter(null);
+              setViewMode('categories');
+            }}
+            className="px-3 py-2 text-sm font-medium text-brand-600 dark:text-brand-400 hover:bg-brand-50 dark:hover:bg-brand-900/20 rounded-lg border border-brand-200 dark:border-brand-800 transition-colors"
+          >
+            Change selection
+          </button>
+          <button
+            type="button"
+            onClick={showAllCategoriesOnMainPage}
+            className="px-3 py-2 text-sm font-medium text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-white hover:bg-slate-100 dark:hover:bg-slate-800 rounded-lg border border-slate-200 dark:border-slate-700 transition-colors"
+          >
+            Show all
           </button>
         </div>
       )}
@@ -8200,9 +8377,42 @@ You may also wrap the array in an object: { "messages": [ ... ] }.
 
       {/* Categories View */}
       {viewMode === 'categories' && activeTab !== 'monitoring' && activeTab !== 'monitorv2' && !(activeTab === 'private' && privateSubTab !== 'spaces') && !hideSearchTiles && !( !isAuthenticated && activeTab === 'public-favorites' && publicFavoritesSubTab === 'bookmarks') && (
-        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-4 pb-20 mt-6">
+        <div className="pb-20 mt-6 space-y-4">
+          <div className="flex flex-wrap items-center justify-between gap-2">
+            <p className="text-sm text-slate-500 dark:text-slate-400">
+              Check categories to show their spaces on the main page. Click a tile to open that category.
+            </p>
+            <div className="flex flex-wrap items-center gap-2">
+              <button
+                type="button"
+                onClick={showAllCategoriesOnMainPage}
+                className="px-3 py-1.5 text-sm font-medium text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-white bg-slate-100 dark:bg-slate-800 hover:bg-slate-200 dark:hover:bg-slate-700 rounded-lg border border-slate-200 dark:border-slate-700 transition-colors"
+              >
+                Select all
+              </button>
+              <button
+                type="button"
+                onClick={() => hideAllCategoriesOnMainPage(Object.keys(groupedTiles))}
+                className="px-3 py-1.5 text-sm font-medium text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-white bg-slate-100 dark:bg-slate-800 hover:bg-slate-200 dark:hover:bg-slate-700 rounded-lg border border-slate-200 dark:border-slate-700 transition-colors"
+              >
+                Clear
+              </button>
+              <button
+                type="button"
+                onClick={() => {
+                  setSelectedCategoryFilter(null);
+                  setViewMode('grid');
+                }}
+                className="px-3 py-1.5 text-sm font-medium text-brand-600 dark:text-brand-400 hover:bg-brand-50 dark:hover:bg-brand-900/20 rounded-lg border border-brand-200 dark:border-brand-800 transition-colors"
+              >
+                View on main page
+              </button>
+            </div>
+          </div>
+        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-4">
           {Object.keys(groupedTiles).map((groupName) => {
             const groupTiles = groupedTiles[groupName];
+            const showOnMainPage = !hiddenCategories.has(groupName);
             const activeTabNameMap: Record<string, string> = {
               'your-apps': 'Your Apps',
               'public': 'Public',
@@ -8220,7 +8430,14 @@ You may also wrap the array in an object: { "messages": [ ... ] }.
             const tabSuffix = activeTabNameMap[activeTab] || activeTab.charAt(0).toUpperCase() + activeTab.slice(1);
 
             return (
-              <div key={groupName} className="bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-xl p-6 shadow-sm hover:shadow-md transition-all flex flex-col justify-between h-40 relative overflow-hidden group cursor-pointer" onClick={() => {
+              <div
+                key={groupName}
+                className={`bg-white dark:bg-slate-800 border rounded-xl p-6 shadow-sm hover:shadow-md transition-all flex flex-col justify-between h-40 relative overflow-hidden group cursor-pointer ${
+                  showOnMainPage
+                    ? 'border-slate-200 dark:border-slate-700'
+                    : 'border-slate-200 dark:border-slate-700 opacity-55'
+                }`}
+                onClick={() => {
                 // Set the category filter and switch to grid view to show only this category
                 setSelectedCategoryFilter(groupName);
                 setViewMode('grid');
@@ -8229,6 +8446,22 @@ You may also wrap the array in an object: { "messages": [ ... ] }.
 
                 <div className="relative z-10">
                   <div className="flex items-center gap-3 mb-2">
+                    <label
+                      className="flex-shrink-0 p-1 -ml-1 rounded-md hover:bg-slate-100 dark:hover:bg-slate-700 cursor-pointer"
+                      title={showOnMainPage ? 'Shown on the main page' : 'Hidden from the main page'}
+                      onClick={(e) => e.stopPropagation()}
+                    >
+                      <input
+                        type="checkbox"
+                        checked={showOnMainPage}
+                        onChange={(e) => {
+                          e.stopPropagation();
+                          setCategoryVisibleOnMainPage(groupName, e.target.checked);
+                        }}
+                        className="w-4 h-4 rounded border-slate-300 dark:border-slate-600 text-brand-600 focus:ring-brand-500 cursor-pointer"
+                        aria-label={`Show ${applyCategoryTextCase(groupName, styles.categoryTextTransform)} on the main page`}
+                      />
+                    </label>
                     <div className="p-2 bg-slate-100 dark:bg-slate-700 rounded-lg text-slate-500 dark:text-slate-400">
                       <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor" className="w-6 h-6">
                         <path d="M2 3.75A.75.75 0 012.75 3h14.5a.75.75 0 010 1.5H2.75A.75.75 0 012 3.75zm0 4.167a.75.75 0 01.75-.75h14.5a.75.75 0 010 1.5H2.75a.75.75 0 01-.75-.75zm0 4.166a.75.75 0 01.75-.75h14.5a.75.75 0 010 1.5H2.75a.75.75 0 01-.75-.75zm0 4.167a.75.75 0 01.75-.75h14.5a.75.75 0 010 1.5H2.75a.75.75 0 01-.75-.75z" />
@@ -8263,14 +8496,15 @@ You may also wrap the array in an object: { "messages": [ ... ] }.
             );
           })}
         </div>
+        </div>
       )}
 
       {/* Tiles Grid - Full Width with More Columns */}
       <div className={activeTab === 'monitoring' || activeTab === 'monitorv2' || viewMode === 'categories' || (activeTab === 'private' && privateSubTab !== 'spaces') || hideSearchTiles || (!isAuthenticated && activeTab === 'public-favorites' && publicFavoritesSubTab === 'bookmarks') ? 'hidden' : ''}>
-        {Object.keys(groupedTiles).map((groupName, groupIndex) => {
-          const groupTiles = groupedTiles[groupName];
+        {Object.keys(mainPageGroupedTiles).map((groupName, groupIndex) => {
+          const groupTiles = mainPageGroupedTiles[groupName];
           // Use the actual display order (which respects categoryOrder)
-          const categoryKeys = Object.keys(groupedTiles);
+          const categoryKeys = Object.keys(mainPageGroupedTiles);
           const canMoveUp = groupIndex > 0;
           const canMoveDown = groupIndex < categoryKeys.length - 1;
 
@@ -8392,6 +8626,31 @@ You may also wrap the array in an object: { "messages": [ ... ] }.
             >
               Clear search
             </button>
+          </div>
+        )}
+        {tiles.length > 0 && Object.keys(groupedTiles).length > 0 && Object.keys(mainPageGroupedTiles).length === 0 && !selectedCategoryFilter && (
+          <div className="text-center py-12">
+            <div className="w-16 h-16 mx-auto mb-3 rounded-full bg-slate-100 dark:bg-slate-800 flex items-center justify-center">
+              <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" strokeWidth={1.5} stroke="currentColor" className="w-8 h-8 text-slate-400">
+                <path strokeLinecap="round" strokeLinejoin="round" d="M3.75 6A2.25 2.25 0 016 3.75h2.25A2.25 2.25 0 0110.5 6v2.25a2.25 2.25 0 01-2.25 2.25H6a2.25 2.25 0 01-2.25-2.25V6zM3.75 15.75A2.25 2.25 0 016 13.5h2.25a2.25 2.25 0 012.25 2.25V18a2.25 2.25 0 01-2.25 2.25H6A2.25 2.25 0 013.75 18v-2.25zM13.5 6a2.25 2.25 0 012.25-2.25H18A2.25 2.25 0 0120.25 6v2.25A2.25 2.25 0 0118 10.5h-2.25a2.25 2.25 0 01-2.25-2.25V6zM13.5 15.75a2.25 2.25 0 012.25-2.25H18a2.25 2.25 0 012.25 2.25V18A2.25 2.25 0 0118 20.25h-2.25A2.25 2.25 0 0113.5 18v-2.25z" />
+              </svg>
+            </div>
+            <p className="text-base font-semibold text-slate-700 dark:text-slate-300 mb-1">No categories selected</p>
+            <p className="text-sm text-slate-500 dark:text-slate-400 mb-3">Check categories to show them on this page</p>
+            <div className="flex items-center justify-center gap-3">
+              <button
+                onClick={() => setViewMode('categories')}
+                className="text-brand-600 dark:text-brand-400 hover:text-brand-700 dark:hover:text-brand-300 text-sm font-medium underline"
+              >
+                Change selection
+              </button>
+              <button
+                onClick={showAllCategoriesOnMainPage}
+                className="text-brand-600 dark:text-brand-400 hover:text-brand-700 dark:hover:text-brand-300 text-sm font-medium underline"
+              >
+                Show all
+              </button>
+            </div>
           </div>
         )}
       </div>
