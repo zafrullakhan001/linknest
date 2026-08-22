@@ -197,6 +197,11 @@ AddDefaultCharset UTF-8
 # Prevent browsers / proxies from sticking on an old SPA shell after deploy.
 <IfModule mod_headers.c>
     Header always set X-Robots-Tag "noindex, nofollow, noarchive, nosnippet"
+    Header always set Content-Security-Policy "default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; font-src 'self' data: https://fonts.gstatic.com; img-src 'self' data: blob: https: http:; connect-src 'self' https: http: ws: wss: blob:; frame-src 'self' https: http: blob:; worker-src 'self' blob:; media-src 'self' blob: https: http:; object-src 'none'; base-uri 'self'; form-action 'self'; frame-ancestors 'self'"
+    <Files "tinymce-editor.html">
+        Header always unset Content-Security-Policy
+        Header always set Content-Security-Policy "default-src 'self'; script-src 'self' 'unsafe-inline' 'unsafe-eval'; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; font-src 'self' data: https://fonts.gstatic.com; img-src 'self' data: https: blob:; connect-src 'self'; frame-ancestors 'self'"
+    </Files>
     <FilesMatch "(?i)^(index\.html|BUILD_INFO\.json|sw-cache-first\.php)$">
         Header set Cache-Control "no-cache, no-store, must-revalidate"
         Header set Pragma "no-cache"

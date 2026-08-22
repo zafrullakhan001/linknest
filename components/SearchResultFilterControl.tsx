@@ -615,7 +615,10 @@ export const RefineSearchInput: React.FC<RefineSearchInputProps> = ({
         </svg>
       </div>
       <input
-        type="text"
+        id="refine-search-results"
+        name="refine-search-results"
+        type="search"
+        autoComplete="off"
         value={value}
         onChange={(e) => onChange(e.target.value)}
         placeholder="Refine results..."

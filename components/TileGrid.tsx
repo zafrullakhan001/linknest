@@ -7870,7 +7870,10 @@ You may also wrap the array in an object: { "messages": [ ... ] }.
                 </svg>
               </div>
               <input
-                type="text"
+                id="home-search-spaces"
+                name="home-search-spaces"
+                type="search"
+                autoComplete="off"
                 placeholder="Search spaces..."
                 value={searchTerm}
                 onChange={(e) => setSearchTerm(e.target.value)}

@@ -89,6 +89,14 @@ AddDefaultCharset UTF-8
     RewriteCond %{REQUEST_FILENAME} !-f
     RewriteRule ^assets/(.*)$ dist/assets/$1 [L]
 
+    # Boot / launcher scripts (Vite public/ → dist/)
+    RewriteCond %{REQUEST_URI} ln-boot-theme\.js$
+    RewriteCond %{REQUEST_FILENAME} !-f
+    RewriteRule (^|/)ln-boot-theme\.js$ dist/ln-boot-theme.js [L]
+    RewriteCond %{REQUEST_URI} ln-load-browser-launcher\.js$
+    RewriteCond %{REQUEST_FILENAME} !-f
+    RewriteRule (^|/)ln-load-browser-launcher\.js$ dist/ln-load-browser-launcher.js [L]
+
     # SSH SharedWorker (Vite public/ → dist/); avoid SPA HTML 404 for worker fetch
     RewriteCond %{REQUEST_URI} ssh-session-shared-worker\.js$
     RewriteCond %{REQUEST_FILENAME} !-f
@@ -162,6 +170,12 @@ AddDefaultCharset UTF-8
 # Hashed Vite assets can be cached forever; HTML / SW must always revalidate.
 <IfModule mod_headers.c>
     Header always set X-Robots-Tag "noindex, nofollow, noarchive, nosnippet"
+    # Main app: no eval(). TinyMCE iframe is allowed eval below (isolated document).
+    Header always set Content-Security-Policy "default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; font-src 'self' data: https://fonts.gstatic.com; img-src 'self' data: blob: https: http:; connect-src 'self' https: http: ws: wss: blob:; frame-src 'self' https: http: blob:; worker-src 'self' blob:; media-src 'self' blob: https: http:; object-src 'none'; base-uri 'self'; form-action 'self'; frame-ancestors 'self'"
+    <Files "tinymce-editor.html">
+        Header always unset Content-Security-Policy
+        Header always set Content-Security-Policy "default-src 'self'; script-src 'self' 'unsafe-inline' 'unsafe-eval'; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; font-src 'self' data: https://fonts.gstatic.com; img-src 'self' data: https: blob:; connect-src 'self'; frame-ancestors 'self'"
+    </Files>
     <FilesMatch "(?i)^(index\.html|BUILD_INFO\.json|sw-cache-first\.php)$">
         Header set Cache-Control "no-cache, no-store, must-revalidate"
         Header set Pragma "no-cache"
