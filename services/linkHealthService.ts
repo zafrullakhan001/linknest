@@ -1,12 +1,11 @@
 import { LinkHealth } from '../types';
+import { resolveApiBase } from './apiHelpers';
 
-// Match other services: guard against environments where import.meta.env may not be typed
-// Vite injects VITE_API_BASE at build time; fallback to '/api' for safety.
-// API_BASE uses relative URLs (starting with /) which are protocol-agnostic
-// This ensures the app works with both HTTP and HTTPS automatically
-const API_BASE: string =
-  (typeof import.meta !== 'undefined' && (import.meta as any).env && (import.meta as any).env.VITE_API_BASE) ||
-  '/api';
+function healthApi(path: string): string {
+  const base = resolveApiBase().replace(/\/$/, '');
+  const suffix = path.startsWith('/') ? path : `/${path}`;
+  return `${base}${suffix}`;
+}
 
 // Safety guard so frontend never "spins forever" even if backend/network hangs
 async function withTimeout<T>(promise: Promise<T>, ms: number, label: string, signal?: AbortSignal): Promise<T> {
@@ -59,7 +58,9 @@ export function isLikelyClientNetworkError(error: unknown): boolean {
     return true;
   }
   const msg = error instanceof Error ? error.message : String(error || '');
-  return /failed to fetch|networkerror|load failed|network request failed|offline|timed out after/i.test(msg);
+  return /failed to fetch|networkerror|load failed|network request failed|offline|timed out after|err_name_not_resolved|err_internet_disconnected|err_network_changed|err_connection_refused|err_connection_timed_out|err_address_unreachable/i.test(
+    msg
+  );
 }
 
 export function networkHealthResult(): LinkHealth {
@@ -107,7 +108,7 @@ export const linkHealthService = {
    */
   async getAllHealth(): Promise<LinkHealthMap> {
     const response = await withTimeout(
-      fetch(`${API_BASE}/linkhealth`, {
+      fetch(healthApi('/linkhealth'), {
         credentials: 'include'
       }),
       8000,
@@ -125,7 +126,7 @@ export const linkHealthService = {
    */
   async getStats(): Promise<HealthStats> {
     const response = await withTimeout(
-      fetch(`${API_BASE}/linkhealth/stats`, {
+      fetch(healthApi('/linkhealth/stats'), {
         credentials: 'include'
       }),
       8000,
@@ -143,7 +144,7 @@ export const linkHealthService = {
    */
   async checkLink(linkId: string): Promise<LinkHealth> {
     const response = await withTimeout(
-      fetch(`${API_BASE}/linkhealth/check`, {
+      fetch(healthApi('/linkhealth/check'), {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         credentials: 'include',
@@ -166,7 +167,7 @@ export const linkHealthService = {
    */
   async checkTileLinks(tileId: string, force: boolean = true, signal?: AbortSignal): Promise<LinkHealthMap> {
     const response = await withTimeout(
-      fetch(`${API_BASE}/linkhealth/check-tile`, {
+      fetch(healthApi('/linkhealth/check-tile'), {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         credentials: 'include',
@@ -179,6 +180,9 @@ export const linkHealthService = {
     );
     
     if (!response.ok) {
+      if (typeof navigator !== 'undefined' && navigator.onLine === false) {
+        throw new TypeError('Failed to fetch');
+      }
       throw new Error('Failed to check tile links');
     }
     
@@ -201,7 +205,7 @@ export const linkHealthService = {
     results: { healthy: number; broken: number; timeout: number; unknown: number };
   }> {
     const response = await withTimeout(
-      fetch(`${API_BASE}/linkhealth/check-all`, {
+      fetch(healthApi('/linkhealth/check-all'), {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         credentials: 'include',
@@ -227,7 +231,7 @@ export const linkHealthService = {
     health: LinkHealth & { serverLatency?: number; finalUrl?: string | null; redirectCount?: number };
   }> {
     const response = await withTimeout(
-      fetch(`${API_BASE}/linkhealth/check-url`, {
+      fetch(healthApi('/linkhealth/check-url'), {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         credentials: 'include',
@@ -265,7 +269,7 @@ export const linkHealthService = {
     }>
   > {
     const response = await withTimeout(
-      fetch(`${API_BASE}/linkhealth/check-urls`, {
+      fetch(healthApi('/linkhealth/check-urls'), {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         credentials: 'include',
@@ -339,7 +343,7 @@ export const linkHealthService = {
 
   async getUrlInventory(): Promise<UrlInventoryItem[]> {
     const response = await withTimeout(
-      fetch(`${API_BASE}/linkhealth/url-inventory`, {
+      fetch(healthApi('/linkhealth/url-inventory'), {
         credentials: 'include',
       }),
       60000,
@@ -357,7 +361,7 @@ export const linkHealthService = {
     changes: Array<{ id: string; url: string; kind: 'link' | 'hyperlink' }>
   ): Promise<{ updated: number; skipped: number }> {
     const response = await withTimeout(
-      fetch(`${API_BASE}/linkhealth/fix-urls`, {
+      fetch(healthApi('/linkhealth/fix-urls'), {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         credentials: 'include',

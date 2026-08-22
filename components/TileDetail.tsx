@@ -6910,15 +6910,6 @@ export const TileDetail: React.FC<TileDetailProps> = ({
                         </div>
                     </div>
 
-                    {Object.values(linkHealth).some((h) => isNetworkHealthStatus(h?.status)) && (
-                        <div
-                            className="mb-4 rounded-xl border border-slate-300 dark:border-slate-600 bg-slate-50 dark:bg-slate-800/80 px-4 py-3 text-sm text-slate-700 dark:text-slate-200"
-                            role="status"
-                        >
-                            Network not reachable. Link checks could not run, so these destinations are not marked Broken.
-                        </div>
-                    )}
-
                     {/* Rolling Messages Display - Below Search Bar */}
                     {activeMessages.length > 0 && (
                         <div className="mb-2 w-full group/message relative cursor-help">

@@ -1,9 +1,12 @@
 import { LinkHealth } from '../types';
 import { isLikelyClientNetworkError, networkHealthResult } from './linkHealthService';
+import { resolveApiBase } from './apiHelpers';
 
-const API_BASE: string =
-    (typeof import.meta !== 'undefined' && (import.meta as any).env && (import.meta as any).env.VITE_API_BASE) ||
-    '/api';
+function healthApi(path: string): string {
+    const base = resolveApiBase().replace(/\/$/, '');
+    const suffix = path.startsWith('/') ? path : `/${path}`;
+    return `${base}${suffix}`;
+}
 
 export interface LinkHealthCheckResult {
     linkId: string;
@@ -31,7 +34,7 @@ class FavoriteLinkHealthService {
             const controller = new AbortController();
             const timeoutId = setTimeout(() => controller.abort(), 10000); // 10 second timeout for the backend call
 
-            const response = await fetch(`${API_BASE}/linkhealth/check`, {
+            const response = await fetch(healthApi('/linkhealth/check'), {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
                 credentials: 'include',

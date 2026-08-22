@@ -12,6 +12,11 @@ if (!defined('HEALTH_MAX_REDIRS')) {
     define('HEALTH_MAX_REDIRS', 55);
 }
 
+/** Checker could not reach the internet. Must be defined before the router switch (handlers exit). */
+if (!defined('HEALTH_NETWORK_ERROR')) {
+    define('HEALTH_NETWORK_ERROR', 'Network not reachable — this is not a broken link');
+}
+
 if (session_status() === PHP_SESSION_NONE) {
     session_start();
 }
@@ -148,16 +153,13 @@ function determineHealthStatus($httpCode, $errno, $error, $redirectCount = 0) {
     return ['status' => $status, 'error' => $error];
 }
 
-/** Session-only: checker could not reach the internet. Do not persist as Broken. */
-if (!defined('HEALTH_NETWORK_ERROR')) {
-    define('HEALTH_NETWORK_ERROR', 'Network not reachable — this is not a broken link');
-}
-
 function networkUnreachableHealthResult($base = []) {
     $out = is_array($base) ? $base : [];
     $out['status'] = 'network';
     $out['http_code'] = 0;
-    $out['error'] = HEALTH_NETWORK_ERROR;
+    $out['error'] = defined('HEALTH_NETWORK_ERROR')
+        ? HEALTH_NETWORK_ERROR
+        : 'Network not reachable — this is not a broken link';
     return $out;
 }
 
@@ -211,8 +213,9 @@ function healthResultLooksLikeConnectivityFailure($result) {
 }
 
 /**
- * True when this PHP process can reach a well-known public endpoint.
- * Cached briefly so a tile check does not probe Google/Cloudflare per link.
+ * True when THIS PHP process can reach the public internet.
+ * Independent of the vhost hostname (localhost, LAN name, or public DNS).
+ * Do not probe HTTP_HOST — that succeeds on LAN even when WAN is down.
  */
 function probeCheckerHasOutboundNetwork() {
     static $cached = null;
@@ -222,40 +225,57 @@ function probeCheckerHasOutboundNetwork() {
         return $cached;
     }
 
-    $targets = [
-        'https://www.gstatic.com/generate_204',
-        'https://1.1.1.1',
-        'http://detectportal.firefox.com/success.txt',
-    ];
+    $mark = function ($up) use ($now, &$cached, &$cachedAt) {
+        $cached = $up;
+        $cachedAt = $now;
+        return $up;
+    };
 
-    foreach ($targets as $url) {
-        $ch = curl_init();
-        curl_setopt_array($ch, [
-            CURLOPT_URL => $url,
-            CURLOPT_RETURNTRANSFER => true,
-            CURLOPT_NOBODY => true,
-            CURLOPT_FOLLOWLOCATION => true,
-            CURLOPT_MAXREDIRS => 2,
-            CURLOPT_TIMEOUT => 1,
-            CURLOPT_CONNECTTIMEOUT => 1,
-            CURLOPT_SSL_VERIFYPEER => false,
-            CURLOPT_SSL_VERIFYHOST => 0,
-            CURLOPT_USERAGENT => (function_exists('getAppName') ? (getAppName() ?: 'LinkNest') : 'LinkNest') . ' Health Checker/1.0',
-        ]);
-        curl_exec($ch);
-        $code = (int)curl_getinfo($ch, CURLINFO_HTTP_CODE);
-        curl_close($ch);
-        // Any HTTP status means packets left this host (204, 301, 403, …).
-        if ($code > 0) {
-            $cached = true;
-            $cachedAt = $now;
-            return true;
+    try {
+        // IP:443 first so DNS for google/cloudflare is not required on the future host.
+        foreach ([['1.1.1.1', 443], ['8.8.8.8', 443], ['9.9.9.9', 443]] as $pair) {
+            $fp = @fsockopen($pair[0], $pair[1], $errno, $errstr, 1.0);
+            if ($fp) {
+                fclose($fp);
+                return $mark(true);
+            }
         }
+
+        $targets = [
+            'https://www.gstatic.com/generate_204',
+            'https://1.1.1.1',
+            'http://detectportal.firefox.com/success.txt',
+        ];
+
+        foreach ($targets as $url) {
+            $ch = curl_init();
+            if ($ch === false) {
+                continue;
+            }
+            curl_setopt_array($ch, [
+                CURLOPT_URL => $url,
+                CURLOPT_RETURNTRANSFER => true,
+                CURLOPT_NOBODY => true,
+                CURLOPT_FOLLOWLOCATION => true,
+                CURLOPT_MAXREDIRS => 2,
+                CURLOPT_TIMEOUT => 1,
+                CURLOPT_CONNECTTIMEOUT => 1,
+                CURLOPT_SSL_VERIFYPEER => false,
+                CURLOPT_SSL_VERIFYHOST => 0,
+                CURLOPT_USERAGENT => (function_exists('getAppName') ? (getAppName() ?: 'LinkNest') : 'LinkNest') . ' Health Checker/1.0',
+            ]);
+            curl_exec($ch);
+            $code = (int)curl_getinfo($ch, CURLINFO_HTTP_CODE);
+            curl_close($ch);
+            if ($code > 0) {
+                return $mark(true);
+            }
+        }
+    } catch (Throwable $e) {
+        return $mark(false);
     }
 
-    $cached = false;
-    $cachedAt = $now;
-    return false;
+    return $mark(false);
 }
 
 /**
@@ -1725,7 +1745,7 @@ function handleCheckTileLinks() {
     } catch (PDOException $e) {
         error_log('Tile link check database error: ' . $e->getMessage());
         sendJSON(['error' => 'Database error. Please try again.'], 500);
-    } catch (Exception $e) {
+    } catch (Throwable $e) {
         error_log('Tile link check failed: ' . $e->getMessage());
         sendJSON(['error' => 'Failed to check tile links: ' . $e->getMessage()], 500);
     }
