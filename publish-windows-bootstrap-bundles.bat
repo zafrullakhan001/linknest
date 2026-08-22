@@ -17,6 +17,7 @@ REM    publish-windows-bootstrap-bundles.bat
 REM    publish-windows-bootstrap-bundles.bat -Yes
 REM    publish-windows-bootstrap-bundles.bat -SkipUpload
 REM    publish-windows-bootstrap-bundles.bat -IncludeDatabase -Yes
+REM    publish-windows-bootstrap-bundles.bat -IncludeUploads
 REM    publish-windows-bootstrap-bundles.bat -SkipRuntime
 REM    publish-windows-bootstrap-bundles.bat -SkipApp
 REM

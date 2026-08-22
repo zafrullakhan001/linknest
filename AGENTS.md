@@ -366,6 +366,7 @@ Default credentials:
 - `docs/VANILLA_APACHE_PHP85_WINDOWS.md` - Vanilla Apache + PHP 8.5 on Windows (`D:\Apache` + `D:\php`, post-install `httpd.conf` / `php.ini`)
 - `docs/PACKAGE_FOR_DEPLOYMENT.md` - Windows XAMPP deploy ZIP (`package-for-deployment.bat`)
 - `docs/WINDOWS_BOOTSTRAP_BUNDLES.md` - Rebuild Apache+PHP runtime ZIP + LinkNest deploy ZIP and upload to GitHub (`publish-windows-bootstrap-bundles.bat`)
+- `docs/VANILLA_APACHE_PHP_UPGRADE.md` - In-place PHP/Apache patches on `D:\Apache` + `D:\php` (`upgrade-vanilla-apache-php.bat`)
 - `docs/REMOTE_WIDGETS_MANUAL_DEPLOY.md` - SSH / VNC manual deployment (ttyd, websockify, HTTPS WSS)
 - `docs/REMOTE_WIDGETS_SETUP.md` - SSH / VNC feature overview
 - `docs/SSH_SESSION_SHARED_WORKER.md` - SSH sessions across browser refresh (SharedWorker in browser memory)
@@ -406,7 +407,9 @@ See [`docs/APP_UPDATES.md`](docs/APP_UPDATES.md). Double-click [`publish-base-re
 
 See [`docs/VANILLA_APACHE_PHP85_WINDOWS.md`](docs/VANILLA_APACHE_PHP85_WINDOWS.md) for post-install `httpd.conf` / `php.ini` on a stock Apache + PHP 8.5 Thread Safe layout (`D:\Apache`, `D:\php`) — not XAMPP.
 
-To rebuild the pre-configured runtime ZIP **and** the LinkNest app ZIP and upload both to GitHub Release tag `apache-php85-runtime`, double-click [`publish-windows-bootstrap-bundles.bat`](publish-windows-bootstrap-bundles.bat). Individual packagers: `scripts\package-vanilla-apache-php85.bat` and `package-for-deployment.bat`. See [`docs/WINDOWS_BOOTSTRAP_BUNDLES.md`](docs/WINDOWS_BOOTSTRAP_BUNDLES.md).
+To rebuild the pre-configured runtime ZIP **and** the LinkNest app ZIP and upload both to GitHub Release tag `apache-php85-runtime`, double-click [`publish-windows-bootstrap-bundles.bat`](publish-windows-bootstrap-bundles.bat) (`uploads/` excluded by default). Individual packagers: `scripts\package-vanilla-apache-php85.bat` and `package-for-deployment.bat`. See [`docs/WINDOWS_BOOTSTRAP_BUNDLES.md`](docs/WINDOWS_BOOTSTRAP_BUNDLES.md).
+
+To patch PHP and Apache **in place** on an existing `D:\Apache` + `D:\php` host (keep `php.ini` / `httpd.conf`): [`upgrade-vanilla-apache-php.bat`](upgrade-vanilla-apache-php.bat) — [`docs/VANILLA_APACHE_PHP_UPGRADE.md`](docs/VANILLA_APACHE_PHP_UPGRADE.md).
 
 ## XAMPP PHP upgrades
 

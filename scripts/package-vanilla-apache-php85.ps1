@@ -457,6 +457,8 @@ try {
     $assets = Join-Path $PSScriptRoot 'vanilla-apache-php85'
     Copy-Item (Join-Path $assets 'htdocs-index.html') (Join-Path $apacheDir 'htdocs\index.html') -Force
     Copy-Item (Join-Path $assets 'install-runtime.bat') (Join-Path $payload 'install-runtime.bat') -Force
+    Copy-Item (Join-Path $assets 'upgrade-vanilla-apache-php.bat') (Join-Path $payload 'upgrade-vanilla-apache-php.bat') -Force
+    Copy-Item (Join-Path $PSScriptRoot 'upgrade-vanilla-apache-php.ps1') (Join-Path $payload 'upgrade-vanilla-apache-php.ps1') -Force
     $phpVer = & (Join-Path $phpDir 'php.exe') -n -r 'echo PHP_VERSION;'
     $readmeText = Get-Content -Raw -Path (Join-Path $assets 'README.txt')
     $readmeText = $readmeText.Replace('__PHP_VERSION__', [string]$phpVer)

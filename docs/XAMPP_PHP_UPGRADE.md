@@ -148,5 +148,6 @@ On PHP 8.5+ Windows builds, **Zend OPcache** is often built-in (no separate `php
 - Replacing Apache, MariaDB, or the full XAMPP installer
 - Docker image PHP upgrades (`docker/Dockerfile` is separate; may still pin another PHP minor)
 - Linux / non-XAMPP PHP installs
+- Vanilla `D:\Apache` + `D:\php` (use [VANILLA_APACHE_PHP_UPGRADE.md](VANILLA_APACHE_PHP_UPGRADE.md) instead)
 
 See also: [SETUP.md](SETUP.md), [APP_UPDATES.md](APP_UPDATES.md) (application updates, not PHP runtime).

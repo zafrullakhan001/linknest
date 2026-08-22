@@ -176,7 +176,7 @@ publish-windows-bootstrap-bundles.bat -Yes
 publish-windows-bootstrap-bundles.bat -SkipUpload
 ```
 
-That is **not** an App Updates `vX.Y.Z` release. Walkthrough and stable download URLs: [WINDOWS_BOOTSTRAP_BUNDLES.md](WINDOWS_BOOTSTRAP_BUNDLES.md). Runtime-only packager: [`scripts/package-vanilla-apache-php85.bat`](../scripts/package-vanilla-apache-php85.bat).
+That is **not** an App Updates `vX.Y.Z` release. The app ZIP **omits `uploads/`** unless you pass `-IncludeUploads`. Walkthrough and stable download URLs: [WINDOWS_BOOTSTRAP_BUNDLES.md](WINDOWS_BOOTSTRAP_BUNDLES.md). Runtime-only packager: [`scripts/package-vanilla-apache-php85.bat`](../scripts/package-vanilla-apache-php85.bat). Later Apache/PHP patches on `D:\`: [VANILLA_APACHE_PHP_UPGRADE.md](VANILLA_APACHE_PHP_UPGRADE.md).
 
 ---
 

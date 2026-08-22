@@ -17,6 +17,11 @@ On the target PC (Administrator):
   5. Open http://localhost/linknest/health.php  (JSON: health.php?format=json)
   6. Then open http://localhost/linknest/
 
+Later PHP / Apache patches (keeps php.ini, httpd.conf, htdocs):
+  Right-click D:\upgrade-vanilla-apache-php.bat -> Run as administrator
+  Or from a git checkout: upgrade-vanilla-apache-php.bat
+  Docs: docs/VANILLA_APACHE_PHP_UPGRADE.md
+
 Notes
 -----
 * httpd.conf and php.ini are already set for D:\Apache and D:\php.

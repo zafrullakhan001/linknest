@@ -15,6 +15,7 @@
         .\scripts\publish-windows-bootstrap-bundles.ps1 -Yes
         .\scripts\publish-windows-bootstrap-bundles.ps1 -SkipUpload
         .\scripts\publish-windows-bootstrap-bundles.ps1 -IncludeDatabase -Yes
+        .\scripts\publish-windows-bootstrap-bundles.ps1 -IncludeUploads
 
     Auth: GITHUB_TOKEN / GH_TOKEN, gh auth login, or Git Credential Manager.
 
@@ -30,8 +31,9 @@
     Pass -SkipBuild to package-for-deployment.ps1 (reuse existing dist/).
 .PARAMETER IncludeDatabase
     Pass -IncludeDatabase to the app packager.
-.PARAMETER ExcludeUploads
-    Pass -ExcludeUploads to the app packager.
+.PARAMETER IncludeUploads
+    Pass through so the app ZIP includes this PC's uploads/ (off by default —
+    test videos and other local uploads are not bundled).
 .PARAMETER DryRun
     Package and copy stable names; do not upload.
 .PARAMETER Token
@@ -49,7 +51,7 @@ param(
     [switch]$SkipApp,
     [switch]$SkipBuild,
     [switch]$IncludeDatabase,
-    [switch]$ExcludeUploads,
+    [switch]$IncludeUploads,
     [switch]$DryRun,
     [string]$Token = '',
     [string]$Repo = '',
@@ -232,7 +234,7 @@ Write-Host "  Repo        : $RepoSlug" -ForegroundColor Gray
 Write-Host "  Release tag : $Tag" -ForegroundColor Gray
 Write-Host "  Branch      : $branch" -ForegroundColor Gray
 Write-Host "  Runtime ZIP : $(if ($SkipRuntime) { 'reuse newest' } else { 'rebuild' })" -ForegroundColor Gray
-Write-Host "  App ZIP     : $(if ($SkipApp) { 'reuse newest' } else { 'rebuild' })  (fresh DB=$(-not $IncludeDatabase))" -ForegroundColor Gray
+Write-Host "  App ZIP     : $(if ($SkipApp) { 'reuse newest' } else { 'rebuild' })  (fresh DB=$(-not $IncludeDatabase); uploads=$(if ($IncludeUploads) { 'included' } else { 'excluded' }))" -ForegroundColor Gray
 Write-Host "  Upload      : $(if ($SkipUpload -or $DryRun) { 'no' } else { 'yes' })" -ForegroundColor Gray
 Write-Host ""
 
@@ -265,7 +267,7 @@ if (-not $SkipApp) {
     $packArgs = @{}
     if ($SkipBuild) { $packArgs.SkipBuild = $true }
     if ($IncludeDatabase) { $packArgs.IncludeDatabase = $true }
-    if ($ExcludeUploads) { $packArgs.ExcludeUploads = $true }
+    if (-not $IncludeUploads) { $packArgs.ExcludeUploads = $true }
     & $appPs1 @packArgs
     if ($LASTEXITCODE -ne 0) { throw "App packager failed (exit $LASTEXITCODE)" }
 }

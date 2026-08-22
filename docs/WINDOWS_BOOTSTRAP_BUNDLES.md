@@ -48,6 +48,7 @@ Built by [`package-for-deployment.ps1`](../package-for-deployment.ps1).
 - SQLite 3.53.4 DLL + `install-sqlite-xampp.bat`
 - `bin/` ttyd + portable OpenSSH + embeddable Python + websockify (SSH/VNC Easy)
 - **Fresh database** by default (this PC’s live `data/linknest.db` is **not** shipped unless you pass `-IncludeDatabase`)
+- **`uploads/` is excluded by default** (test videos and other local uploads stay on this PC). Pass `-IncludeUploads` only if you intend to ship them.
 
 On a vanilla Apache host, copy the extracted app into `D:\Apache\htdocs\linknest`. On XAMPP, run `deploy-xampp.bat`. Details: [PACKAGE_FOR_DEPLOYMENT.md](PACKAGE_FOR_DEPLOYMENT.md).
 
@@ -66,6 +67,7 @@ publish-windows-bootstrap-bundles.bat
 publish-windows-bootstrap-bundles.bat -Yes
 publish-windows-bootstrap-bundles.bat -SkipUpload
 publish-windows-bootstrap-bundles.bat -IncludeDatabase
+publish-windows-bootstrap-bundles.bat -IncludeUploads
 publish-windows-bootstrap-bundles.bat -SkipRuntime
 publish-windows-bootstrap-bundles.bat -SkipApp
 ```
@@ -105,6 +107,8 @@ package-for-deployment.bat -IncludeDatabase
 package-for-deployment.bat -ExcludeUploads
 ```
 
+Bootstrap publishing already passes `-ExcludeUploads` unless you add `-IncludeUploads`.
+
 Output: `linknest-deploy-YYYYMMDD_HHMMSS.zip` and `linknest-update-vX.Y.Z.zip`.
 
 ### Combined packager flags
@@ -117,7 +121,7 @@ Output: `linknest-deploy-YYYYMMDD_HHMMSS.zip` and `linknest-update-vX.Y.Z.zip`.
 | `-SkipApp` | Do not rebuild the LinkNest ZIP |
 | `-SkipBuild` | Pass through to the app packager (reuse existing `dist/`) |
 | `-IncludeDatabase` | Ship this PC’s live SQLite DB inside the app ZIP |
-| `-ExcludeUploads` | Skip `uploads/` in the app ZIP |
+| `-IncludeUploads` | Include `uploads/` (off by default — test videos are not bundled) |
 | `-DryRun` | Package, copy stable names, do not upload |
 | `-Token` / `-Repo` | Override GitHub PAT / `owner/repo` |
 | `-Tag` | Release tag (default `apache-php85-runtime`) |
@@ -139,11 +143,36 @@ If port 80 is already used (XAMPP Apache), stop that service or change `Listen` 
 
 ---
 
+## Later: patch Apache and PHP on the target (new releases)
+
+Do **not** re-extract the whole runtime ZIP over a live host if you only need security/patch updates. That would replace a tuned `php.ini` / `httpd.conf`.
+
+On the target (Administrator), after the runtime ZIP is installed:
+
+```bat
+D:\upgrade-vanilla-apache-php.bat
+```
+
+From a git checkout:
+
+```bat
+upgrade-vanilla-apache-php.bat
+upgrade-vanilla-apache-php.bat -SkipApache
+upgrade-vanilla-apache-php.bat -WhatIf
+```
+
+That downloads the current PHP 8.5.x Thread Safe build and the current Apache Lounge VS17 httpd, keeps configs and `htdocs`, and restarts `Apache24-LinkNest`. Full flags and rollback: [VANILLA_APACHE_PHP_UPGRADE.md](VANILLA_APACHE_PHP_UPGRADE.md).
+
+To ship a brand-new runtime ZIP (new default configs) instead of patching in place, re-run `publish-windows-bootstrap-bundles.bat` / `scripts\package-vanilla-apache-php85.bat`.
+
+---
+
 ## What this is not
 
 | Goal | Use this instead |
 |------|------------------|
 | Update widgets/UI on an existing install | [APP_UPDATES.md](APP_UPDATES.md) — `publish-base-release.bat` → Admin → App Updates |
+| Patch Apache/PHP on a live vanilla host | [VANILLA_APACHE_PHP_UPGRADE.md](VANILLA_APACHE_PHP_UPGRADE.md) — `upgrade-vanilla-apache-php.bat` |
 | Lean app ZIP (target already has PHP/SQLite) | `package-for-deployment.bat -AppOnly` |
 | Docker image | [DOCKER_DEPLOYMENT.md](DOCKER_DEPLOYMENT.md) |
 | Manual `httpd.conf` / `php.ini` edits | [VANILLA_APACHE_PHP85_WINDOWS.md](VANILLA_APACHE_PHP85_WINDOWS.md) |
@@ -153,6 +182,7 @@ If port 80 is already used (XAMPP Apache), stop that service or change `Listen` 
 ## Related docs
 
 - [VANILLA_APACHE_PHP85_WINDOWS.md](VANILLA_APACHE_PHP85_WINDOWS.md) — runtime layout and post-install checklist
+- [VANILLA_APACHE_PHP_UPGRADE.md](VANILLA_APACHE_PHP_UPGRADE.md) — in-place PHP/Apache patches on `D:\`
 - [PACKAGE_FOR_DEPLOYMENT.md](PACKAGE_FOR_DEPLOYMENT.md) — app ZIP flags and target `deploy-xampp.bat`
 - [APP_UPDATES.md](APP_UPDATES.md) — versioned `vX.Y.Z` Releases for in-app updates
 - [XAMPP_PHP_UPGRADE.md](XAMPP_PHP_UPGRADE.md) — upgrade PHP inside an existing XAMPP

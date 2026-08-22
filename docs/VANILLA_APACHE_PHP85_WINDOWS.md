@@ -29,6 +29,8 @@ publish-windows-bootstrap-bundles.bat -Yes
 
 That publishes Release tag `apache-php85-runtime` with stable names `linknest-apache-php85-runtime.zip` and `linknest-deploy.zip`. Full walkthrough: [WINDOWS_BOOTSTRAP_BUNDLES.md](WINDOWS_BOOTSTRAP_BUNDLES.md).
 
+**Later PHP / Apache patches** on a live `D:\` install (keep `php.ini` and `httpd.conf`): [VANILLA_APACHE_PHP_UPGRADE.md](VANILLA_APACHE_PHP_UPGRADE.md) — `upgrade-vanilla-apache-php.bat`.
+
 ---
 
 ## Assumed layout (this machine)
@@ -477,4 +479,6 @@ Error log: `D:\Apache\logs\error.log`.
 - [HTTPS_CONFIGURATION.md](HTTPS_CONFIGURATION.md) — TLS
 - [REMOTE_WIDGETS_MANUAL_DEPLOY.md](REMOTE_WIDGETS_MANUAL_DEPLOY.md) — SSH/VNC + WSS proxy
 - [XAMPP_PHP_UPGRADE.md](XAMPP_PHP_UPGRADE.md) — if you are on XAMPP instead of vanilla Apache
+- [VANILLA_APACHE_PHP_UPGRADE.md](VANILLA_APACHE_PHP_UPGRADE.md) — patch `D:\Apache` + `D:\php` in place
+- [WINDOWS_BOOTSTRAP_BUNDLES.md](WINDOWS_BOOTSTRAP_BUNDLES.md) — runtime + app ZIPs
 - [OFFICE_WIN2022_DEPLOY.md](OFFICE_WIN2022_DEPLOY.md) — verified XAMPP + PHP 8.5.9 office host
