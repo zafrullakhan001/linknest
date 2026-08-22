@@ -85,6 +85,28 @@ export interface UrlInventoryItem {
   sectionTitle: string;
 }
 
+export interface TooltipInventoryItem {
+  id: string;
+  url: string;
+  label: string;
+  tooltip: string;
+  suggestedTooltip: string;
+  reason: 'mismatch' | 'empty';
+  tileId: string;
+  tileTitle: string;
+  tileEmoji: string;
+  sourceTab: string;
+  tabTitle: string;
+  sectionTitle: string;
+}
+
+export interface TooltipInventoryResult {
+  scanned: number;
+  mismatched: number;
+  empty: number;
+  items: TooltipInventoryItem[];
+}
+
 export interface LinkHealthMap {
   [linkId: string]: LinkHealth;
 }
@@ -373,6 +395,49 @@ export const linkHealthService = {
     if (!response.ok) {
       const err = await response.json().catch(() => ({}));
       throw new Error(err.error || 'Failed to fix URLs');
+    }
+    const data = await response.json();
+    return {
+      updated: typeof data.updated === 'number' ? data.updated : 0,
+      skipped: typeof data.skipped === 'number' ? data.skipped : 0,
+    };
+  },
+
+  async getTooltipInventory(): Promise<TooltipInventoryResult> {
+    const response = await withTimeout(
+      fetch(healthApi('/linkhealth/tooltip-inventory'), {
+        credentials: 'include',
+      }),
+      60000,
+      'getTooltipInventory'
+    );
+    if (!response.ok) {
+      const err = await response.json().catch(() => ({}));
+      throw new Error(err.error || 'Failed to load tooltip inventory');
+    }
+    const data = await response.json();
+    return {
+      scanned: typeof data.scanned === 'number' ? data.scanned : 0,
+      mismatched: typeof data.mismatched === 'number' ? data.mismatched : 0,
+      empty: typeof data.empty === 'number' ? data.empty : 0,
+      items: Array.isArray(data.items) ? data.items : [],
+    };
+  },
+
+  async syncTooltips(ids: string[]): Promise<{ updated: number; skipped: number }> {
+    const response = await withTimeout(
+      fetch(healthApi('/linkhealth/sync-tooltips'), {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        credentials: 'include',
+        body: JSON.stringify({ ids }),
+      }),
+      120000,
+      'syncTooltips'
+    );
+    if (!response.ok) {
+      const err = await response.json().catch(() => ({}));
+      throw new Error(err.error || 'Failed to sync tooltips');
     }
     const data = await response.json();
     return {

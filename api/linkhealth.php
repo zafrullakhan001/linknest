@@ -32,6 +32,8 @@ switch ($method) {
             handleGetHealthStats();
         } elseif ($path === '/url-inventory') {
             handleGetUrlInventory();
+        } elseif ($path === '/tooltip-inventory') {
+            handleGetTooltipInventory();
         } else {
             sendJSON(['error' => 'Invalid endpoint', 'received_path' => $path, 'path_type' => gettype($path)], 404);
         }
@@ -50,6 +52,8 @@ switch ($method) {
             handleCheckAllLinks();
         } elseif ($path === '/fix-urls') {
             handleFixUrls();
+        } elseif ($path === '/sync-tooltips') {
+            handleSyncTooltips();
         } else {
             sendJSON(['error' => 'Invalid endpoint'], 404);
         }
@@ -1978,4 +1982,195 @@ function handleFixUrls() {
         'skipped' => $skipped,
     ]);
 }
+
+/**
+ * Plain visible text for comparing / writing hover tooltips.
+ */
+function tooltipSyncPlainText($value): string {
+    $text = html_entity_decode(strip_tags((string)$value), ENT_QUOTES | ENT_HTML5, 'UTF-8');
+    $text = str_replace(["\xC2\xA0", "\xA0"], ' ', $text);
+    $text = preg_replace('/\s+/u', ' ', $text) ?? $text;
+    $text = trim($text);
+    if (function_exists('mb_substr')) {
+        return mb_substr($text, 0, 4096, 'UTF-8');
+    }
+    return substr($text, 0, 4096);
+}
+
+function tooltipSyncKey(string $plain): string {
+    if (function_exists('mb_strtolower')) {
+        return mb_strtolower($plain, 'UTF-8');
+    }
+    return strtolower($plain);
+}
+
+/**
+ * GET /linkhealth/tooltip-inventory — links whose tooltip text does not match the link name.
+ */
+function handleGetTooltipInventory() {
+    requireAdmin();
+    $db = getDB();
+    $items = [];
+    $scanned = 0;
+    $mismatched = 0;
+    $empty = 0;
+
+    $stmt = $db->query("
+        SELECT
+            l.id AS id,
+            l.url AS url,
+            l.label AS label,
+            l.tooltip AS tooltip,
+            COALESCE(tabs.tile_id, s.tile_id) AS tile_id,
+            tiles.title AS tile_title,
+            tiles.emoji AS tile_emoji,
+            COALESCE(tiles.source_tab, 'public') AS source_tab,
+            tabs.title AS tab_title,
+            s.title AS section_title
+        FROM links l
+        INNER JOIN sections s ON l.section_id = s.id
+        LEFT JOIN tabs ON tabs.id = s.tab_id
+        INNER JOIN tiles ON tiles.id = COALESCE(tabs.tile_id, s.tile_id)
+        WHERE tiles.deleted_at IS NULL
+        ORDER BY tiles.title COLLATE NOCASE, tabs.title COLLATE NOCASE, s.title COLLATE NOCASE, l.label COLLATE NOCASE
+    ");
+
+    while ($row = $stmt->fetch(PDO::FETCH_ASSOC)) {
+        $scanned++;
+        $labelPlain = tooltipSyncPlainText($row['label'] ?? '');
+        if ($labelPlain === '') {
+            continue;
+        }
+        $tooltipPlain = tooltipSyncPlainText($row['tooltip'] ?? '');
+        if (tooltipSyncKey($tooltipPlain) === tooltipSyncKey($labelPlain)) {
+            continue;
+        }
+        $reason = $tooltipPlain === '' ? 'empty' : 'mismatch';
+        if ($reason === 'empty') {
+            $empty++;
+        } else {
+            $mismatched++;
+        }
+        $items[] = [
+            'id' => (string)$row['id'],
+            'url' => (string)($row['url'] ?? ''),
+            'label' => (string)($row['label'] ?? ''),
+            'tooltip' => (string)($row['tooltip'] ?? ''),
+            'suggestedTooltip' => $labelPlain,
+            'reason' => $reason,
+            'tileId' => (string)($row['tile_id'] ?? ''),
+            'tileTitle' => (string)($row['tile_title'] ?? ''),
+            'tileEmoji' => (string)($row['tile_emoji'] ?? ''),
+            'sourceTab' => (string)($row['source_tab'] ?? 'public'),
+            'tabTitle' => (string)($row['tab_title'] ?? ''),
+            'sectionTitle' => (string)($row['section_title'] ?? ''),
+        ];
+    }
+
+    sendJSON([
+        'success' => true,
+        'scanned' => $scanned,
+        'mismatched' => $mismatched,
+        'empty' => $empty,
+        'count' => count($items),
+        'items' => $items,
+    ]);
+}
+
+/**
+ * POST /linkhealth/sync-tooltips — set selected link tooltips to the current link name (admin).
+ */
+function handleSyncTooltips() {
+    requireAdmin();
+    $data = getJSONInput();
+    $ids = isset($data['ids']) && is_array($data['ids']) ? $data['ids'] : [];
+    if (count($ids) === 0) {
+        sendJSON(['error' => 'No links selected'], 400);
+        return;
+    }
+    if (count($ids) > 2000) {
+        sendJSON(['error' => 'Too many tooltip changes in one request (max 2000)'], 400);
+        return;
+    }
+
+    $cleanIds = [];
+    foreach ($ids as $id) {
+        if (!is_string($id) && !is_int($id)) {
+            continue;
+        }
+        $id = trim((string)$id);
+        if ($id === '' || strlen($id) > 64) {
+            continue;
+        }
+        $cleanIds[$id] = $id;
+    }
+    $cleanIds = array_values($cleanIds);
+    if (count($cleanIds) === 0) {
+        sendJSON(['error' => 'No valid link IDs provided'], 400);
+        return;
+    }
+
+    $db = getDB();
+    $db->beginTransaction();
+    $updated = 0;
+    $skipped = 0;
+
+    try {
+        $found = [];
+        foreach (array_chunk($cleanIds, 400) as $chunk) {
+            $placeholders = implode(',', array_fill(0, count($chunk), '?'));
+            $select = $db->prepare("
+                SELECT l.id, l.label, l.tooltip
+                FROM links l
+                INNER JOIN sections s ON l.section_id = s.id
+                LEFT JOIN tabs ON tabs.id = s.tab_id
+                INNER JOIN tiles ON tiles.id = COALESCE(tabs.tile_id, s.tile_id)
+                WHERE tiles.deleted_at IS NULL
+                  AND l.id IN ($placeholders)
+            ");
+            $select->execute($chunk);
+            while ($row = $select->fetch(PDO::FETCH_ASSOC)) {
+                $found[(string)$row['id']] = $row;
+            }
+        }
+
+        $update = $db->prepare('UPDATE links SET tooltip = ? WHERE id = ?');
+        foreach ($cleanIds as $id) {
+            if (!isset($found[$id])) {
+                $skipped++;
+                continue;
+            }
+            $labelPlain = tooltipSyncPlainText($found[$id]['label'] ?? '');
+            if ($labelPlain === '') {
+                $skipped++;
+                continue;
+            }
+            $currentPlain = tooltipSyncPlainText($found[$id]['tooltip'] ?? '');
+            if (tooltipSyncKey($currentPlain) === tooltipSyncKey($labelPlain)
+                && (string)($found[$id]['tooltip'] ?? '') === $labelPlain) {
+                $skipped++;
+                continue;
+            }
+            $update->execute([$labelPlain, $id]);
+            $updated++;
+        }
+
+        $db->commit();
+    } catch (Exception $e) {
+        $db->rollBack();
+        sendJSON(['error' => 'Failed to sync tooltips: ' . $e->getMessage()], 500);
+        return;
+    }
+
+    if (function_exists('invalidateGuestTilesListCache')) {
+        invalidateGuestTilesListCache();
+    }
+
+    sendJSON([
+        'success' => true,
+        'updated' => $updated,
+        'skipped' => $skipped,
+    ]);
+}
+
 

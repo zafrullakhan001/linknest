@@ -34,6 +34,7 @@ import { UpdatesPanel } from './UpdatesDialog';
 import { DevicePresetsAdmin } from './DevicePresetsAdmin';
 import { LinkCheckExceptionsAdmin } from './LinkCheckExceptionsAdmin';
 import { UrlScanFixAdmin } from './UrlScanFixAdmin';
+import { TooltipSyncAdmin } from './TooltipSyncAdmin';
 import { IframeBlockDomainsAdmin } from './IframeBlockDomainsAdmin';
 import { UserAuditLog } from './UserAuditLog';
 import { McpAdminPanel } from './McpAdminPanel';
@@ -148,6 +149,7 @@ type AdminNavTabId =
   | 'devicePresets'
   | 'linkCheckExceptions'
   | 'urlScanFix'
+  | 'tooltipSync'
   | 'iframeBlockDomains'
   | 'access'
   | 'clone'
@@ -183,6 +185,7 @@ const ADMIN_NAV_SECTIONS: Array<{
       { id: 'tabVisibility', label: 'Enable/Disable Tabs', emoji: '📑' },
       { id: 'linkCheckExceptions', label: 'Link Check Exceptions', emoji: '🚫' },
       { id: 'urlScanFix', label: 'Scan & Fix URLs', emoji: '🔧' },
+      { id: 'tooltipSync', label: 'Sync Tooltips', emoji: '💬' },
       { id: 'iframeBlockDomains', label: 'Iframe Block Domains', emoji: '🖼️' },
       { id: 'access', label: 'Access Manager', emoji: '🛡️' },
     ],
@@ -349,7 +352,7 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({ onUserApproved }) => {
     if (savedTab === 'footer') return 'settings';
     const validTabs: Array<AdminNavTabId | 'footer'> = [
       'pending', 'all', 'userAudit', 'settings', 'database', 'spaces', 'ldap', 'saml', 'footer',
-      'tabVisibility', 'devicePresets', 'linkCheckExceptions', 'urlScanFix', 'iframeBlockDomains', 'access', 'clone', 'browser', 'mcp', 'broadcast',
+      'tabVisibility', 'devicePresets', 'linkCheckExceptions', 'urlScanFix', 'tooltipSync', 'iframeBlockDomains', 'access', 'clone', 'browser', 'mcp', 'broadcast',
       'maintenanceScripts', 'maintenance', 'widgets', 'addons', 'appUpdates', 'loadTest',
     ];
     return (savedTab && validTabs.includes(savedTab as AdminNavTabId | 'footer'))
@@ -9186,6 +9189,10 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({ onUserApproved }) => {
 
               {activeTab === 'urlScanFix' && (
                 <UrlScanFixAdmin isMobile={isMobile} setError={setError} />
+              )}
+
+              {activeTab === 'tooltipSync' && (
+                <TooltipSyncAdmin isMobile={isMobile} setError={setError} />
               )}
 
               {/* Iframe Block Domains Tab */}

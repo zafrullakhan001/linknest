@@ -1959,6 +1959,8 @@ docker\\docker-sync-database.bat -Direction Out -HostBasePath "/ArchLinks"`}</pr
                       <li><strong>Space Management:</strong> Bulk import/export spaces, manage all spaces</li>
                       <li><strong>Staging:</strong> Admin sandbox with AI Offline Kit (CSV → JSON → Staging → Public)</li>
                       <li><strong>MCP / AI:</strong> Tokens so Cursor, Claude Desktop, and other LLMs can list, search, and edit spaces and links, plus admin LDAP/SAML, Access Manager, Device Presets, and database export/import. Example prompts: Admin → MCP / AI → Example prompts — Help → MCP / AI / Guides → MCP / AI</li>
+                      <li><strong>Scan &amp; Fix URLs:</strong> Find mashed or invalid link URLs and apply suggested website addresses in bulk</li>
+                      <li><strong>Sync Tooltips:</strong> Scan hover tooltips that do not match the link name, then update selected links or all shown results</li>
                       <li><strong>Tab Visibility:</strong> Control which tabs are visible in the application</li>
                       <li><strong>Custom Widgets:</strong> Create, enable/disable, and manage custom widgets</li>
                       <li><strong>Broadcast Messages:</strong> Display scrolling messages across the application</li>
