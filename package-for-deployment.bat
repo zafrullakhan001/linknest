@@ -44,6 +44,9 @@ REM  Or package first, then deploy later:
 REM    deploy-remote-xampp.bat -ComputerName 192.168.0.197 -ZipPath .\linknest-deploy-....zip
 REM
 REM  Docs: docs\PACKAGE_FOR_DEPLOYMENT.md , docs\OFFICE_WIN2022_DEPLOY.md
+REM  New vanilla Apache host (runtime ZIP + this ZIP + GitHub):
+REM    publish-windows-bootstrap-bundles.bat
+REM    Docs: docs\WINDOWS_BOOTSTRAP_BUNDLES.md
 REM ============================================================
 echo.
 echo  Starting LinkNest Deployment Packager...

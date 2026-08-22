@@ -7,7 +7,7 @@ export interface LinkRedirectHop {
 }
 
 export interface LinkHealth {
-  status: 'unknown' | 'healthy' | 'broken' | 'timeout' | 'checking' | 'restricted' | 'accessible' | 'redirected';
+  status: 'unknown' | 'healthy' | 'broken' | 'timeout' | 'checking' | 'restricted' | 'accessible' | 'redirected' | 'network';
   httpCode?: number | null;
   error?: string | null;
   checkedAt?: number | null;

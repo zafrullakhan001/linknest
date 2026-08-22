@@ -898,11 +898,31 @@ $uploadsDst = Join-Path $TempDir "uploads"
 
 if (-not $ExcludeUploads) {
     if (Test-Path $uploadsSrc) {
-        Copy-Item -Path $uploadsSrc -Destination $uploadsDst -Recurse -Force
+        Ensure-Dir $uploadsDst
+        $skippedUploads = New-Object System.Collections.Generic.List[string]
+        Get-ChildItem -LiteralPath $uploadsSrc -Recurse -Force -ErrorAction SilentlyContinue | ForEach-Object {
+            $rel = $_.FullName.Substring($uploadsSrc.Length).TrimStart('\', '/')
+            $dest = Join-Path $uploadsDst $rel
+            try {
+                if ($_.PSIsContainer) {
+                    Ensure-Dir $dest
+                    return
+                }
+                $parent = Split-Path $dest -Parent
+                if (-not (Test-Path $parent)) { Ensure-Dir $parent }
+                Copy-Item -LiteralPath $_.FullName -Destination $dest -Force -ErrorAction Stop
+            } catch {
+                [void]$skippedUploads.Add($rel)
+                Write-Warn ("Skipping locked upload: {0}" -f $rel)
+            }
+        }
         $upBytes = (Get-ChildItem $uploadsDst -Recurse -File -ErrorAction SilentlyContinue | Measure-Object -Property Length -Sum).Sum
         if (-not $upBytes) { $upBytes = 0 }
         $upKB = [math]::Round($upBytes / 1KB, 1)
         Write-OK ("uploads/ copied ({0} KB)" -f $upKB)
+        if ($skippedUploads.Count -gt 0) {
+            Write-Warn ("{0} upload file(s) skipped (in use / access denied)" -f $skippedUploads.Count)
+        }
     }
     else {
         Write-Warn "uploads/ directory not found - creating empty placeholder"

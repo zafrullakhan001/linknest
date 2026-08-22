@@ -148,6 +148,174 @@ function determineHealthStatus($httpCode, $errno, $error, $redirectCount = 0) {
     return ['status' => $status, 'error' => $error];
 }
 
+/** Session-only: checker could not reach the internet. Do not persist as Broken. */
+if (!defined('HEALTH_NETWORK_ERROR')) {
+    define('HEALTH_NETWORK_ERROR', 'Network not reachable — this is not a broken link');
+}
+
+function networkUnreachableHealthResult($base = []) {
+    $out = is_array($base) ? $base : [];
+    $out['status'] = 'network';
+    $out['http_code'] = 0;
+    $out['error'] = HEALTH_NETWORK_ERROR;
+    return $out;
+}
+
+function healthResultLooksLikeConnectivityFailure($result) {
+    if (!is_array($result) || !empty($result['skipped'])) {
+        return false;
+    }
+    if (($result['error'] ?? '') === 'Invalid URL format') {
+        return false;
+    }
+    if ((int)($result['http_code'] ?? 0) > 0) {
+        return false;
+    }
+
+    $errno = (int)($result['errno'] ?? 0);
+    $timeoutErrno = defined('CURLE_OPERATION_TIMEOUTED') ? CURLE_OPERATION_TIMEOUTED : CURLE_OPERATION_TIMEDOUT;
+    $connectivityErrnos = [
+        CURLE_COULDNT_RESOLVE_HOST,
+        CURLE_COULDNT_RESOLVE_PROXY,
+        CURLE_COULDNT_CONNECT,
+        CURLE_OPERATION_TIMEDOUT,
+        $timeoutErrno,
+        CURLE_GOT_NOTHING,
+        CURLE_SEND_ERROR,
+        CURLE_RECV_ERROR,
+    ];
+    if (defined('CURLE_INTERFACE_FAILED')) {
+        $connectivityErrnos[] = CURLE_INTERFACE_FAILED;
+    }
+    if (in_array($errno, $connectivityErrnos, true)) {
+        return true;
+    }
+
+    $status = (string)($result['status'] ?? '');
+    $error = strtolower((string)($result['error'] ?? ''));
+    if ($status === 'timeout') {
+        return true;
+    }
+    if ($status === 'broken' || $status === 'unknown' || $status === 'network') {
+        if ($error === '') {
+            return $errno !== 0;
+        }
+        return str_contains($error, 'could not resolve')
+            || str_contains($error, 'could not connect')
+            || str_contains($error, 'timed out')
+            || str_contains($error, 'timeout')
+            || str_contains($error, 'network')
+            || str_contains($error, 'no result');
+    }
+    return false;
+}
+
+/**
+ * True when this PHP process can reach a well-known public endpoint.
+ * Cached briefly so a tile check does not probe Google/Cloudflare per link.
+ */
+function probeCheckerHasOutboundNetwork() {
+    static $cached = null;
+    static $cachedAt = 0.0;
+    $now = microtime(true);
+    if ($cached !== null && ($now - $cachedAt) < 8.0) {
+        return $cached;
+    }
+
+    $targets = [
+        'https://www.gstatic.com/generate_204',
+        'https://1.1.1.1',
+        'http://detectportal.firefox.com/success.txt',
+    ];
+
+    foreach ($targets as $url) {
+        $ch = curl_init();
+        curl_setopt_array($ch, [
+            CURLOPT_URL => $url,
+            CURLOPT_RETURNTRANSFER => true,
+            CURLOPT_NOBODY => true,
+            CURLOPT_FOLLOWLOCATION => true,
+            CURLOPT_MAXREDIRS => 2,
+            CURLOPT_TIMEOUT => 1,
+            CURLOPT_CONNECTTIMEOUT => 1,
+            CURLOPT_SSL_VERIFYPEER => false,
+            CURLOPT_SSL_VERIFYHOST => 0,
+            CURLOPT_USERAGENT => (function_exists('getAppName') ? (getAppName() ?: 'LinkNest') : 'LinkNest') . ' Health Checker/1.0',
+        ]);
+        curl_exec($ch);
+        $code = (int)curl_getinfo($ch, CURLINFO_HTTP_CODE);
+        curl_close($ch);
+        // Any HTTP status means packets left this host (204, 301, 403, …).
+        if ($code > 0) {
+            $cached = true;
+            $cachedAt = $now;
+            return true;
+        }
+    }
+
+    $cached = false;
+    $cachedAt = $now;
+    return false;
+}
+
+/**
+ * If every probed URL failed with DNS/connect/timeout AND a public probe also fails,
+ * rewrite results to status=network so the UI does not call them Broken.
+ */
+function reclassifyHealthResultsIfNetworkUnreachable(&$healthResults) {
+    if (!is_array($healthResults) || $healthResults === []) {
+        return false;
+    }
+
+    $probeableUrls = [];
+    foreach ($healthResults as $url => $result) {
+        if (!is_array($result) || !empty($result['skipped'])) {
+            continue;
+        }
+        if (($result['error'] ?? '') === 'Invalid URL format') {
+            continue;
+        }
+        $probeableUrls[] = $url;
+    }
+
+    if ($probeableUrls === []) {
+        return false;
+    }
+
+    foreach ($probeableUrls as $url) {
+        $result = $healthResults[$url];
+        if ((int)($result['http_code'] ?? 0) > 0) {
+            return false;
+        }
+        if (!healthResultLooksLikeConnectivityFailure($result)) {
+            return false;
+        }
+    }
+
+    if (probeCheckerHasOutboundNetwork()) {
+        return false;
+    }
+
+    foreach ($probeableUrls as $url) {
+        $healthResults[$url] = networkUnreachableHealthResult($healthResults[$url]);
+    }
+    return true;
+}
+
+function reclassifySingleHealthIfNetworkUnreachable($healthResult) {
+    if (!healthResultLooksLikeConnectivityFailure($healthResult)) {
+        return $healthResult;
+    }
+    if (probeCheckerHasOutboundNetwork()) {
+        return $healthResult;
+    }
+    return networkUnreachableHealthResult($healthResult);
+}
+
+function isPersistableLinkHealthStatus($status) {
+    return $status !== 'checking';
+}
+
 /**
  * Release PHP session lock so long-running health checks do not block
  * other authenticated API requests (e.g. navigating back to the main page).
@@ -408,6 +576,7 @@ function checkUrlHealth($url, $timeoutSeconds = 2) {
         'status' => $status,
         'http_code' => $httpCode,
         'error' => $error,
+        'errno' => (int)$errno,
         'server_latency' => $serverLatency,
         'final_url' => $finalUrl,
         'redirect_count' => $redirectCount
@@ -622,6 +791,7 @@ function checkUrlHealthWithRedirectChain($url, $timeoutSeconds = 5) {
         'status' => $statusResult['status'],
         'http_code' => $httpCode,
         'error' => $statusResult['error'],
+        'errno' => (int)$errno,
         'server_latency' => $serverLatency,
         'final_url' => $finalUrl,
         'redirect_count' => $redirectCount,
@@ -696,6 +866,7 @@ function checkUrlsParallel($urls, $maxConcurrent = 12) {
             'status' => $statusResult['status'],
             'http_code' => $httpCode,
             'error' => $statusResult['error'],
+            'errno' => (int)$errno,
             'server_latency' => $serverLatency,
             'final_url' => $finalUrl,
             'redirect_count' => $redirectCount
@@ -760,6 +931,7 @@ function checkUrlsParallel($urls, $maxConcurrent = 12) {
             'status' => 'timeout',
             'http_code' => 0,
             'error' => 'Request timeout',
+            'errno' => CURLE_OPERATION_TIMEDOUT,
             'server_latency' => round((microtime(true) - $meta['started']) * 1000)
         ];
         curl_multi_remove_handle($multiHandle, $ch);
@@ -771,6 +943,7 @@ function checkUrlsParallel($urls, $maxConcurrent = 12) {
                 'status' => 'timeout',
                 'http_code' => 0,
                 'error' => 'Request timeout',
+                'errno' => CURLE_OPERATION_TIMEDOUT,
                 'server_latency' => 0
             ];
         }
@@ -783,6 +956,9 @@ function checkUrlsParallel($urls, $maxConcurrent = 12) {
  * Update link health status in database (non-blocking with timeout)
  */
 function updateLinkHealth($linkId, $healthResult) {
+    if (!isPersistableLinkHealthStatus($healthResult['status'] ?? '')) {
+        return;
+    }
     // Use a very short timeout to prevent hanging
     $maxRetries = 2; // Reduced from 3
     $retryDelay = 50000; // 50ms in microseconds (reduced from 100ms)
@@ -862,6 +1038,9 @@ function updateLinkHealthBatch($updates) {
         $now = time();
         
         foreach ($updates as $linkId => $healthResult) {
+            if (!isPersistableLinkHealthStatus($healthResult['status'] ?? '')) {
+                continue;
+            }
             try {
                 $stmt->execute([
                     $healthResult['status'],
@@ -1022,6 +1201,7 @@ function handleGetHealthStats() {
                 SUM(CASE WHEN health_status = "broken" THEN 1 ELSE 0 END) as broken,
                 SUM(CASE WHEN health_status = "timeout" THEN 1 ELSE 0 END) as timeout,
                 SUM(CASE WHEN health_status = "restricted" OR health_status = "accessible" THEN 1 ELSE 0 END) as accessible,
+                SUM(CASE WHEN health_status = "network" THEN 1 ELSE 0 END) as network,
                 SUM(CASE WHEN health_status = "unknown" OR health_status IS NULL THEN 1 ELSE 0 END) as unknown
             FROM links
         ');
@@ -1035,6 +1215,7 @@ function handleGetHealthStats() {
                 'broken' => 0,
                 'timeout' => 0,
                 'accessible' => 0,
+                'network' => 0,
                 'unknown' => 0
             ];
         }
@@ -1046,6 +1227,7 @@ function handleGetHealthStats() {
                 'broken' => (int)($stats['broken'] ?? 0),
                 'timeout' => (int)($stats['timeout'] ?? 0),
                 'accessible' => (int)($stats['accessible'] ?? 0),
+                'network' => (int)($stats['network'] ?? 0),
                 'unknown' => (int)($stats['unknown'] ?? 0)
             ]
         ]);
@@ -1138,6 +1320,7 @@ function handleCheckUrls() {
         }
 
         $parallel = !empty($probe) ? checkUrlsParallel($probe, 10) : [];
+        $networkUnreachable = reclassifyHealthResultsIfNetworkUnreachable($parallel);
         $results = [];
         foreach ($urls as $url) {
             if (!empty($skipped[$url])) {
@@ -1148,12 +1331,16 @@ function handleCheckUrls() {
                 ];
                 continue;
             }
-            $healthResult = $parallel[$url] ?? [
-                'status' => 'broken',
-                'http_code' => 0,
-                'error' => 'No result',
-                'server_latency' => 0
-            ];
+            $healthResult = $parallel[$url] ?? (
+                $networkUnreachable
+                    ? networkUnreachableHealthResult(['server_latency' => 0])
+                    : [
+                        'status' => 'broken',
+                        'http_code' => 0,
+                        'error' => 'No result',
+                        'server_latency' => 0
+                    ]
+            );
             if (!empty($healthResult['skipped'])) {
                 $results[] = [
                     'url' => $url,
@@ -1243,6 +1430,7 @@ function handleCheckUrl() {
 
         // Interactive edit-form probe: hop-by-hop chain for the redirects badge
         $healthResult = checkUrlHealthWithRedirectChain($url, 60);
+        $healthResult = reclassifySingleHealthIfNetworkUnreachable($healthResult);
 
         $redirectChain = [];
         if (!empty($healthResult['redirect_chain']) && is_array($healthResult['redirect_chain'])) {
@@ -1338,6 +1526,7 @@ function handleCheckSingleLink() {
         // Check the link (this should complete in ~1 second with our timeout)
         $checkStart = microtime(true);
         $healthResult = checkUrlHealth($link['url']);
+        $healthResult = reclassifySingleHealthIfNetworkUnreachable($healthResult);
         $checkTime = microtime(true) - $checkStart;
         
         // Log if check took too long
@@ -1443,6 +1632,7 @@ function handleCheckTileLinks() {
         }
         
         $results = [];
+        $networkUnreachable = false;
         $now = time();
         $tileMaxAge = 300; // 5 minutes
         
@@ -1501,6 +1691,7 @@ function handleCheckTileLinks() {
         // Check all URLs in parallel (rolling window of concurrent probes)
         if (!empty($linksToCheck)) {
             $healthResults = checkUrlsParallel($linksToCheck, 12);
+            $networkUnreachable = reclassifyHealthResultsIfNetworkUnreachable($healthResults);
             
             // Prepare batch update
             $batchUpdates = [];
@@ -1528,6 +1719,7 @@ function handleCheckTileLinks() {
         sendJSON([
             'success' => true,
             'checked' => count($links),
+            'networkUnreachable' => !empty($networkUnreachable),
             'results' => $results
         ]);
     } catch (PDOException $e) {
@@ -1591,6 +1783,7 @@ function handleCheckAllLinks() {
     
     // Rolling parallel checks (12 at a time)
     $allHealthResults = empty($urls) ? [] : checkUrlsParallel($urls, 12);
+    $networkUnreachable = reclassifyHealthResultsIfNetworkUnreachable($allHealthResults);
     
     // Prepare batch update
     $batchUpdates = [];
@@ -1599,7 +1792,8 @@ function handleCheckAllLinks() {
         'broken' => 0,
         'timeout' => 0,
         'unknown' => 0,
-        'restricted' => 0
+        'restricted' => 0,
+        'network' => 0
     ];
     
     foreach ($allHealthResults as $url => $healthResult) {
@@ -1624,6 +1818,7 @@ function handleCheckAllLinks() {
     sendJSON([
         'success' => true,
         'checked' => count($links),
+        'networkUnreachable' => !empty($networkUnreachable),
         'results' => $results
     ]);
 }

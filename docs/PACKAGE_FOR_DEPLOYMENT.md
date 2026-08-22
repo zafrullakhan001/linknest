@@ -166,10 +166,26 @@ Requires SMB admin share access (`C$`) and permission to create scheduled tasks 
 
 ---
 
+## GitHub bootstrap release (new vanilla Apache host)
+
+To also ship the pre-configured Apache + PHP 8.5 ZIP and upload **both** bundles to GitHub Release tag `apache-php85-runtime`:
+
+```bat
+publish-windows-bootstrap-bundles.bat
+publish-windows-bootstrap-bundles.bat -Yes
+publish-windows-bootstrap-bundles.bat -SkipUpload
+```
+
+That is **not** an App Updates `vX.Y.Z` release. Walkthrough and stable download URLs: [WINDOWS_BOOTSTRAP_BUNDLES.md](WINDOWS_BOOTSTRAP_BUNDLES.md). Runtime-only packager: [`scripts/package-vanilla-apache-php85.bat`](../scripts/package-vanilla-apache-php85.bat).
+
+---
+
 ## Related docs
 
+- [WINDOWS_BOOTSTRAP_BUNDLES.md](WINDOWS_BOOTSTRAP_BUNDLES.md) — Apache/PHP runtime ZIP + app ZIP + GitHub upload
 - [APP_UPDATES.md](APP_UPDATES.md) — in-app GitHub updates after install
 - [XAMPP_PHP_UPGRADE.md](XAMPP_PHP_UPGRADE.md) — upgrade PHP runtime on XAMPP
+- [VANILLA_APACHE_PHP85_WINDOWS.md](VANILLA_APACHE_PHP85_WINDOWS.md) — stock Apache + PHP 8.5 layout (`D:\Apache` + `D:\php`)
 - [OFFICE_WIN2022_DEPLOY.md](OFFICE_WIN2022_DEPLOY.md) — Win2022 / office remote deploy playbook
 - [DEPLOYMENT_INSTRUCTIONS.md](DEPLOYMENT_INSTRUCTIONS.md) — broader deployment notes
 - [CREATE_BUNDLE.md](CREATE_BUNDLE.md) — alternate `scripts/bundle.bat` (Docker-oriented)

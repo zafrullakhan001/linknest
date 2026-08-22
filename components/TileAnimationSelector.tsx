@@ -847,10 +847,10 @@ export const TileAnimationSelector: React.FC<TileAnimationSelectorProps> = ({
             {/* Dropdown Menu - Rendered via Portal */}
             {isOpen && createPortal(
                 <>
-                    {/* Backdrop */}
+                    {/* Backdrop blocks the page; close only with Done (or Escape). */}
                     <div
-                        className="fixed inset-0 z-[10060]"
-                        onClick={() => setIsOpen(false)}
+                        className="fixed inset-0 z-[10060] bg-black/20"
+                        aria-hidden="true"
                     />
 
                     {/* Options Panel */}
@@ -861,6 +861,8 @@ export const TileAnimationSelector: React.FC<TileAnimationSelectorProps> = ({
                             top: `${dropdownPosition.top}px`,
                             left: `${dropdownPosition.left}px`,
                         }}
+                        onMouseDown={(e) => e.stopPropagation()}
+                        onClick={(e) => e.stopPropagation()}
                     >
                         {/* Tabs */}
                         <div className="flex border-b border-slate-200 dark:border-slate-700 shrink-0">
@@ -970,7 +972,12 @@ export const TileAnimationSelector: React.FC<TileAnimationSelectorProps> = ({
                                     {filteredAnimations.map((option) => (
                                         <button
                                             key={option.id}
-                                            onClick={() => handleAnimationSelect(option.id)}
+                                            type="button"
+                                            onClick={(e) => {
+                                                e.preventDefault();
+                                                e.stopPropagation();
+                                                void handleAnimationSelect(option.id);
+                                            }}
                                             className={`
                         p-3 rounded-lg text-left transition-all relative
                         ${selectedAnimation === option.id
@@ -999,7 +1006,12 @@ export const TileAnimationSelector: React.FC<TileAnimationSelectorProps> = ({
                                     {filteredDecorations.map((option) => (
                                         <button
                                             key={option.id}
-                                            onClick={() => handleDecorationSelect(option.id)}
+                                            type="button"
+                                            onClick={(e) => {
+                                                e.preventDefault();
+                                                e.stopPropagation();
+                                                void handleDecorationSelect(option.id);
+                                            }}
                                             className={`
                         p-3 rounded-lg text-left transition-all relative
                         ${selectedDecoration === option.id
@@ -1037,6 +1049,7 @@ export const TileAnimationSelector: React.FC<TileAnimationSelectorProps> = ({
                                 </div>
                                 <div className="flex items-center gap-2">
                                     <button
+                                        type="button"
                                         onClick={() => {
                                             replayPreview();
                                             const selector = persistGlobal ? '.linknest-tile-animated' : '.linknest-content-link';
@@ -1052,6 +1065,7 @@ export const TileAnimationSelector: React.FC<TileAnimationSelectorProps> = ({
                                         Replay
                                     </button>
                                     <button
+                                        type="button"
                                         onClick={() => setIsOpen(false)}
                                         className="px-4 py-1.5 text-xs font-bold bg-brand-600 text-white hover:bg-brand-700 rounded-md transition-colors shadow-sm"
                                     >

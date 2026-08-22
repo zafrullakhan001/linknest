@@ -245,7 +245,9 @@ const SortableFavoriteLinkCard: React.FC<{
                     ? '#10b981'
                     : healthStatus === 'broken'
                       ? '#ef4444'
-                      : '#f59e0b',
+                      : healthStatus === 'network'
+                        ? '#94a3b8'
+                        : '#f59e0b',
               }}
             />
           </div>
@@ -336,7 +338,9 @@ const SortableFavoriteLinkCard: React.FC<{
                   ? '#10b981'
                   : healthStatus === 'broken'
                     ? '#ef4444'
-                    : '#f59e0b',
+                    : healthStatus === 'network'
+                      ? '#94a3b8'
+                      : '#f59e0b',
             }}
           />
         </div>

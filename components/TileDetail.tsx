@@ -1,7 +1,7 @@
 import React, { useState, useEffect, useCallback, useRef, useMemo, useId, lazy, Suspense } from 'react';
 import { createPortal } from 'react-dom';
 import { Tile, Link, LinkSection, Tab, LinkVisibility, TileVisibility, COLOR_STYLES, THEME_COLORS, ThemeColor, TileMessage, AccessRestrictions, LinkRedirectHop } from '../types';
-import { linkHealthService, LinkHealthMap } from '../services/linkHealthService';
+import { linkHealthService, LinkHealthMap, isLikelyClientNetworkError, isNetworkHealthStatus, networkHealthResult } from '../services/linkHealthService';
 import { performanceAnalyticsService, type AnalyticsMetric } from '../services/performanceAnalyticsService';
 import { authService, UserListItem, User } from '../services/authService';
 import { exportTileToFileAsync } from '../services/spaceTransferService';
@@ -639,7 +639,9 @@ const UrlProbeBadges: React.FC<{ url: string; excluded?: boolean }> = ({ url, ex
                     ? 'bg-rose-100 text-rose-800 dark:bg-rose-900/50 dark:text-rose-200 border-rose-200 dark:border-rose-700'
                     : healthStatus === 'timeout'
                         ? 'bg-amber-100 text-amber-800 dark:bg-amber-900/50 dark:text-amber-200 border-amber-200 dark:border-amber-700'
-                        : 'bg-slate-100 text-slate-700 dark:bg-slate-800 dark:text-slate-300 border-slate-200 dark:border-slate-600';
+                        : healthStatus === 'network'
+                            ? 'bg-slate-100 text-slate-700 dark:bg-slate-800 dark:text-slate-300 border-slate-200 dark:border-slate-600'
+                            : 'bg-slate-100 text-slate-700 dark:bg-slate-800 dark:text-slate-300 border-slate-200 dark:border-slate-600';
 
     const latencyBadgeClass = (ms: number | null) =>
         ms !== null && ms < 300
@@ -659,9 +661,11 @@ const UrlProbeBadges: React.FC<{ url: string; excluded?: boolean }> = ({ url, ex
                 ? String(httpCode)
                 : healthStatus === 'timeout'
                     ? 'Timeout'
-                    : error
-                        ? 'Error'
-                        : '—';
+                    : healthStatus === 'network'
+                        ? 'Unreachable'
+                        : error
+                            ? 'Error'
+                            : '—';
 
     const showRedirectBadge = redirectCount > 0 || redirectChain.length > 1;
     const hopCountLabel = redirectCount > 0 ? redirectCount : Math.max(0, redirectChain.length - 1);
@@ -1465,6 +1469,7 @@ export const TileDetail: React.FC<TileDetailProps> = ({
     // Mobile header actions menu (view mode)
     const [showHeaderActionsMenu, setShowHeaderActionsMenu] = useState(false);
     const [mobilePageAnimOpen, setMobilePageAnimOpen] = useState(false);
+    const [pageAnimOpen, setPageAnimOpen] = useState(false);
     const headerActionsMenuRef = useRef<HTMLDivElement>(null);
     const qrPrintRootRef = useRef<HTMLDivElement>(null);
 
@@ -2009,6 +2014,16 @@ export const TileDetail: React.FC<TileDetailProps> = ({
             } catch (error) {
                 if (abortController.signal.aborted || cancelled) return;
                 console.error('Failed to auto-check tile link health:', error);
+                if (isLikelyClientNetworkError(error)) {
+                    setLinkHealth(prev => {
+                        const next = { ...prev };
+                        linkIds.forEach(id => {
+                            next[id] = networkHealthResult();
+                        });
+                        return next;
+                    });
+                    return;
+                }
                 // Fall back to last stored health so dots are not stuck on "checking"
                 try {
                     const health = await linkHealthService.getAllHealth();
@@ -5759,6 +5774,22 @@ export const TileDetail: React.FC<TileDetailProps> = ({
             // Don't alert on abort/navigation away
             if (error instanceof DOMException && error.name === 'AbortError') return;
             if (errorMessage.toLowerCase().includes('abort')) return;
+            if (isLikelyClientNetworkError(error)) {
+                const sections = getAllSections();
+                const ids = sections.flatMap(s => s.links || []).filter(l =>
+                    !isSshLinkUrl(l.url || '') &&
+                    !isVncLinkUrl(l.url || '') &&
+                    !isUrlExcludedFromLinkCheck(l.url || '', linkCheckExceptions)
+                ).map(l => l.id);
+                setLinkHealth(prev => {
+                    const next = { ...prev };
+                    ids.forEach(id => {
+                        next[id] = networkHealthResult();
+                    });
+                    return next;
+                });
+                return;
+            }
             alert(`Failed to check link health: ${errorMessage}. Please try again.`);
         } finally {
             if (healthCheckAbortRef.current === abortController) {
@@ -5792,7 +5823,9 @@ export const TileDetail: React.FC<TileDetailProps> = ({
             console.error('Failed to check link:', error);
             setLinkHealth(prev => ({
                 ...prev,
-                [linkId]: { ...prev[linkId], status: 'unknown', error: 'Check failed' }
+                [linkId]: isLikelyClientNetworkError(error)
+                    ? networkHealthResult()
+                    : { ...prev[linkId], status: 'unknown', error: 'Check failed' }
             }));
         } finally {
             setCheckingLinkId(null);
@@ -6170,7 +6203,7 @@ export const TileDetail: React.FC<TileDetailProps> = ({
                 {/* Mobile page-animation picker lives outside the sidebar so closing the drawer keeps the dialog open */}
                 {tile.canEdit && (
                     <TileAnimationSelector
-                        key={`page-anim-mobile-persistent-${tile.id}-${tile.pageAnimation || 'none'}`}
+                        key={`page-anim-mobile-persistent-${tile.id}`}
                         animationsOnly
                         persistGlobal={false}
                         hideTrigger
@@ -6257,9 +6290,11 @@ export const TileDetail: React.FC<TileDetailProps> = ({
                                     {tile.canEdit && (
                                         <div className="relative flex items-center">
                                             <TileAnimationSelector
-                                                key={`page-anim-${tile.id}-${tile.pageAnimation || 'none'}`}
+                                                key={`page-anim-${tile.id}`}
                                                 animationsOnly
                                                 persistGlobal={false}
+                                                open={pageAnimOpen}
+                                                onOpenChange={setPageAnimOpen}
                                                 value={(tile.pageAnimation as TileAnimation) || 'none'}
                                                 onAnimationChange={async (animation) => {
                                                     const next = animation && animation !== 'none' ? animation : undefined;
@@ -6875,6 +6910,15 @@ export const TileDetail: React.FC<TileDetailProps> = ({
                         </div>
                     </div>
 
+                    {Object.values(linkHealth).some((h) => isNetworkHealthStatus(h?.status)) && (
+                        <div
+                            className="mb-4 rounded-xl border border-slate-300 dark:border-slate-600 bg-slate-50 dark:bg-slate-800/80 px-4 py-3 text-sm text-slate-700 dark:text-slate-200"
+                            role="status"
+                        >
+                            Network not reachable. Link checks could not run, so these destinations are not marked Broken.
+                        </div>
+                    )}
+
                     {/* Rolling Messages Display - Below Search Bar */}
                     {activeMessages.length > 0 && (
                         <div className="mb-2 w-full group/message relative cursor-help">
@@ -7353,6 +7397,7 @@ export const TileDetail: React.FC<TileDetailProps> = ({
                                                             isUrlExcludedFromLinkCheck(link.url || '', linkCheckExceptions);
                                                         const health = skipHealth ? undefined : linkHealth[link.id];
                                                         const isBroken = !skipHealth && health?.status === 'broken';
+                                                        const isNetwork = !skipHealth && isNetworkHealthStatus(health?.status);
                                                         const isGridCards = sectionLinkLayout === 'grid';
                                                         const isCompact = sectionLinkLayout === 'compact';
                                                         const isQrView = sectionLinkLayout === 'qr';
@@ -7472,6 +7517,7 @@ export const TileDetail: React.FC<TileDetailProps> = ({
                                                     linknest-content-link group relative rounded-xl bg-white dark:bg-slate-800/80 border border-slate-200 dark:border-slate-700/60
                                                     hover:border-brand-300 dark:hover:border-brand-500/50 transition-all duration-300 shadow-sm
                                                     ${isBroken ? 'border-red-300 dark:border-red-500/50 bg-red-50/50 dark:bg-red-900/10' : ''}
+                                                    ${isNetwork ? 'border-slate-300 dark:border-slate-500/50 bg-slate-50/50 dark:bg-slate-900/20' : ''}
                                                     ${isGridCards
                                                         ? 'flex flex-col items-center text-center gap-2 p-4 pt-5'
                                                         : isCompact
@@ -7615,6 +7661,15 @@ export const TileDetail: React.FC<TileDetailProps> = ({
                                                                                 <span className="text-red-500 text-xs font-medium flex items-center gap-1 shrink-0">
                                                                                     <span className="w-1.5 h-1.5 rounded-full bg-red-500"></span>
                                                                                     Broken
+                                                                                </span>
+                                                                            )}
+                                                                            {isNetwork && (
+                                                                                <span
+                                                                                    className="text-slate-500 dark:text-slate-400 text-xs font-medium flex items-center gap-1 shrink-0"
+                                                                                    title="Network not reachable — this is not a broken link"
+                                                                                >
+                                                                                    <span className="w-1.5 h-1.5 rounded-full bg-slate-400"></span>
+                                                                                    Unreachable
                                                                                 </span>
                                                                             )}
                                                                         </div>

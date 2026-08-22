@@ -251,6 +251,7 @@ Env (optional): `GITHUB_TOKEN` / `GH_TOKEN`.
 ## Related
 
 - Packager: [`package-for-deployment.ps1`](../package-for-deployment.ps1) / [`package-for-deployment.bat`](../package-for-deployment.bat) — [PACKAGE_FOR_DEPLOYMENT.md](PACKAGE_FOR_DEPLOYMENT.md)
+- Windows new-host bundles (Apache + PHP runtime + app ZIP, GitHub tag `apache-php85-runtime`): [`publish-windows-bootstrap-bundles.bat`](../publish-windows-bootstrap-bundles.bat) — [WINDOWS_BOOTSTRAP_BUNDLES.md](WINDOWS_BOOTSTRAP_BUNDLES.md)
 - Publish script: [`publish-base-release.bat`](../publish-base-release.bat) / [`../scripts/publish-base-release.ps1`](../scripts/publish-base-release.ps1) / [`../scripts/publish-update-release.ps1`](../scripts/publish-update-release.ps1)
 - SSH / VNC deploy: [`REMOTE_WIDGETS_MANUAL_DEPLOY.md`](REMOTE_WIDGETS_MANUAL_DEPLOY.md)
 - Production layout: [`PRODUCTION.md`](PRODUCTION.md)

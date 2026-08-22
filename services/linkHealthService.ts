@@ -42,6 +42,33 @@ export interface HealthStats {
   timeout: number;
   restricted: number;
   unknown: number;
+  network?: number;
+}
+
+export const NETWORK_HEALTH_ERROR = 'Network not reachable — this is not a broken link';
+
+export function isNetworkHealthStatus(status?: string | null): boolean {
+  return status === 'network';
+}
+
+export function isLikelyClientNetworkError(error: unknown): boolean {
+  if (typeof navigator !== 'undefined' && navigator.onLine === false) {
+    return true;
+  }
+  if (error instanceof TypeError) {
+    return true;
+  }
+  const msg = error instanceof Error ? error.message : String(error || '');
+  return /failed to fetch|networkerror|load failed|network request failed|offline|timed out after/i.test(msg);
+}
+
+export function networkHealthResult(): LinkHealth {
+  return {
+    status: 'network',
+    httpCode: null,
+    error: NETWORK_HEALTH_ERROR,
+    checkedAt: Math.floor(Date.now() / 1000),
+  };
 }
 
 export interface UrlInventoryItem {
@@ -146,7 +173,7 @@ export const linkHealthService = {
         body: JSON.stringify({ tileId, force }),
         signal
       }),
-      12000,
+      18000,
       'checkTileLinks',
       signal
     );
@@ -269,6 +296,8 @@ export const linkHealthService = {
         return 'bg-emerald-500'; // Active / available
       case 'broken':
         return 'bg-red-500';
+      case 'network':
+        return 'bg-slate-400';
       case 'unknown':
       case 'timeout':
       case 'redirected':
@@ -291,6 +320,8 @@ export const linkHealthService = {
         return 'Link is online (may require authentication)';
       case 'broken':
         return 'Link is broken';
+      case 'network':
+        return 'Network not reachable — this is not a broken link';
       case 'timeout':
         return 'Link timed out';
       case 'redirected':

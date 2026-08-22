@@ -20,6 +20,15 @@ scripts\package-vanilla-apache-php85.bat
 
 Output: `linknest-apache-php85-runtime-YYYYMMDD_HHMMSS.zip` in the project root (gitignored). On the target: extract to **D:\**, install the VC++ 2015–2022 x64 runtime, run `install-runtime.bat` as Administrator, then copy the LinkNest app into `D:\Apache\htdocs\linknest`.
 
+**Rebuild both ZIPs and upload to GitHub** (runtime + LinkNest app) from the repo root:
+
+```bat
+publish-windows-bootstrap-bundles.bat
+publish-windows-bootstrap-bundles.bat -Yes
+```
+
+That publishes Release tag `apache-php85-runtime` with stable names `linknest-apache-php85-runtime.zip` and `linknest-deploy.zip`. Full walkthrough: [WINDOWS_BOOTSTRAP_BUNDLES.md](WINDOWS_BOOTSTRAP_BUNDLES.md).
+
 ---
 
 ## Assumed layout (this machine)

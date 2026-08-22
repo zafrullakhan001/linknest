@@ -1,4 +1,5 @@
 import { LinkHealth } from '../types';
+import { isLikelyClientNetworkError, networkHealthResult } from './linkHealthService';
 
 const API_BASE: string =
     (typeof import.meta !== 'undefined' && (import.meta as any).env && (import.meta as any).env.VITE_API_BASE) ||
@@ -81,13 +82,16 @@ class FavoriteLinkHealthService {
                 };
             }
 
+            const network = isLikelyClientNetworkError(error);
             return {
                 linkId,
                 health: {
-                    status: 'broken',
-                    httpCode: null,
-                    error: error.message || 'Failed to check link',
-                    checkedAt: Date.now()
+                    ...(network ? networkHealthResult() : {
+                        status: 'unknown',
+                        httpCode: null,
+                        error: error.message || 'Failed to check link',
+                        checkedAt: Date.now()
+                    }),
                 },
                 latency: localLatency,
                 serverLatency: 0
@@ -186,6 +190,8 @@ class FavoriteLinkHealthService {
                 return 'bg-emerald-500'; // Active / available
             case 'broken':
                 return 'bg-red-500';
+            case 'network':
+                return 'bg-slate-400';
             case 'unknown':
             case 'timeout':
             case 'redirected':
@@ -211,6 +217,7 @@ class FavoriteLinkHealthService {
      */
     getStatusDisplay(httpCode?: number | null, status?: string): string {
         if (status === 'timeout') return 'Timeout';
+        if (status === 'network') return 'Unreachable';
         if (status === 'checking') return 'Checking...';
         if (httpCode) return `${httpCode}`;
         return '';

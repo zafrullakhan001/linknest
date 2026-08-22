@@ -73,7 +73,7 @@ import {
   getTileDecorationClass
 } from './TileAnimationSelector';
 import { TitleEmojiPicker } from './TitleEmojiPicker';
-import { linkHealthService } from '../services/linkHealthService';
+import { linkHealthService, isLikelyClientNetworkError, isNetworkHealthStatus, networkHealthResult } from '../services/linkHealthService';
 import {
   requestBookmarksFromBrowserExtension,
   flattenPublicBookmarksForOutSync,
@@ -1053,6 +1053,7 @@ export const PublicBookmarksPanel: React.FC<PublicBookmarksPanelProps> = ({
     let broken = 0;
     let healthy = 0;
     let redirected = 0;
+    let network = 0;
     let other = 0;
 
     const recordHealth = (
@@ -1071,6 +1072,7 @@ export const PublicBookmarksPanel: React.FC<PublicBookmarksPanelProps> = ({
         return;
       }
       if (isRemovableBrokenBookmarkHealth(health.status)) broken += 1;
+      else if (isNetworkHealthStatus(health.status)) network += 1;
       else if (health.status === 'redirected') {
         redirected += 1;
         healthy += 1;
@@ -1106,7 +1108,7 @@ export const PublicBookmarksPanel: React.FC<PublicBookmarksPanelProps> = ({
                 match?.skipped
                   ? null
                   : {
-                      status: 'broken',
+                      status: 'unknown',
                       httpCode: null,
                       error: 'No health result',
                       checkedAt: Date.now()
@@ -1123,6 +1125,12 @@ export const PublicBookmarksPanel: React.FC<PublicBookmarksPanelProps> = ({
             });
           }
         } catch (err) {
+          if (isLikelyClientNetworkError(err)) {
+            for (let j = i; j < links.length; j++) {
+              recordHealth(links[j], networkHealthResult());
+            }
+            break;
+          }
           // Fall back to single checks for this batch
           for (const link of batch) {
             if (controller.signal.aborted) break;
@@ -1140,13 +1148,15 @@ export const PublicBookmarksPanel: React.FC<PublicBookmarksPanelProps> = ({
                     }
                   : null
               );
-            } catch {
-              recordHealth(link, {
-                status: 'broken',
-                httpCode: null,
-                error: err instanceof Error ? err.message : 'Health check failed',
-                checkedAt: Date.now()
-              });
+            } catch (err) {
+              recordHealth(link, isLikelyClientNetworkError(err)
+                ? networkHealthResult()
+                : {
+                    status: 'unknown',
+                    httpCode: null,
+                    error: err instanceof Error ? err.message : 'Health check failed',
+                    checkedAt: Date.now()
+                  });
             }
           }
         }
@@ -1165,7 +1175,9 @@ export const PublicBookmarksPanel: React.FC<PublicBookmarksPanelProps> = ({
             ? ` ${redirected} redirected — use “Update redirects” to adopt final URLs.`
             : '';
         setMessage(
-          `Checked ${links.length} link${links.length === 1 ? '' : 's'}: ${healthy} OK, ${broken} broken/timeout${other ? `, ${other} other/skipped` : ''}.${redirectHint}`
+          network > 0 && broken === 0 && healthy === 0
+            ? 'Network not reachable. Link checks could not run, so bookmarks were not marked broken.'
+            : `Checked ${links.length} link${links.length === 1 ? '' : 's'}: ${healthy} OK, ${broken} broken/timeout${network ? `, ${network} unreachable` : ''}${other ? `, ${other} other/skipped` : ''}.${redirectHint}`
         );
       }
     } finally {
@@ -1423,7 +1435,9 @@ export const PublicBookmarksPanel: React.FC<PublicBookmarksPanelProps> = ({
         ? '#10b981'
         : healthStatus === 'broken'
           ? '#ef4444'
-          : healthStatus === 'timeout' ||
+          : healthStatus === 'network'
+            ? '#94a3b8'
+            : healthStatus === 'timeout' ||
               healthStatus === 'redirected' ||
               healthStatus === 'unknown'
             ? '#f59e0b'
@@ -1443,6 +1457,7 @@ export const PublicBookmarksPanel: React.FC<PublicBookmarksPanelProps> = ({
           className={`group relative flex items-center gap-2 px-2 py-1 rounded-lg cursor-pointer transition-colors ${fullAnimationClass} ${tileAnimatedClass}
             hover:bg-slate-100/90 dark:hover:bg-slate-800/80
             ${isBroken ? 'bg-red-50/60 dark:bg-red-950/20' : ''}
+            ${isNetworkHealthStatus(healthStatus) ? 'bg-slate-50/80 dark:bg-slate-900/40' : ''}
             ${link.pinned && !isBroken ? 'bg-amber-50/50 dark:bg-amber-950/10' : ''}
           `}
           style={{ animationDelay: `${animationDelay}ms` }}
@@ -1463,6 +1478,9 @@ export const PublicBookmarksPanel: React.FC<PublicBookmarksPanelProps> = ({
             )}
             {isBroken && (
               <span className="text-[9px] font-bold tracking-wide text-red-600 dark:text-red-400 shrink-0">BROKEN</span>
+            )}
+            {isNetworkHealthStatus(healthStatus) && (
+              <span className="text-[9px] font-bold tracking-wide text-slate-500 dark:text-slate-400 shrink-0">UNREACHABLE</span>
             )}
             <span className="text-[13px] leading-tight font-medium text-slate-800 dark:text-slate-100 truncate group-hover:text-amber-600 dark:group-hover:text-amber-400">
               {link.title}
@@ -1549,7 +1567,7 @@ export const PublicBookmarksPanel: React.FC<PublicBookmarksPanelProps> = ({
         key={link.id}
         className={`group relative flex items-center gap-3 p-4 bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-xl hover:border-amber-300 dark:hover:border-amber-500/50 transition-all duration-200 shadow-sm hover:shadow-md cursor-pointer ${fullAnimationClass} ${tileAnimatedClass} overflow-hidden ${
           link.pinned ? 'ring-1 ring-amber-300/60 dark:ring-amber-500/40' : ''
-        } ${isBroken ? 'border-red-300 dark:border-red-700/60' : ''}`}
+        } ${isBroken ? 'border-red-300 dark:border-red-700/60' : ''} ${isNetworkHealthStatus(healthStatus) ? 'border-slate-300 dark:border-slate-600' : ''}`}
         style={{ animationDelay: `${animationDelay}ms` }}
         onClick={() => handleOpenLink(cat, link)}
       >
@@ -1573,6 +1591,11 @@ export const PublicBookmarksPanel: React.FC<PublicBookmarksPanelProps> = ({
             {isBroken && (
               <span className="text-[10px] font-semibold uppercase tracking-wide text-red-600 dark:text-red-400 shrink-0">
                 Broken
+              </span>
+            )}
+            {isNetworkHealthStatus(healthStatus) && (
+              <span className="text-[10px] font-semibold uppercase tracking-wide text-slate-500 dark:text-slate-400 shrink-0">
+                Unreachable
               </span>
             )}
             <div
