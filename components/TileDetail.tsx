@@ -74,7 +74,7 @@ import { AuthSourceBadge } from './AuthSourceBadge';
 import { EditLinkForm } from './EditLinkForm';
 import { getDisplayUrl, isHttpOrHttpsUrl, normalizeStoredLinkUrl, rewriteHtmlAnchorHrefs, viewerLinkDisplay, viewerLinkUrl, effectiveShowShortUrls } from '../utils/urlDisplay';
 import { diagnoseLinkUrl, hasBlockingUrlIssues } from '../utils/urlDiagnostics';
-import { UrlFormDiagnostics, UrlNeedsFixBadge } from './UrlFormDiagnostics';
+import { UrlFormDiagnostics, UrlNeedsFixBadge, InvalidUrlMark } from './UrlFormDiagnostics';
 import { tryHandleSshLinkClick, isSshLinkUrl } from '../utils/sshLink';
 import { tryHandleVncLinkClick, isVncLinkUrl } from '../utils/vncLink';
 import {
@@ -7406,6 +7406,7 @@ export const TileDetail: React.FC<TileDetailProps> = ({
                                                                                 title={plainQrLabel}
                                                                                 dangerouslySetInnerHTML={{ __html: labelHtml }}
                                                                             />
+                                                                            <InvalidUrlMark url={link.url} />
                                                                         </div>
                                                                         <p className="text-[11px] sm:text-xs text-slate-500 dark:text-slate-400 font-mono truncate w-fit max-w-full mx-auto" title={viewerHref} data-ln-tooltip-anchor="">
                                                                             {viewerLinkDisplay({ ...link, shortUrl: shortOf('link', link.id, link.shortUrl) }, linkShowShortUrls)}
@@ -7490,7 +7491,8 @@ export const TileDetail: React.FC<TileDetailProps> = ({
                                                                             ? 'absolute bottom-full left-1/2 -translate-x-1/2 mb-[5px] z-10'
                                                                             : ''
                                                                     }`}>
-                                                                        {!skipHealth && getHealthIndicator(link.id)}
+                                                                        {!skipHealth && !hasBlockingUrlIssues(diagnoseLinkUrl(link.url || '')) && getHealthIndicator(link.id)}
+                                                                        <InvalidUrlMark url={link.url} />
                                                                     </div>
 
                                                                     <div className={`linknest-content-link-icon rounded-xl ${styles.iconBg} flex items-center justify-center select-none shadow-sm border border-white/20 ${
@@ -7585,6 +7587,7 @@ export const TileDetail: React.FC<TileDetailProps> = ({
                                                                             }}
                                                                             dangerouslySetInnerHTML={{ __html: labelHtml }}
                                                                         />
+                                                                        <InvalidUrlMark url={link.url} />
                                                                         <AccessRestrictionsBadge rules={link.accessRestrictions} />
                                                                         <LinkMaintenanceBadge link={link} compact={isCompact} />
                                                                     </div>
@@ -8162,9 +8165,9 @@ export const TileDetail: React.FC<TileDetailProps> = ({
                     />
                 )}
                 {!isMobile && (
-                <div className="animate-in fade-in zoom-in duration-300 w-full">
-                    {/* Enhanced Header */}
-                    <div className="bg-gradient-to-r from-slate-50 to-white dark:from-slate-900 dark:to-slate-800 border-b border-slate-200 dark:border-slate-700 -mx-6 px-6 py-5 mb-8 rounded-b-xl shadow-sm">
+                <div className="animate-in fade-in duration-300 w-full">
+                    {/* Enhanced Header — sticky under the site nav so Quick Nav stays on screen */}
+                    <div className="ln-edit-page-toolbar bg-gradient-to-r from-slate-50 to-white dark:from-slate-900 dark:to-slate-800 border-b border-slate-200 dark:border-slate-700 -mx-6 px-6 py-4 mb-8 rounded-b-xl shadow-sm">
                         <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4">
                             <div>
                                 <h1 className="text-2xl font-bold text-slate-800 dark:text-white mb-1">Edit Page</h1>
@@ -8207,6 +8210,34 @@ export const TileDetail: React.FC<TileDetailProps> = ({
                                 </button>
                             </div>
                         </div>
+                        {editTabs.length > 1 && (
+                            <div className="mt-3 pt-3 border-t border-slate-200/80 dark:border-slate-700/80">
+                                <div className="flex items-center gap-2 overflow-x-auto pb-0.5">
+                                    <span className="text-xs font-semibold text-slate-500 dark:text-slate-400 whitespace-nowrap">Quick Nav:</span>
+                                    <div className="flex gap-2">
+                                        {editTabs.map((tab, index) => (
+                                            <button
+                                                key={tab.id}
+                                                type="button"
+                                                onClick={() => {
+                                                    const element = document.getElementById(`tab-${tab.id}`);
+                                                    if (element) {
+                                                        element.scrollIntoView({ behavior: 'smooth', block: 'start' });
+                                                    }
+                                                }}
+                                                className="px-3 py-1.5 text-xs font-medium rounded-lg bg-slate-100 dark:bg-slate-800 hover:bg-brand-100 dark:hover:bg-brand-900/30 text-slate-700 dark:text-slate-300 hover:text-brand-600 dark:hover:text-brand-400 transition-colors whitespace-nowrap flex items-center gap-1.5"
+                                            >
+                                                <span className="w-5 h-5 rounded-full bg-slate-200 dark:bg-slate-700 text-slate-600 dark:text-slate-400 text-[10px] font-bold flex items-center justify-center">
+                                                    {index + 1}
+                                                </span>
+                                                {tab.emoji ? <span aria-hidden>{tab.emoji}</span> : null}
+                                                {tab.title || 'Untitled'}
+                                            </button>
+                                        ))}
+                                    </div>
+                                </div>
+                            </div>
+                        )}
                     </div>
 
                     <div className="flex flex-col lg:flex-row gap-6 lg:gap-8 items-start">
@@ -9257,35 +9288,6 @@ export const TileDetail: React.FC<TileDetailProps> = ({
                                 )}
                             </div>
 
-                            {/* Tab Navigation Bar - Sticky */}
-                            {editTabs.length > 1 && (
-                                <div className="sticky top-0 z-10 bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-xl p-3 shadow-sm">
-                                    <div className="flex items-center gap-2 overflow-x-auto">
-                                        <span className="text-xs font-semibold text-slate-500 dark:text-slate-400 whitespace-nowrap">Quick Nav:</span>
-                                        <div className="flex gap-2">
-                                            {editTabs.map((tab, index) => (
-                                                <button
-                                                    key={tab.id}
-                                                    onClick={() => {
-                                                        const element = document.getElementById(`tab-${tab.id}`);
-                                                        if (element) {
-                                                            element.scrollIntoView({ behavior: 'smooth', block: 'start' });
-                                                        }
-                                                    }}
-                                                    className="px-3 py-1.5 text-xs font-medium rounded-lg bg-slate-100 dark:bg-slate-800 hover:bg-brand-100 dark:hover:bg-brand-900/30 text-slate-700 dark:text-slate-300 hover:text-brand-600 dark:hover:text-brand-400 transition-colors whitespace-nowrap flex items-center gap-1.5"
-                                                >
-                                                    <span className="w-5 h-5 rounded-full bg-slate-200 dark:bg-slate-700 text-slate-600 dark:text-slate-400 text-[10px] font-bold flex items-center justify-center">
-                                                        {index + 1}
-                                                    </span>
-                                                    {tab.emoji ? <span aria-hidden>{tab.emoji}</span> : null}
-                                                    {tab.title || 'Untitled'}
-                                                </button>
-                                            ))}
-                                        </div>
-                                    </div>
-                                </div>
-                            )}
-
                             <div className="space-y-6">
                                 {/* Render tabs if available, otherwise fall back to sections (backward compatibility) */}
                                 {editTabs.length > 0 ? (
@@ -9381,7 +9383,7 @@ export const TileDetail: React.FC<TileDetailProps> = ({
                                         const tabBgClass = tabBgColors[tabColorIndex];
 
                                         return (
-                                            <div id={`tab-${tab.id}`} key={tab.id} className={`bg-white dark:bg-slate-800 border-2 border-t-2 border-r-2 border-b-2 border-slate-200 dark:border-slate-700 ${tabColorClass} rounded-2xl overflow-hidden shadow-lg shadow-slate-200/50 dark:shadow-black/20 scroll-mt-24 hover:shadow-xl transition-shadow`}>
+                                            <div id={`tab-${tab.id}`} key={tab.id} className={`ln-edit-tab-anchor bg-white dark:bg-slate-800 border-2 border-t-2 border-r-2 border-b-2 border-slate-200 dark:border-slate-700 ${tabColorClass} rounded-2xl overflow-hidden shadow-lg shadow-slate-200/50 dark:shadow-black/20 hover:shadow-xl transition-shadow`}>
                                                 {/* Tab Header */}
                                                 <div className={`p-5 ${expandedTabs.has(tab.id) ? 'border-b-2 border-slate-200 dark:border-slate-700' : ''} ${tabBgClass} flex flex-wrap gap-x-3 gap-y-2 items-center`}>
                                                     <div className="flex items-center gap-3 min-w-[10rem] grow">
@@ -10122,6 +10124,7 @@ export const TileDetail: React.FC<TileDetailProps> = ({
                                                                                                     } : undefined}
                                                                                                     dangerouslySetInnerHTML={{ __html: link.label || '' }}
                                                                                                 />
+                                                                                                <InvalidUrlMark url={link.url} />
                                                                                                 {link.visibility && link.visibility !== 'public' && (
                                                                                                     <span className={`text-xs px-1.5 py-0.5 rounded shrink-0 ${link.visibility === 'authenticated'
                                                                                                         ? 'bg-blue-100 dark:bg-blue-900/30 text-blue-600 dark:text-blue-400'
@@ -10141,7 +10144,7 @@ export const TileDetail: React.FC<TileDetailProps> = ({
                                                                                                     </span>
                                                                                                 )}
                                                                                             </div>
-                                                                                            <div className="text-xs text-slate-500 truncate font-mono" title={effectiveShowShortUrls(showShortUrls, tab, section, link) ? viewerLinkUrl({ ...link, shortUrl: shortOf('link', link.id, link.shortUrl) }, true) : link.url}>{effectiveShowShortUrls(showShortUrls, tab, section, link) ? viewerLinkDisplay({ ...link, shortUrl: shortOf('link', link.id, link.shortUrl) }, true) : getDisplayUrl(link.url)}</div>
+                                                                                            <div className={`text-xs truncate font-mono ${hasBlockingUrlIssues(diagnoseLinkUrl(link.url || '')) ? 'text-amber-700 dark:text-amber-300' : 'text-slate-500'}`} title={effectiveShowShortUrls(showShortUrls, tab, section, link) ? viewerLinkUrl({ ...link, shortUrl: shortOf('link', link.id, link.shortUrl) }, true) : link.url}>{effectiveShowShortUrls(showShortUrls, tab, section, link) ? viewerLinkDisplay({ ...link, shortUrl: shortOf('link', link.id, link.shortUrl) }, true) : getDisplayUrl(link.url)}</div>
                                                                                             {settings.browser_specific_links_enabled === '1' && (() => {
                                                                                                 // Determine which browser is being used for this link
                                                                                                 // Priority: link-specific browser > tile default browser > system default

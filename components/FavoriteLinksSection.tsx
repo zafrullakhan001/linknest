@@ -27,6 +27,7 @@ import { isLinkInMaintenance } from '../utils/linkMaintenance';
 import { shouldOpenInfoDialog, shouldShowLinkNotes } from '../utils/linkFeatureToggles';
 import { LinkMaintenanceBadge } from './LinkMaintenanceBadge';
 import { LinkHoverTooltip } from './LinkHoverTooltip';
+import { InvalidUrlMark } from './UrlFormDiagnostics';
 import { useSettings } from '../contexts/SettingsContext';
 import { isUrlExcludedFromLinkCheck, parseExceptionsSetting } from '../services/linkCheckExceptionsService';
 
@@ -254,6 +255,7 @@ const SortableFavoriteLinkCard: React.FC<{
             <div className="text-[13px] leading-tight font-semibold text-slate-900 dark:text-white truncate group-hover:text-amber-600 dark:group-hover:text-amber-400 transition-colors">
               {title}
             </div>
+            <InvalidUrlMark url={link.url} />
             <LinkMaintenanceBadge link={link} compact />
           </div>
         </div>
@@ -345,11 +347,14 @@ const SortableFavoriteLinkCard: React.FC<{
       </div>
 
       <div className="flex-1 min-w-0 overflow-hidden pr-1 pb-5">
-        <div
-          className="font-semibold text-sm text-slate-900 dark:text-white line-clamp-2 group-hover:text-amber-600 dark:group-hover:text-amber-400 transition-colors"
-          style={{ wordBreak: 'break-word', overflowWrap: 'break-word' }}
-        >
-          {title}
+        <div className="flex items-start gap-1.5 min-w-0">
+          <div
+            className="font-semibold text-sm text-slate-900 dark:text-white line-clamp-2 group-hover:text-amber-600 dark:group-hover:text-amber-400 transition-colors"
+            style={{ wordBreak: 'break-word', overflowWrap: 'break-word' }}
+          >
+            {title}
+          </div>
+          <InvalidUrlMark url={link.url} />
         </div>
         <LinkMaintenanceBadge link={link} className="mt-1" />
         <div

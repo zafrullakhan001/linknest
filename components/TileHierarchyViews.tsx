@@ -436,7 +436,7 @@ const TabNode: React.FC<
     <div className={isCompact ? '' : 'rounded-lg'}>
       <div
         id={`tab-${tab.id}`}
-        className={`group flex items-center gap-2 ${rowPad} ${rowHover} ${
+        className={`ln-edit-tab-anchor group flex items-center gap-2 ${rowPad} ${rowHover} ${
           isCompact ? '' : 'rounded-lg border border-transparent hover:border-slate-200 dark:hover:border-slate-600'
         }`}
       >

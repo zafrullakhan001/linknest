@@ -40,6 +40,8 @@ import { viewerLinkDisplay, viewerLinkUrl } from '../utils/urlDisplay';
 import { tryHandleSshLinkClick, isSshLinkUrl } from '../utils/sshLink';
 import { tryHandleVncLinkClick, isVncLinkUrl } from '../utils/vncLink';
 import { isUrlExcludedFromLinkCheck, parseExceptionsSetting } from '../services/linkCheckExceptionsService';
+import { diagnoseLinkUrl, hasBlockingUrlIssues } from '../utils/urlDiagnostics';
+import { InvalidUrlMark } from './UrlFormDiagnostics';
 import { isLinkInMaintenance } from '../utils/linkMaintenance';
 import { shouldOpenInfoDialog } from '../utils/linkFeatureToggles';
 import { LinkMaintenanceBadge } from './LinkMaintenanceBadge';
@@ -9180,14 +9182,18 @@ You may also wrap the array in an object: { "messages": [ ... ] }.
                       }}
                     >
                       {/* Health Status Indicator (HTTP(S) only — skip ssh:// / vnc://) */}
-                      {link.health && !isSshLinkUrl(link.url) && !isVncLinkUrl(link.url) && !isUrlExcludedFromLinkCheck(link.url, linkCheckExceptions) && (
+                      {hasBlockingUrlIssues(diagnoseLinkUrl(link.url || '')) ? (
+                        <div className="shrink-0">
+                          <InvalidUrlMark url={link.url} />
+                        </div>
+                      ) : link.health && !isSshLinkUrl(link.url) && !isVncLinkUrl(link.url) && !isUrlExcludedFromLinkCheck(link.url, linkCheckExceptions) ? (
                         <div className="shrink-0">
                           <div
                             className={`w-2 h-2 rounded-full ${linkHealthService.getHealthColor(link.health.status)}`}
                             title={`${linkHealthService.getHealthLabel(link.health.status)}${link.health.error ? `: ${link.health.error}` : ''}`}
                           />
                         </div>
-                      )}
+                      ) : null}
 
                       {/* Link Icon */}
                       <div className="w-10 h-10 rounded-lg bg-gradient-to-br from-slate-50 to-slate-100 dark:from-slate-900 dark:to-slate-800 flex items-center justify-center shrink-0 text-lg border border-slate-200 dark:border-slate-700">

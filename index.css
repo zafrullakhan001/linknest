@@ -1993,6 +1993,22 @@ body.has-broadcast-banner .linknest-app-container {
   z-index: 1;
 }
 
+/* Edit Page: keep Cancel/Save + Quick Nav under the fixed site nav while scrolling */
+.ln-edit-page-toolbar {
+  position: sticky;
+  top: 4rem;
+  z-index: 45;
+}
+body.has-broadcast-banner .ln-edit-page-toolbar {
+  top: calc(4rem + 40px);
+}
+.ln-edit-tab-anchor {
+  scroll-margin-top: calc(4rem + 10.5rem);
+}
+body.has-broadcast-banner .ln-edit-tab-anchor {
+  scroll-margin-top: calc(4rem + 40px + 10.5rem);
+}
+
 /* Keep footer below interactive overlays (prevents footer from stealing clicks) */
 .linknest-footer {
   position: relative;

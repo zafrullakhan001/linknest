@@ -1,5 +1,6 @@
 import React, { useState } from 'react';
 import type { UrlDiagnosis } from '../utils/urlDiagnostics';
+import { diagnoseLinkUrl, hasBlockingUrlIssues } from '../utils/urlDiagnostics';
 
 export const UrlFormDiagnostics: React.FC<{
   diagnosis: UrlDiagnosis;
@@ -85,3 +86,35 @@ export const UrlNeedsFixBadge: React.FC<{ count: number }> = ({ count }) => (
     Needs fixing{count > 1 ? ` · ${count}` : ''}
   </span>
 );
+
+/** Compact exclamation for link lists when the stored URL is not well formed. */
+export const InvalidUrlMark: React.FC<{ url?: string; className?: string }> = ({ url, className }) => {
+  const diagnosis = diagnoseLinkUrl(url || '');
+  if (!hasBlockingUrlIssues(diagnosis)) return null;
+  const titles = diagnosis.issues
+    .filter((item) => item.severity === 'error')
+    .map((item) => item.title);
+  const hint = [
+    titles.join('. ') || 'This URL is not valid',
+    diagnosis.suggestedUrl ? `Suggested: ${diagnosis.suggestedUrl}` : '',
+  ]
+    .filter(Boolean)
+    .join('. ');
+
+  return (
+    <span
+      className={`inline-flex items-center justify-center shrink-0 text-amber-600 dark:text-amber-400 ${className || ''}`}
+      title={hint}
+      role="img"
+      aria-label={hint}
+    >
+      <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor" className="w-4 h-4">
+        <path
+          fillRule="evenodd"
+          d="M8.485 2.495c.673-1.167 2.357-1.167 3.03 0l6.28 10.875c.673 1.167-.168 2.625-1.516 2.625H3.72c-1.347 0-2.189-1.458-1.515-2.625L8.485 2.495zM10 6a.75.75 0 01.75.75v3.5a.75.75 0 01-1.5 0v-3.5A.75.75 0 0110 6zm0 9a1 1 0 100-2 1 1 0 000 2z"
+          clipRule="evenodd"
+        />
+      </svg>
+    </span>
+  );
+};

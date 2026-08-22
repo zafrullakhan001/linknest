@@ -10,6 +10,7 @@
  *  2. Copy/paste junk (wrappers, spaces, backslashes, invisible chars)
  *  3. Scheme grammar (typos, missing colon, one vs two vs three slashes)
  *  4. A second http(s):// glued into the host (https://label+https://host/path)
+ *     or a label glued in front (workday+https://host/path)
  *  5. Missing scheme on a domain-like value
  *  6. Host / port once a URL can be parsed
  */
@@ -182,16 +183,10 @@ function looksLikeUsableHttpUrl(value: string): boolean {
   }
 }
 
-/**
- * Label or search text glued onto a real website, e.g.
- * https://workday+ipad+https://impl.example.com/path
- * Browsers also swallow the inner colon (https://junk+https//host/path).
- */
-function extractEmbeddedHttpUrl(value: string): { suggested: string; junk: string } | null {
-  const outer = value.match(/^(https?:\/\/)(.+)$/i);
-  if (!outer) return null;
-  const rest = outer[2];
+const SWALLOWED_HTTP_RE =
+  /(https?)\/\/((?:www\.)?[a-z0-9](?:[a-z0-9-]*[a-z0-9])?(?:\.[a-z0-9](?:[a-z0-9-]*[a-z0-9])?)+(?::\d{1,5})?(?:[/?#][^\s]*)?)/i;
 
+function takeEmbeddedFromRest(rest: string): { suggested: string; junk: string } | null {
   const inner = rest.match(/https?:\/\/[^\s]+/i);
   if (inner && inner.index != null) {
     const junk = rest.slice(0, inner.index);
@@ -201,9 +196,7 @@ function extractEmbeddedHttpUrl(value: string): { suggested: string; junk: strin
     }
   }
 
-  const swallowed = rest.match(
-    /(https?)\/\/((?:www\.)?[a-z0-9](?:[a-z0-9-]*[a-z0-9])?(?:\.[a-z0-9](?:[a-z0-9-]*[a-z0-9])?)+(?::\d{1,5})?(?:[/?#][^\s]*)?)/i
-  );
+  const swallowed = rest.match(SWALLOWED_HTTP_RE);
   if (swallowed && swallowed.index != null) {
     const junk = rest.slice(0, swallowed.index);
     if (!/[/?#]/.test(junk)) {
@@ -212,6 +205,27 @@ function extractEmbeddedHttpUrl(value: string): { suggested: string; junk: strin
     }
   }
 
+  return null;
+}
+
+/**
+ * Label or search text glued onto a real website, e.g.
+ * https://workday+ipad+https://impl.example.com/path
+ * workday+https://impl.example.com/path
+ * Browsers also swallow the inner colon (https://junk+https//host/path).
+ */
+function extractEmbeddedHttpUrl(
+  value: string
+): { suggested: string; junk: string; kind: 'wrapped' | 'prefix' } | null {
+  const outer = value.match(/^(https?:\/\/)(.+)$/i);
+  if (outer) {
+    const found = takeEmbeddedFromRest(outer[2]);
+    if (found) return { ...found, kind: 'wrapped' };
+    return null;
+  }
+
+  const found = takeEmbeddedFromRest(value);
+  if (found && found.junk) return { ...found, kind: 'prefix' };
   return null;
 }
 
@@ -447,15 +461,27 @@ export function diagnoseLinkUrl(url: string, opts?: { suggest?: boolean }): UrlD
 
   const embedded = extractEmbeddedHttpUrl(work);
   if (embedded && embedded.junk) {
-    issues.push(
-      issue(
-        'embedded-url',
-        'Another URL is stuck in this address',
-        'Text was joined with a second http:// or https://. The website you want is usually the second URL.',
-        'Keep only the real website address.',
-        { found: embedded.junk, expected: embedded.suggested }
-      )
-    );
+    if (embedded.kind === 'prefix') {
+      issues.push(
+        issue(
+          'prefixed-url',
+          'Extra text before the URL',
+          'A label or search phrase was joined onto a real website address (for example workday+https://…).',
+          'Keep only the https:// address.',
+          { found: embedded.junk, expected: embedded.suggested }
+        )
+      );
+    } else {
+      issues.push(
+        issue(
+          'embedded-url',
+          'Another URL is stuck in this address',
+          'Text was joined with a second http:// or https://. The website you want is usually the second URL.',
+          'Keep only the real website address.',
+          { found: embedded.junk, expected: embedded.suggested }
+        )
+      );
+    }
   } else if (/^https?:\/\/https?:\/\//i.test(work)) {
     issues.push(
       issue(
@@ -468,7 +494,9 @@ export function diagnoseLinkUrl(url: string, opts?: { suggest?: boolean }): UrlD
     );
   }
 
-  const schemeMatch = matchSchemePrefix(work);
+  const gluedPrefix = !!(embedded && embedded.junk && embedded.kind === 'prefix');
+
+  const schemeMatch = gluedPrefix ? null : matchSchemePrefix(work);
   if (schemeMatch) {
     const { typed, colon, slashes } = schemeMatch;
     const typedLower = typed.toLowerCase();
@@ -554,7 +582,7 @@ export function diagnoseLinkUrl(url: string, opts?: { suggest?: boolean }): UrlD
   }
 
   let parsed: URL | null = null;
-  if (/^[a-z][a-z0-9+.-]*:\/\//i.test(work) && !/\s/.test(work)) {
+  if (!gluedPrefix && /^[a-z][a-z0-9+.-]*:\/\//i.test(work) && !/\s/.test(work)) {
     try {
       parsed = new URL(work);
     } catch {

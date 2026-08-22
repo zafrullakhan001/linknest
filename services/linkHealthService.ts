@@ -44,6 +44,19 @@ export interface HealthStats {
   unknown: number;
 }
 
+export interface UrlInventoryItem {
+  kind: 'link' | 'hyperlink';
+  id: string;
+  url: string;
+  label: string;
+  tileId: string;
+  tileTitle: string;
+  tileEmoji: string;
+  sourceTab: string;
+  tabTitle: string;
+  sectionTitle: string;
+}
+
 export interface LinkHealthMap {
   [linkId: string]: LinkHealth;
 }
@@ -291,6 +304,46 @@ export const linkHealthService = {
       default:
         return 'Status unsure';
     }
-  }
+  },
+
+  async getUrlInventory(): Promise<UrlInventoryItem[]> {
+    const response = await withTimeout(
+      fetch(`${API_BASE}/linkhealth/url-inventory`, {
+        credentials: 'include',
+      }),
+      60000,
+      'getUrlInventory'
+    );
+    if (!response.ok) {
+      const err = await response.json().catch(() => ({}));
+      throw new Error(err.error || 'Failed to load URL inventory');
+    }
+    const data = await response.json();
+    return Array.isArray(data.items) ? data.items : [];
+  },
+
+  async fixUrls(
+    changes: Array<{ id: string; url: string; kind: 'link' | 'hyperlink' }>
+  ): Promise<{ updated: number; skipped: number }> {
+    const response = await withTimeout(
+      fetch(`${API_BASE}/linkhealth/fix-urls`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        credentials: 'include',
+        body: JSON.stringify({ changes }),
+      }),
+      120000,
+      'fixUrls'
+    );
+    if (!response.ok) {
+      const err = await response.json().catch(() => ({}));
+      throw new Error(err.error || 'Failed to fix URLs');
+    }
+    const data = await response.json();
+    return {
+      updated: typeof data.updated === 'number' ? data.updated : 0,
+      skipped: typeof data.skipped === 'number' ? data.skipped : 0,
+    };
+  },
 };
 

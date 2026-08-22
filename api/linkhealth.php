@@ -25,6 +25,8 @@ switch ($method) {
             handleGetHealthStatus();
         } elseif ($path === '/stats') {
             handleGetHealthStats();
+        } elseif ($path === '/url-inventory') {
+            handleGetUrlInventory();
         } else {
             sendJSON(['error' => 'Invalid endpoint', 'received_path' => $path, 'path_type' => gettype($path)], 404);
         }
@@ -41,6 +43,8 @@ switch ($method) {
             handleCheckTileLinks();
         } elseif ($path === '/check-all') {
             handleCheckAllLinks();
+        } elseif ($path === '/fix-urls') {
+            handleFixUrls();
         } else {
             sendJSON(['error' => 'Invalid endpoint'], 404);
         }
@@ -1621,6 +1625,142 @@ function handleCheckAllLinks() {
         'success' => true,
         'checked' => count($links),
         'results' => $results
+    ]);
+}
+
+/**
+ * GET /linkhealth/url-inventory — all stored link URLs (admin scan & fix).
+ */
+function handleGetUrlInventory() {
+    requireAdmin();
+    $db = getDB();
+    $items = [];
+
+    $stmt = $db->query("
+        SELECT
+            l.id AS id,
+            l.url AS url,
+            l.label AS label,
+            COALESCE(tabs.tile_id, s.tile_id) AS tile_id,
+            tiles.title AS tile_title,
+            tiles.emoji AS tile_emoji,
+            COALESCE(tiles.source_tab, 'public') AS source_tab,
+            tabs.title AS tab_title,
+            s.title AS section_title
+        FROM links l
+        INNER JOIN sections s ON l.section_id = s.id
+        LEFT JOIN tabs ON tabs.id = s.tab_id
+        INNER JOIN tiles ON tiles.id = COALESCE(tabs.tile_id, s.tile_id)
+        WHERE tiles.deleted_at IS NULL
+        ORDER BY tiles.title COLLATE NOCASE, tabs.title COLLATE NOCASE, s.title COLLATE NOCASE, l.label COLLATE NOCASE
+    ");
+    while ($row = $stmt->fetch(PDO::FETCH_ASSOC)) {
+        $items[] = [
+            'kind' => 'link',
+            'id' => (string)$row['id'],
+            'url' => (string)($row['url'] ?? ''),
+            'label' => (string)($row['label'] ?? ''),
+            'tileId' => (string)($row['tile_id'] ?? ''),
+            'tileTitle' => (string)($row['tile_title'] ?? ''),
+            'tileEmoji' => (string)($row['tile_emoji'] ?? ''),
+            'sourceTab' => (string)($row['source_tab'] ?? 'public'),
+            'tabTitle' => (string)($row['tab_title'] ?? ''),
+            'sectionTitle' => (string)($row['section_title'] ?? ''),
+        ];
+    }
+
+    $hyper = $db->query("
+        SELECT id, title, emoji, hyperlink_url, COALESCE(source_tab, 'public') AS source_tab
+        FROM tiles
+        WHERE deleted_at IS NULL
+          AND is_hyperlink = 1
+          AND hyperlink_url IS NOT NULL
+          AND TRIM(hyperlink_url) != ''
+        ORDER BY title COLLATE NOCASE
+    ");
+    while ($row = $hyper->fetch(PDO::FETCH_ASSOC)) {
+        $items[] = [
+            'kind' => 'hyperlink',
+            'id' => (string)$row['id'],
+            'url' => (string)($row['hyperlink_url'] ?? ''),
+            'label' => (string)($row['title'] ?? ''),
+            'tileId' => (string)$row['id'],
+            'tileTitle' => (string)($row['title'] ?? ''),
+            'tileEmoji' => (string)($row['emoji'] ?? ''),
+            'sourceTab' => (string)($row['source_tab'] ?? 'public'),
+            'tabTitle' => '',
+            'sectionTitle' => '',
+        ];
+    }
+
+    sendJSON([
+        'success' => true,
+        'count' => count($items),
+        'items' => $items,
+    ]);
+}
+
+/**
+ * POST /linkhealth/fix-urls — apply suggested URL replacements (admin).
+ */
+function handleFixUrls() {
+    requireAdmin();
+    $data = getJSONInput();
+    $changes = isset($data['changes']) && is_array($data['changes']) ? $data['changes'] : [];
+    if (count($changes) === 0) {
+        sendJSON(['error' => 'No URL changes provided'], 400);
+        return;
+    }
+    if (count($changes) > 2000) {
+        sendJSON(['error' => 'Too many URL changes in one request (max 2000)'], 400);
+        return;
+    }
+
+    $db = getDB();
+    $db->beginTransaction();
+    $updated = 0;
+    $skipped = 0;
+
+    try {
+        $linkStmt = $db->prepare('UPDATE links SET url = ?, health_status = NULL, health_http_code = NULL, health_error = NULL, health_checked_at = NULL WHERE id = ?');
+        $hyperStmt = $db->prepare('UPDATE tiles SET hyperlink_url = ? WHERE id = ? AND is_hyperlink = 1 AND deleted_at IS NULL');
+
+        foreach ($changes as $change) {
+            if (!is_array($change)) {
+                $skipped++;
+                continue;
+            }
+            $id = isset($change['id']) ? trim((string)$change['id']) : '';
+            $url = isset($change['url']) ? trim((string)$change['url']) : '';
+            $kind = isset($change['kind']) ? strtolower(trim((string)$change['kind'])) : 'link';
+            if ($id === '' || $url === '' || strlen($url) > 4096) {
+                $skipped++;
+                continue;
+            }
+            if ($kind === 'hyperlink') {
+                $hyperStmt->execute([$url, $id]);
+                $updated++;
+            } else {
+                $linkStmt->execute([$url, $id]);
+                $updated++;
+            }
+        }
+
+        $db->commit();
+    } catch (Exception $e) {
+        $db->rollBack();
+        sendJSON(['error' => 'Failed to update URLs: ' . $e->getMessage()], 500);
+        return;
+    }
+
+    if (function_exists('invalidateGuestTilesListCache')) {
+        invalidateGuestTilesListCache();
+    }
+
+    sendJSON([
+        'success' => true,
+        'updated' => $updated,
+        'skipped' => $skipped,
     ]);
 }
 
