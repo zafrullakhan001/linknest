@@ -120,6 +120,7 @@ const AppContent: React.FC = () => {
   const [loading, setLoading] = useState(true);
   const [authModalOpen, setAuthModalOpen] = useState(false);
   const [styleManagerOpen, setStyleManagerOpen] = useState(false);
+  const [styleManagerInitialTab, setStyleManagerInitialTab] = useState<'spaces' | 'hero' | 'content' | undefined>(undefined);
   const [pageBackgroundDialogOpen, setPageBackgroundDialogOpen] = useState(false);
   const [helpAboutOpen, setHelpAboutOpen] = useState(false);
   const [authRequired, setAuthRequired] = useState(false); // Track if we got 401 error
@@ -533,8 +534,13 @@ const AppContent: React.FC = () => {
 
   // Listen for style manager open event
   useEffect(() => {
-    const handleOpenStyleManager = () => {
+    const handleOpenStyleManager = (event: Event) => {
       if (user?.is_admin) {
+        const detail = (event as CustomEvent<{ tab?: 'spaces' | 'hero' | 'content' }>).detail;
+        const tab = detail?.tab;
+        setStyleManagerInitialTab(
+          tab === 'spaces' || tab === 'hero' || tab === 'content' ? tab : undefined
+        );
         setStyleManagerOpen(true);
       }
     };
@@ -1663,7 +1669,11 @@ const AppContent: React.FC = () => {
         <Suspense fallback={null}>
           <StyleManager
             isOpen={styleManagerOpen}
-            onClose={() => setStyleManagerOpen(false)}
+            initialTab={styleManagerInitialTab}
+            onClose={() => {
+              setStyleManagerOpen(false);
+              setStyleManagerInitialTab(undefined);
+            }}
             onStylesChange={updateStyles}
           />
         </Suspense>

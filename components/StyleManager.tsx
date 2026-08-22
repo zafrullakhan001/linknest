@@ -1,15 +1,80 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { createPortal } from 'react-dom';
 import { SpaceStyles, DEFAULT_STYLES, styleService } from '../services/styleService';
+import { settingsService, AppSettings } from '../services/settingsService';
 import { useAuth } from '../contexts/AuthContext';
+import { useSettings } from '../contexts/SettingsContext';
+import { BrandingFontFamilyOptions } from './BrandingFontFamilyOptions';
+
+export type StyleTab = 'spaces' | 'hero' | 'content';
 
 interface StyleManagerProps {
   isOpen: boolean;
   onClose: () => void;
   onStylesChange?: (styles: SpaceStyles) => void;
+  initialTab?: StyleTab;
 }
 
-type StyleTab = 'spaces' | 'content';
+const HERO_SETTING_KEYS = [
+  'spaces_title',
+  'spaces_subtitle',
+  'hero_icon',
+  'hero_title_font_size',
+  'hero_title_font_family',
+  'hero_title_font_weight',
+  'hero_title_font_style',
+  'hero_title_color',
+  'hero_title_color_dark',
+  'hero_title_letter_spacing',
+  'hero_title_line_height',
+  'hero_subtitle_font_size',
+  'hero_subtitle_font_family',
+  'hero_subtitle_font_weight',
+  'hero_subtitle_font_style',
+  'hero_subtitle_color',
+  'hero_subtitle_color_dark',
+  'hero_subtitle_letter_spacing',
+  'hero_subtitle_line_height',
+  'hero_bg_from',
+  'hero_bg_to',
+  'hero_bg_from_dark',
+  'hero_bg_to_dark',
+  'hero_bg_angle',
+  'hero_overlay_color',
+  'hero_overlay_to',
+  'hero_overlay_opacity',
+  'hero_icon_bg_from',
+  'hero_icon_bg_to',
+] as const;
+
+type HeroSettingKey = (typeof HERO_SETTING_KEYS)[number];
+
+type HeroSettingsState = Pick<AppSettings, HeroSettingKey>;
+
+const pickHeroSettings = (src: Partial<AppSettings> | AppSettings): HeroSettingsState => {
+  const out: Partial<HeroSettingsState> = {};
+  for (const key of HERO_SETTING_KEYS) {
+    const v = src[key];
+    (out as any)[key] = v !== undefined && v !== null ? String(v) : '';
+  }
+  // Required defaults for fields that should not be empty strings in UI
+  if (!out.spaces_title) out.spaces_title = 'My Spaces';
+  if (!out.hero_title_font_size) out.hero_title_font_size = '36';
+  if (!out.hero_title_font_family) out.hero_title_font_family = 'inherit';
+  if (!out.hero_title_font_weight) out.hero_title_font_weight = 'bold';
+  if (!out.hero_title_font_style) out.hero_title_font_style = 'normal';
+  if (!out.hero_title_letter_spacing) out.hero_title_letter_spacing = '0';
+  if (!out.hero_title_line_height) out.hero_title_line_height = '1.2';
+  if (!out.hero_subtitle_font_size) out.hero_subtitle_font_size = '16';
+  if (!out.hero_subtitle_font_family) out.hero_subtitle_font_family = 'inherit';
+  if (!out.hero_subtitle_font_weight) out.hero_subtitle_font_weight = 'normal';
+  if (!out.hero_subtitle_font_style) out.hero_subtitle_font_style = 'normal';
+  if (!out.hero_subtitle_letter_spacing) out.hero_subtitle_letter_spacing = '0';
+  if (!out.hero_subtitle_line_height) out.hero_subtitle_line_height = '1.4';
+  if (!out.hero_bg_angle) out.hero_bg_angle = '135';
+  if (!out.hero_overlay_opacity) out.hero_overlay_opacity = '0';
+  return out as HeroSettingsState;
+};
 
 interface StyleProfile {
   id: number;
@@ -61,13 +126,17 @@ const StyleSection: React.FC<{
 );
 
 
-export const StyleManager: React.FC<StyleManagerProps> = ({ isOpen, onClose, onStylesChange }) => {
+export const StyleManager: React.FC<StyleManagerProps> = ({ isOpen, onClose, onStylesChange, initialTab }) => {
   const { user } = useAuth();
+  const { settings, setBrandingPreview, refreshSettings, clearBrandingPreview } = useSettings();
   const [styles, setStyles] = useState<SpaceStyles>(DEFAULT_STYLES);
   const [isLoading, setIsLoading] = useState(false);
   const [isSaving, setIsSaving] = useState(false);
-  const [hasChanges, setHasChanges] = useState(false);
+  const [hasStyleChanges, setHasStyleChanges] = useState(false);
+  const [hasHeroSettingsChanges, setHasHeroSettingsChanges] = useState(false);
+  const hasChanges = hasStyleChanges || hasHeroSettingsChanges;
   const [activeTab, setActiveTab] = useState<StyleTab>('spaces');
+  const [heroSettings, setHeroSettings] = useState<HeroSettingsState>(() => pickHeroSettings({}));
   const [profiles, setProfiles] = useState<StyleProfile[]>([]);
   const [activeProfileId, setActiveProfileId] = useState<number | null>(null);
   const [isLoadingProfiles, setIsLoadingProfiles] = useState(false);
@@ -107,6 +176,11 @@ export const StyleManager: React.FC<StyleManagerProps> = ({ isOpen, onClose, onS
     if (isOpen) {
       loadStyles();
       loadProfiles();
+      setHeroSettings(pickHeroSettings(settings));
+      setHasHeroSettingsChanges(false);
+      if (initialTab) {
+        setActiveTab(initialTab);
+      }
       // Reset initial mount flag when dialog opens
       isInitialMount.current = true;
       // Center the dialog on open - wait for next frame to get dialog dimensions
@@ -135,6 +209,18 @@ export const StyleManager: React.FC<StyleManagerProps> = ({ isOpen, onClose, onS
       setCustomZoomInput(styles.pageZoom.toString());
     }
   }, [styles.pageZoom]);
+
+  useEffect(() => {
+    if (!isOpen) {
+      clearBrandingPreview();
+    }
+  }, [isOpen, clearBrandingPreview]);
+
+  useEffect(() => {
+    if (isOpen && initialTab) {
+      setActiveTab(initialTab);
+    }
+  }, [isOpen, initialTab]);
 
   // Handle ESC key to close
   useEffect(() => {
@@ -299,7 +385,7 @@ export const StyleManager: React.FC<StyleManagerProps> = ({ isOpen, onClose, onS
     try {
       const loadedStyles = await styleService.getStyles();
       setStyles(loadedStyles);
-      setHasChanges(false);
+      setHasStyleChanges(false);
     } catch (error) {
       console.error('Failed to load styles:', error);
       alert('Failed to load styles');
@@ -324,7 +410,16 @@ export const StyleManager: React.FC<StyleManagerProps> = ({ isOpen, onClose, onS
   const updateStyle = <K extends keyof SpaceStyles>(key: K, value: SpaceStyles[K]) => {
     setStyles(prev => {
       const updated = { ...prev, [key]: value };
-      setHasChanges(true);
+      setHasStyleChanges(true);
+      return updated;
+    });
+  };
+
+  const updateHeroSetting = <K extends HeroSettingKey>(key: K, value: string) => {
+    setHeroSettings(prev => {
+      const updated = { ...prev, [key]: value };
+      setHasHeroSettingsChanges(true);
+      setBrandingPreview({ [key]: value } as Partial<AppSettings>);
       return updated;
     });
   };
@@ -346,7 +441,7 @@ export const StyleManager: React.FC<StyleManagerProps> = ({ isOpen, onClose, onS
       }
 
       current[keys[keys.length - 1]] = value;
-      setHasChanges(true);
+      setHasStyleChanges(true);
       return updated;
     });
   };
@@ -357,25 +452,39 @@ export const StyleManager: React.FC<StyleManagerProps> = ({ isOpen, onClose, onS
       return;
     }
 
-    // Prompt for profile name
-    const profileName = prompt('Enter a name for this style profile:', `Profile ${new Date().toLocaleString()}`);
-    if (!profileName) {
-      return; // User cancelled
+    if (!hasStyleChanges && !hasHeroSettingsChanges) {
+      return;
+    }
+
+    let profileName: string | null = null;
+    if (hasStyleChanges) {
+      profileName = prompt('Enter a name for this style profile:', `Profile ${new Date().toLocaleString()}`);
+      if (!profileName && !hasHeroSettingsChanges) {
+        return; // User cancelled and nothing else to save
+      }
     }
 
     setIsSaving(true);
     try {
-      const result = await styleService.saveStyles(styles, profileName);
-      setHasChanges(false);
-      setActiveProfileId(result.profileId);
-      // Reload profiles to get updated list
-      await loadProfiles();
-      // Trigger a refresh of styles in the context
-      window.dispatchEvent(new CustomEvent('refreshStyles'));
-      alert(`Style profile "${result.profileName}" created and activated successfully!`);
+      const messages: string[] = [];
+      if (hasHeroSettingsChanges) {
+        await settingsService.updateSettings(heroSettings as Partial<AppSettings>);
+        await refreshSettings();
+        setHasHeroSettingsChanges(false);
+        messages.push('Hero content settings saved');
+      }
+      if (hasStyleChanges && profileName) {
+        const result = await styleService.saveStyles(styles, profileName);
+        setHasStyleChanges(false);
+        setActiveProfileId(result.profileId);
+        await loadProfiles();
+        window.dispatchEvent(new CustomEvent('refreshStyles'));
+        messages.push(`Style profile "${result.profileName}" created and activated`);
+      }
+      alert(messages.join('. ') + '!');
     } catch (error) {
-      console.error('Failed to save styles:', error);
-      alert('Failed to save styles: ' + (error instanceof Error ? error.message : 'Unknown error'));
+      console.error('Failed to save:', error);
+      alert('Failed to save: ' + (error instanceof Error ? error.message : 'Unknown error'));
     } finally {
       setIsSaving(false);
     }
@@ -393,7 +502,7 @@ export const StyleManager: React.FC<StyleManagerProps> = ({ isOpen, onClose, onS
       const profile = await styleService.getProfile(profileId);
       setStyles(profile.styles);
       setActiveProfileId(profileId);
-      setHasChanges(false);
+      setHasStyleChanges(false);
       
       // Update profiles list
       await loadProfiles();
@@ -470,7 +579,7 @@ export const StyleManager: React.FC<StyleManagerProps> = ({ isOpen, onClose, onS
       await styleService.resetStyles();
       const defaultStyles = { ...DEFAULT_STYLES };
       setStyles(defaultStyles);
-      setHasChanges(false);
+      setHasStyleChanges(false);
       if (onStylesChange) {
         onStylesChange(defaultStyles);
       }
@@ -514,7 +623,7 @@ export const StyleManager: React.FC<StyleManagerProps> = ({ isOpen, onClose, onS
     try {
       const result = await styleService.importStyles(file);
       setStyles(result.styles);
-      setHasChanges(true);
+      setHasStyleChanges(true);
       if (onStylesChange) {
         onStylesChange(result.styles);
       }
@@ -634,7 +743,7 @@ export const StyleManager: React.FC<StyleManagerProps> = ({ isOpen, onClose, onS
                               const profile = await styleService.getProfile(profileId);
                               setStyles(profile.styles);
                               setActiveProfileId(profileId);
-                              setHasChanges(false);
+                              setHasStyleChanges(false);
                               
                               if (onStylesChange) {
                                 onStylesChange(profile.styles);
@@ -743,6 +852,17 @@ export const StyleManager: React.FC<StyleManagerProps> = ({ isOpen, onClose, onS
           >
             <span className="flex items-center gap-2">
               🧩 Spaces Grid
+            </span>
+          </button>
+          <button
+            onClick={() => setActiveTab('hero')}
+            className={`px-4 py-2 text-sm font-semibold transition-all rounded-lg ${activeTab === 'hero'
+              ? 'bg-gradient-to-r from-brand-600 to-violet-600 text-white shadow-sm'
+              : 'text-slate-500 dark:text-slate-400 hover:text-slate-700 dark:hover:text-slate-200 hover:bg-slate-100 dark:hover:bg-slate-700/60'
+              }`}
+          >
+            <span className="flex items-center gap-2">
+              🦸 Hero
             </span>
           </button>
           <button
@@ -1836,6 +1956,556 @@ export const StyleManager: React.FC<StyleManagerProps> = ({ isOpen, onClose, onS
                   </div>
                 </div>
 
+                {/* Footer Typography */}
+                <div className="mb-6">
+                  <h4 className="text-sm font-semibold text-slate-800 dark:text-slate-200 mb-3">Footer</h4>
+                  <div className="grid grid-cols-1 md:grid-cols-2 gap-4 pl-4 border-l-2 border-indigo-200 dark:border-indigo-800">
+                    <div>
+                      <label className="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-2">Font Family</label>
+                      <select
+                        value={styles.footerFontFamily}
+                        onChange={(e) => updateStyle('footerFontFamily', e.target.value)}
+                        className="w-full px-3 py-2 bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-lg text-sm text-slate-900 dark:text-white"
+                      >
+                        <option value="inherit">Inherit (Default)</option>
+                        <option value="Arial, sans-serif">Arial</option>
+                        <option value="'Helvetica Neue', Helvetica, sans-serif">Helvetica</option>
+                        <option value="'Times New Roman', Times, serif">Times New Roman</option>
+                        <option value="Georgia, serif">Georgia</option>
+                        <option value="'Courier New', Courier, monospace">Courier New</option>
+                        <option value="Verdana, sans-serif">Verdana</option>
+                        <option value="'Trebuchet MS', sans-serif">Trebuchet MS</option>
+                        <option value="'Comic Sans MS', cursive">Comic Sans MS</option>
+                        <option value="Impact, sans-serif">Impact</option>
+                        <option value="'Lucida Console', monospace">Lucida Console</option>
+                        <option value="Tahoma, sans-serif">Tahoma</option>
+                        <option value="'Palatino Linotype', Palatino, serif">Palatino</option>
+                      </select>
+                    </div>
+                    <div>
+                      <label className="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-2">Font Size: {styles.footerFontSize}px</label>
+                      <input
+                        type="range"
+                        min="10"
+                        max="24"
+                        value={styles.footerFontSize}
+                        onChange={(e) => updateStyle('footerFontSize', parseInt(e.target.value))}
+                        className="w-full"
+                      />
+                    </div>
+                    <div>
+                      <label className="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-2">Font Weight</label>
+                      <select
+                        value={styles.footerFontWeight}
+                        onChange={(e) => updateStyle('footerFontWeight', e.target.value)}
+                        className="w-full px-3 py-2 bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-lg text-sm text-slate-900 dark:text-white"
+                      >
+                        <option value="normal">Normal</option>
+                        <option value="bold">Bold</option>
+                        <option value="100">Thin (100)</option>
+                        <option value="200">Extra Light (200)</option>
+                        <option value="300">Light (300)</option>
+                        <option value="400">Regular (400)</option>
+                        <option value="500">Medium (500)</option>
+                        <option value="600">Semi Bold (600)</option>
+                        <option value="700">Bold (700)</option>
+                        <option value="800">Extra Bold (800)</option>
+                        <option value="900">Black (900)</option>
+                      </select>
+                    </div>
+                    <div>
+                      <label className="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-2">Font Style</label>
+                      <select
+                        value={styles.footerFontStyle}
+                        onChange={(e) => updateStyle('footerFontStyle', e.target.value)}
+                        className="w-full px-3 py-2 bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-lg text-sm text-slate-900 dark:text-white"
+                      >
+                        <option value="normal">Normal</option>
+                        <option value="italic">Italic</option>
+                        <option value="oblique">Oblique</option>
+                      </select>
+                    </div>
+                    <div className="md:col-span-2">
+                      <label className="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-2">Text Color</label>
+                      <div className="flex items-center gap-3">
+                        <input
+                          type="color"
+                          value={styles.footerColor}
+                          onChange={(e) => updateStyle('footerColor', e.target.value)}
+                          className="w-16 h-10 rounded border border-slate-300 dark:border-slate-600 cursor-pointer"
+                        />
+                        <input
+                          type="text"
+                          value={styles.footerColor}
+                          onChange={(e) => updateStyle('footerColor', e.target.value)}
+                          className="flex-1 px-3 py-2 bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-lg text-sm text-slate-900 dark:text-white"
+                          placeholder="#94a3b8"
+                        />
+                      </div>
+                    </div>
+                  </div>
+                </div>
+              </StyleSection>
+
+              {/* Spaces Grid Tab Styling */}
+              <StyleSection emoji="🗂️" title="Main Page Tabs" accent="brand">
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                  <div>
+                    <label className="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-2">Tab Style</label>
+                    <select
+                      value={styles.spacesTabStyle}
+                      onChange={(e) => updateStyle('spacesTabStyle', e.target.value as 'underline' | 'pill' | 'box' | 'minimal')}
+                      className="w-full px-3 py-2 bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-lg text-sm text-slate-900 dark:text-white"
+                    >
+                      <option value="underline">Underline</option>
+                      <option value="pill">Pill</option>
+                      <option value="box">Box</option>
+                      <option value="minimal">Minimal</option>
+                    </select>
+                  </div>
+                  <div>
+                    <label className="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-2">Active Tab Color</label>
+                    <div className="flex gap-2">
+                      <input
+                        type="color"
+                        value={styles.spacesTabActiveColor}
+                        onChange={(e) => updateStyle('spacesTabActiveColor', e.target.value)}
+                        className="w-16 h-10 rounded-lg border border-slate-300 dark:border-slate-600 cursor-pointer"
+                      />
+                      <input
+                        type="text"
+                        value={styles.spacesTabActiveColor}
+                        onChange={(e) => updateStyle('spacesTabActiveColor', e.target.value)}
+                        className="flex-1 px-3 py-2 bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-lg text-sm text-slate-900 dark:text-white"
+                      />
+                    </div>
+                  </div>
+                  <div>
+                    <label className="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-2">Inactive Tab Color</label>
+                    <div className="flex gap-2">
+                      <input
+                        type="color"
+                        value={styles.spacesTabInactiveColor}
+                        onChange={(e) => updateStyle('spacesTabInactiveColor', e.target.value)}
+                        className="w-16 h-10 rounded-lg border border-slate-300 dark:border-slate-600 cursor-pointer"
+                      />
+                      <input
+                        type="text"
+                        value={styles.spacesTabInactiveColor}
+                        onChange={(e) => updateStyle('spacesTabInactiveColor', e.target.value)}
+                        className="flex-1 px-3 py-2 bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-lg text-sm text-slate-900 dark:text-white"
+                      />
+                    </div>
+                  </div>
+                  <div>
+                    <label className="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-2">Border Radius: {styles.spacesTabBorderRadius}px</label>
+                    <input
+                      type="range"
+                      min="0"
+                      max="16"
+                      value={styles.spacesTabBorderRadius}
+                      onChange={(e) => updateStyle('spacesTabBorderRadius', parseInt(e.target.value))}
+                      className="w-full"
+                    />
+                  </div>
+                </div>
+
+                {/* Spaces Tab Typography */}
+                <div className="mt-6 pt-6 border-t border-slate-200 dark:border-slate-700">
+                  <h4 className="text-sm font-semibold text-slate-800 dark:text-slate-200 mb-3">Tab Typography</h4>
+                  <div className="grid grid-cols-1 md:grid-cols-2 gap-4 pl-4 border-l-2 border-amber-200 dark:border-amber-800">
+                    <div>
+                      <label className="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-2">Font Family</label>
+                      <select
+                        value={styles.spacesTabFontFamily}
+                        onChange={(e) => updateStyle('spacesTabFontFamily', e.target.value)}
+                        className="w-full px-3 py-2 bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-lg text-sm text-slate-900 dark:text-white"
+                      >
+                        <option value="inherit">Inherit (Default)</option>
+                        <option value="Arial, sans-serif">Arial</option>
+                        <option value="'Helvetica Neue', Helvetica, sans-serif">Helvetica</option>
+                        <option value="'Times New Roman', Times, serif">Times New Roman</option>
+                        <option value="Georgia, serif">Georgia</option>
+                        <option value="'Courier New', Courier, monospace">Courier New</option>
+                        <option value="Verdana, sans-serif">Verdana</option>
+                        <option value="'Trebuchet MS', sans-serif">Trebuchet MS</option>
+                        <option value="'Comic Sans MS', cursive">Comic Sans MS</option>
+                        <option value="Impact, sans-serif">Impact</option>
+                        <option value="'Lucida Console', monospace">Lucida Console</option>
+                        <option value="Tahoma, sans-serif">Tahoma</option>
+                        <option value="'Palatino Linotype', Palatino, serif">Palatino</option>
+                      </select>
+                    </div>
+                    <div>
+                      <label className="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-2">Font Size: {styles.spacesTabFontSize}px</label>
+                      <input
+                        type="range"
+                        min="10"
+                        max="20"
+                        value={styles.spacesTabFontSize}
+                        onChange={(e) => updateStyle('spacesTabFontSize', parseInt(e.target.value))}
+                        className="w-full"
+                      />
+                    </div>
+                    <div>
+                      <label className="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-2">Font Weight</label>
+                      <select
+                        value={styles.spacesTabFontWeight}
+                        onChange={(e) => updateStyle('spacesTabFontWeight', e.target.value)}
+                        className="w-full px-3 py-2 bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-lg text-sm text-slate-900 dark:text-white"
+                      >
+                        <option value="normal">Normal</option>
+                        <option value="bold">Bold</option>
+                        <option value="100">Thin (100)</option>
+                        <option value="200">Extra Light (200)</option>
+                        <option value="300">Light (300)</option>
+                        <option value="400">Regular (400)</option>
+                        <option value="500">Medium (500)</option>
+                        <option value="600">Semi Bold (600)</option>
+                        <option value="700">Bold (700)</option>
+                        <option value="800">Extra Bold (800)</option>
+                        <option value="900">Black (900)</option>
+                      </select>
+                    </div>
+                    <div>
+                      <label className="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-2">Font Style</label>
+                      <select
+                        value={styles.spacesTabFontStyle}
+                        onChange={(e) => updateStyle('spacesTabFontStyle', e.target.value)}
+                        className="w-full px-3 py-2 bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-lg text-sm text-slate-900 dark:text-white"
+                      >
+                        <option value="normal">Normal</option>
+                        <option value="italic">Italic</option>
+                        <option value="oblique">Oblique</option>
+                      </select>
+                    </div>
+                  </div>
+                </div>
+              </StyleSection>
+
+              {/* Grid Settings */}
+              <StyleSection emoji="🧱" title="Grid Columns" accent="violet">
+                <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
+                  <div>
+                    <label className="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-2">Small (sm)</label>
+                    <input
+                      type="number"
+                      min="1"
+                      max="6"
+                      value={styles.gridColumns.sm}
+                      onChange={(e) => updateNestedStyle('gridColumns.sm', parseInt(e.target.value) || 1)}
+                      className="w-full px-3 py-2 bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-lg text-sm text-slate-900 dark:text-white"
+                    />
+                  </div>
+                  <div>
+                    <label className="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-2">Medium (md)</label>
+                    <input
+                      type="number"
+                      min="1"
+                      max="6"
+                      value={styles.gridColumns.md}
+                      onChange={(e) => updateNestedStyle('gridColumns.md', parseInt(e.target.value) || 1)}
+                      className="w-full px-3 py-2 bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-lg text-sm text-slate-900 dark:text-white"
+                    />
+                  </div>
+                  <div>
+                    <label className="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-2">Large (lg)</label>
+                    <input
+                      type="number"
+                      min="1"
+                      max="6"
+                      value={styles.gridColumns.lg}
+                      onChange={(e) => updateNestedStyle('gridColumns.lg', parseInt(e.target.value) || 1)}
+                      className="w-full px-3 py-2 bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-lg text-sm text-slate-900 dark:text-white"
+                    />
+                  </div>
+                  <div>
+                    <label className="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-2">Extra Large (xl)</label>
+                    <input
+                      type="number"
+                      min="1"
+                      max="6"
+                      value={styles.gridColumns.xl}
+                      onChange={(e) => updateNestedStyle('gridColumns.xl', parseInt(e.target.value) || 1)}
+                      className="w-full px-3 py-2 bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-lg text-sm text-slate-900 dark:text-white"
+                    />
+                  </div>
+                </div>
+              </StyleSection>
+            </div>
+          ) : activeTab === 'hero' ? (
+
+            <div className="space-y-3">
+              <StyleSection emoji="✏️" title="Hero Content" accent="violet" defaultOpen>
+                <div className="space-y-4">
+                  <div className="rounded-xl border border-slate-200 dark:border-slate-700 p-4 space-y-3 bg-slate-50/50 dark:bg-slate-900/20">
+                    <label className="block text-sm font-semibold text-slate-900 dark:text-white">
+                      Spaces Page Title
+                    </label>
+                    <input
+                      type="text"
+                      value={heroSettings.spaces_title}
+                      onChange={(e) => updateHeroSetting('spaces_title', e.target.value)}
+                      className="w-full bg-white dark:bg-slate-900/50 border border-slate-200 dark:border-slate-700 rounded-lg px-3 py-2 text-sm text-slate-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-sky-400/50 focus:border-sky-400"
+                      placeholder="My Spaces"
+                    />
+                    <details className="rounded-lg border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800/80 group">
+                      <summary className="cursor-pointer list-none [&::-webkit-details-marker]:hidden flex items-center justify-between px-3 py-2.5 text-sm font-medium text-slate-700 dark:text-slate-300 hover:bg-slate-50 dark:hover:bg-slate-700/40 rounded-lg select-none">
+                        <span>Text style</span>
+                        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor" className="w-4 h-4 text-slate-500 transition-transform group-open:rotate-180">
+                          <path fillRule="evenodd" d="M5.23 7.21a.75.75 0 011.06.02L10 11.168l3.71-3.938a.75.75 0 111.08 1.04l-4.25 4.5a.75.75 0 01-1.08 0l-4.25-4.5a.75.75 0 01.02-1.06z" clipRule="evenodd" />
+                        </svg>
+                      </summary>
+                      <div className="px-3 pb-3 pt-1 grid grid-cols-1 sm:grid-cols-2 gap-3 border-t border-slate-200 dark:border-slate-700">
+                        <div>
+                          <label className="block text-xs font-medium text-slate-600 dark:text-slate-400 mb-1">
+                            Title Size: {heroSettings.hero_title_font_size || '36'}px
+                          </label>
+                          <input
+                            type="range"
+                            min={18}
+                            max={72}
+                            step={1}
+                            value={parseInt(heroSettings.hero_title_font_size || '36', 10) || 36}
+                            onChange={(e) => updateHeroSetting('hero_title_font_size', e.target.value)}
+                            className="w-full accent-sky-600"
+                          />
+                        </div>
+                        <div>
+                          <label className="block text-xs font-medium text-slate-600 dark:text-slate-400 mb-1">Font Family</label>
+                          <select
+                            value={heroSettings.hero_title_font_family || 'inherit'}
+                            onChange={(e) => updateHeroSetting('hero_title_font_family', e.target.value)}
+                            className="w-full bg-slate-50 dark:bg-slate-900/50 border border-slate-200 dark:border-slate-700 rounded-lg px-3 py-2 text-sm text-slate-900 dark:text-white"
+                          >
+                            <BrandingFontFamilyOptions />
+                          </select>
+                        </div>
+                        <div>
+                          <label className="block text-xs font-medium text-slate-600 dark:text-slate-400 mb-1">Font Weight</label>
+                          <select
+                            value={heroSettings.hero_title_font_weight || 'bold'}
+                            onChange={(e) => updateHeroSetting('hero_title_font_weight', e.target.value)}
+                            className="w-full bg-slate-50 dark:bg-slate-900/50 border border-slate-200 dark:border-slate-700 rounded-lg px-3 py-2 text-sm text-slate-900 dark:text-white"
+                          >
+                            <option value="normal">Normal</option>
+                            <option value="bold">Bold</option>
+                            <option value="300">Light (300)</option>
+                            <option value="500">Medium (500)</option>
+                            <option value="600">Semi Bold (600)</option>
+                            <option value="700">Bold (700)</option>
+                            <option value="800">Extra Bold (800)</option>
+                          </select>
+                        </div>
+                        <div>
+                          <label className="block text-xs font-medium text-slate-600 dark:text-slate-400 mb-1">Font Style</label>
+                          <select
+                            value={heroSettings.hero_title_font_style || 'normal'}
+                            onChange={(e) => updateHeroSetting('hero_title_font_style', e.target.value)}
+                            className="w-full bg-slate-50 dark:bg-slate-900/50 border border-slate-200 dark:border-slate-700 rounded-lg px-3 py-2 text-sm text-slate-900 dark:text-white"
+                          >
+                            <option value="normal">Normal</option>
+                            <option value="italic">Italic</option>
+                          </select>
+                        </div>
+                        <div className="sm:col-span-2">
+                          <label className="block text-xs font-medium text-slate-600 dark:text-slate-400 mb-1">Text Color (Light)</label>
+                          <div className="flex items-center gap-2">
+                            <input type="color" value={heroSettings.hero_title_color || '#0f172a'} onChange={(e) => updateHeroSetting('hero_title_color', e.target.value)} className="h-9 w-12 rounded border border-slate-200 dark:border-slate-700 cursor-pointer bg-transparent" />
+                            <input type="text" value={heroSettings.hero_title_color || ''} onChange={(e) => updateHeroSetting('hero_title_color', e.target.value)} className="flex-1 bg-slate-50 dark:bg-slate-900/50 border border-slate-200 dark:border-slate-700 rounded-lg px-3 py-2 text-sm text-slate-900 dark:text-white" placeholder="Default (theme)" />
+                            {heroSettings.hero_title_color ? (
+                              <button type="button" onClick={() => updateHeroSetting('hero_title_color', '')} className="text-xs text-slate-500 hover:text-red-600 dark:hover:text-red-400 whitespace-nowrap">Reset</button>
+                            ) : null}
+                          </div>
+                        </div>
+                        <div className="sm:col-span-2">
+                          <label className="block text-xs font-medium text-slate-600 dark:text-slate-400 mb-1">Text Color (Dark mode)</label>
+                          <div className="flex items-center gap-2">
+                            <input type="color" value={heroSettings.hero_title_color_dark || '#f8fafc'} onChange={(e) => updateHeroSetting('hero_title_color_dark', e.target.value)} className="h-9 w-12 rounded border border-slate-200 dark:border-slate-700 cursor-pointer bg-transparent" />
+                            <input type="text" value={heroSettings.hero_title_color_dark || ''} onChange={(e) => updateHeroSetting('hero_title_color_dark', e.target.value)} className="flex-1 bg-slate-50 dark:bg-slate-900/50 border border-slate-200 dark:border-slate-700 rounded-lg px-3 py-2 text-sm text-slate-900 dark:text-white" placeholder="Default (theme)" />
+                            {heroSettings.hero_title_color_dark ? (
+                              <button type="button" onClick={() => updateHeroSetting('hero_title_color_dark', '')} className="text-xs text-slate-500 hover:text-red-600 dark:hover:text-red-400 whitespace-nowrap">Reset</button>
+                            ) : null}
+                          </div>
+                        </div>
+                        <div>
+                          <label className="block text-xs font-medium text-slate-600 dark:text-slate-400 mb-1">Letter Spacing: {heroSettings.hero_title_letter_spacing || '0'}em</label>
+                          <input type="range" min={-0.05} max={0.2} step={0.01} value={parseFloat(heroSettings.hero_title_letter_spacing || '0') || 0} onChange={(e) => updateHeroSetting('hero_title_letter_spacing', e.target.value)} className="w-full accent-sky-600" />
+                        </div>
+                        <div>
+                          <label className="block text-xs font-medium text-slate-600 dark:text-slate-400 mb-1">Line Height: {heroSettings.hero_title_line_height || '1.2'}</label>
+                          <input type="range" min={1} max={2} step={0.05} value={parseFloat(heroSettings.hero_title_line_height || '1.2') || 1.2} onChange={(e) => updateHeroSetting('hero_title_line_height', e.target.value)} className="w-full accent-sky-600" />
+                        </div>
+                      </div>
+                    </details>
+                  </div>
+
+                  <div className="rounded-xl border border-slate-200 dark:border-slate-700 p-4 space-y-3 bg-slate-50/50 dark:bg-slate-900/20">
+                    <label className="block text-sm font-semibold text-slate-900 dark:text-white">
+                      Spaces Subtitle
+                    </label>
+                    <input
+                      type="text"
+                      value={heroSettings.spaces_subtitle || ''}
+                      onChange={(e) => updateHeroSetting('spaces_subtitle', e.target.value)}
+                      className="w-full bg-white dark:bg-slate-900/50 border border-slate-200 dark:border-slate-700 rounded-lg px-3 py-2 text-sm text-slate-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-sky-400/50 focus:border-sky-400"
+                      placeholder="Organize and share your important links"
+                    />
+                    <p className="text-xs text-slate-500 dark:text-slate-400">Shown under the spaces page title in the hero section</p>
+                    <details className="rounded-lg border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800/80 group">
+                      <summary className="cursor-pointer list-none [&::-webkit-details-marker]:hidden flex items-center justify-between px-3 py-2.5 text-sm font-medium text-slate-700 dark:text-slate-300 hover:bg-slate-50 dark:hover:bg-slate-700/40 rounded-lg select-none">
+                        <span>Text style</span>
+                        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor" className="w-4 h-4 text-slate-500 transition-transform group-open:rotate-180">
+                          <path fillRule="evenodd" d="M5.23 7.21a.75.75 0 011.06.02L10 11.168l3.71-3.938a.75.75 0 111.08 1.04l-4.25 4.5a.75.75 0 01-1.08 0l-4.25-4.5a.75.75 0 01.02-1.06z" clipRule="evenodd" />
+                        </svg>
+                      </summary>
+                      <div className="px-3 pb-3 pt-1 grid grid-cols-1 sm:grid-cols-2 gap-3 border-t border-slate-200 dark:border-slate-700">
+                        <div>
+                          <label className="block text-xs font-medium text-slate-600 dark:text-slate-400 mb-1">
+                            Subtitle Size: {heroSettings.hero_subtitle_font_size || '16'}px
+                          </label>
+                          <input type="range" min={10} max={28} step={1} value={parseInt(heroSettings.hero_subtitle_font_size || '16', 10) || 16} onChange={(e) => updateHeroSetting('hero_subtitle_font_size', e.target.value)} className="w-full accent-sky-600" />
+                        </div>
+                        <div>
+                          <label className="block text-xs font-medium text-slate-600 dark:text-slate-400 mb-1">Font Family</label>
+                          <select value={heroSettings.hero_subtitle_font_family || 'inherit'} onChange={(e) => updateHeroSetting('hero_subtitle_font_family', e.target.value)} className="w-full bg-slate-50 dark:bg-slate-900/50 border border-slate-200 dark:border-slate-700 rounded-lg px-3 py-2 text-sm text-slate-900 dark:text-white">
+                            <BrandingFontFamilyOptions />
+                          </select>
+                        </div>
+                        <div>
+                          <label className="block text-xs font-medium text-slate-600 dark:text-slate-400 mb-1">Font Weight</label>
+                          <select value={heroSettings.hero_subtitle_font_weight || 'normal'} onChange={(e) => updateHeroSetting('hero_subtitle_font_weight', e.target.value)} className="w-full bg-slate-50 dark:bg-slate-900/50 border border-slate-200 dark:border-slate-700 rounded-lg px-3 py-2 text-sm text-slate-900 dark:text-white">
+                            <option value="normal">Normal</option>
+                            <option value="bold">Bold</option>
+                            <option value="300">Light (300)</option>
+                            <option value="500">Medium (500)</option>
+                            <option value="600">Semi Bold (600)</option>
+                            <option value="700">Bold (700)</option>
+                          </select>
+                        </div>
+                        <div>
+                          <label className="block text-xs font-medium text-slate-600 dark:text-slate-400 mb-1">Font Style</label>
+                          <select value={heroSettings.hero_subtitle_font_style || 'normal'} onChange={(e) => updateHeroSetting('hero_subtitle_font_style', e.target.value)} className="w-full bg-slate-50 dark:bg-slate-900/50 border border-slate-200 dark:border-slate-700 rounded-lg px-3 py-2 text-sm text-slate-900 dark:text-white">
+                            <option value="normal">Normal</option>
+                            <option value="italic">Italic</option>
+                          </select>
+                        </div>
+                        <div className="sm:col-span-2">
+                          <label className="block text-xs font-medium text-slate-600 dark:text-slate-400 mb-1">Text Color (Light)</label>
+                          <div className="flex items-center gap-2">
+                            <input type="color" value={heroSettings.hero_subtitle_color || '#475569'} onChange={(e) => updateHeroSetting('hero_subtitle_color', e.target.value)} className="h-9 w-12 rounded border border-slate-200 dark:border-slate-700 cursor-pointer bg-transparent" />
+                            <input type="text" value={heroSettings.hero_subtitle_color || ''} onChange={(e) => updateHeroSetting('hero_subtitle_color', e.target.value)} className="flex-1 bg-slate-50 dark:bg-slate-900/50 border border-slate-200 dark:border-slate-700 rounded-lg px-3 py-2 text-sm text-slate-900 dark:text-white" placeholder="Default (theme)" />
+                            {heroSettings.hero_subtitle_color ? (
+                              <button type="button" onClick={() => updateHeroSetting('hero_subtitle_color', '')} className="text-xs text-slate-500 hover:text-red-600 dark:hover:text-red-400 whitespace-nowrap">Reset</button>
+                            ) : null}
+                          </div>
+                        </div>
+                        <div className="sm:col-span-2">
+                          <label className="block text-xs font-medium text-slate-600 dark:text-slate-400 mb-1">Text Color (Dark mode)</label>
+                          <div className="flex items-center gap-2">
+                            <input type="color" value={heroSettings.hero_subtitle_color_dark || '#cbd5e1'} onChange={(e) => updateHeroSetting('hero_subtitle_color_dark', e.target.value)} className="h-9 w-12 rounded border border-slate-200 dark:border-slate-700 cursor-pointer bg-transparent" />
+                            <input type="text" value={heroSettings.hero_subtitle_color_dark || ''} onChange={(e) => updateHeroSetting('hero_subtitle_color_dark', e.target.value)} className="flex-1 bg-slate-50 dark:bg-slate-900/50 border border-slate-200 dark:border-slate-700 rounded-lg px-3 py-2 text-sm text-slate-900 dark:text-white" placeholder="Default (theme)" />
+                            {heroSettings.hero_subtitle_color_dark ? (
+                              <button type="button" onClick={() => updateHeroSetting('hero_subtitle_color_dark', '')} className="text-xs text-slate-500 hover:text-red-600 dark:hover:text-red-400 whitespace-nowrap">Reset</button>
+                            ) : null}
+                          </div>
+                        </div>
+                        <div>
+                          <label className="block text-xs font-medium text-slate-600 dark:text-slate-400 mb-1">Letter Spacing: {heroSettings.hero_subtitle_letter_spacing || '0'}em</label>
+                          <input type="range" min={-0.05} max={0.2} step={0.01} value={parseFloat(heroSettings.hero_subtitle_letter_spacing || '0') || 0} onChange={(e) => updateHeroSetting('hero_subtitle_letter_spacing', e.target.value)} className="w-full accent-sky-600" />
+                        </div>
+                        <div>
+                          <label className="block text-xs font-medium text-slate-600 dark:text-slate-400 mb-1">Line Height: {heroSettings.hero_subtitle_line_height || '1.4'}</label>
+                          <input type="range" min={1} max={2} step={0.05} value={parseFloat(heroSettings.hero_subtitle_line_height || '1.4') || 1.4} onChange={(e) => updateHeroSetting('hero_subtitle_line_height', e.target.value)} className="w-full accent-sky-600" />
+                        </div>
+                      </div>
+                    </details>
+                  </div>
+
+                  <div className="rounded-xl border border-slate-200 dark:border-slate-700 p-4 space-y-3 bg-slate-50/50 dark:bg-slate-900/20">
+                    <label className="block text-sm font-semibold text-slate-900 dark:text-white">
+                      Hero Icon / Emoji
+                    </label>
+                    <input
+                      type="text"
+                      value={heroSettings.hero_icon || ''}
+                      onChange={(e) => updateHeroSetting('hero_icon', e.target.value)}
+                      className="w-full bg-white dark:bg-slate-900/50 border border-slate-200 dark:border-slate-700 rounded-lg px-3 py-2 text-2xl text-center focus:outline-none focus:ring-2 focus:ring-sky-400/50 focus:border-sky-400"
+                      placeholder="🚀"
+                      maxLength={4}
+                    />
+                    <p className="text-xs text-slate-500 dark:text-slate-400">Shown to the left of the spaces page title in the hero section</p>
+                    <details className="rounded-lg border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800/80 group">
+                      <summary className="cursor-pointer list-none [&::-webkit-details-marker]:hidden flex items-center justify-between px-3 py-2.5 text-sm font-medium text-slate-700 dark:text-slate-300 hover:bg-slate-50 dark:hover:bg-slate-700/40 rounded-lg select-none">
+                        <span>Icon style</span>
+                        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor" className="w-4 h-4 text-slate-500 transition-transform group-open:rotate-180">
+                          <path fillRule="evenodd" d="M5.23 7.21a.75.75 0 011.06.02L10 11.168l3.71-3.938a.75.75 0 111.08 1.04l-4.25 4.5a.75.75 0 01-1.08 0l-4.25-4.5a.75.75 0 01.02-1.06z" clipRule="evenodd" />
+                        </svg>
+                      </summary>
+                      <div className="px-3 pb-3 pt-1 grid grid-cols-1 sm:grid-cols-2 gap-3 border-t border-slate-200 dark:border-slate-700">
+                        {([
+                          ['hero_icon_bg_from', 'Icon Gradient From', '#3b82f6'],
+                          ['hero_icon_bg_to', 'Icon Gradient To', '#7c3aed'],
+                        ] as const).map(([key, label, fallback]) => (
+                          <div key={key}>
+                            <label className="block text-xs font-medium text-slate-600 dark:text-slate-400 mb-1">{label}</label>
+                            <div className="flex items-center gap-2">
+                              <input type="color" value={heroSettings[key] || fallback} onChange={(e) => updateHeroSetting(key, e.target.value)} className="h-9 w-12 rounded border border-slate-200 dark:border-slate-700 cursor-pointer bg-transparent" />
+                              <input type="text" value={heroSettings[key] || ''} onChange={(e) => updateHeroSetting(key, e.target.value)} className="flex-1 bg-slate-50 dark:bg-slate-900/50 border border-slate-200 dark:border-slate-700 rounded-lg px-3 py-2 text-sm" placeholder="Default" />
+                              {heroSettings[key] ? (
+                                <button type="button" onClick={() => updateHeroSetting(key, '')} className="text-xs text-slate-500 hover:text-red-600 whitespace-nowrap">Reset</button>
+                              ) : null}
+                            </div>
+                          </div>
+                        ))}
+                      </div>
+                    </details>
+                  </div>
+
+                  <details className="rounded-xl border border-slate-200 dark:border-slate-700 bg-slate-50/50 dark:bg-slate-900/20 group overflow-hidden">
+                    <summary className="cursor-pointer list-none [&::-webkit-details-marker]:hidden flex items-center justify-between px-4 py-3 text-sm font-semibold text-slate-900 dark:text-white hover:bg-slate-100/80 dark:hover:bg-slate-800/60 select-none">
+                      <span>Background &amp; Overlay</span>
+                      <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor" className="w-4 h-4 text-slate-500 transition-transform group-open:rotate-180">
+                        <path fillRule="evenodd" d="M5.23 7.21a.75.75 0 011.06.02L10 11.168l3.71-3.938a.75.75 0 111.08 1.04l-4.25 4.5a.75.75 0 01-1.08 0l-4.25-4.5a.75.75 0 01.02-1.06z" clipRule="evenodd" />
+                      </svg>
+                    </summary>
+                    <div className="px-4 pb-4 space-y-4 border-t border-slate-200 dark:border-slate-700 pt-4">
+                      <p className="text-xs text-slate-500 dark:text-slate-400">Hero section background gradient and optional color wash overlay.</p>
+                      <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                        {([
+                          ['hero_bg_from', 'Background From (Light)', '#eff6ff'],
+                          ['hero_bg_to', 'Background To (Light)', '#ede9fe'],
+                          ['hero_bg_from_dark', 'Background From (Dark)', '#1e293b'],
+                          ['hero_bg_to_dark', 'Background To (Dark)', '#312e81'],
+                          ['hero_overlay_color', 'Overlay From', '#4f46e5'],
+                          ['hero_overlay_to', 'Overlay To', '#7c3aed'],
+                        ] as const).map(([key, label, fallback]) => (
+                          <div key={key}>
+                            <label className="block text-xs font-medium text-slate-600 dark:text-slate-400 mb-1">{label}</label>
+                            <div className="flex items-center gap-2">
+                              <input type="color" value={heroSettings[key] || fallback} onChange={(e) => updateHeroSetting(key, e.target.value)} className="h-9 w-12 rounded border border-slate-200 dark:border-slate-700 cursor-pointer bg-transparent" />
+                              <input type="text" value={heroSettings[key] || ''} onChange={(e) => updateHeroSetting(key, e.target.value)} className="flex-1 bg-slate-50 dark:bg-slate-900/50 border border-slate-200 dark:border-slate-700 rounded-lg px-3 py-2 text-sm" placeholder="Default" />
+                              {heroSettings[key] ? (
+                                <button type="button" onClick={() => updateHeroSetting(key, '')} className="text-xs text-slate-500 hover:text-red-600 whitespace-nowrap">Reset</button>
+                              ) : null}
+                            </div>
+                          </div>
+                        ))}
+                        <div>
+                          <label className="block text-xs font-medium text-slate-600 dark:text-slate-400 mb-1">Background Angle: {heroSettings.hero_bg_angle || '135'}°</label>
+                          <input type="range" min={0} max={360} step={1} value={parseInt(heroSettings.hero_bg_angle || '135', 10) || 135} onChange={(e) => updateHeroSetting('hero_bg_angle', e.target.value)} className="w-full accent-sky-600" />
+                        </div>
+                        <div>
+                          <label className="block text-xs font-medium text-slate-600 dark:text-slate-400 mb-1">Overlay Opacity: {heroSettings.hero_overlay_opacity || '0'}%</label>
+                          <input type="range" min={0} max={40} step={1} value={parseInt(heroSettings.hero_overlay_opacity || '0', 10) || 0} onChange={(e) => updateHeroSetting('hero_overlay_opacity', e.target.value)} className="w-full accent-sky-600" />
+                        </div>
+                      </div>
+                    </div>
+                  </details>
+                </div>
+              </StyleSection>
+
+              <StyleSection emoji="🎨" title="Hero Section Style" accent="fuchsia" defaultOpen>
                 {/* Spaces Title (Landing Page Heading) Typography */}
                 <div className="mb-6">
                   <h4 className="text-sm font-semibold text-slate-800 dark:text-slate-200 mb-3">Spaces Title (Landing Page Heading)</h4>
@@ -2236,281 +2906,6 @@ export const StyleManager: React.FC<StyleManagerProps> = ({ isOpen, onClose, onS
                   )}
                 </div>
 
-                {/* Footer Typography */}
-                <div className="mb-6">
-                  <h4 className="text-sm font-semibold text-slate-800 dark:text-slate-200 mb-3">Footer</h4>
-                  <div className="grid grid-cols-1 md:grid-cols-2 gap-4 pl-4 border-l-2 border-indigo-200 dark:border-indigo-800">
-                    <div>
-                      <label className="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-2">Font Family</label>
-                      <select
-                        value={styles.footerFontFamily}
-                        onChange={(e) => updateStyle('footerFontFamily', e.target.value)}
-                        className="w-full px-3 py-2 bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-lg text-sm text-slate-900 dark:text-white"
-                      >
-                        <option value="inherit">Inherit (Default)</option>
-                        <option value="Arial, sans-serif">Arial</option>
-                        <option value="'Helvetica Neue', Helvetica, sans-serif">Helvetica</option>
-                        <option value="'Times New Roman', Times, serif">Times New Roman</option>
-                        <option value="Georgia, serif">Georgia</option>
-                        <option value="'Courier New', Courier, monospace">Courier New</option>
-                        <option value="Verdana, sans-serif">Verdana</option>
-                        <option value="'Trebuchet MS', sans-serif">Trebuchet MS</option>
-                        <option value="'Comic Sans MS', cursive">Comic Sans MS</option>
-                        <option value="Impact, sans-serif">Impact</option>
-                        <option value="'Lucida Console', monospace">Lucida Console</option>
-                        <option value="Tahoma, sans-serif">Tahoma</option>
-                        <option value="'Palatino Linotype', Palatino, serif">Palatino</option>
-                      </select>
-                    </div>
-                    <div>
-                      <label className="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-2">Font Size: {styles.footerFontSize}px</label>
-                      <input
-                        type="range"
-                        min="10"
-                        max="24"
-                        value={styles.footerFontSize}
-                        onChange={(e) => updateStyle('footerFontSize', parseInt(e.target.value))}
-                        className="w-full"
-                      />
-                    </div>
-                    <div>
-                      <label className="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-2">Font Weight</label>
-                      <select
-                        value={styles.footerFontWeight}
-                        onChange={(e) => updateStyle('footerFontWeight', e.target.value)}
-                        className="w-full px-3 py-2 bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-lg text-sm text-slate-900 dark:text-white"
-                      >
-                        <option value="normal">Normal</option>
-                        <option value="bold">Bold</option>
-                        <option value="100">Thin (100)</option>
-                        <option value="200">Extra Light (200)</option>
-                        <option value="300">Light (300)</option>
-                        <option value="400">Regular (400)</option>
-                        <option value="500">Medium (500)</option>
-                        <option value="600">Semi Bold (600)</option>
-                        <option value="700">Bold (700)</option>
-                        <option value="800">Extra Bold (800)</option>
-                        <option value="900">Black (900)</option>
-                      </select>
-                    </div>
-                    <div>
-                      <label className="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-2">Font Style</label>
-                      <select
-                        value={styles.footerFontStyle}
-                        onChange={(e) => updateStyle('footerFontStyle', e.target.value)}
-                        className="w-full px-3 py-2 bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-lg text-sm text-slate-900 dark:text-white"
-                      >
-                        <option value="normal">Normal</option>
-                        <option value="italic">Italic</option>
-                        <option value="oblique">Oblique</option>
-                      </select>
-                    </div>
-                    <div className="md:col-span-2">
-                      <label className="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-2">Text Color</label>
-                      <div className="flex items-center gap-3">
-                        <input
-                          type="color"
-                          value={styles.footerColor}
-                          onChange={(e) => updateStyle('footerColor', e.target.value)}
-                          className="w-16 h-10 rounded border border-slate-300 dark:border-slate-600 cursor-pointer"
-                        />
-                        <input
-                          type="text"
-                          value={styles.footerColor}
-                          onChange={(e) => updateStyle('footerColor', e.target.value)}
-                          className="flex-1 px-3 py-2 bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-lg text-sm text-slate-900 dark:text-white"
-                          placeholder="#94a3b8"
-                        />
-                      </div>
-                    </div>
-                  </div>
-                </div>
-              </StyleSection>
-
-              {/* Spaces Grid Tab Styling */}
-              <StyleSection emoji="🗂️" title="Main Page Tabs" accent="brand">
-                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                  <div>
-                    <label className="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-2">Tab Style</label>
-                    <select
-                      value={styles.spacesTabStyle}
-                      onChange={(e) => updateStyle('spacesTabStyle', e.target.value as 'underline' | 'pill' | 'box' | 'minimal')}
-                      className="w-full px-3 py-2 bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-lg text-sm text-slate-900 dark:text-white"
-                    >
-                      <option value="underline">Underline</option>
-                      <option value="pill">Pill</option>
-                      <option value="box">Box</option>
-                      <option value="minimal">Minimal</option>
-                    </select>
-                  </div>
-                  <div>
-                    <label className="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-2">Active Tab Color</label>
-                    <div className="flex gap-2">
-                      <input
-                        type="color"
-                        value={styles.spacesTabActiveColor}
-                        onChange={(e) => updateStyle('spacesTabActiveColor', e.target.value)}
-                        className="w-16 h-10 rounded-lg border border-slate-300 dark:border-slate-600 cursor-pointer"
-                      />
-                      <input
-                        type="text"
-                        value={styles.spacesTabActiveColor}
-                        onChange={(e) => updateStyle('spacesTabActiveColor', e.target.value)}
-                        className="flex-1 px-3 py-2 bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-lg text-sm text-slate-900 dark:text-white"
-                      />
-                    </div>
-                  </div>
-                  <div>
-                    <label className="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-2">Inactive Tab Color</label>
-                    <div className="flex gap-2">
-                      <input
-                        type="color"
-                        value={styles.spacesTabInactiveColor}
-                        onChange={(e) => updateStyle('spacesTabInactiveColor', e.target.value)}
-                        className="w-16 h-10 rounded-lg border border-slate-300 dark:border-slate-600 cursor-pointer"
-                      />
-                      <input
-                        type="text"
-                        value={styles.spacesTabInactiveColor}
-                        onChange={(e) => updateStyle('spacesTabInactiveColor', e.target.value)}
-                        className="flex-1 px-3 py-2 bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-lg text-sm text-slate-900 dark:text-white"
-                      />
-                    </div>
-                  </div>
-                  <div>
-                    <label className="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-2">Border Radius: {styles.spacesTabBorderRadius}px</label>
-                    <input
-                      type="range"
-                      min="0"
-                      max="16"
-                      value={styles.spacesTabBorderRadius}
-                      onChange={(e) => updateStyle('spacesTabBorderRadius', parseInt(e.target.value))}
-                      className="w-full"
-                    />
-                  </div>
-                </div>
-
-                {/* Spaces Tab Typography */}
-                <div className="mt-6 pt-6 border-t border-slate-200 dark:border-slate-700">
-                  <h4 className="text-sm font-semibold text-slate-800 dark:text-slate-200 mb-3">Tab Typography</h4>
-                  <div className="grid grid-cols-1 md:grid-cols-2 gap-4 pl-4 border-l-2 border-amber-200 dark:border-amber-800">
-                    <div>
-                      <label className="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-2">Font Family</label>
-                      <select
-                        value={styles.spacesTabFontFamily}
-                        onChange={(e) => updateStyle('spacesTabFontFamily', e.target.value)}
-                        className="w-full px-3 py-2 bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-lg text-sm text-slate-900 dark:text-white"
-                      >
-                        <option value="inherit">Inherit (Default)</option>
-                        <option value="Arial, sans-serif">Arial</option>
-                        <option value="'Helvetica Neue', Helvetica, sans-serif">Helvetica</option>
-                        <option value="'Times New Roman', Times, serif">Times New Roman</option>
-                        <option value="Georgia, serif">Georgia</option>
-                        <option value="'Courier New', Courier, monospace">Courier New</option>
-                        <option value="Verdana, sans-serif">Verdana</option>
-                        <option value="'Trebuchet MS', sans-serif">Trebuchet MS</option>
-                        <option value="'Comic Sans MS', cursive">Comic Sans MS</option>
-                        <option value="Impact, sans-serif">Impact</option>
-                        <option value="'Lucida Console', monospace">Lucida Console</option>
-                        <option value="Tahoma, sans-serif">Tahoma</option>
-                        <option value="'Palatino Linotype', Palatino, serif">Palatino</option>
-                      </select>
-                    </div>
-                    <div>
-                      <label className="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-2">Font Size: {styles.spacesTabFontSize}px</label>
-                      <input
-                        type="range"
-                        min="10"
-                        max="20"
-                        value={styles.spacesTabFontSize}
-                        onChange={(e) => updateStyle('spacesTabFontSize', parseInt(e.target.value))}
-                        className="w-full"
-                      />
-                    </div>
-                    <div>
-                      <label className="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-2">Font Weight</label>
-                      <select
-                        value={styles.spacesTabFontWeight}
-                        onChange={(e) => updateStyle('spacesTabFontWeight', e.target.value)}
-                        className="w-full px-3 py-2 bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-lg text-sm text-slate-900 dark:text-white"
-                      >
-                        <option value="normal">Normal</option>
-                        <option value="bold">Bold</option>
-                        <option value="100">Thin (100)</option>
-                        <option value="200">Extra Light (200)</option>
-                        <option value="300">Light (300)</option>
-                        <option value="400">Regular (400)</option>
-                        <option value="500">Medium (500)</option>
-                        <option value="600">Semi Bold (600)</option>
-                        <option value="700">Bold (700)</option>
-                        <option value="800">Extra Bold (800)</option>
-                        <option value="900">Black (900)</option>
-                      </select>
-                    </div>
-                    <div>
-                      <label className="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-2">Font Style</label>
-                      <select
-                        value={styles.spacesTabFontStyle}
-                        onChange={(e) => updateStyle('spacesTabFontStyle', e.target.value)}
-                        className="w-full px-3 py-2 bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-lg text-sm text-slate-900 dark:text-white"
-                      >
-                        <option value="normal">Normal</option>
-                        <option value="italic">Italic</option>
-                        <option value="oblique">Oblique</option>
-                      </select>
-                    </div>
-                  </div>
-                </div>
-              </StyleSection>
-
-              {/* Grid Settings */}
-              <StyleSection emoji="🧱" title="Grid Columns" accent="violet">
-                <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
-                  <div>
-                    <label className="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-2">Small (sm)</label>
-                    <input
-                      type="number"
-                      min="1"
-                      max="6"
-                      value={styles.gridColumns.sm}
-                      onChange={(e) => updateNestedStyle('gridColumns.sm', parseInt(e.target.value) || 1)}
-                      className="w-full px-3 py-2 bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-lg text-sm text-slate-900 dark:text-white"
-                    />
-                  </div>
-                  <div>
-                    <label className="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-2">Medium (md)</label>
-                    <input
-                      type="number"
-                      min="1"
-                      max="6"
-                      value={styles.gridColumns.md}
-                      onChange={(e) => updateNestedStyle('gridColumns.md', parseInt(e.target.value) || 1)}
-                      className="w-full px-3 py-2 bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-lg text-sm text-slate-900 dark:text-white"
-                    />
-                  </div>
-                  <div>
-                    <label className="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-2">Large (lg)</label>
-                    <input
-                      type="number"
-                      min="1"
-                      max="6"
-                      value={styles.gridColumns.lg}
-                      onChange={(e) => updateNestedStyle('gridColumns.lg', parseInt(e.target.value) || 1)}
-                      className="w-full px-3 py-2 bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-lg text-sm text-slate-900 dark:text-white"
-                    />
-                  </div>
-                  <div>
-                    <label className="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-2">Extra Large (xl)</label>
-                    <input
-                      type="number"
-                      min="1"
-                      max="6"
-                      value={styles.gridColumns.xl}
-                      onChange={(e) => updateNestedStyle('gridColumns.xl', parseInt(e.target.value) || 1)}
-                      className="w-full px-3 py-2 bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-lg text-sm text-slate-900 dark:text-white"
-                    />
-                  </div>
-                </div>
               </StyleSection>
             </div>
           ) : (
@@ -3523,7 +3918,7 @@ export const StyleManager: React.FC<StyleManagerProps> = ({ isOpen, onClose, onS
                     <path d="M10.75 2.75a.75.75 0 00-1.5 0v8.614L6.295 8.235a.75.75 0 00-1.09 1.03l4.25 4.5a.75.75 0 001.07 0l4.25-4.5a.75.75 0 00-1.08-1.03l-2.955 3.129V2.75z" />
                     <path d="M3.5 12.75a.75.75 0 00-1.5 0v3.5A2.75 2.75 0 004.75 19h10.5A2.75 2.75 0 0018 16.25v-3.5a.75.75 0 00-1.5 0v3.5c0 .69-.56 1.25-1.25 1.25H4.75c-.69 0-1.25-.56-1.25-1.25v-3.5z" />
                   </svg>
-                  Save as Profile
+                  {hasStyleChanges ? 'Save as Profile' : 'Save Hero Settings'}
                 </>
               )}
             </button>
