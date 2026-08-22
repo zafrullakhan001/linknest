@@ -32,6 +32,7 @@ import { GranularPermissionsModal } from './GranularPermissionsModal';
 import { AddonsManagement } from './AddonsManagement';
 import { UpdatesPanel } from './UpdatesDialog';
 import { DevicePresetsAdmin } from './DevicePresetsAdmin';
+import { LinkCheckExceptionsAdmin } from './LinkCheckExceptionsAdmin';
 import { UrlScanFixAdmin } from './UrlScanFixAdmin';
 import { IframeBlockDomainsAdmin } from './IframeBlockDomainsAdmin';
 import { UserAuditLog } from './UserAuditLog';

@@ -557,6 +557,8 @@ const UrlProbeBadges: React.FC<{ url: string; excluded?: boolean }> = ({ url, ex
         }, 650);
 
         // Browser → URL RTT (direct from this device). Prefer HEAD so we don't download the page body.
+        // no-cors: we only need timing, not status. cors mode spams the console on SSO/login
+        // hosts (e.g. Workday 302) that omit Access-Control-Allow-Origin.
         let browserCancelled = false;
         const browserTimer = window.setTimeout(async () => {
             const controller = new AbortController();
@@ -566,7 +568,7 @@ const UrlProbeBadges: React.FC<{ url: string; excluded?: boolean }> = ({ url, ex
             try {
                 await fetch(trimmed, {
                     method: 'HEAD',
-                    mode: 'cors',
+                    mode: 'no-cors',
                     cache: 'no-store',
                     credentials: 'omit',
                     redirect: 'follow',
@@ -577,7 +579,7 @@ const UrlProbeBadges: React.FC<{ url: string; excluded?: boolean }> = ({ url, ex
                 setBrowserPhase('done');
             } catch {
                 if (browserCancelled || requestId !== requestIdRef.current) return;
-                // CORS / network / soft-timeout still reflect browser path timing in most cases
+                // Network / soft-timeout still reflect browser path timing in most cases
                 setBrowserLatency(Math.round(performance.now() - started));
                 setBrowserPhase('done');
             } finally {
