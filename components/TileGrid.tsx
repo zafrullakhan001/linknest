@@ -98,6 +98,7 @@ const MonitoringOverview = lazy(() => import('./MonitoringOverview').then(m => (
 const RecycleBinOverview = lazy(() => import('./RecycleBinOverview').then(m => ({ default: m.RecycleBinOverview })));
 const TileInfoDialog = lazy(() => import('./TileInfoDialog').then(m => ({ default: m.TileInfoDialog })));
 const ShareTileDialog = lazy(() => import('./ShareTileDialog').then(m => ({ default: m.ShareTileDialog })));
+const SpaceCompareDialog = lazy(() => import('./SpaceCompareDialog').then(m => ({ default: m.SpaceCompareDialog })));
 
 
 
@@ -1207,6 +1208,7 @@ interface SortableTileProps {
   onMoveLeft?: (tileId: string) => void;
   onMoveRight?: (tileId: string) => void;
   onExportTile?: (tile: Tile) => void;
+  onCompareTile?: (tile: Tile) => void;
   onRestoreTile?: (e: React.MouseEvent, tileId: string) => void;
   onPermanentDeleteTile?: (e: React.MouseEvent, tileId: string) => void;
   onArchiveTile?: (e: React.MouseEvent, tileId: string) => void;
@@ -1239,6 +1241,7 @@ const SortableTile: React.FC<SortableTileProps> = ({
   onMoveLeft,
   onMoveRight,
   onExportTile,
+  onCompareTile,
   onRestoreTile,
   onPermanentDeleteTile,
   onArchiveTile,
@@ -1968,6 +1971,24 @@ const SortableTile: React.FC<SortableTileProps> = ({
             </>
           )}
 
+          {/* Compare Button - users who can edit the space */}
+          {onCompareTile && tile.canEdit === true && (tile.canEditTile === undefined || tile.canEditTile === true) && !isRecycleBin && !isArchive && (
+            <button
+              onClick={(e) => {
+                e.preventDefault();
+                e.stopPropagation();
+                onCompareTile(tile);
+              }}
+              className="p-1 text-slate-400 hover:text-sky-500 hover:bg-sky-50 dark:hover:bg-sky-500/10 rounded transition-all"
+              title="Compare & merge with another space"
+            >
+              <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor" className="w-3.5 h-3.5" aria-hidden="true">
+                <path d="M8 2a.75.75 0 01.75.75v14.5a.75.75 0 01-1.5 0V2.75A.75.75 0 018 2zM12 2a.75.75 0 01.75.75v14.5a.75.75 0 01-1.5 0V2.75A.75.75 0 0112 2z" />
+                <path d="M3.28 7.22a.75.75 0 011.06 0L5.5 8.38V5.75a.75.75 0 011.5 0v4.5a.75.75 0 01-.75.75H2.75a.75.75 0 010-1.5h2.63L3.28 8.28a.75.75 0 010-1.06zM16.72 12.78a.75.75 0 01-1.06 0L14.5 11.62v2.63a.75.75 0 01-1.5 0v-4.5a.75.75 0 01.75-.75h4.5a.75.75 0 010 1.5h-2.63l1.16 1.16a.75.75 0 010 1.06z" />
+              </svg>
+            </button>
+          )}
+
           {/* Export Button - Only show if user is admin */}
           {onExportTile && user?.is_admin && (
             <button
@@ -2655,6 +2676,7 @@ export const TileGrid: React.FC<TileGridProps> = ({
   const [linkMaintenanceDialog, setLinkMaintenanceDialog] = useState<{ link: Link } | null>(null);
   const [tileInfoDialog, setTileInfoDialog] = useState<{ tile?: Tile; categoryInfo?: { categoryName: string; tiles: Tile[] } } | null>(null);
   const [shareTileDialog, setShareTileDialog] = useState<Tile | null>(null);
+  const [compareTileId, setCompareTileId] = useState<string | null>(null);
   const [favNotesDialogState, setFavNotesDialogState] = useState<{ linkId: string; notes: string; linkLabel: string } | null>(null);
   const [stagingTiles, setStagingTiles] = useState<Tile[]>([]);
   const tilesRef = useRef(tiles);
@@ -6482,6 +6504,48 @@ You may also wrap the array in an object: { "messages": [ ... ] }.
     [user]
   );
 
+  const handleCompareTile = useCallback((tile: Tile) => {
+    setCompareTileId(tile.id);
+  }, []);
+
+  const compareAvailableTiles = useMemo(() => {
+    const byId = new Map<string, Tile>();
+    for (const t of tiles) byId.set(t.id, t);
+    for (const t of stagingTiles) byId.set(t.id, t);
+    return Array.from(byId.values()).map((t) => ({
+      id: t.id,
+      title: t.title,
+      emoji: t.emoji,
+      group: t.group,
+      visibility: t.visibility,
+      sourceTab: t.sourceTab,
+      canEdit: t.canEdit === true,
+    }));
+  }, [tiles, stagingTiles]);
+
+  const handleCompareCompleted = useCallback(
+    async (result: { action: 'merge-left' | 'merge-right' | 'create'; tile: Tile }) => {
+      try {
+        const refreshed = await getTiles();
+        onUpdateTiles(refreshed);
+        if (user?.is_admin) {
+          try {
+            const updatedStaging = await getTiles({ sourceTab: 'staging' });
+            setStagingTiles(updatedStaging);
+          } catch {
+            /* ignore */
+          }
+        }
+        if (result.action === 'create') {
+          // Soft notice; grid refresh is enough
+        }
+      } catch (e) {
+        console.error('Failed to refresh after space compare:', e);
+      }
+    },
+    [onUpdateTiles, user]
+  );
+
   const handleExportStats = useCallback(() => {
     if (favoriteLinks.length === 0) {
       alert('No favorite links to export');
@@ -8984,6 +9048,7 @@ You may also wrap the array in an object: { "messages": [ ... ] }.
                         onMoveLeft={(isAuthenticated || (!isAuthenticated && activeTab === 'public-favorites')) ? () => handleMoveTile(tile.id, 'left') : undefined}
                         onMoveRight={(isAuthenticated || (!isAuthenticated && activeTab === 'public-favorites')) ? () => handleMoveTile(tile.id, 'right') : undefined}
                         onExportTile={handleExportTile}
+                        onCompareTile={handleCompareTile}
                         onRestoreTile={activeTab === 'recycle-bin' ? handleRestoreTile : undefined}
                         onPermanentDeleteTile={activeTab === 'recycle-bin' ? handlePermanentDeleteTile : undefined}
                         onArchiveTile={activeTab !== 'archive' && activeTab !== 'recycle-bin' ? handleArchiveTile : undefined}
@@ -13670,6 +13735,17 @@ You may also wrap the array in an object: { "messages": [ ... ] }.
             tile={shareTileDialog}
             onClose={() => setShareTileDialog(null)}
             onShared={() => { getTiles().then(t => onUpdateTiles(t, false)); }}
+          />
+        </Suspense>
+      )}
+      {compareTileId && (
+        <Suspense fallback={null}>
+          <SpaceCompareDialog
+            open={!!compareTileId}
+            leftTileId={compareTileId}
+            availableTiles={compareAvailableTiles}
+            onClose={() => setCompareTileId(null)}
+            onCompleted={handleCompareCompleted}
           />
         </Suspense>
       )}

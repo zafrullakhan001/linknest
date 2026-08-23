@@ -69,6 +69,8 @@ import {
     type HierarchyViewMode,
 } from './TileHierarchyViews';
 import { VersionDiffViewer } from './VersionDiffViewer';
+import { SpaceCompareDialog } from './SpaceCompareDialog';
+import type { SpaceCompareCandidate } from './SpaceCompareDialog';
 import { TileAnimationSelector, getTileAnimationClass, TileAnimation, getAnimationOption, resolveLinkAnimation } from './TileAnimationSelector';
 import { AuthSourceBadge } from './AuthSourceBadge';
 import { EditLinkForm } from './EditLinkForm';
@@ -1222,6 +1224,47 @@ export const TileDetail: React.FC<TileDetailProps> = ({
         return viewerLinkUrl({ ...link, shortUrl: shortOf('link', link.id, link.shortUrl) }, show ?? showShortUrls) || link.url;
     }, [showShortUrls, shortOf]);
 
+    const openSpaceCompare = useCallback(async () => {
+        try {
+            const byId = new Map<string, Tile>();
+            for (const t of allTiles) byId.set(t.id, t);
+            try {
+                const publicList = await getTiles();
+                for (const t of publicList) byId.set(t.id, t);
+            } catch { /* ignore */ }
+            if (user?.is_admin) {
+                try {
+                    const stagingList = await getTiles({ sourceTab: 'staging' });
+                    for (const t of stagingList) byId.set(t.id, t);
+                } catch { /* ignore */ }
+            }
+            setSpaceCompareCandidates(
+                Array.from(byId.values()).map((t) => ({
+                    id: t.id,
+                    title: t.title,
+                    emoji: t.emoji,
+                    group: t.group,
+                    visibility: t.visibility,
+                    sourceTab: t.sourceTab,
+                    canEdit: t.canEdit === true,
+                }))
+            );
+        } catch {
+            setSpaceCompareCandidates(
+                allTiles.map((t) => ({
+                    id: t.id,
+                    title: t.title,
+                    emoji: t.emoji,
+                    group: t.group,
+                    visibility: t.visibility,
+                    sourceTab: t.sourceTab,
+                    canEdit: t.canEdit === true,
+                }))
+            );
+        }
+        setSpaceCompareOpen(true);
+    }, [allTiles, user?.is_admin]);
+
     const persistShowShortUrls = useCallback(async (enabled: boolean) => {
         const updatedTile: Tile = { ...tile, showShortUrls: enabled };
         const updatedTiles = allTiles.map((t) => (t.id === tile.id ? updatedTile : t));
@@ -1550,6 +1593,8 @@ export const TileDetail: React.FC<TileDetailProps> = ({
     const [diffOriginalTile, setDiffOriginalTile] = useState<any | null>(null);
     const [diffModifiedTile, setDiffModifiedTile] = useState<any | null>(null);
     const [diffTitle, setDiffTitle] = useState('');
+    const [spaceCompareOpen, setSpaceCompareOpen] = useState(false);
+    const [spaceCompareCandidates, setSpaceCompareCandidates] = useState<SpaceCompareCandidate[]>([]);
     const [diffOriginalVersionMeta, setDiffOriginalVersionMeta] = useState<{
         versionNumber: number;
         createdAt: number;
@@ -6329,6 +6374,21 @@ export const TileDetail: React.FC<TileDetailProps> = ({
                                         </svg>
                                         <span>Export</span>
                                     </button>
+                                    {/* Compare & merge spaces */}
+                                    {tile.canEdit === true && (tile.canEditTile === undefined || tile.canEditTile === true) && (
+                                        <button
+                                            type="button"
+                                            onClick={() => void openSpaceCompare()}
+                                            className="px-4 py-2 rounded-lg bg-white/15 hover:bg-white/25 text-white text-sm font-medium border border-white/20 transition-all shadow-sm flex items-center justify-center gap-2 backdrop-blur-sm"
+                                            title="Compare & merge with another space"
+                                        >
+                                            <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor" className="w-4 h-4" aria-hidden="true">
+                                                <path d="M8 2a.75.75 0 01.75.75v14.5a.75.75 0 01-1.5 0V2.75A.75.75 0 018 2zM12 2a.75.75 0 01.75.75v14.5a.75.75 0 01-1.5 0V2.75A.75.75 0 0112 2z" />
+                                                <path d="M3.28 7.22a.75.75 0 011.06 0L5.5 8.38V5.75a.75.75 0 011.5 0v4.5a.75.75 0 01-.75.75H2.75a.75.75 0 010-1.5h2.63L3.28 8.28a.75.75 0 010-1.06zM16.72 12.78a.75.75 0 01-1.06 0L14.5 11.62v2.63a.75.75 0 01-1.5 0v-4.5a.75.75 0 01.75-.75h4.5a.75.75 0 010 1.5h-2.63l1.16 1.16a.75.75 0 010 1.06z" />
+                                            </svg>
+                                            <span>Compare</span>
+                                        </button>
+                                    )}
                                     {/* Check All Links Button */}
                                     <button
                                         onClick={(e) => handleCheckTileHealth(e)}
@@ -6589,6 +6649,22 @@ export const TileDetail: React.FC<TileDetailProps> = ({
                                                             </svg>
                                                             Export
                                                         </button>
+                                                        {tile.canEdit === true && (tile.canEditTile === undefined || tile.canEditTile === true) && (
+                                                            <button
+                                                                type="button"
+                                                                onClick={() => {
+                                                                    setShowHeaderActionsMenu(false);
+                                                                    void openSpaceCompare();
+                                                                }}
+                                                                className="w-full px-3 py-3 text-left text-sm font-medium text-slate-700 dark:text-slate-200 hover:bg-slate-50 dark:hover:bg-slate-800 rounded-lg flex items-center gap-3"
+                                                            >
+                                                                <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor" className="w-5 h-5 text-slate-400 shrink-0" aria-hidden="true">
+                                                                    <path d="M8 2a.75.75 0 01.75.75v14.5a.75.75 0 01-1.5 0V2.75A.75.75 0 018 2zM12 2a.75.75 0 01.75.75v14.5a.75.75 0 01-1.5 0V2.75A.75.75 0 0112 2z" />
+                                                                    <path d="M3.28 7.22a.75.75 0 011.06 0L5.5 8.38V5.75a.75.75 0 011.5 0v4.5a.75.75 0 01-.75.75H2.75a.75.75 0 010-1.5h2.63L3.28 8.28a.75.75 0 010-1.06zM16.72 12.78a.75.75 0 01-1.06 0L14.5 11.62v2.63a.75.75 0 01-1.5 0v-4.5a.75.75 0 01.75-.75h4.5a.75.75 0 010 1.5h-2.63l1.16 1.16a.75.75 0 010 1.06z" />
+                                                                </svg>
+                                                                Compare & merge
+                                                            </button>
+                                                        )}
                                                         <button
                                                             type="button"
                                                             disabled={checkingHealth}
@@ -12322,6 +12398,34 @@ export const TileDetail: React.FC<TileDetailProps> = ({
                         modifiedVersionMeta={restorePreviewVersion ? diffOriginalVersionMeta || undefined : diffModifiedVersionMeta || undefined}
                         isRestorePreview={!!restorePreviewVersion}
                         onConfirmRestore={restorePreviewVersion ? handleConfirmRestore : undefined}
+                    />
+                )}
+
+                {spaceCompareOpen && (
+                    <SpaceCompareDialog
+                        open={spaceCompareOpen}
+                        leftTileId={tile.id}
+                        availableTiles={spaceCompareCandidates}
+                        onClose={() => setSpaceCompareOpen(false)}
+                        onCompleted={async (result) => {
+                            try {
+                                const refreshed = await getTiles(
+                                    tile.sourceTab === 'staging' || sourceTab === 'staging'
+                                        ? { sourceTab: 'staging' }
+                                        : undefined
+                                );
+                                // Prefer merging into allTiles list when possible
+                                const byId = new Map(allTiles.map((t) => [t.id, t]));
+                                for (const t of refreshed) byId.set(t.id, t);
+                                if (result.action === 'create' || result.action === 'merge-left' || result.action === 'merge-right') {
+                                    byId.set(result.tile.id, result.tile);
+                                }
+                                onUpdateTiles(Array.from(byId.values()));
+                            } catch (e) {
+                                console.error('Failed to refresh after space compare:', e);
+                                onUpdateTiles(allTiles);
+                            }
+                        }}
                     />
                 )}
             </>
