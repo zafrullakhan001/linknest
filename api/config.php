@@ -409,6 +409,34 @@ function warmSqliteOsPageCache(): bool {
     }
 }
 
+/** Ensure tiles video-space columns exist (YouTube / uploaded file tiles). */
+function ensureTilesVideoColumns(PDO $db): void {
+    static $ensured = false;
+    if ($ensured) {
+        return;
+    }
+    try {
+        $columns = $db->query('PRAGMA table_info(tiles)')->fetchAll(PDO::FETCH_ASSOC);
+        if (empty($columns)) {
+            return;
+        }
+        $names = array_column($columns, 'name');
+        $needed = [
+            'is_video' => 'INTEGER DEFAULT 0',
+            'video_url' => 'TEXT',
+            'video_source' => 'TEXT',
+        ];
+        foreach ($needed as $col => $type) {
+            if (!in_array($col, $names, true)) {
+                $db->exec("ALTER TABLE tiles ADD COLUMN {$col} {$type}");
+            }
+        }
+        $ensured = true;
+    } catch (PDOException $e) {
+        error_log('ensureTilesVideoColumns warning: ' . $e->getMessage());
+    }
+}
+
 /**
  * Ensure tile header-image / emoji visibility columns exist even when user_version already matches SCHEMA_VERSION.
  * Guards against version bumps that raced ahead of column ALTERs.
@@ -1314,6 +1342,7 @@ function initDatabase() {
             ensureLinkFeatureToggleColumns($db);
             ensureMcpTokensTable($db);
             ensureCategoryVisibilityPresetsTable($db);
+            ensureTilesVideoColumns($db);
             if (!schemaPatchesAlreadyApplied()) {
                 ensureTilesHeaderImageColumns($db);
                 ensureTilesSearchTagsColumn($db);
@@ -1346,6 +1375,7 @@ function initDatabase() {
             ensureLinkFeatureToggleColumns($db);
             ensureMcpTokensTable($db);
             ensureCategoryVisibilityPresetsTable($db);
+            ensureTilesVideoColumns($db);
             if (!schemaPatchesAlreadyApplied()) {
                 ensureTilesHeaderImageColumns($db);
                 ensureTilesSearchTagsColumn($db);
@@ -1619,6 +1649,8 @@ function initDatabase() {
         } catch (PDOException $e) {
             error_log('Tiles hyperlink migration warning: ' . $e->getMessage());
         }
+
+        ensureTilesVideoColumns($db);
         
         // Migrate existing tiles table to add deleted_at column for soft delete (recycle bin)
         try {

@@ -207,7 +207,7 @@ function handleGetTiles() {
     // Step 1: Get visible tiles filtered by source_tab
     // Summary mode skips html_content and other heavy columns
     $tileCols = $summaryMode
-        ? 'id, user_id, title, description, emoji, theme_color, "group", position, created_at, visibility, allowed_users, allowed_groups, source_tab, deleted_at, archived_at, is_hyperlink, hyperlink_url, open_in_new_tab, browser, visible_from, expires_at, tile_background_color, tile_gradient_enabled, tile_gradient_colors, tile_gradient_color_positions, tile_gradient_direction, tile_gradient_type, tile_border_radius, tile_text_color, page_animation, links_animation, header_image, header_image_align, header_image_opacity, header_image_offset_x, header_image_offset_y, header_image_zoom, header_image_fit, show_emoji, emoji_image, emoji_image_opacity, emoji_image_offset_x, emoji_image_offset_y, emoji_image_zoom, show_title, show_description, show_short_urls, search_tags, published, access_restrictions'
+        ? 'id, user_id, title, description, emoji, theme_color, "group", position, created_at, visibility, allowed_users, allowed_groups, source_tab, deleted_at, archived_at, is_hyperlink, hyperlink_url, open_in_new_tab, is_video, video_url, video_source, browser, visible_from, expires_at, tile_background_color, tile_gradient_enabled, tile_gradient_colors, tile_gradient_color_positions, tile_gradient_direction, tile_gradient_type, tile_border_radius, tile_text_color, page_animation, links_animation, header_image, header_image_align, header_image_opacity, header_image_offset_x, header_image_offset_y, header_image_zoom, header_image_fit, show_emoji, emoji_image, emoji_image_opacity, emoji_image_offset_x, emoji_image_offset_y, emoji_image_zoom, show_title, show_description, show_short_urls, search_tags, published, access_restrictions'
         : '*';
     $baseWhere = 'deleted_at IS NULL AND archived_at IS NULL';
     if ($sourceTab === 'staging') {
@@ -501,6 +501,9 @@ function handleGetTiles() {
             'isHyperlink' => isset($row['is_hyperlink']) ? (bool)$row['is_hyperlink'] : false,
             'hyperlinkUrl' => $row['hyperlink_url'] ?? null,
             'openInNewTab' => isset($row['open_in_new_tab']) ? (bool)$row['open_in_new_tab'] : null,
+            'isVideo' => isset($row['is_video']) ? (bool)$row['is_video'] : false,
+            'videoUrl' => $row['video_url'] ?? null,
+            'videoSource' => (isset($row['video_source']) && in_array($row['video_source'], ['youtube', 'file'], true)) ? $row['video_source'] : null,
             'browser' => isset($row['browser']) ? $row['browser'] : null,
             'canView' => $canView,
             'canEdit' => $canEdit,
@@ -1349,6 +1352,9 @@ function handleGetTile($tileId) {
         'isHyperlink' => isset($row['is_hyperlink']) ? (bool)$row['is_hyperlink'] : false,
         'hyperlinkUrl' => $row['hyperlink_url'] ?? null,
         'openInNewTab' => isset($row['open_in_new_tab']) ? (bool)$row['open_in_new_tab'] : null,
+        'isVideo' => isset($row['is_video']) ? (bool)$row['is_video'] : false,
+        'videoUrl' => $row['video_url'] ?? null,
+        'videoSource' => (isset($row['video_source']) && in_array($row['video_source'], ['youtube', 'file'], true)) ? $row['video_source'] : null,
         'browser' => isset($row['browser']) ? $row['browser'] : null,
         'canView' => $canView,
         'canEdit' => $canEdit,
@@ -1756,6 +1762,24 @@ function handleCreateTile() {
     $isHyperlink = isset($data['isHyperlink']) && $data['isHyperlink'] ? 1 : 0;
     $hyperlinkUrl = $data['hyperlinkUrl'] ?? null;
     $openInNewTab = isset($data['openInNewTab']) && $data['openInNewTab'] ? 1 : 0;
+
+    // Handle video space fields
+    $isVideo = isset($data['isVideo']) && $data['isVideo'] ? 1 : 0;
+    $videoUrl = isset($data['videoUrl']) && is_string($data['videoUrl']) && trim($data['videoUrl']) !== '' ? trim($data['videoUrl']) : null;
+    $videoSource = isset($data['videoSource']) && in_array($data['videoSource'], ['youtube', 'file'], true) ? $data['videoSource'] : null;
+    if ($isVideo) {
+        $isHyperlink = 0;
+        $hyperlinkUrl = null;
+        $openInNewTab = 0;
+    } else {
+        $videoUrl = null;
+        $videoSource = null;
+    }
+    if ($isHyperlink) {
+        $isVideo = 0;
+        $videoUrl = null;
+        $videoSource = null;
+    }
     
     // Handle scheduling fields
     $visibleFrom = isset($data['visibleFrom']) && $data['visibleFrom'] ? $data['visibleFrom'] : null;
@@ -1879,7 +1903,7 @@ function handleCreateTile() {
     // Published flag: only admins may create unpublished content
     $published = resolvePublishedFlag($data, $user, true);
     
-    $stmt = $db->prepare('INSERT INTO tiles (id, user_id, title, description, html_content, emoji, theme_color, "group", visibility, allowed_users, allowed_groups, is_hyperlink, hyperlink_url, open_in_new_tab, visible_from, expires_at, browser, tile_background_color, tile_gradient_enabled, tile_gradient_colors, tile_gradient_color_positions, tile_gradient_direction, tile_gradient_type, tile_border_radius, tile_text_color, page_animation, links_animation, header_image, header_image_align, header_image_opacity, header_image_offset_x, header_image_offset_y, header_image_zoom, header_image_fit, show_emoji, emoji_image, emoji_image_opacity, emoji_image_offset_x, emoji_image_offset_y, emoji_image_zoom, show_title, show_description, search_tags, source_tab, published, access_restrictions, position, created_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)');
+    $stmt = $db->prepare('INSERT INTO tiles (id, user_id, title, description, html_content, emoji, theme_color, "group", visibility, allowed_users, allowed_groups, is_hyperlink, hyperlink_url, open_in_new_tab, is_video, video_url, video_source, visible_from, expires_at, browser, tile_background_color, tile_gradient_enabled, tile_gradient_colors, tile_gradient_color_positions, tile_gradient_direction, tile_gradient_type, tile_border_radius, tile_text_color, page_animation, links_animation, header_image, header_image_align, header_image_opacity, header_image_offset_x, header_image_offset_y, header_image_zoom, header_image_fit, show_emoji, emoji_image, emoji_image_opacity, emoji_image_offset_x, emoji_image_offset_y, emoji_image_zoom, show_title, show_description, search_tags, source_tab, published, access_restrictions, position, created_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)');
     
     if (!$stmt->execute([
         $tileId,
@@ -1896,6 +1920,9 @@ function handleCreateTile() {
         $isHyperlink,
         $hyperlinkUrl,
         $openInNewTab,
+        $isVideo,
+        $videoUrl,
+        $videoSource,
         $visibleFrom,
         $expiresAt,
         $browser,
@@ -2541,7 +2568,7 @@ function handleCloneTile($tileId) {
         // Copy source_tab so cloned tile stays in same area (staging vs public)
         $newSourceTab = isset($originalTile['source_tab']) && trim($originalTile['source_tab']) === 'staging' ? 'staging' : 'public';
         
-        $insertStmt = $db->prepare('INSERT INTO tiles (id, user_id, title, description, html_content, emoji, theme_color, "group", visibility, allowed_users, allowed_groups, is_hyperlink, hyperlink_url, open_in_new_tab, visible_from, expires_at, browser, tile_background_color, tile_gradient_enabled, tile_gradient_colors, tile_gradient_color_positions, tile_gradient_direction, tile_gradient_type, tile_border_radius, tile_text_color, page_animation, links_animation, header_image, header_image_align, header_image_opacity, header_image_offset_x, header_image_offset_y, header_image_zoom, header_image_fit, show_emoji, emoji_image, emoji_image_opacity, emoji_image_offset_x, emoji_image_offset_y, emoji_image_zoom, show_title, show_description, search_tags, source_tab, position, created_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)');
+        $insertStmt = $db->prepare('INSERT INTO tiles (id, user_id, title, description, html_content, emoji, theme_color, "group", visibility, allowed_users, allowed_groups, is_hyperlink, hyperlink_url, open_in_new_tab, is_video, video_url, video_source, visible_from, expires_at, browser, tile_background_color, tile_gradient_enabled, tile_gradient_colors, tile_gradient_color_positions, tile_gradient_direction, tile_gradient_type, tile_border_radius, tile_text_color, page_animation, links_animation, header_image, header_image_align, header_image_opacity, header_image_offset_x, header_image_offset_y, header_image_zoom, header_image_fit, show_emoji, emoji_image, emoji_image_opacity, emoji_image_offset_x, emoji_image_offset_y, emoji_image_zoom, show_title, show_description, search_tags, source_tab, position, created_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)');
         
         if (!$insertStmt->execute([
             $newTileId,
@@ -2558,6 +2585,9 @@ function handleCloneTile($tileId) {
             $originalTile['is_hyperlink'] ?? 0,
             $originalTile['hyperlink_url'] ?? null,
             $originalTile['open_in_new_tab'] ?? 0,
+            $originalTile['is_video'] ?? 0,
+            $originalTile['video_url'] ?? null,
+            $originalTile['video_source'] ?? null,
             $originalTile['visible_from'] ?? null,
             $originalTile['expires_at'] ?? null,
             $originalTile['browser'] ?? null,
@@ -3056,7 +3086,7 @@ function handleCloneCategory($categoryName) {
                     ? max(50, min(300, (int)$originalTile['header_image_zoom'])) : 100)
                 : null;
             
-            $insertStmt = $db->prepare('INSERT INTO tiles (id, user_id, title, description, html_content, emoji, theme_color, "group", visibility, allowed_users, allowed_groups, is_hyperlink, hyperlink_url, open_in_new_tab, visible_from, expires_at, browser, tile_background_color, tile_gradient_enabled, tile_gradient_colors, tile_gradient_color_positions, tile_gradient_direction, tile_gradient_type, tile_border_radius, tile_text_color, page_animation, links_animation, header_image, header_image_align, header_image_opacity, header_image_offset_x, header_image_offset_y, header_image_zoom, header_image_fit, show_emoji, emoji_image, emoji_image_opacity, emoji_image_offset_x, emoji_image_offset_y, emoji_image_zoom, show_title, show_description, search_tags, source_tab, position, created_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)');
+            $insertStmt = $db->prepare('INSERT INTO tiles (id, user_id, title, description, html_content, emoji, theme_color, "group", visibility, allowed_users, allowed_groups, is_hyperlink, hyperlink_url, open_in_new_tab, is_video, video_url, video_source, visible_from, expires_at, browser, tile_background_color, tile_gradient_enabled, tile_gradient_colors, tile_gradient_color_positions, tile_gradient_direction, tile_gradient_type, tile_border_radius, tile_text_color, page_animation, links_animation, header_image, header_image_align, header_image_opacity, header_image_offset_x, header_image_offset_y, header_image_zoom, header_image_fit, show_emoji, emoji_image, emoji_image_opacity, emoji_image_offset_x, emoji_image_offset_y, emoji_image_zoom, show_title, show_description, search_tags, source_tab, position, created_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)');
             
             if (!$insertStmt->execute([
                 $newTileId,
@@ -3073,6 +3103,9 @@ function handleCloneCategory($categoryName) {
                 $originalTile['is_hyperlink'] ?? 0,
                 $originalTile['hyperlink_url'] ?? null,
                 $originalTile['open_in_new_tab'] ?? 0,
+                $originalTile['is_video'] ?? 0,
+                $originalTile['video_url'] ?? null,
+                $originalTile['video_source'] ?? null,
                 $originalTile['visible_from'] ?? null,
                 $originalTile['expires_at'] ?? null,
                 $originalTile['browser'] ?? null,
@@ -4604,6 +4637,9 @@ function handleGetRecycleBin() {
             'isHyperlink' => isset($row['is_hyperlink']) ? (bool)$row['is_hyperlink'] : false,
             'hyperlinkUrl' => $row['hyperlink_url'] ?? null,
             'openInNewTab' => isset($row['open_in_new_tab']) ? (bool)$row['open_in_new_tab'] : null,
+            'isVideo' => isset($row['is_video']) ? (bool)$row['is_video'] : false,
+            'videoUrl' => $row['video_url'] ?? null,
+            'videoSource' => (isset($row['video_source']) && in_array($row['video_source'], ['youtube', 'file'], true)) ? $row['video_source'] : null,
             'canView' => $canView,
             'canEdit' => false, // Deleted tiles cannot be edited
             'canDelete' => true, // Can permanently delete from recycle bin
@@ -4974,6 +5010,9 @@ function handleGetArchive() {
                 'isHyperlink' => isset($row['is_hyperlink']) ? (bool)$row['is_hyperlink'] : false,
                 'hyperlinkUrl' => $row['hyperlink_url'] ?? null,
                 'openInNewTab' => isset($row['open_in_new_tab']) ? (bool)$row['open_in_new_tab'] : null,
+                'isVideo' => isset($row['is_video']) ? (bool)$row['is_video'] : false,
+                'videoUrl' => $row['video_url'] ?? null,
+                'videoSource' => (isset($row['video_source']) && in_array($row['video_source'], ['youtube', 'file'], true)) ? $row['video_source'] : null,
                 'canView' => $canView,
                 'canEdit' => false, // Archived tiles cannot be edited
                 'canDelete' => $canDelete, // Allow delete from archive (moves to recycle bin)
@@ -5478,6 +5517,9 @@ function getTileForVersion($tileId, $db) {
         'isHyperlink' => isset($row['is_hyperlink']) ? (bool)$row['is_hyperlink'] : false,
         'hyperlinkUrl' => $row['hyperlink_url'] ?? null,
         'openInNewTab' => isset($row['open_in_new_tab']) ? (bool)$row['open_in_new_tab'] : false,
+        'isVideo' => isset($row['is_video']) ? (bool)$row['is_video'] : false,
+        'videoUrl' => $row['video_url'] ?? null,
+        'videoSource' => (isset($row['video_source']) && in_array($row['video_source'], ['youtube', 'file'], true)) ? $row['video_source'] : null,
         'browser' => isset($row['browser']) ? $row['browser'] : null,
         'visibleFrom' => $row['visible_from'] ?? null,
         'expiresAt' => $row['expires_at'] ?? null,
@@ -5934,6 +5976,24 @@ function updateTileInternal($tileId, $data, $db, $user, $isRestore = false, $isF
         $isHyperlink = isset($data['isHyperlink']) && $data['isHyperlink'] ? 1 : 0;
         $hyperlinkUrl = $data['hyperlinkUrl'] ?? null;
         $openInNewTab = isset($data['openInNewTab']) && $data['openInNewTab'] ? 1 : 0;
+
+        // Handle video space fields
+        $isVideo = isset($data['isVideo']) && $data['isVideo'] ? 1 : 0;
+        $videoUrl = isset($data['videoUrl']) && is_string($data['videoUrl']) && trim($data['videoUrl']) !== '' ? trim($data['videoUrl']) : null;
+        $videoSource = isset($data['videoSource']) && in_array($data['videoSource'], ['youtube', 'file'], true) ? $data['videoSource'] : null;
+        if ($isVideo) {
+            $isHyperlink = 0;
+            $hyperlinkUrl = null;
+            $openInNewTab = 0;
+        } else {
+            $videoUrl = null;
+            $videoSource = null;
+        }
+        if ($isHyperlink) {
+            $isVideo = 0;
+            $videoUrl = null;
+            $videoSource = null;
+        }
         
         // Handle scheduling fields
         $visibleFrom = isset($data['visibleFrom']) && $data['visibleFrom'] ? $data['visibleFrom'] : null;
@@ -6216,7 +6276,7 @@ function updateTileInternal($tileId, $data, $db, $user, $isRestore = false, $isF
         }
         
         // Update tile
-        $stmt = $db->prepare('UPDATE tiles SET title = ?, description = ?, html_content = ?, emoji = ?, theme_color = ?, "group" = ?, visibility = ?, allowed_users = ?, allowed_groups = ?, is_hyperlink = ?, hyperlink_url = ?, open_in_new_tab = ?, visible_from = ?, expires_at = ?, browser = ?, tile_background_color = ?, tile_gradient_enabled = ?, tile_gradient_colors = ?, tile_gradient_color_positions = ?, tile_gradient_direction = ?, tile_gradient_type = ?, tile_border_radius = ?, tile_text_color = ?, page_animation = ?, links_animation = ?, header_image = ?, header_image_align = ?, header_image_opacity = ?, header_image_offset_x = ?, header_image_offset_y = ?, header_image_zoom = ?, header_image_fit = ?, show_emoji = ?, emoji_image = ?, emoji_image_opacity = ?, emoji_image_offset_x = ?, emoji_image_offset_y = ?, emoji_image_zoom = ?, show_title = ?, show_description = ?, search_tags = ?, source_tab = ?, published = ?, access_restrictions = ? WHERE id = ?');
+        $stmt = $db->prepare('UPDATE tiles SET title = ?, description = ?, html_content = ?, emoji = ?, theme_color = ?, "group" = ?, visibility = ?, allowed_users = ?, allowed_groups = ?, is_hyperlink = ?, hyperlink_url = ?, open_in_new_tab = ?, is_video = ?, video_url = ?, video_source = ?, visible_from = ?, expires_at = ?, browser = ?, tile_background_color = ?, tile_gradient_enabled = ?, tile_gradient_colors = ?, tile_gradient_color_positions = ?, tile_gradient_direction = ?, tile_gradient_type = ?, tile_border_radius = ?, tile_text_color = ?, page_animation = ?, links_animation = ?, header_image = ?, header_image_align = ?, header_image_opacity = ?, header_image_offset_x = ?, header_image_offset_y = ?, header_image_zoom = ?, header_image_fit = ?, show_emoji = ?, emoji_image = ?, emoji_image_opacity = ?, emoji_image_offset_x = ?, emoji_image_offset_y = ?, emoji_image_zoom = ?, show_title = ?, show_description = ?, search_tags = ?, source_tab = ?, published = ?, access_restrictions = ? WHERE id = ?');
         $stmt->execute([
             $data['title'] ?? '',
             $data['description'] ?? '',
@@ -6230,6 +6290,9 @@ function updateTileInternal($tileId, $data, $db, $user, $isRestore = false, $isF
             $isHyperlink,
             $hyperlinkUrl,
             $openInNewTab,
+            $isVideo,
+            $videoUrl,
+            $videoSource,
             $visibleFrom,
             $expiresAt,
             $browser,
@@ -6750,7 +6813,7 @@ function generateChangelogSummary($old, $new) {
     $changes = [];
     
     // Root level fields
-    $rootFields = ['title', 'description', 'htmlContent', 'group', 'emoji', 'showEmoji', 'showTitle', 'showDescription', 'showShortUrls', 'emojiImage', 'emojiImageOpacity', 'emojiImageOffsetX', 'emojiImageOffsetY', 'emojiImageZoom', 'visibility', 'browser', 'themeColor', 'isHyperlink', 'hyperlinkUrl', 'pageAnimation', 'linksAnimation', 'headerImage', 'headerImageAlign', 'headerImageOpacity', 'headerImageOffsetX', 'headerImageOffsetY', 'headerImageZoom', 'headerImageFit'];
+    $rootFields = ['title', 'description', 'htmlContent', 'group', 'emoji', 'showEmoji', 'showTitle', 'showDescription', 'showShortUrls', 'emojiImage', 'emojiImageOpacity', 'emojiImageOffsetX', 'emojiImageOffsetY', 'emojiImageZoom', 'visibility', 'browser', 'themeColor', 'isHyperlink', 'hyperlinkUrl', 'isVideo', 'videoUrl', 'videoSource', 'pageAnimation', 'linksAnimation', 'headerImage', 'headerImageAlign', 'headerImageOpacity', 'headerImageOffsetX', 'headerImageOffsetY', 'headerImageZoom', 'headerImageFit'];
     foreach ($rootFields as $f) {
         $oldVal = is_array($old) ? ($old[$f] ?? null) : null;
         $newVal = is_array($new) ? ($new[$f] ?? null) : null;

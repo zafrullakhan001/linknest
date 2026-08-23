@@ -8041,7 +8041,6 @@ export const TileDetail: React.FC<TileDetailProps> = ({
                                             htmlId={`section-${section.id}`}
                                             disabled={!canReorderSections}
                                             layout={sectionsSideBySide ? 'grid' : 'list'}
-                                            style={{ animationDelay: isQrLayout ? undefined : `${sectionIndex * 120}ms` }}
                                             data-view-layout={sectionLinkLayout}
                                             data-qr-print-section={isQrLayout ? section.id : undefined}
                                             data-qr-print-title={isQrLayout ? (`${section.emoji ? `${section.emoji} ` : ''}${section.title || ''}`) : undefined}
@@ -8052,12 +8051,15 @@ export const TileDetail: React.FC<TileDetailProps> = ({
                                                         ? 'p-4'
                                                         : 'p-6'
                                             } ${
-                                                !isQrLayout && tile.pageAnimation && tile.pageAnimation !== 'none'
-                                                    ? getTileAnimationClass(tile.pageAnimation as TileAnimation)
-                                                    : isQrLayout
-                                                        ? ''
+                                                // Do not put animate-in on the sortable root when reorder is enabled —
+                                                // animation fill-mode locks transform and hides the drag preview.
+                                                canReorderSections || isQrLayout
+                                                    ? ''
+                                                    : tile.pageAnimation && tile.pageAnimation !== 'none'
+                                                        ? getTileAnimationClass(tile.pageAnimation as TileAnimation)
                                                         : 'animate-in fade-in slide-in-from-bottom-2'
                                             }`}
+                                            style={{ animationDelay: isQrLayout || canReorderSections ? undefined : `${sectionIndex * 120}ms` }}
                                         >
                                             {({ attributes: sectionDragAttrs, listeners: sectionDragListeners }) => (
                                             <>

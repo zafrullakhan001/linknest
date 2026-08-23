@@ -71,6 +71,9 @@ const transformTile = (apiTile: any): Tile => {
     isHyperlink: apiTile.isHyperlink || false,
     hyperlinkUrl: apiTile.hyperlinkUrl || undefined,
     openInNewTab: apiTile.openInNewTab !== undefined ? apiTile.openInNewTab : undefined,
+    isVideo: apiTile.isVideo || false,
+    videoUrl: apiTile.videoUrl || undefined,
+    videoSource: apiTile.videoSource === 'youtube' || apiTile.videoSource === 'file' ? apiTile.videoSource : undefined,
     canView: apiTile.canView !== undefined ? apiTile.canView : true, // Default to true if not set
     canEdit: apiTile.canEdit !== undefined ? apiTile.canEdit : false, // Default to false if not set
     canDelete: apiTile.canDelete !== undefined ? apiTile.canDelete : false, // Default to false if not set

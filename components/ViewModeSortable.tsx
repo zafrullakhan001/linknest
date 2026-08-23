@@ -5,19 +5,19 @@ import { CSS } from '@dnd-kit/utilities';
 
 const SOFT_TRANSITION = 'transform 220ms cubic-bezier(0.22, 1, 0.36, 1), box-shadow 180ms ease, background-color 180ms ease, opacity 160ms ease';
 
-type DragHandleBag = {
+type DragHandleProps = {
   attributes: React.HTMLAttributes<HTMLElement>;
   listeners: ReturnType<typeof useSortable>['listeners'];
   isDragging: boolean;
 };
 
-type DragHandleRender = (props: DragHandleBag) => React.ReactNode;
+type DragHandleRender = (props: DragHandleProps) => React.ReactNode;
 
 function DropLine({ position }: { position: 'before' | 'after' }) {
   return (
     <div
-      className={`pointer-events-none absolute left-1 right-1 z-40 flex items-center ${
-        position === 'before' ? '-top-1.5' : '-bottom-1.5'
+      className={`pointer-events-none absolute left-0 right-0 z-50 flex items-center ${
+        position === 'before' ? '-top-2.5' : '-bottom-2.5'
       }`}
       aria-hidden
     >
@@ -78,25 +78,32 @@ export const ViewModeSortable: React.FC<{
     }
   }
 
-  const mergedStyle: React.CSSProperties = {
-    ...style,
-    // Keep transform while dragging so the real card sticks to the pointer (no separate banner)
-    transform: CSS.Transform.toString(transform),
-    // No layout transition while actively dragging — keeps it glued to the mouse
-    transition: isDragging ? undefined : (transition ?? SOFT_TRANSITION),
-    opacity: isDragging ? 0.92 : 1,
-    zIndex: isDragging ? 50 : isOverTarget ? 5 : undefined,
-    position: 'relative',
-    cursor: isDragging ? 'grabbing' : undefined,
-    boxShadow: isDragging
-      ? '0 12px 28px -8px rgba(37, 99, 235, 0.35), 0 4px 10px -4px rgba(15, 23, 42, 0.15)'
-      : undefined,
-  };
-
   const content =
     typeof children === 'function'
       ? (children as DragHandleRender)({ attributes, listeners, isDragging })
       : children;
+
+  const mergedStyle: React.CSSProperties = {
+    ...style,
+    transform: CSS.Translate.toString(transform),
+    // Entrance animations (animate-in / pageAnimation) own `transform` and would
+    // hide the drag preview — kill them for the duration of the drag.
+    ...(isDragging
+      ? {
+          animation: 'none',
+          transition: undefined,
+          opacity: 0.95,
+          zIndex: 200,
+          cursor: 'grabbing' as const,
+          boxShadow: '0 16px 36px -10px rgba(37, 99, 235, 0.4), 0 6px 14px -4px rgba(15, 23, 42, 0.2)',
+          willChange: 'transform',
+        }
+      : {
+          transition: transition ?? SOFT_TRANSITION,
+          zIndex: isOverTarget ? 5 : undefined,
+        }),
+    position: 'relative',
+  };
 
   return (
     <div
@@ -104,9 +111,10 @@ export const ViewModeSortable: React.FC<{
       id={htmlId}
       className={[
         className,
-        !isDragging ? 'transition-[box-shadow,background-color,opacity] duration-200 ease-out' : '',
+        'overflow-visible',
+        !isDragging ? 'transition-[box-shadow,background-color,opacity] duration-200 ease-out' : 'animate-none',
         isDragging
-          ? 'ring-2 ring-brand-400/80 dark:ring-brand-400/60 bg-white dark:bg-slate-800 scale-[1.01]'
+          ? 'ring-2 ring-brand-400/90 dark:ring-brand-400/70 bg-white dark:bg-slate-800 shadow-xl'
           : '',
         isOverTarget && !isDragging
           ? 'ring-2 ring-brand-400/70 dark:ring-brand-400/50 bg-brand-50/60 dark:bg-brand-900/25 shadow-md shadow-brand-500/10'

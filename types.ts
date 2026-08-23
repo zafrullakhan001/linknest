@@ -251,6 +251,12 @@ export interface Tile {
   isHyperlink?: boolean; // Whether this tile is a hyperlink instead of a space
   hyperlinkUrl?: string; // URL for hyperlink tiles
   openInNewTab?: boolean; // Whether hyperlink should open in new tab (true) or same tab (false)
+  /** Video space: plays YouTube or an uploaded file in-app (not a link list). */
+  isVideo?: boolean;
+  /** YouTube URL or uploaded video file URL for video spaces. */
+  videoUrl?: string;
+  /** How videoUrl should be interpreted. */
+  videoSource?: 'youtube' | 'file';
   canView?: boolean; // Whether the current user can view this tile (based on tile access permissions)
   canEdit?: boolean; // Whether the current user can edit this tile (based on tile access permissions)
   canDelete?: boolean; // Whether the current user can delete this tile (based on tile access permissions)

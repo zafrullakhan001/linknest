@@ -100,7 +100,8 @@ export function getTileLabeledFields(tile: Tile, includeUrls = true): LabeledSea
     { text: tile.description, sourceLabel: 'Description' },
     { text: tile.emoji, sourceLabel: 'Emoji' },
     ...(tile.searchTags ?? []).map((tag) => ({ text: tag, sourceLabel: 'Tag', sourceName: tag })),
-    { text: includeUrls ? tile.hyperlinkUrl : undefined, sourceLabel: 'Hyperlink URL' }
+    { text: includeUrls ? tile.hyperlinkUrl : undefined, sourceLabel: 'Hyperlink URL' },
+    { text: includeUrls ? tile.videoUrl : undefined, sourceLabel: 'Video URL' }
   ];
 
   const addLinkFields = (link: { label?: string; url?: string; notes?: string; tooltip?: string; richTextContent?: string }) => {

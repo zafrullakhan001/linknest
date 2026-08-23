@@ -61,6 +61,9 @@ import { SearchResultFilterControl, SearchWordModeControl, FuzzySearchControl, S
 import type { StagingOfflineKitHandle } from './StagingOfflineKit';
 import { FormSection, FormLabel, SpaceModalHeader, EditModalTabButton } from './SpaceFormChrome';
 import { SearchTagsInput } from './SearchTagsInput';
+import { SpaceVideoField, type SpaceVideoSource } from './SpaceVideoField';
+import { VideoSpacePlayerDialog } from './VideoSpacePlayerDialog';
+import { isYouTubeUrl } from '../utils/youtube';
 import { EmojiPickerPopover } from './EmojiPickerPanel';
 import { TileFireworks } from './TileFireworks';
 import { TileConfetti } from './TileConfetti';
@@ -1354,7 +1357,7 @@ const SortableTile: React.FC<SortableTileProps> = ({
   };
 
   const styles = getColorStyles(tile.themeColor);
-  const linkCount = tile.isHyperlink ? 0 : (typeof tile.linkCount === 'number' ? tile.linkCount : (() => {
+  const linkCount = (tile.isHyperlink || tile.isVideo) ? 0 : (typeof tile.linkCount === 'number' ? tile.linkCount : (() => {
     const uniqueLinks = new Set<string>();
     const processLink = (link: any) => {
       const key = `${(link.label || '').toLowerCase()}|${(link.url || '').toLowerCase()}`;
@@ -1720,7 +1723,7 @@ const SortableTile: React.FC<SortableTileProps> = ({
           <div className="flex items-center gap-2 shrink-0">
             <div className={`
               w-10 h-10 rounded-lg ${styles.soft} flex items-center justify-center text-lg 
-              border ${styles.border} transition-shadow duration-200 ease-out group-hover:shadow-md overflow-hidden
+              border ${styles.border} transition-shadow duration-200 ease-out group-hover:shadow-md overflow-hidden relative
             `}>
               {tile.emojiImage ? (
                 <img
@@ -1736,6 +1739,13 @@ const SortableTile: React.FC<SortableTileProps> = ({
               ) : (
                 tile.emoji
               )}
+              {tile.isVideo ? (
+                <span className="absolute -bottom-0.5 -right-0.5 flex h-4 w-4 items-center justify-center rounded-full bg-rose-600 text-white shadow" aria-hidden>
+                  <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor" className="w-2.5 h-2.5 ml-px">
+                    <path d="M6.3 2.841A1.5 1.5 0 004 4.11V15.89a1.5 1.5 0 002.3 1.269l9.344-5.89a1.5 1.5 0 000-2.538L6.3 2.84z" />
+                  </svg>
+                </span>
+              ) : null}
             </div>
           </div>
         ) : null}
@@ -2154,7 +2164,7 @@ const SortableTile: React.FC<SortableTileProps> = ({
 
       {/* Compact Footer */}
       <div className="pt-2.5 border-t border-slate-100 dark:border-slate-700/50 flex items-center justify-between">
-        {!tile.isHyperlink && (
+        {!(tile.isHyperlink || tile.isVideo) && (
           <div className={`flex items-center gap-1.5 text-xs font-medium ${styles.text}`}>
             <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor" className="w-3 h-3">
               <path d="M12.232 4.232a2.5 2.5 0 013.536 3.536l-1.225 1.224a.75.75 0 001.061 1.06l1.224-1.224a4 4 0 00-5.656-5.656l-3 3a4 4 0 00.225 5.865.75.75 0 00.977-1.138 2.5 2.5 0 01-.142-3.667l3-3z" />
@@ -2163,12 +2173,23 @@ const SortableTile: React.FC<SortableTileProps> = ({
             <span>{linkCount}</span>
           </div>
         )}
-        {tile.isHyperlink && <div></div>}
+        {(tile.isHyperlink || tile.isVideo) && (
+          <div className={`flex items-center gap-1.5 text-xs font-medium ${styles.text}`}>
+            {tile.isVideo ? (
+              <>
+                <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor" className="w-3.5 h-3.5">
+                  <path d="M6.3 2.841A1.5 1.5 0 004 4.11V15.89a1.5 1.5 0 002.3 1.269l9.344-5.89a1.5 1.5 0 000-2.538L6.3 2.84z" />
+                </svg>
+                <span>Video</span>
+              </>
+            ) : null}
+          </div>
+        )}
 
         {/* Center Rolling Message */}
         {activeMessages.length > 0 && (
           <div
-            className={`group/message absolute bottom-1 left-0 right-0 transition-all cursor-help ${!tile.isHyperlink ? 'pl-[60px]' : ''} ${!activeMessages[0].textColor ? (
+            className={`group/message absolute bottom-1 left-0 right-0 transition-all cursor-help ${!(tile.isHyperlink || tile.isVideo) ? 'pl-[60px]' : ''} ${!activeMessages[0].textColor ? (
               activeMessages[0].type === 'alert' ? 'text-amber-600 dark:text-amber-400' :
                 activeMessages[0].type === 'warning' ? 'text-amber-600 dark:text-amber-400' :
                   activeMessages[0].type === 'celebration' ? 'text-pink-600 dark:text-pink-400' :
@@ -2946,10 +2967,13 @@ export const TileGrid: React.FC<TileGridProps> = ({
     setNewAllowedUsers((prev) => includeUserInAllowedList(prev, id));
   }, [isEditModalOpen, editingTile?.userId, user?.id]);
 
-  // Hyperlink state
-  const [tileType, setTileType] = useState<'space' | 'hyperlink'>('space');
+  // Hyperlink / video space state
+  const [tileType, setTileType] = useState<'space' | 'hyperlink' | 'video'>('space');
   const [hyperlinkUrl, setHyperlinkUrl] = useState('');
   const [openInNewTab, setOpenInNewTab] = useState(true);
+  const [videoUrl, setVideoUrl] = useState('');
+  const [videoSource, setVideoSource] = useState<SpaceVideoSource>('youtube');
+  const [videoPlayerTile, setVideoPlayerTile] = useState<Tile | null>(null);
 
   // Emoji Picker State
   const [showEmojiPicker, setShowEmojiPicker] = useState(false);
@@ -5275,6 +5299,10 @@ You may also wrap the array in an object: { "messages": [ ... ] }.
     if (!newTitle.trim()) return;
 
     if (tileType === 'hyperlink' && !hyperlinkUrl.trim()) return;
+    if (tileType === 'video') {
+      if (!videoUrl.trim()) return;
+      if (videoSource === 'youtube' && !isYouTubeUrl(videoUrl)) return;
+    }
 
     if (!isAuthenticated && onAuthRequired) {
       onAuthRequired();
@@ -5325,6 +5353,9 @@ You may also wrap the array in an object: { "messages": [ ... ] }.
       isHyperlink: tileType === 'hyperlink',
       hyperlinkUrl: tileType === 'hyperlink' ? hyperlinkUrl.trim() : undefined,
       openInNewTab: tileType === 'hyperlink' ? openInNewTab : undefined,
+      isVideo: tileType === 'video',
+      videoUrl: tileType === 'video' ? videoUrl.trim() : undefined,
+      videoSource: tileType === 'video' ? videoSource : undefined,
       visibleFrom: visibleFrom.trim() ? new Date(visibleFrom).toISOString() : undefined,
       expiresAt: expiresAt.trim() ? new Date(expiresAt).toISOString() : undefined,
       accessRestrictions: newAccessRestrictions ?? null,
@@ -5404,6 +5435,8 @@ You may also wrap the array in an object: { "messages": [ ... ] }.
     setTileType('space');
     setHyperlinkUrl('');
     setOpenInNewTab(true);
+    setVideoUrl('');
+    setVideoSource('youtube');
     setVisibleFrom('');
     setExpiresAt('');
     setNewAccessRestrictions(undefined);
@@ -5802,6 +5835,9 @@ You may also wrap the array in an object: { "messages": [ ... ] }.
       } else {
         window.location.href = tile.hyperlinkUrl;
       }
+    } else if (tile?.isVideo && tile.videoUrl) {
+      void recordTileVisit(tile.id);
+      setVideoPlayerTile(tile);
     } else {
       // Include the active tab in the URL hash so TileDetail knows the source context
       window.location.hash = `#/tile/${tileId}?from=${activeTab}`;
@@ -5858,11 +5894,13 @@ You may also wrap the array in an object: { "messages": [ ... ] }.
     setHeaderBgMode('auto');
     setHeaderBgColor('#ffffff');
     setNewColor(tile.themeColor);
-    setTileType(tile.isHyperlink ? 'hyperlink' : 'space');
+    setTileType(tile.isVideo ? 'video' : (tile.isHyperlink ? 'hyperlink' : 'space'));
     setHyperlinkUrl(tile.hyperlinkUrl || '');
     setOpenInNewTab(tile.openInNewTab !== undefined ? tile.openInNewTab : true);
-    // For hyperlinks: if user is not admin, set visibility to private (they can only select private)
-    if (tile.isHyperlink && user && !user.is_admin && isAuthenticated) {
+    setVideoUrl(tile.videoUrl || '');
+    setVideoSource(tile.videoSource === 'file' ? 'file' : 'youtube');
+    // For hyperlinks/videos: if user is not admin, set visibility to private (they can only select private)
+    if ((tile.isHyperlink || tile.isVideo) && user && !user.is_admin && isAuthenticated) {
       setNewVisibility('private');
     } else {
       setNewVisibility(tile.visibility || 'public');
@@ -6050,6 +6088,10 @@ You may also wrap the array in an object: { "messages": [ ... ] }.
 
     if (tileType === 'hyperlink' && !hyperlinkUrl.trim()) return;
     if (editingTile.isHyperlink && tileType === 'space' && !hyperlinkUrl.trim()) return;
+    if (tileType === 'video') {
+      if (!videoUrl.trim()) return;
+      if (videoSource === 'youtube' && !isYouTubeUrl(videoUrl)) return;
+    }
 
     if (newVisibility === 'private' && !hasPrivateAudience) return;
 
@@ -6145,6 +6187,9 @@ You may also wrap the array in an object: { "messages": [ ... ] }.
       isHyperlink: tileType === 'hyperlink',
       hyperlinkUrl: tileType === 'hyperlink' ? hyperlinkUrl.trim() : undefined,
       openInNewTab: tileType === 'hyperlink' ? openInNewTab : undefined,
+      isVideo: tileType === 'video',
+      videoUrl: tileType === 'video' ? videoUrl.trim() : undefined,
+      videoSource: tileType === 'video' ? videoSource : undefined,
       visibleFrom: visibleFrom.trim() ? new Date(visibleFrom).toISOString() : undefined,
       expiresAt: expiresAt.trim() ? new Date(expiresAt).toISOString() : undefined,
       accessRestrictions: newAccessRestrictions ?? null,
@@ -6201,6 +6246,7 @@ You may also wrap the array in an object: { "messages": [ ... ] }.
     !newTitle.trim() ||
     (tileType === 'hyperlink' && !hyperlinkUrl.trim()) ||
     (convertingHyperlinkToSpace && !hyperlinkUrl.trim()) ||
+    (tileType === 'video' && (!videoUrl.trim() || (videoSource === 'youtube' && !isYouTubeUrl(videoUrl)))) ||
     (newVisibility === 'private' && !hasPrivateAudience);
 
   const isPrivateScopeSave = activeTab === 'private' && !!user;
@@ -8631,7 +8677,7 @@ You may also wrap the array in an object: { "messages": [ ... ] }.
           <div className="flex items-center gap-1.5">
             <div className="w-1.5 h-1.5 rounded-full bg-violet-500"></div>
             <span>{flattenGroupedTiles(displayGroupedTiles).reduce((acc: number, t: Tile) => {
-              if (t.isHyperlink) return acc;
+              if (t.isHyperlink || t.isVideo) return acc;
               const uniqueLinks = new Set<string>();
               const processLink = (link: any) => {
                 const key = `${(link.label || '').toLowerCase()}|${(link.url || '').toLowerCase()}`;
@@ -9452,10 +9498,10 @@ You may also wrap the array in an object: { "messages": [ ... ] }.
               }}
             >
               <SpaceModalHeader
-                emoji={tileType === 'hyperlink' ? '🔗' : '✨'}
-                eyebrow={tileType === 'hyperlink' ? 'New Hyperlink' : 'New Space'}
-                title={tileType === 'hyperlink' ? 'Create Hyperlink' : 'Create New Space'}
-                subtitle={tileType === 'hyperlink' ? 'Add a direct link tile to your board' : 'Organize your links into a beautiful space'}
+                emoji={tileType === 'video' ? '🎬' : (tileType === 'hyperlink' ? '🔗' : '✨')}
+                eyebrow={tileType === 'video' ? 'New Video' : (tileType === 'hyperlink' ? 'New Hyperlink' : 'New Space')}
+                title={tileType === 'video' ? 'Create Video Space' : (tileType === 'hyperlink' ? 'Create Hyperlink' : 'Create New Space')}
+                subtitle={tileType === 'video' ? 'Play a YouTube video or uploaded file right on the board' : (tileType === 'hyperlink' ? 'Add a direct link tile to your board' : 'Organize your links into a beautiful space')}
                 onClose={() => setIsModalOpen(false)}
                 onMouseDown={handleDragStart}
               />
@@ -9486,7 +9532,7 @@ You may also wrap the array in an object: { "messages": [ ... ] }.
                           value="space"
                           checked={tileType === 'space'}
                           onChange={(e) => {
-                            setTileType(e.target.value as 'space' | 'hyperlink');
+                            setTileType(e.target.value as 'space' | 'hyperlink' | 'video');
                             if (e.target.value === 'space') {
                               setNewEmoji('📁'); // Reset to folder for space
                             }
@@ -9502,7 +9548,7 @@ You may also wrap the array in an object: { "messages": [ ... ] }.
                           value="hyperlink"
                           checked={tileType === 'hyperlink'}
                           onChange={(e) => {
-                            setTileType(e.target.value as 'space' | 'hyperlink');
+                            setTileType(e.target.value as 'space' | 'hyperlink' | 'video');
                             if (e.target.value === 'hyperlink') {
                               setNewEmoji('🔗'); // Set default link emoji
                               // Set default visibility: private for authenticated non-admin users, public for admins
@@ -9519,14 +9565,40 @@ You may also wrap the array in an object: { "messages": [ ... ] }.
                         />
                         <span className="text-sm text-slate-700 dark:text-slate-300"><span aria-hidden="true">🔗</span> Hyperlink — direct link to a URL</span>
                       </label>
+                      <label className={`flex items-center gap-2.5 cursor-pointer rounded-lg border px-3 py-2.5 transition-colors ${tileType === 'video' ? 'border-rose-300 bg-rose-50/80 dark:border-rose-800 dark:bg-rose-950/30' : 'border-slate-200 dark:border-slate-700 hover:bg-white/70 dark:hover:bg-slate-800/50'}`}>
+                        <input
+                          type="radio"
+                          name="tileType"
+                          value="video"
+                          checked={tileType === 'video'}
+                          onChange={(e) => {
+                            setTileType(e.target.value as 'space' | 'hyperlink' | 'video');
+                            if (e.target.value === 'video') {
+                              setNewEmoji('🎬');
+                              if (user && !user.is_admin && isAuthenticated) {
+                                selectPrivateVisibility(user.id);
+                              } else if (!user || user.is_admin) {
+                                setNewVisibility('public');
+                              }
+                            }
+                          }}
+                          className="w-4 h-4 text-rose-600 focus:ring-rose-500 focus:ring-2"
+                        />
+                        <span className="text-sm text-slate-700 dark:text-slate-300"><span aria-hidden="true">🎬</span> Video — YouTube or uploaded file to play on the board</span>
+                      </label>
                     </div>
                   </div>
                   </FormSection>
 
-                  {/* Hyperlink URL - Only shown when type is hyperlink */}
-                  {tileType === 'hyperlink' && (
-                    <FormSection emoji="🔗" title="Hyperlink Details" accent="indigo">
+                  {/* Hyperlink / Video details */}
+                  {(tileType === 'hyperlink' || tileType === 'video') && (
+                    <FormSection
+                      emoji={tileType === 'video' ? '🎬' : '🔗'}
+                      title={tileType === 'video' ? 'Video Details' : 'Hyperlink Details'}
+                      accent={tileType === 'video' ? 'rose' : 'indigo'}
+                    >
                     <>
+                      {tileType === 'hyperlink' && (
                       <div>
                         <FormLabel emoji="🌐">URL</FormLabel>
                         <input
@@ -9537,6 +9609,8 @@ You may also wrap the array in an object: { "messages": [ ... ] }.
                           className="w-full bg-slate-50 dark:bg-slate-900/50 border border-slate-200 dark:border-slate-700 rounded-lg px-3 py-2.5 text-sm text-slate-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-brand-500/50 focus:border-brand-500 placeholder-slate-400 transition-all"
                         />
                       </div>
+                      )}
+                      {tileType === 'hyperlink' && (
                       <div>
                         <label className="block text-xs font-semibold text-slate-700 dark:text-slate-300 mb-1.5">Open Link</label>
                         <div className="space-y-2">
@@ -9564,8 +9638,17 @@ You may also wrap the array in an object: { "messages": [ ... ] }.
                           </label>
                         </div>
                       </div>
+                      )}
+                      {tileType === 'video' && (
+                        <SpaceVideoField
+                          source={videoSource}
+                          url={videoUrl}
+                          onSourceChange={setVideoSource}
+                          onUrlChange={setVideoUrl}
+                        />
+                      )}
 
-                      {/* Category - Also shown for hyperlinks */}
+                      {/* Category - Also shown for hyperlinks / videos */}
                       <div>
                         <label className="block text-xs font-semibold text-slate-700 dark:text-slate-300 mb-1.5">Category</label>
                         <input
@@ -9582,7 +9665,7 @@ You may also wrap the array in an object: { "messages": [ ... ] }.
                         <p className="mt-1 text-xs text-slate-500 dark:text-slate-400">Select an existing category or type a new name to create one</p>
                       </div>
 
-                    {/* Visibility Settings - For hyperlinks */}
+                    {/* Visibility Settings - For hyperlinks / videos */}
                       <div>
                         <FormLabel emoji="👁️">Visibility</FormLabel>
                         <div className="space-y-2">
@@ -9813,7 +9896,7 @@ You may also wrap the array in an object: { "messages": [ ... ] }.
 
                           {newVisibility === 'private' && !hasPrivateAudience && (
                               <p className="mt-2 text-xs text-amber-600 dark:text-amber-400 px-3 py-2 bg-amber-50 dark:bg-amber-900/20 rounded border border-amber-200 dark:border-amber-700">
-                                Please select at least one user or group for private hyperlinks
+                                Please select at least one user or group for private hyperlinks or videos
                               </p>
                             )}
                           </div>
@@ -9869,7 +9952,7 @@ You may also wrap the array in an object: { "messages": [ ... ] }.
                               }}
                             />
                           ) : (
-                            newEmoji || (tileType === 'hyperlink' ? '🔗' : '✨')
+                            newEmoji || (tileType === 'video' ? '🎬' : (tileType === 'hyperlink' ? '🔗' : '✨'))
                           )}
                         </button>
 
@@ -10694,11 +10777,12 @@ You may also wrap the array in an object: { "messages": [ ... ] }.
                       disabled={
                         !newTitle.trim() ||
                         (newVisibility === 'private' && !hasPrivateAudience) ||
-                        (tileType === 'hyperlink' && !hyperlinkUrl.trim())
+                        (tileType === 'hyperlink' && !hyperlinkUrl.trim()) ||
+                        (tileType === 'video' && (!videoUrl.trim() || (videoSource === 'youtube' && !isYouTubeUrl(videoUrl))))
                       }
                       className="bg-gradient-to-r from-sky-600 to-indigo-500 hover:from-sky-500 hover:to-indigo-400 disabled:opacity-50 disabled:cursor-not-allowed text-white px-5 py-2 rounded-lg text-sm font-semibold transition-all shadow-md shadow-sky-500/20 hover:shadow-lg hover:shadow-sky-500/30 hover:scale-105 active:scale-95"
                     >
-                      {tileType === 'hyperlink' ? '🔗 Create Hyperlink' : '✨ Create Space'}
+                      {tileType === 'video' ? '🎬 Create Video' : (tileType === 'hyperlink' ? '🔗 Create Hyperlink' : '✨ Create Space')}
                     </button>
                   </div>
                 </div>
@@ -10747,12 +10831,12 @@ You may also wrap the array in an object: { "messages": [ ... ] }.
               }}
             >
               <SpaceModalHeader
-                emoji={tileType === 'hyperlink' ? '🔗' : '✏️'}
-                eyebrow={convertingHyperlinkToSpace ? 'Convert Hyperlink' : (tileType === 'hyperlink' ? 'Edit Hyperlink' : 'Edit Space')}
-                title={editingTile.title || (tileType === 'hyperlink' ? 'Edit Hyperlink' : 'Edit Space')}
+                emoji={tileType === 'video' ? '🎬' : (tileType === 'hyperlink' ? '🔗' : '✏️')}
+                eyebrow={convertingHyperlinkToSpace ? 'Convert Hyperlink' : (tileType === 'video' ? 'Edit Video' : (tileType === 'hyperlink' ? 'Edit Hyperlink' : 'Edit Space'))}
+                title={editingTile.title || (tileType === 'video' ? 'Edit Video' : (tileType === 'hyperlink' ? 'Edit Hyperlink' : 'Edit Space'))}
                 subtitle={convertingHyperlinkToSpace
                   ? 'This URL will become a section with a link inside the new space'
-                  : (tileType === 'hyperlink' ? 'Update your hyperlink settings' : 'Update your space settings')}
+                  : (tileType === 'video' ? 'Update your video space' : (tileType === 'hyperlink' ? 'Update your hyperlink settings' : 'Update your space settings'))}
                 onClose={() => setIsEditModalOpen(false)}
                 onMouseDown={handleDragStart}
               />
@@ -11809,6 +11893,19 @@ You may also wrap the array in an object: { "messages": [ ... ] }.
                       </div>
                     )}
 
+                    {/* Video source editing */}
+                    {(tileType === 'video' || editingTile.isVideo) && tileType === 'video' && (
+                      <div>
+                        <FormLabel emoji="🎬">Video</FormLabel>
+                        <SpaceVideoField
+                          source={videoSource}
+                          url={videoUrl}
+                          onSourceChange={setVideoSource}
+                          onUrlChange={setVideoUrl}
+                        />
+                      </div>
+                    )}
+
                     {/* URL - hyperlinks, and while converting a hyperlink to a space */}
                     {(tileType === 'hyperlink' || convertingHyperlinkToSpace) && (
                       <div>
@@ -12107,7 +12204,7 @@ You may also wrap the array in an object: { "messages": [ ... ] }.
 
                           {newVisibility === 'private' && !hasPrivateAudience && (
                               <p className="mt-2 text-xs text-amber-600 dark:text-amber-400 px-3 py-2 bg-amber-50 dark:bg-amber-900/20 rounded border border-amber-200 dark:border-amber-700">
-                                Please select at least one user or group for private hyperlinks
+                                Please select at least one user or group for private hyperlinks or videos
                               </p>
                             )}
                           </div>
@@ -13715,6 +13812,15 @@ You may also wrap the array in an object: { "messages": [ ... ] }.
           />
         </Suspense>
       )}
+
+      <VideoSpacePlayerDialog
+        isOpen={!!videoPlayerTile}
+        onClose={() => setVideoPlayerTile(null)}
+        title={videoPlayerTile?.title || 'Video'}
+        videoUrl={videoPlayerTile?.videoUrl || ''}
+        videoSource={videoPlayerTile?.videoSource}
+        emoji={videoPlayerTile?.emoji}
+      />
 
       {/* Favorite Link Notes Dialog */}
       {favNotesDialogState && (
