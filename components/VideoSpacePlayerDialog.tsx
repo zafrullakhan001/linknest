@@ -1,4 +1,4 @@
-import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import React, { useEffect, useMemo, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
 import {
   isYouTubeUrl,
@@ -17,18 +17,10 @@ interface VideoSpacePlayerDialogProps {
   emoji?: string;
 }
 
-type PlayerPos = { left: number; top: number };
-
-/** Keep at least this much of the title bar reachable on-screen. */
-const EDGE_GRIP = 56;
-
-function clampPos(left: number, top: number, w: number, h: number): PlayerPos {
-  return {
-    left: Math.min(window.innerWidth - EDGE_GRIP, Math.max(EDGE_GRIP - w, left)),
-    top: Math.min(window.innerHeight - EDGE_GRIP, Math.max(0, top)),
-  };
-}
-
+/**
+ * Drag via CSS transform only — the dialog stays flex-centered in the layout,
+ * so there is no left/top handoff jump when the title bar is clicked.
+ */
 export const VideoSpacePlayerDialog: React.FC<VideoSpacePlayerDialogProps> = ({
   isOpen,
   onClose,
@@ -39,14 +31,17 @@ export const VideoSpacePlayerDialog: React.FC<VideoSpacePlayerDialogProps> = ({
 }) => {
   const shellRef = useRef<HTMLDivElement>(null);
   const videoRef = useRef<HTMLVideoElement>(null);
-  /** Offset from the dialog's top-left to the pointer (keeps grab point under cursor). */
-  const grabRef = useRef<{ x: number; y: number } | null>(null);
-  const sizeRef = useRef({ w: 0, h: 0 });
+  const dragRef = useRef<{
+    startX: number;
+    startY: number;
+    originX: number;
+    originY: number;
+  } | null>(null);
+  const offsetRef = useRef({ x: 0, y: 0 });
 
   const [maximized, setMaximized] = useState(false);
   const [autoplay, setAutoplay] = useState(true);
-  /** null = CSS-centered (flex). Set only after user starts dragging. */
-  const [dragPos, setDragPos] = useState<PlayerPos | null>(null);
+  const [offset, setOffset] = useState({ x: 0, y: 0 });
   const [isDragging, setIsDragging] = useState(false);
 
   const isYouTube = useMemo(() => {
@@ -68,17 +63,22 @@ export const VideoSpacePlayerDialog: React.FC<VideoSpacePlayerDialogProps> = ({
     if (!isOpen) {
       setMaximized(false);
       setAutoplay(true);
-      setDragPos(null);
+      setOffset({ x: 0, y: 0 });
+      offsetRef.current = { x: 0, y: 0 };
       setIsDragging(false);
-      grabRef.current = null;
+      dragRef.current = null;
       return;
     }
 
-    // Fresh open → always start centered (clear any previous drag)
-    setDragPos(null);
+    // Fresh launch → centered
+    setOffset({ x: 0, y: 0 });
+    offsetRef.current = { x: 0, y: 0 };
     setIsDragging(false);
-    grabRef.current = null;
+    dragRef.current = null;
+  }, [isOpen]);
 
+  useEffect(() => {
+    if (!isOpen) return;
     const onKey = (e: KeyboardEvent) => {
       if (e.key === 'Escape' || e.key === 'Esc') {
         e.preventDefault();
@@ -103,48 +103,37 @@ export const VideoSpacePlayerDialog: React.FC<VideoSpacePlayerDialogProps> = ({
     }
   }, [isOpen, isYouTube, autoplay, videoUrl]);
 
-  const moveToPointer = useCallback((clientX: number, clientY: number) => {
-    const grab = grabRef.current;
-    const el = shellRef.current;
-    if (!grab || !el) return;
-    const w = sizeRef.current.w || el.offsetWidth;
-    const h = sizeRef.current.h || el.offsetHeight;
-    setDragPos(clampPos(clientX - grab.x, clientY - grab.y, w, h));
-  }, []);
-
   const onTitlePointerDown = (e: React.PointerEvent<HTMLDivElement>) => {
     if (maximized) return;
     if (e.button !== 0) return;
     const target = e.target as HTMLElement | null;
     if (target?.closest('a, button, input, label, select, textarea')) return;
 
-    const el = shellRef.current;
-    if (!el) return;
-
-    const rect = el.getBoundingClientRect();
-    sizeRef.current = { w: rect.width, h: rect.height };
-    grabRef.current = {
-      x: e.clientX - rect.left,
-      y: e.clientY - rect.top,
-    };
-
-    // Lock to current visual position first (no jump), then follow the pointer
-    const locked = clampPos(rect.left, rect.top, rect.width, rect.height);
-    setDragPos(locked);
-    setIsDragging(true);
-
     e.preventDefault();
+    dragRef.current = {
+      startX: e.clientX,
+      startY: e.clientY,
+      originX: offsetRef.current.x,
+      originY: offsetRef.current.y,
+    };
+    setIsDragging(true);
     e.currentTarget.setPointerCapture(e.pointerId);
   };
 
   const onTitlePointerMove = (e: React.PointerEvent<HTMLDivElement>) => {
-    if (!grabRef.current) return;
-    moveToPointer(e.clientX, e.clientY);
+    const drag = dragRef.current;
+    if (!drag) return;
+    const next = {
+      x: drag.originX + (e.clientX - drag.startX),
+      y: drag.originY + (e.clientY - drag.startY),
+    };
+    offsetRef.current = next;
+    setOffset(next);
   };
 
   const endTitleDrag = (e: React.PointerEvent<HTMLDivElement>) => {
-    if (!grabRef.current) return;
-    grabRef.current = null;
+    if (!dragRef.current) return;
+    dragRef.current = null;
     setIsDragging(false);
     try {
       e.currentTarget.releasePointerCapture(e.pointerId);
@@ -169,46 +158,12 @@ export const VideoSpacePlayerDialog: React.FC<VideoSpacePlayerDialogProps> = ({
 
   if (!isOpen || typeof document === 'undefined') return null;
 
-  const isFreePos = !maximized && dragPos !== null;
-
-  const shellStyle: React.CSSProperties = maximized
-    ? {
-        position: 'fixed',
-        left: 0,
-        top: 0,
-        width: '100vw',
-        height: '100vh',
-        maxWidth: 'none',
-        maxHeight: 'none',
-      }
-    : isFreePos
-      ? {
-          position: 'fixed',
-          left: dragPos.left,
-          top: dragPos.top,
-          width: 'min(56rem, calc(100vw - 1.5rem))',
-          maxWidth: 'calc(100vw - 1.5rem)',
-          maxHeight: 'min(90vh, 820px)',
-          margin: 0,
-          transform: 'none',
-          transition: 'none',
-        }
-      : {
-          // Flex child — parent centers it on screen
-          position: 'relative',
-          width: 'min(56rem, calc(100vw - 1.5rem))',
-          maxWidth: 'calc(100vw - 1.5rem)',
-          maxHeight: 'min(90vh, 820px)',
-          margin: 0,
-          transform: 'none',
-        };
-
   return createPortal(
     <div className="fixed inset-0 z-[99999]" role="presentation">
       <div className="absolute inset-0 bg-black/60" onClick={onClose} aria-hidden />
       <div
         className={
-          maximized || isFreePos
+          maximized
             ? 'absolute inset-0 pointer-events-none'
             : 'absolute inset-0 flex items-center justify-center p-3 pointer-events-none'
         }
@@ -218,7 +173,26 @@ export const VideoSpacePlayerDialog: React.FC<VideoSpacePlayerDialogProps> = ({
           role="dialog"
           aria-modal="true"
           aria-labelledby="video-space-player-title"
-          style={shellStyle}
+          style={
+            maximized
+              ? {
+                  position: 'fixed',
+                  inset: 0,
+                  width: '100vw',
+                  height: '100vh',
+                  maxWidth: 'none',
+                  maxHeight: 'none',
+                  transform: 'none',
+                }
+              : {
+                  width: 'min(56rem, calc(100vw - 1.5rem))',
+                  maxWidth: 'calc(100vw - 1.5rem)',
+                  maxHeight: 'min(90vh, 820px)',
+                  transform: `translate(${offset.x}px, ${offset.y}px)`,
+                  transition: isDragging ? 'none' : undefined,
+                  willChange: isDragging ? 'transform' : undefined,
+                }
+          }
           className={`pointer-events-auto flex flex-col overflow-hidden border border-slate-700/80 bg-slate-950 text-white shadow-2xl ${
             maximized ? 'rounded-none' : 'rounded-2xl'
           }`}
@@ -257,8 +231,14 @@ export const VideoSpacePlayerDialog: React.FC<VideoSpacePlayerDialogProps> = ({
               <button
                 type="button"
                 onClick={() => {
-                  setMaximized((v) => !v);
-                  if (maximized) setDragPos(null); // restore → re-center via flex
+                  setMaximized((v) => {
+                    if (v) {
+                      // Restoring → back to center
+                      setOffset({ x: 0, y: 0 });
+                      offsetRef.current = { x: 0, y: 0 };
+                    }
+                    return !v;
+                  });
                 }}
                 className="px-2.5 py-1.5 rounded-lg text-xs font-medium bg-white/10 hover:bg-white/15 text-white transition-colors"
                 title={maximized ? 'Exit maximize' : 'Maximize in app'}
