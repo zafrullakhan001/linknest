@@ -4,18 +4,26 @@ import { createTile, getTile, saveTile } from '../services/storageService';
 import {
   buildMergedCreateTitle,
   concatenateSpaces,
+  computeSpaceSimilarity,
+  countDiffByKind,
+  countMatchesByKind,
   diffSpaces,
   downloadTileCompareJson,
+  filterDiffByKinds,
   filterDiffDifferences,
+  filterDiffMatches,
   mergeSpaces,
   parseTileFromCompareFile,
   regenerateIds,
   type SpaceCompareSide,
+  type SpaceDiffKindFilter,
   type SpaceDiffNode,
   type SpaceDiffStatus,
   type SpaceFieldDiff,
 } from '../services/spaceCompareService';
 import { useEscapeToClose } from '../hooks/useEscapeToClose';
+
+type DiffViewMode = 'diff' | 'matches' | 'all';
 
 export interface SpaceCompareCandidate {
   id: string;
@@ -84,7 +92,12 @@ export const SpaceCompareDialog: React.FC<SpaceCompareDialogProps> = ({
   const [loadingLeft, setLoadingLeft] = useState(false);
   const [loadingRight, setLoadingRight] = useState(false);
   const [busy, setBusy] = useState(false);
-  const [showAll, setShowAll] = useState(false);
+  const [viewMode, setViewMode] = useState<DiffViewMode>('diff');
+  const [kindFilters, setKindFilters] = useState<SpaceDiffKindFilter>({
+    tabs: true,
+    sections: true,
+    links: true,
+  });
   const [pickerQuery, setPickerQuery] = useState('');
   const [expanded, setExpanded] = useState<Record<string, boolean>>({});
   const fileLeftRef = useRef<HTMLInputElement>(null);
@@ -136,7 +149,8 @@ export const SpaceCompareDialog: React.FC<SpaceCompareDialogProps> = ({
     setRight(null);
     setErrorRight(null);
     setPickerQuery('');
-    setShowAll(false);
+    setViewMode('diff');
+    setKindFilters({ tabs: true, sections: true, links: true });
     setExpanded({});
     void loadLeftFromId(leftTileId);
   }, [open, leftTileId, loadLeftFromId]);
@@ -189,18 +203,46 @@ export const SpaceCompareDialog: React.FC<SpaceCompareDialogProps> = ({
 
   const visibleRootFields = useMemo(() => {
     if (!diff) return [];
-    return showAll ? diff.rootFields : diff.rootFields.filter((f) => f.status !== 'unchanged');
-  }, [diff, showAll]);
+    if (viewMode === 'all') return diff.rootFields;
+    if (viewMode === 'matches') return diff.rootFields.filter((f) => f.status === 'unchanged');
+    return diff.rootFields.filter((f) => f.status !== 'unchanged');
+  }, [diff, viewMode]);
 
   const visibleTabs = useMemo(() => {
     if (!diff) return [];
-    return showAll ? diff.tabs : filterDiffDifferences(diff.tabs);
-  }, [diff, showAll]);
+    let base = diff.tabs;
+    if (viewMode === 'diff') base = filterDiffDifferences(diff.tabs);
+    else if (viewMode === 'matches') base = filterDiffMatches(diff.tabs);
+    return filterDiffByKinds(base, kindFilters);
+  }, [diff, viewMode, kindFilters]);
+
+  const kindCounts = useMemo(() => {
+    if (!diff) return { tabs: 0, sections: 0, links: 0 };
+    if (viewMode === 'matches') return countMatchesByKind(diff.tabs);
+    if (viewMode === 'diff') return countDiffByKind(filterDiffDifferences(diff.tabs));
+    // All items: show diff counts on badges so filters stay useful
+    return countDiffByKind(diff.tabs);
+  }, [diff, viewMode]);
+
+  const similarity = useMemo(() => {
+    if (!diff) return null;
+    return computeSpaceSimilarity(diff);
+  }, [diff]);
+
+  const toggleKindFilter = (key: keyof SpaceDiffKindFilter) => {
+    setKindFilters((prev) => {
+      const next = { ...prev, [key]: !prev[key] };
+      if (!next.tabs && !next.sections && !next.links) return prev;
+      return next;
+    });
+  };
 
   const visibleMessages = useMemo(() => {
     if (!diff) return [];
-    return showAll ? diff.messages : filterDiffDifferences(diff.messages);
-  }, [diff, showAll]);
+    if (viewMode === 'all') return diff.messages;
+    if (viewMode === 'matches') return filterDiffMatches(diff.messages);
+    return filterDiffDifferences(diff.messages);
+  }, [diff, viewMode]);
 
   const pickerTiles = useMemo(() => {
     const q = pickerQuery.trim().toLowerCase();
@@ -458,16 +500,102 @@ export const SpaceCompareDialog: React.FC<SpaceCompareDialogProps> = ({
               }`}
             >
               <h3 className="text-sm font-semibold text-slate-800 dark:text-slate-100">Difference summary</h3>
+              {similarity ? (
+                <div className="rounded-xl border border-emerald-200/70 dark:border-emerald-800/50 bg-white/70 dark:bg-slate-900/40 p-3 space-y-2">
+                  <div className="flex flex-wrap items-end justify-between gap-2">
+                    <div>
+                      <div className="text-[11px] font-semibold uppercase tracking-wide text-slate-500 dark:text-slate-400">
+                        How alike
+                      </div>
+                      <div className="flex items-baseline gap-2">
+                        <span className="text-2xl font-bold tabular-nums text-emerald-700 dark:text-emerald-300">
+                          {similarity.percent}%
+                        </span>
+                        <span className="text-sm font-medium text-slate-700 dark:text-slate-200">
+                          {similarity.label}
+                        </span>
+                      </div>
+                    </div>
+                    <p className="text-xs text-slate-600 dark:text-slate-300">
+                      <span className="font-semibold text-emerald-700 dark:text-emerald-300">{similarity.same}</span>
+                      {' of '}
+                      <span className="font-semibold">{similarity.total}</span>
+                      {' items match (same)'}
+                    </p>
+                  </div>
+                  <div
+                    className="h-2.5 rounded-full bg-slate-200 dark:bg-slate-700 overflow-hidden"
+                    role="progressbar"
+                    aria-valuenow={similarity.percent}
+                    aria-valuemin={0}
+                    aria-valuemax={100}
+                    aria-label="Space similarity"
+                  >
+                    <div
+                      className={`h-full rounded-full transition-all ${
+                        similarity.percent >= 80
+                          ? 'bg-emerald-500'
+                          : similarity.percent >= 50
+                            ? 'bg-amber-500'
+                            : 'bg-rose-500'
+                      }`}
+                      style={{ width: `${similarity.percent}%` }}
+                    />
+                  </div>
+                  <div className="grid grid-cols-2 sm:grid-cols-4 gap-2 text-[11px]">
+                    {(
+                      [
+                        { label: 'Tabs', bucket: similarity.byKind.tabs },
+                        { label: 'Sections', bucket: similarity.byKind.sections },
+                        { label: 'Links', bucket: similarity.byKind.links },
+                        { label: 'Properties', bucket: similarity.byKind.properties },
+                      ] as const
+                    ).map(({ label, bucket }) => (
+                      <div
+                        key={label}
+                        className="rounded-lg border border-slate-200/80 dark:border-slate-700 px-2 py-1.5 bg-slate-50/80 dark:bg-slate-800/40"
+                      >
+                        <div className="font-semibold text-slate-600 dark:text-slate-300">{label}</div>
+                        <div className="tabular-nums text-slate-800 dark:text-slate-100">
+                          {bucket.percent}% same
+                        </div>
+                        <div className="text-slate-500 dark:text-slate-400">
+                          {bucket.same}/{bucket.total}
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                  <button
+                    type="button"
+                    onClick={() => setViewMode('matches')}
+                    className={`w-full sm:w-auto px-3 py-1.5 text-[11px] font-medium rounded-lg border transition-colors ${
+                      viewMode === 'matches'
+                        ? 'border-emerald-500 bg-emerald-100 dark:bg-emerald-900/50 text-emerald-900 dark:text-emerald-100'
+                        : 'border-emerald-300 dark:border-emerald-700 bg-emerald-50/80 dark:bg-emerald-950/40 text-emerald-800 dark:text-emerald-200 hover:bg-emerald-100 dark:hover:bg-emerald-900/50'
+                    }`}
+                  >
+                    See what matches ({similarity.same})
+                  </button>
+                </div>
+              ) : null}
               <p className="text-sm text-slate-700 dark:text-slate-200">
                 {diff.counts.changed} changed · {diff.counts.onlyA} only left · {diff.counts.onlyB} only right ·{' '}
                 {diff.counts.unchanged} same
               </p>
-              <div className="flex flex-wrap gap-2">
+              <p className="text-xs text-slate-600 dark:text-slate-300">
+                {kindCounts.tabs} tab(s) · {kindCounts.sections} section(s) · {kindCounts.links} link(s)
+                {viewMode === 'matches'
+                  ? ' matching'
+                  : viewMode === 'diff'
+                    ? ' with differences'
+                    : ''}
+              </p>
+              <div className="flex flex-wrap items-center gap-2">
                 <button
                   type="button"
-                  onClick={() => setShowAll(false)}
+                  onClick={() => setViewMode('diff')}
                   className={`px-2.5 py-1 text-[11px] font-medium rounded-lg border ${
-                    !showAll
+                    viewMode === 'diff'
                       ? 'border-sky-400 bg-sky-100 dark:bg-sky-900/50 text-sky-900 dark:text-sky-100'
                       : 'border-slate-200 dark:border-slate-600 text-slate-600 dark:text-slate-300'
                   }`}
@@ -476,14 +604,61 @@ export const SpaceCompareDialog: React.FC<SpaceCompareDialogProps> = ({
                 </button>
                 <button
                   type="button"
-                  onClick={() => setShowAll(true)}
+                  onClick={() => setViewMode('matches')}
                   className={`px-2.5 py-1 text-[11px] font-medium rounded-lg border ${
-                    showAll
+                    viewMode === 'matches'
+                      ? 'border-emerald-500 bg-emerald-100 dark:bg-emerald-900/50 text-emerald-900 dark:text-emerald-100'
+                      : 'border-slate-200 dark:border-slate-600 text-slate-600 dark:text-slate-300'
+                  }`}
+                >
+                  Matches only
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setViewMode('all')}
+                  className={`px-2.5 py-1 text-[11px] font-medium rounded-lg border ${
+                    viewMode === 'all'
                       ? 'border-sky-400 bg-sky-100 dark:bg-sky-900/50 text-sky-900 dark:text-sky-100'
                       : 'border-slate-200 dark:border-slate-600 text-slate-600 dark:text-slate-300'
                   }`}
                 >
                   All items
+                </button>
+                <span
+                  className="hidden sm:inline-block w-px h-4 bg-amber-300/80 dark:bg-amber-700/60 mx-0.5"
+                  aria-hidden="true"
+                />
+                {(
+                  [
+                    { key: 'tabs' as const, label: 'Tabs', count: kindCounts.tabs },
+                    { key: 'sections' as const, label: 'Sections', count: kindCounts.sections },
+                    { key: 'links' as const, label: 'Links', count: kindCounts.links },
+                  ] as const
+                ).map(({ key, label, count }) => {
+                  const on = kindFilters[key];
+                  return (
+                    <button
+                      key={key}
+                      type="button"
+                      onClick={() => toggleKindFilter(key)}
+                      className={`px-2.5 py-1 text-[11px] font-medium rounded-lg border transition-colors ${
+                        on
+                          ? 'border-violet-400 bg-violet-100 dark:bg-violet-900/50 text-violet-900 dark:text-violet-100'
+                          : 'border-slate-200 dark:border-slate-600 text-slate-500 dark:text-slate-400 opacity-70'
+                      }`}
+                      title={on ? `Hide ${label.toLowerCase()}` : `Show ${label.toLowerCase()}`}
+                    >
+                      {label}
+                      <span className="ml-1 tabular-nums opacity-80">({count})</span>
+                    </button>
+                  );
+                })}
+                <button
+                  type="button"
+                  onClick={() => setKindFilters({ tabs: true, sections: true, links: true })}
+                  className="px-2.5 py-1 text-[11px] font-medium rounded-lg border border-slate-200 dark:border-slate-600 text-slate-600 dark:text-slate-300"
+                >
+                  All kinds
                 </button>
               </div>
             </div>
@@ -495,7 +670,9 @@ export const SpaceCompareDialog: React.FC<SpaceCompareDialogProps> = ({
 
           {diff && visibleRootFields.length > 0 ? (
             <section>
-              <h4 className="text-sm font-semibold text-slate-800 dark:text-slate-100 mb-2">Space properties</h4>
+              <h4 className="text-sm font-semibold text-slate-800 dark:text-slate-100 mb-2">
+                {viewMode === 'matches' ? 'Matching space properties' : 'Space properties'}
+              </h4>
               <FieldTable fields={visibleRootFields} />
             </section>
           ) : null}
@@ -532,7 +709,13 @@ export const SpaceCompareDialog: React.FC<SpaceCompareDialogProps> = ({
           visibleTabs.length === 0 &&
           visibleMessages.length === 0 ? (
             <p className="text-sm text-emerald-700 dark:text-emerald-300">
-              These spaces look the same for compared fields, tabs, sections, and links.
+              {!kindFilters.tabs || !kindFilters.sections || !kindFilters.links
+                ? 'Nothing to show for the selected kinds. Turn on Tabs, Sections, or Links above.'
+                : viewMode === 'matches'
+                  ? 'No matching tabs, sections, or links between these spaces.'
+                  : viewMode === 'diff'
+                    ? 'These spaces look the same for compared fields, tabs, sections, and links.'
+                    : 'Nothing to show.'}
             </p>
           ) : null}
         </div>
@@ -710,7 +893,7 @@ const DiffTreeNode: React.FC<{
   onToggle: (key: string) => void;
 }> = ({ node, path, expanded, onToggle }) => {
   const hasChildren = !!(node.children && node.children.length) || !!(node.fields && node.fields.length);
-  const isOpen = expanded[path] ?? node.status !== 'unchanged';
+  const isOpen = expanded[path] ?? true;
   const kindLabel =
     node.kind === 'tab'
       ? 'Tab'

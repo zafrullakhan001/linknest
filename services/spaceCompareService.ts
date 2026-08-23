@@ -547,6 +547,46 @@ export const buildMergedCreateTitle = (leftTitle: string, rightTitle: string): s
   return combined.length > 120 ? `${combined.slice(0, 117)}...` : combined;
 };
 
+/** Filter diff tree to matching (unchanged) items only; keep parents for context. */
+export const filterDiffMatches = (nodes: SpaceDiffNode[]): SpaceDiffNode[] => {
+  const result: SpaceDiffNode[] = [];
+  for (const node of nodes) {
+    const children = node.children ? filterDiffMatches(node.children) : undefined;
+    const hasMatchingChildren = !!(children && children.length > 0);
+    if (node.status === 'unchanged') {
+      result.push({ ...node, children });
+      continue;
+    }
+    if (hasMatchingChildren) {
+      result.push({
+        ...node,
+        fields: undefined,
+        status: 'unchanged',
+        children,
+      });
+    }
+  }
+  return result;
+};
+
+export const countMatchesByKind = (
+  nodes: SpaceDiffNode[]
+): { tabs: number; sections: number; links: number } => {
+  const counts = { tabs: 0, sections: 0, links: 0 };
+  const walk = (list: SpaceDiffNode[]) => {
+    for (const node of list) {
+      if (node.status === 'unchanged') {
+        if (node.kind === 'tab') counts.tabs++;
+        else if (node.kind === 'section') counts.sections++;
+        else if (node.kind === 'link' || node.kind === 'richText') counts.links++;
+      }
+      if (node.children) walk(node.children);
+    }
+  };
+  walk(nodes);
+  return counts;
+};
+
 /** Filter diff tree to differences only (keep parents that have differing descendants). */
 export const filterDiffDifferences = (nodes: SpaceDiffNode[]): SpaceDiffNode[] => {
   const result: SpaceDiffNode[] = [];
@@ -562,4 +602,169 @@ export const filterDiffDifferences = (nodes: SpaceDiffNode[]): SpaceDiffNode[] =
     }
   }
   return result;
+};
+
+export type SpaceDiffKindFilter = {
+  tabs: boolean;
+  sections: boolean;
+  links: boolean;
+};
+
+const nodeMatchesKindFilter = (node: SpaceDiffNode, kinds: SpaceDiffKindFilter): boolean => {
+  if (node.kind === 'tab') return kinds.tabs;
+  if (node.kind === 'section') return kinds.sections;
+  if (node.kind === 'link' || node.kind === 'richText') return kinds.links;
+  return true;
+};
+
+/**
+ * Keep ancestors when a descendant matches the kind filter.
+ * Tab/section field diffs only show when that kind is enabled.
+ */
+export const filterDiffByKinds = (
+  nodes: SpaceDiffNode[],
+  kinds: SpaceDiffKindFilter
+): SpaceDiffNode[] => {
+  const anyKind = kinds.tabs || kinds.sections || kinds.links;
+  if (!anyKind) return [];
+
+  const walk = (list: SpaceDiffNode[]): SpaceDiffNode[] => {
+    const out: SpaceDiffNode[] = [];
+    for (const node of list) {
+      const filteredChildren = node.children ? walk(node.children) : undefined;
+      const selfMatch = nodeMatchesKindFilter(node, kinds);
+      const hasMatchingChildren = !!(filteredChildren && filteredChildren.length > 0);
+      const hasOwnSignal =
+        node.status === 'unchanged' ||
+        node.status === 'onlyA' ||
+        node.status === 'onlyB' ||
+        !!(node.fields && node.fields.length > 0);
+
+      if (!selfMatch && !hasMatchingChildren) continue;
+
+      // Kind off: keep only as a structural parent for matches below.
+      if (!selfMatch && hasMatchingChildren) {
+        out.push({
+          ...node,
+          fields: undefined,
+          status: node.status === 'unchanged' ? 'unchanged' : node.status === 'changed' ? 'changed' : node.status,
+          children: filteredChildren,
+        });
+        continue;
+      }
+
+      // Kind on: skip containers whose only signals were in filtered-out descendants.
+      if (selfMatch && !hasOwnSignal && !hasMatchingChildren) continue;
+
+      out.push({
+        ...node,
+        children: filteredChildren,
+      });
+    }
+    return out;
+  };
+
+  return walk(nodes);
+};
+
+export const countDiffByKind = (
+  nodes: SpaceDiffNode[]
+): { tabs: number; sections: number; links: number } => {
+  const counts = { tabs: 0, sections: 0, links: 0 };
+  const walk = (list: SpaceDiffNode[]) => {
+    for (const node of list) {
+      if (node.status !== 'unchanged') {
+        if (node.kind === 'tab') counts.tabs++;
+        else if (node.kind === 'section') counts.sections++;
+        else if (node.kind === 'link' || node.kind === 'richText') counts.links++;
+      }
+      if (node.children) walk(node.children);
+    }
+  };
+  walk(nodes);
+  return counts;
+};
+
+export type SpaceSimilarityBucket = {
+  same: number;
+  total: number;
+  percent: number;
+};
+
+export type SpaceSimilarity = {
+  /** Overall alike score 0–100 (same items / all compared items). */
+  percent: number;
+  same: number;
+  total: number;
+  label: string;
+  byKind: {
+    tabs: SpaceSimilarityBucket;
+    sections: SpaceSimilarityBucket;
+    links: SpaceSimilarityBucket;
+    properties: SpaceSimilarityBucket;
+  };
+};
+
+const bucketFrom = (same: number, total: number): SpaceSimilarityBucket => ({
+  same,
+  total,
+  percent: total <= 0 ? 100 : Math.round((same / total) * 100),
+});
+
+const alikeLabel = (percent: number): string => {
+  if (percent >= 95) return 'Nearly identical';
+  if (percent >= 80) return 'Very similar';
+  if (percent >= 60) return 'Mostly alike';
+  if (percent >= 40) return 'Partly alike';
+  if (percent >= 20) return 'Mostly different';
+  return 'Very different';
+};
+
+/** How much two spaces look alike (equal/same items vs all compared items). */
+export const computeSpaceSimilarity = (diff: SpaceDiffResult): SpaceSimilarity => {
+  const byKind = {
+    tabs: { same: 0, total: 0 },
+    sections: { same: 0, total: 0 },
+    links: { same: 0, total: 0 },
+    properties: { same: 0, total: 0 },
+  };
+
+  for (const field of diff.rootFields) {
+    byKind.properties.total++;
+    if (field.status === 'unchanged') byKind.properties.same++;
+  }
+
+  const walk = (nodes: SpaceDiffNode[]) => {
+    for (const node of nodes) {
+      if (node.kind === 'tab') {
+        byKind.tabs.total++;
+        if (node.status === 'unchanged') byKind.tabs.same++;
+      } else if (node.kind === 'section') {
+        byKind.sections.total++;
+        if (node.status === 'unchanged') byKind.sections.same++;
+      } else if (node.kind === 'link' || node.kind === 'richText') {
+        byKind.links.total++;
+        if (node.status === 'unchanged') byKind.links.same++;
+      }
+      if (node.children) walk(node.children);
+    }
+  };
+  walk(diff.tabs);
+
+  const tabs = bucketFrom(byKind.tabs.same, byKind.tabs.total);
+  const sections = bucketFrom(byKind.sections.same, byKind.sections.total);
+  const links = bucketFrom(byKind.links.same, byKind.links.total);
+  const properties = bucketFrom(byKind.properties.same, byKind.properties.total);
+
+  const same = tabs.same + sections.same + links.same + properties.same;
+  const total = tabs.total + sections.total + links.total + properties.total;
+  const percent = total <= 0 ? 100 : Math.round((same / total) * 100);
+
+  return {
+    percent,
+    same,
+    total,
+    label: alikeLabel(percent),
+    byKind: { tabs, sections, links, properties },
+  };
 };
