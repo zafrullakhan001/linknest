@@ -13738,7 +13738,7 @@ You may also wrap the array in an object: { "messages": [ ... ] }.
           />
         </Suspense>
       )}
-      {compareTileId && (
+      {compareTileId && createPortal(
         <Suspense fallback={null}>
           <SpaceCompareDialog
             open={!!compareTileId}
@@ -13747,7 +13747,8 @@ You may also wrap the array in an object: { "messages": [ ... ] }.
             onClose={() => setCompareTileId(null)}
             onCompleted={handleCompareCompleted}
           />
-        </Suspense>
+        </Suspense>,
+        document.body
       )}
       {tileInfoDialog && (
         <Suspense fallback={null}>

@@ -1,5 +1,21 @@
 import React, { useState, useEffect, useCallback, useRef, useMemo, useId, lazy, Suspense } from 'react';
 import { createPortal } from 'react-dom';
+import {
+    DndContext,
+    DragOverlay,
+    PointerSensor,
+    closestCenter,
+    useSensor,
+    useSensors,
+    type DragEndEvent,
+    type DragStartEvent,
+} from '@dnd-kit/core';
+import {
+    SortableContext,
+    arrayMove,
+    rectSortingStrategy,
+    verticalListSortingStrategy,
+} from '@dnd-kit/sortable';
 import { Tile, Link, LinkSection, Tab, LinkVisibility, TileVisibility, COLOR_STYLES, THEME_COLORS, ThemeColor, TileMessage, AccessRestrictions, LinkRedirectHop } from '../types';
 import { linkHealthService, LinkHealthMap, isLikelyClientNetworkError, isNetworkHealthStatus, networkHealthResult } from '../services/linkHealthService';
 import { performanceAnalyticsService, type AnalyticsMetric } from '../services/performanceAnalyticsService';
@@ -88,6 +104,7 @@ import {
 } from '../services/linkCheckExceptionsService';
 import { printQrView } from '../utils/printQrView';
 import { rolesService, LINK_ACTION_IDS, type LinkActionId } from '../services/rolesService';
+import { ViewModeDragHandle, ViewModeSortable } from './ViewModeSortable';
 
 const SslCheckerDialog = lazy(() => import('./ssl/SslCheckerDialog'));
 const WhoisDialog = lazy(() => import('./ssl/WhoisDialog'));
@@ -100,9 +117,58 @@ const isViewLayoutMode = (value: string | null | undefined): value is ViewLayout
 const sectionLinkLayoutsStorageKey = (tileId: string) => `linknest_section_link_layouts_${tileId}`;
 const tabsMenuFloatingKey = (tileId: string) => `tile_tab_nav_floating_${tileId}`;
 const tabsMenuFloatPosKey = (tileId: string) => `tile_tab_nav_float_pos_${tileId}`;
+const tabsMenuFloatOriginKey = (tileId: string) => `tile_tab_nav_float_origin_${tileId}`;
 const TABS_MENU_FLOAT_MIN_VISIBLE = 48;
 
 type TabsMenuFloatPoint = { x: number; y: number };
+type TabsMenuFloatSize = { width: number; height: number };
+type TabsMenuFloatOrigin = 'horizontal' | 'vertical';
+
+const TABS_MENU_FLOAT_MIN_W = 200;
+const TABS_MENU_FLOAT_MAX_W = 480;
+const TABS_MENU_FLOAT_MIN_H = 180;
+const TABS_MENU_FLOAT_MAX_H = 800;
+
+const tabsMenuFloatSizeKey = (tileId: string) => `tile_tab_nav_float_size_${tileId}`;
+
+const safeParseTabsMenuSize = (raw: string | null): TabsMenuFloatSize | null => {
+    if (!raw) return null;
+    try {
+        const parsed = JSON.parse(raw) as unknown;
+        if (
+            typeof parsed === 'object' &&
+            parsed &&
+            typeof (parsed as TabsMenuFloatSize).width === 'number' &&
+            typeof (parsed as TabsMenuFloatSize).height === 'number' &&
+            Number.isFinite((parsed as TabsMenuFloatSize).width) &&
+            Number.isFinite((parsed as TabsMenuFloatSize).height)
+        ) {
+            return {
+                width: (parsed as TabsMenuFloatSize).width,
+                height: (parsed as TabsMenuFloatSize).height,
+            };
+        }
+    } catch {
+        // ignore
+    }
+    return null;
+};
+
+const loadTabsMenuFloatSize = (tileId: string): TabsMenuFloatSize | null => {
+    try {
+        return safeParseTabsMenuSize(localStorage.getItem(tabsMenuFloatSizeKey(tileId)));
+    } catch {
+        return null;
+    }
+};
+
+const saveTabsMenuFloatSize = (tileId: string, size: TabsMenuFloatSize): void => {
+    try {
+        localStorage.setItem(tabsMenuFloatSizeKey(tileId), JSON.stringify(size));
+    } catch {
+        // ignore
+    }
+};
 
 const clampTabsMenuCoord = (n: number, min: number, max: number) => Math.max(min, Math.min(max, n));
 
@@ -148,6 +214,14 @@ const loadTabsMenuFloatPos = (tileId: string): TabsMenuFloatPoint | null => {
     }
 };
 
+const loadTabsMenuFloatOrigin = (tileId: string): TabsMenuFloatOrigin => {
+    try {
+        return localStorage.getItem(tabsMenuFloatOriginKey(tileId)) === 'horizontal' ? 'horizontal' : 'vertical';
+    } catch {
+        return 'vertical';
+    }
+};
+
 const saveTabsMenuFloating = (tileId: string, floating: boolean): void => {
     try {
         localStorage.setItem(tabsMenuFloatingKey(tileId), floating ? '1' : '0');
@@ -159,6 +233,14 @@ const saveTabsMenuFloating = (tileId: string, floating: boolean): void => {
 const saveTabsMenuFloatPos = (tileId: string, pos: TabsMenuFloatPoint): void => {
     try {
         localStorage.setItem(tabsMenuFloatPosKey(tileId), JSON.stringify(pos));
+    } catch {
+        // ignore quota / private mode
+    }
+};
+
+const saveTabsMenuFloatOrigin = (tileId: string, origin: TabsMenuFloatOrigin): void => {
+    try {
+        localStorage.setItem(tabsMenuFloatOriginKey(tileId), origin);
     } catch {
         // ignore quota / private mode
     }
@@ -1290,45 +1372,46 @@ export const TileDetail: React.FC<TileDetailProps> = ({
         return viewerLinkUrl({ ...link, shortUrl: shortOf('link', link.id, link.shortUrl) }, show ?? showShortUrls) || link.url;
     }, [showShortUrls, shortOf]);
 
-    const openSpaceCompare = useCallback(async () => {
-        try {
-            const byId = new Map<string, Tile>();
-            for (const t of allTiles) byId.set(t.id, t);
+    const openSpaceCompare = useCallback(() => {
+        const byId = new Map<string, Tile>();
+        for (const t of allTiles) byId.set(t.id, t);
+        setSpaceCompareCandidates(
+            Array.from(byId.values()).map((t) => ({
+                id: t.id,
+                title: t.title,
+                emoji: t.emoji,
+                group: t.group,
+                visibility: t.visibility,
+                sourceTab: t.sourceTab,
+                canEdit: t.canEdit === true,
+            }))
+        );
+        setSpaceCompareOpen(true);
+
+        // Enrich candidate list in the background (dialog already open)
+        void (async () => {
             try {
                 const publicList = await getTiles();
                 for (const t of publicList) byId.set(t.id, t);
+                if (user?.is_admin) {
+                    try {
+                        const stagingList = await getTiles({ sourceTab: 'staging' });
+                        for (const t of stagingList) byId.set(t.id, t);
+                    } catch { /* ignore */ }
+                }
+                setSpaceCompareCandidates(
+                    Array.from(byId.values()).map((t) => ({
+                        id: t.id,
+                        title: t.title,
+                        emoji: t.emoji,
+                        group: t.group,
+                        visibility: t.visibility,
+                        sourceTab: t.sourceTab,
+                        canEdit: t.canEdit === true,
+                    }))
+                );
             } catch { /* ignore */ }
-            if (user?.is_admin) {
-                try {
-                    const stagingList = await getTiles({ sourceTab: 'staging' });
-                    for (const t of stagingList) byId.set(t.id, t);
-                } catch { /* ignore */ }
-            }
-            setSpaceCompareCandidates(
-                Array.from(byId.values()).map((t) => ({
-                    id: t.id,
-                    title: t.title,
-                    emoji: t.emoji,
-                    group: t.group,
-                    visibility: t.visibility,
-                    sourceTab: t.sourceTab,
-                    canEdit: t.canEdit === true,
-                }))
-            );
-        } catch {
-            setSpaceCompareCandidates(
-                allTiles.map((t) => ({
-                    id: t.id,
-                    title: t.title,
-                    emoji: t.emoji,
-                    group: t.group,
-                    visibility: t.visibility,
-                    sourceTab: t.sourceTab,
-                    canEdit: t.canEdit === true,
-                }))
-            );
-        }
-        setSpaceCompareOpen(true);
+        })();
     }, [allTiles, user?.is_admin]);
 
     const persistShowShortUrls = useCallback(async (enabled: boolean) => {
@@ -1546,6 +1629,7 @@ export const TileDetail: React.FC<TileDetailProps> = ({
     // Horizontal tabs vs vertical side menu (per space; useful when many tabs)
     const [tabNavLayout, setTabNavLayout] = useState<'horizontal' | 'vertical'>(() => {
         try {
+            if (loadTabsMenuFloating(tile.id)) return 'vertical';
             const saved = localStorage.getItem(`tile_tab_nav_layout_${tile.id}`);
             return saved === 'vertical' ? 'vertical' : 'horizontal';
         } catch {
@@ -1556,11 +1640,26 @@ export const TileDetail: React.FC<TileDetailProps> = ({
     const [verticalTabsFloatPos, setVerticalTabsFloatPos] = useState<TabsMenuFloatPoint>(() =>
         loadTabsMenuFloatPos(tile.id) ?? { x: 24, y: 96 }
     );
+    const [verticalTabsFloatSize, setVerticalTabsFloatSize] = useState<TabsMenuFloatSize>(() =>
+        loadTabsMenuFloatSize(tile.id) ?? { width: 224, height: 360 }
+    );
     const [verticalTabsDragging, setVerticalTabsDragging] = useState(false);
-    const verticalTabsNavRef = useRef<HTMLNavElement | null>(null);
+    const [verticalTabsResizing, setVerticalTabsResizing] = useState(false);
+    const [viewReorderSaving, setViewReorderSaving] = useState(false);
+    const [viewDragActive, setViewDragActive] = useState<{
+        type: 'section' | 'item';
+        id: string;
+        label: string;
+    } | null>(null);
+    const verticalTabsNavRef = useRef<HTMLElement | null>(null);
     const verticalTabsFloatPosRef = useRef<TabsMenuFloatPoint>(verticalTabsFloatPos);
+    const verticalTabsFloatSizeRef = useRef<TabsMenuFloatSize>(verticalTabsFloatSize);
     const verticalTabsDragStartRef = useRef<{ x: number; y: number; posX: number; posY: number } | null>(null);
+    const verticalTabsResizeStartRef = useRef<{ x: number; y: number; width: number; height: number } | null>(null);
     const verticalTabsDragCleanupRef = useRef<(() => void) | null>(null);
+    const viewReorderSensors = useSensors(
+        useSensor(PointerSensor, { activationConstraint: { distance: 8 } })
+    );
     const [sectionLinkLayouts, setSectionLinkLayouts] = useState<Record<string, ViewLayoutMode>>(() =>
         loadSectionLinkLayouts(tile.id)
     );
@@ -2222,19 +2321,26 @@ export const TileDetail: React.FC<TileDetailProps> = ({
     // Reload per-section link layouts when switching tiles
     useEffect(() => {
         setSectionLinkLayouts(loadSectionLinkLayouts(tile.id));
+        const floating = loadTabsMenuFloating(tile.id);
         try {
             const saved = localStorage.getItem(`tile_tab_nav_layout_${tile.id}`);
-            setTabNavLayout(saved === 'vertical' ? 'vertical' : 'horizontal');
+            // Floating menu is the vertical panel — keep layout vertical while floated
+            setTabNavLayout(floating ? 'vertical' : (saved === 'vertical' ? 'vertical' : 'horizontal'));
         } catch {
-            setTabNavLayout('horizontal');
+            setTabNavLayout(floating ? 'vertical' : 'horizontal');
         }
-        setVerticalTabsFloating(loadTabsMenuFloating(tile.id));
+        setVerticalTabsFloating(floating);
         setVerticalTabsFloatPos(loadTabsMenuFloatPos(tile.id) ?? { x: 24, y: 96 });
+        setVerticalTabsFloatSize(loadTabsMenuFloatSize(tile.id) ?? { width: 224, height: 360 });
     }, [tile.id]);
 
     useEffect(() => {
         verticalTabsFloatPosRef.current = verticalTabsFloatPos;
     }, [verticalTabsFloatPos]);
+
+    useEffect(() => {
+        verticalTabsFloatSizeRef.current = verticalTabsFloatSize;
+    }, [verticalTabsFloatSize]);
 
     useEffect(() => {
         return () => {
@@ -6354,6 +6460,11 @@ export const TileDetail: React.FC<TileDetailProps> = ({
     const useVerticalTabsDocked = useVerticalTabs && !verticalTabsFloating;
     const useMobileTabHamburger = isMobile && displayTabs.length >= 2;
     const showTabNavLayoutToggle = !isMobile && displayTabs.length >= 2;
+    const canViewReorder =
+        tile.canEdit === true &&
+        !(searchTerm || '').trim() &&
+        !viewReorderSaving &&
+        !isMobile;
 
     const getDisplayTabLinksCount = (tab: Tab): number => {
         const tabSections = tab.sections || [];
@@ -6389,12 +6500,18 @@ export const TileDetail: React.FC<TileDetailProps> = ({
         } catch (error) {
             console.error('Failed to save tab nav layout preference:', error);
         }
+        if (layout === 'horizontal' && verticalTabsFloating) {
+            setVerticalTabsFloating(false);
+            saveTabsMenuFloating(tile.id, false);
+            saveTabsMenuFloatOrigin(tile.id, 'horizontal');
+        }
     };
 
-    const clampVerticalTabsFloatPos = useCallback((p: TabsMenuFloatPoint): TabsMenuFloatPoint => {
+    const clampVerticalTabsFloatPos = useCallback((p: TabsMenuFloatPoint, sizeOverride?: TabsMenuFloatSize): TabsMenuFloatPoint => {
+        const size = sizeOverride ?? verticalTabsFloatSizeRef.current;
         const el = verticalTabsNavRef.current;
-        const width = el?.offsetWidth ?? 224;
-        const height = el?.offsetHeight ?? 280;
+        const width = size.width || el?.offsetWidth || 224;
+        const height = size.height || el?.offsetHeight || 280;
         const zoom = getTabsMenuCssZoom();
         const vv = window.visualViewport;
         const layoutW = (vv?.width ?? window.innerWidth) / zoom;
@@ -6409,17 +6526,34 @@ export const TileDetail: React.FC<TileDetailProps> = ({
         if (verticalTabsFloating) {
             setVerticalTabsFloating(false);
             saveTabsMenuFloating(tile.id, false);
+            if (loadTabsMenuFloatOrigin(tile.id) === 'horizontal') {
+                setAndPersistTabNavLayout('horizontal');
+            }
             return;
         }
+
+        const fromHorizontal = tabNavLayout !== 'vertical';
+        saveTabsMenuFloatOrigin(tile.id, fromHorizontal ? 'horizontal' : 'vertical');
+        if (fromHorizontal) {
+            setAndPersistTabNavLayout('vertical');
+        }
+
         const el = verticalTabsNavRef.current;
         const zoom = getTabsMenuCssZoom();
         let nextPos = verticalTabsFloatPosRef.current;
-        if (el) {
+        if (el && !fromHorizontal) {
             const rect = el.getBoundingClientRect();
             nextPos = clampVerticalTabsFloatPos({
                 x: rect.left / zoom,
                 y: rect.top / zoom,
             });
+            const nextSize = {
+                width: clampTabsMenuCoord(rect.width / zoom, TABS_MENU_FLOAT_MIN_W, TABS_MENU_FLOAT_MAX_W),
+                height: clampTabsMenuCoord(rect.height / zoom, TABS_MENU_FLOAT_MIN_H, TABS_MENU_FLOAT_MAX_H),
+            };
+            setVerticalTabsFloatSize(nextSize);
+            verticalTabsFloatSizeRef.current = nextSize;
+            saveTabsMenuFloatSize(tile.id, nextSize);
         } else {
             nextPos = clampVerticalTabsFloatPos(loadTabsMenuFloatPos(tile.id) ?? { x: 24, y: 96 });
         }
@@ -6431,9 +6565,9 @@ export const TileDetail: React.FC<TileDetailProps> = ({
     };
 
     const startVerticalTabsDrag = (e: React.PointerEvent) => {
-        if (!verticalTabsFloating) return;
+        if (!verticalTabsFloating || verticalTabsResizing) return;
         const target = e.target as HTMLElement | null;
-        if (target?.closest('button')) return;
+        if (target?.closest('button') || target?.closest('[data-resize-handle]')) return;
 
         verticalTabsDragCleanupRef.current?.();
         verticalTabsDragCleanupRef.current = null;
@@ -6476,6 +6610,62 @@ export const TileDetail: React.FC<TileDetailProps> = ({
         e.preventDefault();
     };
 
+    const startVerticalTabsResize = (e: React.PointerEvent) => {
+        if (!verticalTabsFloating) return;
+        verticalTabsDragCleanupRef.current?.();
+        verticalTabsDragCleanupRef.current = null;
+
+        verticalTabsResizeStartRef.current = {
+            x: e.clientX,
+            y: e.clientY,
+            width: verticalTabsFloatSizeRef.current.width,
+            height: verticalTabsFloatSizeRef.current.height,
+        };
+        setVerticalTabsResizing(true);
+
+        const onMove = (ev: PointerEvent) => {
+            const start = verticalTabsResizeStartRef.current;
+            if (!start) return;
+            const zoom = getTabsMenuCssZoom();
+            const nextSize: TabsMenuFloatSize = {
+                width: clampTabsMenuCoord(
+                    start.width + (ev.clientX - start.x) / zoom,
+                    TABS_MENU_FLOAT_MIN_W,
+                    TABS_MENU_FLOAT_MAX_W
+                ),
+                height: clampTabsMenuCoord(
+                    start.height + (ev.clientY - start.y) / zoom,
+                    TABS_MENU_FLOAT_MIN_H,
+                    TABS_MENU_FLOAT_MAX_H
+                ),
+            };
+            verticalTabsFloatSizeRef.current = nextSize;
+            setVerticalTabsFloatSize(nextSize);
+            const nextPos = clampVerticalTabsFloatPos(verticalTabsFloatPosRef.current, nextSize);
+            verticalTabsFloatPosRef.current = nextPos;
+            setVerticalTabsFloatPos(nextPos);
+        };
+
+        const onUp = () => {
+            verticalTabsDragCleanupRef.current?.();
+            verticalTabsDragCleanupRef.current = null;
+            verticalTabsResizeStartRef.current = null;
+            setVerticalTabsResizing(false);
+            saveTabsMenuFloatSize(tile.id, verticalTabsFloatSizeRef.current);
+            saveTabsMenuFloatPos(tile.id, verticalTabsFloatPosRef.current);
+        };
+
+        window.addEventListener('pointermove', onMove);
+        window.addEventListener('pointerup', onUp, { once: true });
+        window.addEventListener('pointercancel', onUp, { once: true });
+        verticalTabsDragCleanupRef.current = () => {
+            window.removeEventListener('pointermove', onMove);
+        };
+
+        e.preventDefault();
+        e.stopPropagation();
+    };
+
     useEffect(() => {
         if (!verticalTabsFloating) return;
         const onResize = () => {
@@ -6485,6 +6675,8 @@ export const TileDetail: React.FC<TileDetailProps> = ({
                 return next;
             });
         };
+        // Re-clamp once after mount so a leftover relative-mode Y isn't stuck near the footer
+        requestAnimationFrame(onResize);
         window.addEventListener('resize', onResize);
         window.visualViewport?.addEventListener('resize', onResize);
         return () => {
@@ -6492,6 +6684,87 @@ export const TileDetail: React.FC<TileDetailProps> = ({
             window.visualViewport?.removeEventListener('resize', onResize);
         };
     }, [verticalTabsFloating, clampVerticalTabsFloatPos]);
+
+    const persistViewModeTile = useCallback(async (updatedTile: Tile) => {
+        const updatedTiles = allTiles.map((t) => (t.id === updatedTile.id ? updatedTile : t));
+        if (!allTiles.some((t) => t.id === updatedTile.id)) {
+            updatedTiles.push(updatedTile);
+        }
+        await saveTile(updatedTile);
+        onUpdateTiles(updatedTiles, true, false, true);
+    }, [allTiles, onUpdateTiles]);
+
+    const handleViewSectionDragEnd = useCallback(async (event: DragEndEvent) => {
+        const { active, over } = event;
+        if (!over || active.id === over.id || viewReorderSaving) return;
+        if (tile.canEdit !== true) return;
+        const tab = activeViewTab;
+        if (!tab?.sections?.length) return;
+
+        const ordered = [...tab.sections].sort((a, b) => (a.position ?? 0) - (b.position ?? 0));
+        const oldIndex = ordered.findIndex((s) => s.id === active.id);
+        const newIndex = ordered.findIndex((s) => s.id === over.id);
+        if (oldIndex < 0 || newIndex < 0 || oldIndex === newIndex) return;
+
+        const reordered = arrayMove(ordered, oldIndex, newIndex).map((s, idx) => ({ ...s, position: idx }));
+        const nextTabs = (tile.tabs || []).map((t) =>
+            t.id === tab.id ? { ...t, sections: reordered } : t
+        );
+        const updatedTile: Tile = { ...tile, tabs: nextTabs };
+        setViewReorderSaving(true);
+        try {
+            await persistViewModeTile(updatedTile);
+        } catch (e) {
+            console.error('Failed to save section order', e);
+            alert(e instanceof Error ? e.message : 'Failed to save section order');
+        } finally {
+            setViewReorderSaving(false);
+        }
+    }, [activeViewTab, persistViewModeTile, tile, viewReorderSaving]);
+
+    const handleViewLinkDragEnd = useCallback(async (sectionId: string, event: DragEndEvent) => {
+        const { active, over } = event;
+        if (!over || active.id === over.id || viewReorderSaving) return;
+        if (tile.canEdit !== true) return;
+        const tab = activeViewTab;
+        if (!tab?.sections?.length) return;
+        const section = tab.sections.find((s) => s.id === sectionId);
+        if (!section) return;
+
+        const ordered = [
+            ...(section.links || []).map((l) => ({ ...l, itemType: 'link' as const })),
+            ...(section.richTextContent || []).map((rt) => ({ ...rt, itemType: 'rich-text' as const })),
+        ].sort((a, b) => (a.position ?? 0) - (b.position ?? 0));
+
+        const oldIndex = ordered.findIndex((item) => item.id === active.id);
+        const newIndex = ordered.findIndex((item) => item.id === over.id);
+        if (oldIndex < 0 || newIndex < 0 || oldIndex === newIndex) return;
+
+        const reordered = arrayMove(ordered, oldIndex, newIndex).map((item, idx) => ({ ...item, position: idx }));
+        const nextLinks = reordered.filter((item) => item.itemType === 'link').map(({ itemType: _t, ...rest }) => rest as Link);
+        const nextRich = reordered
+            .filter((item) => item.itemType === 'rich-text')
+            .map(({ itemType: _t, ...rest }) => rest);
+
+        const nextSections = tab.sections.map((s) =>
+            s.id === sectionId
+                ? { ...s, links: nextLinks, richTextContent: nextRich as typeof s.richTextContent }
+                : s
+        );
+        const nextTabs = (tile.tabs || []).map((t) =>
+            t.id === tab.id ? { ...t, sections: nextSections } : t
+        );
+        const updatedTile: Tile = { ...tile, tabs: nextTabs };
+        setViewReorderSaving(true);
+        try {
+            await persistViewModeTile(updatedTile);
+        } catch (e) {
+            console.error('Failed to save link order', e);
+            alert(e instanceof Error ? e.message : 'Failed to save link order');
+        } finally {
+            setViewReorderSaving(false);
+        }
+    }, [activeViewTab, persistViewModeTile, tile, viewReorderSaving]);
 
     // VIEW MODE (also used when the URL asked for edit but this session cannot edit)
     if (!isEditing || !tile.canEdit) {
@@ -6630,7 +6903,7 @@ export const TileDetail: React.FC<TileDetailProps> = ({
                                     {tile.canEdit === true && (tile.canEditTile === undefined || tile.canEditTile === true) && (
                                         <button
                                             type="button"
-                                            onClick={() => void openSpaceCompare()}
+                                            onClick={() => openSpaceCompare()}
                                             className="px-4 py-2 rounded-lg bg-white/15 hover:bg-white/25 text-white text-sm font-medium border border-white/20 transition-all shadow-sm flex items-center justify-center gap-2 backdrop-blur-sm"
                                             title="Compare & merge with another space"
                                         >
@@ -6906,7 +7179,7 @@ export const TileDetail: React.FC<TileDetailProps> = ({
                                                                 type="button"
                                                                 onClick={() => {
                                                                     setShowHeaderActionsMenu(false);
-                                                                    void openSpaceCompare();
+                                                                    openSpaceCompare();
                                                                 }}
                                                                 className="w-full px-3 py-3 text-left text-sm font-medium text-slate-700 dark:text-slate-200 hover:bg-slate-50 dark:hover:bg-slate-800 rounded-lg flex items-center gap-3"
                                                             >
@@ -7384,14 +7657,16 @@ export const TileDetail: React.FC<TileDetailProps> = ({
                         const tabsNav = (
                         <nav
                             ref={verticalTabsNavRef}
-                            className={`w-56 shrink-0 overflow-hidden flex flex-col rounded-xl border border-slate-200/90 dark:border-slate-700 shadow-sm bg-slate-100/70 dark:bg-slate-800/40 ${
+                            className={`${verticalTabsFloating ? '' : 'w-56'} shrink-0 overflow-hidden flex flex-col rounded-xl border border-slate-200/90 dark:border-slate-700 shadow-sm bg-slate-100/70 dark:bg-slate-800/40 ${
                                 verticalTabsFloating
-                                    ? 'fixed max-h-[min(70vh,calc(100vh-2rem))] shadow-xl ring-1 ring-slate-300/60 dark:ring-slate-600/50 z-[75]'
+                                    ? 'fixed shadow-xl ring-1 ring-slate-300/60 dark:ring-slate-600/50 z-[75]'
                                     : 'sticky top-4 self-start max-h-[calc(100vh-6rem)]'
                             }`}
                             style={verticalTabsFloating ? {
                                 left: verticalTabsFloatPos.x,
                                 top: verticalTabsFloatPos.y,
+                                width: verticalTabsFloatSize.width,
+                                height: verticalTabsFloatSize.height,
                             } : undefined}
                             aria-label="Space tabs"
                             data-floating={verticalTabsFloating ? 'true' : 'false'}
@@ -7472,7 +7747,7 @@ export const TileDetail: React.FC<TileDetailProps> = ({
                                                 {tab.emoji ? (
                                                     <span className="shrink-0 leading-none" aria-hidden>{tab.emoji}</span>
                                                 ) : null}
-                                                <span className="flex-1 min-w-0 truncate">{tab.title}</span>
+                                                <span className={`flex-1 min-w-0 ${verticalTabsFloating ? 'whitespace-normal break-words' : 'truncate'}`}>{tab.title}</span>
                                                 <AccessRestrictionsBadge rules={tab.accessRestrictions} />
                                                 {(tile.canEdit === true || !!user?.is_admin) && (
                                                     <VisibilityProtectionBadge visibility={tab.visibility} />
@@ -7502,6 +7777,19 @@ export const TileDetail: React.FC<TileDetailProps> = ({
                                     );
                                 })}
                             </div>
+                            {verticalTabsFloating && (
+                                <div
+                                    data-resize-handle=""
+                                    className={`absolute bottom-0 right-0 w-4 h-4 cursor-se-resize ${verticalTabsResizing ? 'opacity-100' : 'opacity-70 hover:opacity-100'}`}
+                                    onPointerDown={startVerticalTabsResize}
+                                    title="Resize tabs menu"
+                                    aria-label="Resize tabs menu"
+                                    style={{
+                                        background: 'linear-gradient(45deg, transparent 50%, rgb(100 116 139 / 0.85) 50%)',
+                                        borderBottomRightRadius: '0.75rem',
+                                    }}
+                                />
+                            )}
                         </nav>
                         );
                         return verticalTabsFloating
@@ -7676,20 +7964,35 @@ export const TileDetail: React.FC<TileDetailProps> = ({
                                             );
                                         })}
                                     </div>
-                                    {showTabNavLayoutToggle && (
+                                    <div className="shrink-0 self-center mr-2 flex items-center gap-1">
                                         <button
                                             type="button"
-                                            onClick={() => setAndPersistTabNavLayout('vertical')}
-                                            className="shrink-0 self-center mr-2 px-2.5 py-1.5 rounded-lg text-xs font-medium text-slate-500 dark:text-slate-400 hover:text-slate-800 dark:hover:text-slate-200 hover:bg-slate-100 dark:hover:bg-slate-800 transition-colors flex items-center gap-1.5"
-                                            title="Switch to vertical tab menu"
-                                            aria-label="Switch to vertical tab menu"
+                                            onClick={toggleVerticalTabsFloating}
+                                            className="p-1.5 rounded-lg text-slate-500 dark:text-slate-400 hover:text-slate-800 dark:hover:text-slate-200 hover:bg-slate-100 dark:hover:bg-slate-800 transition-colors"
+                                            title="Float tabs menu (drag to move)"
+                                            aria-label="Float tabs menu"
+                                            aria-pressed={false}
                                         >
                                             <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor" className="w-4 h-4">
-                                                <path d="M2 4.5A2.5 2.5 0 014.5 2h3A2.5 2.5 0 0110 4.5v11A2.5 2.5 0 017.5 18h-3A2.5 2.5 0 012 15.5v-11zM10.75 2.75a.75.75 0 000 1.5h6.5a.75.75 0 000-1.5h-6.5zM10.75 6.25a.75.75 0 000 1.5h6.5a.75.75 0 000-1.5h-6.5zM10.75 9.75a.75.75 0 000 1.5h6.5a.75.75 0 000-1.5h-6.5zM10.75 13.25a.75.75 0 000 1.5h6.5a.75.75 0 000-1.5h-6.5zM10.75 16.75a.75.75 0 000 1.5h6.5a.75.75 0 000-1.5h-6.5z" />
+                                                <path d="M10 3a.75.75 0 01.75.75v1.5h1.5a.75.75 0 010 1.5h-1.5v1.5a.75.75 0 01-1.5 0v-1.5h-1.5a.75.75 0 010-1.5h1.5v-1.5A.75.75 0 0110 3z" />
+                                                <path fillRule="evenodd" d="M4.25 5.5A2.25 2.25 0 002 7.75v7.5A2.25 2.25 0 004.25 17.5h11.5A2.25 2.25 0 0018 15.25v-7.5A2.25 2.25 0 0015.75 5.5H12a.75.75 0 000 1.5h3.75c.414 0 .75.336.75.75v7.5a.75.75 0 01-.75.75H4.25a.75.75 0 01-.75-.75v-7.5a.75.75 0 01.75-.75H8A.75.75 0 008 5.5H4.25z" clipRule="evenodd" />
                                             </svg>
-                                            <span className="hidden sm:inline">Vertical</span>
                                         </button>
-                                    )}
+                                        {showTabNavLayoutToggle && (
+                                            <button
+                                                type="button"
+                                                onClick={() => setAndPersistTabNavLayout('vertical')}
+                                                className="px-2.5 py-1.5 rounded-lg text-xs font-medium text-slate-500 dark:text-slate-400 hover:text-slate-800 dark:hover:text-slate-200 hover:bg-slate-100 dark:hover:bg-slate-800 transition-colors flex items-center gap-1.5"
+                                                title="Switch to vertical tab menu"
+                                                aria-label="Switch to vertical tab menu"
+                                            >
+                                                <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor" className="w-4 h-4">
+                                                    <path d="M2 4.5A2.5 2.5 0 014.5 2h3A2.5 2.5 0 0110 4.5v11A2.5 2.5 0 017.5 18h-3A2.5 2.5 0 012 15.5v-11zM10.75 2.75a.75.75 0 000 1.5h6.5a.75.75 0 000-1.5h-6.5zM10.75 6.25a.75.75 0 000 1.5h6.5a.75.75 0 000-1.5h-6.5zM10.75 9.75a.75.75 0 000 1.5h6.5a.75.75 0 000-1.5h-6.5zM10.75 13.25a.75.75 0 000 1.5h6.5a.75.75 0 000-1.5h-6.5zM10.75 16.75a.75.75 0 000 1.5h6.5a.75.75 0 000-1.5h-6.5z" />
+                                                </svg>
+                                                <span className="hidden sm:inline">Vertical</span>
+                                            </button>
+                                        )}
+                                    </div>
                                 </div>
                         )}
 
@@ -7703,6 +8006,28 @@ export const TileDetail: React.FC<TileDetailProps> = ({
                                 <p className="text-slate-500 font-medium">No links found</p>
                             </div>
                         ) : (
+                            <DndContext
+                                sensors={viewReorderSensors}
+                                collisionDetection={closestCenter}
+                                onDragStart={(e: DragStartEvent) => {
+                                    const section = filteredSections.find((s) => s.id === String(e.active.id));
+                                    if (!section) return;
+                                    setViewDragActive({
+                                        type: 'section',
+                                        id: section.id,
+                                        label: `${section.emoji ? `${section.emoji} ` : ''}${section.title || 'Section'}`.trim(),
+                                    });
+                                }}
+                                onDragCancel={() => setViewDragActive(null)}
+                                onDragEnd={(e) => {
+                                    setViewDragActive(null);
+                                    void handleViewSectionDragEnd(e);
+                                }}
+                            >
+                            <SortableContext
+                                items={filteredSections.map((s) => s.id)}
+                                strategy={sectionsSideBySide ? rectSortingStrategy : verticalListSortingStrategy}
+                            >
                             <div
                                 ref={qrPrintRootRef}
                                 className={sectionsSideBySide ? 'grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6' : 'space-y-8'}
@@ -7715,6 +8040,7 @@ export const TileDetail: React.FC<TileDetailProps> = ({
                                     const shouldForceStacked = section.forceStackedView === true;
                                     const sectionLinkLayout = getSectionLinkLayout(section);
                                     const isQrLayout = sectionLinkLayout === 'qr';
+                                    const canReorderSections = canViewReorder && filteredSections.length > 1;
                                     const resolvedLinkContainerClass =
                                         sectionLinkLayout === 'grid'
                                             ? 'linknest-content-link-grid-cards'
@@ -7727,9 +8053,11 @@ export const TileDetail: React.FC<TileDetailProps> = ({
                                                         : 'linknest-content-link-grid';
 
                                     return (
-                                        <div
+                                        <ViewModeSortable
                                             key={section.id}
-                                            id={`section-${section.id}`}
+                                            id={section.id}
+                                            htmlId={`section-${section.id}`}
+                                            disabled={!canReorderSections}
                                             style={{ animationDelay: isQrLayout ? undefined : `${sectionIndex * 120}ms` }}
                                             data-view-layout={sectionLinkLayout}
                                             data-qr-print-section={isQrLayout ? section.id : undefined}
@@ -7748,8 +8076,19 @@ export const TileDetail: React.FC<TileDetailProps> = ({
                                                         : 'animate-in fade-in slide-in-from-bottom-2'
                                             }`}
                                         >
+                                            {({ attributes: sectionDragAttrs, listeners: sectionDragListeners }) => (
+                                            <>
                                             {/* Section Title + per-section link view toggle */}
                                             <div className={`flex items-start justify-between gap-3 ${sectionLinkLayout === 'compact' || isQrLayout ? 'mb-3' : 'mb-5'}`}>
+                                                <div className="flex items-start gap-1 min-w-0 flex-1">
+                                                {canReorderSections && (
+                                                    <ViewModeDragHandle
+                                                        attributes={sectionDragAttrs}
+                                                        listeners={sectionDragListeners}
+                                                        title="Drag to reorder section"
+                                                        className="mt-0.5"
+                                                    />
+                                                )}
                                                 {section.title ? (
                                                     <h3
                                                         className={`linknest-content-section-title font-bold flex items-center gap-3 min-w-0 ${sectionLinkLayout === 'compact' ? 'text-base' : 'text-lg'} ${!section.textColor ? 'text-slate-800 dark:text-white' : ''}`}
@@ -7777,6 +8116,7 @@ export const TileDetail: React.FC<TileDetailProps> = ({
                                                 ) : (
                                                     <div />
                                                 )}
+                                                </div>
                                                 {!shouldForceStacked && (
                                                     <div
                                                         className={`flex items-center gap-0.5 bg-slate-100 dark:bg-slate-800 rounded-lg p-0.5 shrink-0 ${
@@ -7887,6 +8227,54 @@ export const TileDetail: React.FC<TileDetailProps> = ({
                                             </div>
 
                                             {/* Links and Rich Text */}
+                                            <DndContext
+                                                sensors={viewReorderSensors}
+                                                collisionDetection={closestCenter}
+                                                onDragStart={(e: DragStartEvent) => {
+                                                    const sortedItems = [
+                                                        ...(section.links || []).map((l) => ({ ...l, itemType: 'link' as const })),
+                                                        ...(section.richTextContent || []).map((rt) => ({ ...rt, itemType: 'rich-text' as const })),
+                                                    ];
+                                                    const item = sortedItems.find((i) => i.id === String(e.active.id));
+                                                    if (!item) return;
+                                                    const label =
+                                                        item.itemType === 'link'
+                                                            ? stripHtmlTags((item as Link).label || 'Link')
+                                                            : ((item as { boxTitle?: string }).boxTitle || 'Rich text');
+                                                    setViewDragActive({
+                                                        type: 'item',
+                                                        id: item.id,
+                                                        label,
+                                                    });
+                                                }}
+                                                onDragCancel={() => setViewDragActive(null)}
+                                                onDragEnd={(e) => {
+                                                    setViewDragActive(null);
+                                                    void handleViewLinkDragEnd(section.id, e);
+                                                }}
+                                            >
+                                            {(() => {
+                                                    // Merge links and rich text, sort by position
+                                                    const sortedItems = [
+                                                        ...(section.links || []).map(l => ({ ...l, itemType: 'link' as const })),
+                                                        ...(section.richTextContent || []).map(rt => ({ ...rt, itemType: 'rich-text' as const }))
+                                                    ].sort((a, b) => {
+                                                        const posA = a.position ?? 0;
+                                                        const posB = b.position ?? 0;
+                                                        return posA - posB;
+                                                    });
+                                                    const canReorderItems = canViewReorder && sortedItems.length > 1;
+                                                    const itemIds = sortedItems.map((item) => item.id);
+
+                                                    return (
+                                            <SortableContext
+                                                items={itemIds}
+                                                strategy={
+                                                    sectionLinkLayout === 'grid' || sectionLinkLayout === 'qr' || sectionLinkLayout === 'side-by-side'
+                                                        ? rectSortingStrategy
+                                                        : verticalListSortingStrategy
+                                                }
+                                            >
                                             <div
                                                 className={resolvedLinkContainerClass}
                                                 style={
@@ -7901,30 +8289,31 @@ export const TileDetail: React.FC<TileDetailProps> = ({
                                                         : undefined
                                                 }
                                             >
-                                                {(() => {
-                                                    // Merge links and rich text, sort by position
-                                                    const sortedItems = [
-                                                        ...(section.links || []).map(l => ({ ...l, itemType: 'link' as const })),
-                                                        ...(section.richTextContent || []).map(rt => ({ ...rt, itemType: 'rich-text' as const }))
-                                                    ].sort((a, b) => {
-                                                        const posA = a.position ?? 0;
-                                                        const posB = b.position ?? 0;
-                                                        return posA - posB;
-                                                    });
-
-                                                    return sortedItems.map((item, itemIndex) => {
+                                                {sortedItems.map((item, itemIndex) => {
                                                         const animationDelay = (sectionIndex * 100) + (itemIndex * 30);
 
                                                         // Render rich text content
                                                         if (item.itemType === 'rich-text') {
                                                             return (
-                                                                <div
+                                                                <ViewModeSortable
                                                                     key={item.id}
+                                                                    id={item.id}
+                                                                    disabled={!canReorderItems}
                                                                     style={{ animationDelay: `${animationDelay}ms` }}
                                                                     className={`linknest-content-rich-text rich-text-content-item animate-in fade-in slide-in-from-bottom-2 ${
                                                                         sectionLinkLayout === 'grid' || sectionLinkLayout === 'qr' ? 'col-span-full' : ''
                                                                     }`}
                                                                 >
+                                                                    {({ attributes: itemDragAttrs, listeners: itemDragListeners }) => (
+                                                                        <div className="relative">
+                                                                            {canReorderItems && (
+                                                                                <ViewModeDragHandle
+                                                                                    attributes={itemDragAttrs}
+                                                                                    listeners={itemDragListeners}
+                                                                                    title="Drag to reorder"
+                                                                                    className="absolute top-1 right-1 z-10 bg-white/90 dark:bg-slate-900/80 shadow-sm"
+                                                                                />
+                                                                            )}
                                                                     <RichTextBoxedView
                                                                         content={item.content || ''}
                                                                         boxed={!!item.boxed}
@@ -7942,7 +8331,9 @@ export const TileDetail: React.FC<TileDetailProps> = ({
                                                                         boxHeaderEmoji={item.boxHeaderEmoji}
                                                                         boxImportance={item.boxImportance}
                                                                     />
-                                                                </div>
+                                                                        </div>
+                                                                    )}
+                                                                </ViewModeSortable>
                                                             );
                                                         }
 
@@ -7987,11 +8378,26 @@ export const TileDetail: React.FC<TileDetailProps> = ({
                                                         if (isQrView) {
                                                             const plainQrLabel = stripHtmlTags(link.label || '');
                                                             return (
-                                                                <LinkHoverTooltip key={link.id} link={link} fallbackTitle={plainQrLabel}>
+                                                                <ViewModeSortable
+                                                                    key={link.id}
+                                                                    id={link.id}
+                                                                    disabled={!canReorderItems}
+                                                                    style={{ animationDelay: `${animationDelay}ms` }}
+                                                                >
+                                                                    {({ attributes: itemDragAttrs, listeners: itemDragListeners }) => (
+                                                                <LinkHoverTooltip link={link} fallbackTitle={plainQrLabel}>
                                                                 <div
-                                                                    className="linknest-qr-card flex flex-col items-center text-center gap-3 p-4 rounded-2xl bg-white dark:bg-slate-800/80 border border-slate-200 dark:border-slate-700/60 shadow-sm w-full min-w-0 max-w-full overflow-hidden"
+                                                                    className="linknest-qr-card flex flex-col items-center text-center gap-3 p-4 rounded-2xl bg-white dark:bg-slate-800/80 border border-slate-200 dark:border-slate-700/60 shadow-sm w-full min-w-0 max-w-full overflow-hidden relative"
                                                                     style={{ opacity: 1, position: 'relative', zIndex: 0 }}
                                                                 >
+                                                                    {canReorderItems && (
+                                                                        <ViewModeDragHandle
+                                                                            attributes={itemDragAttrs}
+                                                                            listeners={itemDragListeners}
+                                                                            title="Drag to reorder link"
+                                                                            className="absolute top-2 left-2 z-10 bg-white/90 dark:bg-slate-900/80 shadow-sm"
+                                                                        />
+                                                                    )}
                                                                     <div className="bg-white p-3 rounded-2xl border border-slate-100 shadow-sm w-full flex justify-center max-w-[280px]">
                                                                         <BrandedQRCode
                                                                             value={viewerHref || ''}
@@ -8063,11 +8469,21 @@ export const TileDetail: React.FC<TileDetailProps> = ({
                                                                     </div>
                                                                 </div>
                                                                 </LinkHoverTooltip>
+                                                                    )}
+                                                                </ViewModeSortable>
                                                             );
                                                         }
 
                                                         return (
-                                                            <LinkHoverTooltip key={link.id} link={link} fallbackTitle={stripHtmlTags(link.label || '')}>
+                                                            <ViewModeSortable
+                                                                key={link.id}
+                                                                id={link.id}
+                                                                disabled={!canReorderItems}
+                                                                style={{ animationDelay: `${animationDelay}ms` }}
+                                                                className="relative"
+                                                            >
+                                                                {({ attributes: itemDragAttrs, listeners: itemDragListeners }) => (
+                                                            <LinkHoverTooltip link={link} fallbackTitle={stripHtmlTags(link.label || '')}>
                                                             <div
                                                                 style={{ animationDelay: `${animationDelay}ms` }}
                                                                 className={`
@@ -8083,6 +8499,14 @@ export const TileDetail: React.FC<TileDetailProps> = ({
                                                     ${getTileAnimationClass(resolveLinkAnimation(link.animation, tile.linksAnimation))}
                                                 `}
                                                             >
+                                                                {canReorderItems && (
+                                                                    <ViewModeDragHandle
+                                                                        attributes={itemDragAttrs}
+                                                                        listeners={itemDragListeners}
+                                                                        title="Drag to reorder link"
+                                                                        className="absolute top-1 left-1 z-30 bg-white/90 dark:bg-slate-900/80 shadow-sm opacity-0 group-hover:opacity-100"
+                                                                    />
+                                                                )}
                                                                 {/* Icon + health (grid: alive dot centered above icon) */}
                                                                 <div className={`relative shrink-0 ${
                                                                     isGridCards
@@ -8643,14 +9067,50 @@ export const TileDetail: React.FC<TileDetailProps> = ({
                                                                 )}
                                                             </div>
                                                             </LinkHoverTooltip>
+                                                                )}
+                                                            </ViewModeSortable>
                                                         );
-                                                    });
-                                                })()}
+                                                    })}
                                             </div>
-                                        </div>
+                                            </SortableContext>
+                                                    );
+                                                })()}
+                                                <DragOverlay dropAnimation={null}>
+                                                    {viewDragActive?.type === 'item' ? (
+                                                        <div className="pointer-events-none px-4 py-3 rounded-xl bg-white dark:bg-slate-800 border-2 border-brand-400 dark:border-brand-500 shadow-2xl shadow-brand-500/20 max-w-sm">
+                                                            <div className="flex items-center gap-2 text-sm font-semibold text-slate-800 dark:text-slate-100">
+                                                                <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor" className="w-4 h-4 text-brand-500 shrink-0" aria-hidden>
+                                                                    <path d="M7 4a1 1 0 11-2 0 1 1 0 012 0zM7 10a1 1 0 11-2 0 1 1 0 012 0zM7 16a1 1 0 11-2 0 1 1 0 012 0zM13 4a1 1 0 11-2 0 1 1 0 012 0zM13 10a1 1 0 11-2 0 1 1 0 012 0zM13 16a1 1 0 11-2 0 1 1 0 012 0z" />
+                                                                </svg>
+                                                                <span className="truncate">{viewDragActive.label}</span>
+                                                            </div>
+                                                            <p className="text-[10px] text-slate-500 dark:text-slate-400 mt-1">Moving item…</p>
+                                                        </div>
+                                                    ) : null}
+                                                </DragOverlay>
+                                            </DndContext>
+                                            </>
+                                            )}
+                                        </ViewModeSortable>
                                     );
                                 })}
                             </div>
+                            </SortableContext>
+                                <DragOverlay dropAnimation={null}>
+                                    {viewDragActive?.type === 'section' ? (
+                                        <div className="pointer-events-none px-5 py-4 rounded-2xl bg-white/95 dark:bg-slate-800/95 border-2 border-brand-400 dark:border-brand-500 shadow-2xl shadow-brand-500/25 min-w-[220px] max-w-md backdrop-blur">
+                                            <div className="flex items-center gap-2.5 text-base font-bold text-slate-800 dark:text-white">
+                                                <span className="w-1.5 h-6 rounded-full bg-brand-500 shrink-0" aria-hidden />
+                                                <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor" className="w-4 h-4 text-brand-500 shrink-0" aria-hidden>
+                                                    <path d="M7 4a1 1 0 11-2 0 1 1 0 012 0zM7 10a1 1 0 11-2 0 1 1 0 012 0zM7 16a1 1 0 11-2 0 1 1 0 012 0zM13 4a1 1 0 11-2 0 1 1 0 012 0zM13 10a1 1 0 11-2 0 1 1 0 012 0zM13 16a1 1 0 11-2 0 1 1 0 012 0z" />
+                                                </svg>
+                                                <span className="truncate">{viewDragActive.label}</span>
+                                            </div>
+                                            <p className="text-xs text-slate-500 dark:text-slate-400 mt-1.5 pl-4">Drop to reorder section</p>
+                                        </div>
+                                    ) : null}
+                                </DragOverlay>
+                            </DndContext>
                         )}
                     </div>
                     </div>
@@ -8704,6 +9164,34 @@ export const TileDetail: React.FC<TileDetailProps> = ({
                     url={mobilePreviewState?.url || ''}
                     label={mobilePreviewState?.label || ''}
                 />
+
+                {spaceCompareOpen && typeof document !== 'undefined' && createPortal(
+                    <SpaceCompareDialog
+                        open={spaceCompareOpen}
+                        leftTileId={tile.id}
+                        availableTiles={spaceCompareCandidates}
+                        onClose={() => setSpaceCompareOpen(false)}
+                        onCompleted={async (result) => {
+                            try {
+                                const refreshed = await getTiles(
+                                    tile.sourceTab === 'staging' || sourceTab === 'staging'
+                                        ? { sourceTab: 'staging' }
+                                        : undefined
+                                );
+                                const byId = new Map(allTiles.map((t) => [t.id, t]));
+                                for (const t of refreshed) byId.set(t.id, t);
+                                if (result.action === 'create' || result.action === 'merge-left' || result.action === 'merge-right') {
+                                    byId.set(result.tile.id, result.tile);
+                                }
+                                onUpdateTiles(Array.from(byId.values()));
+                            } catch (e) {
+                                console.error('Failed to refresh after space compare:', e);
+                                onUpdateTiles(allTiles);
+                            }
+                        }}
+                    />,
+                    document.body
+                )}
             </>
         );
     }
@@ -12889,7 +13377,7 @@ export const TileDetail: React.FC<TileDetailProps> = ({
                     />
                 )}
 
-                {spaceCompareOpen && (
+                {spaceCompareOpen && createPortal(
                     <SpaceCompareDialog
                         open={spaceCompareOpen}
                         leftTileId={tile.id}
@@ -12914,7 +13402,8 @@ export const TileDetail: React.FC<TileDetailProps> = ({
                                 onUpdateTiles(allTiles);
                             }
                         }}
-                    />
+                    />,
+                    document.body
                 )}
             </>
         );
