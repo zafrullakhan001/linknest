@@ -1160,6 +1160,7 @@ function ensureMcpTokensTable($db): void {
 
 /**
  * Named category-visibility presets (checked categories on the main page). Safe on every connection.
+ * scope=user: personal (user_id set). scope=builtin: admin-managed shared presets (user_id NULL).
  */
 function ensureCategoryVisibilityPresetsTable($db): void {
     static $ensured = false;
@@ -1169,7 +1170,8 @@ function ensureCategoryVisibilityPresetsTable($db): void {
     try {
         $db->exec('CREATE TABLE IF NOT EXISTS category_visibility_presets (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
-            user_id INTEGER NOT NULL,
+            user_id INTEGER,
+            scope TEXT NOT NULL DEFAULT \'user\',
             tab_key TEXT NOT NULL,
             name TEXT NOT NULL COLLATE NOCASE,
             visible_json TEXT NOT NULL DEFAULT \'[]\',
@@ -1178,10 +1180,69 @@ function ensureCategoryVisibilityPresetsTable($db): void {
             updated_at INTEGER NOT NULL,
             FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE
         )');
+
+        // Migrate older schema (user_id NOT NULL, no scope) → nullable user_id + scope
+        $cols = $db->query('PRAGMA table_info(category_visibility_presets)')->fetchAll(PDO::FETCH_ASSOC);
+        $colNames = [];
+        $userIdNotNull = false;
+        foreach ($cols as $col) {
+            $colNames[] = $col['name'];
+            if (($col['name'] ?? '') === 'user_id' && (int)($col['notnull'] ?? 0) === 1) {
+                $userIdNotNull = true;
+            }
+        }
+        $hasScope = in_array('scope', $colNames, true);
+        if (!$hasScope || $userIdNotNull) {
+            $db->exec('BEGIN');
+            try {
+                $db->exec('CREATE TABLE category_visibility_presets__mig (
+                    id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    user_id INTEGER,
+                    scope TEXT NOT NULL DEFAULT \'user\',
+                    tab_key TEXT NOT NULL,
+                    name TEXT NOT NULL COLLATE NOCASE,
+                    visible_json TEXT NOT NULL DEFAULT \'[]\',
+                    is_active INTEGER NOT NULL DEFAULT 0,
+                    created_at INTEGER NOT NULL,
+                    updated_at INTEGER NOT NULL,
+                    FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE
+                )');
+                if ($hasScope) {
+                    $db->exec('INSERT INTO category_visibility_presets__mig
+                        (id, user_id, scope, tab_key, name, visible_json, is_active, created_at, updated_at)
+                        SELECT id, user_id, COALESCE(NULLIF(scope, \'\'), \'user\'), tab_key, name, visible_json, is_active, created_at, updated_at
+                        FROM category_visibility_presets');
+                } else {
+                    $db->exec('INSERT INTO category_visibility_presets__mig
+                        (id, user_id, scope, tab_key, name, visible_json, is_active, created_at, updated_at)
+                        SELECT id, user_id, \'user\', tab_key, name, visible_json, is_active, created_at, updated_at
+                        FROM category_visibility_presets');
+                }
+                $db->exec('DROP TABLE category_visibility_presets');
+                $db->exec('ALTER TABLE category_visibility_presets__mig RENAME TO category_visibility_presets');
+                $db->exec('COMMIT');
+            } catch (Throwable $migErr) {
+                $db->exec('ROLLBACK');
+                throw $migErr;
+            }
+        }
+
         $db->exec('CREATE INDEX IF NOT EXISTS idx_category_visibility_presets_user ON category_visibility_presets(user_id)');
-        $db->exec('CREATE UNIQUE INDEX IF NOT EXISTS idx_category_visibility_presets_user_tab_name ON category_visibility_presets(user_id, tab_key, name)');
+        $db->exec('CREATE INDEX IF NOT EXISTS idx_category_visibility_presets_scope ON category_visibility_presets(scope)');
+        // Drop legacy unique if present (conflicts with nullable builtin rows)
+        try {
+            $db->exec('DROP INDEX IF EXISTS idx_category_visibility_presets_user_tab_name');
+        } catch (Throwable $e) {
+            // ignore
+        }
+        $db->exec('CREATE UNIQUE INDEX IF NOT EXISTS idx_category_visibility_presets_user_tab_name
+            ON category_visibility_presets(user_id, tab_key, name) WHERE scope = \'user\' AND user_id IS NOT NULL');
+        $db->exec('CREATE UNIQUE INDEX IF NOT EXISTS idx_category_visibility_presets_builtin_tab_name
+            ON category_visibility_presets(tab_key, name) WHERE scope = \'builtin\'');
         $ensured = true;
     } catch (PDOException $e) {
+        error_log('ensureCategoryVisibilityPresetsTable warning: ' . $e->getMessage());
+    } catch (Throwable $e) {
         error_log('ensureCategoryVisibilityPresetsTable warning: ' . $e->getMessage());
     }
 }

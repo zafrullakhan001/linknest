@@ -33,6 +33,7 @@ import { GranularPermissionsModal } from './GranularPermissionsModal';
 import { AddonsManagement } from './AddonsManagement';
 import { UpdatesPanel } from './UpdatesDialog';
 import { DevicePresetsAdmin } from './DevicePresetsAdmin';
+import { CategoryPresetsAdmin } from './CategoryPresetsAdmin';
 import { LinkCheckExceptionsAdmin } from './LinkCheckExceptionsAdmin';
 import { UrlScanFixAdmin } from './UrlScanFixAdmin';
 import { TooltipSyncAdmin } from './TooltipSyncAdmin';
@@ -148,6 +149,7 @@ type AdminNavTabId =
   | 'saml'
   | 'tabVisibility'
   | 'devicePresets'
+  | 'categoryPresets'
   | 'linkCheckExceptions'
   | 'urlScanFix'
   | 'tooltipSync'
@@ -181,6 +183,7 @@ const ADMIN_NAV_SECTIONS: Array<{
     items: [
       { id: 'settings', label: 'Settings', emoji: '⚙️' },
       { id: 'devicePresets', label: 'Device Presets', emoji: '📱' },
+      { id: 'categoryPresets', label: 'Category Presets', emoji: '📌' },
       { id: 'database', label: 'Database', emoji: '🗄️' },
       { id: 'spaces', label: 'Spaces', emoji: '📦' },
       { id: 'tabVisibility', label: 'Enable/Disable Tabs', emoji: '📑' },
@@ -264,7 +267,7 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({ onUserApproved }) => {
     if (savedTab === 'footer') return 'settings';
     const validTabs: Array<AdminNavTabId | 'footer'> = [
       'pending', 'all', 'userAudit', 'settings', 'database', 'spaces', 'ldap', 'saml', 'footer',
-      'tabVisibility', 'devicePresets', 'linkCheckExceptions', 'urlScanFix', 'tooltipSync', 'iframeBlockDomains', 'access', 'clone', 'browser', 'mcp', 'broadcast',
+      'tabVisibility', 'devicePresets', 'categoryPresets', 'linkCheckExceptions', 'urlScanFix', 'tooltipSync', 'iframeBlockDomains', 'access', 'clone', 'browser', 'mcp', 'broadcast',
       'maintenanceScripts', 'maintenance', 'widgets', 'addons', 'appUpdates', 'loadTest',
     ];
     return (savedTab && validTabs.includes(savedTab as AdminNavTabId | 'footer'))
@@ -9077,6 +9080,11 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({ onUserApproved }) => {
                     setError={setError}
                   />
                 )
+              )}
+
+              {/* Category Presets (built-in) Tab */}
+              {activeTab === 'categoryPresets' && (
+                <CategoryPresetsAdmin setError={setError} />
               )}
 
               {/* Link Check Exceptions Tab */}

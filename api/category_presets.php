@@ -21,6 +21,8 @@ try {
         case 'GET':
             if ($path === '' || $path === '/') {
                 handleListCategoryPresets($db, $allowedTabs);
+            } elseif ($path === '/builtin') {
+                handleListBuiltinCategoryPresets($db, $allowedTabs);
             } else {
                 sendJSON(['error' => 'Invalid endpoint'], 404);
             }
@@ -29,6 +31,8 @@ try {
         case 'POST':
             if ($path === '' || $path === '/') {
                 handleSaveCategoryPreset($db, $allowedTabs);
+            } elseif ($path === '/builtin') {
+                handleSaveBuiltinCategoryPreset($db, $allowedTabs);
             } elseif ($path === '/import') {
                 handleImportCategoryPresets($db, $allowedTabs);
             } elseif ($path === '/sync') {
@@ -43,7 +47,9 @@ try {
             break;
 
         case 'PUT':
-            if (preg_match('#^/(\d+)$#', $path, $m)) {
+            if (preg_match('#^/builtin/(\d+)$#', $path, $m)) {
+                handleUpdateBuiltinCategoryPreset($db, (int)$m[1], $allowedTabs);
+            } elseif (preg_match('#^/(\d+)$#', $path, $m)) {
                 handleUpdateCategoryPreset($db, (int)$m[1], $allowedTabs);
             } else {
                 sendJSON(['error' => 'Invalid endpoint'], 404);
@@ -51,7 +57,9 @@ try {
             break;
 
         case 'DELETE':
-            if (preg_match('#^/(\d+)$#', $path, $m)) {
+            if (preg_match('#^/builtin/(\d+)$#', $path, $m)) {
+                handleDeleteBuiltinCategoryPreset($db, (int)$m[1]);
+            } elseif (preg_match('#^/(\d+)$#', $path, $m)) {
                 handleDeleteCategoryPreset($db, (int)$m[1]);
             } else {
                 sendJSON(['error' => 'Invalid endpoint'], 404);
@@ -64,11 +72,6 @@ try {
 } catch (Throwable $e) {
     error_log('category_presets.php: ' . $e->getMessage());
     sendJSON(['error' => 'Failed to process category presets'], 500);
-}
-
-function categoryPresetAllowedTabs(array $allowedTabs): array
-{
-    return $allowedTabs;
 }
 
 function normalizeCategoryPresetName(string $name): string
@@ -116,12 +119,17 @@ function categoryPresetRowToApi(array $row): array
     if (is_array($decoded)) {
         $visible = normalizeVisibleCategories($decoded);
     }
+    $scope = (($row['scope'] ?? 'user') === 'builtin') ? 'builtin' : 'user';
+    $id = (string)$row['id'];
     return [
-        'id' => (string)$row['id'],
+        'id' => $scope === 'builtin' ? ('builtin-' . $id) : $id,
+        'db_id' => $id,
         'tab_key' => (string)$row['tab_key'],
         'name' => (string)$row['name'],
         'visible' => $visible,
-        'is_active' => ((int)$row['is_active']) === 1,
+        'is_active' => $scope === 'user' && ((int)$row['is_active']) === 1,
+        'scope' => $scope,
+        'source' => $scope,
         'created_at' => (int)$row['created_at'],
         'updated_at' => (int)$row['updated_at'],
     ];
@@ -130,9 +138,9 @@ function categoryPresetRowToApi(array $row): array
 function listCategoryPresetRows(PDO $db, int $userId): array
 {
     $stmt = $db->prepare(
-        'SELECT id, tab_key, name, visible_json, is_active, created_at, updated_at
+        'SELECT id, user_id, scope, tab_key, name, visible_json, is_active, created_at, updated_at
          FROM category_visibility_presets
-         WHERE user_id = ?
+         WHERE user_id = ? AND scope = \'user\'
          ORDER BY name COLLATE NOCASE ASC, id ASC'
     );
     $stmt->execute([$userId]);
@@ -148,16 +156,47 @@ function listCategoryPresetRows(PDO $db, int $userId): array
     return ['presets' => $presets, 'activeByTab' => $activeByTab];
 }
 
+function listBuiltinCategoryPresetRows(PDO $db, ?string $tabKey = null): array
+{
+    if ($tabKey !== null && $tabKey !== '') {
+        $stmt = $db->prepare(
+            'SELECT id, user_id, scope, tab_key, name, visible_json, is_active, created_at, updated_at
+             FROM category_visibility_presets
+             WHERE scope = \'builtin\' AND tab_key = ?
+             ORDER BY name COLLATE NOCASE ASC, id ASC'
+        );
+        $stmt->execute([$tabKey]);
+    } else {
+        $stmt = $db->query(
+            'SELECT id, user_id, scope, tab_key, name, visible_json, is_active, created_at, updated_at
+             FROM category_visibility_presets
+             WHERE scope = \'builtin\'
+             ORDER BY tab_key ASC, name COLLATE NOCASE ASC, id ASC'
+        );
+    }
+    $presets = [];
+    foreach ($stmt->fetchAll(PDO::FETCH_ASSOC) as $row) {
+        $presets[] = categoryPresetRowToApi($row);
+    }
+    return ['presets' => $presets];
+}
+
 function clearActiveCategoryPresetForTab(PDO $db, int $userId, string $tabKey): void
 {
-    $stmt = $db->prepare('UPDATE category_visibility_presets SET is_active = 0, updated_at = ? WHERE user_id = ? AND tab_key = ? AND is_active = 1');
+    $stmt = $db->prepare(
+        'UPDATE category_visibility_presets SET is_active = 0, updated_at = ?
+         WHERE user_id = ? AND tab_key = ? AND scope = \'user\' AND is_active = 1'
+    );
     $stmt->execute([time(), $userId, $tabKey]);
 }
 
 function setActiveCategoryPresetRow(PDO $db, int $userId, int $presetId, string $tabKey): bool
 {
     clearActiveCategoryPresetForTab($db, $userId, $tabKey);
-    $stmt = $db->prepare('UPDATE category_visibility_presets SET is_active = 1, updated_at = ? WHERE id = ? AND user_id = ? AND tab_key = ?');
+    $stmt = $db->prepare(
+        'UPDATE category_visibility_presets SET is_active = 1, updated_at = ?
+         WHERE id = ? AND user_id = ? AND tab_key = ? AND scope = \'user\''
+    );
     $stmt->execute([time(), $presetId, $userId, $tabKey]);
     return $stmt->rowCount() > 0;
 }
@@ -165,10 +204,21 @@ function setActiveCategoryPresetRow(PDO $db, int $userId, int $presetId, string 
 function fetchCategoryPresetRow(PDO $db, int $userId, int $presetId): ?array
 {
     $stmt = $db->prepare(
-        'SELECT id, tab_key, name, visible_json, is_active, created_at, updated_at
-         FROM category_visibility_presets WHERE id = ? AND user_id = ?'
+        'SELECT id, user_id, scope, tab_key, name, visible_json, is_active, created_at, updated_at
+         FROM category_visibility_presets WHERE id = ? AND user_id = ? AND scope = \'user\''
     );
     $stmt->execute([$presetId, $userId]);
+    $row = $stmt->fetch(PDO::FETCH_ASSOC);
+    return $row ?: null;
+}
+
+function fetchBuiltinCategoryPresetRow(PDO $db, int $presetId): ?array
+{
+    $stmt = $db->prepare(
+        'SELECT id, user_id, scope, tab_key, name, visible_json, is_active, created_at, updated_at
+         FROM category_visibility_presets WHERE id = ? AND scope = \'builtin\''
+    );
+    $stmt->execute([$presetId]);
     $row = $stmt->fetch(PDO::FETCH_ASSOC);
     return $row ?: null;
 }
@@ -177,23 +227,31 @@ function upsertCategoryPresetRow(PDO $db, int $userId, string $tabKey, string $n
 {
     $now = time();
     $visibleJson = json_encode(array_values($visible), JSON_UNESCAPED_UNICODE);
-    $existing = $db->prepare('SELECT id FROM category_visibility_presets WHERE user_id = ? AND tab_key = ? AND name = ? COLLATE NOCASE');
+    $existing = $db->prepare(
+        'SELECT id FROM category_visibility_presets
+         WHERE user_id = ? AND tab_key = ? AND name = ? COLLATE NOCASE AND scope = \'user\''
+    );
     $existing->execute([$userId, $tabKey, $name]);
     $existingId = $existing->fetchColumn();
 
     if ($existingId) {
         $id = (int)$existingId;
-        $stmt = $db->prepare('UPDATE category_visibility_presets SET name = ?, visible_json = ?, updated_at = ? WHERE id = ? AND user_id = ?');
+        $stmt = $db->prepare(
+            'UPDATE category_visibility_presets SET name = ?, visible_json = ?, updated_at = ?
+             WHERE id = ? AND user_id = ? AND scope = \'user\''
+        );
         $stmt->execute([$name, $visibleJson, $now, $id, $userId]);
     } else {
-        $countStmt = $db->prepare('SELECT COUNT(*) FROM category_visibility_presets WHERE user_id = ?');
+        $countStmt = $db->prepare(
+            'SELECT COUNT(*) FROM category_visibility_presets WHERE user_id = ? AND scope = \'user\''
+        );
         $countStmt->execute([$userId]);
         if ((int)$countStmt->fetchColumn() >= 50) {
             sendJSON(['error' => 'Maximum of 50 category presets reached'], 400);
         }
         $stmt = $db->prepare(
-            'INSERT INTO category_visibility_presets (user_id, tab_key, name, visible_json, is_active, created_at, updated_at)
-             VALUES (?, ?, ?, ?, 0, ?, ?)'
+            'INSERT INTO category_visibility_presets (user_id, scope, tab_key, name, visible_json, is_active, created_at, updated_at)
+             VALUES (?, \'user\', ?, ?, ?, 0, ?, ?)'
         );
         $stmt->execute([$userId, $tabKey, $name, $visibleJson, $now, $now]);
         $id = (int)$db->lastInsertId();
@@ -210,6 +268,66 @@ function upsertCategoryPresetRow(PDO $db, int $userId, string $tabKey, string $n
     return categoryPresetRowToApi($row);
 }
 
+function upsertBuiltinCategoryPresetRow(PDO $db, string $tabKey, string $name, array $visible, ?int $existingId = null): array
+{
+    $now = time();
+    $visibleJson = json_encode(array_values($visible), JSON_UNESCAPED_UNICODE);
+
+    if ($existingId !== null && $existingId > 0) {
+        $row = fetchBuiltinCategoryPresetRow($db, $existingId);
+        if (!$row) {
+            sendJSON(['error' => 'Built-in preset not found'], 404);
+        }
+        // Unique name check against other builtins on same tab
+        $dup = $db->prepare(
+            'SELECT id FROM category_visibility_presets
+             WHERE scope = \'builtin\' AND tab_key = ? AND name = ? COLLATE NOCASE AND id != ?'
+        );
+        $dup->execute([$tabKey, $name, $existingId]);
+        if ($dup->fetchColumn()) {
+            sendJSON(['error' => 'A built-in preset with this name already exists for this tab'], 409);
+        }
+        $stmt = $db->prepare(
+            'UPDATE category_visibility_presets SET tab_key = ?, name = ?, visible_json = ?, updated_at = ?
+             WHERE id = ? AND scope = \'builtin\''
+        );
+        $stmt->execute([$tabKey, $name, $visibleJson, $now, $existingId]);
+        $id = $existingId;
+    } else {
+        $dup = $db->prepare(
+            'SELECT id FROM category_visibility_presets
+             WHERE scope = \'builtin\' AND tab_key = ? AND name = ? COLLATE NOCASE'
+        );
+        $dup->execute([$tabKey, $name]);
+        $dupId = $dup->fetchColumn();
+        if ($dupId) {
+            $id = (int)$dupId;
+            $stmt = $db->prepare(
+                'UPDATE category_visibility_presets SET visible_json = ?, updated_at = ?
+                 WHERE id = ? AND scope = \'builtin\''
+            );
+            $stmt->execute([$visibleJson, $now, $id]);
+        } else {
+            $countStmt = $db->query('SELECT COUNT(*) FROM category_visibility_presets WHERE scope = \'builtin\'');
+            if ((int)$countStmt->fetchColumn() >= 100) {
+                sendJSON(['error' => 'Maximum of 100 built-in category presets reached'], 400);
+            }
+            $stmt = $db->prepare(
+                'INSERT INTO category_visibility_presets (user_id, scope, tab_key, name, visible_json, is_active, created_at, updated_at)
+                 VALUES (NULL, \'builtin\', ?, ?, ?, 0, ?, ?)'
+            );
+            $stmt->execute([$tabKey, $name, $visibleJson, $now, $now]);
+            $id = (int)$db->lastInsertId();
+        }
+    }
+
+    $row = fetchBuiltinCategoryPresetRow($db, $id);
+    if (!$row) {
+        sendJSON(['error' => 'Failed to save built-in preset'], 500);
+    }
+    return categoryPresetRowToApi($row);
+}
+
 function handleListCategoryPresets(PDO $db, array $allowedTabs): void
 {
     $user = requireAuth();
@@ -218,9 +336,80 @@ function handleListCategoryPresets(PDO $db, array $allowedTabs): void
     sendJSON(listCategoryPresetRows($db, $userId));
 }
 
+function handleListBuiltinCategoryPresets(PDO $db, array $allowedTabs): void
+{
+    $tabKey = isset($_GET['tab_key']) ? trim((string)$_GET['tab_key']) : '';
+    if ($tabKey !== '' && !in_array($tabKey, $allowedTabs, true)) {
+        sendJSON(['error' => 'Invalid tab'], 400);
+    }
+    sendJSON(listBuiltinCategoryPresetRows($db, $tabKey !== '' ? $tabKey : null));
+}
+
+function handleSaveBuiltinCategoryPreset(PDO $db, array $allowedTabs): void
+{
+    requireAdmin();
+    $data = getJSONInput();
+    $tabKey = isset($data['tab_key']) ? trim((string)$data['tab_key']) : '';
+    $name = normalizeCategoryPresetName((string)($data['name'] ?? ''));
+    $visible = normalizeVisibleCategories($data['visible'] ?? []);
+
+    if (!in_array($tabKey, $allowedTabs, true)) {
+        sendJSON(['error' => 'Invalid tab'], 400);
+    }
+    if ($name === '') {
+        sendJSON(['error' => 'Preset name is required'], 400);
+    }
+
+    $preset = upsertBuiltinCategoryPresetRow($db, $tabKey, $name, $visible, null);
+    sendJSON(['preset' => $preset], 201);
+}
+
+function handleUpdateBuiltinCategoryPreset(PDO $db, int $presetId, array $allowedTabs): void
+{
+    requireAdmin();
+    $row = fetchBuiltinCategoryPresetRow($db, $presetId);
+    if (!$row) {
+        sendJSON(['error' => 'Built-in preset not found'], 404);
+    }
+
+    $data = getJSONInput();
+    $tabKey = array_key_exists('tab_key', $data)
+        ? trim((string)$data['tab_key'])
+        : (string)$row['tab_key'];
+    $name = array_key_exists('name', $data)
+        ? normalizeCategoryPresetName((string)$data['name'])
+        : (string)$row['name'];
+    $visible = array_key_exists('visible', $data)
+        ? normalizeVisibleCategories($data['visible'])
+        : normalizeVisibleCategories(json_decode((string)$row['visible_json'], true));
+
+    if (!in_array($tabKey, $allowedTabs, true)) {
+        sendJSON(['error' => 'Invalid tab'], 400);
+    }
+    if ($name === '') {
+        sendJSON(['error' => 'Preset name is required'], 400);
+    }
+
+    $preset = upsertBuiltinCategoryPresetRow($db, $tabKey, $name, $visible, $presetId);
+    sendJSON(['preset' => $preset]);
+}
+
+function handleDeleteBuiltinCategoryPreset(PDO $db, int $presetId): void
+{
+    requireAdmin();
+    $stmt = $db->prepare('DELETE FROM category_visibility_presets WHERE id = ? AND scope = \'builtin\'');
+    $stmt->execute([$presetId]);
+    if ($stmt->rowCount() === 0) {
+        sendJSON(['error' => 'Built-in preset not found'], 404);
+    }
+    sendJSON(['success' => true]);
+}
+
 function migrateLegacyCategoryPresetsFromPreferences(PDO $db, int $userId, array $allowedTabs): void
 {
-    $countStmt = $db->prepare('SELECT COUNT(*) FROM category_visibility_presets WHERE user_id = ?');
+    $countStmt = $db->prepare(
+        'SELECT COUNT(*) FROM category_visibility_presets WHERE user_id = ? AND scope = \'user\''
+    );
     $countStmt->execute([$userId]);
     if ((int)$countStmt->fetchColumn() > 0) {
         return;
@@ -287,8 +476,8 @@ function insertImportedCategoryPresets(PDO $db, int $userId, array $imported): v
 {
     $now = time();
     $insert = $db->prepare(
-        'INSERT OR IGNORE INTO category_visibility_presets (user_id, tab_key, name, visible_json, is_active, created_at, updated_at)
-         VALUES (?, ?, ?, ?, 0, ?, ?)'
+        'INSERT OR IGNORE INTO category_visibility_presets (user_id, scope, tab_key, name, visible_json, is_active, created_at, updated_at)
+         VALUES (?, \'user\', ?, ?, ?, 0, ?, ?)'
     );
     foreach ($imported as $item) {
         $insert->execute([
@@ -304,7 +493,10 @@ function insertImportedCategoryPresets(PDO $db, int $userId, array $imported): v
         if (empty($item['is_active'])) {
             continue;
         }
-        $lookup = $db->prepare('SELECT id FROM category_visibility_presets WHERE user_id = ? AND tab_key = ? AND name = ? COLLATE NOCASE');
+        $lookup = $db->prepare(
+            'SELECT id FROM category_visibility_presets
+             WHERE user_id = ? AND tab_key = ? AND name = ? COLLATE NOCASE AND scope = \'user\''
+        );
         $lookup->execute([$userId, $item['tab_key'], $item['name']]);
         $id = $lookup->fetchColumn();
         if ($id) {
@@ -336,6 +528,13 @@ function handleUpdateCategoryPreset(PDO $db, int $presetId, array $allowedTabs):
 {
     $user = requireAuth();
     $userId = (int)$user['id'];
+
+    // Never allow updating builtins via user route
+    $builtin = fetchBuiltinCategoryPresetRow($db, $presetId);
+    if ($builtin) {
+        sendJSON(['error' => 'Built-in presets cannot be modified'], 403);
+    }
+
     $row = fetchCategoryPresetRow($db, $userId, $presetId);
     if (!$row) {
         sendJSON(['error' => 'Preset not found'], 404);
@@ -350,10 +549,14 @@ function handleUpdateCategoryPreset(PDO $db, int $presetId, array $allowedTabs):
 
     $now = time();
     if ($visible === null) {
-        $stmt = $db->prepare('UPDATE category_visibility_presets SET name = ?, updated_at = ? WHERE id = ? AND user_id = ?');
+        $stmt = $db->prepare(
+            'UPDATE category_visibility_presets SET name = ?, updated_at = ? WHERE id = ? AND user_id = ? AND scope = \'user\''
+        );
         $stmt->execute([$name, $now, $presetId, $userId]);
     } else {
-        $stmt = $db->prepare('UPDATE category_visibility_presets SET name = ?, visible_json = ?, updated_at = ? WHERE id = ? AND user_id = ?');
+        $stmt = $db->prepare(
+            'UPDATE category_visibility_presets SET name = ?, visible_json = ?, updated_at = ? WHERE id = ? AND user_id = ? AND scope = \'user\''
+        );
         $stmt->execute([$name, json_encode(array_values($visible), JSON_UNESCAPED_UNICODE), $now, $presetId, $userId]);
     }
 
@@ -364,7 +567,15 @@ function handleUpdateCategoryPreset(PDO $db, int $presetId, array $allowedTabs):
 function handleDeleteCategoryPreset(PDO $db, int $presetId): void
 {
     $user = requireAuth();
-    $stmt = $db->prepare('DELETE FROM category_visibility_presets WHERE id = ? AND user_id = ?');
+
+    $builtin = fetchBuiltinCategoryPresetRow($db, $presetId);
+    if ($builtin) {
+        sendJSON(['error' => 'Built-in presets cannot be deleted'], 403);
+    }
+
+    $stmt = $db->prepare(
+        'DELETE FROM category_visibility_presets WHERE id = ? AND user_id = ? AND scope = \'user\''
+    );
     $stmt->execute([$presetId, (int)$user['id']]);
     if ($stmt->rowCount() === 0) {
         sendJSON(['error' => 'Preset not found'], 404);
@@ -403,7 +614,14 @@ function handleSetActiveCategoryPreset(PDO $db, array $allowedTabs): void
         sendJSON(['success' => true, 'active_id' => null]);
         return;
     }
-    $presetId = (int)$data['id'];
+    // Active tracking in DB is only for personal presets
+    $rawId = (string)$data['id'];
+    if (str_starts_with($rawId, 'builtin-') || !ctype_digit($rawId)) {
+        clearActiveCategoryPresetForTab($db, $userId, $tabKey);
+        sendJSON(['success' => true, 'active_id' => null]);
+        return;
+    }
+    $presetId = (int)$rawId;
     $row = fetchCategoryPresetRow($db, $userId, $presetId);
     if (!$row || (string)$row['tab_key'] !== $tabKey) {
         sendJSON(['error' => 'Preset not found'], 404);
@@ -416,7 +634,9 @@ function handleImportCategoryPresets(PDO $db, array $allowedTabs): void
 {
     $user = requireAuth();
     $userId = (int)$user['id'];
-    $countStmt = $db->prepare('SELECT COUNT(*) FROM category_visibility_presets WHERE user_id = ?');
+    $countStmt = $db->prepare(
+        'SELECT COUNT(*) FROM category_visibility_presets WHERE user_id = ? AND scope = \'user\''
+    );
     $countStmt->execute([$userId]);
     if ((int)$countStmt->fetchColumn() > 0) {
         sendJSON(listCategoryPresetRows($db, $userId));
@@ -432,6 +652,14 @@ function handleImportCategoryPresets(PDO $db, array $allowedTabs): void
     $imported = [];
     foreach ($incoming as $item) {
         if (!is_array($item)) {
+            continue;
+        }
+        // Never import builtins into personal table
+        if (($item['scope'] ?? $item['source'] ?? 'user') === 'builtin') {
+            continue;
+        }
+        $idHint = isset($item['id']) ? (string)$item['id'] : '';
+        if (str_starts_with($idHint, 'builtin-')) {
             continue;
         }
         $tabKey = isset($item['tab_key']) ? trim((string)$item['tab_key']) : '';
@@ -472,17 +700,27 @@ function handleSyncCategoryPresets(PDO $db, array $allowedTabs): void
         if (!is_array($item)) {
             continue;
         }
+        if (($item['scope'] ?? $item['source'] ?? 'user') === 'builtin') {
+            continue;
+        }
+        $idRaw = isset($item['id']) ? (string)$item['id'] : '';
+        if (str_starts_with($idRaw, 'builtin-')) {
+            continue;
+        }
         $tabKey = isset($item['tab_key']) ? trim((string)$item['tab_key']) : '';
         $name = normalizeCategoryPresetName((string)($item['name'] ?? ''));
         if (!in_array($tabKey, $allowedTabs, true) || $name === '') {
             continue;
         }
         $visible = normalizeVisibleCategories($item['visible'] ?? []);
-        $id = isset($item['id']) && ctype_digit((string)$item['id']) ? (int)$item['id'] : 0;
+        $id = ctype_digit($idRaw) ? (int)$idRaw : 0;
         if ($id > 0) {
             $row = fetchCategoryPresetRow($db, $userId, $id);
             if ($row) {
-                $stmt = $db->prepare('UPDATE category_visibility_presets SET name = ?, visible_json = ?, tab_key = ?, updated_at = ? WHERE id = ? AND user_id = ?');
+                $stmt = $db->prepare(
+                    'UPDATE category_visibility_presets SET name = ?, visible_json = ?, tab_key = ?, updated_at = ?
+                     WHERE id = ? AND user_id = ? AND scope = \'user\''
+                );
                 $stmt->execute([$name, json_encode(array_values($visible), JSON_UNESCAPED_UNICODE), $tabKey, time(), $id, $userId]);
                 $keepIds[] = $id;
                 if (!empty($item['is_active'])) {
@@ -492,15 +730,17 @@ function handleSyncCategoryPresets(PDO $db, array $allowedTabs): void
             }
         }
         $saved = upsertCategoryPresetRow($db, $userId, $tabKey, $name, $visible, !empty($item['is_active']));
-        $keepIds[] = (int)$saved['id'];
+        $keepIds[] = (int)($saved['db_id'] ?? $saved['id']);
     }
 
     if ($keepIds === []) {
-        $db->prepare('DELETE FROM category_visibility_presets WHERE user_id = ?')->execute([$userId]);
+        $db->prepare('DELETE FROM category_visibility_presets WHERE user_id = ? AND scope = \'user\'')->execute([$userId]);
     } else {
         $placeholders = implode(',', array_fill(0, count($keepIds), '?'));
         $params = array_merge([$userId], $keepIds);
-        $db->prepare("DELETE FROM category_visibility_presets WHERE user_id = ? AND id NOT IN ($placeholders)")->execute($params);
+        $db->prepare(
+            "DELETE FROM category_visibility_presets WHERE user_id = ? AND scope = 'user' AND id NOT IN ($placeholders)"
+        )->execute($params);
     }
 
     sendJSON(listCategoryPresetRows($db, $userId));

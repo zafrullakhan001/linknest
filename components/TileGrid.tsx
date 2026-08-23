@@ -19,7 +19,7 @@ import { useAuth } from '../contexts/AuthContext';
 import { useAccessRestrictionGate } from '../contexts/AccessRestrictionContext';
 import { AccessRestrictionsEditor, AccessRestrictionsBadge } from './AccessRestrictionsEditor';
 import { userPreferencesService } from '../services/userPreferencesService';
-import { categoryPresetService, groupDbCategoryPresets, flattenCategoryPresetsForSync } from '../services/categoryPresetService';
+import { categoryPresetService, groupDbCategoryPresets, groupBuiltinCategoryPresets, flattenCategoryPresetsForSync, mergeCategoryPresetsForTab, isBuiltinPresetId } from '../services/categoryPresetService';
 import { getPublicFavorites, togglePublicFavorite, isPublicFavorite, getPublicActiveTab, setPublicActiveTab, exportPublicFavorites, importPublicFavorites, clearPublicFavorites, getPublicLinkFavorites, togglePublicLinkFavorite, clearPublicLinkFavorites, getPublicLinkFavoriteDetails, syncPublicLinkFavoriteDetails, upsertPublicLinkFavoriteDetail, removePublicLinkFavoriteDetail, getPublicFavoritesInstanceLabel, setPublicFavorites as writePublicFavorites, setPublicLinkFavorites as writePublicLinkFavorites, swapPublicFavoriteIds, getPublicFavoritesLayout, setPublicFavoritesLayout } from '../services/publicFavoritesService';
 import { linkHealthService } from '../services/linkHealthService';
 import { favoriteLinkHealthService, LinkHealthCheckResult } from '../services/favoriteLinkHealthService';
@@ -536,6 +536,7 @@ const CategoryPresetSwitcher: React.FC<{
     typeof window !== 'undefined' ? loadPresetMenuFloatPos() : { x: 24, y: 96 }
   );
   const [dragging, setDragging] = useState(false);
+  const [search, setSearch] = useState('');
   const rootRef = useRef<HTMLDivElement>(null);
   const panelRef = useRef<HTMLDivElement>(null);
   const floatPosRef = useRef(floatPos);
@@ -543,12 +544,29 @@ const CategoryPresetSwitcher: React.FC<{
   const dragCleanupRef = useRef<(() => void) | null>(null);
   const active = presets.find((p) => p.id === activePresetId) || null;
   const menuVisible = open || floating;
+  const filteredPresets = useMemo(() => {
+    const q = search.trim().toLowerCase();
+    if (!q) return presets;
+    return presets.filter((preset) => preset.name.toLowerCase().includes(q));
+  }, [presets, search]);
+  const builtinFiltered = useMemo(
+    () => filteredPresets.filter((p) => p.source === 'builtin' || isBuiltinPresetId(p.id)),
+    [filteredPresets]
+  );
+  const userFiltered = useMemo(
+    () => filteredPresets.filter((p) => p.source !== 'builtin' && !isBuiltinPresetId(p.id)),
+    [filteredPresets]
+  );
 
-  useEscapeToClose(menuVisible && !floating, () => setOpen(false));
+  useEscapeToClose(menuVisible && !floating, () => {
+    setOpen(false);
+    setSearch('');
+  });
   useEscapeToClose(floating, () => {
     setFloating(false);
     savePresetMenuFloating(false);
     setOpen(false);
+    setSearch('');
   });
 
   useEffect(() => {
@@ -565,7 +583,10 @@ const CategoryPresetSwitcher: React.FC<{
   useEffect(() => {
     if (!open || floating) return;
     const onDoc = (e: MouseEvent) => {
-      if (rootRef.current && !rootRef.current.contains(e.target as Node)) setOpen(false);
+      if (rootRef.current && !rootRef.current.contains(e.target as Node)) {
+        setOpen(false);
+        setSearch('');
+      }
     };
     document.addEventListener('mousedown', onDoc);
     return () => document.removeEventListener('mousedown', onDoc);
@@ -622,12 +643,13 @@ const CategoryPresetSwitcher: React.FC<{
     setFloating(false);
     savePresetMenuFloating(false);
     setOpen(false);
+    setSearch('');
   }, []);
 
   const startDrag = (e: React.PointerEvent) => {
     if (!floating) return;
     const target = e.target as HTMLElement | null;
-    if (target?.closest('button')) return;
+    if (target?.closest('button') || target?.closest('input')) return;
 
     dragCleanupRef.current?.();
     dragCleanupRef.current = null;
@@ -683,7 +705,7 @@ const CategoryPresetSwitcher: React.FC<{
       role="menu"
       aria-label="Category presets"
       data-floating={floating ? 'true' : 'false'}
-      className={`linknest-overlay w-56 max-h-72 overflow-hidden flex flex-col rounded-xl border border-slate-200/90 dark:border-slate-700 shadow-xl ring-1 ring-slate-300/60 dark:ring-slate-600/50 bg-white dark:bg-slate-800 ${
+      className={`linknest-overlay w-56 max-h-80 overflow-hidden flex flex-col rounded-xl border border-slate-200/90 dark:border-slate-700 shadow-xl ring-1 ring-slate-300/60 dark:ring-slate-600/50 bg-white dark:bg-slate-800 ${
         floating ? 'fixed' : 'absolute left-0 top-full mt-1.5 z-50'
       }`}
       style={
@@ -741,39 +763,131 @@ const CategoryPresetSwitcher: React.FC<{
           )}
         </div>
       </div>
+      <div className="shrink-0 px-2 py-2 border-b border-slate-200/80 dark:border-slate-700/80 bg-white dark:bg-slate-800">
+        <div className="relative">
+          <svg
+            xmlns="http://www.w3.org/2000/svg"
+            viewBox="0 0 20 20"
+            fill="currentColor"
+            className="pointer-events-none absolute left-2.5 top-1/2 -translate-y-1/2 w-3.5 h-3.5 text-slate-400"
+            aria-hidden
+          >
+            <path fillRule="evenodd" d="M9 3.5a5.5 5.5 0 100 11 5.5 5.5 0 000-11zM2 9a7 7 0 1112.452 4.391l3.328 3.329a.75.75 0 11-1.06 1.06l-3.329-3.328A7 7 0 012 9z" clipRule="evenodd" />
+          </svg>
+          <input
+            type="search"
+            value={search}
+            onChange={(e) => setSearch(e.target.value)}
+            onPointerDown={(e) => e.stopPropagation()}
+            onKeyDown={(e) => {
+              if (e.key === 'Escape' && search) {
+                e.stopPropagation();
+                setSearch('');
+              }
+            }}
+            placeholder="Search presets..."
+            aria-label="Search presets"
+            autoFocus={!floating}
+            className="w-full pl-8 pr-2.5 py-1.5 text-sm rounded-lg border border-slate-200 dark:border-slate-600 bg-slate-50 dark:bg-slate-900/60 text-slate-900 dark:text-slate-100 placeholder:text-slate-400 dark:placeholder:text-slate-500 focus:outline-none focus:ring-2 focus:ring-brand-500/40 focus:border-brand-400"
+          />
+        </div>
+      </div>
       <div className="flex-1 min-h-0 overflow-y-auto p-1.5 flex flex-col gap-0.5 bg-slate-50/90 dark:bg-slate-900/40">
-        {presets.map((preset) => {
-          const isActive = preset.id === activePresetId;
-          const count = preset.visible.length;
-          return (
-            <button
-              key={preset.id}
-              type="button"
-              role="menuitem"
-              onClick={() => {
-                onSelect(preset);
-                if (!floating) setOpen(false);
-              }}
-              className={`w-full text-left px-3 py-2.5 rounded-lg text-sm font-medium transition-colors flex items-center gap-2 ${
-                isActive
-                  ? 'bg-brand-50 dark:bg-brand-900/30 text-brand-700 dark:text-brand-300 ring-1 ring-inset ring-brand-200/80 dark:ring-brand-700/50 font-semibold'
-                  : 'text-slate-700 dark:text-slate-300 hover:bg-white dark:hover:bg-slate-800 hover:text-slate-900 dark:hover:text-white'
-              }`}
-            >
-              <span className="flex-1 min-w-0 truncate">{preset.name}</span>
-              <span
-                className={`shrink-0 px-1.5 py-0.5 text-[10px] rounded-full font-semibold ${
-                  isActive
-                    ? 'bg-brand-100 dark:bg-brand-800/50 text-brand-700 dark:text-brand-300'
-                    : 'bg-white dark:bg-slate-800 text-slate-500 dark:text-slate-400'
-                }`}
-                title={`${count} categor${count === 1 ? 'y' : 'ies'}`}
-              >
-                {count}
-              </span>
-            </button>
-          );
-        })}
+        {builtinFiltered.length > 0 && (
+          <>
+            <div className="px-2 pt-1 pb-0.5 text-[10px] font-semibold uppercase tracking-wider text-slate-400 dark:text-slate-500">
+              Built-in
+            </div>
+            {builtinFiltered.map((preset) => {
+              const isActive = preset.id === activePresetId;
+              const count = preset.visible.length;
+              return (
+                <button
+                  key={preset.id}
+                  type="button"
+                  role="menuitem"
+                  onClick={() => {
+                    onSelect(preset);
+                    if (!floating) {
+                      setOpen(false);
+                      setSearch('');
+                    }
+                  }}
+                  className={`w-full text-left px-3 py-2.5 rounded-lg text-sm font-medium transition-colors flex items-center gap-2 ${
+                    isActive
+                      ? 'bg-brand-50 dark:bg-brand-900/30 text-brand-700 dark:text-brand-300 ring-1 ring-inset ring-brand-200/80 dark:ring-brand-700/50 font-semibold'
+                      : 'text-slate-700 dark:text-slate-300 hover:bg-white dark:hover:bg-slate-800 hover:text-slate-900 dark:hover:text-white'
+                  }`}
+                >
+                  <span className="flex-1 min-w-0 truncate">{preset.name}</span>
+                  <span
+                    className="shrink-0 px-1.5 py-0.5 text-[9px] rounded font-semibold uppercase tracking-wide bg-slate-200/80 dark:bg-slate-700 text-slate-600 dark:text-slate-300"
+                    title="Built-in preset (read-only)"
+                  >
+                    Built-in
+                  </span>
+                  <span
+                    className={`shrink-0 px-1.5 py-0.5 text-[10px] rounded-full font-semibold ${
+                      isActive
+                        ? 'bg-brand-100 dark:bg-brand-800/50 text-brand-700 dark:text-brand-300'
+                        : 'bg-white dark:bg-slate-800 text-slate-500 dark:text-slate-400'
+                    }`}
+                    title={`${count} categor${count === 1 ? 'y' : 'ies'}`}
+                  >
+                    {count}
+                  </span>
+                </button>
+              );
+            })}
+          </>
+        )}
+        {userFiltered.length > 0 && (
+          <>
+            <div className={`px-2 pt-1.5 pb-0.5 text-[10px] font-semibold uppercase tracking-wider text-slate-400 dark:text-slate-500 ${builtinFiltered.length > 0 ? 'mt-1 border-t border-slate-200/70 dark:border-slate-700/70' : ''}`}>
+              My presets
+            </div>
+            {userFiltered.map((preset) => {
+              const isActive = preset.id === activePresetId;
+              const count = preset.visible.length;
+              return (
+                <button
+                  key={preset.id}
+                  type="button"
+                  role="menuitem"
+                  onClick={() => {
+                    onSelect(preset);
+                    if (!floating) {
+                      setOpen(false);
+                      setSearch('');
+                    }
+                  }}
+                  className={`w-full text-left px-3 py-2.5 rounded-lg text-sm font-medium transition-colors flex items-center gap-2 ${
+                    isActive
+                      ? 'bg-brand-50 dark:bg-brand-900/30 text-brand-700 dark:text-brand-300 ring-1 ring-inset ring-brand-200/80 dark:ring-brand-700/50 font-semibold'
+                      : 'text-slate-700 dark:text-slate-300 hover:bg-white dark:hover:bg-slate-800 hover:text-slate-900 dark:hover:text-white'
+                  }`}
+                >
+                  <span className="flex-1 min-w-0 truncate">{preset.name}</span>
+                  <span
+                    className={`shrink-0 px-1.5 py-0.5 text-[10px] rounded-full font-semibold ${
+                      isActive
+                        ? 'bg-brand-100 dark:bg-brand-800/50 text-brand-700 dark:text-brand-300'
+                        : 'bg-white dark:bg-slate-800 text-slate-500 dark:text-slate-400'
+                    }`}
+                    title={`${count} categor${count === 1 ? 'y' : 'ies'}`}
+                  >
+                    {count}
+                  </span>
+                </button>
+              );
+            })}
+          </>
+        )}
+        {filteredPresets.length === 0 && (
+          <div className="px-3 py-3 text-sm text-slate-500 dark:text-slate-400 text-center">
+            No matching presets
+          </div>
+        )}
       </div>
     </div>
   );
@@ -2829,6 +2943,7 @@ interface CategoryVisibilityPreset {
   id: string;
   name: string;
   visible: string[];
+  source?: 'user' | 'builtin';
 }
 
 const CATEGORY_PRESETS_STORAGE_KEY = 'linknest_category_presets';
@@ -2860,7 +2975,10 @@ function parseCategoryPresetsByTab(raw: string | null | undefined): Record<strin
         presets.push({
           id: rawId || `preset-${tab}-${presets.length}-${name.toLowerCase()}`,
           name,
-          visible
+          visible,
+          source: rawId.startsWith('builtin-') || (item as CategoryVisibilityPreset).source === 'builtin'
+            ? 'builtin'
+            : 'user'
         });
       }
       if (presets.length > 0) out[tab] = presets;
@@ -3534,9 +3652,15 @@ export const TileGrid: React.FC<TileGridProps> = ({
 
   useEffect(() => {
     try {
-      const hasAny = Object.keys(categoryPresetsByTab).some((tab) => (categoryPresetsByTab[tab] || []).length > 0);
+      // Never persist built-in presets in the browser — only personal/user presets
+      const personalOnly: Record<string, CategoryVisibilityPreset[]> = {};
+      for (const [tab, list] of Object.entries(categoryPresetsByTab)) {
+        const filtered = (list || []).filter((p) => p.source !== 'builtin' && !isBuiltinPresetId(p.id));
+        if (filtered.length > 0) personalOnly[tab] = filtered.map(({ id, name, visible }) => ({ id, name, visible, source: 'user' as const }));
+      }
+      const hasAny = Object.keys(personalOnly).length > 0;
       if (hasAny) {
-        localStorage.setItem(CATEGORY_PRESETS_STORAGE_KEY, JSON.stringify(categoryPresetsByTab));
+        localStorage.setItem(CATEGORY_PRESETS_STORAGE_KEY, JSON.stringify(personalOnly));
       } else {
         localStorage.removeItem(CATEGORY_PRESETS_STORAGE_KEY);
       }
@@ -3558,6 +3682,24 @@ export const TileGrid: React.FC<TileGridProps> = ({
     }
   }, [activePresetIdByTab]);
 
+  const [builtinPresetsByTab, setBuiltinPresetsByTab] = useState<Record<string, CategoryVisibilityPreset[]>>({});
+
+  useEffect(() => {
+    let cancelled = false;
+    (async () => {
+      try {
+        const data = await categoryPresetService.listBuiltin();
+        if (cancelled) return;
+        setBuiltinPresetsByTab(groupBuiltinCategoryPresets(data.presets));
+      } catch (error) {
+        console.debug('Could not load built-in category presets:', error);
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, []);
+
   useEffect(() => {
     if (!isAuthenticated) return;
     let cancelled = false;
@@ -3571,6 +3713,7 @@ export const TileGrid: React.FC<TileGridProps> = ({
           const importPayload: Array<{ tab_key: string; name: string; visible: string[]; is_active?: boolean }> = [];
           Object.entries(local).forEach(([tabKey, list]) => {
             list.forEach((preset) => {
+              if (preset.source === 'builtin' || isBuiltinPresetId(preset.id)) return;
               importPayload.push({
                 tab_key: tabKey,
                 name: preset.name,
@@ -3595,9 +3738,18 @@ export const TileGrid: React.FC<TileGridProps> = ({
     };
   }, [isAuthenticated]);
 
-  const tabCategoryPresets = categoryPresetsByTab[activeTab] || [];
+  const tabCategoryPresets = useMemo(
+    () => mergeCategoryPresetsForTab(builtinPresetsByTab[activeTab], categoryPresetsByTab[activeTab]),
+    [builtinPresetsByTab, categoryPresetsByTab, activeTab]
+  );
   const activeCategoryPresetId = activePresetIdByTab[activeTab] || '';
   const activeCategoryPreset = tabCategoryPresets.find((preset) => preset.id === activeCategoryPresetId) || null;
+  const activeIsBuiltin = !!(activeCategoryPreset && (activeCategoryPreset.source === 'builtin' || isBuiltinPresetId(activeCategoryPreset.id)));
+  const builtinNameConflict = useMemo(() => {
+    const draft = presetNameDraft.trim().toLowerCase();
+    if (!draft) return false;
+    return (builtinPresetsByTab[activeTab] || []).some((p) => p.name.toLowerCase() === draft);
+  }, [presetNameDraft, builtinPresetsByTab, activeTab]);
 
   const applyCategoryPreset = useCallback((preset: CategoryVisibilityPreset, allCategoryNames: string[]) => {
     const visible = new Set(preset.visible);
@@ -3622,8 +3774,15 @@ export const TileGrid: React.FC<TileGridProps> = ({
   const saveCategoryPreset = useCallback(async (name: string, visibleNames: string[]) => {
     const trimmed = name.trim().slice(0, 60);
     if (!trimmed) return;
-    const existing = (categoryPresetsByTab[activeTab] || []).find(
+    const hitsBuiltin = (builtinPresetsByTab[activeTab] || []).some(
       (preset) => preset.name.toLowerCase() === trimmed.toLowerCase()
+    );
+    if (hitsBuiltin) {
+      alert('That name is used by a built-in preset. Choose a different name for your personal preset.');
+      return;
+    }
+    const existing = (categoryPresetsByTab[activeTab] || []).find(
+      (preset) => preset.source !== 'builtin' && !isBuiltinPresetId(preset.id) && preset.name.toLowerCase() === trimmed.toLowerCase()
     );
     const sameSelection = existing
       && [...existing.visible].sort().join('\0') === [...visibleNames].sort().join('\0');
@@ -3638,7 +3797,8 @@ export const TileGrid: React.FC<TileGridProps> = ({
         const nextPreset: CategoryVisibilityPreset = {
           id: String(saved.id),
           name: saved.name,
-          visible: Array.isArray(saved.visible) ? saved.visible : [...visibleNames]
+          visible: Array.isArray(saved.visible) ? saved.visible : [...visibleNames],
+          source: 'user',
         };
         setCategoryPresetsByTab((prev) => {
           const list = [...(prev[activeTab] || [])].filter((preset) => {
@@ -3658,7 +3818,7 @@ export const TileGrid: React.FC<TileGridProps> = ({
     }
 
     const id = existing?.id || generateUuid();
-    const nextPreset: CategoryVisibilityPreset = { id, name: existing?.name || trimmed, visible: [...visibleNames] };
+    const nextPreset: CategoryVisibilityPreset = { id, name: existing?.name || trimmed, visible: [...visibleNames], source: 'user' };
     setCategoryPresetsByTab((prev) => {
       const list = [...(prev[activeTab] || [])];
       const idx = list.findIndex((preset) => preset.id === id);
@@ -3668,11 +3828,15 @@ export const TileGrid: React.FC<TileGridProps> = ({
     });
     setActivePresetIdByTab((prev) => ({ ...prev, [activeTab]: id }));
     setPresetNameDraft(nextPreset.name);
-  }, [activeTab, categoryPresetsByTab, isAuthenticated]);
+  }, [activeTab, categoryPresetsByTab, builtinPresetsByTab, isAuthenticated]);
 
   const deleteCategoryPreset = useCallback(async (presetId: string) => {
+    if (isBuiltinPresetId(presetId)) {
+      alert('Built-in presets cannot be deleted.');
+      return;
+    }
     const preset = (categoryPresetsByTab[activeTab] || []).find((item) => item.id === presetId);
-    if (!preset) return;
+    if (!preset || preset.source === 'builtin') return;
     if (!window.confirm(`Delete preset "${preset.name}"?`)) return;
 
     if (isAuthenticated && /^\d+$/.test(presetId)) {
@@ -7502,6 +7666,7 @@ You may also wrap the array in an object: { "messages": [ ... ] }.
       if (next !== prev) persistCategoryPresetsToDb(next, activePresetIdByTab);
       return next;
     });
+    setBuiltinPresetsByTab((prev) => remapPresetCategoryNames(prev, applyName));
 
     const persist = async () => {
       try {
@@ -9305,12 +9470,13 @@ You may also wrap the array in an object: { "messages": [ ... ] }.
                 presetNameDraft,
                 Object.keys(groupedTiles).filter((name) => !hiddenCategories.has(name))
               )}
-              disabled={!presetNameDraft.trim()}
+              disabled={!presetNameDraft.trim() || builtinNameConflict}
+              title={builtinNameConflict ? 'Name is reserved by a built-in preset' : undefined}
               className="px-3 py-1.5 text-sm font-medium text-white bg-brand-600 hover:bg-brand-700 disabled:opacity-50 disabled:cursor-not-allowed rounded-lg transition-colors"
             >
               Save preset
             </button>
-            {activeCategoryPreset && (
+            {activeCategoryPreset && !activeIsBuiltin && (
               <button
                 type="button"
                 onClick={() => deleteCategoryPreset(activeCategoryPreset.id)}
@@ -9318,6 +9484,16 @@ You may also wrap the array in an object: { "messages": [ ... ] }.
               >
                 Delete preset
               </button>
+            )}
+            {activeIsBuiltin && (
+              <span className="px-2 py-1.5 text-xs text-slate-500 dark:text-slate-400">
+                Built-in preset (read-only)
+              </span>
+            )}
+            {builtinNameConflict && (
+              <span className="px-2 py-1.5 text-xs text-amber-700 dark:text-amber-300">
+                Name used by a built-in preset
+              </span>
             )}
           </div>
         <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-4">
