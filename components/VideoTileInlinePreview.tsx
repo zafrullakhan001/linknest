@@ -17,6 +17,8 @@ function msUntilPreviewStart(): number {
 interface VideoTileInlinePreviewProps {
   videoUrl: string;
   isYouTube: boolean;
+  /** Fill the parent tile (no extra height from aspect-video). */
+  fill?: boolean;
 }
 
 /**
@@ -26,6 +28,7 @@ interface VideoTileInlinePreviewProps {
 export const VideoTileInlinePreview: React.FC<VideoTileInlinePreviewProps> = ({
   videoUrl,
   isYouTube,
+  fill = false,
 }) => {
   const shellRef = useRef<HTMLDivElement>(null);
   const fileVideoRef = useRef<HTMLVideoElement>(null);
@@ -106,7 +109,11 @@ export const VideoTileInlinePreview: React.FC<VideoTileInlinePreviewProps> = ({
   return (
     <div
       ref={shellRef}
-      className="relative z-[1] w-full aspect-video rounded-lg overflow-hidden mb-3 bg-slate-900 shrink-0 shadow-sm ring-1 ring-black/5 dark:ring-white/10"
+      className={
+        fill
+          ? 'absolute inset-0 z-[1] w-auto h-auto rounded-[inherit] overflow-hidden bg-slate-900'
+          : 'relative z-[1] w-full aspect-video rounded-lg overflow-hidden mb-3 bg-slate-900 shrink-0 shadow-sm ring-1 ring-black/5 dark:ring-white/10'
+      }
     >
       {thumbUrl && (
         <img
@@ -142,10 +149,10 @@ export const VideoTileInlinePreview: React.FC<VideoTileInlinePreviewProps> = ({
 
       {!showPlaying && (
         <>
-          <div className="absolute inset-0 bg-gradient-to-t from-black/50 via-black/10 to-transparent pointer-events-none" />
-          <div className="absolute inset-0 flex items-center justify-center pointer-events-none">
+          <div className="absolute inset-0 bg-gradient-to-t from-black/45 via-transparent to-transparent pointer-events-none group-hover:opacity-0 transition-opacity duration-200" />
+          <div className="absolute inset-0 flex items-center justify-center pointer-events-none group-hover:opacity-0 transition-opacity duration-200">
             <span
-              className="flex h-11 w-11 items-center justify-center rounded-full bg-rose-600/95 text-white shadow-lg shadow-black/40 ring-2 ring-white/30 group-hover:scale-110 transition-transform"
+              className="flex h-11 w-11 items-center justify-center rounded-full bg-rose-600/95 text-white shadow-lg shadow-black/40 ring-2 ring-white/30"
               aria-hidden
             >
               <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="currentColor" className="w-5 h-5 ml-0.5">
@@ -157,12 +164,12 @@ export const VideoTileInlinePreview: React.FC<VideoTileInlinePreviewProps> = ({
       )}
 
       {isYouTube && (
-        <span className="absolute bottom-1.5 right-1.5 rounded bg-black/75 px-1.5 py-0.5 text-[9px] font-semibold uppercase tracking-wide text-white pointer-events-none">
+        <span className="absolute bottom-1.5 right-1.5 rounded bg-black/75 px-1.5 py-0.5 text-[9px] font-semibold uppercase tracking-wide text-white pointer-events-none group-hover:opacity-0 transition-opacity">
           {showPlaying ? 'Preview' : 'YouTube'}
         </span>
       )}
       {!isYouTube && showPlaying && (
-        <span className="absolute bottom-1.5 right-1.5 rounded bg-black/75 px-1.5 py-0.5 text-[9px] font-semibold uppercase tracking-wide text-white pointer-events-none">
+        <span className="absolute bottom-1.5 right-1.5 rounded bg-black/75 px-1.5 py-0.5 text-[9px] font-semibold uppercase tracking-wide text-white pointer-events-none group-hover:opacity-0 transition-opacity">
           Preview
         </span>
       )}

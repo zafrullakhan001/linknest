@@ -228,6 +228,12 @@ html:not(.ln-branding-ready) nav.linknest-nav {
   }
 }
 
+/* Video tiles: edge-to-edge preview so height matches sibling tiles in the grid */
+.linknest-tile.linknest-video-tile,
+div.linknest-tile.linknest-video-tile {
+  padding: 0 !important;
+}
+
 /* Local tile decoration override - must take precedence over global styles with !important */
 .linknest-tile.has-local-decoration,
 div.linknest-tile.has-local-decoration {

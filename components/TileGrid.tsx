@@ -1669,7 +1669,7 @@ const SortableTile: React.FC<SortableTileProps> = ({
         }
       }}
       className={`
-        linknest-tile ${hasLocalDecoration ? 'has-local-decoration' : ''} ${tileAnimatedClass} ${finalAnimationClass} group relative overflow-hidden ${tile.tileBorderRadius === undefined ? 'rounded-xl' : ''} ${borderClass}
+        linknest-tile ${hasLocalDecoration ? 'has-local-decoration' : ''} ${hasVideoTilePreview ? 'linknest-video-tile' : ''} ${tileAnimatedClass} ${finalAnimationClass} group relative overflow-hidden ${tile.tileBorderRadius === undefined ? 'rounded-xl' : ''} ${borderClass}
         transition-[transform,box-shadow,border-color] duration-200 ease-out
         flex flex-col h-full min-h-[140px] min-w-0 cursor-pointer
       `}
@@ -1702,16 +1702,17 @@ const SortableTile: React.FC<SortableTileProps> = ({
         );
       })()}
 
-      {/* YouTube / video preview — thumbnail + muted 15s clip after page load */}
+      {/* YouTube / video preview — fills tile; meta shows on hover */}
       {hasVideoTilePreview ? (
         <VideoTileInlinePreview
           videoUrl={tile.videoUrl!}
           isYouTube={!isFileVideoSpace}
+          fill
         />
       ) : null}
 
       {/* Header logo: desktop (lg+) only — hidden on small screens so title/description can take over */}
-      {tile.headerImage ? (
+      {tile.headerImage && !hasVideoTilePreview ? (
         <img
           src={tile.headerImage}
           alt=""
@@ -1733,7 +1734,10 @@ const SortableTile: React.FC<SortableTileProps> = ({
       ) : null}
 
       {/* Compact Header — min-w-0 + flex-wrap on actions so controls stay visible in narrow tiles */}
-      <div className="flex items-start gap-2 mb-3 min-w-0">
+      <div className={hasVideoTilePreview
+        ? 'absolute top-0 inset-x-0 z-20 flex items-start gap-2 min-w-0 p-2 opacity-0 group-hover:opacity-100 transition-opacity duration-200'
+        : 'flex items-start gap-2 mb-3 min-w-0'
+      }>
         {tile.showEmoji !== false && !hasVideoTilePreview ? (
           <div className="flex items-center gap-2 shrink-0">
             <div className={`
@@ -1764,8 +1768,8 @@ const SortableTile: React.FC<SortableTileProps> = ({
             </div>
           </div>
         ) : null}
-        <div className="relative flex-1 min-w-0 min-h-[40px]">
-          <div className="relative z-10 opacity-0 group-hover:opacity-100 transition-opacity flex flex-wrap items-center gap-1 justify-end w-full min-w-0">
+        <div className={`relative flex-1 min-w-0 ${hasVideoTilePreview ? 'min-h-0' : 'min-h-[40px]'}`}>
+          <div className={`relative z-10 flex flex-wrap items-center gap-1 justify-end w-full min-w-0 ${hasVideoTilePreview ? 'opacity-100 rounded-lg bg-black/35 backdrop-blur-[2px] p-0.5' : 'opacity-0 group-hover:opacity-100 transition-opacity'}`}>
           {isAuthenticated && (
             <>
               {/* Category Selector */}
@@ -2127,8 +2131,18 @@ const SortableTile: React.FC<SortableTileProps> = ({
         </div>
       </div>
 
+      {hasVideoTilePreview ? (
+        <div
+          className="pointer-events-none absolute inset-x-0 bottom-0 z-[15] h-[70%] bg-gradient-to-t from-black/85 via-black/45 to-transparent opacity-0 group-hover:opacity-100 transition-opacity duration-200"
+          aria-hidden
+        />
+      ) : null}
+
       {/* Compact Title and Description — on small screens, force text when header image is hidden; on large screens respect checkboxes */}
-      <div className="relative z-[1] flex-1 mb-3">
+      <div className={hasVideoTilePreview
+        ? 'absolute bottom-8 inset-x-0 z-20 px-3 opacity-0 group-hover:opacity-100 transition-opacity duration-200'
+        : 'relative z-[1] flex-1 mb-3'
+      }>
         {(() => {
           const hasHeaderImage = Boolean(tile.headerImage?.trim());
           // Small: override hide checkboxes so text fills in for the missing image.
@@ -2141,7 +2155,7 @@ const SortableTile: React.FC<SortableTileProps> = ({
           return (
             <>
               {showTitle ? (
-                <h3 className={`font-bold text-sm leading-tight line-clamp-2 mb-1.5 ${styles.text} group-hover:text-brand-600 dark:group-hover:text-brand-400 transition-colors`}>
+                <h3 className={`font-bold text-sm leading-tight line-clamp-2 mb-1.5 ${hasVideoTilePreview ? 'text-white drop-shadow' : `${styles.text} group-hover:text-brand-600 dark:group-hover:text-brand-400`} transition-colors`}>
                   {tile.title}
                   <AccessRestrictionsBadge rules={tile.accessRestrictions} />
                   {tile.published === false && (
@@ -2158,7 +2172,7 @@ const SortableTile: React.FC<SortableTileProps> = ({
                 ) : null
               )}
               {showDescription ? (
-                <p className="text-slate-600 dark:text-slate-400 text-xs line-clamp-2 leading-snug">
+                <p className={`text-xs line-clamp-2 leading-snug ${hasVideoTilePreview ? 'text-white/85 drop-shadow' : 'text-slate-600 dark:text-slate-400'}`}>
                   {tile.description || 'No description'}
                 </p>
               ) : null}
@@ -2166,7 +2180,7 @@ const SortableTile: React.FC<SortableTileProps> = ({
           );
         })()}
         {ownerUsername && (
-          <p className="text-[10px] text-slate-400 dark:text-slate-500 mt-1 truncate" title={`Owner: ${ownerUsername}`}>
+          <p className={`text-[10px] mt-1 truncate ${hasVideoTilePreview ? 'text-white/70' : 'text-slate-400 dark:text-slate-500'}`} title={`Owner: ${ownerUsername}`}>
             by {ownerUsername}
           </p>
         )}
@@ -2178,7 +2192,10 @@ const SortableTile: React.FC<SortableTileProps> = ({
       </div>
 
       {/* Compact Footer */}
-      <div className="pt-2.5 border-t border-slate-100 dark:border-slate-700/50 flex items-center justify-between">
+      <div className={hasVideoTilePreview
+        ? 'absolute bottom-0 inset-x-0 z-20 flex items-center justify-between px-3 pb-2.5 opacity-0 group-hover:opacity-100 transition-opacity duration-200'
+        : 'pt-2.5 border-t border-slate-100 dark:border-slate-700/50 flex items-center justify-between'
+      }>
         {!(tile.isHyperlink || tile.isVideo) && (
           <div className={`flex items-center gap-1.5 text-xs font-medium ${styles.text}`}>
             <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor" className="w-3 h-3">
@@ -2189,7 +2206,7 @@ const SortableTile: React.FC<SortableTileProps> = ({
           </div>
         )}
         {(tile.isHyperlink || tile.isVideo) && (
-          <div className={`flex items-center gap-1.5 text-xs font-medium ${styles.text}`}>
+          <div className={`flex items-center gap-1.5 text-xs font-medium ${hasVideoTilePreview ? 'text-white drop-shadow' : styles.text}`}>
             {tile.isVideo ? (
               <>
                 <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor" className="w-3.5 h-3.5">
