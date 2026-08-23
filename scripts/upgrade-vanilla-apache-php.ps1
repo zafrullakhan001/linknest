@@ -84,6 +84,21 @@ function Write-Step([string]$Message) {
     Write-Host "==> $Message" -ForegroundColor Cyan
 }
 
+function Get-Sha256Hex([string]$Path) {
+    $sha = [System.Security.Cryptography.SHA256]::Create()
+    try {
+        $stream = [System.IO.File]::OpenRead($Path)
+        try {
+            $bytes = $sha.ComputeHash($stream)
+        } finally {
+            $stream.Dispose()
+        }
+        return ([BitConverter]::ToString($bytes) -replace '-', '').ToLowerInvariant()
+    } finally {
+        $sha.Dispose()
+    }
+}
+
 function Test-IsAdmin {
     $id = [Security.Principal.WindowsIdentity]::GetCurrent()
     $p = New-Object Security.Principal.WindowsPrincipal($id)
@@ -345,7 +360,7 @@ try {
             $phpZip = Join-Path $env:TEMP $phpRelease.Path
             $need = $true
             if (Test-Path $phpZip) {
-                $hash = (Get-FileHash -Algorithm SHA256 -Path $phpZip).Hash.ToLowerInvariant()
+                $hash = Get-Sha256Hex $phpZip
                 if ($hash -eq $phpRelease.Sha256.ToLowerInvariant()) {
                     Write-Host 'Reusing cached PHP zip (SHA256 OK)'
                     $need = $false
@@ -354,7 +369,7 @@ try {
             if ($need) {
                 Write-Step "Downloading PHP $($phpRelease.Version)"
                 Download-File $phpRelease.Url $phpZip $ua
-                $hash = (Get-FileHash -Algorithm SHA256 -Path $phpZip).Hash.ToLowerInvariant()
+                $hash = Get-Sha256Hex $phpZip
                 if ($hash -ne $phpRelease.Sha256.ToLowerInvariant()) {
                     throw "PHP SHA256 mismatch. Expected $($phpRelease.Sha256) got $hash"
                 }

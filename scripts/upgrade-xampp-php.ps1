@@ -45,6 +45,21 @@ function Write-Step([string]$Message) {
     Write-Host "==> $Message"
 }
 
+function Get-Sha256Hex([string]$Path) {
+    $sha = [System.Security.Cryptography.SHA256]::Create()
+    try {
+        $stream = [System.IO.File]::OpenRead($Path)
+        try {
+            $bytes = $sha.ComputeHash($stream)
+        } finally {
+            $stream.Dispose()
+        }
+        return ([BitConverter]::ToString($bytes) -replace '-', '').ToLowerInvariant()
+    } finally {
+        $sha.Dispose()
+    }
+}
+
 function Get-EnabledExtensionsFromIni([string]$IniPath) {
     $names = New-Object System.Collections.Generic.List[string]
     foreach ($line in Get-Content -Path $IniPath) {
@@ -459,7 +474,7 @@ if ($release) {
     $needDownload = $true
     if (Test-Path $zipFile) {
         Write-Step "Checking existing zip SHA256"
-        $hash = (Get-FileHash -Algorithm SHA256 -Path $zipFile).Hash.ToLowerInvariant()
+        $hash = Get-Sha256Hex $zipFile
         $expected = $release.Sha256.ToLowerInvariant()
         if ($hash -eq $expected) {
             Write-Host "Reusing cached zip (SHA256 OK): $zipFile"
@@ -470,7 +485,7 @@ if ($release) {
         Write-Step "Downloading $($release.Path)"
         Invoke-WebRequest -Uri $release.Url -OutFile $zipFile -UseBasicParsing
         Write-Step "Verifying SHA256"
-        $hash = (Get-FileHash -Algorithm SHA256 -Path $zipFile).Hash.ToLowerInvariant()
+        $hash = Get-Sha256Hex $zipFile
         $expected = $release.Sha256.ToLowerInvariant()
         if ($hash -ne $expected) {
             throw "SHA256 mismatch for $($release.Path). Expected $expected got $hash"
