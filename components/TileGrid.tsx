@@ -449,6 +449,373 @@ const PrivateOwnerFilterDropdown: React.FC<{
   );
 };
 
+const PRESET_MENU_FLOATING_KEY = 'linknest_category_preset_menu_floating';
+const PRESET_MENU_FLOAT_POS_KEY = 'linknest_category_preset_menu_float_pos';
+const PRESET_MENU_FLOAT_MIN_VISIBLE = 48;
+const PRESET_MENU_FLOAT_DEFAULT_W = 224;
+const PRESET_MENU_FLOAT_DEFAULT_H = 280;
+
+type PresetMenuFloatPoint = { x: number; y: number };
+
+function getPresetMenuCssZoom(): number {
+  try {
+    const raw = getComputedStyle(document.documentElement).zoom;
+    const z = raw && raw !== 'normal' ? Number.parseFloat(raw) : 1;
+    return Number.isFinite(z) && z > 0 ? z : 1;
+  } catch {
+    return 1;
+  }
+}
+
+function loadPresetMenuFloating(): boolean {
+  try {
+    return localStorage.getItem(PRESET_MENU_FLOATING_KEY) === '1';
+  } catch {
+    return false;
+  }
+}
+
+function savePresetMenuFloating(floating: boolean): void {
+  try {
+    localStorage.setItem(PRESET_MENU_FLOATING_KEY, floating ? '1' : '0');
+  } catch {
+    /* ignore */
+  }
+}
+
+function loadPresetMenuFloatPos(): PresetMenuFloatPoint {
+  try {
+    const raw = localStorage.getItem(PRESET_MENU_FLOAT_POS_KEY);
+    if (!raw) return { x: 24, y: 96 };
+    const parsed = JSON.parse(raw) as Partial<PresetMenuFloatPoint>;
+    if (
+      typeof parsed?.x === 'number' &&
+      typeof parsed?.y === 'number' &&
+      Number.isFinite(parsed.x) &&
+      Number.isFinite(parsed.y)
+    ) {
+      return { x: parsed.x, y: parsed.y };
+    }
+  } catch {
+    /* ignore */
+  }
+  return { x: 24, y: 96 };
+}
+
+function savePresetMenuFloatPos(pos: PresetMenuFloatPoint): void {
+  try {
+    localStorage.setItem(PRESET_MENU_FLOAT_POS_KEY, JSON.stringify(pos));
+  } catch {
+    /* ignore */
+  }
+}
+
+function clampPresetMenuFloatPos(p: PresetMenuFloatPoint, size?: { width: number; height: number }): PresetMenuFloatPoint {
+  const width = size?.width || PRESET_MENU_FLOAT_DEFAULT_W;
+  const height = size?.height || PRESET_MENU_FLOAT_DEFAULT_H;
+  const zoom = getPresetMenuCssZoom();
+  const vv = window.visualViewport;
+  const layoutW = (vv?.width ?? window.innerWidth) / zoom;
+  const layoutH = (vv?.height ?? window.innerHeight) / zoom;
+  return {
+    x: Math.min(Math.max(p.x, -width + PRESET_MENU_FLOAT_MIN_VISIBLE), layoutW - PRESET_MENU_FLOAT_MIN_VISIBLE),
+    y: Math.min(Math.max(p.y, -height + PRESET_MENU_FLOAT_MIN_VISIBLE), layoutH - PRESET_MENU_FLOAT_MIN_VISIBLE),
+  };
+}
+
+/** Vertical floating menu to switch category visibility presets (same pattern as space tabs). */
+const CategoryPresetSwitcher: React.FC<{
+  presets: CategoryVisibilityPreset[];
+  activePresetId: string;
+  onSelect: (preset: CategoryVisibilityPreset) => void;
+  buttonClassName?: string;
+}> = ({ presets, activePresetId, onSelect, buttonClassName }) => {
+  const [open, setOpen] = useState(false);
+  const [floating, setFloating] = useState(() => (typeof window !== 'undefined' ? loadPresetMenuFloating() : false));
+  const [floatPos, setFloatPos] = useState<PresetMenuFloatPoint>(() =>
+    typeof window !== 'undefined' ? loadPresetMenuFloatPos() : { x: 24, y: 96 }
+  );
+  const [dragging, setDragging] = useState(false);
+  const rootRef = useRef<HTMLDivElement>(null);
+  const panelRef = useRef<HTMLDivElement>(null);
+  const floatPosRef = useRef(floatPos);
+  const dragStartRef = useRef<{ x: number; y: number; posX: number; posY: number } | null>(null);
+  const dragCleanupRef = useRef<(() => void) | null>(null);
+  const active = presets.find((p) => p.id === activePresetId) || null;
+  const menuVisible = open || floating;
+
+  useEscapeToClose(menuVisible && !floating, () => setOpen(false));
+  useEscapeToClose(floating, () => {
+    setFloating(false);
+    savePresetMenuFloating(false);
+    setOpen(false);
+  });
+
+  useEffect(() => {
+    floatPosRef.current = floatPos;
+  }, [floatPos]);
+
+  useEffect(() => {
+    return () => {
+      dragCleanupRef.current?.();
+      dragCleanupRef.current = null;
+    };
+  }, []);
+
+  useEffect(() => {
+    if (!open || floating) return;
+    const onDoc = (e: MouseEvent) => {
+      if (rootRef.current && !rootRef.current.contains(e.target as Node)) setOpen(false);
+    };
+    document.addEventListener('mousedown', onDoc);
+    return () => document.removeEventListener('mousedown', onDoc);
+  }, [open, floating]);
+
+  useEffect(() => {
+    if (!floating) return;
+    const reclamp = () => {
+      const el = panelRef.current;
+      const next = clampPresetMenuFloatPos(floatPosRef.current, {
+        width: el?.offsetWidth || PRESET_MENU_FLOAT_DEFAULT_W,
+        height: el?.offsetHeight || PRESET_MENU_FLOAT_DEFAULT_H,
+      });
+      setFloatPos(next);
+      floatPosRef.current = next;
+      savePresetMenuFloatPos(next);
+    };
+    window.addEventListener('resize', reclamp);
+    window.visualViewport?.addEventListener('resize', reclamp);
+    window.visualViewport?.addEventListener('scroll', reclamp);
+    return () => {
+      window.removeEventListener('resize', reclamp);
+      window.visualViewport?.removeEventListener('resize', reclamp);
+      window.visualViewport?.removeEventListener('scroll', reclamp);
+    };
+  }, [floating]);
+
+  const panelSize = () => ({
+    width: panelRef.current?.offsetWidth || PRESET_MENU_FLOAT_DEFAULT_W,
+    height: panelRef.current?.offsetHeight || PRESET_MENU_FLOAT_DEFAULT_H,
+  });
+
+  const detachMenu = useCallback((e?: React.MouseEvent) => {
+    e?.stopPropagation();
+    const anchor = rootRef.current?.querySelector('[data-preset-trigger]') as HTMLElement | null;
+    const rect = anchor?.getBoundingClientRect();
+    const zoom = getPresetMenuCssZoom();
+    const next = clampPresetMenuFloatPos(
+      rect
+        ? { x: rect.left / zoom, y: (rect.bottom + 8) / zoom }
+        : floatPosRef.current,
+      panelSize()
+    );
+    setFloatPos(next);
+    floatPosRef.current = next;
+    savePresetMenuFloatPos(next);
+    setFloating(true);
+    savePresetMenuFloating(true);
+    setOpen(true);
+  }, []);
+
+  const dockMenu = useCallback((e?: React.MouseEvent) => {
+    e?.stopPropagation();
+    setFloating(false);
+    savePresetMenuFloating(false);
+    setOpen(false);
+  }, []);
+
+  const startDrag = (e: React.PointerEvent) => {
+    if (!floating) return;
+    const target = e.target as HTMLElement | null;
+    if (target?.closest('button')) return;
+
+    dragCleanupRef.current?.();
+    dragCleanupRef.current = null;
+
+    dragStartRef.current = {
+      x: e.clientX,
+      y: e.clientY,
+      posX: floatPosRef.current.x,
+      posY: floatPosRef.current.y,
+    };
+    setDragging(true);
+
+    const onMove = (ev: PointerEvent) => {
+      const start = dragStartRef.current;
+      if (!start) return;
+      const zoom = getPresetMenuCssZoom();
+      const next = clampPresetMenuFloatPos(
+        {
+          x: start.posX + (ev.clientX - start.x) / zoom,
+          y: start.posY + (ev.clientY - start.y) / zoom,
+        },
+        panelSize()
+      );
+      floatPosRef.current = next;
+      setFloatPos(next);
+    };
+    const onUp = () => {
+      setDragging(false);
+      dragStartRef.current = null;
+      savePresetMenuFloatPos(floatPosRef.current);
+      window.removeEventListener('pointermove', onMove);
+      window.removeEventListener('pointerup', onUp);
+      window.removeEventListener('pointercancel', onUp);
+      dragCleanupRef.current = null;
+    };
+    window.addEventListener('pointermove', onMove);
+    window.addEventListener('pointerup', onUp);
+    window.addEventListener('pointercancel', onUp);
+    dragCleanupRef.current = () => {
+      window.removeEventListener('pointermove', onMove);
+      window.removeEventListener('pointerup', onUp);
+      window.removeEventListener('pointercancel', onUp);
+    };
+    e.preventDefault();
+    e.stopPropagation();
+  };
+
+  if (presets.length === 0) return null;
+
+  const menuPanel = (
+    <div
+      ref={panelRef}
+      role="menu"
+      aria-label="Category presets"
+      data-floating={floating ? 'true' : 'false'}
+      className={`linknest-overlay w-56 max-h-72 overflow-hidden flex flex-col rounded-xl border border-slate-200/90 dark:border-slate-700 shadow-xl ring-1 ring-slate-300/60 dark:ring-slate-600/50 bg-white dark:bg-slate-800 ${
+        floating ? 'fixed' : 'absolute left-0 top-full mt-1.5 z-50'
+      }`}
+      style={
+        floating
+          ? {
+              left: floatPos.x,
+              top: floatPos.y,
+              zIndex: 2147483646,
+              touchAction: 'none',
+            }
+          : undefined
+      }
+    >
+      <div
+        className={`shrink-0 flex items-center justify-between gap-2 px-3 py-2 border-b border-slate-200/80 dark:border-slate-700/80 bg-slate-100/80 dark:bg-slate-800/90 rounded-t-xl select-none ${
+          floating ? (dragging ? 'cursor-grabbing' : 'cursor-grab') : ''
+        }`}
+        onPointerDown={floating ? startDrag : undefined}
+        title={floating ? 'Drag to move presets menu' : undefined}
+      >
+        <span className="text-[11px] font-semibold uppercase tracking-wider text-slate-500 dark:text-slate-400 flex items-center gap-1.5 pointer-events-none">
+          {floating && (
+            <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor" className="w-3.5 h-3.5 opacity-60" aria-hidden>
+              <path d="M7 4a1 1 0 11-2 0 1 1 0 012 0zM7 10a1 1 0 11-2 0 1 1 0 012 0zM7 16a1 1 0 11-2 0 1 1 0 012 0zM13 4a1 1 0 11-2 0 1 1 0 012 0zM13 10a1 1 0 11-2 0 1 1 0 012 0zM13 16a1 1 0 11-2 0 1 1 0 012 0z" />
+            </svg>
+          )}
+          Presets
+        </span>
+        <div className="flex items-center gap-0.5">
+          {floating ? (
+            <button
+              type="button"
+              onClick={dockMenu}
+              className="p-1.5 rounded-lg text-brand-600 dark:text-brand-400 bg-white/80 dark:bg-slate-700 hover:bg-white dark:hover:bg-slate-600 transition-colors"
+              title="Dock presets menu"
+              aria-label="Dock presets menu"
+            >
+              <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor" className="w-4 h-4">
+                <path fillRule="evenodd" d="M4.25 2A2.25 2.25 0 002 4.25v3.5A2.25 2.25 0 004.25 10h3.5A2.25 2.25 0 0010 7.75v-3.5A2.25 2.25 0 007.75 2h-3.5zM4.25 11.5A2.25 2.25 0 002 13.75v1.5A2.25 2.25 0 004.25 17.5h1.5A2.25 2.25 0 007.999 15.25v-1.5A2.25 2.25 0 005.75 11.5h-1.5zM11.5 4.25A2.25 2.25 0 0113.75 2h1.5A2.25 2.25 0 0117.5 4.25v1.5A2.25 2.25 0 0115.25 8h-1.5A2.25 2.25 0 0111.5 5.75v-1.5zM13.75 11.5a.75.75 0 01.75.75v2.69l.72-.72a.75.75 0 111.06 1.06l-2 2a.75.75 0 01-1.06 0l-2-2a.75.75 0 111.06-1.06l.72.72V12.25a.75.75 0 01.75-.75z" clipRule="evenodd" />
+              </svg>
+            </button>
+          ) : (
+            <button
+              type="button"
+              onClick={detachMenu}
+              className="p-1.5 rounded-lg text-slate-500 hover:text-slate-800 dark:hover:text-slate-200 hover:bg-white/70 dark:hover:bg-slate-700 transition-colors"
+              title="Detach presets menu"
+              aria-label="Detach presets menu"
+            >
+              <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor" className="w-4 h-4">
+                <path d="M10 3a.75.75 0 01.75.75v1.5h1.5a.75.75 0 010 1.5h-1.5v1.5a.75.75 0 01-1.5 0v-1.5h-1.5a.75.75 0 010-1.5h1.5v-1.5A.75.75 0 0110 3z" />
+                <path fillRule="evenodd" d="M4.25 5.5A2.25 2.25 0 002 7.75v7.5A2.25 2.25 0 004.25 17.5h11.5A2.25 2.25 0 0018 15.25v-7.5A2.25 2.25 0 0015.75 5.5H12a.75.75 0 000 1.5h3.75c.414 0 .75.336.75.75v7.5a.75.75 0 01-.75.75H4.25a.75.75 0 01-.75-.75v-7.5a.75.75 0 01.75-.75H8A.75.75 0 008 5.5H4.25z" clipRule="evenodd" />
+              </svg>
+            </button>
+          )}
+        </div>
+      </div>
+      <div className="flex-1 min-h-0 overflow-y-auto p-1.5 flex flex-col gap-0.5 bg-slate-50/90 dark:bg-slate-900/40">
+        {presets.map((preset) => {
+          const isActive = preset.id === activePresetId;
+          const count = preset.visible.length;
+          return (
+            <button
+              key={preset.id}
+              type="button"
+              role="menuitem"
+              onClick={() => {
+                onSelect(preset);
+                if (!floating) setOpen(false);
+              }}
+              className={`w-full text-left px-3 py-2.5 rounded-lg text-sm font-medium transition-colors flex items-center gap-2 ${
+                isActive
+                  ? 'bg-brand-50 dark:bg-brand-900/30 text-brand-700 dark:text-brand-300 ring-1 ring-inset ring-brand-200/80 dark:ring-brand-700/50 font-semibold'
+                  : 'text-slate-700 dark:text-slate-300 hover:bg-white dark:hover:bg-slate-800 hover:text-slate-900 dark:hover:text-white'
+              }`}
+            >
+              <span className="flex-1 min-w-0 truncate">{preset.name}</span>
+              <span
+                className={`shrink-0 px-1.5 py-0.5 text-[10px] rounded-full font-semibold ${
+                  isActive
+                    ? 'bg-brand-100 dark:bg-brand-800/50 text-brand-700 dark:text-brand-300'
+                    : 'bg-white dark:bg-slate-800 text-slate-500 dark:text-slate-400'
+                }`}
+                title={`${count} categor${count === 1 ? 'y' : 'ies'}`}
+              >
+                {count}
+              </span>
+            </button>
+          );
+        })}
+      </div>
+    </div>
+  );
+
+  return (
+    <div ref={rootRef} className="relative">
+      <button
+        type="button"
+        data-preset-trigger=""
+        onClick={() => {
+          if (floating) {
+            dockMenu();
+            return;
+          }
+          setOpen((v) => !v);
+        }}
+        className={
+          buttonClassName ||
+          'flex items-center gap-2 px-3 py-2 text-sm font-medium text-slate-700 dark:text-slate-200 bg-white dark:bg-slate-800 rounded-lg border border-slate-200 dark:border-slate-700 hover:bg-slate-50 dark:hover:bg-slate-700/80 transition-colors min-w-[9rem] justify-between'
+        }
+        title={floating ? 'Dock presets menu' : 'Switch category preset'}
+        aria-label="Category preset"
+        aria-expanded={menuVisible}
+        aria-haspopup="menu"
+      >
+        <span className="truncate">{active?.name || 'Choose preset'}</span>
+        <svg
+          xmlns="http://www.w3.org/2000/svg"
+          viewBox="0 0 20 20"
+          fill="currentColor"
+          className={`w-4 h-4 shrink-0 transition-transform ${menuVisible && !floating ? 'rotate-180' : ''}`}
+          aria-hidden
+        >
+          <path fillRule="evenodd" d="M5.23 7.21a.75.75 0 011.06.02L10 11.168l3.71-3.938a.75.75 0 111.08 1.04l-4.25 4.5a.75.75 0 01-1.08 0l-4.25-4.5a.75.75 0 01.02-1.06z" clipRule="evenodd" />
+        </svg>
+      </button>
+      {menuVisible && !floating && menuPanel}
+      {floating && typeof document !== 'undefined' && createPortal(menuPanel, document.body)}
+    </div>
+  );
+};
+
 // Category Visibility Management Dialog
 interface CategoryVisibilityDialogProps {
   categoryName: string;
@@ -8765,23 +9132,11 @@ You may also wrap the array in an object: { "messages": [ ... ] }.
             </span>
           )}
           {tabCategoryPresets.length > 0 && (
-            <select
-              value={activeCategoryPresetId}
-              onChange={(e) => {
-                const preset = tabCategoryPresets.find((item) => item.id === e.target.value);
-                if (preset) applyCategoryPreset(preset, Object.keys(groupedTiles));
-              }}
-              className="px-3 py-2 text-sm font-medium text-slate-700 dark:text-slate-200 bg-white dark:bg-slate-800 rounded-lg border border-slate-200 dark:border-slate-700"
-              title="Switch category preset"
-              aria-label="Category preset"
-            >
-              <option value="">Choose preset</option>
-              {tabCategoryPresets.map((preset) => (
-                <option key={preset.id} value={preset.id}>
-                  {preset.name}
-                </option>
-              ))}
-            </select>
+            <CategoryPresetSwitcher
+              presets={tabCategoryPresets}
+              activePresetId={activeCategoryPresetId}
+              onSelect={(preset) => applyCategoryPreset(preset, Object.keys(groupedTiles))}
+            />
           )}
           <button
             type="button"
@@ -8920,23 +9275,12 @@ You may also wrap the array in an object: { "messages": [ ... ] }.
           </div>
           <div className="flex flex-wrap items-center gap-2">
             {tabCategoryPresets.length > 0 && (
-              <select
-                value={activeCategoryPresetId}
-                onChange={(e) => {
-                  const preset = tabCategoryPresets.find((item) => item.id === e.target.value);
-                  if (preset) applyCategoryPreset(preset, Object.keys(groupedTiles));
-                }}
-                className="px-3 py-1.5 text-sm font-medium text-slate-700 dark:text-slate-200 bg-white dark:bg-slate-800 rounded-lg border border-slate-200 dark:border-slate-700"
-                title="Switch category preset"
-                aria-label="Category preset"
-              >
-                <option value="">Choose preset</option>
-                {tabCategoryPresets.map((preset) => (
-                  <option key={preset.id} value={preset.id}>
-                    {preset.name}
-                  </option>
-                ))}
-              </select>
+              <CategoryPresetSwitcher
+                presets={tabCategoryPresets}
+                activePresetId={activeCategoryPresetId}
+                onSelect={(preset) => applyCategoryPreset(preset, Object.keys(groupedTiles))}
+                buttonClassName="flex items-center gap-2 px-3 py-1.5 text-sm font-medium text-slate-700 dark:text-slate-200 bg-white dark:bg-slate-800 rounded-lg border border-slate-200 dark:border-slate-700 hover:bg-slate-50 dark:hover:bg-slate-700/80 transition-colors min-w-[9rem] justify-between"
+              />
             )}
             <input
               type="text"
