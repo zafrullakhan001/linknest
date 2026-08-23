@@ -98,6 +98,72 @@ const isViewLayoutMode = (value: string | null | undefined): value is ViewLayout
     value === 'stacked' || value === 'side-by-side' || value === 'grid' || value === 'compact' || value === 'qr';
 
 const sectionLinkLayoutsStorageKey = (tileId: string) => `linknest_section_link_layouts_${tileId}`;
+const tabsMenuFloatingKey = (tileId: string) => `tile_tab_nav_floating_${tileId}`;
+const tabsMenuFloatPosKey = (tileId: string) => `tile_tab_nav_float_pos_${tileId}`;
+const TABS_MENU_FLOAT_MIN_VISIBLE = 48;
+
+type TabsMenuFloatPoint = { x: number; y: number };
+
+const clampTabsMenuCoord = (n: number, min: number, max: number) => Math.max(min, Math.min(max, n));
+
+const getTabsMenuCssZoom = (): number => {
+    const raw = getComputedStyle(document.documentElement).zoom;
+    const z = raw && raw !== 'normal' ? Number.parseFloat(raw) : 1;
+    return Number.isFinite(z) && z > 0 ? z : 1;
+};
+
+const safeParseTabsMenuPoint = (raw: string | null): TabsMenuFloatPoint | null => {
+    if (!raw) return null;
+    try {
+        const parsed = JSON.parse(raw) as unknown;
+        if (
+            typeof parsed === 'object' &&
+            parsed &&
+            typeof (parsed as TabsMenuFloatPoint).x === 'number' &&
+            typeof (parsed as TabsMenuFloatPoint).y === 'number' &&
+            Number.isFinite((parsed as TabsMenuFloatPoint).x) &&
+            Number.isFinite((parsed as TabsMenuFloatPoint).y)
+        ) {
+            return { x: (parsed as TabsMenuFloatPoint).x, y: (parsed as TabsMenuFloatPoint).y };
+        }
+    } catch {
+        // ignore
+    }
+    return null;
+};
+
+const loadTabsMenuFloating = (tileId: string): boolean => {
+    try {
+        return localStorage.getItem(tabsMenuFloatingKey(tileId)) === '1';
+    } catch {
+        return false;
+    }
+};
+
+const loadTabsMenuFloatPos = (tileId: string): TabsMenuFloatPoint | null => {
+    try {
+        return safeParseTabsMenuPoint(localStorage.getItem(tabsMenuFloatPosKey(tileId)));
+    } catch {
+        return null;
+    }
+};
+
+const saveTabsMenuFloating = (tileId: string, floating: boolean): void => {
+    try {
+        localStorage.setItem(tabsMenuFloatingKey(tileId), floating ? '1' : '0');
+    } catch {
+        // ignore quota / private mode
+    }
+};
+
+const saveTabsMenuFloatPos = (tileId: string, pos: TabsMenuFloatPoint): void => {
+    try {
+        localStorage.setItem(tabsMenuFloatPosKey(tileId), JSON.stringify(pos));
+    } catch {
+        // ignore quota / private mode
+    }
+};
+
 const GENERAL_SETTINGS_EXPANDED_KEY = 'linknest_edit_general_settings_expanded';
 const EDIT_LINK_PLAIN_COLORS_KEY = 'linknest_edit_link_plain_colors';
 
@@ -1486,6 +1552,15 @@ export const TileDetail: React.FC<TileDetailProps> = ({
             return 'horizontal';
         }
     });
+    const [verticalTabsFloating, setVerticalTabsFloating] = useState(() => loadTabsMenuFloating(tile.id));
+    const [verticalTabsFloatPos, setVerticalTabsFloatPos] = useState<TabsMenuFloatPoint>(() =>
+        loadTabsMenuFloatPos(tile.id) ?? { x: 24, y: 96 }
+    );
+    const [verticalTabsDragging, setVerticalTabsDragging] = useState(false);
+    const verticalTabsNavRef = useRef<HTMLNavElement | null>(null);
+    const verticalTabsFloatPosRef = useRef<TabsMenuFloatPoint>(verticalTabsFloatPos);
+    const verticalTabsDragStartRef = useRef<{ x: number; y: number; posX: number; posY: number } | null>(null);
+    const verticalTabsDragCleanupRef = useRef<(() => void) | null>(null);
     const [sectionLinkLayouts, setSectionLinkLayouts] = useState<Record<string, ViewLayoutMode>>(() =>
         loadSectionLinkLayouts(tile.id)
     );
@@ -2153,7 +2228,20 @@ export const TileDetail: React.FC<TileDetailProps> = ({
         } catch {
             setTabNavLayout('horizontal');
         }
+        setVerticalTabsFloating(loadTabsMenuFloating(tile.id));
+        setVerticalTabsFloatPos(loadTabsMenuFloatPos(tile.id) ?? { x: 24, y: 96 });
     }, [tile.id]);
+
+    useEffect(() => {
+        verticalTabsFloatPosRef.current = verticalTabsFloatPos;
+    }, [verticalTabsFloatPos]);
+
+    useEffect(() => {
+        return () => {
+            verticalTabsDragCleanupRef.current?.();
+            verticalTabsDragCleanupRef.current = null;
+        };
+    }, []);
 
     // Persist per-section link layouts for this tile
     useEffect(() => {
@@ -6263,6 +6351,7 @@ export const TileDetail: React.FC<TileDetailProps> = ({
         : [];
     const activeViewTab = displayTabs.find((tab) => tab.id === selectedTabId || tab.id === resolveTabId(displayTabs, selectedTabId));
     const useVerticalTabs = !isMobile && tabNavLayout === 'vertical' && displayTabs.length > 0;
+    const useVerticalTabsDocked = useVerticalTabs && !verticalTabsFloating;
     const useMobileTabHamburger = isMobile && displayTabs.length >= 2;
     const showTabNavLayoutToggle = !isMobile && displayTabs.length >= 2;
 
@@ -6301,6 +6390,108 @@ export const TileDetail: React.FC<TileDetailProps> = ({
             console.error('Failed to save tab nav layout preference:', error);
         }
     };
+
+    const clampVerticalTabsFloatPos = useCallback((p: TabsMenuFloatPoint): TabsMenuFloatPoint => {
+        const el = verticalTabsNavRef.current;
+        const width = el?.offsetWidth ?? 224;
+        const height = el?.offsetHeight ?? 280;
+        const zoom = getTabsMenuCssZoom();
+        const vv = window.visualViewport;
+        const layoutW = (vv?.width ?? window.innerWidth) / zoom;
+        const layoutH = (vv?.height ?? window.innerHeight) / zoom;
+        return {
+            x: clampTabsMenuCoord(p.x, -width + TABS_MENU_FLOAT_MIN_VISIBLE, layoutW - TABS_MENU_FLOAT_MIN_VISIBLE),
+            y: clampTabsMenuCoord(p.y, -height + TABS_MENU_FLOAT_MIN_VISIBLE, layoutH - TABS_MENU_FLOAT_MIN_VISIBLE),
+        };
+    }, []);
+
+    const toggleVerticalTabsFloating = () => {
+        if (verticalTabsFloating) {
+            setVerticalTabsFloating(false);
+            saveTabsMenuFloating(tile.id, false);
+            return;
+        }
+        const el = verticalTabsNavRef.current;
+        const zoom = getTabsMenuCssZoom();
+        let nextPos = verticalTabsFloatPosRef.current;
+        if (el) {
+            const rect = el.getBoundingClientRect();
+            nextPos = clampVerticalTabsFloatPos({
+                x: rect.left / zoom,
+                y: rect.top / zoom,
+            });
+        } else {
+            nextPos = clampVerticalTabsFloatPos(loadTabsMenuFloatPos(tile.id) ?? { x: 24, y: 96 });
+        }
+        setVerticalTabsFloatPos(nextPos);
+        verticalTabsFloatPosRef.current = nextPos;
+        saveTabsMenuFloatPos(tile.id, nextPos);
+        setVerticalTabsFloating(true);
+        saveTabsMenuFloating(tile.id, true);
+    };
+
+    const startVerticalTabsDrag = (e: React.PointerEvent) => {
+        if (!verticalTabsFloating) return;
+        const target = e.target as HTMLElement | null;
+        if (target?.closest('button')) return;
+
+        verticalTabsDragCleanupRef.current?.();
+        verticalTabsDragCleanupRef.current = null;
+
+        verticalTabsDragStartRef.current = {
+            x: e.clientX,
+            y: e.clientY,
+            posX: verticalTabsFloatPosRef.current.x,
+            posY: verticalTabsFloatPosRef.current.y,
+        };
+        setVerticalTabsDragging(true);
+
+        const onMove = (ev: PointerEvent) => {
+            const start = verticalTabsDragStartRef.current;
+            if (!start) return;
+            const zoom = getTabsMenuCssZoom();
+            const next = clampVerticalTabsFloatPos({
+                x: start.posX + (ev.clientX - start.x) / zoom,
+                y: start.posY + (ev.clientY - start.y) / zoom,
+            });
+            verticalTabsFloatPosRef.current = next;
+            setVerticalTabsFloatPos(next);
+        };
+
+        const onUp = () => {
+            verticalTabsDragCleanupRef.current?.();
+            verticalTabsDragCleanupRef.current = null;
+            verticalTabsDragStartRef.current = null;
+            setVerticalTabsDragging(false);
+            saveTabsMenuFloatPos(tile.id, verticalTabsFloatPosRef.current);
+        };
+
+        window.addEventListener('pointermove', onMove);
+        window.addEventListener('pointerup', onUp, { once: true });
+        window.addEventListener('pointercancel', onUp, { once: true });
+        verticalTabsDragCleanupRef.current = () => {
+            window.removeEventListener('pointermove', onMove);
+        };
+
+        e.preventDefault();
+    };
+
+    useEffect(() => {
+        if (!verticalTabsFloating) return;
+        const onResize = () => {
+            setVerticalTabsFloatPos((p) => {
+                const next = clampVerticalTabsFloatPos(p);
+                verticalTabsFloatPosRef.current = next;
+                return next;
+            });
+        };
+        window.addEventListener('resize', onResize);
+        window.visualViewport?.addEventListener('resize', onResize);
+        return () => {
+            window.removeEventListener('resize', onResize);
+            window.visualViewport?.removeEventListener('resize', onResize);
+        };
+    }, [verticalTabsFloating, clampVerticalTabsFloatPos]);
 
     // VIEW MODE (also used when the URL asked for edit but this session cannot edit)
     if (!isEditing || !tile.canEdit) {
@@ -7186,31 +7377,82 @@ export const TileDetail: React.FC<TileDetailProps> = ({
 
                     {/* Vertical menu outside section cards — aligned with section start */}
                     <div
-                        className={useVerticalTabs ? 'flex flex-row gap-6 items-start w-full' : 'flex flex-col gap-8'}
-                        data-tab-nav-layout={useVerticalTabs ? 'vertical' : (useMobileTabHamburger ? 'hamburger' : 'horizontal')}
+                        className={useVerticalTabsDocked ? 'flex flex-row gap-6 items-start w-full' : 'flex flex-col gap-8'}
+                        data-tab-nav-layout={useVerticalTabsDocked ? 'vertical' : (useVerticalTabs && verticalTabsFloating ? 'vertical-floating' : (useMobileTabHamburger ? 'hamburger' : 'horizontal'))}
                     >
-                    {useVerticalTabs && displayTabs.length > 0 && (
+                    {useVerticalTabs && displayTabs.length > 0 && (() => {
+                        const tabsNav = (
                         <nav
-                            className="w-56 shrink-0 sticky top-4 self-start max-h-[calc(100vh-6rem)] overflow-hidden flex flex-col rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900/80 shadow-sm"
+                            ref={verticalTabsNavRef}
+                            className={`w-56 shrink-0 overflow-hidden flex flex-col rounded-xl border border-slate-200/90 dark:border-slate-700 shadow-sm bg-slate-100/70 dark:bg-slate-800/40 ${
+                                verticalTabsFloating
+                                    ? 'fixed max-h-[min(70vh,calc(100vh-2rem))] shadow-xl ring-1 ring-slate-300/60 dark:ring-slate-600/50 z-[75]'
+                                    : 'sticky top-4 self-start max-h-[calc(100vh-6rem)]'
+                            }`}
+                            style={verticalTabsFloating ? {
+                                left: verticalTabsFloatPos.x,
+                                top: verticalTabsFloatPos.y,
+                            } : undefined}
                             aria-label="Space tabs"
+                            data-floating={verticalTabsFloating ? 'true' : 'false'}
                         >
-                            <div className="shrink-0 flex items-center justify-between gap-2 px-3 py-2.5 border-b border-slate-200/80 dark:border-slate-700/80">
-                                <span className="text-[11px] font-semibold uppercase tracking-wider text-slate-500 dark:text-slate-400">Tabs</span>
-                                {showTabNavLayoutToggle && (
+                            <div
+                                className={`shrink-0 flex items-center justify-between gap-2 px-3 py-2.5 border-b border-slate-200/80 dark:border-slate-700/80 bg-slate-200/50 dark:bg-slate-800/70 rounded-t-xl select-none ${
+                                    verticalTabsFloating
+                                        ? (verticalTabsDragging ? 'cursor-grabbing' : 'cursor-grab')
+                                        : ''
+                                }`}
+                                onPointerDown={verticalTabsFloating ? startVerticalTabsDrag : undefined}
+                                title={verticalTabsFloating ? 'Drag to move tabs menu' : undefined}
+                            >
+                                <span className="text-[11px] font-semibold uppercase tracking-wider text-slate-500 dark:text-slate-400 flex items-center gap-1.5">
+                                    {verticalTabsFloating && (
+                                        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor" className="w-3.5 h-3.5 opacity-60" aria-hidden>
+                                            <path d="M7 4a1 1 0 11-2 0 1 1 0 012 0zM7 10a1 1 0 11-2 0 1 1 0 012 0zM7 16a1 1 0 11-2 0 1 1 0 012 0zM13 4a1 1 0 11-2 0 1 1 0 012 0zM13 10a1 1 0 11-2 0 1 1 0 012 0zM13 16a1 1 0 11-2 0 1 1 0 012 0z" />
+                                        </svg>
+                                    )}
+                                    Tabs
+                                </span>
+                                <div className="flex items-center gap-0.5">
                                     <button
                                         type="button"
-                                        onClick={() => setAndPersistTabNavLayout('horizontal')}
-                                        className="p-1.5 rounded-lg text-slate-500 hover:text-slate-800 dark:hover:text-slate-200 hover:bg-slate-100 dark:hover:bg-slate-800 transition-colors"
-                                        title="Switch to horizontal tabs"
-                                        aria-label="Switch to horizontal tabs"
+                                        onClick={toggleVerticalTabsFloating}
+                                        className={`p-1.5 rounded-lg transition-colors ${
+                                            verticalTabsFloating
+                                                ? 'text-brand-600 dark:text-brand-400 bg-white/80 dark:bg-slate-700 hover:bg-white dark:hover:bg-slate-600'
+                                                : 'text-slate-500 hover:text-slate-800 dark:hover:text-slate-200 hover:bg-white/70 dark:hover:bg-slate-700'
+                                        }`}
+                                        title={verticalTabsFloating ? 'Dock tabs menu' : 'Float tabs menu (drag to move)'}
+                                        aria-label={verticalTabsFloating ? 'Dock tabs menu' : 'Float tabs menu'}
+                                        aria-pressed={verticalTabsFloating}
                                     >
-                                        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor" className="w-4 h-4">
-                                            <path d="M2 4.5A2.5 2.5 0 014.5 2h11a2.5 2.5 0 010 5h-11A2.5 2.5 0 012 4.5zM2.75 9.083a.75.75 0 000 1.5h14.5a.75.75 0 000-1.5H2.75zM2.75 12.663a.75.75 0 000 1.5h14.5a.75.75 0 000-1.5H2.75zM2.75 16.25a.75.75 0 000 1.5h14.5a.75.75 0 100-1.5H2.75z" />
-                                        </svg>
+                                        {verticalTabsFloating ? (
+                                            <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor" className="w-4 h-4">
+                                                <path fillRule="evenodd" d="M4.25 2A2.25 2.25 0 002 4.25v3.5A2.25 2.25 0 004.25 10h3.5A2.25 2.25 0 0010 7.75v-3.5A2.25 2.25 0 007.75 2h-3.5zM4.25 11.5A2.25 2.25 0 002 13.75v1.5A2.25 2.25 0 004.25 17.5h1.5A2.25 2.25 0 007.999 15.25v-1.5A2.25 2.25 0 005.75 11.5h-1.5zM11.5 4.25A2.25 2.25 0 0113.75 2h1.5A2.25 2.25 0 0117.5 4.25v1.5A2.25 2.25 0 0115.25 8h-1.5A2.25 2.25 0 0111.5 5.75v-1.5zM13.75 11.5a.75.75 0 01.75.75v2.69l.72-.72a.75.75 0 111.06 1.06l-2 2a.75.75 0 01-1.06 0l-2-2a.75.75 0 111.06-1.06l.72.72V12.25a.75.75 0 01.75-.75z" clipRule="evenodd" />
+                                            </svg>
+                                        ) : (
+                                            <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor" className="w-4 h-4">
+                                                <path d="M10 3a.75.75 0 01.75.75v1.5h1.5a.75.75 0 010 1.5h-1.5v1.5a.75.75 0 01-1.5 0v-1.5h-1.5a.75.75 0 010-1.5h1.5v-1.5A.75.75 0 0110 3z" />
+                                                <path fillRule="evenodd" d="M4.25 5.5A2.25 2.25 0 002 7.75v7.5A2.25 2.25 0 004.25 17.5h11.5A2.25 2.25 0 0018 15.25v-7.5A2.25 2.25 0 0015.75 5.5H12a.75.75 0 000 1.5h3.75c.414 0 .75.336.75.75v7.5a.75.75 0 01-.75.75H4.25a.75.75 0 01-.75-.75v-7.5a.75.75 0 01.75-.75H8A.75.75 0 008 5.5H4.25z" clipRule="evenodd" />
+                                            </svg>
+                                        )}
                                     </button>
-                                )}
+                                    {showTabNavLayoutToggle && (
+                                        <button
+                                            type="button"
+                                            onClick={() => setAndPersistTabNavLayout('horizontal')}
+                                            className="p-1.5 rounded-lg text-slate-500 hover:text-slate-800 dark:hover:text-slate-200 hover:bg-white/70 dark:hover:bg-slate-700 transition-colors"
+                                            title="Switch to horizontal tabs"
+                                            aria-label="Switch to horizontal tabs"
+                                        >
+                                            <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor" className="w-4 h-4">
+                                                <path d="M2 4.5A2.5 2.5 0 014.5 2h11a2.5 2.5 0 010 5h-11A2.5 2.5 0 012 4.5zM2.75 9.083a.75.75 0 000 1.5h14.5a.75.75 0 000-1.5H2.75zM2.75 12.663a.75.75 0 000 1.5h14.5a.75.75 0 000-1.5H2.75zM2.75 16.25a.75.75 0 000 1.5h14.5a.75.75 0 100-1.5H2.75z" />
+                                            </svg>
+                                        </button>
+                                    )}
+                                </div>
                             </div>
-                            <div className="flex-1 min-h-0 overflow-y-auto p-2 flex flex-col gap-1">
+                            <div className="flex-1 min-h-0 overflow-y-auto p-2 flex flex-col gap-1 bg-slate-50/90 dark:bg-slate-900/50">
                                 {displayTabs.map((tab) => {
                                     const isActive = tab.id === selectedTabId || tab.id === resolveTabId(displayTabs, selectedTabId);
                                     const tabLinksCount = getDisplayTabLinksCount(tab);
@@ -7222,7 +7464,7 @@ export const TileDetail: React.FC<TileDetailProps> = ({
                                             data-active={isActive}
                                             className={`linknest-content-tab w-full text-left px-3 py-2.5 text-sm font-medium transition-all duration-150 rounded-lg ${isActive
                                                 ? `${styles.iconBg} ${styles.text} font-semibold ring-1 ring-inset ring-slate-200/80 dark:ring-slate-600/50`
-                                                : 'text-slate-600 dark:text-slate-400 hover:bg-slate-100/90 dark:hover:bg-slate-800/80 hover:text-slate-800 dark:hover:text-slate-200'
+                                                : 'text-slate-600 dark:text-slate-400 hover:bg-white/80 dark:hover:bg-slate-800/80 hover:text-slate-800 dark:hover:text-slate-200'
                                                 }`}
                                             style={tab.textColor && isActive ? { color: tab.textColor } : undefined}
                                         >
@@ -7250,7 +7492,7 @@ export const TileDetail: React.FC<TileDetailProps> = ({
                                                 {tabLinksCount > 0 && (
                                                     <span className={`shrink-0 px-1.5 py-0.5 text-[10px] rounded-full font-semibold transition-colors ${isActive
                                                         ? `${styles.iconBg} ${styles.text}`
-                                                        : 'bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-400'
+                                                        : 'bg-white dark:bg-slate-800 text-slate-600 dark:text-slate-400'
                                                         }`}>
                                                         {tabLinksCount}
                                                     </span>
@@ -7261,10 +7503,14 @@ export const TileDetail: React.FC<TileDetailProps> = ({
                                 })}
                             </div>
                         </nav>
-                    )}
+                        );
+                        return verticalTabsFloating
+                            ? createPortal(tabsNav, document.body)
+                            : tabsNav;
+                    })()}
 
                     {/* Section content column only (menu is a sibling, not inside section cards) */}
-                    <div className={`min-w-0 ${useVerticalTabs ? 'flex-1 flex flex-col gap-8' : 'contents'}`}>
+                    <div className={`min-w-0 ${useVerticalTabsDocked ? 'flex-1 flex flex-col gap-8' : 'contents'}`}>
 
                         {/* Mobile: hamburger tabs drawer trigger */}
                         {useMobileTabHamburger && (

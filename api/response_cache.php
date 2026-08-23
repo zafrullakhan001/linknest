@@ -79,11 +79,14 @@ function responseCacheSet(string $key, $payload, ?int $ttl = null): void {
     if (@file_put_contents($tmp, $json, LOCK_EX) === false) {
         return;
     }
+    // Atomic replace: rename moves $tmp away on success (Windows + Unix).
+    // Only clean up $tmp when it is still present after a failed rename.
     if (!@rename($tmp, $file)) {
         @unlink($file);
-        @rename($tmp, $file);
+        if (!@rename($tmp, $file) && is_file($tmp)) {
+            @unlink($tmp);
+        }
     }
-    @unlink($tmp);
 }
 
 function responseCacheInvalidate(string $prefix = ''): void {
