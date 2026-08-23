@@ -39,7 +39,16 @@ export function isYouTubeUrl(input: string): boolean {
   return parseYouTubeVideoId(input) !== null;
 }
 
-export function toYouTubeEmbedUrl(input: string, opts?: { autoplay?: boolean }): string | null {
+export function toYouTubeEmbedUrl(
+  input: string,
+  opts?: {
+    autoplay?: boolean;
+    mute?: boolean;
+    controls?: boolean;
+    start?: number;
+    end?: number;
+  }
+): string | null {
   const id = parseYouTubeVideoId(input);
   if (!id) return null;
   const params = new URLSearchParams({
@@ -48,6 +57,10 @@ export function toYouTubeEmbedUrl(input: string, opts?: { autoplay?: boolean }):
     playsinline: '1',
   });
   if (opts?.autoplay) params.set('autoplay', '1');
+  if (opts?.mute) params.set('mute', '1');
+  if (opts?.controls === false) params.set('controls', '0');
+  if (typeof opts?.start === 'number' && opts.start >= 0) params.set('start', String(Math.floor(opts.start)));
+  if (typeof opts?.end === 'number' && opts.end > 0) params.set('end', String(Math.floor(opts.end)));
   return `https://www.youtube.com/embed/${id}?${params.toString()}`;
 }
 

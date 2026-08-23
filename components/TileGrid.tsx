@@ -63,6 +63,7 @@ import { FormSection, FormLabel, SpaceModalHeader, EditModalTabButton } from './
 import { SearchTagsInput } from './SearchTagsInput';
 import { SpaceVideoField, type SpaceVideoSource } from './SpaceVideoField';
 import { VideoSpacePlayerDialog } from './VideoSpacePlayerDialog';
+import { VideoTileInlinePreview } from './VideoTileInlinePreview';
 import { isYouTubeUrl } from '../utils/youtube';
 import { EmojiPickerPopover } from './EmojiPickerPanel';
 import { TileFireworks } from './TileFireworks';
@@ -1357,6 +1358,12 @@ const SortableTile: React.FC<SortableTileProps> = ({
   };
 
   const styles = getColorStyles(tile.themeColor);
+  const isFileVideoSpace = !!(
+    tile.isVideo &&
+    tile.videoUrl &&
+    (tile.videoSource === 'file' || (tile.videoSource !== 'youtube' && !isYouTubeUrl(tile.videoUrl)))
+  );
+  const hasVideoTilePreview = !!(tile.isVideo && tile.videoUrl);
   const linkCount = (tile.isHyperlink || tile.isVideo) ? 0 : (typeof tile.linkCount === 'number' ? tile.linkCount : (() => {
     const uniqueLinks = new Set<string>();
     const processLink = (link: any) => {
@@ -1695,6 +1702,14 @@ const SortableTile: React.FC<SortableTileProps> = ({
         );
       })()}
 
+      {/* YouTube / video preview — thumbnail + muted 15s clip after page load */}
+      {hasVideoTilePreview ? (
+        <VideoTileInlinePreview
+          videoUrl={tile.videoUrl!}
+          isYouTube={!isFileVideoSpace}
+        />
+      ) : null}
+
       {/* Header logo: desktop (lg+) only — hidden on small screens so title/description can take over */}
       {tile.headerImage ? (
         <img
@@ -1719,7 +1734,7 @@ const SortableTile: React.FC<SortableTileProps> = ({
 
       {/* Compact Header — min-w-0 + flex-wrap on actions so controls stay visible in narrow tiles */}
       <div className="flex items-start gap-2 mb-3 min-w-0">
-        {tile.showEmoji !== false ? (
+        {tile.showEmoji !== false && !hasVideoTilePreview ? (
           <div className="flex items-center gap-2 shrink-0">
             <div className={`
               w-10 h-10 rounded-lg ${styles.soft} flex items-center justify-center text-lg 
