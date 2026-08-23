@@ -1,23 +1,42 @@
 import React from 'react';
+import { useDndContext } from '@dnd-kit/core';
 import { useSortable } from '@dnd-kit/sortable';
 import { CSS } from '@dnd-kit/utilities';
 
+const SOFT_TRANSITION = 'transform 220ms cubic-bezier(0.22, 1, 0.36, 1), box-shadow 180ms ease, background-color 180ms ease, opacity 160ms ease';
+
 type DragHandleBag = {
   attributes: React.HTMLAttributes<HTMLElement>;
-  // dnd-kit synthetic listeners
   listeners: ReturnType<typeof useSortable>['listeners'];
   isDragging: boolean;
 };
 
 type DragHandleRender = (props: DragHandleBag) => React.ReactNode;
 
-/** Thin sortable wrapper for view-mode section / link cards. */
+function DropLine({ position }: { position: 'before' | 'after' }) {
+  return (
+    <div
+      className={`pointer-events-none absolute left-1 right-1 z-40 flex items-center ${
+        position === 'before' ? '-top-1.5' : '-bottom-1.5'
+      }`}
+      aria-hidden
+    >
+      <span className="h-2.5 w-2.5 rounded-full bg-brand-500 shadow-[0_0_0_3px_rgba(59,130,246,0.35)] shrink-0" />
+      <span className="flex-1 h-[3px] rounded-full bg-gradient-to-r from-brand-500 via-brand-400 to-brand-500 shadow-[0_0_10px_rgba(59,130,246,0.55)]" />
+      <span className="h-2.5 w-2.5 rounded-full bg-brand-500 shadow-[0_0_0_3px_rgba(59,130,246,0.35)] shrink-0" />
+    </div>
+  );
+}
+
+/** Soft sortable wrapper — item follows the pointer; drop-line shows insert position. */
 export const ViewModeSortable: React.FC<{
   id: string;
   htmlId?: string;
   disabled?: boolean;
   className?: string;
   style?: React.CSSProperties;
+  /** Prefer vertical list indicators (default). Grid layouts still get a soft ring. */
+  layout?: 'list' | 'grid';
   children: React.ReactNode | DragHandleRender;
 } & Omit<React.HTMLAttributes<HTMLDivElement>, 'id' | 'children' | 'style' | 'className'>> = ({
   id,
@@ -25,23 +44,53 @@ export const ViewModeSortable: React.FC<{
   disabled = false,
   className,
   style,
+  layout = 'list',
   children,
   ...rest
 }) => {
-  const { attributes, listeners, setNodeRef, transform, transition, isDragging } = useSortable({
+  const { active, over } = useDndContext();
+  const {
+    attributes,
+    listeners,
+    setNodeRef,
+    transform,
+    transition,
+    isDragging,
+  } = useSortable({
     id,
     disabled,
   });
 
+  const isOverTarget =
+    !!active &&
+    !!over &&
+    String(over.id) === String(id) &&
+    String(active.id) !== String(id);
+
+  let dropLine: 'before' | 'after' | null = null;
+  if (isOverTarget && layout === 'list') {
+    const activeIndex = active?.data?.current?.sortable?.index;
+    const overIndex = over?.data?.current?.sortable?.index;
+    if (typeof activeIndex === 'number' && typeof overIndex === 'number') {
+      dropLine = activeIndex < overIndex ? 'after' : 'before';
+    } else {
+      dropLine = 'before';
+    }
+  }
+
   const mergedStyle: React.CSSProperties = {
     ...style,
+    // Keep transform while dragging so the real card sticks to the pointer (no separate banner)
     transform: CSS.Transform.toString(transform),
-    transition,
-    opacity: isDragging ? 0.35 : undefined,
-    zIndex: isDragging ? 20 : undefined,
-    position: isDragging ? 'relative' : style?.position,
-    outline: isDragging ? '2px dashed rgb(96 165 250)' : undefined,
-    outlineOffset: isDragging ? 2 : undefined,
+    // No layout transition while actively dragging — keeps it glued to the mouse
+    transition: isDragging ? undefined : (transition ?? SOFT_TRANSITION),
+    opacity: isDragging ? 0.92 : 1,
+    zIndex: isDragging ? 50 : isOverTarget ? 5 : undefined,
+    position: 'relative',
+    cursor: isDragging ? 'grabbing' : undefined,
+    boxShadow: isDragging
+      ? '0 12px 28px -8px rgba(37, 99, 235, 0.35), 0 4px 10px -4px rgba(15, 23, 42, 0.15)'
+      : undefined,
   };
 
   const content =
@@ -53,11 +102,24 @@ export const ViewModeSortable: React.FC<{
     <div
       ref={setNodeRef}
       id={htmlId}
-      className={className}
+      className={[
+        className,
+        !isDragging ? 'transition-[box-shadow,background-color,opacity] duration-200 ease-out' : '',
+        isDragging
+          ? 'ring-2 ring-brand-400/80 dark:ring-brand-400/60 bg-white dark:bg-slate-800 scale-[1.01]'
+          : '',
+        isOverTarget && !isDragging
+          ? 'ring-2 ring-brand-400/70 dark:ring-brand-400/50 bg-brand-50/60 dark:bg-brand-900/25 shadow-md shadow-brand-500/10'
+          : '',
+      ]
+        .filter(Boolean)
+        .join(' ')}
       style={mergedStyle}
       data-dragging={isDragging ? 'true' : 'false'}
+      data-drop-target={isOverTarget ? 'true' : 'false'}
       {...rest}
     >
+      {dropLine && <DropLine position={dropLine} />}
       {content}
     </div>
   );
@@ -71,7 +133,7 @@ export const ViewModeDragHandle: React.FC<{
 }> = ({ attributes, listeners, title = 'Drag to reorder', className = '' }) => (
   <button
     type="button"
-    className={`p-1.5 rounded-lg text-slate-400 hover:text-slate-700 dark:hover:text-slate-200 hover:bg-slate-100 dark:hover:bg-slate-800 cursor-grab active:cursor-grabbing touch-none shrink-0 ${className}`}
+    className={`p-1.5 rounded-lg text-slate-400 hover:text-brand-600 dark:hover:text-brand-400 hover:bg-brand-50 dark:hover:bg-brand-950/40 cursor-grab active:cursor-grabbing touch-none shrink-0 transition-colors ${className}`}
     title={title}
     aria-label={title}
     {...attributes}

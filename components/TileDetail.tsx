@@ -2,13 +2,11 @@ import React, { useState, useEffect, useCallback, useRef, useMemo, useId, lazy, 
 import { createPortal } from 'react-dom';
 import {
     DndContext,
-    DragOverlay,
     PointerSensor,
-    closestCenter,
+    closestCorners,
     useSensor,
     useSensors,
     type DragEndEvent,
-    type DragStartEvent,
 } from '@dnd-kit/core';
 import {
     SortableContext,
@@ -1646,11 +1644,6 @@ export const TileDetail: React.FC<TileDetailProps> = ({
     const [verticalTabsDragging, setVerticalTabsDragging] = useState(false);
     const [verticalTabsResizing, setVerticalTabsResizing] = useState(false);
     const [viewReorderSaving, setViewReorderSaving] = useState(false);
-    const [viewDragActive, setViewDragActive] = useState<{
-        type: 'section' | 'item';
-        id: string;
-        label: string;
-    } | null>(null);
     const verticalTabsNavRef = useRef<HTMLElement | null>(null);
     const verticalTabsFloatPosRef = useRef<TabsMenuFloatPoint>(verticalTabsFloatPos);
     const verticalTabsFloatSizeRef = useRef<TabsMenuFloatSize>(verticalTabsFloatSize);
@@ -1658,7 +1651,7 @@ export const TileDetail: React.FC<TileDetailProps> = ({
     const verticalTabsResizeStartRef = useRef<{ x: number; y: number; width: number; height: number } | null>(null);
     const verticalTabsDragCleanupRef = useRef<(() => void) | null>(null);
     const viewReorderSensors = useSensors(
-        useSensor(PointerSensor, { activationConstraint: { distance: 8 } })
+        useSensor(PointerSensor, { activationConstraint: { distance: 6 } })
     );
     const [sectionLinkLayouts, setSectionLinkLayouts] = useState<Record<string, ViewLayoutMode>>(() =>
         loadSectionLinkLayouts(tile.id)
@@ -8008,19 +8001,8 @@ export const TileDetail: React.FC<TileDetailProps> = ({
                         ) : (
                             <DndContext
                                 sensors={viewReorderSensors}
-                                collisionDetection={closestCenter}
-                                onDragStart={(e: DragStartEvent) => {
-                                    const section = filteredSections.find((s) => s.id === String(e.active.id));
-                                    if (!section) return;
-                                    setViewDragActive({
-                                        type: 'section',
-                                        id: section.id,
-                                        label: `${section.emoji ? `${section.emoji} ` : ''}${section.title || 'Section'}`.trim(),
-                                    });
-                                }}
-                                onDragCancel={() => setViewDragActive(null)}
+                                collisionDetection={closestCorners}
                                 onDragEnd={(e) => {
-                                    setViewDragActive(null);
                                     void handleViewSectionDragEnd(e);
                                 }}
                             >
@@ -8058,6 +8040,7 @@ export const TileDetail: React.FC<TileDetailProps> = ({
                                             id={section.id}
                                             htmlId={`section-${section.id}`}
                                             disabled={!canReorderSections}
+                                            layout={sectionsSideBySide ? 'grid' : 'list'}
                                             style={{ animationDelay: isQrLayout ? undefined : `${sectionIndex * 120}ms` }}
                                             data-view-layout={sectionLinkLayout}
                                             data-qr-print-section={isQrLayout ? section.id : undefined}
@@ -8229,27 +8212,8 @@ export const TileDetail: React.FC<TileDetailProps> = ({
                                             {/* Links and Rich Text */}
                                             <DndContext
                                                 sensors={viewReorderSensors}
-                                                collisionDetection={closestCenter}
-                                                onDragStart={(e: DragStartEvent) => {
-                                                    const sortedItems = [
-                                                        ...(section.links || []).map((l) => ({ ...l, itemType: 'link' as const })),
-                                                        ...(section.richTextContent || []).map((rt) => ({ ...rt, itemType: 'rich-text' as const })),
-                                                    ];
-                                                    const item = sortedItems.find((i) => i.id === String(e.active.id));
-                                                    if (!item) return;
-                                                    const label =
-                                                        item.itemType === 'link'
-                                                            ? stripHtmlTags((item as Link).label || 'Link')
-                                                            : ((item as { boxTitle?: string }).boxTitle || 'Rich text');
-                                                    setViewDragActive({
-                                                        type: 'item',
-                                                        id: item.id,
-                                                        label,
-                                                    });
-                                                }}
-                                                onDragCancel={() => setViewDragActive(null)}
+                                                collisionDetection={closestCorners}
                                                 onDragEnd={(e) => {
-                                                    setViewDragActive(null);
                                                     void handleViewLinkDragEnd(section.id, e);
                                                 }}
                                             >
@@ -8299,6 +8263,11 @@ export const TileDetail: React.FC<TileDetailProps> = ({
                                                                     key={item.id}
                                                                     id={item.id}
                                                                     disabled={!canReorderItems}
+                                                                    layout={
+                                                                        sectionLinkLayout === 'grid' || sectionLinkLayout === 'qr' || sectionLinkLayout === 'side-by-side'
+                                                                            ? 'grid'
+                                                                            : 'list'
+                                                                    }
                                                                     style={{ animationDelay: `${animationDelay}ms` }}
                                                                     className={`linknest-content-rich-text rich-text-content-item animate-in fade-in slide-in-from-bottom-2 ${
                                                                         sectionLinkLayout === 'grid' || sectionLinkLayout === 'qr' ? 'col-span-full' : ''
@@ -8382,6 +8351,7 @@ export const TileDetail: React.FC<TileDetailProps> = ({
                                                                     key={link.id}
                                                                     id={link.id}
                                                                     disabled={!canReorderItems}
+                                                                    layout="grid"
                                                                     style={{ animationDelay: `${animationDelay}ms` }}
                                                                 >
                                                                     {({ attributes: itemDragAttrs, listeners: itemDragListeners }) => (
@@ -8479,6 +8449,7 @@ export const TileDetail: React.FC<TileDetailProps> = ({
                                                                 key={link.id}
                                                                 id={link.id}
                                                                 disabled={!canReorderItems}
+                                                                layout={isGridCards ? 'grid' : 'list'}
                                                                 style={{ animationDelay: `${animationDelay}ms` }}
                                                                 className="relative"
                                                             >
@@ -9075,19 +9046,6 @@ export const TileDetail: React.FC<TileDetailProps> = ({
                                             </SortableContext>
                                                     );
                                                 })()}
-                                                <DragOverlay dropAnimation={null}>
-                                                    {viewDragActive?.type === 'item' ? (
-                                                        <div className="pointer-events-none px-4 py-3 rounded-xl bg-white dark:bg-slate-800 border-2 border-brand-400 dark:border-brand-500 shadow-2xl shadow-brand-500/20 max-w-sm">
-                                                            <div className="flex items-center gap-2 text-sm font-semibold text-slate-800 dark:text-slate-100">
-                                                                <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor" className="w-4 h-4 text-brand-500 shrink-0" aria-hidden>
-                                                                    <path d="M7 4a1 1 0 11-2 0 1 1 0 012 0zM7 10a1 1 0 11-2 0 1 1 0 012 0zM7 16a1 1 0 11-2 0 1 1 0 012 0zM13 4a1 1 0 11-2 0 1 1 0 012 0zM13 10a1 1 0 11-2 0 1 1 0 012 0zM13 16a1 1 0 11-2 0 1 1 0 012 0z" />
-                                                                </svg>
-                                                                <span className="truncate">{viewDragActive.label}</span>
-                                                            </div>
-                                                            <p className="text-[10px] text-slate-500 dark:text-slate-400 mt-1">Moving item…</p>
-                                                        </div>
-                                                    ) : null}
-                                                </DragOverlay>
                                             </DndContext>
                                             </>
                                             )}
@@ -9096,20 +9054,6 @@ export const TileDetail: React.FC<TileDetailProps> = ({
                                 })}
                             </div>
                             </SortableContext>
-                                <DragOverlay dropAnimation={null}>
-                                    {viewDragActive?.type === 'section' ? (
-                                        <div className="pointer-events-none px-5 py-4 rounded-2xl bg-white/95 dark:bg-slate-800/95 border-2 border-brand-400 dark:border-brand-500 shadow-2xl shadow-brand-500/25 min-w-[220px] max-w-md backdrop-blur">
-                                            <div className="flex items-center gap-2.5 text-base font-bold text-slate-800 dark:text-white">
-                                                <span className="w-1.5 h-6 rounded-full bg-brand-500 shrink-0" aria-hidden />
-                                                <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor" className="w-4 h-4 text-brand-500 shrink-0" aria-hidden>
-                                                    <path d="M7 4a1 1 0 11-2 0 1 1 0 012 0zM7 10a1 1 0 11-2 0 1 1 0 012 0zM7 16a1 1 0 11-2 0 1 1 0 012 0zM13 4a1 1 0 11-2 0 1 1 0 012 0zM13 10a1 1 0 11-2 0 1 1 0 012 0zM13 16a1 1 0 11-2 0 1 1 0 012 0z" />
-                                                </svg>
-                                                <span className="truncate">{viewDragActive.label}</span>
-                                            </div>
-                                            <p className="text-xs text-slate-500 dark:text-slate-400 mt-1.5 pl-4">Drop to reorder section</p>
-                                        </div>
-                                    ) : null}
-                                </DragOverlay>
                             </DndContext>
                         )}
                     </div>
