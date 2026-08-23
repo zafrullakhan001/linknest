@@ -1477,6 +1477,15 @@ export const TileDetail: React.FC<TileDetailProps> = ({
             return true;
         }
     });
+    // Horizontal tabs vs vertical side menu (per space; useful when many tabs)
+    const [tabNavLayout, setTabNavLayout] = useState<'horizontal' | 'vertical'>(() => {
+        try {
+            const saved = localStorage.getItem(`tile_tab_nav_layout_${tile.id}`);
+            return saved === 'vertical' ? 'vertical' : 'horizontal';
+        } catch {
+            return 'horizontal';
+        }
+    });
     const [sectionLinkLayouts, setSectionLinkLayouts] = useState<Record<string, ViewLayoutMode>>(() =>
         loadSectionLinkLayouts(tile.id)
     );
@@ -2137,6 +2146,12 @@ export const TileDetail: React.FC<TileDetailProps> = ({
     // Reload per-section link layouts when switching tiles
     useEffect(() => {
         setSectionLinkLayouts(loadSectionLinkLayouts(tile.id));
+        try {
+            const saved = localStorage.getItem(`tile_tab_nav_layout_${tile.id}`);
+            setTabNavLayout(saved === 'vertical' ? 'vertical' : 'horizontal');
+        } catch {
+            setTabNavLayout('horizontal');
+        }
     }, [tile.id]);
 
     // Persist per-section link layouts for this tile
@@ -6239,7 +6254,43 @@ export const TileDetail: React.FC<TileDetailProps> = ({
             .filter(tab => isEditing || (isContentVisible(tab) && canViewerSeeByVisibility(tab))) // Show all in edit mode
         : [];
     const activeViewTab = displayTabs.find((tab) => tab.id === selectedTabId || tab.id === resolveTabId(displayTabs, selectedTabId));
+    const useVerticalTabs = !isMobile && tabNavLayout === 'vertical' && displayTabs.length > 0;
+    const showTabNavLayoutToggle = !isMobile && displayTabs.length >= 2;
 
+    const getDisplayTabLinksCount = (tab: Tab): number => {
+        const tabSections = tab.sections || [];
+        const shouldApplyRoleFiltering =
+            sourceTab === 'your-apps' &&
+            tile.canEdit !== true &&
+            !user?.is_admin;
+        return tabSections.reduce((acc, s) => {
+            const links = s.links || [];
+            const filteredLinks = shouldApplyRoleFiltering
+                ? links.filter(link => link.hasRoleAccess === true)
+                : links;
+            return acc + filteredLinks.length;
+        }, 0);
+    };
+
+    const selectDisplayTab = async (tab: Tab) => {
+        if (!isEditing) {
+            const allowed = await assertCanOpen('tab', tab.id, {
+                rules: [tile.accessRestrictions, tab.accessRestrictions],
+            });
+            if (!allowed) return;
+        }
+        setSelectedTabId(tab.id);
+        writeTileHashTab(tabParamFor(tab, displayTabs), 'push', null);
+    };
+
+    const setAndPersistTabNavLayout = (layout: 'horizontal' | 'vertical') => {
+        setTabNavLayout(layout);
+        try {
+            localStorage.setItem(`tile_tab_nav_layout_${tile.id}`, layout);
+        } catch (error) {
+            console.error('Failed to save tab nav layout preference:', error);
+        }
+    };
 
     // VIEW MODE (also used when the URL asked for edit but this session cannot edit)
     if (!isEditing || !tile.canEdit) {
@@ -7127,85 +7178,157 @@ export const TileDetail: React.FC<TileDetailProps> = ({
                             </div>
                         )}
 
+                        {/* Tabs + sections: horizontal bar or vertical side menu */}
+                        <div
+                            className={useVerticalTabs ? 'flex gap-6 items-start' : 'flex flex-col gap-8'}
+                            data-tab-nav-layout={useVerticalTabs ? 'vertical' : 'horizontal'}
+                        >
                         {/* Tab Navigation */}
                         {displayTabs && displayTabs.length > 0 && (
-                            <div className="border-b border-slate-200 dark:border-slate-700 overflow-x-auto bg-white/50 dark:bg-slate-900/30 backdrop-blur-sm rounded-t-xl">
-                                <div className="flex gap-2 min-w-max py-1 px-2">
-                                    {displayTabs.map((tab) => {
-                                        const isActive = tab.id === selectedTabId || tab.id === resolveTabId(displayTabs, selectedTabId);
-                                        const tabSections = tab.sections || [];
-                                        // Only apply role-based filtering if source is "Your Apps" tab
-                                        // Tile editors see all links (including newly added ones not yet role-filtered in UI)
-                                        const shouldApplyRoleFiltering =
-                                            sourceTab === 'your-apps' &&
-                                            tile.canEdit !== true &&
-                                            !user?.is_admin;
-                                        // Count links, filtering by role access if needed
-                                        const tabLinksCount = tabSections.reduce((acc, s) => {
-                                            const links = s.links || [];
-                                            const filteredLinks = shouldApplyRoleFiltering
-                                                ? links.filter(link => link.hasRoleAccess === true)
-                                                : links;
-                                            return acc + filteredLinks.length;
-                                        }, 0);
-
-                                        return (
+                            useVerticalTabs ? (
+                                <nav
+                                    className="w-56 shrink-0 sticky top-4 self-start max-h-[calc(100vh-6rem)] overflow-hidden flex flex-col rounded-xl border border-slate-200 dark:border-slate-700 bg-white/80 dark:bg-slate-900/50 backdrop-blur-sm shadow-sm"
+                                    aria-label="Space tabs"
+                                >
+                                    <div className="shrink-0 flex items-center justify-between gap-2 px-3 py-2.5 border-b border-slate-200/80 dark:border-slate-700/80">
+                                        <span className="text-[11px] font-semibold uppercase tracking-wider text-slate-500 dark:text-slate-400">Tabs</span>
+                                        {showTabNavLayoutToggle && (
                                             <button
-                                                key={tab.id}
-                                                onClick={async () => {
-                                                    if (!isEditing) {
-                                                        const allowed = await assertCanOpen('tab', tab.id, {
-                                                            rules: [tile.accessRestrictions, tab.accessRestrictions],
-                                                        });
-                                                        if (!allowed) return;
-                                                    }
-                                                    setSelectedTabId(tab.id);
-                                                    writeTileHashTab(tabParamFor(tab, displayTabs), 'push', null);
-                                                }}
-                                                data-active={isActive}
-                                                className={`linknest-content-tab relative px-5 py-2.5 text-sm font-medium transition-all duration-200 whitespace-nowrap rounded-lg ${isActive
-                                                    ? `${styles.text} font-semibold`
-                                                    : 'text-slate-500 dark:text-slate-400 hover:text-slate-700 dark:hover:text-slate-300'
-                                                    }`}
-                                                style={tab.textColor && isActive ? { color: tab.textColor } : undefined}
+                                                type="button"
+                                                onClick={() => setAndPersistTabNavLayout('horizontal')}
+                                                className="p-1.5 rounded-lg text-slate-500 hover:text-slate-800 dark:hover:text-slate-200 hover:bg-slate-100 dark:hover:bg-slate-800 transition-colors"
+                                                title="Switch to horizontal tabs"
+                                                aria-label="Switch to horizontal tabs"
                                             >
-                                                <span className="flex items-center gap-2">
-                                                    {tab.emoji ? (
-                                                        <span className="shrink-0 leading-none" aria-hidden>{tab.emoji}</span>
-                                                    ) : null}
-                                                    {tab.title}
-                                                    <AccessRestrictionsBadge rules={tab.accessRestrictions} />
-                                                    {(tile.canEdit === true || !!user?.is_admin) && (
-                                                        <VisibilityProtectionBadge visibility={tab.visibility} />
-                                                    )}
-                                                    <span onClick={(e) => e.stopPropagation()} className="inline-flex">
-                                                        {effectiveShowShortUrls(showShortUrls, tab) ? (
-                                                        <ShortUrlActions
-                                                            targetType="tab"
-                                                            targetId={tab.id}
-                                                            shortUrl={shortOf('tab', tab.id, tab.shortUrl)}
-                                                            canRecycle={canRecycleShortUrl}
-                                                            compact
-                                                            onRecycled={({ shortUrl }) => applyRecycledShortUrl('tab', tab.id, shortUrl)}
-                                                        />
-                                                        ) : null}
-                                                    </span>
-                                                    {tabLinksCount > 0 && (
-                                                        <span className={`px-2 py-0.5 text-xs rounded-full font-semibold transition-colors ${isActive
-                                                            ? `${styles.iconBg} ${styles.text}`
-                                                            : 'bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-400'
-                                                            }`}>
-                                                            {tabLinksCount}
-                                                        </span>
-                                                    )}
-                                                </span>
+                                                <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor" className="w-4 h-4">
+                                                    <path d="M2 4.5A2.5 2.5 0 014.5 2h11a2.5 2.5 0 010 5h-11A2.5 2.5 0 012 4.5zM2.75 9.083a.75.75 0 000 1.5h14.5a.75.75 0 000-1.5H2.75zM2.75 12.663a.75.75 0 000 1.5h14.5a.75.75 0 000-1.5H2.75zM2.75 16.25a.75.75 0 000 1.5h14.5a.75.75 0 100-1.5H2.75z" />
+                                                </svg>
                                             </button>
-                                        );
-                                    })}
+                                        )}
+                                    </div>
+                                    <div className="flex-1 min-h-0 overflow-y-auto p-2 flex flex-col gap-1">
+                                        {displayTabs.map((tab) => {
+                                            const isActive = tab.id === selectedTabId || tab.id === resolveTabId(displayTabs, selectedTabId);
+                                            const tabLinksCount = getDisplayTabLinksCount(tab);
+                                            return (
+                                                <button
+                                                    key={tab.id}
+                                                    type="button"
+                                                    onClick={() => { void selectDisplayTab(tab); }}
+                                                    data-active={isActive}
+                                                    className={`linknest-content-tab w-full text-left px-3 py-2.5 text-sm font-medium transition-all duration-150 rounded-lg ${isActive
+                                                        ? `${styles.iconBg} ${styles.text} font-semibold ring-1 ring-inset ring-slate-200/80 dark:ring-slate-600/50`
+                                                        : 'text-slate-600 dark:text-slate-400 hover:bg-slate-100/90 dark:hover:bg-slate-800/80 hover:text-slate-800 dark:hover:text-slate-200'
+                                                        }`}
+                                                    style={tab.textColor && isActive ? { color: tab.textColor } : undefined}
+                                                >
+                                                    <span className="flex items-center gap-2 min-w-0">
+                                                        {tab.emoji ? (
+                                                            <span className="shrink-0 leading-none" aria-hidden>{tab.emoji}</span>
+                                                        ) : null}
+                                                        <span className="flex-1 min-w-0 truncate">{tab.title}</span>
+                                                        <AccessRestrictionsBadge rules={tab.accessRestrictions} />
+                                                        {(tile.canEdit === true || !!user?.is_admin) && (
+                                                            <VisibilityProtectionBadge visibility={tab.visibility} />
+                                                        )}
+                                                        <span onClick={(e) => e.stopPropagation()} className="inline-flex shrink-0">
+                                                            {effectiveShowShortUrls(showShortUrls, tab) ? (
+                                                            <ShortUrlActions
+                                                                targetType="tab"
+                                                                targetId={tab.id}
+                                                                shortUrl={shortOf('tab', tab.id, tab.shortUrl)}
+                                                                canRecycle={canRecycleShortUrl}
+                                                                compact
+                                                                onRecycled={({ shortUrl }) => applyRecycledShortUrl('tab', tab.id, shortUrl)}
+                                                            />
+                                                            ) : null}
+                                                        </span>
+                                                        {tabLinksCount > 0 && (
+                                                            <span className={`shrink-0 px-1.5 py-0.5 text-[10px] rounded-full font-semibold transition-colors ${isActive
+                                                                ? `${styles.iconBg} ${styles.text}`
+                                                                : 'bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-400'
+                                                                }`}>
+                                                                {tabLinksCount}
+                                                            </span>
+                                                        )}
+                                                    </span>
+                                                </button>
+                                            );
+                                        })}
+                                    </div>
+                                </nav>
+                            ) : (
+                                <div className="border-b border-slate-200 dark:border-slate-700 bg-white/50 dark:bg-slate-900/30 backdrop-blur-sm rounded-t-xl flex items-stretch gap-1">
+                                    <div className="flex gap-2 min-w-0 flex-1 overflow-x-auto py-1 px-2">
+                                        {displayTabs.map((tab) => {
+                                            const isActive = tab.id === selectedTabId || tab.id === resolveTabId(displayTabs, selectedTabId);
+                                            const tabLinksCount = getDisplayTabLinksCount(tab);
+
+                                            return (
+                                                <button
+                                                    key={tab.id}
+                                                    type="button"
+                                                    onClick={() => { void selectDisplayTab(tab); }}
+                                                    data-active={isActive}
+                                                    className={`linknest-content-tab relative px-5 py-2.5 text-sm font-medium transition-all duration-200 whitespace-nowrap rounded-lg ${isActive
+                                                        ? `${styles.text} font-semibold`
+                                                        : 'text-slate-500 dark:text-slate-400 hover:text-slate-700 dark:hover:text-slate-300'
+                                                        }`}
+                                                    style={tab.textColor && isActive ? { color: tab.textColor } : undefined}
+                                                >
+                                                    <span className="flex items-center gap-2">
+                                                        {tab.emoji ? (
+                                                            <span className="shrink-0 leading-none" aria-hidden>{tab.emoji}</span>
+                                                        ) : null}
+                                                        {tab.title}
+                                                        <AccessRestrictionsBadge rules={tab.accessRestrictions} />
+                                                        {(tile.canEdit === true || !!user?.is_admin) && (
+                                                            <VisibilityProtectionBadge visibility={tab.visibility} />
+                                                        )}
+                                                        <span onClick={(e) => e.stopPropagation()} className="inline-flex">
+                                                            {effectiveShowShortUrls(showShortUrls, tab) ? (
+                                                            <ShortUrlActions
+                                                                targetType="tab"
+                                                                targetId={tab.id}
+                                                                shortUrl={shortOf('tab', tab.id, tab.shortUrl)}
+                                                                canRecycle={canRecycleShortUrl}
+                                                                compact
+                                                                onRecycled={({ shortUrl }) => applyRecycledShortUrl('tab', tab.id, shortUrl)}
+                                                            />
+                                                            ) : null}
+                                                        </span>
+                                                        {tabLinksCount > 0 && (
+                                                            <span className={`px-2 py-0.5 text-xs rounded-full font-semibold transition-colors ${isActive
+                                                                ? `${styles.iconBg} ${styles.text}`
+                                                                : 'bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-400'
+                                                                }`}>
+                                                                {tabLinksCount}
+                                                            </span>
+                                                        )}
+                                                    </span>
+                                                </button>
+                                            );
+                                        })}
+                                    </div>
+                                    {showTabNavLayoutToggle && (
+                                        <button
+                                            type="button"
+                                            onClick={() => setAndPersistTabNavLayout('vertical')}
+                                            className="shrink-0 self-center mr-2 px-2.5 py-1.5 rounded-lg text-xs font-medium text-slate-500 dark:text-slate-400 hover:text-slate-800 dark:hover:text-slate-200 hover:bg-slate-100 dark:hover:bg-slate-800 transition-colors flex items-center gap-1.5"
+                                            title="Switch to vertical tab menu"
+                                            aria-label="Switch to vertical tab menu"
+                                        >
+                                            <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor" className="w-4 h-4">
+                                                <path d="M2 4.5A2.5 2.5 0 014.5 2h3A2.5 2.5 0 0110 4.5v11A2.5 2.5 0 017.5 18h-3A2.5 2.5 0 012 15.5v-11zM10.75 2.75a.75.75 0 000 1.5h6.5a.75.75 0 000-1.5h-6.5zM10.75 6.25a.75.75 0 000 1.5h6.5a.75.75 0 000-1.5h-6.5zM10.75 9.75a.75.75 0 000 1.5h6.5a.75.75 0 000-1.5h-6.5zM10.75 13.25a.75.75 0 000 1.5h6.5a.75.75 0 000-1.5h-6.5zM10.75 16.75a.75.75 0 000 1.5h6.5a.75.75 0 000-1.5h-6.5z" />
+                                            </svg>
+                                            <span className="hidden sm:inline">Vertical</span>
+                                        </button>
+                                    )}
                                 </div>
-                            </div>
+                            )
                         )}
 
+                        <div className={useVerticalTabs ? 'flex-1 min-w-0 flex flex-col gap-8' : 'contents'}>
                         {filteredSections.length === 0 ? (
                             <div className="flex flex-col items-center justify-center py-16 border border-dashed border-slate-300 dark:border-slate-800 rounded-xl bg-slate-50 dark:bg-slate-900/30">
                                 <div className="w-12 h-12 bg-slate-100 dark:bg-slate-800 rounded-full flex items-center justify-center text-slate-400 dark:text-slate-600 mb-3">
@@ -8165,6 +8288,8 @@ export const TileDetail: React.FC<TileDetailProps> = ({
                                 })}
                             </div>
                         )}
+                        </div>
+                        </div>
                     </div>
                 </div>
 
