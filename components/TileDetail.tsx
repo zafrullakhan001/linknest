@@ -11,6 +11,7 @@ import {
 import {
     SortableContext,
     arrayMove,
+    horizontalListSortingStrategy,
     rectSortingStrategy,
     verticalListSortingStrategy,
 } from '@dnd-kit/sortable';
@@ -6458,6 +6459,7 @@ export const TileDetail: React.FC<TileDetailProps> = ({
         !(searchTerm || '').trim() &&
         !viewReorderSaving &&
         !isMobile;
+    const canReorderTabs = canViewReorder && displayTabs.length > 1;
 
     const getDisplayTabLinksCount = (tab: Tab): number => {
         const tabSections = tab.sections || [];
@@ -6714,6 +6716,37 @@ export const TileDetail: React.FC<TileDetailProps> = ({
             setViewReorderSaving(false);
         }
     }, [activeViewTab, persistViewModeTile, tile, viewReorderSaving]);
+
+    const handleViewTabDragEnd = useCallback(async (event: DragEndEvent) => {
+        const { active, over } = event;
+        if (!over || active.id === over.id || viewReorderSaving) return;
+        if (tile.canEdit !== true) return;
+        if (!tile.tabs?.length || displayTabs.length < 2) return;
+
+        const oldIndex = displayTabs.findIndex((t) => t.id === active.id);
+        const newIndex = displayTabs.findIndex((t) => t.id === over.id);
+        if (oldIndex < 0 || newIndex < 0 || oldIndex === newIndex) return;
+
+        // Reorder among currently visible tabs; keep hidden tabs in their relative slots.
+        const reorderedVisible = arrayMove(displayTabs, oldIndex, newIndex);
+        const visibleIds = new Set(displayTabs.map((t) => t.id));
+        const orderedAll = [...tile.tabs].sort((a, b) => (a.position ?? 0) - (b.position ?? 0));
+        let vi = 0;
+        const nextTabs = orderedAll
+            .map((t) => (visibleIds.has(t.id) ? reorderedVisible[vi++]! : t))
+            .map((t, idx) => ({ ...t, position: idx }));
+
+        const updatedTile: Tile = { ...tile, tabs: nextTabs };
+        setViewReorderSaving(true);
+        try {
+            await persistViewModeTile(updatedTile);
+        } catch (e) {
+            console.error('Failed to save tab order', e);
+            alert(e instanceof Error ? e.message : 'Failed to save tab order');
+        } finally {
+            setViewReorderSaving(false);
+        }
+    }, [displayTabs, persistViewModeTile, tile, viewReorderSaving]);
 
     const handleViewLinkDragEnd = useCallback(async (sectionId: string, event: DragEndEvent) => {
         const { active, over } = event;
@@ -7721,54 +7754,87 @@ export const TileDetail: React.FC<TileDetailProps> = ({
                                 </div>
                             </div>
                             <div className="flex-1 min-h-0 overflow-y-auto p-2 flex flex-col gap-1 bg-slate-50/90 dark:bg-slate-900/50">
-                                {displayTabs.map((tab) => {
-                                    const isActive = tab.id === selectedTabId || tab.id === resolveTabId(displayTabs, selectedTabId);
-                                    const tabLinksCount = getDisplayTabLinksCount(tab);
-                                    return (
-                                        <button
-                                            key={tab.id}
-                                            type="button"
-                                            onClick={() => { void selectDisplayTab(tab); }}
-                                            data-active={isActive}
-                                            className={`linknest-content-tab w-full text-left px-3 py-2.5 text-sm font-medium transition-all duration-150 rounded-lg ${isActive
-                                                ? `${styles.iconBg} ${styles.text} font-semibold ring-1 ring-inset ring-slate-200/80 dark:ring-slate-600/50`
-                                                : 'text-slate-600 dark:text-slate-400 hover:bg-white/80 dark:hover:bg-slate-800/80 hover:text-slate-800 dark:hover:text-slate-200'
-                                                }`}
-                                            style={tab.textColor && isActive ? { color: tab.textColor } : undefined}
-                                        >
-                                            <span className="flex items-center gap-2 min-w-0">
-                                                {tab.emoji ? (
-                                                    <span className="shrink-0 leading-none" aria-hidden>{tab.emoji}</span>
-                                                ) : null}
-                                                <span className={`flex-1 min-w-0 ${verticalTabsFloating ? 'whitespace-normal break-words' : 'truncate'}`}>{tab.title}</span>
-                                                <AccessRestrictionsBadge rules={tab.accessRestrictions} />
-                                                {(tile.canEdit === true || !!user?.is_admin) && (
-                                                    <VisibilityProtectionBadge visibility={tab.visibility} />
-                                                )}
-                                                <span onClick={(e) => e.stopPropagation()} className="inline-flex shrink-0">
-                                                    {effectiveShowShortUrls(showShortUrls, tab) ? (
-                                                    <ShortUrlActions
-                                                        targetType="tab"
-                                                        targetId={tab.id}
-                                                        shortUrl={shortOf('tab', tab.id, tab.shortUrl)}
-                                                        canRecycle={canRecycleShortUrl}
-                                                        compact
-                                                        onRecycled={({ shortUrl }) => applyRecycledShortUrl('tab', tab.id, shortUrl)}
-                                                    />
-                                                    ) : null}
-                                                </span>
-                                                {tabLinksCount > 0 && (
-                                                    <span className={`shrink-0 px-1.5 py-0.5 text-[10px] rounded-full font-semibold transition-colors ${isActive
-                                                        ? `${styles.iconBg} ${styles.text}`
-                                                        : 'bg-white dark:bg-slate-800 text-slate-600 dark:text-slate-400'
-                                                        }`}>
-                                                        {tabLinksCount}
-                                                    </span>
-                                                )}
-                                            </span>
-                                        </button>
-                                    );
-                                })}
+                                <DndContext
+                                    sensors={viewReorderSensors}
+                                    collisionDetection={closestCorners}
+                                    onDragEnd={(e) => {
+                                        void handleViewTabDragEnd(e);
+                                    }}
+                                >
+                                    <SortableContext
+                                        items={displayTabs.map((t) => t.id)}
+                                        strategy={verticalListSortingStrategy}
+                                    >
+                                        {displayTabs.map((tab) => {
+                                            const isActive = tab.id === selectedTabId || tab.id === resolveTabId(displayTabs, selectedTabId);
+                                            const tabLinksCount = getDisplayTabLinksCount(tab);
+                                            return (
+                                                <ViewModeSortable
+                                                    key={tab.id}
+                                                    id={tab.id}
+                                                    disabled={!canReorderTabs}
+                                                    className="rounded-lg"
+                                                >
+                                                    {({ attributes: tabDragAttrs, listeners: tabDragListeners }) => (
+                                                        <div
+                                                            data-active={isActive}
+                                                            className={`linknest-content-tab flex items-stretch w-full text-sm font-medium transition-all duration-150 rounded-lg ${isActive
+                                                                ? `${styles.iconBg} ${styles.text} font-semibold ring-1 ring-inset ring-slate-200/80 dark:ring-slate-600/50`
+                                                                : 'text-slate-600 dark:text-slate-400 hover:bg-white/80 dark:hover:bg-slate-800/80 hover:text-slate-800 dark:hover:text-slate-200'
+                                                                }`}
+                                                            style={tab.textColor && isActive ? { color: tab.textColor } : undefined}
+                                                        >
+                                                            {canReorderTabs && (
+                                                                <ViewModeDragHandle
+                                                                    attributes={tabDragAttrs}
+                                                                    listeners={tabDragListeners}
+                                                                    title="Drag to reorder tab"
+                                                                    className="self-center ml-1"
+                                                                />
+                                                            )}
+                                                            <button
+                                                                type="button"
+                                                                onClick={() => { void selectDisplayTab(tab); }}
+                                                                className="flex-1 min-w-0 text-left px-3 py-2.5 rounded-lg"
+                                                            >
+                                                                <span className="flex items-center gap-2 min-w-0">
+                                                                    {tab.emoji ? (
+                                                                        <span className="shrink-0 leading-none" aria-hidden>{tab.emoji}</span>
+                                                                    ) : null}
+                                                                    <span className={`flex-1 min-w-0 ${verticalTabsFloating ? 'whitespace-normal break-words' : 'truncate'}`}>{tab.title}</span>
+                                                                    <AccessRestrictionsBadge rules={tab.accessRestrictions} />
+                                                                    {(tile.canEdit === true || !!user?.is_admin) && (
+                                                                        <VisibilityProtectionBadge visibility={tab.visibility} />
+                                                                    )}
+                                                                    <span onClick={(e) => e.stopPropagation()} className="inline-flex shrink-0">
+                                                                        {effectiveShowShortUrls(showShortUrls, tab) ? (
+                                                                        <ShortUrlActions
+                                                                            targetType="tab"
+                                                                            targetId={tab.id}
+                                                                            shortUrl={shortOf('tab', tab.id, tab.shortUrl)}
+                                                                            canRecycle={canRecycleShortUrl}
+                                                                            compact
+                                                                            onRecycled={({ shortUrl }) => applyRecycledShortUrl('tab', tab.id, shortUrl)}
+                                                                        />
+                                                                        ) : null}
+                                                                    </span>
+                                                                    {tabLinksCount > 0 && (
+                                                                        <span className={`shrink-0 px-1.5 py-0.5 text-[10px] rounded-full font-semibold transition-colors ${isActive
+                                                                            ? `${styles.iconBg} ${styles.text}`
+                                                                            : 'bg-white dark:bg-slate-800 text-slate-600 dark:text-slate-400'
+                                                                            }`}>
+                                                                            {tabLinksCount}
+                                                                        </span>
+                                                                    )}
+                                                                </span>
+                                                            </button>
+                                                        </div>
+                                                    )}
+                                                </ViewModeSortable>
+                                            );
+                                        })}
+                                    </SortableContext>
+                                </DndContext>
                             </div>
                             {verticalTabsFloating && (
                                 <div
@@ -7906,57 +7972,91 @@ export const TileDetail: React.FC<TileDetailProps> = ({
                         {/* Desktop horizontal tab bar */}
                         {displayTabs && displayTabs.length > 0 && !useVerticalTabs && !useMobileTabHamburger && (
                                 <div className="border-b border-slate-200 dark:border-slate-700 bg-white/50 dark:bg-slate-900/30 backdrop-blur-sm rounded-t-xl flex items-stretch gap-1">
-                                    <div className="flex gap-2 min-w-0 flex-1 overflow-x-auto py-1 px-2">
-                                        {displayTabs.map((tab) => {
-                                            const isActive = tab.id === selectedTabId || tab.id === resolveTabId(displayTabs, selectedTabId);
-                                            const tabLinksCount = getDisplayTabLinksCount(tab);
+                                    <DndContext
+                                        sensors={viewReorderSensors}
+                                        collisionDetection={closestCorners}
+                                        onDragEnd={(e) => {
+                                            void handleViewTabDragEnd(e);
+                                        }}
+                                    >
+                                        <SortableContext
+                                            items={displayTabs.map((t) => t.id)}
+                                            strategy={horizontalListSortingStrategy}
+                                        >
+                                            <div className="flex gap-2 min-w-0 flex-1 overflow-x-auto py-1 px-2">
+                                                {displayTabs.map((tab) => {
+                                                    const isActive = tab.id === selectedTabId || tab.id === resolveTabId(displayTabs, selectedTabId);
+                                                    const tabLinksCount = getDisplayTabLinksCount(tab);
 
-                                            return (
-                                                <button
-                                                    key={tab.id}
-                                                    type="button"
-                                                    onClick={() => { void selectDisplayTab(tab); }}
-                                                    data-active={isActive}
-                                                    className={`linknest-content-tab relative px-5 py-2.5 text-sm font-medium transition-all duration-200 whitespace-nowrap rounded-lg ${isActive
-                                                        ? `${styles.text} font-semibold`
-                                                        : 'text-slate-500 dark:text-slate-400 hover:text-slate-700 dark:hover:text-slate-300'
-                                                        }`}
-                                                    style={tab.textColor && isActive ? { color: tab.textColor } : undefined}
-                                                >
-                                                    <span className="flex items-center gap-2">
-                                                        {tab.emoji ? (
-                                                            <span className="shrink-0 leading-none" aria-hidden>{tab.emoji}</span>
-                                                        ) : null}
-                                                        {tab.title}
-                                                        <AccessRestrictionsBadge rules={tab.accessRestrictions} />
-                                                        {(tile.canEdit === true || !!user?.is_admin) && (
-                                                            <VisibilityProtectionBadge visibility={tab.visibility} />
-                                                        )}
-                                                        <span onClick={(e) => e.stopPropagation()} className="inline-flex">
-                                                            {effectiveShowShortUrls(showShortUrls, tab) ? (
-                                                            <ShortUrlActions
-                                                                targetType="tab"
-                                                                targetId={tab.id}
-                                                                shortUrl={shortOf('tab', tab.id, tab.shortUrl)}
-                                                                canRecycle={canRecycleShortUrl}
-                                                                compact
-                                                                onRecycled={({ shortUrl }) => applyRecycledShortUrl('tab', tab.id, shortUrl)}
-                                                            />
-                                                            ) : null}
-                                                        </span>
-                                                        {tabLinksCount > 0 && (
-                                                            <span className={`px-2 py-0.5 text-xs rounded-full font-semibold transition-colors ${isActive
-                                                                ? `${styles.iconBg} ${styles.text}`
-                                                                : 'bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-400'
-                                                                }`}>
-                                                                {tabLinksCount}
-                                                            </span>
-                                                        )}
-                                                    </span>
-                                                </button>
-                                            );
-                                        })}
-                                    </div>
+                                                    return (
+                                                        <ViewModeSortable
+                                                            key={tab.id}
+                                                            id={tab.id}
+                                                            disabled={!canReorderTabs}
+                                                            layout="grid"
+                                                            className="rounded-lg shrink-0"
+                                                        >
+                                                            {({ attributes: tabDragAttrs, listeners: tabDragListeners }) => (
+                                                                <div
+                                                                    data-active={isActive}
+                                                                    className={`linknest-content-tab relative flex items-center text-sm font-medium transition-all duration-200 whitespace-nowrap rounded-lg ${isActive
+                                                                        ? `${styles.text} font-semibold`
+                                                                        : 'text-slate-500 dark:text-slate-400 hover:text-slate-700 dark:hover:text-slate-300'
+                                                                        }`}
+                                                                    style={tab.textColor && isActive ? { color: tab.textColor } : undefined}
+                                                                >
+                                                                    {canReorderTabs && (
+                                                                        <ViewModeDragHandle
+                                                                            attributes={tabDragAttrs}
+                                                                            listeners={tabDragListeners}
+                                                                            title="Drag to reorder tab"
+                                                                            className="ml-1"
+                                                                        />
+                                                                    )}
+                                                                    <button
+                                                                        type="button"
+                                                                        onClick={() => { void selectDisplayTab(tab); }}
+                                                                        className="px-5 py-2.5 rounded-lg"
+                                                                    >
+                                                                        <span className="flex items-center gap-2">
+                                                                            {tab.emoji ? (
+                                                                                <span className="shrink-0 leading-none" aria-hidden>{tab.emoji}</span>
+                                                                            ) : null}
+                                                                            {tab.title}
+                                                                            <AccessRestrictionsBadge rules={tab.accessRestrictions} />
+                                                                            {(tile.canEdit === true || !!user?.is_admin) && (
+                                                                                <VisibilityProtectionBadge visibility={tab.visibility} />
+                                                                            )}
+                                                                            <span onClick={(e) => e.stopPropagation()} className="inline-flex">
+                                                                                {effectiveShowShortUrls(showShortUrls, tab) ? (
+                                                                                <ShortUrlActions
+                                                                                    targetType="tab"
+                                                                                    targetId={tab.id}
+                                                                                    shortUrl={shortOf('tab', tab.id, tab.shortUrl)}
+                                                                                    canRecycle={canRecycleShortUrl}
+                                                                                    compact
+                                                                                    onRecycled={({ shortUrl }) => applyRecycledShortUrl('tab', tab.id, shortUrl)}
+                                                                                />
+                                                                                ) : null}
+                                                                            </span>
+                                                                            {tabLinksCount > 0 && (
+                                                                                <span className={`px-2 py-0.5 text-xs rounded-full font-semibold transition-colors ${isActive
+                                                                                    ? `${styles.iconBg} ${styles.text}`
+                                                                                    : 'bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-400'
+                                                                                    }`}>
+                                                                                    {tabLinksCount}
+                                                                                </span>
+                                                                            )}
+                                                                        </span>
+                                                                    </button>
+                                                                </div>
+                                                            )}
+                                                        </ViewModeSortable>
+                                                    );
+                                                })}
+                                            </div>
+                                        </SortableContext>
+                                    </DndContext>
                                     <div className="shrink-0 self-center mr-2 flex items-center gap-1">
                                         <button
                                             type="button"

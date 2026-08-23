@@ -1,4 +1,5 @@
 import React, { useState, useEffect, useRef, useCallback } from 'react';
+import { createPortal } from 'react-dom';
 import { Tile } from '../types';
 import { FaTimes, FaCheck, FaCopy } from 'react-icons/fa';
 import { ShortUrlActions } from './ShortUrlActions';
@@ -144,6 +145,72 @@ const ACCENT_STYLES: Record<AccentTone, { bar: string; iconBg: string; card: str
 };
 
 const API_BASE = import.meta.env.VITE_API_BASE || '/api';
+
+const DIALOG_MIN_W = 360;
+const DIALOG_MIN_H = 280;
+const DIALOG_DEFAULT_W = 672;
+const DIALOG_DEFAULT_H = 720;
+const DIALOG_MIN_VISIBLE = 64;
+
+type DialogPoint = { x: number; y: number };
+type DialogSize = { width: number; height: number };
+
+function clampNum(n: number, min: number, max: number) {
+  return Math.max(min, Math.min(max, n));
+}
+
+function getCssZoom(): number {
+  // App applies `html { zoom }` via styles; dialog geometry must use layout coords.
+  const raw = getComputedStyle(document.documentElement).zoom;
+  const z = raw && raw !== 'normal' ? Number.parseFloat(raw) : 1;
+  return Number.isFinite(z) && z > 0 ? z : 1;
+}
+
+function getViewportSize() {
+  const vv = window.visualViewport;
+  return {
+    width: vv?.width ?? window.innerWidth,
+    height: vv?.height ?? window.innerHeight,
+  };
+}
+
+function getLayoutViewport() {
+  const { width: vvW, height: vvH } = getViewportSize();
+  const zoom = getCssZoom();
+  return { width: vvW / zoom, height: vvH / zoom, zoom };
+}
+
+function defaultDialogSize(): DialogSize {
+  const { width: layoutW, height: layoutH } = getLayoutViewport();
+  return {
+    width: clampNum(Math.min(DIALOG_DEFAULT_W, layoutW - 32), DIALOG_MIN_W, Math.max(DIALOG_MIN_W, layoutW - 24)),
+    height: clampNum(Math.min(DIALOG_DEFAULT_H, layoutH - 32), DIALOG_MIN_H, Math.max(DIALOG_MIN_H, layoutH - 24)),
+  };
+}
+
+function centeredDialogPos(size: DialogSize): DialogPoint {
+  const { width: layoutW, height: layoutH } = getLayoutViewport();
+  return {
+    x: Math.max(12, Math.round((layoutW - size.width) / 2)),
+    y: Math.max(12, Math.round((layoutH - size.height) / 2)),
+  };
+}
+
+function clampDialogPos(p: DialogPoint, size: DialogSize): DialogPoint {
+  const { width: layoutW, height: layoutH } = getLayoutViewport();
+  return {
+    x: clampNum(p.x, -size.width + DIALOG_MIN_VISIBLE, layoutW - DIALOG_MIN_VISIBLE),
+    y: clampNum(p.y, -size.height + DIALOG_MIN_VISIBLE, layoutH - DIALOG_MIN_VISIBLE),
+  };
+}
+
+function clampDialogSize(size: DialogSize, pos: DialogPoint = { x: 0, y: 0 }): DialogSize {
+  const { width: layoutW, height: layoutH } = getLayoutViewport();
+  return {
+    width: clampNum(size.width, DIALOG_MIN_W, Math.max(DIALOG_MIN_W, layoutW - Math.max(0, pos.x) - 8)),
+    height: clampNum(size.height, DIALOG_MIN_H, Math.max(DIALOG_MIN_H, layoutH - Math.max(0, pos.y) - 8)),
+  };
+}
 
 const InfoRow: React.FC<{
   label: string;
@@ -299,14 +366,14 @@ export const TileInfoDialog: React.FC<TileInfoDialogProps> = ({
   const [error, setError] = useState<string | null>(null);
   const [spaceShortUrl, setSpaceShortUrl] = useState(tile?.shortUrl || '');
 
-  const [modalPosition, setModalPosition] = useState({ x: 0, y: 0 });
-  const [modalSize, setModalSize] = useState({ width: 0, height: 0 });
+  const [modalPosition, setModalPosition] = useState<DialogPoint>({ x: 0, y: 0 });
+  const [modalSize, setModalSize] = useState<DialogSize>({ width: 0, height: 0 });
   const [isDragging, setIsDragging] = useState(false);
   const [isResizing, setIsResizing] = useState(false);
-  const dragStartRef = useRef({ x: 0, y: 0 });
+  const dragStartRef = useRef({ x: 0, y: 0, posX: 0, posY: 0 });
   const resizeStartRef = useRef({ x: 0, y: 0, width: 0, height: 0 });
-  const modalPositionRef = useRef({ x: 0, y: 0 });
-  const modalSizeRef = useRef({ width: 0, height: 0 });
+  const modalPositionRef = useRef<DialogPoint>({ x: 0, y: 0 });
+  const modalSizeRef = useRef<DialogSize>({ width: 0, height: 0 });
   const modalRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
@@ -338,32 +405,23 @@ export const TileInfoDialog: React.FC<TileInfoDialogProps> = ({
     };
   }, [isOpen, onClose]);
 
-  // Initialize centered size/position when dialog opens; reset when closed
+  // Center using zoom-aware layout viewport (html { zoom } breaks window.innerWidth math)
   useEffect(() => {
-    if (isOpen) {
-      const timer = setTimeout(() => {
-        if (modalSize.width === 0 && modalSize.height === 0) {
-          const defaultWidth = Math.min(672, window.innerWidth - 40);
-          const defaultHeight = Math.min(720, window.innerHeight - 40);
-          const newSize = { width: defaultWidth, height: defaultHeight };
-          setModalSize(newSize);
-          modalSizeRef.current = newSize;
-          const newPos = {
-            x: (window.innerWidth - defaultWidth) / 2,
-            y: (window.innerHeight - defaultHeight) / 2,
-          };
-          setModalPosition(newPos);
-          modalPositionRef.current = newPos;
-        }
-      }, 10);
-      return () => clearTimeout(timer);
+    if (!isOpen) {
+      setModalPosition({ x: 0, y: 0 });
+      setModalSize({ width: 0, height: 0 });
+      modalPositionRef.current = { x: 0, y: 0 };
+      modalSizeRef.current = { width: 0, height: 0 };
+      return;
     }
 
-    setModalPosition({ x: 0, y: 0 });
-    setModalSize({ width: 0, height: 0 });
-    modalPositionRef.current = { x: 0, y: 0 };
-    modalSizeRef.current = { width: 0, height: 0 };
-  }, [isOpen, modalSize.width, modalSize.height]);
+    const nextSize = clampDialogSize(defaultDialogSize());
+    const nextPos = clampDialogPos(centeredDialogPos(nextSize), nextSize);
+    setModalSize(nextSize);
+    setModalPosition(nextPos);
+    modalSizeRef.current = nextSize;
+    modalPositionRef.current = nextPos;
+  }, [isOpen]);
 
   useEffect(() => {
     if (!isDragging && !isResizing) {
@@ -372,29 +430,63 @@ export const TileInfoDialog: React.FC<TileInfoDialogProps> = ({
     }
   }, [modalPosition, modalSize, isDragging, isResizing]);
 
+  // Keep dialog on-screen when the viewport or page zoom changes
+  useEffect(() => {
+    if (!isOpen || modalSize.width === 0) return;
+
+    const reclamp = () => {
+      const nextSize = clampDialogSize(modalSizeRef.current, modalPositionRef.current);
+      const nextPos = clampDialogPos(modalPositionRef.current, nextSize);
+      modalSizeRef.current = nextSize;
+      modalPositionRef.current = nextPos;
+      setModalSize(nextSize);
+      setModalPosition(nextPos);
+      if (modalRef.current) {
+        modalRef.current.style.left = `${nextPos.x}px`;
+        modalRef.current.style.top = `${nextPos.y}px`;
+        modalRef.current.style.width = `${nextSize.width}px`;
+        modalRef.current.style.height = `${nextSize.height}px`;
+      }
+    };
+
+    window.addEventListener('resize', reclamp);
+    window.visualViewport?.addEventListener('resize', reclamp);
+    window.visualViewport?.addEventListener('scroll', reclamp);
+    return () => {
+      window.removeEventListener('resize', reclamp);
+      window.visualViewport?.removeEventListener('resize', reclamp);
+      window.visualViewport?.removeEventListener('scroll', reclamp);
+    };
+  }, [isOpen, modalSize.width]);
+
   const handleDragStart = (e: React.MouseEvent) => {
     const target = e.target as HTMLElement;
-    if (target.tagName === 'BUTTON' || target.closest('button')) {
-      return;
-    }
+    if (target.closest('button, a')) return;
+    e.preventDefault();
     e.stopPropagation();
-    if (!modalRef.current) return;
     setIsDragging(true);
     dragStartRef.current = {
-      x: e.clientX - (modalPositionRef.current.x || 0),
-      y: e.clientY - (modalPositionRef.current.y || 0),
+      x: e.clientX,
+      y: e.clientY,
+      posX: modalPositionRef.current.x,
+      posY: modalPositionRef.current.y,
     };
   };
 
   const handleDrag = useCallback((e: MouseEvent) => {
-    if (!isDragging || !modalRef.current) return;
-    const newX = e.clientX - dragStartRef.current.x;
-    const newY = e.clientY - dragStartRef.current.y;
-    modalPositionRef.current = { x: newX, y: newY };
-    modalRef.current.style.left = `${newX}px`;
-    modalRef.current.style.top = `${newY}px`;
-    modalRef.current.style.position = 'absolute';
-  }, [isDragging]);
+    if (!modalRef.current) return;
+    const zoom = getCssZoom();
+    const next = clampDialogPos(
+      {
+        x: dragStartRef.current.posX + (e.clientX - dragStartRef.current.x) / zoom,
+        y: dragStartRef.current.posY + (e.clientY - dragStartRef.current.y) / zoom,
+      },
+      modalSizeRef.current
+    );
+    modalPositionRef.current = next;
+    modalRef.current.style.left = `${next.x}px`;
+    modalRef.current.style.top = `${next.y}px`;
+  }, []);
 
   const handleDragEnd = useCallback(() => {
     setModalPosition(modalPositionRef.current);
@@ -402,34 +494,36 @@ export const TileInfoDialog: React.FC<TileInfoDialogProps> = ({
   }, []);
 
   const handleResizeStart = (e: React.MouseEvent) => {
-    e.stopPropagation();
     e.preventDefault();
+    e.stopPropagation();
     if (!modalRef.current) return;
     setIsResizing(true);
     const rect = modalRef.current.getBoundingClientRect();
+    const zoom = getCssZoom();
     resizeStartRef.current = {
       x: e.clientX,
       y: e.clientY,
-      width: rect.width,
-      height: rect.height,
+      width: rect.width / zoom,
+      height: rect.height / zoom,
     };
-    modalPositionRef.current = { x: modalPosition.x, y: modalPosition.y };
   };
 
   const handleResize = useCallback((e: MouseEvent) => {
-    if (!isResizing || !modalRef.current) return;
-    const deltaX = e.clientX - resizeStartRef.current.x;
-    const deltaY = e.clientY - resizeStartRef.current.y;
-    const minWidth = 360;
-    const minHeight = 280;
-    const maxWidth = window.innerWidth - modalPositionRef.current.x;
-    const maxHeight = window.innerHeight - modalPositionRef.current.y;
-    const newWidth = Math.max(minWidth, Math.min(resizeStartRef.current.width + deltaX, maxWidth));
-    const newHeight = Math.max(minHeight, Math.min(resizeStartRef.current.height + deltaY, maxHeight));
-    modalSizeRef.current = { width: newWidth, height: newHeight };
-    modalRef.current.style.width = `${newWidth}px`;
-    modalRef.current.style.height = `${newHeight}px`;
-  }, [isResizing]);
+    if (!modalRef.current) return;
+    const zoom = getCssZoom();
+    const dx = (e.clientX - resizeStartRef.current.x) / zoom;
+    const dy = (e.clientY - resizeStartRef.current.y) / zoom;
+    const nextSize = clampDialogSize(
+      {
+        width: resizeStartRef.current.width + dx,
+        height: resizeStartRef.current.height + dy,
+      },
+      modalPositionRef.current
+    );
+    modalSizeRef.current = nextSize;
+    modalRef.current.style.width = `${nextSize.width}px`;
+    modalRef.current.style.height = `${nextSize.height}px`;
+  }, []);
 
   const handleResizeEnd = useCallback(() => {
     setModalSize(modalSizeRef.current);
@@ -503,36 +597,41 @@ export const TileInfoDialog: React.FC<TileInfoDialogProps> = ({
     return `${Math.floor(diff / 31536000)} years ago`;
   };
 
-  if (!isOpen) return null;
+  if (!isOpen || typeof document === 'undefined' || modalSize.width === 0) return null;
 
   const headerTitle = categoryInfo ? categoryInfo.categoryName : (tileInfo?.title || tile?.title || 'Tile');
   const headerEmoji = categoryInfo ? '📂' : '🧩';
   const headerSubtitle = categoryInfo ? 'Category details & permissions' : 'Space metadata, ownership & access';
-  const positioned = modalSize.width > 0;
 
-  return (
-    <div className="fixed inset-0 z-50 bg-slate-900/50 dark:bg-black/70 backdrop-blur-[2px]">
+  return createPortal(
+    <div className="fixed inset-0 z-[99999]" role="presentation">
+      <div
+        className="absolute inset-0 bg-slate-900/50 dark:bg-black/70 backdrop-blur-[2px]"
+        onClick={onClose}
+        aria-hidden
+      />
       <div
         ref={modalRef}
-        className={`bg-white dark:bg-slate-800 rounded-2xl shadow-2xl overflow-hidden border border-slate-200/80 dark:border-slate-700 flex flex-col ${isDragging ? 'cursor-move' : ''} ${isDragging || isResizing ? 'will-change-transform' : ''}`}
+        role="dialog"
+        aria-modal="true"
+        aria-labelledby="tile-info-dialog-title"
+        className={`absolute bg-white dark:bg-slate-800 rounded-2xl shadow-2xl overflow-hidden border border-slate-200/80 dark:border-slate-700 flex flex-col ${
+          isDragging || isResizing ? 'will-change-transform' : ''
+        }`}
         style={{
-          width: positioned ? `${modalSize.width}px` : 'min(672px, calc(100vw - 2rem))',
-          height: positioned ? `${modalSize.height}px` : 'min(720px, calc(100vh - 2rem))',
-          minWidth: '360px',
-          minHeight: '280px',
-          maxWidth: '95vw',
-          maxHeight: '95vh',
-          left: positioned ? `${modalPosition.x}px` : '50%',
-          top: positioned ? `${modalPosition.y}px` : '50%',
-          position: 'absolute',
-          transform: positioned ? undefined : 'translate(-50%, -50%)',
+          left: modalPosition.x,
+          top: modalPosition.y,
+          width: modalSize.width,
+          height: modalSize.height,
           transition: isDragging || isResizing ? 'none' : undefined,
         }}
-        onMouseDown={(e) => e.stopPropagation()}
+        onClick={(e) => e.stopPropagation()}
       >
         <div
           onMouseDown={handleDragStart}
-          className="shrink-0 z-10 border-b border-sky-100 dark:border-slate-700 bg-gradient-to-r from-sky-50 via-white to-indigo-50 dark:from-slate-800 dark:via-slate-800 dark:to-indigo-950/40 px-5 sm:px-6 py-4 flex items-start justify-between gap-3 select-none cursor-move"
+          className={`shrink-0 z-10 border-b border-sky-100 dark:border-slate-700 bg-gradient-to-r from-sky-50 via-white to-indigo-50 dark:from-slate-800 dark:via-slate-800 dark:to-indigo-950/40 px-5 sm:px-6 py-4 flex items-start justify-between gap-3 select-none cursor-move ${
+            isDragging ? 'cursor-grabbing' : ''
+          }`}
         >
           <div className="flex items-start gap-3 min-w-0">
             <div className="h-11 w-11 rounded-xl bg-gradient-to-br from-sky-500 to-indigo-600 text-white shadow-md shadow-sky-500/20 flex items-center justify-center text-xl shrink-0" aria-hidden="true">
@@ -542,13 +641,14 @@ export const TileInfoDialog: React.FC<TileInfoDialogProps> = ({
               <p className="text-[11px] uppercase tracking-[0.14em] font-semibold text-sky-700/80 dark:text-sky-300/80">
                 {categoryInfo ? 'Category Information' : 'Tile Information'}
               </p>
-              <h2 className="text-xl sm:text-2xl font-bold text-slate-900 dark:text-white truncate">
+              <h2 id="tile-info-dialog-title" className="text-xl sm:text-2xl font-bold text-slate-900 dark:text-white truncate">
                 {headerTitle}
               </h2>
               <p className="text-xs text-slate-500 dark:text-slate-400 mt-0.5">{headerSubtitle}</p>
             </div>
           </div>
           <button
+            type="button"
             onClick={onClose}
             className="p-2 hover:bg-white/80 dark:hover:bg-slate-700 rounded-lg transition-colors shrink-0 cursor-pointer"
             aria-label="Close"
@@ -557,7 +657,7 @@ export const TileInfoDialog: React.FC<TileInfoDialogProps> = ({
           </button>
         </div>
 
-        <div className="flex-1 min-h-0 p-5 sm:p-6 overflow-y-auto">
+        <div className="flex-1 min-h-0 p-5 sm:p-6 pb-10 overflow-y-auto">
           {categoryInfo ? (
             <CategoryInfoView categoryInfo={categoryInfo} formatDate={formatDate} formatRelativeTime={formatRelativeTime} />
           ) : loading ? (
@@ -582,19 +682,40 @@ export const TileInfoDialog: React.FC<TileInfoDialogProps> = ({
           ) : null}
         </div>
 
+        {/* Bottom drag strip — reachable if the header is off-screen */}
+        <div
+          onMouseDown={handleDragStart}
+          className={`absolute left-0 right-5 bottom-0 h-7 cursor-move flex items-center justify-center gap-1.5 select-none border-t border-slate-200/80 dark:border-slate-700/80 z-[5] ${
+            isDragging
+              ? 'bg-sky-100/90 dark:bg-sky-950/50'
+              : 'bg-slate-50/95 dark:bg-slate-800/95 hover:bg-slate-100 dark:hover:bg-slate-700/80'
+          }`}
+          title="Drag to move"
+          role="presentation"
+        >
+          <span className="w-8 h-1 rounded-full bg-slate-300 dark:bg-slate-500" aria-hidden />
+          <span className="text-[10px] font-medium text-slate-400 dark:text-slate-500 uppercase tracking-wide">
+            Drag
+          </span>
+          <span className="w-8 h-1 rounded-full bg-slate-300 dark:bg-slate-500" aria-hidden />
+        </div>
+
+        {/* Resize handle — overlay only; does not affect layout size */}
         <div
           onMouseDown={handleResizeStart}
-          className={`absolute bottom-0 right-0 w-6 h-6 cursor-nwse-resize flex items-end justify-end rounded-br-2xl ${isResizing ? 'bg-sky-500/20' : 'hover:bg-slate-200/50 dark:hover:bg-slate-700/50'}`}
+          className={`absolute bottom-0 right-0 w-5 h-5 cursor-nwse-resize flex items-end justify-end p-0.5 rounded-br-2xl z-10 ${
+            isResizing ? 'bg-sky-500/20' : 'hover:bg-slate-200/50 dark:hover:bg-slate-700/50'
+          }`}
           title="Resize"
-          aria-hidden="true"
+          aria-label="Resize dialog"
         >
-          <div className="w-4 h-4 relative mr-0.5 mb-0.5">
-            <div className="absolute bottom-0 right-0 w-3 h-3 border-r-2 border-b-2 border-slate-400 dark:border-slate-500 rounded-br-lg"></div>
-            <div className="absolute bottom-1 right-1 w-2 h-2 border-r border-b border-slate-400 dark:border-slate-500 rounded-br"></div>
-          </div>
+          <svg width="12" height="12" viewBox="0 0 12 12" className="text-slate-400 dark:text-slate-500" aria-hidden>
+            <path d="M10 2L2 10M10 6L6 10M10 10L10 10" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" fill="none" />
+          </svg>
         </div>
       </div>
-    </div>
+    </div>,
+    document.body
   );
 };
 

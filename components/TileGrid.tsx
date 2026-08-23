@@ -13888,7 +13888,7 @@ You may also wrap the array in an object: { "messages": [ ... ] }.
         </Suspense>,
         document.body
       )}
-      {tileInfoDialog && (
+      {tileInfoDialog && createPortal(
         <Suspense fallback={null}>
           <TileInfoDialog
             isOpen={!!tileInfoDialog}
@@ -13896,7 +13896,8 @@ You may also wrap the array in an object: { "messages": [ ... ] }.
             tile={tileInfoDialog.tile}
             categoryInfo={tileInfoDialog.categoryInfo}
           />
-        </Suspense>
+        </Suspense>,
+        document.body
       )}
     </div >
   );
