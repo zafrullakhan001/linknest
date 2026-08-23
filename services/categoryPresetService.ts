@@ -279,3 +279,133 @@ export function flattenCategoryPresetsForSync(
   }
   return out;
 }
+
+export interface CategoryPresetsExportFile {
+  version: 1;
+  kind: 'linknest-category-presets';
+  scope: 'builtin' | 'user';
+  exportedAt: string;
+  presets: Array<{ tab_key: string; name: string; visible: string[] }>;
+  activeByTab?: Record<string, string>;
+}
+
+const ALLOWED_EXPORT_TABS = new Set([
+  'favorites', 'public', 'public-favorites', 'your-apps', 'staging', 'private',
+  'scheduled', 'expired', 'archive', 'recycle-bin', 'monitoring', 'monitorv2',
+]);
+
+function normalizeExportPresetItem(raw: unknown): { tab_key: string; name: string; visible: string[] } | null {
+  if (!raw || typeof raw !== 'object') return null;
+  const item = raw as Record<string, unknown>;
+  const tabKey = typeof item.tab_key === 'string' ? item.tab_key.trim() : '';
+  const name = typeof item.name === 'string' ? item.name.trim().slice(0, 60) : '';
+  if (!tabKey || !ALLOWED_EXPORT_TABS.has(tabKey) || !name) return null;
+  const visible = Array.isArray(item.visible)
+    ? item.visible
+        .filter((n): n is string => typeof n === 'string' && n.trim().length > 0)
+        .map((n) => n.trim())
+        .slice(0, 200)
+    : [];
+  return { tab_key: tabKey, name, visible };
+}
+
+export function buildCategoryPresetsExportFile(
+  presets: Array<{ tab_key: string; name: string; visible: string[] }>,
+  scope: 'builtin' | 'user',
+  activeByTab?: Record<string, string>
+): CategoryPresetsExportFile {
+  const normalized = presets
+    .map((p) => normalizeExportPresetItem(p))
+    .filter((p): p is { tab_key: string; name: string; visible: string[] } => !!p);
+  const file: CategoryPresetsExportFile = {
+    version: 1,
+    kind: 'linknest-category-presets',
+    scope,
+    exportedAt: new Date().toISOString(),
+    presets: normalized,
+  };
+  if (scope === 'user' && activeByTab && Object.keys(activeByTab).length > 0) {
+    file.activeByTab = { ...activeByTab };
+  }
+  return file;
+}
+
+export function parseCategoryPresetsImportFile(raw: unknown): {
+  scope: 'builtin' | 'user' | 'unknown';
+  presets: Array<{ tab_key: string; name: string; visible: string[] }>;
+  activeByTab: Record<string, string>;
+} {
+  if (!raw || typeof raw !== 'object') {
+    throw new Error('Invalid JSON: expected an object');
+  }
+  const obj = raw as Record<string, unknown>;
+  const presetsRaw = Array.isArray(obj.presets) ? obj.presets : Array.isArray(raw) ? raw : null;
+  if (!presetsRaw) {
+    throw new Error('Invalid file: missing "presets" array');
+  }
+  const presets = presetsRaw
+    .map((item) => normalizeExportPresetItem(item))
+    .filter((p): p is { tab_key: string; name: string; visible: string[] } => !!p);
+  if (presets.length === 0) {
+    throw new Error('No valid category presets found in file');
+  }
+  if (presets.length > 100) {
+    throw new Error('Too many presets in file (max 100)');
+  }
+  const scopeRaw = obj.scope === 'builtin' || obj.scope === 'user' ? obj.scope : 'unknown';
+  const activeByTab: Record<string, string> = {};
+  if (obj.activeByTab && typeof obj.activeByTab === 'object' && !Array.isArray(obj.activeByTab)) {
+    for (const [tab, id] of Object.entries(obj.activeByTab as Record<string, unknown>)) {
+      if (typeof id === 'string' && id.trim() && ALLOWED_EXPORT_TABS.has(tab)) {
+        activeByTab[tab] = id.trim();
+      }
+    }
+  }
+  return { scope: scopeRaw, presets, activeByTab };
+}
+
+export function downloadCategoryPresetsJson(
+  presets: Array<{ tab_key: string; name: string; visible: string[] }>,
+  scope: 'builtin' | 'user',
+  activeByTab?: Record<string, string>,
+  filename?: string
+): void {
+  const payload = buildCategoryPresetsExportFile(presets, scope, activeByTab);
+  const blob = new Blob([JSON.stringify(payload, null, 2)], { type: 'application/json' });
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement('a');
+  a.href = url;
+  a.download = filename || `linknest-category-presets-${scope}-${new Date().toISOString().slice(0, 10)}.json`;
+  document.body.appendChild(a);
+  a.click();
+  document.body.removeChild(a);
+  URL.revokeObjectURL(url);
+}
+
+/** Merge imported personal presets into an existing by-tab map (upsert by name, case-insensitive). */
+export function mergeImportedUserPresets(
+  existing: Record<string, CategoryVisibilityPresetItem[]>,
+  imported: Array<{ tab_key: string; name: string; visible: string[] }>,
+  makeIds: () => string
+): Record<string, CategoryVisibilityPresetItem[]> {
+  const next: Record<string, CategoryVisibilityPresetItem[]> = {};
+  for (const [tab, list] of Object.entries(existing)) {
+    next[tab] = list
+      .filter((p) => p.source !== 'builtin' && !isBuiltinPresetId(p.id))
+      .map((p) => ({ ...p, source: 'user' as const }));
+  }
+  for (const item of imported) {
+    const list = [...(next[item.tab_key] || [])];
+    const idx = list.findIndex((p) => p.name.toLowerCase() === item.name.toLowerCase());
+    const row: CategoryVisibilityPresetItem = {
+      id: idx >= 0 ? list[idx].id : makeIds(),
+      name: item.name,
+      visible: [...item.visible],
+      source: 'user',
+    };
+    if (idx >= 0) list[idx] = row;
+    else list.push(row);
+    next[item.tab_key] = list;
+  }
+  return next;
+}

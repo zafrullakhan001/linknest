@@ -19,7 +19,7 @@ import { useAuth } from '../contexts/AuthContext';
 import { useAccessRestrictionGate } from '../contexts/AccessRestrictionContext';
 import { AccessRestrictionsEditor, AccessRestrictionsBadge } from './AccessRestrictionsEditor';
 import { userPreferencesService } from '../services/userPreferencesService';
-import { categoryPresetService, groupDbCategoryPresets, groupBuiltinCategoryPresets, flattenCategoryPresetsForSync, mergeCategoryPresetsForTab, isBuiltinPresetId } from '../services/categoryPresetService';
+import { categoryPresetService, groupDbCategoryPresets, groupBuiltinCategoryPresets, flattenCategoryPresetsForSync, mergeCategoryPresetsForTab, isBuiltinPresetId, downloadCategoryPresetsJson, parseCategoryPresetsImportFile, mergeImportedUserPresets } from '../services/categoryPresetService';
 import { getPublicFavorites, togglePublicFavorite, isPublicFavorite, getPublicActiveTab, setPublicActiveTab, exportPublicFavorites, importPublicFavorites, clearPublicFavorites, getPublicLinkFavorites, togglePublicLinkFavorite, clearPublicLinkFavorites, getPublicLinkFavoriteDetails, syncPublicLinkFavoriteDetails, upsertPublicLinkFavoriteDetail, removePublicLinkFavoriteDetail, getPublicFavoritesInstanceLabel, setPublicFavorites as writePublicFavorites, setPublicLinkFavorites as writePublicLinkFavorites, swapPublicFavoriteIds, getPublicFavoritesLayout, setPublicFavoritesLayout } from '../services/publicFavoritesService';
 import { linkHealthService } from '../services/linkHealthService';
 import { favoriteLinkHealthService, LinkHealthCheckResult } from '../services/favoriteLinkHealthService';
@@ -3649,6 +3649,7 @@ export const TileGrid: React.FC<TileGridProps> = ({
   });
 
   const [presetNameDraft, setPresetNameDraft] = useState('');
+  const categoryPresetImportInputRef = useRef<HTMLInputElement>(null);
 
   useEffect(() => {
     try {
@@ -3878,6 +3879,62 @@ export const TileGrid: React.FC<TileGridProps> = ({
         console.error('Failed to sync category presets to the database', error);
       });
   }, [isAuthenticated]);
+
+  const exportUserCategoryPresets = useCallback(() => {
+    const rows: Array<{ tab_key: string; name: string; visible: string[] }> = [];
+    for (const [tabKey, list] of Object.entries(categoryPresetsByTab)) {
+      for (const preset of list || []) {
+        if (preset.source === 'builtin' || isBuiltinPresetId(preset.id)) continue;
+        rows.push({ tab_key: tabKey, name: preset.name, visible: [...preset.visible] });
+      }
+    }
+    if (rows.length === 0) {
+      alert('No personal presets to export.');
+      return;
+    }
+    const activeExport: Record<string, string> = {};
+    for (const [tab, id] of Object.entries(activePresetIdByTab)) {
+      if (!id || isBuiltinPresetId(id)) continue;
+      const match = (categoryPresetsByTab[tab] || []).find((p) => p.id === id);
+      // Export active as preset name so import can resolve across machines
+      if (match) activeExport[tab] = match.name;
+    }
+    downloadCategoryPresetsJson(rows, 'user', activeExport);
+  }, [categoryPresetsByTab, activePresetIdByTab]);
+
+  const importUserCategoryPresetsFile = useCallback(async (file: File) => {
+    try {
+      const text = await file.text();
+      const parsed = JSON.parse(text);
+      const { scope, presets: incoming, activeByTab: importedActive } = parseCategoryPresetsImportFile(parsed);
+      if (scope === 'builtin') {
+        const ok = window.confirm(
+          'This file looks like admin built-in presets. Import them as your personal presets anyway?'
+        );
+        if (!ok) return;
+      }
+      const merged = mergeImportedUserPresets(categoryPresetsByTab, incoming, generateUuid);
+      const nextActive: Record<string, string> = { ...activePresetIdByTab };
+      for (const [tab, activeHint] of Object.entries(importedActive)) {
+        const list = merged[tab] || [];
+        const byId = list.find((p) => p.id === activeHint);
+        if (byId) {
+          nextActive[tab] = byId.id;
+          continue;
+        }
+        const byName = list.find((p) => p.name.toLowerCase() === activeHint.toLowerCase());
+        if (byName) nextActive[tab] = byName.id;
+      }
+      setCategoryPresetsByTab(merged);
+      setActivePresetIdByTab(nextActive);
+      if (isAuthenticated) {
+        persistCategoryPresetsToDb(merged, nextActive);
+      }
+      alert(`Imported ${incoming.length} personal preset${incoming.length === 1 ? '' : 's'}`);
+    } catch (error) {
+      alert(error instanceof Error ? error.message : 'Failed to import presets');
+    }
+  }, [categoryPresetsByTab, activePresetIdByTab, isAuthenticated, persistCategoryPresetsToDb]);
 
   // Edit Modal Tab State
   const [editModalActiveTab, setEditModalActiveTab] = useState<'general' | 'decoration' | 'messages'>('general');
@@ -9495,6 +9552,33 @@ You may also wrap the array in an object: { "messages": [ ... ] }.
                 Name used by a built-in preset
               </span>
             )}
+            <button
+              type="button"
+              onClick={exportUserCategoryPresets}
+              className="px-3 py-1.5 text-sm font-medium text-slate-600 dark:text-slate-300 hover:text-slate-900 dark:hover:text-white hover:bg-slate-100 dark:hover:bg-slate-800 rounded-lg border border-slate-200 dark:border-slate-700 transition-colors"
+              title="Export your personal presets as JSON"
+            >
+              Export
+            </button>
+            <button
+              type="button"
+              onClick={() => categoryPresetImportInputRef.current?.click()}
+              className="px-3 py-1.5 text-sm font-medium text-slate-600 dark:text-slate-300 hover:text-slate-900 dark:hover:text-white hover:bg-slate-100 dark:hover:bg-slate-800 rounded-lg border border-slate-200 dark:border-slate-700 transition-colors"
+              title="Import personal presets from JSON"
+            >
+              Import
+            </button>
+            <input
+              ref={categoryPresetImportInputRef}
+              type="file"
+              accept="application/json,.json"
+              className="hidden"
+              onChange={(e) => {
+                const file = e.target.files?.[0];
+                if (file) void importUserCategoryPresetsFile(file);
+                e.target.value = '';
+              }}
+            />
           </div>
         <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-4">
           {Object.keys(groupedTiles).map((groupName) => {

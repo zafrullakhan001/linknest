@@ -1,6 +1,8 @@
-import React, { useCallback, useEffect, useMemo, useState } from 'react';
+import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
   categoryPresetService,
+  downloadCategoryPresetsJson,
+  parseCategoryPresetsImportFile,
   type DbCategoryPreset,
 } from '../services/categoryPresetService';
 
@@ -51,6 +53,8 @@ export const CategoryPresetsAdmin: React.FC<CategoryPresetsAdminProps> = ({ setE
   const [name, setName] = useState('');
   const [visibleText, setVisibleText] = useState('');
   const [filterTab, setFilterTab] = useState<string>('all');
+  const [importing, setImporting] = useState(false);
+  const fileInputRef = useRef<HTMLInputElement>(null);
 
   const load = useCallback(async () => {
     setLoading(true);
@@ -131,6 +135,45 @@ export const CategoryPresetsAdmin: React.FC<CategoryPresetsAdminProps> = ({ setE
     }
   };
 
+  const handleExport = () => {
+    const rows = presets.map((p) => ({
+      tab_key: p.tab_key,
+      name: p.name,
+      visible: Array.isArray(p.visible) ? p.visible : [],
+    }));
+    if (rows.length === 0) {
+      setError('Nothing to export — add a built-in preset first.');
+      return;
+    }
+    downloadCategoryPresetsJson(rows, 'builtin');
+  };
+
+  const handleImportFile = async (file: File) => {
+    setImporting(true);
+    setError('');
+    try {
+      const text = await file.text();
+      const parsed = JSON.parse(text);
+      const { scope, presets: incoming } = parseCategoryPresetsImportFile(parsed);
+      if (scope === 'user') {
+        const ok = confirm(
+          'This file looks like personal (browser/user) presets. Import them as built-in admin presets anyway?'
+        );
+        if (!ok) return;
+      }
+      for (const item of incoming) {
+        await categoryPresetService.saveBuiltin(item.tab_key, item.name, item.visible);
+      }
+      await load();
+      alert(`Imported ${incoming.length} built-in preset${incoming.length === 1 ? '' : 's'}`);
+    } catch (err: unknown) {
+      setError(err instanceof Error ? err.message : 'Failed to import category presets');
+    } finally {
+      setImporting(false);
+      if (fileInputRef.current) fileInputRef.current.value = '';
+    }
+  };
+
   return (
     <div className="space-y-6">
       <div className={ADMIN_SECTION_CARD}>
@@ -205,6 +248,32 @@ export const CategoryPresetsAdmin: React.FC<CategoryPresetsAdminProps> = ({ setE
                 Cancel edit
               </button>
             )}
+            <button
+              type="button"
+              onClick={handleExport}
+              disabled={saving || importing || presets.length === 0}
+              className="px-4 py-2 text-sm font-medium text-slate-700 dark:text-slate-200 hover:bg-slate-100 dark:hover:bg-slate-700 rounded-lg border border-slate-200 dark:border-slate-600 disabled:opacity-50"
+            >
+              Export JSON
+            </button>
+            <button
+              type="button"
+              onClick={() => fileInputRef.current?.click()}
+              disabled={saving || importing}
+              className="px-4 py-2 text-sm font-medium text-slate-700 dark:text-slate-200 hover:bg-slate-100 dark:hover:bg-slate-700 rounded-lg border border-slate-200 dark:border-slate-600 disabled:opacity-50"
+            >
+              {importing ? 'Importing…' : 'Import JSON'}
+            </button>
+            <input
+              ref={fileInputRef}
+              type="file"
+              accept="application/json,.json"
+              className="hidden"
+              onChange={(e) => {
+                const file = e.target.files?.[0];
+                if (file) void handleImportFile(file);
+              }}
+            />
           </div>
         </div>
       </div>
