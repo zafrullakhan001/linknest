@@ -5093,6 +5093,235 @@ export const TileDetail: React.FC<TileDetailProps> = ({
         }
     };
 
+    const handleViewAddTab = async () => {
+        if (tile.canEdit !== true || tile.canAddTabs === false || viewQuickEditSaving) return;
+        const ordered = [...(tile.tabs || [])].sort((a, b) => (a.position ?? 0) - (b.position ?? 0));
+        const newTab: Tab = {
+            id: generateUuid(),
+            title: 'New Tab',
+            position: ordered.length,
+            sections: [],
+            visibility: 'public',
+            published: true,
+        };
+        const nextTabs = [...ordered, newTab].map((t, idx) => ({ ...t, position: idx }));
+        setViewQuickEditSaving(true);
+        try {
+            await persistViewModeTile({ ...tile, tabs: nextTabs });
+            setSelectedTabId(newTab.id);
+            writeTileHashTab(tabParamFor(newTab, nextTabs), 'push', null);
+            setViewRename({ kind: 'tab', tabId: newTab.id, value: newTab.title });
+        } catch (e) {
+            console.error('Failed to add tab', e);
+            alert(e instanceof Error ? e.message : 'Failed to add tab');
+        } finally {
+            setViewQuickEditSaving(false);
+        }
+    };
+
+    const resolveViewTabId = (): string | null => {
+        const tabs = tile.tabs || [];
+        if (tabs.length === 0) return null;
+        return resolveTabId(tabs, selectedTabIdRef.current || selectedTabId) || tabs[0]?.id || null;
+    };
+
+    const handleViewAddSection = async () => {
+        if (tile.canEdit !== true || tile.canAddSections === false || viewQuickEditSaving) return;
+
+        let tabs = [...(tile.tabs || [])];
+        let tabId = resolveViewTabId();
+
+        // No tabs yet — create a default tab first, then add the section into it
+        if (!tabId || tabs.length === 0) {
+            if (tile.canAddTabs === false) {
+                alert('Cannot add a section: create a tab first.');
+                return;
+            }
+            const newTab: Tab = {
+                id: generateUuid(),
+                title: 'New Tab',
+                position: 0,
+                sections: [],
+                visibility: 'public',
+                published: true,
+            };
+            tabs = [newTab];
+            tabId = newTab.id;
+        }
+
+        const tab = tabs.find((t) => t.id === tabId);
+        if (!tab || !tabId) {
+            alert('Select a tab first, then add a section.');
+            return;
+        }
+
+        const sortedSections = [...(tab.sections || [])].sort((a, b) => (a.position ?? 0) - (b.position ?? 0));
+        const maxPosition = Math.max(...sortedSections.map((s) => s.position ?? 0), -1);
+        const newSection: LinkSection = {
+            id: generateUuid(),
+            title: 'New Section',
+            links: [],
+            richTextContent: [],
+            position: maxPosition + 1,
+            visibility: 'public',
+            published: true,
+        };
+        const nextTabs = tabs.map((t) =>
+            t.id !== tabId
+                ? t
+                : { ...t, sections: [...sortedSections, newSection] }
+        );
+        setViewQuickEditSaving(true);
+        try {
+            await persistViewModeTile({ ...tile, tabs: nextTabs });
+            if (selectedTabId !== tabId) {
+                setSelectedTabId(tabId);
+                const savedTab = nextTabs.find((t) => t.id === tabId);
+                if (savedTab) writeTileHashTab(tabParamFor(savedTab, nextTabs), 'push', newSection.id);
+            } else {
+                writeTileHashTab(tabParamFor(tab, nextTabs), 'replace', newSection.id);
+            }
+            setViewRename({ kind: 'section', tabId, sectionId: newSection.id, value: newSection.title });
+        } catch (e) {
+            console.error('Failed to add section', e);
+            alert(e instanceof Error ? e.message : 'Failed to add section');
+        } finally {
+            setViewQuickEditSaving(false);
+        }
+    };
+
+    const handleViewDeleteTab = async (tabId: string) => {
+        if (tile.canEdit !== true || tile.canDeleteTabs === false || viewQuickEditSaving) return;
+        const tabs = [...(tile.tabs || [])].sort((a, b) => (a.position ?? 0) - (b.position ?? 0));
+        if (tabs.length <= 1) {
+            alert('Cannot delete the last tab. A space must have at least one tab.');
+            return;
+        }
+        const tab = tabs.find((t) => t.id === tabId);
+        if (!tab) return;
+        const label = (tab.title || '').trim() || 'this tab';
+        if (!window.confirm(`Delete "${label}" and all its sections and links? This cannot be undone.`)) return;
+
+        const nextTabs = tabs
+            .filter((t) => t.id !== tabId)
+            .map((t, idx) => ({ ...t, position: idx }));
+        setViewQuickEditSaving(true);
+        try {
+            await persistViewModeTile({ ...tile, tabs: nextTabs });
+            if (viewRename?.kind === 'tab' && viewRename.tabId === tabId) setViewRename(null);
+            const stillSelected = resolveTabId(nextTabs, selectedTabIdRef.current || selectedTabId);
+            if (!stillSelected || stillSelected === tabId) {
+                const fallback = nextTabs[0];
+                if (fallback) {
+                    setSelectedTabId(fallback.id);
+                    writeTileHashTab(tabParamFor(fallback, nextTabs), 'replace', null);
+                }
+            }
+        } catch (e) {
+            console.error('Failed to delete tab', e);
+            alert(e instanceof Error ? e.message : 'Failed to delete tab');
+        } finally {
+            setViewQuickEditSaving(false);
+        }
+    };
+
+    const handleViewDeleteSection = async (tabId: string, sectionId: string) => {
+        if (tile.canEdit !== true || tile.canDeleteSections === false || viewQuickEditSaving) return;
+        const tab = (tile.tabs || []).find((t) => t.id === tabId);
+        const section = tab?.sections?.find((s) => s.id === sectionId);
+        if (!tab || !section) return;
+        const label = (section.title || '').trim() || 'this section';
+        if (!window.confirm(`Delete "${label}" and all its links? This cannot be undone.`)) return;
+
+        const nextSections = [...(tab.sections || [])]
+            .filter((s) => s.id !== sectionId)
+            .sort((a, b) => (a.position ?? 0) - (b.position ?? 0))
+            .map((s, idx) => ({ ...s, position: idx }));
+        const nextTabs = (tile.tabs || []).map((t) =>
+            t.id !== tabId ? t : { ...t, sections: nextSections }
+        );
+        setViewQuickEditSaving(true);
+        try {
+            await persistViewModeTile({ ...tile, tabs: nextTabs });
+            if (viewRename?.kind === 'section' && viewRename.sectionId === sectionId) setViewRename(null);
+        } catch (e) {
+            console.error('Failed to delete section', e);
+            alert(e instanceof Error ? e.message : 'Failed to delete section');
+        } finally {
+            setViewQuickEditSaving(false);
+        }
+    };
+
+    const handleViewCloneTab = async (tabId: string) => {
+        if (tile.canEdit !== true || tile.canAddTabs === false || viewQuickEditSaving) return;
+        const ordered = [...(tile.tabs || [])].sort((a, b) => (a.position ?? 0) - (b.position ?? 0));
+        const index = ordered.findIndex((t) => t.id === tabId);
+        if (index < 0) return;
+        const tabToClone = ordered[index];
+        const clonedTab = cloneTabItem(tabToClone, {
+            appendCopyTitle: true,
+            position: (tabToClone.position ?? index) + 1,
+        });
+        const nextTabs = [
+            ...ordered.slice(0, index + 1),
+            clonedTab,
+            ...ordered.slice(index + 1),
+        ].map((t, idx) => ({ ...t, position: idx }));
+        setViewQuickEditSaving(true);
+        try {
+            await persistViewModeTile({ ...tile, tabs: nextTabs });
+            setSelectedTabId(clonedTab.id);
+            writeTileHashTab(tabParamFor(clonedTab, nextTabs), 'push', null);
+            setViewRename({ kind: 'tab', tabId: clonedTab.id, value: clonedTab.title });
+        } catch (e) {
+            console.error('Failed to clone tab', e);
+            alert(e instanceof Error ? e.message : 'Failed to clone tab');
+        } finally {
+            setViewQuickEditSaving(false);
+        }
+    };
+
+    const handleViewCloneSection = async (tabId: string, sectionId: string) => {
+        if (tile.canEdit !== true || tile.canAddSections === false || viewQuickEditSaving) return;
+        const tab = (tile.tabs || []).find((t) => t.id === tabId);
+        if (!tab) return;
+        const sortedSections = [...(tab.sections || [])].sort(
+            (a, b) => (a.position ?? 0) - (b.position ?? 0)
+        );
+        const index = sortedSections.findIndex((s) => s.id === sectionId);
+        if (index < 0) return;
+        const sectionToClone = sortedSections[index];
+        const clonedSection = cloneSectionItem(sectionToClone, {
+            appendCopyTitle: true,
+            position: (sectionToClone.position ?? index) + 1,
+        });
+        const nextSections = [
+            ...sortedSections.slice(0, index + 1),
+            clonedSection,
+            ...sortedSections.slice(index + 1),
+        ].map((s, idx) => ({ ...s, position: idx }));
+        const nextTabs = (tile.tabs || []).map((t) =>
+            t.id !== tabId ? t : { ...t, sections: nextSections }
+        );
+        setViewQuickEditSaving(true);
+        try {
+            await persistViewModeTile({ ...tile, tabs: nextTabs });
+            const savedTab = nextTabs.find((t) => t.id === tabId) || tab;
+            writeTileHashTab(tabParamFor(savedTab, nextTabs), 'replace', clonedSection.id);
+            setViewRename({
+                kind: 'section',
+                tabId,
+                sectionId: clonedSection.id,
+                value: clonedSection.title,
+            });
+        } catch (e) {
+            console.error('Failed to clone section', e);
+            alert(e instanceof Error ? e.message : 'Failed to clone section');
+        } finally {
+            setViewQuickEditSaving(false);
+        }
+    };
+
     const handleUpdateLink = (tabId: string, sectionId: string, linkId: string) => {
         const state = editLinkState[linkId];
         if (!state || !state.label.trim() || !state.url.trim()) return;
@@ -6712,9 +6941,13 @@ export const TileDetail: React.FC<TileDetailProps> = ({
                         isContentVisible(rt) && canViewerSeeByVisibility(rt)
                     )
                 }))
+                // Hide empty sections from viewers; editors keep them so newly added
+                // sections (and empty ones they manage) still appear in view mode.
                 .filter(section =>
                     section.links.length > 0 ||
-                    (section.richTextContent?.length ?? 0) > 0
+                    (section.richTextContent?.length ?? 0) > 0 ||
+                    tile.canEdit === true ||
+                    !!user?.is_admin
                 );
         }
 
@@ -6772,6 +7005,25 @@ export const TileDetail: React.FC<TileDetailProps> = ({
         !viewQuickEditSaving;
     const canQuickEditTitles =
         tile.canEdit === true &&
+        !viewQuickEditSaving;
+    const canQuickAddTabs =
+        tile.canEdit === true &&
+        tile.canAddTabs !== false &&
+        !viewQuickEditSaving;
+    const canQuickAddSections =
+        tile.canEdit === true &&
+        tile.canAddSections !== false &&
+        !viewQuickEditSaving;
+    const canQuickCloneTabs = canQuickAddTabs;
+    const canQuickCloneSections = canQuickAddSections;
+    const canQuickDeleteTabs =
+        tile.canEdit === true &&
+        tile.canDeleteTabs !== false &&
+        !viewQuickEditSaving &&
+        displayTabs.length > 1;
+    const canQuickDeleteSections =
+        tile.canEdit === true &&
+        tile.canDeleteSections !== false &&
         !viewQuickEditSaving;
     const canReorderTabs = canViewReorder && displayTabs.length > 1;
     const verticalTabsSearchQuery = verticalTabsSearch.trim().toLowerCase();
@@ -7832,6 +8084,42 @@ export const TileDetail: React.FC<TileDetailProps> = ({
 
                                     {/* View Layout Toggle */}
                                     <div className="flex items-center gap-2 flex-wrap justify-end">
+                                        {(canQuickAddTabs || canQuickAddSections) && (
+                                            <div className="flex items-center gap-1 bg-slate-100 dark:bg-slate-800 rounded-lg p-1">
+                                                {canQuickAddTabs && (
+                                                    <button
+                                                        type="button"
+                                                        onClick={() => { void handleViewAddTab(); }}
+                                                        className="px-2.5 py-1.5 text-xs font-medium rounded-md text-slate-600 dark:text-slate-400 hover:text-brand-600 dark:hover:text-brand-400 hover:bg-white dark:hover:bg-slate-700 transition-all inline-flex items-center gap-1.5"
+                                                        title="Add new tab"
+                                                        aria-label="Add new tab"
+                                                    >
+                                                        {/* Browser-tab style + plus */}
+                                                        <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" strokeWidth={1.75} stroke="currentColor" className="w-4 h-4" aria-hidden>
+                                                            <path strokeLinecap="round" strokeLinejoin="round" d="M3.75 6.75A2.25 2.25 0 016 4.5h4.5a.75.75 0 01.53.22l1.28 1.28a.75.75 0 00.53.22H18A2.25 2.25 0 0120.25 8.25v9A2.25 2.25 0 0118 19.5H6a2.25 2.25 0 01-2.25-2.25v-10.5z" />
+                                                            <path strokeLinecap="round" strokeLinejoin="round" d="M12 11.25v4.5m2.25-2.25h-4.5" />
+                                                        </svg>
+                                                        <span className="hidden sm:inline">Tab</span>
+                                                    </button>
+                                                )}
+                                                {canQuickAddSections && (
+                                                    <button
+                                                        type="button"
+                                                        onClick={() => { void handleViewAddSection(); }}
+                                                        className="px-2.5 py-1.5 text-xs font-medium rounded-md text-slate-600 dark:text-slate-400 hover:text-brand-600 dark:hover:text-brand-400 hover:bg-white dark:hover:bg-slate-700 transition-all inline-flex items-center gap-1.5"
+                                                        title="Add new section to the current tab"
+                                                        aria-label="Add new section"
+                                                    >
+                                                        {/* Section/card + plus */}
+                                                        <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" strokeWidth={1.75} stroke="currentColor" className="w-4 h-4" aria-hidden>
+                                                            <path strokeLinecap="round" strokeLinejoin="round" d="M3.75 6.75h16.5M3.75 12h16.5m-16.5 5.25H12" />
+                                                            <path strokeLinecap="round" strokeLinejoin="round" d="M16.5 18.75v-4.5m2.25 2.25h-4.5" />
+                                                        </svg>
+                                                        <span className="hidden sm:inline">Section</span>
+                                                    </button>
+                                                )}
+                                            </div>
+                                        )}
                                         <span className="text-xs font-medium text-slate-500 dark:text-slate-400">View:</span>
                                         <div className="flex items-center gap-1 bg-slate-100 dark:bg-slate-800 rounded-lg p-1">
                                             <button
@@ -8344,29 +8632,83 @@ export const TileDetail: React.FC<TileDetailProps> = ({
                                                                             ) : (
                                                                                 <span className="flex-1 min-w-0 font-semibold leading-snug break-words line-clamp-2 inline-flex items-start gap-1">
                                                                                     <span className="min-w-0 break-words">{tab.title}</span>
-                                                                                    {canQuickEditTitles && (
-                                                                                        <span
-                                                                                            role="button"
-                                                                                            tabIndex={0}
-                                                                                            onClick={(e) => {
-                                                                                                e.preventDefault();
-                                                                                                e.stopPropagation();
-                                                                                                startViewRenameTab(tab);
-                                                                                            }}
-                                                                                            onKeyDown={(e) => {
-                                                                                                if (e.key === 'Enter' || e.key === ' ') {
-                                                                                                    e.preventDefault();
-                                                                                                    e.stopPropagation();
-                                                                                                    startViewRenameTab(tab);
-                                                                                                }
-                                                                                            }}
-                                                                                            className="p-0.5 rounded text-slate-400 hover:text-brand-600 dark:hover:text-brand-400 hover:bg-slate-100 dark:hover:bg-slate-700 shrink-0 mt-0.5"
-                                                                                            title="Edit tab title"
-                                                                                            aria-label="Edit tab title"
-                                                                                        >
-                                                                                            <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" strokeWidth={2} stroke="currentColor" className="w-3.5 h-3.5" aria-hidden>
-                                                                                                <path strokeLinecap="round" strokeLinejoin="round" d="m16.862 4.487 1.687-1.688a1.875 1.875 0 1 1 2.652 2.652L10.582 16.07a4.5 4.5 0 0 1-1.897 1.13L6 18l.8-2.685a4.5 4.5 0 0 1 1.13-1.897l8.932-8.931Zm0 0L19.5 7.125M18 14v4.75A2.25 2.25 0 0 1 15.75 21H5.25A2.25 2.25 0 0 1 3 18.75V8.25A2.25 2.25 0 0 1 5.25 6H10" />
-                                                                                            </svg>
+                                                                                    {(canQuickEditTitles || canQuickCloneTabs || canQuickDeleteTabs) && (
+                                                                                        <span className="inline-flex items-center gap-0.5 shrink-0 mt-0.5">
+                                                                                            {canQuickEditTitles && (
+                                                                                                <span
+                                                                                                    role="button"
+                                                                                                    tabIndex={0}
+                                                                                                    onClick={(e) => {
+                                                                                                        e.preventDefault();
+                                                                                                        e.stopPropagation();
+                                                                                                        startViewRenameTab(tab);
+                                                                                                    }}
+                                                                                                    onKeyDown={(e) => {
+                                                                                                        if (e.key === 'Enter' || e.key === ' ') {
+                                                                                                            e.preventDefault();
+                                                                                                            e.stopPropagation();
+                                                                                                            startViewRenameTab(tab);
+                                                                                                        }
+                                                                                                    }}
+                                                                                                    className="p-0.5 rounded text-slate-400 hover:text-brand-600 dark:hover:text-brand-400 hover:bg-slate-100 dark:hover:bg-slate-700"
+                                                                                                    title="Edit tab title"
+                                                                                                    aria-label="Edit tab title"
+                                                                                                >
+                                                                                                    <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" strokeWidth={2} stroke="currentColor" className="w-3.5 h-3.5" aria-hidden>
+                                                                                                        <path strokeLinecap="round" strokeLinejoin="round" d="m16.862 4.487 1.687-1.688a1.875 1.875 0 1 1 2.652 2.652L10.582 16.07a4.5 4.5 0 0 1-1.897 1.13L6 18l.8-2.685a4.5 4.5 0 0 1 1.13-1.897l8.932-8.931Zm0 0L19.5 7.125M18 14v4.75A2.25 2.25 0 0 1 15.75 21H5.25A2.25 2.25 0 0 1 3 18.75V8.25A2.25 2.25 0 0 1 5.25 6H10" />
+                                                                                                    </svg>
+                                                                                                </span>
+                                                                                            )}
+                                                                                            {canQuickCloneTabs && (
+                                                                                                <span
+                                                                                                    role="button"
+                                                                                                    tabIndex={0}
+                                                                                                    onClick={(e) => {
+                                                                                                        e.preventDefault();
+                                                                                                        e.stopPropagation();
+                                                                                                        void handleViewCloneTab(tab.id);
+                                                                                                    }}
+                                                                                                    onKeyDown={(e) => {
+                                                                                                        if (e.key === 'Enter' || e.key === ' ') {
+                                                                                                            e.preventDefault();
+                                                                                                            e.stopPropagation();
+                                                                                                            void handleViewCloneTab(tab.id);
+                                                                                                        }
+                                                                                                    }}
+                                                                                                    className="p-0.5 rounded text-slate-400 hover:text-violet-600 dark:hover:text-violet-400 hover:bg-violet-50 dark:hover:bg-violet-950/40"
+                                                                                                    title="Clone tab"
+                                                                                                    aria-label="Clone tab"
+                                                                                                >
+                                                                                                    <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" strokeWidth={1.75} stroke="currentColor" className="w-3.5 h-3.5" aria-hidden>
+                                                                                                        <path strokeLinecap="round" strokeLinejoin="round" d="M15.75 17.25v3.375c0 .621-.504 1.125-1.125 1.125h-9.75a1.125 1.125 0 01-1.125-1.125V7.875c0-.621.504-1.125 1.125-1.125H6.75a9.06 9.06 0 011.5.124m7.5 10.376h3.375c.621 0 1.125-.504 1.125-1.125V11.25c0-4.46-3.243-8.161-7.5-8.876a9.06 9.06 0 00-1.5-.124H9.375c-.621 0-1.125.504-1.125 1.125v3.5m7.5 10.375H9.375a1.125 1.125 0 01-1.125-1.125v-9.25m12 6.625v-1.875a3.375 3.375 0 00-3.375-3.375h-1.5a1.125 1.125 0 01-1.125-1.125v-1.5a3.375 3.375 0 00-3.375-3.375H9.75" />
+                                                                                                    </svg>
+                                                                                                </span>
+                                                                                            )}
+                                                                                            {canQuickDeleteTabs && (
+                                                                                                <span
+                                                                                                    role="button"
+                                                                                                    tabIndex={0}
+                                                                                                    onClick={(e) => {
+                                                                                                        e.preventDefault();
+                                                                                                        e.stopPropagation();
+                                                                                                        void handleViewDeleteTab(tab.id);
+                                                                                                    }}
+                                                                                                    onKeyDown={(e) => {
+                                                                                                        if (e.key === 'Enter' || e.key === ' ') {
+                                                                                                            e.preventDefault();
+                                                                                                            e.stopPropagation();
+                                                                                                            void handleViewDeleteTab(tab.id);
+                                                                                                        }
+                                                                                                    }}
+                                                                                                    className="p-0.5 rounded text-slate-400 hover:text-red-600 dark:hover:text-red-400 hover:bg-red-50 dark:hover:bg-red-950/40"
+                                                                                                    title="Delete tab"
+                                                                                                    aria-label="Delete tab"
+                                                                                                >
+                                                                                                    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor" className="w-3.5 h-3.5" aria-hidden>
+                                                                                                        <path fillRule="evenodd" d="M8.75 1A2.75 2.75 0 006 3.75v.443c-.795.077-1.584.176-2.365.298a.75.75 0 10.23 1.482l.226-.038 1.27 12.003A2.75 2.75 0 008.104 19.5h3.792a2.75 2.75 0 002.743-2.562l1.27-12.003.226.038a.75.75 0 00.23-1.482A41.03 41.03 0 0014 4.193V3.75A2.75 2.75 0 0011.25 1h-2.5zM10 4c.784 0 1.569.047 2.35.138V3.75c0-.69-.56-1.25-1.25-1.25h-2.5c-.69 0-1.25.56-1.25 1.25v.388C8.431 4.047 9.216 4 10 4zM8.58 7.72a.75.75 0 00-1.5.06l.3 7.5a.75.75 0 101.5.06l-.3-7.5zm4.34.06a.75.75 0 10-1.5-.06l-.3 7.5a.75.75 0 101.5.06l.3-7.5z" clipRule="evenodd" />
+                                                                                                    </svg>
+                                                                                                </span>
+                                                                                            )}
                                                                                         </span>
                                                                                     )}
                                                                                 </span>
@@ -8428,29 +8770,83 @@ export const TileDetail: React.FC<TileDetailProps> = ({
                                                                     ) : (
                                                                         <span className={`flex-1 min-w-0 inline-flex items-center gap-1 ${isCompact ? '' : ''}`}>
                                                                             <span className={`min-w-0 ${isCompact ? 'truncate' : (verticalTabsFloating ? 'whitespace-normal break-words' : 'truncate')}`}>{tab.title}</span>
-                                                                            {canQuickEditTitles && (
-                                                                                <span
-                                                                                    role="button"
-                                                                                    tabIndex={0}
-                                                                                    onClick={(e) => {
-                                                                                        e.preventDefault();
-                                                                                        e.stopPropagation();
-                                                                                        startViewRenameTab(tab);
-                                                                                    }}
-                                                                                    onKeyDown={(e) => {
-                                                                                        if (e.key === 'Enter' || e.key === ' ') {
-                                                                                            e.preventDefault();
-                                                                                            e.stopPropagation();
-                                                                                            startViewRenameTab(tab);
-                                                                                        }
-                                                                                    }}
-                                                                                    className="p-0.5 rounded text-slate-400 hover:text-brand-600 dark:hover:text-brand-400 hover:bg-slate-100 dark:hover:bg-slate-700 shrink-0"
-                                                                                    title="Edit tab title"
-                                                                                    aria-label="Edit tab title"
-                                                                                >
-                                                                                    <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" strokeWidth={2} stroke="currentColor" className="w-3.5 h-3.5" aria-hidden>
-                                                                                        <path strokeLinecap="round" strokeLinejoin="round" d="m16.862 4.487 1.687-1.688a1.875 1.875 0 1 1 2.652 2.652L10.582 16.07a4.5 4.5 0 0 1-1.897 1.13L6 18l.8-2.685a4.5 4.5 0 0 1 1.13-1.897l8.932-8.931Zm0 0L19.5 7.125M18 14v4.75A2.25 2.25 0 0 1 15.75 21H5.25A2.25 2.25 0 0 1 3 18.75V8.25A2.25 2.25 0 0 1 5.25 6H10" />
-                                                                                    </svg>
+                                                                            {(canQuickEditTitles || canQuickCloneTabs || canQuickDeleteTabs) && (
+                                                                                <span className="inline-flex items-center gap-0.5 shrink-0">
+                                                                                    {canQuickEditTitles && (
+                                                                                        <span
+                                                                                            role="button"
+                                                                                            tabIndex={0}
+                                                                                            onClick={(e) => {
+                                                                                                e.preventDefault();
+                                                                                                e.stopPropagation();
+                                                                                                startViewRenameTab(tab);
+                                                                                            }}
+                                                                                            onKeyDown={(e) => {
+                                                                                                if (e.key === 'Enter' || e.key === ' ') {
+                                                                                                    e.preventDefault();
+                                                                                                    e.stopPropagation();
+                                                                                                    startViewRenameTab(tab);
+                                                                                                }
+                                                                                            }}
+                                                                                            className="p-0.5 rounded text-slate-400 hover:text-brand-600 dark:hover:text-brand-400 hover:bg-slate-100 dark:hover:bg-slate-700"
+                                                                                            title="Edit tab title"
+                                                                                            aria-label="Edit tab title"
+                                                                                        >
+                                                                                            <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" strokeWidth={2} stroke="currentColor" className="w-3.5 h-3.5" aria-hidden>
+                                                                                                <path strokeLinecap="round" strokeLinejoin="round" d="m16.862 4.487 1.687-1.688a1.875 1.875 0 1 1 2.652 2.652L10.582 16.07a4.5 4.5 0 0 1-1.897 1.13L6 18l.8-2.685a4.5 4.5 0 0 1 1.13-1.897l8.932-8.931Zm0 0L19.5 7.125M18 14v4.75A2.25 2.25 0 0 1 15.75 21H5.25A2.25 2.25 0 0 1 3 18.75V8.25A2.25 2.25 0 0 1 5.25 6H10" />
+                                                                                            </svg>
+                                                                                        </span>
+                                                                                    )}
+                                                                                    {canQuickCloneTabs && (
+                                                                                        <span
+                                                                                            role="button"
+                                                                                            tabIndex={0}
+                                                                                            onClick={(e) => {
+                                                                                                e.preventDefault();
+                                                                                                e.stopPropagation();
+                                                                                                void handleViewCloneTab(tab.id);
+                                                                                            }}
+                                                                                            onKeyDown={(e) => {
+                                                                                                if (e.key === 'Enter' || e.key === ' ') {
+                                                                                                    e.preventDefault();
+                                                                                                    e.stopPropagation();
+                                                                                                    void handleViewCloneTab(tab.id);
+                                                                                                }
+                                                                                            }}
+                                                                                            className="p-0.5 rounded text-slate-400 hover:text-violet-600 dark:hover:text-violet-400 hover:bg-violet-50 dark:hover:bg-violet-950/40"
+                                                                                            title="Clone tab"
+                                                                                            aria-label="Clone tab"
+                                                                                        >
+                                                                                            <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" strokeWidth={1.75} stroke="currentColor" className="w-3.5 h-3.5" aria-hidden>
+                                                                                                <path strokeLinecap="round" strokeLinejoin="round" d="M15.75 17.25v3.375c0 .621-.504 1.125-1.125 1.125h-9.75a1.125 1.125 0 01-1.125-1.125V7.875c0-.621.504-1.125 1.125-1.125H6.75a9.06 9.06 0 011.5.124m7.5 10.376h3.375c.621 0 1.125-.504 1.125-1.125V11.25c0-4.46-3.243-8.161-7.5-8.876a9.06 9.06 0 00-1.5-.124H9.375c-.621 0-1.125.504-1.125 1.125v3.5m7.5 10.375H9.375a1.125 1.125 0 01-1.125-1.125v-9.25m12 6.625v-1.875a3.375 3.375 0 00-3.375-3.375h-1.5a1.125 1.125 0 01-1.125-1.125v-1.5a3.375 3.375 0 00-3.375-3.375H9.75" />
+                                                                                            </svg>
+                                                                                        </span>
+                                                                                    )}
+                                                                                    {canQuickDeleteTabs && (
+                                                                                        <span
+                                                                                            role="button"
+                                                                                            tabIndex={0}
+                                                                                            onClick={(e) => {
+                                                                                                e.preventDefault();
+                                                                                                e.stopPropagation();
+                                                                                                void handleViewDeleteTab(tab.id);
+                                                                                            }}
+                                                                                            onKeyDown={(e) => {
+                                                                                                if (e.key === 'Enter' || e.key === ' ') {
+                                                                                                    e.preventDefault();
+                                                                                                    e.stopPropagation();
+                                                                                                    void handleViewDeleteTab(tab.id);
+                                                                                                }
+                                                                                            }}
+                                                                                            className="p-0.5 rounded text-slate-400 hover:text-red-600 dark:hover:text-red-400 hover:bg-red-50 dark:hover:bg-red-950/40"
+                                                                                            title="Delete tab"
+                                                                                            aria-label="Delete tab"
+                                                                                        >
+                                                                                            <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor" className="w-3.5 h-3.5" aria-hidden>
+                                                                                                <path fillRule="evenodd" d="M8.75 1A2.75 2.75 0 006 3.75v.443c-.795.077-1.584.176-2.365.298a.75.75 0 10.23 1.482l.226-.038 1.27 12.003A2.75 2.75 0 008.104 19.5h3.792a2.75 2.75 0 002.743-2.562l1.27-12.003.226.038a.75.75 0 00.23-1.482A41.03 41.03 0 0014 4.193V3.75A2.75 2.75 0 0011.25 1h-2.5zM10 4c.784 0 1.569.047 2.35.138V3.75c0-.69-.56-1.25-1.25-1.25h-2.5c-.69 0-1.25.56-1.25 1.25v.388C8.431 4.047 9.216 4 10 4zM8.58 7.72a.75.75 0 00-1.5.06l.3 7.5a.75.75 0 101.5.06l-.3-7.5zm4.34.06a.75.75 0 10-1.5-.06l-.3 7.5a.75.75 0 101.5.06l.3-7.5z" clipRule="evenodd" />
+                                                                                            </svg>
+                                                                                        </span>
+                                                                                    )}
                                                                                 </span>
                                                                             )}
                                                                         </span>
@@ -8633,29 +9029,83 @@ export const TileDetail: React.FC<TileDetailProps> = ({
                                                                 ) : (
                                                                     <span className="flex-1 min-w-0 truncate inline-flex items-center gap-1">
                                                                         <span className="truncate">{tab.title}</span>
-                                                                        {canQuickEditTitles && (
-                                                                            <span
-                                                                                role="button"
-                                                                                tabIndex={0}
-                                                                                onClick={(e) => {
-                                                                                    e.preventDefault();
-                                                                                    e.stopPropagation();
-                                                                                    startViewRenameTab(tab);
-                                                                                }}
-                                                                                onKeyDown={(e) => {
-                                                                                    if (e.key === 'Enter' || e.key === ' ') {
-                                                                                        e.preventDefault();
-                                                                                        e.stopPropagation();
-                                                                                        startViewRenameTab(tab);
-                                                                                    }
-                                                                                }}
-                                                                                className="p-1 rounded text-slate-400 hover:text-brand-600 dark:hover:text-brand-400 hover:bg-slate-100 dark:hover:bg-slate-700 shrink-0"
-                                                                                title="Edit tab title"
-                                                                                aria-label="Edit tab title"
-                                                                            >
-                                                                                <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" strokeWidth={2} stroke="currentColor" className="w-3.5 h-3.5" aria-hidden>
-                                                                                    <path strokeLinecap="round" strokeLinejoin="round" d="m16.862 4.487 1.687-1.688a1.875 1.875 0 1 1 2.652 2.652L10.582 16.07a4.5 4.5 0 0 1-1.897 1.13L6 18l.8-2.685a4.5 4.5 0 0 1 1.13-1.897l8.932-8.931Zm0 0L19.5 7.125M18 14v4.75A2.25 2.25 0 0 1 15.75 21H5.25A2.25 2.25 0 0 1 3 18.75V8.25A2.25 2.25 0 0 1 5.25 6H10" />
-                                                                                </svg>
+                                                                        {(canQuickEditTitles || canQuickCloneTabs || canQuickDeleteTabs) && (
+                                                                            <span className="inline-flex items-center gap-0.5 shrink-0">
+                                                                                {canQuickEditTitles && (
+                                                                                    <span
+                                                                                        role="button"
+                                                                                        tabIndex={0}
+                                                                                        onClick={(e) => {
+                                                                                            e.preventDefault();
+                                                                                            e.stopPropagation();
+                                                                                            startViewRenameTab(tab);
+                                                                                        }}
+                                                                                        onKeyDown={(e) => {
+                                                                                            if (e.key === 'Enter' || e.key === ' ') {
+                                                                                                e.preventDefault();
+                                                                                                e.stopPropagation();
+                                                                                                startViewRenameTab(tab);
+                                                                                            }
+                                                                                        }}
+                                                                                        className="p-1 rounded text-slate-400 hover:text-brand-600 dark:hover:text-brand-400 hover:bg-slate-100 dark:hover:bg-slate-700"
+                                                                                        title="Edit tab title"
+                                                                                        aria-label="Edit tab title"
+                                                                                    >
+                                                                                        <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" strokeWidth={2} stroke="currentColor" className="w-3.5 h-3.5" aria-hidden>
+                                                                                            <path strokeLinecap="round" strokeLinejoin="round" d="m16.862 4.487 1.687-1.688a1.875 1.875 0 1 1 2.652 2.652L10.582 16.07a4.5 4.5 0 0 1-1.897 1.13L6 18l.8-2.685a4.5 4.5 0 0 1 1.13-1.897l8.932-8.931Zm0 0L19.5 7.125M18 14v4.75A2.25 2.25 0 0 1 15.75 21H5.25A2.25 2.25 0 0 1 3 18.75V8.25A2.25 2.25 0 0 1 5.25 6H10" />
+                                                                                        </svg>
+                                                                                    </span>
+                                                                                )}
+                                                                                {canQuickCloneTabs && (
+                                                                                    <span
+                                                                                        role="button"
+                                                                                        tabIndex={0}
+                                                                                        onClick={(e) => {
+                                                                                            e.preventDefault();
+                                                                                            e.stopPropagation();
+                                                                                            void handleViewCloneTab(tab.id);
+                                                                                        }}
+                                                                                        onKeyDown={(e) => {
+                                                                                            if (e.key === 'Enter' || e.key === ' ') {
+                                                                                                e.preventDefault();
+                                                                                                e.stopPropagation();
+                                                                                                void handleViewCloneTab(tab.id);
+                                                                                            }
+                                                                                        }}
+                                                                                        className="p-1 rounded text-slate-400 hover:text-violet-600 dark:hover:text-violet-400 hover:bg-violet-50 dark:hover:bg-violet-950/40"
+                                                                                        title="Clone tab"
+                                                                                        aria-label="Clone tab"
+                                                                                    >
+                                                                                        <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" strokeWidth={1.75} stroke="currentColor" className="w-3.5 h-3.5" aria-hidden>
+                                                                                            <path strokeLinecap="round" strokeLinejoin="round" d="M15.75 17.25v3.375c0 .621-.504 1.125-1.125 1.125h-9.75a1.125 1.125 0 01-1.125-1.125V7.875c0-.621.504-1.125 1.125-1.125H6.75a9.06 9.06 0 011.5.124m7.5 10.376h3.375c.621 0 1.125-.504 1.125-1.125V11.25c0-4.46-3.243-8.161-7.5-8.876a9.06 9.06 0 00-1.5-.124H9.375c-.621 0-1.125.504-1.125 1.125v3.5m7.5 10.375H9.375a1.125 1.125 0 01-1.125-1.125v-9.25m12 6.625v-1.875a3.375 3.375 0 00-3.375-3.375h-1.5a1.125 1.125 0 01-1.125-1.125v-1.5a3.375 3.375 0 00-3.375-3.375H9.75" />
+                                                                                        </svg>
+                                                                                    </span>
+                                                                                )}
+                                                                                {canQuickDeleteTabs && (
+                                                                                    <span
+                                                                                        role="button"
+                                                                                        tabIndex={0}
+                                                                                        onClick={(e) => {
+                                                                                            e.preventDefault();
+                                                                                            e.stopPropagation();
+                                                                                            void handleViewDeleteTab(tab.id);
+                                                                                        }}
+                                                                                        onKeyDown={(e) => {
+                                                                                            if (e.key === 'Enter' || e.key === ' ') {
+                                                                                                e.preventDefault();
+                                                                                                e.stopPropagation();
+                                                                                                void handleViewDeleteTab(tab.id);
+                                                                                            }
+                                                                                        }}
+                                                                                        className="p-1 rounded text-slate-400 hover:text-red-600 dark:hover:text-red-400 hover:bg-red-50 dark:hover:bg-red-950/40"
+                                                                                        title="Delete tab"
+                                                                                        aria-label="Delete tab"
+                                                                                    >
+                                                                                        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor" className="w-3.5 h-3.5" aria-hidden>
+                                                                                            <path fillRule="evenodd" d="M8.75 1A2.75 2.75 0 006 3.75v.443c-.795.077-1.584.176-2.365.298a.75.75 0 10.23 1.482l.226-.038 1.27 12.003A2.75 2.75 0 008.104 19.5h3.792a2.75 2.75 0 002.743-2.562l1.27-12.003.226.038a.75.75 0 00.23-1.482A41.03 41.03 0 0014 4.193V3.75A2.75 2.75 0 0011.25 1h-2.5zM10 4c.784 0 1.569.047 2.35.138V3.75c0-.69-.56-1.25-1.25-1.25h-2.5c-.69 0-1.25.56-1.25 1.25v.388C8.431 4.047 9.216 4 10 4zM8.58 7.72a.75.75 0 00-1.5.06l.3 7.5a.75.75 0 101.5.06l-.3-7.5zm4.34.06a.75.75 0 10-1.5-.06l-.3 7.5a.75.75 0 101.5.06l.3-7.5z" clipRule="evenodd" />
+                                                                                        </svg>
+                                                                                    </span>
+                                                                                )}
                                                                             </span>
                                                                         )}
                                                                     </span>
@@ -8762,29 +9212,83 @@ export const TileDetail: React.FC<TileDetailProps> = ({
                                                                             ) : (
                                                                                 <span className="inline-flex items-center gap-1 min-w-0">
                                                                                     <span className="truncate">{tab.title}</span>
-                                                                                    {canQuickEditTitles && (
-                                                                                        <span
-                                                                                            role="button"
-                                                                                            tabIndex={0}
-                                                                                            onClick={(e) => {
-                                                                                                e.preventDefault();
-                                                                                                e.stopPropagation();
-                                                                                                startViewRenameTab(tab);
-                                                                                            }}
-                                                                                            onKeyDown={(e) => {
-                                                                                                if (e.key === 'Enter' || e.key === ' ') {
-                                                                                                    e.preventDefault();
-                                                                                                    e.stopPropagation();
-                                                                                                    startViewRenameTab(tab);
-                                                                                                }
-                                                                                            }}
-                                                                                            className="p-0.5 rounded text-slate-400 hover:text-brand-600 dark:hover:text-brand-400 hover:bg-slate-100 dark:hover:bg-slate-700 shrink-0"
-                                                                                            title="Edit tab title"
-                                                                                            aria-label="Edit tab title"
-                                                                                        >
-                                                                                            <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" strokeWidth={2} stroke="currentColor" className="w-3.5 h-3.5" aria-hidden>
-                                                                                                <path strokeLinecap="round" strokeLinejoin="round" d="m16.862 4.487 1.687-1.688a1.875 1.875 0 1 1 2.652 2.652L10.582 16.07a4.5 4.5 0 0 1-1.897 1.13L6 18l.8-2.685a4.5 4.5 0 0 1 1.13-1.897l8.932-8.931Zm0 0L19.5 7.125M18 14v4.75A2.25 2.25 0 0 1 15.75 21H5.25A2.25 2.25 0 0 1 3 18.75V8.25A2.25 2.25 0 0 1 5.25 6H10" />
-                                                                                            </svg>
+                                                                                    {(canQuickEditTitles || canQuickCloneTabs || canQuickDeleteTabs) && (
+                                                                                        <span className="inline-flex items-center gap-0.5 shrink-0">
+                                                                                            {canQuickEditTitles && (
+                                                                                                <span
+                                                                                                    role="button"
+                                                                                                    tabIndex={0}
+                                                                                                    onClick={(e) => {
+                                                                                                        e.preventDefault();
+                                                                                                        e.stopPropagation();
+                                                                                                        startViewRenameTab(tab);
+                                                                                                    }}
+                                                                                                    onKeyDown={(e) => {
+                                                                                                        if (e.key === 'Enter' || e.key === ' ') {
+                                                                                                            e.preventDefault();
+                                                                                                            e.stopPropagation();
+                                                                                                            startViewRenameTab(tab);
+                                                                                                        }
+                                                                                                    }}
+                                                                                                    className="p-0.5 rounded text-slate-400 hover:text-brand-600 dark:hover:text-brand-400 hover:bg-slate-100 dark:hover:bg-slate-700"
+                                                                                                    title="Edit tab title"
+                                                                                                    aria-label="Edit tab title"
+                                                                                                >
+                                                                                                    <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" strokeWidth={2} stroke="currentColor" className="w-3.5 h-3.5" aria-hidden>
+                                                                                                        <path strokeLinecap="round" strokeLinejoin="round" d="m16.862 4.487 1.687-1.688a1.875 1.875 0 1 1 2.652 2.652L10.582 16.07a4.5 4.5 0 0 1-1.897 1.13L6 18l.8-2.685a4.5 4.5 0 0 1 1.13-1.897l8.932-8.931Zm0 0L19.5 7.125M18 14v4.75A2.25 2.25 0 0 1 15.75 21H5.25A2.25 2.25 0 0 1 3 18.75V8.25A2.25 2.25 0 0 1 5.25 6H10" />
+                                                                                                    </svg>
+                                                                                                </span>
+                                                                                            )}
+                                                                                            {canQuickCloneTabs && (
+                                                                                                <span
+                                                                                                    role="button"
+                                                                                                    tabIndex={0}
+                                                                                                    onClick={(e) => {
+                                                                                                        e.preventDefault();
+                                                                                                        e.stopPropagation();
+                                                                                                        void handleViewCloneTab(tab.id);
+                                                                                                    }}
+                                                                                                    onKeyDown={(e) => {
+                                                                                                        if (e.key === 'Enter' || e.key === ' ') {
+                                                                                                            e.preventDefault();
+                                                                                                            e.stopPropagation();
+                                                                                                            void handleViewCloneTab(tab.id);
+                                                                                                        }
+                                                                                                    }}
+                                                                                                    className="p-0.5 rounded text-slate-400 hover:text-violet-600 dark:hover:text-violet-400 hover:bg-violet-50 dark:hover:bg-violet-950/40"
+                                                                                                    title="Clone tab"
+                                                                                                    aria-label="Clone tab"
+                                                                                                >
+                                                                                                    <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" strokeWidth={1.75} stroke="currentColor" className="w-3.5 h-3.5" aria-hidden>
+                                                                                                        <path strokeLinecap="round" strokeLinejoin="round" d="M15.75 17.25v3.375c0 .621-.504 1.125-1.125 1.125h-9.75a1.125 1.125 0 01-1.125-1.125V7.875c0-.621.504-1.125 1.125-1.125H6.75a9.06 9.06 0 011.5.124m7.5 10.376h3.375c.621 0 1.125-.504 1.125-1.125V11.25c0-4.46-3.243-8.161-7.5-8.876a9.06 9.06 0 00-1.5-.124H9.375c-.621 0-1.125.504-1.125 1.125v3.5m7.5 10.375H9.375a1.125 1.125 0 01-1.125-1.125v-9.25m12 6.625v-1.875a3.375 3.375 0 00-3.375-3.375h-1.5a1.125 1.125 0 01-1.125-1.125v-1.5a3.375 3.375 0 00-3.375-3.375H9.75" />
+                                                                                                    </svg>
+                                                                                                </span>
+                                                                                            )}
+                                                                                            {canQuickDeleteTabs && (
+                                                                                                <span
+                                                                                                    role="button"
+                                                                                                    tabIndex={0}
+                                                                                                    onClick={(e) => {
+                                                                                                        e.preventDefault();
+                                                                                                        e.stopPropagation();
+                                                                                                        void handleViewDeleteTab(tab.id);
+                                                                                                    }}
+                                                                                                    onKeyDown={(e) => {
+                                                                                                        if (e.key === 'Enter' || e.key === ' ') {
+                                                                                                            e.preventDefault();
+                                                                                                            e.stopPropagation();
+                                                                                                            void handleViewDeleteTab(tab.id);
+                                                                                                        }
+                                                                                                    }}
+                                                                                                    className="p-0.5 rounded text-slate-400 hover:text-red-600 dark:hover:text-red-400 hover:bg-red-50 dark:hover:bg-red-950/40"
+                                                                                                    title="Delete tab"
+                                                                                                    aria-label="Delete tab"
+                                                                                                >
+                                                                                                    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor" className="w-3.5 h-3.5" aria-hidden>
+                                                                                                        <path fillRule="evenodd" d="M8.75 1A2.75 2.75 0 006 3.75v.443c-.795.077-1.584.176-2.365.298a.75.75 0 10.23 1.482l.226-.038 1.27 12.003A2.75 2.75 0 008.104 19.5h3.792a2.75 2.75 0 002.743-2.562l1.27-12.003.226.038a.75.75 0 00.23-1.482A41.03 41.03 0 0014 4.193V3.75A2.75 2.75 0 0011.25 1h-2.5zM10 4c.784 0 1.569.047 2.35.138V3.75c0-.69-.56-1.25-1.25-1.25h-2.5c-.69 0-1.25.56-1.25 1.25v.388C8.431 4.047 9.216 4 10 4zM8.58 7.72a.75.75 0 00-1.5.06l.3 7.5a.75.75 0 101.5.06l-.3-7.5zm4.34.06a.75.75 0 10-1.5-.06l-.3 7.5a.75.75 0 101.5.06l.3-7.5z" clipRule="evenodd" />
+                                                                                                    </svg>
+                                                                                                </span>
+                                                                                            )}
                                                                                         </span>
                                                                                     )}
                                                                                 </span>
@@ -8977,22 +9481,60 @@ export const TileDetail: React.FC<TileDetailProps> = ({
                                                         ) : (
                                                             <>
                                                                 <span className="truncate">{section.title || 'Untitled'}</span>
-                                                                {canQuickEditTitles && activeViewTab && (
-                                                                    <button
-                                                                        type="button"
-                                                                        onClick={(e) => {
-                                                                            e.preventDefault();
-                                                                            e.stopPropagation();
-                                                                            startViewRenameSection(activeViewTab.id, section);
-                                                                        }}
-                                                                        className="p-1 rounded-md text-slate-400 hover:text-brand-600 dark:hover:text-brand-400 hover:bg-slate-100 dark:hover:bg-slate-700 shrink-0 transition-colors"
-                                                                        title="Edit section title"
-                                                                        aria-label="Edit section title"
-                                                                    >
-                                                                        <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" strokeWidth={2} stroke="currentColor" className="w-3.5 h-3.5" aria-hidden>
-                                                                            <path strokeLinecap="round" strokeLinejoin="round" d="m16.862 4.487 1.687-1.688a1.875 1.875 0 1 1 2.652 2.652L10.582 16.07a4.5 4.5 0 0 1-1.897 1.13L6 18l.8-2.685a4.5 4.5 0 0 1 1.13-1.897l8.932-8.931Zm0 0L19.5 7.125M18 14v4.75A2.25 2.25 0 0 1 15.75 21H5.25A2.25 2.25 0 0 1 3 18.75V8.25A2.25 2.25 0 0 1 5.25 6H10" />
-                                                                        </svg>
-                                                                    </button>
+                                                                {(canQuickEditTitles || canQuickCloneSections || canQuickDeleteSections) && activeViewTab && (
+                                                                    <span className="inline-flex items-center gap-0.5 shrink-0">
+                                                                        {canQuickEditTitles && (
+                                                                            <button
+                                                                                type="button"
+                                                                                onClick={(e) => {
+                                                                                    e.preventDefault();
+                                                                                    e.stopPropagation();
+                                                                                    startViewRenameSection(activeViewTab.id, section);
+                                                                                }}
+                                                                                className="p-1 rounded-md text-slate-400 hover:text-brand-600 dark:hover:text-brand-400 hover:bg-slate-100 dark:hover:bg-slate-700 transition-colors"
+                                                                                title="Edit section title"
+                                                                                aria-label="Edit section title"
+                                                                            >
+                                                                                <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" strokeWidth={2} stroke="currentColor" className="w-3.5 h-3.5" aria-hidden>
+                                                                                    <path strokeLinecap="round" strokeLinejoin="round" d="m16.862 4.487 1.687-1.688a1.875 1.875 0 1 1 2.652 2.652L10.582 16.07a4.5 4.5 0 0 1-1.897 1.13L6 18l.8-2.685a4.5 4.5 0 0 1 1.13-1.897l8.932-8.931Zm0 0L19.5 7.125M18 14v4.75A2.25 2.25 0 0 1 15.75 21H5.25A2.25 2.25 0 0 1 3 18.75V8.25A2.25 2.25 0 0 1 5.25 6H10" />
+                                                                                </svg>
+                                                                            </button>
+                                                                        )}
+                                                                        {canQuickCloneSections && (
+                                                                            <button
+                                                                                type="button"
+                                                                                onClick={(e) => {
+                                                                                    e.preventDefault();
+                                                                                    e.stopPropagation();
+                                                                                    void handleViewCloneSection(activeViewTab.id, section.id);
+                                                                                }}
+                                                                                className="p-1 rounded-md text-slate-400 hover:text-violet-600 dark:hover:text-violet-400 hover:bg-violet-50 dark:hover:bg-violet-950/40 transition-colors"
+                                                                                title="Clone section"
+                                                                                aria-label="Clone section"
+                                                                            >
+                                                                                <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" strokeWidth={1.75} stroke="currentColor" className="w-3.5 h-3.5" aria-hidden>
+                                                                                    <path strokeLinecap="round" strokeLinejoin="round" d="M15.75 17.25v3.375c0 .621-.504 1.125-1.125 1.125h-9.75a1.125 1.125 0 01-1.125-1.125V7.875c0-.621.504-1.125 1.125-1.125H6.75a9.06 9.06 0 011.5.124m7.5 10.376h3.375c.621 0 1.125-.504 1.125-1.125V11.25c0-4.46-3.243-8.161-7.5-8.876a9.06 9.06 0 00-1.5-.124H9.375c-.621 0-1.125.504-1.125 1.125v3.5m7.5 10.375H9.375a1.125 1.125 0 01-1.125-1.125v-9.25m12 6.625v-1.875a3.375 3.375 0 00-3.375-3.375h-1.5a1.125 1.125 0 01-1.125-1.125v-1.5a3.375 3.375 0 00-3.375-3.375H9.75" />
+                                                                                </svg>
+                                                                            </button>
+                                                                        )}
+                                                                        {canQuickDeleteSections && (
+                                                                            <button
+                                                                                type="button"
+                                                                                onClick={(e) => {
+                                                                                    e.preventDefault();
+                                                                                    e.stopPropagation();
+                                                                                    void handleViewDeleteSection(activeViewTab.id, section.id);
+                                                                                }}
+                                                                                className="p-1 rounded-md text-slate-400 hover:text-red-600 dark:hover:text-red-400 hover:bg-red-50 dark:hover:bg-red-950/40 transition-colors"
+                                                                                title="Delete section"
+                                                                                aria-label="Delete section"
+                                                                            >
+                                                                                <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor" className="w-3.5 h-3.5" aria-hidden>
+                                                                                    <path fillRule="evenodd" d="M8.75 1A2.75 2.75 0 006 3.75v.443c-.795.077-1.584.176-2.365.298a.75.75 0 10.23 1.482l.226-.038 1.27 12.003A2.75 2.75 0 008.104 19.5h3.792a2.75 2.75 0 002.743-2.562l1.27-12.003.226.038a.75.75 0 00.23-1.482A41.03 41.03 0 0014 4.193V3.75A2.75 2.75 0 0011.25 1h-2.5zM10 4c.784 0 1.569.047 2.35.138V3.75c0-.69-.56-1.25-1.25-1.25h-2.5c-.69 0-1.25.56-1.25 1.25v.388C8.431 4.047 9.216 4 10 4zM8.58 7.72a.75.75 0 00-1.5.06l.3 7.5a.75.75 0 101.5.06l-.3-7.5zm4.34.06a.75.75 0 10-1.5-.06l-.3 7.5a.75.75 0 101.5.06l.3-7.5z" clipRule="evenodd" />
+                                                                                </svg>
+                                                                            </button>
+                                                                        )}
+                                                                    </span>
                                                                 )}
                                                             </>
                                                         )}
