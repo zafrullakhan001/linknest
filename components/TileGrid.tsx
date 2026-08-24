@@ -451,11 +451,32 @@ const PrivateOwnerFilterDropdown: React.FC<{
 
 const PRESET_MENU_FLOATING_KEY = 'linknest_category_preset_menu_floating';
 const PRESET_MENU_FLOAT_POS_KEY = 'linknest_category_preset_menu_float_pos';
+const PRESET_MENU_VIEW_KEY = 'linknest_category_preset_menu_view';
 const PRESET_MENU_FLOAT_MIN_VISIBLE = 48;
 const PRESET_MENU_FLOAT_DEFAULT_W = 224;
 const PRESET_MENU_FLOAT_DEFAULT_H = 280;
 
 type PresetMenuFloatPoint = { x: number; y: number };
+type PresetMenuView = 'list' | 'tiles' | 'compact';
+const PRESET_MENU_VIEWS: PresetMenuView[] = ['list', 'tiles', 'compact'];
+
+function loadPresetMenuView(): PresetMenuView {
+  try {
+    const raw = localStorage.getItem(PRESET_MENU_VIEW_KEY);
+    if (raw === 'tiles' || raw === 'compact' || raw === 'list') return raw;
+  } catch {
+    /* ignore */
+  }
+  return 'list';
+}
+
+function savePresetMenuView(view: PresetMenuView): void {
+  try {
+    localStorage.setItem(PRESET_MENU_VIEW_KEY, view);
+  } catch {
+    /* ignore */
+  }
+}
 
 function getPresetMenuCssZoom(): number {
   try {
@@ -537,6 +558,9 @@ const CategoryPresetSwitcher: React.FC<{
   );
   const [dragging, setDragging] = useState(false);
   const [search, setSearch] = useState('');
+  const [view, setView] = useState<PresetMenuView>(() =>
+    typeof window !== 'undefined' ? loadPresetMenuView() : 'list'
+  );
   const rootRef = useRef<HTMLDivElement>(null);
   const panelRef = useRef<HTMLDivElement>(null);
   const floatPosRef = useRef(floatPos);
@@ -557,6 +581,16 @@ const CategoryPresetSwitcher: React.FC<{
     () => filteredPresets.filter((p) => p.source !== 'builtin' && !isBuiltinPresetId(p.id)),
     [filteredPresets]
   );
+
+  const cycleView = useCallback((e?: React.MouseEvent) => {
+    e?.stopPropagation();
+    setView((prev) => {
+      const idx = PRESET_MENU_VIEWS.indexOf(prev);
+      const next = PRESET_MENU_VIEWS[(idx + 1) % PRESET_MENU_VIEWS.length];
+      savePresetMenuView(next);
+      return next;
+    });
+  }, []);
 
   useEscapeToClose(menuVisible && !floating, () => {
     setOpen(false);
@@ -697,7 +731,134 @@ const CategoryPresetSwitcher: React.FC<{
     e.stopPropagation();
   };
 
+  const selectPreset = (preset: CategoryVisibilityPreset) => {
+    onSelect(preset);
+    if (!floating) {
+      setOpen(false);
+      setSearch('');
+    }
+  };
+
+  const renderPresetButton = (preset: CategoryVisibilityPreset, builtin: boolean) => {
+    const isActive = preset.id === activePresetId;
+    const count = preset.visible.length;
+    if (view === 'tiles') {
+      return (
+        <button
+          key={preset.id}
+          type="button"
+          role="menuitem"
+          onClick={() => selectPreset(preset)}
+          className={`text-left p-2.5 rounded-xl text-sm font-medium transition-colors flex flex-col gap-1.5 min-h-[4.5rem] ${
+            isActive
+              ? 'bg-brand-50 dark:bg-brand-900/30 text-brand-700 dark:text-brand-300 ring-1 ring-inset ring-brand-200/80 dark:ring-brand-700/50 font-semibold'
+              : 'bg-white dark:bg-slate-800 text-slate-700 dark:text-slate-300 hover:bg-slate-50 dark:hover:bg-slate-700/80 border border-slate-200/80 dark:border-slate-700'
+          }`}
+        >
+          <span className="font-semibold leading-snug break-words line-clamp-2">{preset.name}</span>
+          <span className="mt-auto flex items-center justify-between gap-1">
+            {builtin ? (
+              <span className="px-1 py-0.5 text-[9px] rounded font-semibold uppercase tracking-wide bg-slate-200/80 dark:bg-slate-700 text-slate-600 dark:text-slate-300">
+                Built-in
+              </span>
+            ) : (
+              <span className="text-[10px] text-slate-400">My preset</span>
+            )}
+            <span
+              className={`shrink-0 px-1.5 py-0.5 text-[10px] rounded-full font-semibold ${
+                isActive
+                  ? 'bg-brand-100 dark:bg-brand-800/50 text-brand-700 dark:text-brand-300'
+                  : 'bg-slate-100 dark:bg-slate-900 text-slate-500 dark:text-slate-400'
+              }`}
+              title={`${count} categor${count === 1 ? 'y' : 'ies'}`}
+            >
+              {count}
+            </span>
+          </span>
+        </button>
+      );
+    }
+    if (view === 'compact') {
+      return (
+        <button
+          key={preset.id}
+          type="button"
+          role="menuitem"
+          onClick={() => selectPreset(preset)}
+          className={`w-full text-left px-2 py-1 rounded-md text-xs font-medium transition-colors flex items-center gap-1.5 ${
+            isActive
+              ? 'bg-brand-50 dark:bg-brand-900/30 text-brand-700 dark:text-brand-300 font-semibold'
+              : 'text-slate-700 dark:text-slate-300 hover:bg-white dark:hover:bg-slate-800'
+          }`}
+        >
+          {builtin && (
+            <span className="shrink-0 w-1.5 h-1.5 rounded-full bg-slate-400" title="Built-in" aria-hidden />
+          )}
+          <span className="flex-1 min-w-0 truncate">{preset.name}</span>
+          <span className="shrink-0 tabular-nums text-[10px] text-slate-400">{count}</span>
+        </button>
+      );
+    }
+    return (
+      <button
+        key={preset.id}
+        type="button"
+        role="menuitem"
+        onClick={() => selectPreset(preset)}
+        className={`w-full text-left px-3 py-2.5 rounded-lg text-sm font-medium transition-colors flex items-center gap-2 ${
+          isActive
+            ? 'bg-brand-50 dark:bg-brand-900/30 text-brand-700 dark:text-brand-300 ring-1 ring-inset ring-brand-200/80 dark:ring-brand-700/50 font-semibold'
+            : 'text-slate-700 dark:text-slate-300 hover:bg-white dark:hover:bg-slate-800 hover:text-slate-900 dark:hover:text-white'
+        }`}
+      >
+        <span className="flex-1 min-w-0 truncate">{preset.name}</span>
+        {builtin && (
+          <span
+            className="shrink-0 px-1.5 py-0.5 text-[9px] rounded font-semibold uppercase tracking-wide bg-slate-200/80 dark:bg-slate-700 text-slate-600 dark:text-slate-300"
+            title="Built-in preset (read-only)"
+          >
+            Built-in
+          </span>
+        )}
+        <span
+          className={`shrink-0 px-1.5 py-0.5 text-[10px] rounded-full font-semibold ${
+            isActive
+              ? 'bg-brand-100 dark:bg-brand-800/50 text-brand-700 dark:text-brand-300'
+              : 'bg-white dark:bg-slate-800 text-slate-500 dark:text-slate-400'
+          }`}
+          title={`${count} categor${count === 1 ? 'y' : 'ies'}`}
+        >
+          {count}
+        </span>
+      </button>
+    );
+  };
+
+  const renderSection = (label: string, items: CategoryVisibilityPreset[], builtin: boolean, showDivider: boolean) => {
+    if (items.length === 0) return null;
+    return (
+      <>
+        <div
+          className={`px-2 pt-1 pb-0.5 text-[10px] font-semibold uppercase tracking-wider text-slate-400 dark:text-slate-500 ${
+            showDivider ? 'mt-1 border-t border-slate-200/70 dark:border-slate-700/70' : ''
+          }`}
+        >
+          {label}
+        </div>
+        <div className={view === 'tiles' ? 'grid grid-cols-2 gap-1.5 px-0.5' : 'flex flex-col gap-0.5'}>
+          {items.map((preset) => renderPresetButton(preset, builtin))}
+        </div>
+      </>
+    );
+  };
+
   if (presets.length === 0) return null;
+
+  const viewLabel =
+    view === 'tiles' ? 'Tiles view' : view === 'compact' ? 'Compact view' : 'List view';
+  const nextViewLabel =
+    view === 'list' ? 'Switch to tiles view' : view === 'tiles' ? 'Switch to compact view' : 'Switch to list view';
+  const panelWidthClass = view === 'tiles' ? 'w-72' : view === 'compact' ? 'w-52' : 'w-56';
 
   const menuPanel = (
     <div
@@ -705,7 +866,8 @@ const CategoryPresetSwitcher: React.FC<{
       role="menu"
       aria-label="Category presets"
       data-floating={floating ? 'true' : 'false'}
-      className={`linknest-overlay w-56 max-h-80 overflow-hidden flex flex-col rounded-xl border border-slate-200/90 dark:border-slate-700 shadow-xl ring-1 ring-slate-300/60 dark:ring-slate-600/50 bg-white dark:bg-slate-800 ${
+      data-view={view}
+      className={`linknest-overlay ${panelWidthClass} max-h-80 overflow-hidden flex flex-col rounded-xl border border-slate-200/90 dark:border-slate-700 shadow-xl ring-1 ring-slate-300/60 dark:ring-slate-600/50 bg-white dark:bg-slate-800 ${
         floating ? 'fixed' : 'absolute left-0 top-full mt-1.5 z-50'
       }`}
       style={
@@ -735,6 +897,27 @@ const CategoryPresetSwitcher: React.FC<{
           Presets
         </span>
         <div className="flex items-center gap-0.5">
+          <button
+            type="button"
+            onClick={cycleView}
+            className="p-1.5 rounded-lg text-slate-500 hover:text-slate-800 dark:hover:text-slate-200 hover:bg-white/70 dark:hover:bg-slate-700 transition-colors"
+            title={`${viewLabel} — ${nextViewLabel}`}
+            aria-label={nextViewLabel}
+          >
+            {view === 'tiles' ? (
+              <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor" className="w-4 h-4" aria-hidden>
+                <path d="M2 4.25A2.25 2.25 0 014.25 2h3.5A2.25 2.25 0 0110 4.25v3.5A2.25 2.25 0 017.75 10h-3.5A2.25 2.25 0 012 7.75v-3.5zM2 12.25A2.25 2.25 0 014.25 10h3.5A2.25 2.25 0 0110 12.25v3.5A2.25 2.25 0 017.75 18h-3.5A2.25 2.25 0 012 15.75v-3.5zM12.25 2A2.25 2.25 0 0010 4.25v3.5A2.25 2.25 0 0012.25 10h3.5A2.25 2.25 0 0018 7.75v-3.5A2.25 2.25 0 0015.75 2h-3.5zM10 12.25a2.25 2.25 0 012.25-2.25h3.5A2.25 2.25 0 0118 12.25v3.5A2.25 2.25 0 0115.75 18h-3.5A2.25 2.25 0 0110 15.75v-3.5z" />
+              </svg>
+            ) : view === 'compact' ? (
+              <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor" className="w-4 h-4" aria-hidden>
+                <path fillRule="evenodd" d="M2 4.75A.75.75 0 012.75 4h14.5a.75.75 0 010 1.5H2.75A.75.75 0 012 4.75zm0 5A.75.75 0 012.75 9h14.5a.75.75 0 010 1.5H2.75A.75.75 0 012 9.75zM2.75 14a.75.75 0 000 1.5h14.5a.75.75 0 000-1.5H2.75z" clipRule="evenodd" />
+              </svg>
+            ) : (
+              <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor" className="w-4 h-4" aria-hidden>
+                <path fillRule="evenodd" d="M6 4.75A.75.75 0 016.75 4h10.5a.75.75 0 010 1.5H6.75A.75.75 0 016 4.75zM6 10a.75.75 0 01.75-.75h10.5a.75.75 0 010 1.5H6.75A.75.75 0 016 10zm0 5.25a.75.75 0 01.75-.75h10.5a.75.75 0 010 1.5H6.75a.75.75 0 01-.75-.75zM1.99 4.75a1 1 0 011.99-.01 1 1 0 01-1.99.01zm0 5.25a1 1 0 011.99-.01 1 1 0 01-1.99.01zm1.99 4.25a1 1 0 10-1.99.01 1 1 0 001.99-.01z" clipRule="evenodd" />
+              </svg>
+            )}
+          </button>
           {floating ? (
             <button
               type="button"
@@ -793,96 +976,8 @@ const CategoryPresetSwitcher: React.FC<{
         </div>
       </div>
       <div className="flex-1 min-h-0 overflow-y-auto p-1.5 flex flex-col gap-0.5 bg-slate-50/90 dark:bg-slate-900/40">
-        {builtinFiltered.length > 0 && (
-          <>
-            <div className="px-2 pt-1 pb-0.5 text-[10px] font-semibold uppercase tracking-wider text-slate-400 dark:text-slate-500">
-              Built-in
-            </div>
-            {builtinFiltered.map((preset) => {
-              const isActive = preset.id === activePresetId;
-              const count = preset.visible.length;
-              return (
-                <button
-                  key={preset.id}
-                  type="button"
-                  role="menuitem"
-                  onClick={() => {
-                    onSelect(preset);
-                    if (!floating) {
-                      setOpen(false);
-                      setSearch('');
-                    }
-                  }}
-                  className={`w-full text-left px-3 py-2.5 rounded-lg text-sm font-medium transition-colors flex items-center gap-2 ${
-                    isActive
-                      ? 'bg-brand-50 dark:bg-brand-900/30 text-brand-700 dark:text-brand-300 ring-1 ring-inset ring-brand-200/80 dark:ring-brand-700/50 font-semibold'
-                      : 'text-slate-700 dark:text-slate-300 hover:bg-white dark:hover:bg-slate-800 hover:text-slate-900 dark:hover:text-white'
-                  }`}
-                >
-                  <span className="flex-1 min-w-0 truncate">{preset.name}</span>
-                  <span
-                    className="shrink-0 px-1.5 py-0.5 text-[9px] rounded font-semibold uppercase tracking-wide bg-slate-200/80 dark:bg-slate-700 text-slate-600 dark:text-slate-300"
-                    title="Built-in preset (read-only)"
-                  >
-                    Built-in
-                  </span>
-                  <span
-                    className={`shrink-0 px-1.5 py-0.5 text-[10px] rounded-full font-semibold ${
-                      isActive
-                        ? 'bg-brand-100 dark:bg-brand-800/50 text-brand-700 dark:text-brand-300'
-                        : 'bg-white dark:bg-slate-800 text-slate-500 dark:text-slate-400'
-                    }`}
-                    title={`${count} categor${count === 1 ? 'y' : 'ies'}`}
-                  >
-                    {count}
-                  </span>
-                </button>
-              );
-            })}
-          </>
-        )}
-        {userFiltered.length > 0 && (
-          <>
-            <div className={`px-2 pt-1.5 pb-0.5 text-[10px] font-semibold uppercase tracking-wider text-slate-400 dark:text-slate-500 ${builtinFiltered.length > 0 ? 'mt-1 border-t border-slate-200/70 dark:border-slate-700/70' : ''}`}>
-              My presets
-            </div>
-            {userFiltered.map((preset) => {
-              const isActive = preset.id === activePresetId;
-              const count = preset.visible.length;
-              return (
-                <button
-                  key={preset.id}
-                  type="button"
-                  role="menuitem"
-                  onClick={() => {
-                    onSelect(preset);
-                    if (!floating) {
-                      setOpen(false);
-                      setSearch('');
-                    }
-                  }}
-                  className={`w-full text-left px-3 py-2.5 rounded-lg text-sm font-medium transition-colors flex items-center gap-2 ${
-                    isActive
-                      ? 'bg-brand-50 dark:bg-brand-900/30 text-brand-700 dark:text-brand-300 ring-1 ring-inset ring-brand-200/80 dark:ring-brand-700/50 font-semibold'
-                      : 'text-slate-700 dark:text-slate-300 hover:bg-white dark:hover:bg-slate-800 hover:text-slate-900 dark:hover:text-white'
-                  }`}
-                >
-                  <span className="flex-1 min-w-0 truncate">{preset.name}</span>
-                  <span
-                    className={`shrink-0 px-1.5 py-0.5 text-[10px] rounded-full font-semibold ${
-                      isActive
-                        ? 'bg-brand-100 dark:bg-brand-800/50 text-brand-700 dark:text-brand-300'
-                        : 'bg-white dark:bg-slate-800 text-slate-500 dark:text-slate-400'
-                    }`}
-                    title={`${count} categor${count === 1 ? 'y' : 'ies'}`}
-                  >
-                    {count}
-                  </span>
-                </button>
-              );
-            })}
-          </>
-        )}
+        {renderSection('Built-in', builtinFiltered, true, false)}
+        {renderSection('My presets', userFiltered, false, builtinFiltered.length > 0)}
         {filteredPresets.length === 0 && (
           <div className="px-3 py-3 text-sm text-slate-500 dark:text-slate-400 text-center">
             No matching presets
@@ -929,6 +1024,7 @@ const CategoryPresetSwitcher: React.FC<{
     </div>
   );
 };
+
 
 // Category Visibility Management Dialog
 interface CategoryVisibilityDialogProps {
