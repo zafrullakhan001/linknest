@@ -290,7 +290,11 @@ export type EditLinkFormProps = {
   onPatchDraft: (patch: Partial<EditLinkDraft>) => void;
   onCancel: () => void;
   onSave: () => void;
-  onConvert: () => void;
+  onConvert?: () => void;
+  /** Prefer this mode on mount (e.g. dialog-tabs when editing from view mode). */
+  initialViewMode?: EditLinkViewMode;
+  /** When true and in dialog-tabs, only render the floating dialog (no inline placeholder). */
+  dialogOnly?: boolean;
   urlField: React.ReactNode;
   isAdmin: boolean;
   canChangeVisibility: boolean;
@@ -310,7 +314,7 @@ export type EditLinkFormProps = {
   onToggleGroup: (groupId: number) => void;
   showEmojiPicker: boolean;
   onSetEmojiPicker: (open: boolean) => void;
-  onOpenNotesPreset: () => void;
+  onOpenNotesPreset?: () => void;
   linkAnimationForEdit: (animation?: string) => TileAnimation;
 };
 
@@ -335,6 +339,8 @@ export const EditLinkForm: React.FC<EditLinkFormProps> = (props) => {
     onCancel,
     onSave,
     onConvert,
+    initialViewMode,
+    dialogOnly = false,
     urlField,
     isAdmin,
     canChangeVisibility,
@@ -358,7 +364,9 @@ export const EditLinkForm: React.FC<EditLinkFormProps> = (props) => {
     linkAnimationForEdit,
   } = props;
 
-  const [viewMode, setViewMode] = useState<EditLinkViewMode>(() => readEditLinkViewMode());
+  const [viewMode, setViewMode] = useState<EditLinkViewMode>(
+    () => initialViewMode ?? readEditLinkViewMode()
+  );
   const [activeTab, setActiveTab] = useState<EditLinkTabId>('basics');
   const canSave = !!draft.label?.trim() && !!draft.url?.trim();
   // Popup tabs always use colored section chrome; Long form keeps the Colors preference.
@@ -593,13 +601,15 @@ export const EditLinkForm: React.FC<EditLinkFormProps> = (props) => {
 
   const footerActions = (
     <div className="flex flex-wrap gap-2 justify-end pt-2 border-t border-slate-200 dark:border-slate-700">
-      <button
-        type="button"
-        onClick={onConvert}
-        className="mr-auto px-4 py-2 text-xs font-medium text-indigo-700 dark:text-indigo-300 hover:text-indigo-900 dark:hover:text-indigo-100 hover:bg-indigo-50 dark:hover:bg-indigo-950/40 rounded-lg border border-indigo-200 dark:border-indigo-800 transition-all"
-      >
-        Convert to tile/space
-      </button>
+      {onConvert && (
+        <button
+          type="button"
+          onClick={onConvert}
+          className="mr-auto px-4 py-2 text-xs font-medium text-indigo-700 dark:text-indigo-300 hover:text-indigo-900 dark:hover:text-indigo-100 hover:bg-indigo-50 dark:hover:bg-indigo-950/40 rounded-lg border border-indigo-200 dark:border-indigo-800 transition-all"
+        >
+          Convert to tile/space
+        </button>
+      )}
       {cancelSaveButtons}
     </div>
   );
@@ -945,17 +955,19 @@ export const EditLinkForm: React.FC<EditLinkFormProps> = (props) => {
       <div>
         <div className="flex items-center justify-between mb-1.5">
           <label className="block text-xs font-semibold uppercase tracking-wider text-slate-600 dark:text-slate-400">Notes (Rich Text)</label>
-          <button
-            type="button"
-            onClick={onOpenNotesPreset}
-            className="text-[10px] px-2 py-1 bg-brand-100 dark:bg-brand-900/30 text-brand-600 dark:text-brand-400 hover:bg-brand-200 dark:hover:bg-brand-900/50 rounded transition-colors flex items-center gap-1"
-            title="Use preset form"
-          >
-            <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" strokeWidth={2} stroke="currentColor" className="w-3 h-3">
-              <path strokeLinecap="round" strokeLinejoin="round" d="M12 4.5v15m7.5-7.5h-15" />
-            </svg>
-            Preset Form
-          </button>
+          {onOpenNotesPreset && (
+            <button
+              type="button"
+              onClick={onOpenNotesPreset}
+              className="text-[10px] px-2 py-1 bg-brand-100 dark:bg-brand-900/30 text-brand-600 dark:text-brand-400 hover:bg-brand-200 dark:hover:bg-brand-900/50 rounded transition-colors flex items-center gap-1"
+              title="Use preset form"
+            >
+              <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" strokeWidth={2} stroke="currentColor" className="w-3 h-3">
+                <path strokeLinecap="round" strokeLinejoin="round" d="M12 4.5v15m7.5-7.5h-15" />
+              </svg>
+              Preset Form
+            </button>
+          )}
         </div>
         <SelectableRichTextEditor
           value={draft.notes || ''}
@@ -1411,7 +1423,7 @@ export const EditLinkForm: React.FC<EditLinkFormProps> = (props) => {
           onMouseDown={handleDragStart}
         />
         <div className="flex items-center gap-2 shrink-0 flex-wrap justify-end -mt-2 mb-3">
-          {viewModeToggle}
+          {!dialogOnly && viewModeToggle}
           {cancelSaveButtons}
         </div>
         <div className="flex gap-1.5 mb-4 border-b border-slate-200 dark:border-slate-700 overflow-x-auto shrink-0">
@@ -1477,6 +1489,9 @@ export const EditLinkForm: React.FC<EditLinkFormProps> = (props) => {
       : null;
 
   if (viewMode === 'dialog-tabs') {
+    if (dialogOnly) {
+      return dialogPortal;
+    }
     return (
       <>
         <div

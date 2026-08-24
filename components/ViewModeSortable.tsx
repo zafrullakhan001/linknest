@@ -1,7 +1,13 @@
 import React from 'react';
-import { useDndContext } from '@dnd-kit/core';
+import { useDndContext, useDroppable } from '@dnd-kit/core';
 import { useSortable } from '@dnd-kit/sortable';
 import { CSS } from '@dnd-kit/utilities';
+
+export const VIEW_SECTION_DROP_PREFIX = 'view-section-drop:';
+
+export function viewSectionDropId(sectionId: string): string {
+  return `${VIEW_SECTION_DROP_PREFIX}${sectionId}`;
+}
 
 const SOFT_TRANSITION = 'transform 220ms cubic-bezier(0.22, 1, 0.36, 1), box-shadow 180ms ease, background-color 180ms ease, opacity 160ms ease';
 
@@ -37,6 +43,8 @@ export const ViewModeSortable: React.FC<{
   style?: React.CSSProperties;
   /** Prefer vertical list indicators (default). Grid layouts still get a soft ring. */
   layout?: 'list' | 'grid';
+  /** Extra sortable data (e.g. sectionId for cross-section moves). */
+  data?: Record<string, unknown>;
   children: React.ReactNode | DragHandleRender;
 } & Omit<React.HTMLAttributes<HTMLDivElement>, 'id' | 'children' | 'style' | 'className'>> = ({
   id,
@@ -45,6 +53,7 @@ export const ViewModeSortable: React.FC<{
   className,
   style,
   layout = 'list',
+  data,
   children,
   ...rest
 }) => {
@@ -59,6 +68,7 @@ export const ViewModeSortable: React.FC<{
   } = useSortable({
     id,
     disabled,
+    data,
   });
 
   const isOverTarget =
@@ -156,3 +166,40 @@ export const ViewModeDragHandle: React.FC<{
     </svg>
   </button>
 );
+
+/** Drop target for a section's item list (empty sections + append-to-section). */
+export const ViewModeSectionDropZone: React.FC<{
+  sectionId: string;
+  disabled?: boolean;
+  className?: string;
+  style?: React.CSSProperties;
+  children: React.ReactNode;
+}> = ({ sectionId, disabled = false, className = '', style, children }) => {
+  const { setNodeRef, isOver, active } = useDroppable({
+    id: viewSectionDropId(sectionId),
+    disabled,
+    data: { type: 'view-section', sectionId },
+  });
+  const activeIsItem = active?.data?.current?.type === 'view-item';
+  const showHighlight = isOver && activeIsItem && !disabled;
+
+  return (
+    <div
+      ref={setNodeRef}
+      className={[
+        className,
+        'min-h-[12px] rounded-xl transition-[box-shadow,background-color] duration-150',
+        showHighlight
+          ? 'ring-2 ring-brand-400/70 dark:ring-brand-400/50 bg-brand-50/50 dark:bg-brand-900/20'
+          : '',
+      ]
+        .filter(Boolean)
+        .join(' ')}
+      style={style}
+      data-section-drop={sectionId}
+      data-drop-over={showHighlight ? 'true' : 'false'}
+    >
+      {children}
+    </div>
+  );
+};

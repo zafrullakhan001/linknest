@@ -103,7 +103,12 @@ import {
 } from '../services/linkCheckExceptionsService';
 import { printQrView } from '../utils/printQrView';
 import { rolesService, LINK_ACTION_IDS, type LinkActionId } from '../services/rolesService';
-import { ViewModeDragHandle, ViewModeSortable } from './ViewModeSortable';
+import {
+    ViewModeDragHandle,
+    ViewModeSectionDropZone,
+    ViewModeSortable,
+    VIEW_SECTION_DROP_PREFIX,
+} from './ViewModeSortable';
 
 const SslCheckerDialog = lazy(() => import('./ssl/SslCheckerDialog'));
 const WhoisDialog = lazy(() => import('./ssl/WhoisDialog'));
@@ -1545,6 +1550,20 @@ export const TileDetail: React.FC<TileDetailProps> = ({
 
     // State for Editing Links (keyed by link ID)
     const [editingLinkId, setEditingLinkId] = useState<string | null>(null);
+    /** View-mode quick edit/add: dialog without entering the edit panel */
+    const [viewQuickEdit, setViewQuickEdit] = useState<{
+        mode: 'edit' | 'add';
+        tabId: string;
+        sectionId: string;
+        linkId: string;
+    } | null>(null);
+    const [viewQuickEditSaving, setViewQuickEditSaving] = useState(false);
+    /** Inline rename for tab/section titles in view mode */
+    const [viewRename, setViewRename] = useState<
+        | { kind: 'tab'; tabId: string; value: string }
+        | { kind: 'section'; tabId: string; sectionId: string; value: string }
+        | null
+    >(null);
     const [editLinkPlainColors, setEditLinkPlainColors] = useState<Record<string, boolean>>({});
     const [editLinkSectionFold, setEditLinkSectionFold] = useState<{ nonce: number; open: boolean }>({ nonce: 0, open: true });
     const [convertLinkDialog, setConvertLinkDialog] = useState<{ tabId: string; sectionId: string; link: Link } | null>(null);
@@ -2499,9 +2518,9 @@ export const TileDetail: React.FC<TileDetailProps> = ({
         }
     }, [viewLayout, isLinkActionAllowed]);
 
-    // Load users list when editing and authenticated
+    // Load users list when editing (panel or view-mode quick edit) and authenticated
     useEffect(() => {
-        if (isEditing && isAuthenticated && tile.canEdit) {
+        if (isAuthenticated && tile.canEdit && (isEditing || !!viewQuickEdit)) {
             const loadUsers = async () => {
                 try {
                     setLoadingUsers(true);
@@ -2533,7 +2552,7 @@ export const TileDetail: React.FC<TileDetailProps> = ({
             loadUsers();
             loadGroups();
         }
-    }, [isEditing, isAuthenticated, tile.canEdit]);
+    }, [isEditing, isAuthenticated, tile.canEdit, viewQuickEdit]);
 
     // Load available browsers from database when feature is enabled (auth required)
     useEffect(() => {
@@ -2599,7 +2618,7 @@ export const TileDetail: React.FC<TileDetailProps> = ({
             // Dialogs that register via useEscapeToClose (and similar) handle Escape themselves
             if (isEscapeDialogOpen()) return;
             // Local dialogs with their own Escape handlers
-            if (notesDialogState || linkInfoDialog || qrDialogState || mobilePreviewState || notesPresetFormState || diffViewerOpen) return;
+            if (notesDialogState || linkInfoDialog || qrDialogState || mobilePreviewState || notesPresetFormState || diffViewerOpen || viewQuickEdit || viewRename) return;
             if (
                 visibilityDialogTab ||
                 visibilityDialogSection ||
@@ -2654,6 +2673,8 @@ export const TileDetail: React.FC<TileDetailProps> = ({
         mobilePreviewState,
         notesPresetFormState,
         diffViewerOpen,
+        viewQuickEdit,
+        viewRename,
         visibilityDialogTab,
         visibilityDialogSection,
         schedulingDialogTab,
@@ -4817,7 +4838,259 @@ export const TileDetail: React.FC<TileDetailProps> = ({
             setLinkGroupSearch(prev => ({ ...prev, [editingLinkId]: '' }));
         }
         setEditingLinkId(null);
+        setViewQuickEdit(null);
         setEditLinkState({});
+    };
+
+    const handleStartViewQuickEdit = (tabId: string, sectionId: string, link: Link) => {
+        if (tile.canEdit !== true) return;
+        if (tile.canEditLinks === false) return;
+        setViewQuickEdit({ mode: 'edit', tabId, sectionId, linkId: link.id });
+        handleStartEditLink(link);
+    };
+
+    const handleStartViewQuickAdd = (tabId: string, sectionId: string) => {
+        if (tile.canEdit !== true) return;
+        if (tile.canAddLinks === false) return;
+        const draftId = generateId();
+        setViewQuickEdit({ mode: 'add', tabId, sectionId, linkId: draftId });
+        setEditingLinkId(draftId);
+        setEditLinkSectionFold({ nonce: 0, open: true });
+        setEditLinkState({ [draftId]: emptyNewLinkFormState() });
+        setShowUserPicker((prev) => ({ ...prev, [draftId]: false }));
+        setLinkUserSearch((prev) => ({ ...prev, [draftId]: '' }));
+        setLinkGroupSearch((prev) => ({ ...prev, [draftId]: '' }));
+        setShowLinkEmojiPicker((prev) => ({ ...prev, [draftId]: false }));
+    };
+
+    const handleSaveViewQuickEdit = async () => {
+        if (!viewQuickEdit || viewQuickEditSaving) return;
+        const { mode, tabId, sectionId, linkId } = viewQuickEdit;
+        const state = editLinkState[linkId];
+        if (!state || !state.label.trim() || !state.url.trim()) return;
+        if (tile.canEdit !== true) return;
+
+        const nextTabs = (tile.tabs || []).map((tab) => {
+            if (tab.id !== tabId) return tab;
+            return {
+                ...tab,
+                sections: (tab.sections || []).map((s) => {
+                    if (s.id !== sectionId) return s;
+                    if (mode === 'add') {
+                        const items = [
+                            ...(s.links || []).map((l) => ({ ...l, itemType: 'link' as const })),
+                            ...(s.richTextContent || []).map((rt) => ({ ...rt, itemType: 'rich-text' as const })),
+                        ];
+                        const maxPosition = Math.max(...items.map((i) => i.position ?? 0), -1);
+                        const newLink: Link = {
+                            ...applyEditLinkFormToLink({ id: linkId, label: '', url: '' }, state),
+                            id: linkId,
+                            position: maxPosition + 1,
+                            hasRoleAccess: tile.hasRoleAccess === true || undefined,
+                        };
+                        return {
+                            ...s,
+                            links: [...(s.links || []), newLink],
+                            richTextContent: s.richTextContent || [],
+                        };
+                    }
+                    return {
+                        ...s,
+                        links: (s.links || []).map((l) =>
+                            l.id === linkId ? applyEditLinkFormToLink(l, state) : l
+                        ),
+                    };
+                }),
+            };
+        });
+        const updatedTile: Tile = { ...tile, tabs: nextTabs };
+        setViewQuickEditSaving(true);
+        try {
+            await persistViewModeTile(updatedTile);
+            handleCancelEditLink();
+        } catch (e) {
+            console.error(mode === 'add' ? 'Failed to add link' : 'Failed to save link', e);
+            alert(e instanceof Error ? e.message : mode === 'add' ? 'Failed to add link' : 'Failed to save link');
+        } finally {
+            setViewQuickEditSaving(false);
+        }
+    };
+
+    const handleViewCloneLink = async (tabId: string, sectionId: string, linkId: string) => {
+        if (tile.canEdit !== true || tile.canAddLinks === false || viewQuickEditSaving) return;
+        const tab = (tile.tabs || []).find((t) => t.id === tabId);
+        const section = tab?.sections?.find((s) => s.id === sectionId);
+        const linkToClone = section?.links?.find((l) => l.id === linkId);
+        if (!section || !linkToClone) return;
+
+        const items = [
+            ...(section.links || []).map((l) => ({ ...l, itemType: 'link' as const })),
+            ...(section.richTextContent || []).map((rt) => ({ ...rt, itemType: 'rich-text' as const })),
+        ].sort((a, b) => (a.position ?? 0) - (b.position ?? 0));
+        const sourceIndex = items.findIndex((i) => i.id === linkId && i.itemType === 'link');
+        if (sourceIndex < 0) return;
+
+        const clonedLink: Link = {
+            id: generateId(),
+            label: `${linkToClone.label} (Copy)`,
+            url: linkToClone.url,
+            icon: linkToClone.icon,
+            textColor: linkToClone.textColor,
+            visibility: linkToClone.visibility,
+            allowedUsers: linkToClone.allowedUsers ? [...linkToClone.allowedUsers] : undefined,
+            allowedGroups: linkToClone.allowedGroups ? [...linkToClone.allowedGroups] : undefined,
+            notes: linkToClone.notes,
+            tooltip: linkToClone.tooltip,
+            tooltipStyle: linkToClone.tooltipStyle,
+            health: linkToClone.health,
+            browser: linkToClone.browser,
+            hasRoleAccess: linkToClone.hasRoleAccess === true,
+            published: linkToClone.published,
+            animation: linkToClone.animation,
+            richTextContent: linkToClone.richTextContent,
+            notesEnabled: linkToClone.notesEnabled,
+            richTextEnabled: linkToClone.richTextEnabled,
+            maintenanceEnabled: linkToClone.maintenanceEnabled,
+            maintenanceMessage: linkToClone.maintenanceMessage,
+            maintenanceVideoUrl: linkToClone.maintenanceVideoUrl,
+            accessRestrictions: linkToClone.accessRestrictions,
+            inheritShortUrls: linkToClone.inheritShortUrls,
+        };
+
+        const updatedItems = [
+            ...items.slice(0, sourceIndex + 1),
+            { ...clonedLink, itemType: 'link' as const },
+            ...items.slice(sourceIndex + 1),
+        ];
+        const finalLinks: Link[] = [];
+        const finalRichText: NonNullable<LinkSection['richTextContent']> = [];
+        updatedItems.forEach((item, index) => {
+            const { itemType, ...rest } = item;
+            const withPos = { ...rest, position: index };
+            if (itemType === 'link') finalLinks.push(withPos as Link);
+            else finalRichText.push(withPos as NonNullable<LinkSection['richTextContent']>[number]);
+        });
+
+        const nextTabs = (tile.tabs || []).map((t) =>
+            t.id !== tabId
+                ? t
+                : {
+                      ...t,
+                      sections: (t.sections || []).map((s) =>
+                          s.id !== sectionId
+                              ? s
+                              : { ...s, links: finalLinks, richTextContent: finalRichText }
+                      ),
+                  }
+        );
+        setViewQuickEditSaving(true);
+        try {
+            await persistViewModeTile({ ...tile, tabs: nextTabs });
+        } catch (e) {
+            console.error('Failed to clone link', e);
+            alert(e instanceof Error ? e.message : 'Failed to clone link');
+        } finally {
+            setViewQuickEditSaving(false);
+        }
+    };
+
+    const handleViewDeleteLink = async (tabId: string, sectionId: string, link: Link) => {
+        if (tile.canEdit !== true || tile.canDeleteLinks === false || viewQuickEditSaving) return;
+        const label = stripHtmlTags(link.label || '').trim() || 'this link';
+        if (!window.confirm(`Delete "${label}"? This cannot be undone.`)) return;
+
+        const nextTabs = (tile.tabs || []).map((t) =>
+            t.id !== tabId
+                ? t
+                : {
+                      ...t,
+                      sections: (t.sections || []).map((s) =>
+                          s.id !== sectionId
+                              ? s
+                              : {
+                                    ...s,
+                                    links: (s.links || []).filter((l) => l.id !== link.id),
+                                    richTextContent: s.richTextContent || [],
+                                }
+                      ),
+                  }
+        );
+        setViewQuickEditSaving(true);
+        try {
+            await persistViewModeTile({ ...tile, tabs: nextTabs });
+        } catch (e) {
+            console.error('Failed to delete link', e);
+            alert(e instanceof Error ? e.message : 'Failed to delete link');
+        } finally {
+            setViewQuickEditSaving(false);
+        }
+    };
+
+    const startViewRenameTab = (tab: Tab) => {
+        if (tile.canEdit !== true || viewQuickEditSaving) return;
+        setViewRename({ kind: 'tab', tabId: tab.id, value: tab.title || '' });
+    };
+
+    const startViewRenameSection = (tabId: string, section: LinkSection) => {
+        if (tile.canEdit !== true || viewQuickEditSaving) return;
+        setViewRename({ kind: 'section', tabId, sectionId: section.id, value: section.title || '' });
+    };
+
+    const cancelViewRename = () => setViewRename(null);
+
+    const commitViewRename = async () => {
+        if (!viewRename || viewQuickEditSaving) return;
+        const nextTitle = viewRename.value.trim();
+
+        if (viewRename.kind === 'tab') {
+            const tab = (tile.tabs || []).find((t) => t.id === viewRename.tabId);
+            if (!tab || (tab.title || '') === nextTitle) {
+                setViewRename(null);
+                return;
+            }
+            const nextTabs = (tile.tabs || []).map((t) =>
+                t.id === viewRename.tabId ? { ...t, title: nextTitle || t.title || 'Untitled' } : t
+            );
+            setViewQuickEditSaving(true);
+            try {
+                await persistViewModeTile({ ...tile, tabs: nextTabs });
+                setViewRename(null);
+            } catch (e) {
+                console.error('Failed to rename tab', e);
+                alert(e instanceof Error ? e.message : 'Failed to rename tab');
+            } finally {
+                setViewQuickEditSaving(false);
+            }
+            return;
+        }
+
+        const section = (tile.tabs || [])
+            .find((t) => t.id === viewRename.tabId)
+            ?.sections?.find((s) => s.id === viewRename.sectionId);
+        if (!section || (section.title || '') === nextTitle) {
+            setViewRename(null);
+            return;
+        }
+        const nextTabs = (tile.tabs || []).map((t) =>
+            t.id !== viewRename.tabId
+                ? t
+                : {
+                      ...t,
+                      sections: (t.sections || []).map((s) =>
+                          s.id === viewRename.sectionId ? { ...s, title: nextTitle } : s
+                      ),
+                  }
+        );
+        setViewQuickEditSaving(true);
+        try {
+            await persistViewModeTile({ ...tile, tabs: nextTabs });
+            setViewRename(null);
+        } catch (e) {
+            console.error('Failed to rename section', e);
+            alert(e instanceof Error ? e.message : 'Failed to rename section');
+        } finally {
+            setViewQuickEditSaving(false);
+        }
     };
 
     const handleUpdateLink = (tabId: string, sectionId: string, linkId: string) => {
@@ -6484,6 +6757,22 @@ export const TileDetail: React.FC<TileDetailProps> = ({
         !(searchTerm || '').trim() &&
         !viewReorderSaving &&
         !isMobile;
+    const canQuickEditLinks =
+        tile.canEdit === true &&
+        tile.canEditLinks !== false &&
+        !viewQuickEditSaving;
+    const canQuickAddLinks =
+        tile.canEdit === true &&
+        tile.canAddLinks !== false &&
+        !viewQuickEditSaving;
+    const canQuickCloneLinks = canQuickAddLinks;
+    const canQuickDeleteLinks =
+        tile.canEdit === true &&
+        tile.canDeleteLinks !== false &&
+        !viewQuickEditSaving;
+    const canQuickEditTitles =
+        tile.canEdit === true &&
+        !viewQuickEditSaving;
     const canReorderTabs = canViewReorder && displayTabs.length > 1;
     const verticalTabsSearchQuery = verticalTabsSearch.trim().toLowerCase();
     const filteredVerticalTabs = verticalTabsSearchQuery
@@ -6748,6 +7037,7 @@ export const TileDetail: React.FC<TileDetailProps> = ({
     const handleViewSectionDragEnd = useCallback(async (event: DragEndEvent) => {
         const { active, over } = event;
         if (!over || active.id === over.id || viewReorderSaving) return;
+        if (active.data.current?.type === 'view-item') return;
         if (tile.canEdit !== true) return;
         const tab = activeViewTab;
         if (!tab?.sections?.length) return;
@@ -6804,35 +7094,111 @@ export const TileDetail: React.FC<TileDetailProps> = ({
         }
     }, [displayTabs, persistViewModeTile, tile, viewReorderSaving]);
 
-    const handleViewLinkDragEnd = useCallback(async (sectionId: string, event: DragEndEvent) => {
+    const handleViewLinkDragEnd = useCallback(async (event: DragEndEvent) => {
         const { active, over } = event;
-        if (!over || active.id === over.id || viewReorderSaving) return;
+        if (!over || viewReorderSaving) return;
         if (tile.canEdit !== true) return;
         const tab = activeViewTab;
         if (!tab?.sections?.length) return;
-        const section = tab.sections.find((s) => s.id === sectionId);
-        if (!section) return;
 
-        const ordered = [
-            ...(section.links || []).map((l) => ({ ...l, itemType: 'link' as const })),
-            ...(section.richTextContent || []).map((rt) => ({ ...rt, itemType: 'rich-text' as const })),
-        ].sort((a, b) => (a.position ?? 0) - (b.position ?? 0));
+        type OrderedItem =
+            | (Link & { itemType: 'link' })
+            | (NonNullable<LinkSection['richTextContent']>[number] & { itemType: 'rich-text' });
 
-        const oldIndex = ordered.findIndex((item) => item.id === active.id);
-        const newIndex = ordered.findIndex((item) => item.id === over.id);
-        if (oldIndex < 0 || newIndex < 0 || oldIndex === newIndex) return;
+        const getOrderedItems = (section: LinkSection): OrderedItem[] =>
+            [
+                ...(section.links || []).map((l) => ({ ...l, itemType: 'link' as const })),
+                ...(section.richTextContent || []).map((rt) => ({ ...rt, itemType: 'rich-text' as const })),
+            ].sort((a, b) => (a.position ?? 0) - (b.position ?? 0));
 
-        const reordered = arrayMove(ordered, oldIndex, newIndex).map((item, idx) => ({ ...item, position: idx }));
-        const nextLinks = reordered.filter((item) => item.itemType === 'link').map(({ itemType: _t, ...rest }) => rest as Link);
-        const nextRich = reordered
-            .filter((item) => item.itemType === 'rich-text')
-            .map(({ itemType: _t, ...rest }) => rest);
+        const splitOrdered = (ordered: OrderedItem[]) => {
+            const withPositions = ordered.map((item, idx) => ({ ...item, position: idx }));
+            return {
+                links: withPositions
+                    .filter((item) => item.itemType === 'link')
+                    .map(({ itemType: _t, ...rest }) => rest as Link),
+                richTextContent: withPositions
+                    .filter((item) => item.itemType === 'rich-text')
+                    .map(({ itemType: _t, ...rest }) => rest) as NonNullable<LinkSection['richTextContent']>,
+            };
+        };
 
-        const nextSections = tab.sections.map((s) =>
-            s.id === sectionId
-                ? { ...s, links: nextLinks, richTextContent: nextRich as typeof s.richTextContent }
-                : s
-        );
+        const findSectionIdForItem = (itemId: string): string | null => {
+            for (const s of tab.sections) {
+                if ((s.links || []).some((l) => l.id === itemId)) return s.id;
+                if ((s.richTextContent || []).some((rt) => rt.id === itemId)) return s.id;
+            }
+            return null;
+        };
+
+        const activeId = String(active.id);
+        const overId = String(over.id);
+        if (active.data.current?.type === 'section') return;
+
+        const sourceSectionId =
+            (typeof active.data.current?.sectionId === 'string' ? active.data.current.sectionId : null) ||
+            findSectionIdForItem(activeId);
+        if (!sourceSectionId) return;
+
+        const overIsSectionDrop = overId.startsWith(VIEW_SECTION_DROP_PREFIX);
+        const overIsSectionCard = tab.sections.some((s) => s.id === overId);
+        const targetSectionId = overIsSectionDrop
+            ? overId.slice(VIEW_SECTION_DROP_PREFIX.length)
+            : overIsSectionCard
+              ? overId
+              : (typeof over.data.current?.sectionId === 'string' ? over.data.current.sectionId : null) ||
+                findSectionIdForItem(overId);
+        if (!targetSectionId) return;
+
+        const sourceSection = tab.sections.find((s) => s.id === sourceSectionId);
+        const targetSection = tab.sections.find((s) => s.id === targetSectionId);
+        if (!sourceSection || !targetSection) return;
+
+        let nextSections: LinkSection[];
+
+        if (sourceSectionId === targetSectionId) {
+            if (activeId === overId || overIsSectionDrop || overIsSectionCard) return;
+            const ordered = getOrderedItems(sourceSection);
+            const oldIndex = ordered.findIndex((item) => item.id === activeId);
+            const newIndex = ordered.findIndex((item) => item.id === overId);
+            if (oldIndex < 0 || newIndex < 0 || oldIndex === newIndex) return;
+
+            const reordered = arrayMove(ordered, oldIndex, newIndex);
+            const split = splitOrdered(reordered);
+            nextSections = tab.sections.map((s) =>
+                s.id === sourceSectionId
+                    ? { ...s, links: split.links, richTextContent: split.richTextContent }
+                    : s
+            );
+        } else {
+            const sourceOrdered = getOrderedItems(sourceSection);
+            const targetOrdered = getOrderedItems(targetSection);
+            const oldIndex = sourceOrdered.findIndex((item) => item.id === activeId);
+            if (oldIndex < 0) return;
+
+            const [moved] = sourceOrdered.splice(oldIndex, 1);
+            if (!moved) return;
+
+            let insertAt = targetOrdered.length;
+            if (!overIsSectionDrop && !overIsSectionCard) {
+                const overIndex = targetOrdered.findIndex((item) => item.id === overId);
+                if (overIndex >= 0) insertAt = overIndex;
+            }
+            targetOrdered.splice(insertAt, 0, moved);
+
+            const sourceSplit = splitOrdered(sourceOrdered);
+            const targetSplit = splitOrdered(targetOrdered);
+            nextSections = tab.sections.map((s) => {
+                if (s.id === sourceSectionId) {
+                    return { ...s, links: sourceSplit.links, richTextContent: sourceSplit.richTextContent };
+                }
+                if (s.id === targetSectionId) {
+                    return { ...s, links: targetSplit.links, richTextContent: targetSplit.richTextContent };
+                }
+                return s;
+            });
+        }
+
         const nextTabs = (tile.tabs || []).map((t) =>
             t.id === tab.id ? { ...t, sections: nextSections } : t
         );
@@ -6841,8 +7207,8 @@ export const TileDetail: React.FC<TileDetailProps> = ({
         try {
             await persistViewModeTile(updatedTile);
         } catch (e) {
-            console.error('Failed to save link order', e);
-            alert(e instanceof Error ? e.message : 'Failed to save link order');
+            console.error('Failed to save link move', e);
+            alert(e instanceof Error ? e.message : 'Failed to save link move');
         } finally {
             setViewReorderSaving(false);
         }
@@ -7925,7 +8291,10 @@ export const TileDetail: React.FC<TileDetailProps> = ({
                                                             )}
                                                             <button
                                                                 type="button"
-                                                                onClick={() => { void selectDisplayTab(tab); }}
+                                                                onClick={() => {
+                                                                    if (viewRename?.kind === 'tab' && viewRename.tabId === tab.id) return;
+                                                                    void selectDisplayTab(tab);
+                                                                }}
                                                                 className={`flex-1 min-w-0 text-left rounded-lg ${
                                                                     isTiles
                                                                         ? 'p-2.5 flex flex-col gap-1.5 min-h-[4.5rem]'
@@ -7953,7 +8322,55 @@ export const TileDetail: React.FC<TileDetailProps> = ({
                                                                             {tab.emoji ? (
                                                                                 <span className="shrink-0 leading-none" aria-hidden>{tab.emoji}</span>
                                                                             ) : null}
-                                                                            <span className="flex-1 min-w-0 font-semibold leading-snug break-words line-clamp-2">{tab.title}</span>
+                                                                            {viewRename?.kind === 'tab' && viewRename.tabId === tab.id ? (
+                                                                                <input
+                                                                                    autoFocus
+                                                                                    value={viewRename.value}
+                                                                                    onChange={(e) => setViewRename({ ...viewRename, value: e.target.value })}
+                                                                                    onClick={(e) => e.stopPropagation()}
+                                                                                    onKeyDown={(e) => {
+                                                                                        if (e.key === 'Enter') {
+                                                                                            e.preventDefault();
+                                                                                            void commitViewRename();
+                                                                                        } else if (e.key === 'Escape') {
+                                                                                            e.preventDefault();
+                                                                                            cancelViewRename();
+                                                                                        }
+                                                                                    }}
+                                                                                    onBlur={() => { void commitViewRename(); }}
+                                                                                    className="flex-1 min-w-0 rounded-md border border-brand-400 dark:border-brand-500 bg-white dark:bg-slate-900 px-1.5 py-0.5 text-sm font-semibold outline-none ring-2 ring-brand-500/30"
+                                                                                    aria-label="Tab title"
+                                                                                />
+                                                                            ) : (
+                                                                                <span className="flex-1 min-w-0 font-semibold leading-snug break-words line-clamp-2 inline-flex items-start gap-1">
+                                                                                    <span className="min-w-0 break-words">{tab.title}</span>
+                                                                                    {canQuickEditTitles && (
+                                                                                        <span
+                                                                                            role="button"
+                                                                                            tabIndex={0}
+                                                                                            onClick={(e) => {
+                                                                                                e.preventDefault();
+                                                                                                e.stopPropagation();
+                                                                                                startViewRenameTab(tab);
+                                                                                            }}
+                                                                                            onKeyDown={(e) => {
+                                                                                                if (e.key === 'Enter' || e.key === ' ') {
+                                                                                                    e.preventDefault();
+                                                                                                    e.stopPropagation();
+                                                                                                    startViewRenameTab(tab);
+                                                                                                }
+                                                                                            }}
+                                                                                            className="p-0.5 rounded text-slate-400 hover:text-brand-600 dark:hover:text-brand-400 hover:bg-slate-100 dark:hover:bg-slate-700 shrink-0 mt-0.5"
+                                                                                            title="Edit tab title"
+                                                                                            aria-label="Edit tab title"
+                                                                                        >
+                                                                                            <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" strokeWidth={2} stroke="currentColor" className="w-3.5 h-3.5" aria-hidden>
+                                                                                                <path strokeLinecap="round" strokeLinejoin="round" d="m16.862 4.487 1.687-1.688a1.875 1.875 0 1 1 2.652 2.652L10.582 16.07a4.5 4.5 0 0 1-1.897 1.13L6 18l.8-2.685a4.5 4.5 0 0 1 1.13-1.897l8.932-8.931Zm0 0L19.5 7.125M18 14v4.75A2.25 2.25 0 0 1 15.75 21H5.25A2.25 2.25 0 0 1 3 18.75V8.25A2.25 2.25 0 0 1 5.25 6H10" />
+                                                                                            </svg>
+                                                                                        </span>
+                                                                                    )}
+                                                                                </span>
+                                                                            )}
                                                                         </span>
                                                                         <span className="mt-auto flex items-center justify-between gap-1">
                                                                             <span className="inline-flex items-center gap-1 min-w-0">
@@ -7989,7 +8406,55 @@ export const TileDetail: React.FC<TileDetailProps> = ({
                                                                     {tab.emoji ? (
                                                                         <span className="shrink-0 leading-none" aria-hidden>{tab.emoji}</span>
                                                                     ) : null}
-                                                                    <span className={`flex-1 min-w-0 ${isCompact ? 'truncate' : (verticalTabsFloating ? 'whitespace-normal break-words' : 'truncate')}`}>{tab.title}</span>
+                                                                    {viewRename?.kind === 'tab' && viewRename.tabId === tab.id ? (
+                                                                        <input
+                                                                            autoFocus
+                                                                            value={viewRename.value}
+                                                                            onChange={(e) => setViewRename({ ...viewRename, value: e.target.value })}
+                                                                            onClick={(e) => e.stopPropagation()}
+                                                                            onKeyDown={(e) => {
+                                                                                if (e.key === 'Enter') {
+                                                                                    e.preventDefault();
+                                                                                    void commitViewRename();
+                                                                                } else if (e.key === 'Escape') {
+                                                                                    e.preventDefault();
+                                                                                    cancelViewRename();
+                                                                                }
+                                                                            }}
+                                                                            onBlur={() => { void commitViewRename(); }}
+                                                                            className="flex-1 min-w-0 rounded-md border border-brand-400 dark:border-brand-500 bg-white dark:bg-slate-900 px-1.5 py-0.5 text-sm font-medium outline-none ring-2 ring-brand-500/30"
+                                                                            aria-label="Tab title"
+                                                                        />
+                                                                    ) : (
+                                                                        <span className={`flex-1 min-w-0 inline-flex items-center gap-1 ${isCompact ? '' : ''}`}>
+                                                                            <span className={`min-w-0 ${isCompact ? 'truncate' : (verticalTabsFloating ? 'whitespace-normal break-words' : 'truncate')}`}>{tab.title}</span>
+                                                                            {canQuickEditTitles && (
+                                                                                <span
+                                                                                    role="button"
+                                                                                    tabIndex={0}
+                                                                                    onClick={(e) => {
+                                                                                        e.preventDefault();
+                                                                                        e.stopPropagation();
+                                                                                        startViewRenameTab(tab);
+                                                                                    }}
+                                                                                    onKeyDown={(e) => {
+                                                                                        if (e.key === 'Enter' || e.key === ' ') {
+                                                                                            e.preventDefault();
+                                                                                            e.stopPropagation();
+                                                                                            startViewRenameTab(tab);
+                                                                                        }
+                                                                                    }}
+                                                                                    className="p-0.5 rounded text-slate-400 hover:text-brand-600 dark:hover:text-brand-400 hover:bg-slate-100 dark:hover:bg-slate-700 shrink-0"
+                                                                                    title="Edit tab title"
+                                                                                    aria-label="Edit tab title"
+                                                                                >
+                                                                                    <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" strokeWidth={2} stroke="currentColor" className="w-3.5 h-3.5" aria-hidden>
+                                                                                        <path strokeLinecap="round" strokeLinejoin="round" d="m16.862 4.487 1.687-1.688a1.875 1.875 0 1 1 2.652 2.652L10.582 16.07a4.5 4.5 0 0 1-1.897 1.13L6 18l.8-2.685a4.5 4.5 0 0 1 1.13-1.897l8.932-8.931Zm0 0L19.5 7.125M18 14v4.75A2.25 2.25 0 0 1 15.75 21H5.25A2.25 2.25 0 0 1 3 18.75V8.25A2.25 2.25 0 0 1 5.25 6H10" />
+                                                                                    </svg>
+                                                                                </span>
+                                                                            )}
+                                                                        </span>
+                                                                    )}
                                                                     {!isCompact && (
                                                                         <>
                                                                             <AccessRestrictionsBadge rules={tab.accessRestrictions} />
@@ -8128,7 +8593,10 @@ export const TileDetail: React.FC<TileDetailProps> = ({
                                                         <button
                                                             key={tab.id}
                                                             type="button"
-                                                            onClick={() => { void selectDisplayTab(tab); }}
+                                                            onClick={() => {
+                                                                if (viewRename?.kind === 'tab' && viewRename.tabId === tab.id) return;
+                                                                void selectDisplayTab(tab);
+                                                            }}
                                                             data-active={isActive}
                                                             className={`linknest-content-tab w-full text-left px-3 py-3 text-sm font-medium transition-all duration-150 rounded-xl touch-manipulation ${isActive
                                                                 ? `${styles.iconBg} ${styles.text} font-semibold ring-1 ring-inset ring-slate-200/80 dark:ring-slate-600/50`
@@ -8143,7 +8611,55 @@ export const TileDetail: React.FC<TileDetailProps> = ({
                                                                 {tab.emoji ? (
                                                                     <span className="shrink-0 leading-none" aria-hidden>{tab.emoji}</span>
                                                                 ) : null}
-                                                                <span className="flex-1 min-w-0 truncate">{tab.title}</span>
+                                                                {viewRename?.kind === 'tab' && viewRename.tabId === tab.id ? (
+                                                                    <input
+                                                                        autoFocus
+                                                                        value={viewRename.value}
+                                                                        onChange={(e) => setViewRename({ ...viewRename, value: e.target.value })}
+                                                                        onClick={(e) => e.stopPropagation()}
+                                                                        onKeyDown={(e) => {
+                                                                            if (e.key === 'Enter') {
+                                                                                e.preventDefault();
+                                                                                void commitViewRename();
+                                                                            } else if (e.key === 'Escape') {
+                                                                                e.preventDefault();
+                                                                                cancelViewRename();
+                                                                            }
+                                                                        }}
+                                                                        onBlur={() => { void commitViewRename(); }}
+                                                                        className="flex-1 min-w-0 rounded-md border border-brand-400 dark:border-brand-500 bg-white dark:bg-slate-900 px-1.5 py-0.5 text-sm font-medium outline-none ring-2 ring-brand-500/30"
+                                                                        aria-label="Tab title"
+                                                                    />
+                                                                ) : (
+                                                                    <span className="flex-1 min-w-0 truncate inline-flex items-center gap-1">
+                                                                        <span className="truncate">{tab.title}</span>
+                                                                        {canQuickEditTitles && (
+                                                                            <span
+                                                                                role="button"
+                                                                                tabIndex={0}
+                                                                                onClick={(e) => {
+                                                                                    e.preventDefault();
+                                                                                    e.stopPropagation();
+                                                                                    startViewRenameTab(tab);
+                                                                                }}
+                                                                                onKeyDown={(e) => {
+                                                                                    if (e.key === 'Enter' || e.key === ' ') {
+                                                                                        e.preventDefault();
+                                                                                        e.stopPropagation();
+                                                                                        startViewRenameTab(tab);
+                                                                                    }
+                                                                                }}
+                                                                                className="p-1 rounded text-slate-400 hover:text-brand-600 dark:hover:text-brand-400 hover:bg-slate-100 dark:hover:bg-slate-700 shrink-0"
+                                                                                title="Edit tab title"
+                                                                                aria-label="Edit tab title"
+                                                                            >
+                                                                                <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" strokeWidth={2} stroke="currentColor" className="w-3.5 h-3.5" aria-hidden>
+                                                                                    <path strokeLinecap="round" strokeLinejoin="round" d="m16.862 4.487 1.687-1.688a1.875 1.875 0 1 1 2.652 2.652L10.582 16.07a4.5 4.5 0 0 1-1.897 1.13L6 18l.8-2.685a4.5 4.5 0 0 1 1.13-1.897l8.932-8.931Zm0 0L19.5 7.125M18 14v4.75A2.25 2.25 0 0 1 15.75 21H5.25A2.25 2.25 0 0 1 3 18.75V8.25A2.25 2.25 0 0 1 5.25 6H10" />
+                                                                                </svg>
+                                                                            </span>
+                                                                        )}
+                                                                    </span>
+                                                                )}
                                                                 <AccessRestrictionsBadge rules={tab.accessRestrictions} />
                                                                 {(tile.canEdit === true || !!user?.is_admin) && (
                                                                     <VisibilityProtectionBadge visibility={tab.visibility} />
@@ -8214,14 +8730,65 @@ export const TileDetail: React.FC<TileDetailProps> = ({
                                                                     )}
                                                                     <button
                                                                         type="button"
-                                                                        onClick={() => { void selectDisplayTab(tab); }}
+                                                                        onClick={() => {
+                                                                            if (viewRename?.kind === 'tab' && viewRename.tabId === tab.id) return;
+                                                                            void selectDisplayTab(tab);
+                                                                        }}
                                                                         className="px-5 py-2.5 rounded-lg"
                                                                     >
                                                                         <span className="flex items-center gap-2">
                                                                             {tab.emoji ? (
                                                                                 <span className="shrink-0 leading-none" aria-hidden>{tab.emoji}</span>
                                                                             ) : null}
-                                                                            {tab.title}
+                                                                            {viewRename?.kind === 'tab' && viewRename.tabId === tab.id ? (
+                                                                                <input
+                                                                                    autoFocus
+                                                                                    value={viewRename.value}
+                                                                                    onChange={(e) => setViewRename({ ...viewRename, value: e.target.value })}
+                                                                                    onClick={(e) => e.stopPropagation()}
+                                                                                    onKeyDown={(e) => {
+                                                                                        if (e.key === 'Enter') {
+                                                                                            e.preventDefault();
+                                                                                            void commitViewRename();
+                                                                                        } else if (e.key === 'Escape') {
+                                                                                            e.preventDefault();
+                                                                                            cancelViewRename();
+                                                                                        }
+                                                                                    }}
+                                                                                    onBlur={() => { void commitViewRename(); }}
+                                                                                    className="w-28 max-w-[10rem] rounded-md border border-brand-400 dark:border-brand-500 bg-white dark:bg-slate-900 px-1.5 py-0.5 text-sm font-medium outline-none ring-2 ring-brand-500/30"
+                                                                                    aria-label="Tab title"
+                                                                                />
+                                                                            ) : (
+                                                                                <span className="inline-flex items-center gap-1 min-w-0">
+                                                                                    <span className="truncate">{tab.title}</span>
+                                                                                    {canQuickEditTitles && (
+                                                                                        <span
+                                                                                            role="button"
+                                                                                            tabIndex={0}
+                                                                                            onClick={(e) => {
+                                                                                                e.preventDefault();
+                                                                                                e.stopPropagation();
+                                                                                                startViewRenameTab(tab);
+                                                                                            }}
+                                                                                            onKeyDown={(e) => {
+                                                                                                if (e.key === 'Enter' || e.key === ' ') {
+                                                                                                    e.preventDefault();
+                                                                                                    e.stopPropagation();
+                                                                                                    startViewRenameTab(tab);
+                                                                                                }
+                                                                                            }}
+                                                                                            className="p-0.5 rounded text-slate-400 hover:text-brand-600 dark:hover:text-brand-400 hover:bg-slate-100 dark:hover:bg-slate-700 shrink-0"
+                                                                                            title="Edit tab title"
+                                                                                            aria-label="Edit tab title"
+                                                                                        >
+                                                                                            <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" strokeWidth={2} stroke="currentColor" className="w-3.5 h-3.5" aria-hidden>
+                                                                                                <path strokeLinecap="round" strokeLinejoin="round" d="m16.862 4.487 1.687-1.688a1.875 1.875 0 1 1 2.652 2.652L10.582 16.07a4.5 4.5 0 0 1-1.897 1.13L6 18l.8-2.685a4.5 4.5 0 0 1 1.13-1.897l8.932-8.931Zm0 0L19.5 7.125M18 14v4.75A2.25 2.25 0 0 1 15.75 21H5.25A2.25 2.25 0 0 1 3 18.75V8.25A2.25 2.25 0 0 1 5.25 6H10" />
+                                                                                            </svg>
+                                                                                        </span>
+                                                                                    )}
+                                                                                </span>
+                                                                            )}
                                                                             <AccessRestrictionsBadge rules={tab.accessRestrictions} />
                                                                             {(tile.canEdit === true || !!user?.is_admin) && (
                                                                                 <VisibilityProtectionBadge visibility={tab.visibility} />
@@ -8302,6 +8869,11 @@ export const TileDetail: React.FC<TileDetailProps> = ({
                                 sensors={viewReorderSensors}
                                 collisionDetection={closestCorners}
                                 onDragEnd={(e) => {
+                                    const activeType = e.active.data.current?.type;
+                                    if (activeType === 'view-item') {
+                                        void handleViewLinkDragEnd(e);
+                                        return;
+                                    }
                                     void handleViewSectionDragEnd(e);
                                 }}
                             >
@@ -8339,6 +8911,7 @@ export const TileDetail: React.FC<TileDetailProps> = ({
                                             id={section.id}
                                             htmlId={`section-${section.id}`}
                                             disabled={!canReorderSections}
+                                            data={{ type: 'section' }}
                                             layout={sectionsSideBySide ? 'grid' : 'list'}
                                             data-view-layout={sectionLinkLayout}
                                             data-qr-print-section={isQrLayout ? section.id : undefined}
@@ -8373,16 +8946,56 @@ export const TileDetail: React.FC<TileDetailProps> = ({
                                                         className="mt-0.5"
                                                     />
                                                 )}
-                                                {section.title ? (
+                                                {section.title || canQuickEditTitles ? (
                                                     <h3
-                                                        className={`linknest-content-section-title font-bold flex items-center gap-3 min-w-0 ${sectionLinkLayout === 'compact' ? 'text-base' : 'text-lg'} ${!section.textColor ? 'text-slate-800 dark:text-white' : ''}`}
+                                                        className={`linknest-content-section-title font-bold flex items-center gap-2 min-w-0 ${sectionLinkLayout === 'compact' ? 'text-base' : 'text-lg'} ${!section.textColor ? 'text-slate-800 dark:text-white' : ''}`}
                                                         style={section.textColor ? { color: section.textColor } : undefined}
                                                     >
                                                         <span className={`w-1.5 rounded-full shrink-0 ${styles.base} shadow-sm ${sectionLinkLayout === 'compact' ? 'h-5' : 'h-7'}`}></span>
                                                         {section.emoji ? (
                                                             <span className="shrink-0 leading-none" aria-hidden>{section.emoji}</span>
                                                         ) : null}
-                                                        <span className="truncate">{section.title}</span>
+                                                        {viewRename?.kind === 'section' && viewRename.sectionId === section.id ? (
+                                                            <input
+                                                                autoFocus
+                                                                value={viewRename.value}
+                                                                onChange={(e) => setViewRename({ ...viewRename, value: e.target.value })}
+                                                                onClick={(e) => e.stopPropagation()}
+                                                                onKeyDown={(e) => {
+                                                                    if (e.key === 'Enter') {
+                                                                        e.preventDefault();
+                                                                        void commitViewRename();
+                                                                    } else if (e.key === 'Escape') {
+                                                                        e.preventDefault();
+                                                                        cancelViewRename();
+                                                                    }
+                                                                }}
+                                                                onBlur={() => { void commitViewRename(); }}
+                                                                className="min-w-0 flex-1 max-w-md rounded-md border border-brand-400 dark:border-brand-500 bg-white dark:bg-slate-900 px-2 py-0.5 text-inherit font-bold outline-none ring-2 ring-brand-500/30"
+                                                                aria-label="Section title"
+                                                            />
+                                                        ) : (
+                                                            <>
+                                                                <span className="truncate">{section.title || 'Untitled'}</span>
+                                                                {canQuickEditTitles && activeViewTab && (
+                                                                    <button
+                                                                        type="button"
+                                                                        onClick={(e) => {
+                                                                            e.preventDefault();
+                                                                            e.stopPropagation();
+                                                                            startViewRenameSection(activeViewTab.id, section);
+                                                                        }}
+                                                                        className="p-1 rounded-md text-slate-400 hover:text-brand-600 dark:hover:text-brand-400 hover:bg-slate-100 dark:hover:bg-slate-700 shrink-0 transition-colors"
+                                                                        title="Edit section title"
+                                                                        aria-label="Edit section title"
+                                                                    >
+                                                                        <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" strokeWidth={2} stroke="currentColor" className="w-3.5 h-3.5" aria-hidden>
+                                                                            <path strokeLinecap="round" strokeLinejoin="round" d="m16.862 4.487 1.687-1.688a1.875 1.875 0 1 1 2.652 2.652L10.582 16.07a4.5 4.5 0 0 1-1.897 1.13L6 18l.8-2.685a4.5 4.5 0 0 1 1.13-1.897l8.932-8.931Zm0 0L19.5 7.125M18 14v4.75A2.25 2.25 0 0 1 15.75 21H5.25A2.25 2.25 0 0 1 3 18.75V8.25A2.25 2.25 0 0 1 5.25 6H10" />
+                                                                        </svg>
+                                                                    </button>
+                                                                )}
+                                                            </>
+                                                        )}
                                                         {effectiveShowShortUrls(showShortUrls, activeViewTab, section) ? (
                                                         <ShortUrlActions
                                                             targetType="section"
@@ -8401,6 +9014,24 @@ export const TileDetail: React.FC<TileDetailProps> = ({
                                                     <div />
                                                 )}
                                                 </div>
+                                                <div className="flex items-center gap-1 shrink-0">
+                                                {canQuickAddLinks && activeViewTab && (
+                                                    <button
+                                                        type="button"
+                                                        onClick={(e) => {
+                                                            e.preventDefault();
+                                                            e.stopPropagation();
+                                                            handleStartViewQuickAdd(activeViewTab.id, section.id);
+                                                        }}
+                                                        className="p-1.5 rounded-md text-slate-500 dark:text-slate-400 hover:text-brand-600 dark:hover:text-brand-400 hover:bg-slate-100 dark:hover:bg-slate-700 transition-all"
+                                                        title="Add link to this section"
+                                                        aria-label="Add link to this section"
+                                                    >
+                                                        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor" className="w-4 h-4" aria-hidden>
+                                                            <path d="M10.75 4.75a.75.75 0 00-1.5 0v4.5h-4.5a.75.75 0 000 1.5h4.5v4.5a.75.75 0 001.5 0v-4.5h4.5a.75.75 0 000-1.5h-4.5v-4.5z" />
+                                                        </svg>
+                                                    </button>
+                                                )}
                                                 {!shouldForceStacked && (
                                                     <div
                                                         className={`flex items-center gap-0.5 bg-slate-100 dark:bg-slate-800 rounded-lg p-0.5 shrink-0 ${
@@ -8508,16 +9139,10 @@ export const TileDetail: React.FC<TileDetailProps> = ({
                                                         )}
                                                     </div>
                                                 )}
+                                                </div>
                                             </div>
 
                                             {/* Links and Rich Text */}
-                                            <DndContext
-                                                sensors={viewReorderSensors}
-                                                collisionDetection={closestCorners}
-                                                onDragEnd={(e) => {
-                                                    void handleViewLinkDragEnd(section.id, e);
-                                                }}
-                                            >
                                             {(() => {
                                                     // Merge links and rich text, sort by position
                                                     const sortedItems = [
@@ -8528,8 +9153,15 @@ export const TileDetail: React.FC<TileDetailProps> = ({
                                                         const posB = b.position ?? 0;
                                                         return posA - posB;
                                                     });
-                                                    const canReorderItems = canViewReorder && sortedItems.length > 1;
+                                                    const canReorderItems =
+                                                        canViewReorder &&
+                                                        sortedItems.length > 0 &&
+                                                        (sortedItems.length > 1 || filteredSections.length > 1);
                                                     const itemIds = sortedItems.map((item) => item.id);
+                                                    const itemDragTitle =
+                                                        filteredSections.length > 1
+                                                            ? 'Drag to reorder or move to another section'
+                                                            : 'Drag to reorder';
 
                                                     return (
                                             <SortableContext
@@ -8540,7 +9172,9 @@ export const TileDetail: React.FC<TileDetailProps> = ({
                                                         : verticalListSortingStrategy
                                                 }
                                             >
-                                            <div
+                                            <ViewModeSectionDropZone
+                                                sectionId={section.id}
+                                                disabled={!canViewReorder}
                                                 className={resolvedLinkContainerClass}
                                                 style={
                                                     isQrLayout
@@ -8564,6 +9198,7 @@ export const TileDetail: React.FC<TileDetailProps> = ({
                                                                     key={item.id}
                                                                     id={item.id}
                                                                     disabled={!canReorderItems}
+                                                                    data={{ type: 'view-item', sectionId: section.id }}
                                                                     layout={
                                                                         sectionLinkLayout === 'grid' || sectionLinkLayout === 'qr' || sectionLinkLayout === 'side-by-side'
                                                                             ? 'grid'
@@ -8580,7 +9215,7 @@ export const TileDetail: React.FC<TileDetailProps> = ({
                                                                                 <ViewModeDragHandle
                                                                                     attributes={itemDragAttrs}
                                                                                     listeners={itemDragListeners}
-                                                                                    title="Drag to reorder"
+                                                                                    title={itemDragTitle}
                                                                                     className="absolute top-1 right-1 z-10 bg-white/90 dark:bg-slate-900/80 shadow-sm"
                                                                                 />
                                                                             )}
@@ -8625,6 +9260,9 @@ export const TileDetail: React.FC<TileDetailProps> = ({
                                                         const showCopyAction = isLinkActionAllowed('copy');
                                                         const showMobileAction = isLinkActionAllowed('mobile') && !!link.url;
                                                         const showQrAction = isLinkActionAllowed('qr');
+                                                        const showEditAction = canQuickEditLinks;
+                                                        const showCloneAction = canQuickCloneLinks;
+                                                        const showDeleteAction = canQuickDeleteLinks;
                                                         const showBrowserAction =
                                                             isLinkActionAllowed('browser') &&
                                                             settings.browser_specific_links_enabled === '1' &&
@@ -8633,6 +9271,9 @@ export const TileDetail: React.FC<TileDetailProps> = ({
                                                             typeof window !== 'undefined' &&
                                                             !!(window as any).BrowserLauncher;
                                                         const showLinkActionBar =
+                                                            showEditAction ||
+                                                            showCloneAction ||
+                                                            showDeleteAction ||
                                                             showNotesAction ||
                                                             showFavoriteAction ||
                                                             showHealthAction ||
@@ -8652,6 +9293,7 @@ export const TileDetail: React.FC<TileDetailProps> = ({
                                                                     key={link.id}
                                                                     id={link.id}
                                                                     disabled={!canReorderItems}
+                                                                    data={{ type: 'view-item', sectionId: section.id }}
                                                                     layout="grid"
                                                                     style={{ animationDelay: `${animationDelay}ms` }}
                                                                 >
@@ -8665,7 +9307,7 @@ export const TileDetail: React.FC<TileDetailProps> = ({
                                                                         <ViewModeDragHandle
                                                                             attributes={itemDragAttrs}
                                                                             listeners={itemDragListeners}
-                                                                            title="Drag to reorder link"
+                                                                            title={itemDragTitle}
                                                                             className="absolute top-2 left-2 z-10 bg-white/90 dark:bg-slate-900/80 shadow-sm"
                                                                         />
                                                                     )}
@@ -8737,6 +9379,54 @@ export const TileDetail: React.FC<TileDetailProps> = ({
                                                                                 </button>
                                                                             </>
                                                                         ) : null}
+                                                                        {canQuickEditLinks && activeViewTab ? (
+                                                                            <>
+                                                                                <span className="text-slate-300 dark:text-slate-600" aria-hidden>·</span>
+                                                                                <button
+                                                                                    type="button"
+                                                                                    className="text-xs font-medium text-slate-500 dark:text-slate-400 hover:text-brand-600 dark:hover:text-brand-400"
+                                                                                    onClick={(e) => {
+                                                                                        e.preventDefault();
+                                                                                        e.stopPropagation();
+                                                                                        handleStartViewQuickEdit(activeViewTab.id, section.id, link);
+                                                                                    }}
+                                                                                >
+                                                                                    Edit
+                                                                                </button>
+                                                                            </>
+                                                                        ) : null}
+                                                                        {canQuickCloneLinks && activeViewTab ? (
+                                                                            <>
+                                                                                <span className="text-slate-300 dark:text-slate-600" aria-hidden>·</span>
+                                                                                <button
+                                                                                    type="button"
+                                                                                    className="text-xs font-medium text-slate-500 dark:text-slate-400 hover:text-violet-600 dark:hover:text-violet-400"
+                                                                                    onClick={(e) => {
+                                                                                        e.preventDefault();
+                                                                                        e.stopPropagation();
+                                                                                        void handleViewCloneLink(activeViewTab.id, section.id, link.id);
+                                                                                    }}
+                                                                                >
+                                                                                    Clone
+                                                                                </button>
+                                                                            </>
+                                                                        ) : null}
+                                                                        {canQuickDeleteLinks && activeViewTab ? (
+                                                                            <>
+                                                                                <span className="text-slate-300 dark:text-slate-600" aria-hidden>·</span>
+                                                                                <button
+                                                                                    type="button"
+                                                                                    className="text-xs font-medium text-slate-500 dark:text-slate-400 hover:text-red-600 dark:hover:text-red-400"
+                                                                                    onClick={(e) => {
+                                                                                        e.preventDefault();
+                                                                                        e.stopPropagation();
+                                                                                        void handleViewDeleteLink(activeViewTab.id, section.id, link);
+                                                                                    }}
+                                                                                >
+                                                                                    Delete
+                                                                                </button>
+                                                                            </>
+                                                                        ) : null}
                                                                     </div>
                                                                 </div>
                                                                 </LinkHoverTooltip>
@@ -8750,6 +9440,7 @@ export const TileDetail: React.FC<TileDetailProps> = ({
                                                                 key={link.id}
                                                                 id={link.id}
                                                                 disabled={!canReorderItems}
+                                                                data={{ type: 'view-item', sectionId: section.id }}
                                                                 layout={isGridCards ? 'grid' : 'list'}
                                                                 style={{ animationDelay: `${animationDelay}ms` }}
                                                                 className="relative"
@@ -8775,7 +9466,7 @@ export const TileDetail: React.FC<TileDetailProps> = ({
                                                                     <ViewModeDragHandle
                                                                         attributes={itemDragAttrs}
                                                                         listeners={itemDragListeners}
-                                                                        title="Drag to reorder link"
+                                                                        title={itemDragTitle}
                                                                         className="absolute top-1 left-1 z-30 bg-white/90 dark:bg-slate-900/80 shadow-sm opacity-0 group-hover:opacity-100"
                                                                     />
                                                                 )}
@@ -9090,6 +9781,41 @@ export const TileDetail: React.FC<TileDetailProps> = ({
                                                                 <div className={`absolute flex items-center gap-0.5 opacity-0 group-hover:opacity-100 transition-all duration-200 bg-white/95 dark:bg-slate-800/95 backdrop-blur-sm p-0.5 rounded-lg border border-slate-200/50 dark:border-slate-700/50 z-20 pointer-events-none group-hover:pointer-events-auto ${
                                                                     isGridCards || isCompact ? 'top-1 right-1' : 'top-1.5 right-1.5'
                                                                 }`}>
+                                                                    {showEditAction && activeViewTab && (
+                                                                        <button
+                                                                            type="button"
+                                                                            onClick={(e) => {
+                                                                                e.preventDefault();
+                                                                                e.stopPropagation();
+                                                                                handleStartViewQuickEdit(activeViewTab.id, section.id, link);
+                                                                            }}
+                                                                            className="p-1 rounded-md hover:bg-slate-100 dark:hover:bg-slate-700 text-slate-400 hover:text-brand-600 dark:hover:text-brand-400 transition-all"
+                                                                            title="Edit link"
+                                                                            aria-label="Edit link"
+                                                                        >
+                                                                            <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" strokeWidth={2} stroke="currentColor" className="w-4 h-4" aria-hidden>
+                                                                                <path strokeLinecap="round" strokeLinejoin="round" d="m16.862 4.487 1.687-1.688a1.875 1.875 0 1 1 2.652 2.652L10.582 16.07a4.5 4.5 0 0 1-1.897 1.13L6 18l.8-2.685a4.5 4.5 0 0 1 1.13-1.897l8.932-8.931Zm0 0L19.5 7.125M18 14v4.75A2.25 2.25 0 0 1 15.75 21H5.25A2.25 2.25 0 0 1 3 18.75V8.25A2.25 2.25 0 0 1 5.25 6H10" />
+                                                                            </svg>
+                                                                        </button>
+                                                                    )}
+                                                                    {showCloneAction && activeViewTab && (
+                                                                        <button
+                                                                            type="button"
+                                                                            onClick={(e) => {
+                                                                                e.preventDefault();
+                                                                                e.stopPropagation();
+                                                                                void handleViewCloneLink(activeViewTab.id, section.id, link.id);
+                                                                            }}
+                                                                            className="p-1 rounded-md hover:bg-slate-100 dark:hover:bg-slate-700 text-slate-400 hover:text-violet-600 dark:hover:text-violet-400 transition-all"
+                                                                            title="Clone link"
+                                                                            aria-label="Clone link"
+                                                                        >
+                                                                            {/* DocumentDuplicate — distinct from Copy URL (square-2-stack) */}
+                                                                            <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" strokeWidth={1.75} stroke="currentColor" className="w-4 h-4" aria-hidden>
+                                                                                <path strokeLinecap="round" strokeLinejoin="round" d="M15.75 17.25v3.375c0 .621-.504 1.125-1.125 1.125h-9.75a1.125 1.125 0 01-1.125-1.125V7.875c0-.621.504-1.125 1.125-1.125H6.75a9.06 9.06 0 011.5.124m7.5 10.376h3.375c.621 0 1.125-.504 1.125-1.125V11.25c0-4.46-3.243-8.161-7.5-8.876a9.06 9.06 0 00-1.5-.124H9.375c-.621 0-1.125.504-1.125 1.125v3.5m7.5 10.375H9.375a1.125 1.125 0 01-1.125-1.125v-9.25m12 6.625v-1.875a3.375 3.375 0 00-3.375-3.375h-1.5a1.125 1.125 0 01-1.125-1.125v-1.5a3.375 3.375 0 00-3.375-3.375H9.75" />
+                                                                            </svg>
+                                                                        </button>
+                                                                    )}
                                                                     {/* Notes info button - only show if link has notes */}
                                                                     {showNotesAction && (
                                                                         <button
@@ -9335,6 +10061,23 @@ export const TileDetail: React.FC<TileDetailProps> = ({
                                                                             </svg>
                                                                         </button>
                                                                     )}
+                                                                    {showDeleteAction && activeViewTab && (
+                                                                        <button
+                                                                            type="button"
+                                                                            onClick={(e) => {
+                                                                                e.preventDefault();
+                                                                                e.stopPropagation();
+                                                                                void handleViewDeleteLink(activeViewTab.id, section.id, link);
+                                                                            }}
+                                                                            className="p-1 rounded-md hover:bg-red-50 dark:hover:bg-red-950/40 text-slate-400 hover:text-red-600 dark:hover:text-red-400 transition-all"
+                                                                            title="Delete link"
+                                                                            aria-label="Delete link"
+                                                                        >
+                                                                            <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor" className="w-4 h-4" aria-hidden>
+                                                                                <path fillRule="evenodd" d="M8.75 1A2.75 2.75 0 006 3.75v.443c-.795.077-1.584.176-2.365.298a.75.75 0 10.23 1.482l.226-.038 1.27 12.003A2.75 2.75 0 008.104 19.5h3.792a2.75 2.75 0 002.743-2.562l1.27-12.003.226.038a.75.75 0 00.23-1.482A41.03 41.03 0 0014 4.193V3.75A2.75 2.75 0 0011.25 1h-2.5zM10 4c.784 0 1.569.047 2.35.138V3.75c0-.69-.56-1.25-1.25-1.25h-2.5c-.69 0-1.25.56-1.25 1.25v.388C8.431 4.047 9.216 4 10 4zM8.58 7.72a.75.75 0 00-1.5.06l.3 7.5a.75.75 0 101.5.06l-.3-7.5zm4.34.06a.75.75 0 10-1.5-.06l-.3 7.5a.75.75 0 101.5.06l.3-7.5z" clipRule="evenodd" />
+                                                                            </svg>
+                                                                        </button>
+                                                                    )}
                                                                 </div>
                                                                 )}
                                                             </div>
@@ -9343,11 +10086,10 @@ export const TileDetail: React.FC<TileDetailProps> = ({
                                                             </ViewModeSortable>
                                                         );
                                                     })}
-                                            </div>
+                                            </ViewModeSectionDropZone>
                                             </SortableContext>
                                                     );
                                                 })()}
-                                            </DndContext>
                                             </>
                                             )}
                                         </ViewModeSortable>
@@ -9368,6 +10110,75 @@ export const TileDetail: React.FC<TileDetailProps> = ({
                     linkLabel={notesDialogState?.linkLabel || ''}
                     notes={notesDialogState?.notes || ''}
                 />
+
+                {/* View-mode quick edit/add (same EditLinkForm dialog as edit panel) */}
+                {viewQuickEdit && editingLinkId && editLinkState[editingLinkId] && (() => {
+                    const linkId = editingLinkId;
+                    const draft = editLinkState[linkId];
+                    const section = (tile.tabs || [])
+                        .flatMap((t) => t.sections || [])
+                        .find((s) => s.id === viewQuickEdit.sectionId);
+                    const existing = section?.links?.find((l) => l.id === linkId);
+                    const link: Link | null =
+                        existing ??
+                        (viewQuickEdit.mode === 'add' ? { id: linkId, label: '', url: '' } : null);
+                    if (!link || !draft) return null;
+                    const editLinkPlain = editLinkPlainColors[linkId] ?? readEditLinkPlainColors();
+                    return (
+                        <EditLinkForm
+                            key={`view-quick-${viewQuickEdit.mode}-${linkId}`}
+                            link={link}
+                            draft={draft}
+                            plain={editLinkPlain}
+                            onPlainChange={(nextPlain) => {
+                                setEditLinkPlainColors((prev) => ({ ...prev, [linkId]: nextPlain }));
+                                writeEditLinkPlainColors(nextPlain);
+                            }}
+                            foldNonce={editLinkSectionFold.nonce}
+                            foldOpen={editLinkSectionFold.open}
+                            onCollapseAll={() => setEditLinkSectionFold((prev) => ({ nonce: prev.nonce + 1, open: false }))}
+                            onExpandAll={() => setEditLinkSectionFold((prev) => ({ nonce: prev.nonce + 1, open: true }))}
+                            onUpdateField={(field, value) => updateEditLinkState(linkId, field as any, value as any)}
+                            onPatchDraft={(patch) => {
+                                setEditLinkState((prev) => ({
+                                    ...prev,
+                                    [linkId]: { ...prev[linkId], ...patch },
+                                }));
+                            }}
+                            onCancel={handleCancelEditLink}
+                            onSave={() => {
+                                void handleSaveViewQuickEdit();
+                            }}
+                            initialViewMode="dialog-tabs"
+                            dialogOnly
+                            urlField={
+                                <LinkUrlField
+                                    value={draft.url || ''}
+                                    onChange={(value) => updateEditLinkState(linkId, 'url', value)}
+                                />
+                            }
+                            isAdmin={!!user?.is_admin}
+                            canChangeVisibility={tile.canChangeVisibility !== false}
+                            canChangeBrowser={tile.canChangeBrowser === true}
+                            browserSpecificEnabled={settings.browser_specific_links_enabled === '1'}
+                            availableBrowsers={availableBrowsers}
+                            usersList={usersList}
+                            availableGroups={availableGroups}
+                            loadingUsers={loadingUsers}
+                            showUserPicker={!!showUserPicker[linkId]}
+                            onToggleUserPicker={() => setShowUserPicker((prev) => ({ ...prev, [linkId]: !prev[linkId] }))}
+                            linkUserSearch={linkUserSearch[linkId] || ''}
+                            onLinkUserSearch={(q) => setLinkUserSearch((prev) => ({ ...prev, [linkId]: q }))}
+                            linkGroupSearch={linkGroupSearch[linkId] || ''}
+                            onLinkGroupSearch={(q) => setLinkGroupSearch((prev) => ({ ...prev, [linkId]: q }))}
+                            onToggleUser={(userId) => toggleEditUserSelection(linkId, userId)}
+                            onToggleGroup={(groupId) => toggleEditGroupSelection(linkId, groupId)}
+                            showEmojiPicker={!!showLinkEmojiPicker[linkId]}
+                            onSetEmojiPicker={(open) => setShowLinkEmojiPicker((prev) => ({ ...prev, [linkId]: open }))}
+                            linkAnimationForEdit={linkAnimationForEdit}
+                        />
+                    );
+                })()}
 
                 {/* Link Info Dialog */}
                 {linkInfoDialog && (
