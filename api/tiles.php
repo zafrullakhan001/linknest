@@ -2,6 +2,7 @@
 require_once __DIR__ . '/config.php';
 require_once __DIR__ . '/access_restrictions_lib.php';
 require_once __DIR__ . '/short_urls_lib.php';
+require_once __DIR__ . '/upload_video_lib.php';
 
 $method = $_SERVER['REQUEST_METHOD'];
 $path = $_SERVER['PATH_INFO'] ?? $_SERVER['REDIRECT_PATH_INFO'] ?? '';
@@ -2305,6 +2306,9 @@ function handleDeleteTile($tileId) {
         sendJSON(['error' => 'You do not have permission to delete this tile'], 403);
         return;
     }
+
+    // Remove uploaded space / webcam / link-maintenance videos (file stays gone if restored)
+    purgeTileMaintvidUploads($db, $tileId, true);
     
     // Soft delete: set deleted_at timestamp and clear archived_at if it was archived
     // This moves the tile to recycle bin (whether it was archived or not)
@@ -5288,6 +5292,8 @@ function handlePermanentDeleteTile($tileId) {
     if (!$canDelete) {
         sendJSON(['error' => 'You do not have permission to permanently delete this tile'], 403);
     }
+
+    purgeTileMaintvidUploads($db, $tileId, true);
     
     // Permanently delete tile (cascade will delete sections, links, and tabs)
     $stmt = $db->prepare('DELETE FROM tiles WHERE id = ?');
@@ -5319,6 +5325,12 @@ function handlePermanentDeleteCategory($categoryName) {
     if (empty($deletedTiles)) {
         sendJSON(['error' => 'No tiles found in this category in recycle bin'], 404);
     }
+
+    foreach ($deletedTiles as $deletedTile) {
+        if (!empty($deletedTile['id'])) {
+            purgeTileMaintvidUploads($db, (string)$deletedTile['id'], true);
+        }
+    }
     
     // Permanently delete all tiles in this category from recycle bin
     // Cascade will delete sections, links, and tabs
@@ -5338,6 +5350,20 @@ function handlePermanentDeleteCategory($categoryName) {
 function handlePurgeRecycleBin() {
     $user = requireAuth();
     $db = getDB();
+
+    if ($user['is_admin']) {
+        $listStmt = $db->prepare('SELECT id FROM tiles WHERE deleted_at IS NOT NULL');
+        $listStmt->execute();
+    } else {
+        $listStmt = $db->prepare('SELECT id FROM tiles WHERE deleted_at IS NOT NULL AND user_id = ?');
+        $listStmt->execute([$user['id']]);
+    }
+    $toPurge = $listStmt->fetchAll(PDO::FETCH_ASSOC);
+    foreach ($toPurge as $row) {
+        if (!empty($row['id'])) {
+            purgeTileMaintvidUploads($db, (string)$row['id'], true);
+        }
+    }
     
     // Users can purge their own recycle bin, admins can purge all
     if ($user['is_admin']) {
@@ -6327,6 +6353,17 @@ function updateTileInternal($tileId, $data, $db, $user, $isRestore = false, $isF
             $tileAccessRestrictions,
             $tileId
         ]);
+
+        $oldVideoUrl = null;
+        if (is_array($currentTileData)) {
+            $oldVideoUrl = $currentTileData['videoUrl'] ?? $currentTileData['video_url'] ?? null;
+            if (is_string($oldVideoUrl)) {
+                $oldVideoUrl = trim($oldVideoUrl);
+            } else {
+                $oldVideoUrl = null;
+            }
+        }
+        purgeReplacedTileVideoUpload($db, $tileId, $oldVideoUrl, $videoUrl);
 
         persistTileShowShortUrls($db, $tileId, $data, $currentTileData);
 

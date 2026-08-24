@@ -1,8 +1,9 @@
 import React, { useRef, useState } from 'react';
+import { LinkMaintenanceVideoField } from './LinkMaintenanceVideoField';
 import { uploadLinkMaintenanceVideo } from '../services/storageService';
 import { isYouTubeUrl, toYouTubeThumbnailUrl } from '../utils/youtube';
 
-export type SpaceVideoSource = 'youtube' | 'file';
+export type SpaceVideoSource = 'youtube' | 'file' | 'webcam';
 
 interface SpaceVideoFieldProps {
   source: SpaceVideoSource;
@@ -85,6 +86,21 @@ export const SpaceVideoField: React.FC<SpaceVideoFieldProps> = ({
               <span aria-hidden="true">📁</span> Video file — upload MP4 / WebM (up to 50MB)
             </span>
           </label>
+          <label className={`flex items-center gap-2.5 cursor-pointer rounded-lg border px-3 py-2.5 transition-colors ${source === 'webcam' ? 'border-amber-300 bg-amber-50/80 dark:border-amber-800 dark:bg-amber-950/30' : 'border-slate-200 dark:border-slate-700 hover:bg-white/70 dark:hover:bg-slate-800/50'}`}>
+            <input
+              type="radio"
+              name="spaceVideoSource"
+              checked={source === 'webcam'}
+              onChange={() => {
+                onSourceChange('webcam');
+                if (url && isYouTubeUrl(url)) onUrlChange('');
+              }}
+              className="w-4 h-4 text-amber-600 focus:ring-amber-500 focus:ring-2"
+            />
+            <span className="text-sm text-slate-700 dark:text-slate-300">
+              <span aria-hidden="true">📷</span> Webcam — record with your camera
+            </span>
+          </label>
         </div>
       </div>
 
@@ -117,6 +133,14 @@ export const SpaceVideoField: React.FC<SpaceVideoFieldProps> = ({
             </div>
           )}
         </div>
+      ) : source === 'webcam' ? (
+        <LinkMaintenanceVideoField
+          value={url}
+          onChange={onUrlChange}
+          allowFileUpload={false}
+          heading="Webcam recording"
+          description="Record a clip with your webcam (WebM / MP4, up to 50MB)."
+        />
       ) : (
         <div>
           <label className="block text-xs font-semibold text-slate-700 dark:text-slate-300 mb-1.5">Video file</label>

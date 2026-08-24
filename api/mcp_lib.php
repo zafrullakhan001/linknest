@@ -3,6 +3,8 @@
  * LinkNest MCP protocol helpers and tools.
  */
 
+require_once __DIR__ . '/upload_video_lib.php';
+
 const MCP_SUPPORTED_PROTOCOL_VERSIONS = [
     '2025-11-25',
     '2025-06-18',
@@ -1174,6 +1176,7 @@ function mcpToolDeleteSpace(array $user, array $args): array {
     if (!mcpCanDeleteSpace($db, $user, $spaceId)) {
         return ['error' => 'You do not have permission to delete this space'];
     }
+    purgeTileMaintvidUploads($db, $spaceId, true);
     $db->prepare('UPDATE tiles SET deleted_at = ?, archived_at = NULL WHERE id = ?')->execute([time(), $spaceId]);
     mcpInvalidateGuestCache();
     return ['ok' => true, 'id' => $spaceId, 'movedTo' => 'recycle_bin'];

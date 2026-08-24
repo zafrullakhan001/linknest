@@ -14,6 +14,12 @@ type PendingClip = {
 interface LinkMaintenanceVideoFieldProps {
   value?: string;
   onChange: (url: string) => void;
+  /** Override the default “Maintenance video” heading. */
+  heading?: string;
+  /** Override the helper description under the heading. */
+  description?: string;
+  /** When false, hide video file upload (webcam record only). Default true. */
+  allowFileUpload?: boolean;
 }
 
 const CAMERA_STORAGE_KEY = 'linknest.maintenanceVideo.cameraId';
@@ -303,6 +309,9 @@ const AvSlider: React.FC<{
 export const LinkMaintenanceVideoField: React.FC<LinkMaintenanceVideoFieldProps> = ({
   value,
   onChange,
+  heading = 'Maintenance video',
+  description = 'Record a webcam message or upload a video file (WebM, MP4, up to 50MB).',
+  allowFileUpload = true,
 }) => {
   const fileInputRef = useRef<HTMLInputElement>(null);
   const brandBgInputRef = useRef<HTMLInputElement>(null);
@@ -751,7 +760,11 @@ export const LinkMaintenanceVideoField: React.FC<LinkMaintenanceVideoFieldProps>
       isRecordingRef.current = true;
       setIsRecording(true);
     } catch {
-      setError('Recording is not supported in this browser. Upload a video file instead.');
+      setError(
+        allowFileUpload
+          ? 'Recording is not supported in this browser. Upload a video file instead.'
+          : 'Recording is not supported in this browser.',
+      );
     }
   };
 
@@ -997,10 +1010,10 @@ export const LinkMaintenanceVideoField: React.FC<LinkMaintenanceVideoFieldProps>
   return (
     <div className="space-y-2">
       <div className="text-xs font-semibold uppercase tracking-wider text-slate-600 dark:text-slate-400">
-        Maintenance video
+        {heading}
       </div>
       <p className="text-xs text-slate-500 dark:text-slate-400">
-        Record a webcam message or upload a video file (WebM, MP4, up to 50MB).
+        {description}
       </p>
 
       {value ? (
@@ -1023,7 +1036,11 @@ export const LinkMaintenanceVideoField: React.FC<LinkMaintenanceVideoFieldProps>
           onConfirm={(startSec, endSec) => void confirmPendingClip(startSec, endSec)}
           onDiscard={discardPendingClip}
           onRerecord={pendingClip.source === 'webcam' ? rerecordPendingClip : undefined}
-          onChooseAnotherFile={pendingClip.source === 'file' ? () => fileInputRef.current?.click() : undefined}
+          onChooseAnotherFile={
+            allowFileUpload && pendingClip.source === 'file'
+              ? () => fileInputRef.current?.click()
+              : undefined
+          }
         />
       ) : (
         <>
@@ -1087,14 +1104,16 @@ export const LinkMaintenanceVideoField: React.FC<LinkMaintenanceVideoFieldProps>
                   >
                     Cancel camera
                   </button>
-                  <button
-                    type="button"
-                    onClick={() => fileInputRef.current?.click()}
-                    disabled={isUploading || isRecording}
-                    className="px-3 py-1.5 text-xs font-medium rounded-lg bg-slate-200 dark:bg-slate-700 hover:bg-slate-300 dark:hover:bg-slate-600 disabled:opacity-50 text-slate-700 dark:text-slate-200"
-                  >
-                    {isUploading ? 'Uploading…' : 'Upload video file'}
-                  </button>
+                  {allowFileUpload ? (
+                    <button
+                      type="button"
+                      onClick={() => fileInputRef.current?.click()}
+                      disabled={isUploading || isRecording}
+                      className="px-3 py-1.5 text-xs font-medium rounded-lg bg-slate-200 dark:bg-slate-700 hover:bg-slate-300 dark:hover:bg-slate-600 disabled:opacity-50 text-slate-700 dark:text-slate-200"
+                    >
+                      {isUploading ? 'Uploading…' : 'Upload video file'}
+                    </button>
+                  ) : null}
                 </div>
               </div>
 
@@ -1367,25 +1386,29 @@ export const LinkMaintenanceVideoField: React.FC<LinkMaintenanceVideoFieldProps>
               >
                 Record with webcam
               </button>
-              <button
-                type="button"
-                onClick={() => fileInputRef.current?.click()}
-                disabled={isUploading || isRecording}
-                className="px-3 py-1.5 text-xs font-medium rounded-lg bg-slate-200 dark:bg-slate-700 hover:bg-slate-300 dark:hover:bg-slate-600 disabled:opacity-50 text-slate-700 dark:text-slate-200"
-              >
-                {isUploading ? 'Uploading…' : 'Upload video file'}
-              </button>
+              {allowFileUpload ? (
+                <button
+                  type="button"
+                  onClick={() => fileInputRef.current?.click()}
+                  disabled={isUploading || isRecording}
+                  className="px-3 py-1.5 text-xs font-medium rounded-lg bg-slate-200 dark:bg-slate-700 hover:bg-slate-300 dark:hover:bg-slate-600 disabled:opacity-50 text-slate-700 dark:text-slate-200"
+                >
+                  {isUploading ? 'Uploading…' : 'Upload video file'}
+                </button>
+              ) : null}
             </div>
           )}
         </>
       )}
-      <input
-        ref={fileInputRef}
-        type="file"
-        accept="video/*"
-        className="hidden"
-        onChange={(e) => handleFile(e.target.files?.[0])}
-      />
+      {allowFileUpload ? (
+        <input
+          ref={fileInputRef}
+          type="file"
+          accept="video/*"
+          className="hidden"
+          onChange={(e) => handleFile(e.target.files?.[0])}
+        />
+      ) : null}
       {error && (
         <p className="text-xs text-red-600 dark:text-red-400">{error}</p>
       )}
