@@ -20,6 +20,8 @@ scripts\package-vanilla-apache-php85.bat
 
 Output: `linknest-apache-php85-runtime-YYYYMMDD_HHMMSS.zip` in the project root (gitignored). On the target: extract to **D:\**, install the VC++ 2015–2022 x64 runtime, run `install-runtime.bat` as Administrator, then copy the LinkNest app into `D:\Apache\htdocs\linknest`.
 
+The runtime ZIP already includes official **SQLite 3.53.4** as `D:\php\libsqlite3.dll` (and a copy under `Apache\bin`), so `health.php` SQLite checks should pass without a separate `install-sqlite-xampp` step.
+
 **Rebuild both ZIPs and upload to GitHub** (runtime + LinkNest app) from the repo root:
 
 ```bat

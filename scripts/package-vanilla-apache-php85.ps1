@@ -34,6 +34,10 @@ $ReleasesUrl = 'https://downloads.php.net/~windows/releases/releases.json'
 $ReleasesBase = 'https://downloads.php.net/~windows/releases/'
 $CacertUrl = 'https://curl.se/ca/cacert.pem'
 $ApachePageUrl = 'https://www.apachelounge.com/download/VS17/'
+# Same official Windows x64 package health.php / package-for-deployment.ps1 expect.
+$SqliteTargetVersion = '3.53.4'
+$SqliteDllZipUrl = 'https://www.sqlite.org/2026/sqlite-dll-win-x64-3530400.zip'
+$SqliteMinVersion = '3.53.0'
 
 $RequiredExtensions = @(
     'ldap', 'pdo_sqlite', 'sqlite3', 'curl', 'mbstring', 'openssl', 'zip', 'fileinfo', 'gd', 'intl'
@@ -316,7 +320,7 @@ function Build-PhpIni([string]$PhpDir) {
 
 function Copy-PhpDllsToApache([string]$PhpDir, [string]$ApacheBin) {
     $names = @(
-        'libsasl.dll', 'libsqlite3.dll',
+        'libsasl.dll', 'libsqlite3.dll', 'sqlite3.dll',
         'libcrypto-3-x64.dll', 'libssl-3-x64.dll',
         'nghttp2.dll', 'libssh2.dll',
         'brotlicommon.dll', 'brotlidec.dll',
@@ -337,6 +341,45 @@ function Copy-PhpDllsToApache([string]$PhpDir, [string]$ApacheBin) {
     Write-Host "Copied $copied PHP dependency DLLs into Apache\bin"
 }
 
+function Install-OfficialSqliteDll {
+    param(
+        [string]$PhpDir,
+        [string]$WorkDir,
+        [string]$UserAgent
+    )
+
+    Write-Step "Installing official SQLite $SqliteTargetVersion libsqlite3.dll into php\"
+    $tmp = Join-Path $WorkDir 'sqlite-dll'
+    if (Test-Path $tmp) { Remove-Item $tmp -Recurse -Force }
+    New-Item -ItemType Directory -Path $tmp -Force | Out-Null
+    $zip = Join-Path $tmp 'sqlite-dll-win-x64.zip'
+    Download-File $SqliteDllZipUrl $zip $UserAgent
+    Expand-Archive -Path $zip -DestinationPath (Join-Path $tmp 'out') -Force
+    $dll = Get-ChildItem (Join-Path $tmp 'out') -Filter 'sqlite3.dll' -Recurse | Select-Object -First 1
+    if (-not $dll) { throw 'sqlite3.dll missing from official sqlite.org zip' }
+
+    $destLib = Join-Path $PhpDir 'libsqlite3.dll'
+    $destAlt = Join-Path $PhpDir 'sqlite3.dll'
+    if (Test-Path $destLib) {
+        Copy-Item $destLib (Join-Path $PhpDir 'libsqlite3.dll.php-shipped.bak') -Force
+    }
+    Copy-Item $dll.FullName $destLib -Force
+    Copy-Item $dll.FullName $destAlt -Force
+    $bytes = (Get-Item $destLib).Length
+    Write-Host ("Placed libsqlite3.dll ({0:N0} bytes) at php\libsqlite3.dll (health.php replace target)" -f $bytes)
+
+    $versionTxt = @(
+        "SQLite $SqliteTargetVersion for LinkNest vanilla Apache runtime"
+        'Source: https://sqlite.org/ (Windows x64 precompiled binary)'
+        "URL: $SqliteDllZipUrl"
+        "Packaged: $(Get-Date -Format 'yyyy-MM-dd HH:mm:ss')"
+        ''
+        'This file is also copied to Apache\bin so httpd loads the same DLL.'
+        'Do not replace php_sqlite3.dll / php_pdo_sqlite.dll in ext\ — those stay from PHP.'
+    ) -join [Environment]::NewLine
+    Set-Content -Path (Join-Path $PhpDir 'SQLITE_VERSION.txt') -Value $versionTxt -Encoding ASCII
+}
+
 function Assert-PhpModules([string]$PhpExe, [string]$IniPath, [string]$PhpDir) {
     $missing = @()
     $probe = Join-Path $PhpDir '_ln_ext_probe.php'
@@ -350,11 +393,25 @@ function Assert-PhpModules([string]$PhpExe, [string]$IniPath, [string]$PhpDir) {
         $ErrorActionPreference = $prev
         if ($out -notmatch '1') { $missing += $ext }
     }
-    Remove-Item $probe -Force -ErrorAction SilentlyContinue
     if ($missing.Count -gt 0) {
+        Remove-Item $probe -Force -ErrorAction SilentlyContinue
         throw "Required PHP extensions did not load: $($missing -join ', ')"
     }
-    Write-Host "PHP extensions OK"
+
+    Set-Content -Path $probe -Value "<?php `$m=new PDO('sqlite::memory:'); echo `$m->query('SELECT sqlite_version()')->fetchColumn();" -Encoding ASCII
+    $prev = $ErrorActionPreference
+    $ErrorActionPreference = 'Continue'
+    $verOut = & $PhpExe -c $IniPath -d "extension_dir=$extDir" -d display_errors=0 $probe 2>&1 | Out-String
+    $ErrorActionPreference = $prev
+    Remove-Item $probe -Force -ErrorAction SilentlyContinue
+    $ver = ($verOut -replace '\s', '')
+    if ($ver -notmatch '^\d+\.\d+') {
+        throw "Could not read SQLite version via PDO (got: $verOut)"
+    }
+    if ([version]$ver -lt [version]$SqliteMinVersion) {
+        throw "SQLite $ver is below LinkNest minimum $SqliteMinVersion (need official libsqlite3.dll $SqliteTargetVersion)"
+    }
+    Write-Host "PHP extensions OK (SQLite $ver)"
 }
 
 # ---- paths ----
@@ -423,6 +480,7 @@ try {
 
     Write-Step "Writing php.ini"
     $iniPath = Build-PhpIni -PhpDir $phpDir
+    Install-OfficialSqliteDll -PhpDir $phpDir -WorkDir $work -UserAgent $ua
     Assert-PhpModules -PhpExe (Join-Path $phpDir 'php.exe') -IniPath $iniPath -PhpDir $phpDir
 
     # Apache
@@ -491,7 +549,7 @@ try {
     $sizeMb = [math]::Round((Get-Item $zipPath).Length / 1MB, 1)
     Write-Host ""
     Write-Host "OK  $zipPath  ($sizeMb MB)" -ForegroundColor Green
-    Write-Host "PHP $phpVer TS  |  extract to D:\  |  run install-runtime.bat as Administrator"
+    Write-Host "PHP $phpVer TS + SQLite $SqliteTargetVersion  |  extract to D:\  |  run install-runtime.bat as Administrator"
     Write-Output $zipPath
 }
 finally {

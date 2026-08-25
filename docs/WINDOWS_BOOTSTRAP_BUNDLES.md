@@ -32,6 +32,7 @@ Built by [`scripts/package-vanilla-apache-php85.ps1`](../scripts/package-vanilla
 
 - Latest PHP **8.5 Thread Safe x64** from windows.php.net (SHA256 verified)
 - Apache Lounge **httpd Win64 VS17** (matches PHP’s VS17 ABI)
+- Official **SQLite 3.53.4** `libsqlite3.dll` in `D:\php` (and `Apache\bin`) so `health.php` SQLite checks pass without a manual DLL swap
 - `php.ini` from `php.ini-production` with SQLite, curl, LDAP, OpenSSL, zip, mbstring, OPcache, CA bundle, sessions under `D:\Apache\tmp`
 - `httpd.conf` with `AllowOverride All`, `mod_rewrite`, PHP module (`php8apache2_4.dll`), DocumentRoot `D:\Apache\htdocs`
 - PHP dependency DLLs copied into `Apache\bin`
