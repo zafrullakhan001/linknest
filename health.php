@@ -25,6 +25,8 @@ const LN_HEALTH_SQLITE_VERSION = '3.53.4';
 const LN_HEALTH_SQLITE_DLL_ZIP = 'sqlite-dll-win-x64-3530400.zip';
 const LN_HEALTH_SQLITE_DLL_URL = 'https://www.sqlite.org/2026/sqlite-dll-win-x64-3530400.zip';
 const LN_HEALTH_SQLITE_TOOLS_URL = 'https://www.sqlite.org/2026/sqlite-tools-win-x64-3530400.zip';
+/** Minimum Node for npm run build / Vite (AGENTS.md). Not required to serve dist/. */
+const LN_HEALTH_NODE_MIN = '20.0.0';
 
 /**
  * @return array{id:string,category:string,ok:bool,level:string,required:string,actual:string,advice:string}
@@ -156,6 +158,9 @@ function lnHealthArchLabel(string $arch): string {
     if ($arch === 'x86') {
         return '32-bit (x86)';
     }
+    if ($arch === 'arm64') {
+        return '64-bit (arm64)';
+    }
     return $arch !== '' ? $arch : 'unknown';
 }
 
@@ -169,6 +174,146 @@ function lnHealthFirstExistingFile(array $candidates): string {
         }
     }
     return '';
+}
+
+function lnHealthCmdAllowed(string $fn): bool {
+    if (!function_exists($fn)) {
+        return false;
+    }
+    $disabled = array_filter(array_map('trim', explode(',', (string)ini_get('disable_functions'))));
+    foreach ($disabled as $d) {
+        if (strcasecmp($d, $fn) === 0) {
+            return false;
+        }
+    }
+    return true;
+}
+
+/**
+ * Run a short command; returns trimmed stdout or ''.
+ *
+ * @param list<string> $argv
+ */
+function lnHealthRunArgv(array $argv, int $timeoutSec = 3): string {
+    if ($argv === [] || !lnHealthCmdAllowed('proc_open')) {
+        return '';
+    }
+    $descriptors = [
+        0 => ['pipe', 'r'],
+        1 => ['pipe', 'w'],
+        2 => ['pipe', 'w'],
+    ];
+    $proc = @proc_open($argv, $descriptors, $pipes, null, null, ['bypass_shell' => true]);
+    if (!is_resource($proc)) {
+        return '';
+    }
+    fclose($pipes[0]);
+    stream_set_blocking($pipes[1], false);
+    stream_set_blocking($pipes[2], false);
+    $out = '';
+    $err = '';
+    $deadline = microtime(true) + max(1, $timeoutSec);
+    while (true) {
+        $status = proc_get_status($proc);
+        $out .= (string)stream_get_contents($pipes[1]);
+        $err .= (string)stream_get_contents($pipes[2]);
+        if (!$status['running']) {
+            break;
+        }
+        if (microtime(true) >= $deadline) {
+            proc_terminate($proc);
+            break;
+        }
+        usleep(20000);
+    }
+    $out .= (string)stream_get_contents($pipes[1]);
+    fclose($pipes[1]);
+    fclose($pipes[2]);
+    proc_close($proc);
+    return trim($out !== '' ? $out : $err);
+}
+
+/**
+ * Detect Node.js on PATH or common install locations.
+ *
+ * @return array{version:string,arch:string|null,path:string,error:string}
+ */
+function lnHealthDetectNode(bool $isWindows): array {
+    $empty = ['version' => '', 'arch' => null, 'path' => '', 'error' => ''];
+    $candidates = [];
+    if ($isWindows) {
+        $pf = getenv('ProgramFiles') ?: 'C:\\Program Files';
+        $pf86 = getenv('ProgramFiles(x86)') ?: 'C:\\Program Files (x86)';
+        $local = getenv('LOCALAPPDATA') ?: '';
+        $candidates[] = $pf . '\\nodejs\\node.exe';
+        $candidates[] = $pf86 . '\\nodejs\\node.exe';
+        if ($local !== '') {
+            $candidates[] = $local . '\\Programs\\node\\node.exe';
+        }
+    } else {
+        $candidates[] = '/usr/local/bin/node';
+        $candidates[] = '/usr/bin/node';
+    }
+
+    $nodePath = lnHealthFirstExistingFile($candidates);
+    if ($nodePath === '' && lnHealthCmdAllowed('proc_open')) {
+        if ($isWindows) {
+            $where = lnHealthRunArgv(['where.exe', 'node']);
+            if ($where !== '') {
+                foreach (preg_split('/\r\n|\n|\r/', $where) ?: [] as $line) {
+                    $line = trim($line);
+                    if ($line !== '' && is_file($line)) {
+                        $nodePath = $line;
+                        break;
+                    }
+                }
+            }
+        } else {
+            $which = lnHealthRunArgv(['which', 'node']);
+            if ($which !== '') {
+                $first = trim(explode("\n", $which)[0]);
+                if ($first !== '' && is_file($first)) {
+                    $nodePath = $first;
+                }
+            }
+        }
+    }
+
+    if ($nodePath === '') {
+        $empty['error'] = !lnHealthCmdAllowed('proc_open')
+            ? 'proc_open disabled; cannot probe node'
+            : 'node not found on PATH or common install paths';
+        return $empty;
+    }
+
+    $verOut = lnHealthRunArgv([$nodePath, '-v']);
+    $version = '';
+    if (preg_match('/v?(\d+\.\d+\.\d+)/', $verOut, $m)) {
+        $version = $m[1];
+    }
+
+    $archOut = lnHealthRunArgv([$nodePath, '-p', 'process.arch']);
+    $arch = null;
+    $archRaw = strtolower(trim($archOut));
+    if ($archRaw === 'x64' || $archRaw === 'arm64' || $archRaw === 'ia32') {
+        $arch = $archRaw === 'ia32' ? 'x86' : $archRaw;
+    } elseif ($isWindows) {
+        $pe = lnHealthPeMachine($nodePath);
+        if ($pe !== null) {
+            $arch = $pe;
+        }
+    }
+
+    if ($version === '') {
+        return [
+            'version' => '',
+            'arch' => $arch,
+            'path' => $nodePath,
+            'error' => 'node found but -v failed: ' . ($verOut !== '' ? $verOut : 'empty output'),
+        ];
+    }
+
+    return ['version' => $version, 'arch' => $arch, 'path' => $nodePath, 'error' => ''];
 }
 
 $root = __DIR__;
@@ -334,6 +479,40 @@ if ($isWindows) {
         'php_sqlite3.dll / php_pdo_sqlite.dll match PHP x64',
         implode('; ', $extArchParts) . ($extDir !== '' ? ' · ext=' . $extDir : ''),
         'These DLLs ship with PHP (extension_dir). Enable extension=sqlite3 and extension=pdo_sqlite in php.ini. Do not replace them with the sqlite.org zip — only replace libsqlite3.dll.'
+    );
+}
+
+// ---- Node.js (build toolchain; warn-only for production serve) ----
+$nodeInfo = lnHealthDetectNode($isWindows);
+$nodeVersion = $nodeInfo['version'];
+$nodeArch = $nodeInfo['arch'];
+$nodePath = $nodeInfo['path'];
+$nodeError = $nodeInfo['error'];
+$nodeOk = $nodeVersion !== '' && version_compare($nodeVersion, LN_HEALTH_NODE_MIN, '>=');
+$nodeActual = $nodeVersion !== ''
+    ? ('v' . $nodeVersion
+        . ($nodeArch !== null ? ' · ' . lnHealthArchLabel($nodeArch) : '')
+        . ($nodePath !== '' ? ' · ' . $nodePath : ''))
+    : ($nodeError !== '' ? $nodeError : 'not found');
+$checks[] = lnHealthCheck(
+    'node_version',
+    'Node',
+    $nodeOk,
+    'warn',
+    'Node.js >= ' . LN_HEALTH_NODE_MIN . ' (for npm run build / Vite)',
+    $nodeActual,
+    'Required to build the frontend (npm run build). Production can serve dist/ without Node. Install from https://nodejs.org/ (LTS 20+).'
+);
+if ($nodeVersion !== '' && $nodeArch !== null) {
+    $nodeArchOk = $nodeArch === 'x64' || $nodeArch === 'arm64';
+    $checks[] = lnHealthCheck(
+        'node_architecture',
+        'Node',
+        $nodeArchOk,
+        'warn',
+        'Node.js 64-bit (x64 or arm64)',
+        lnHealthArchLabel($nodeArch) . ($nodePath !== '' ? ' · ' . $nodePath : ''),
+        'Prefer the 64-bit Node installer. 32-bit Node is not recommended for LinkNest builds.'
     );
 }
 
@@ -680,6 +859,9 @@ if ($libSqliteArch !== null) {
 if ($apacheArch !== null) {
     $archMeta .= ' · Apache ' . $apacheArch;
 }
+if ($nodeVersion !== '') {
+    $archMeta .= ' · Node v' . $nodeVersion . ($nodeArch !== null ? ' ' . $nodeArch : '');
+}
 
 $payload = [
     'success' => $fail === 0,
@@ -705,6 +887,9 @@ $payload = [
         'os_arch' => $osArch,
         'apache_arch' => $apacheArch,
         'apache_httpd' => $httpdPath !== '' ? $httpdPath : null,
+        'node' => $nodeVersion !== '' ? $nodeVersion : null,
+        'node_arch' => $nodeArch,
+        'node_path' => $nodePath !== '' ? $nodePath : null,
         'ini' => $iniFile,
         'sqlite' => $sqliteVersion,
         'libsqlite3_path' => $libSqlitePath !== '' ? $libSqlitePath : null,
@@ -732,7 +917,7 @@ $esc = static function ($v): string {
 $badgeClass = $status === 'ok' ? 'ok' : ($status === 'degraded' ? 'warn' : 'fail');
 $badgeLabel = $status === 'ok' ? 'READY' : ($status === 'degraded' ? 'DEGRADED' : 'NOT READY');
 
-$catOrder = ['Architecture', 'PHP', 'Extensions', 'OPcache', 'Apache', 'App', 'Filesystem', 'SQLite'];
+$catOrder = ['Architecture', 'Node', 'PHP', 'Extensions', 'OPcache', 'Apache', 'App', 'Filesystem', 'SQLite'];
 $grouped = [];
 foreach ($checks as $c) {
     $grouped[$c['category']][] = $c;
@@ -794,6 +979,7 @@ foreach ($checks as $c) {
     </div>
     <div class="meta">
       <div><b>PHP</b><?php echo $esc(PHP_VERSION); ?> / <?php echo $esc($sapi); ?></div>
+      <div><b>Node</b><?php echo $esc($nodeVersion !== '' ? ('v' . $nodeVersion . ($nodeArch !== null ? ' / ' . $nodeArch : '')) : 'n/a'); ?></div>
       <div><b>Arch</b><?php echo $esc($archMeta); ?></div>
       <div><b>SQLite</b><?php echo $esc($sqliteVersion !== '' ? $sqliteVersion : 'n/a'); ?></div>
       <div><b>php.ini</b><?php echo $esc($iniFile !== '' ? $iniFile : 'not loaded'); ?></div>
