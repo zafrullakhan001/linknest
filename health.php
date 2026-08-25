@@ -164,6 +164,138 @@ function lnHealthArchLabel(string $arch): string {
     return $arch !== '' ? $arch : 'unknown';
 }
 
+/** Mermaid Live editor URL (base64 state — same approach as utils/mermaidLiveUrl.ts). */
+function lnHealthMermaidLiveUrl(string $code): string {
+    $state = json_encode(
+        [
+            'code' => trim(str_replace("\r\n", "\n", $code)),
+            'mermaid' => "{\n  \"theme\": \"default\"\n}",
+            'autoSync' => true,
+            'updateDiagram' => true,
+            'editorMode' => 'code',
+        ],
+        JSON_UNESCAPED_SLASHES | JSON_UNESCAPED_UNICODE
+    );
+    if ($state === false) {
+        return 'https://mermaid.live/edit';
+    }
+    $b64 = rtrim(strtr(base64_encode($state), '+/', '-_'), '=');
+    return 'https://mermaid.live/edit#base64:' . $b64;
+}
+
+/**
+ * Deploy architecture diagram for this host (labels reflect detected versions when known).
+ */
+function lnHealthBuildArchDiagram(
+    string $phpVersion,
+    string $phpArch,
+    bool $phpZts,
+    string $sapi,
+    ?string $apacheArch,
+    string $sqliteVersion,
+    ?string $libSqliteArch,
+    string $nodeVersion,
+    ?string $nodeArch
+): string {
+    $phpLabel = 'PHP ' . $phpVersion . ' ' . ($phpZts ? 'TS' : 'NTS') . ' ' . ($phpArch !== '' ? $phpArch : '?');
+    $sapiLabel = $sapi !== '' ? $sapi : 'sapi?';
+    $apacheLabel = 'Apache httpd' . ($apacheArch !== null ? ' ' . $apacheArch : '');
+    $sqliteLabel = 'libsqlite3.dll'
+        . ($sqliteVersion !== '' ? ' ' . $sqliteVersion : '')
+        . ($libSqliteArch !== null ? ' ' . $libSqliteArch : '');
+    $nodeLabel = $nodeVersion !== ''
+        ? ('Node.js v' . $nodeVersion . ($nodeArch !== null ? ' ' . $nodeArch : ''))
+        : 'Node.js 20+ optional';
+
+    // Keep Mermaid node IDs simple (no spaces). Solid edges; JS draws moving packets.
+    return <<<MERMAID
+flowchart TB
+  subgraph client [Client]
+    Browser[Browser]
+  end
+  subgraph web [Web server]
+    Apache["{$apacheLabel}"]
+    ModPhp["{$phpLabel} / {$sapiLabel}"]
+  end
+  subgraph runtime [LinkNest]
+    Health[health.php]
+    App[API + SPA routes]
+    Ext[pdo_sqlite sqlite3 curl]
+  end
+  subgraph data [Data]
+    LibDll["{$sqliteLabel}"]
+    Db[(data/linknest.db)]
+  end
+  subgraph build [Build toolchain]
+    Node["{$nodeLabel}"]
+    Dist[dist/index.html]
+  end
+  Browser --> Health
+  Browser --> Dist
+  Health --> Apache
+  Dist --> Apache
+  Apache --> ModPhp
+  ModPhp --> App
+  ModPhp --> Health
+  App --> Ext
+  Health --> Ext
+  Ext --> LibDll
+  LibDll --> Db
+  Node -.->|"npm run build"| Dist
+MERMAID;
+}
+
+/** Request lifecycle sequence for this host. */
+function lnHealthBuildSeqDiagram(
+    string $phpVersion,
+    string $phpArch,
+    bool $phpZts,
+    string $sapi,
+    ?string $apacheArch,
+    string $sqliteVersion,
+    ?string $libSqliteArch,
+    string $nodeVersion,
+    ?string $nodeArch
+): string {
+    $phpActor = 'PHP ' . $phpVersion . ' ' . ($phpZts ? 'TS' : 'NTS') . ($phpArch !== '' ? ' ' . $phpArch : '');
+    $apacheActor = 'Apache' . ($apacheArch !== null ? ' ' . $apacheArch : '');
+    $sqliteActor = 'libsqlite3' . ($sqliteVersion !== '' ? ' ' . $sqliteVersion : '') . ($libSqliteArch !== null ? ' ' . $libSqliteArch : '');
+    $nodeActor = $nodeVersion !== ''
+        ? ('Node v' . $nodeVersion . ($nodeArch !== null ? ' ' . $nodeArch : ''))
+        : 'Node 20+';
+    $sapiNote = $sapi !== '' ? $sapi : 'mod_php';
+
+    return <<<MERMAID
+sequenceDiagram
+  autonumber
+  participant Browser as Browser
+  participant Apache as {$apacheActor}
+  participant PHP as {$phpActor}
+  participant Ext as pdo_sqlite / sqlite3
+  participant Lib as {$sqliteActor}
+  participant DB as data/linknest.db
+  participant Node as {$nodeActor}
+
+  Note over Node,Browser: Build (optional): npm run build writes dist/
+  Node-->>Browser: Serve static SPA from dist/
+
+  Browser->>Apache: GET /linknest/ or /api/*
+  Apache->>PHP: {$sapiNote} handler
+  PHP->>Ext: Query / write via PDO SQLite
+  Ext->>Lib: SQLite C API
+  Lib->>DB: read/write (WAL)
+  DB-->>Lib: pages / rows
+  Lib-->>Ext: result set
+  Ext-->>PHP: PDO rows / status
+  alt health.php
+    PHP-->>Apache: HTML health report
+  else API JSON
+    PHP-->>Apache: application/json
+  end
+  Apache-->>Browser: HTTP response
+MERMAID;
+}
+
 /**
  * @param list<string> $candidates
  */
@@ -863,6 +995,31 @@ if ($nodeVersion !== '') {
     $archMeta .= ' · Node v' . $nodeVersion . ($nodeArch !== null ? ' ' . $nodeArch : '');
 }
 
+$archDiagram = lnHealthBuildArchDiagram(
+    PHP_VERSION,
+    $phpArch,
+    $phpZts,
+    $sapi,
+    $apacheArch,
+    $sqliteVersion,
+    $libSqliteArch,
+    $nodeVersion,
+    $nodeArch
+);
+$seqDiagram = lnHealthBuildSeqDiagram(
+    PHP_VERSION,
+    $phpArch,
+    $phpZts,
+    $sapi,
+    $apacheArch,
+    $sqliteVersion,
+    $libSqliteArch,
+    $nodeVersion,
+    $nodeArch
+);
+$archDiagramLiveUrl = lnHealthMermaidLiveUrl($archDiagram);
+$seqDiagramLiveUrl = lnHealthMermaidLiveUrl($seqDiagram);
+
 $payload = [
     'success' => $fail === 0,
     'status' => $status,
@@ -895,6 +1052,10 @@ $payload = [
         'libsqlite3_path' => $libSqlitePath !== '' ? $libSqlitePath : null,
         'libsqlite3_arch' => $libSqliteArch,
         'sqlite_package' => $sqlitePackage,
+        'architecture_diagram' => $archDiagram,
+        'architecture_diagram_live' => $archDiagramLiveUrl,
+        'sequence_diagram' => $seqDiagram,
+        'sequence_diagram_live' => $seqDiagramLiveUrl,
         'checked_at' => date('c'),
     ],
     'checks' => $checks,
@@ -903,8 +1064,15 @@ $payload = [
 http_response_code($http);
 
 if ($wantJson) {
+    $jsonBody = json_encode($payload, JSON_UNESCAPED_SLASHES | JSON_UNESCAPED_UNICODE | JSON_PRETTY_PRINT);
     header('Content-Type: application/json; charset=utf-8');
-    echo json_encode($payload, JSON_UNESCAPED_SLASHES | JSON_UNESCAPED_UNICODE | JSON_PRETTY_PRINT);
+    $wantDownload = isset($_GET['download']) && in_array(strtolower((string)$_GET['download']), ['1', 'true', 'yes'], true);
+    if ($wantDownload) {
+        $stamp = date('Ymd-His');
+        header('Content-Disposition: attachment; filename="linknest-health-' . $stamp . '.json"');
+        header('X-Content-Type-Options: nosniff');
+    }
+    echo $jsonBody;
     exit;
 }
 
@@ -923,56 +1091,46 @@ foreach ($checks as $c) {
     $grouped[$c['category']][] = $c;
 }
 
+$payloadJson = json_encode($payload, JSON_UNESCAPED_SLASHES | JSON_UNESCAPED_UNICODE | JSON_HEX_TAG | JSON_HEX_AMP | JSON_HEX_APOS);
+if ($payloadJson === false) {
+    $payloadJson = '{}';
+}
+$exportName = 'linknest-health-' . date('Ymd-His') . '.json';
+
+$themeCookie = isset($_COOKIE['ln_health_theme']) ? (string)$_COOKIE['ln_health_theme'] : '';
+$pageTheme = ($themeCookie === 'light' || $themeCookie === 'dark') ? $themeCookie : 'dark';
+$healthJsVer = max(
+    (int)(@filemtime(__DIR__ . DIRECTORY_SEPARATOR . 'health.js') ?: 0),
+    (int)(@filemtime(__DIR__ . DIRECTORY_SEPARATOR . 'health.css') ?: 0),
+    time() - (time() % 60)
+);
+
 ?>
 <!DOCTYPE html>
-<html lang="en">
+<html lang="en" data-theme="<?php echo $esc($pageTheme); ?>">
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="color-scheme" content="dark light">
   <title>LinkNest deploy health</title>
-  <style>
-    :root { color-scheme: dark; }
-    body { margin: 0; font-family: ui-sans-serif, system-ui, Segoe UI, Roboto, sans-serif; background: #0f172a; color: #e2e8f0; }
-    .wrap { max-width: 960px; margin: 0 auto; padding: 1.5rem 1.25rem 3rem; }
-    h1 { font-size: 1.5rem; margin: 0 0 .35rem; }
-    .sub { color: #94a3b8; margin: 0 0 1.25rem; font-size: .95rem; }
-    .banner { display: flex; gap: 1rem; align-items: center; flex-wrap: wrap; padding: 1rem 1.15rem; border-radius: 12px; margin-bottom: 1.25rem; border: 1px solid #334155; }
-    .banner.ok { background: #052e16; border-color: #166534; }
-    .banner.warn { background: #422006; border-color: #a16207; }
-    .banner.fail { background: #450a0a; border-color: #b91c1c; }
-    .pill { font-weight: 700; letter-spacing: .04em; font-size: .75rem; padding: .35rem .65rem; border-radius: 999px; }
-    .pill.ok { background: #16a34a; color: #fff; }
-    .pill.warn { background: #ca8a04; color: #111; }
-    .pill.fail { background: #dc2626; color: #fff; }
-    .meta { display: grid; grid-template-columns: repeat(auto-fit, minmax(180px, 1fr)); gap: .5rem .75rem; font-size: .82rem; color: #cbd5e1; margin-bottom: 1.5rem; }
-    .meta b { color: #94a3b8; font-weight: 500; display: block; }
-    .cat { margin: 1.25rem 0 .5rem; font-size: 1.05rem; }
-    table { width: 100%; border-collapse: collapse; background: #1e293b; border-radius: 10px; overflow: hidden; }
-    th, td { text-align: left; padding: .55rem .7rem; font-size: .82rem; vertical-align: top; border-bottom: 1px solid #334155; }
-    th { color: #94a3b8; font-weight: 600; background: #0f172a; }
-    tr:last-child td { border-bottom: 0; }
-    .st { font-weight: 700; font-size: .72rem; letter-spacing: .03em; }
-    .st.pass { color: #4ade80; }
-    .st.warn { color: #facc15; }
-    .st.fail { color: #f87171; }
-    .advice { color: #94a3b8; font-size: .78rem; margin-top: .2rem; }
-    code { font-size: .78rem; background: #0f172a; padding: .1rem .3rem; border-radius: 4px; }
-    a { color: #93c5fd; }
-    .foot { margin-top: 1.5rem; color: #64748b; font-size: .8rem; }
-    .pkg { margin: 1rem 0 1.5rem; padding: 1rem 1.15rem; border-radius: 10px; border: 1px solid #334155; background: #1e293b; font-size: .82rem; }
-    .pkg h3 { margin: 0 0 .65rem; font-size: .95rem; }
-    .pkg dl { margin: 0; display: grid; grid-template-columns: minmax(120px, 160px) 1fr; gap: .35rem .75rem; }
-    .pkg dt { color: #94a3b8; }
-    .pkg dd { margin: 0; word-break: break-word; }
-    .pkg ol { margin: .75rem 0 0; padding-left: 1.2rem; color: #cbd5e1; }
-    .pkg li { margin: .25rem 0; }
-    .pkg .note { margin: .75rem 0 0; color: #94a3b8; font-size: .78rem; }
-  </style>
+  <link rel="stylesheet" href="health.css?v=<?php echo (int)$healthJsVer; ?>">
+  <script src="health.js?v=<?php echo (int)$healthJsVer; ?>" defer></script>
 </head>
 <body>
   <div class="wrap">
-    <h1>LinkNest deploy health</h1>
-    <p class="sub">Apache + PHP + SQLite checks for this install. JSON: <a href="?format=json">health.php?format=json</a></p>
+    <div class="top">
+      <div>
+        <h1>LinkNest deploy health</h1>
+        <p class="sub">Apache + PHP + SQLite checks for this install. Use day/night for readability, and export JSON for support or deploy notes.</p>
+      </div>
+      <div class="actions">
+        <button type="button" class="btn" id="themeToggle" aria-pressed="<?php echo $pageTheme === 'light' ? 'true' : 'false'; ?>" title="<?php echo $pageTheme === 'light' ? 'Switch to night mode' : 'Switch to day mode'; ?>">
+          <span id="themeLabel"><?php echo $pageTheme === 'light' ? 'Night mode' : 'Day mode'; ?></span>
+        </button>
+        <a class="btn btn-primary" id="exportJson" href="?format=json&amp;download=1" data-filename="<?php echo $esc($exportName); ?>" title="Download health report as JSON">Export JSON</a>
+        <a class="btn" href="?format=json" target="_blank" rel="noopener">View JSON</a>
+      </div>
+    </div>
     <div class="banner <?php echo $esc($badgeClass); ?>">
       <span class="pill <?php echo $esc($badgeClass); ?>"><?php echo $esc($badgeLabel); ?></span>
       <div><?php echo $esc($payload['summary']); ?> (<?php echo (int)$pass; ?> pass, <?php echo (int)$warn; ?> warn, <?php echo (int)$fail; ?> fail)</div>
@@ -985,6 +1143,30 @@ foreach ($checks as $c) {
       <div><b>php.ini</b><?php echo $esc($iniFile !== '' ? $iniFile : 'not loaded'); ?></div>
       <div><b>Checked</b><?php echo $esc($payload['runtime']['checked_at']); ?></div>
     </div>
+
+    <section class="diagram" data-mermaid-diagram="1" data-diagram-mode="flow" data-live-flow="<?php echo $esc($archDiagramLiveUrl); ?>" data-live-seq="<?php echo $esc($seqDiagramLiveUrl); ?>" aria-label="Deploy architecture diagram">
+      <div class="diagram-head">
+        <h2 class="cat diagram-title" id="diagramTitle">Architecture diagram</h2>
+        <div class="diagram-actions">
+          <button type="button" class="btn btn-primary" id="diagramModeFlow" data-diagram-mode-btn="flow" aria-pressed="true" title="Show flowchart architecture">Flow</button>
+          <button type="button" class="btn" id="diagramModeSeq" data-diagram-mode-btn="seq" aria-pressed="false" title="Show Mermaid sequence diagram">Seq diagram</button>
+          <button type="button" class="btn" id="flowToggle" data-flow="on" title="Pause or resume data-flow animation" aria-pressed="true">Pause flow</button>
+          <button type="button" class="btn" data-mermaid-action="view" title="Toggle Mermaid source">View code</button>
+          <button type="button" class="btn" data-mermaid-action="copy" title="Copy Mermaid source">Copy</button>
+          <a class="btn" id="mermaidLiveLink" data-mermaid-action="live" href="<?php echo $esc($archDiagramLiveUrl); ?>" target="_blank" rel="noopener noreferrer" title="Open in Mermaid Live">Mermaid Live</a>
+          <button type="button" class="btn" data-mermaid-action="refresh" title="Re-render diagram">Refresh</button>
+        </div>
+      </div>
+      <p class="diagram-sub" id="diagramSub">Runtime layout for this host. Colored balls travel solid edges to show request / data flow (Pause flow to stop).</p>
+      <div class="mermaid-canvas ln-flow-on" id="mermaid-canvas">
+        <div class="mermaid" id="health-mermaid"></div>
+      </div>
+      <pre class="mermaid-source" data-mermaid-source-view hidden></pre>
+      <textarea id="health-mermaid-source-flow" readonly hidden aria-hidden="true"><?php echo $esc($archDiagram); ?></textarea>
+      <textarea id="health-mermaid-source-seq" readonly hidden aria-hidden="true"><?php echo $esc($seqDiagram); ?></textarea>
+      <textarea id="health-mermaid-source" readonly hidden aria-hidden="true"><?php echo $esc($archDiagram); ?></textarea>
+      <p class="diagram-fallback" id="mermaid-fallback" hidden>Diagram could not render in this browser. Use <a id="mermaidFallbackLink" href="<?php echo $esc($archDiagramLiveUrl); ?>" target="_blank" rel="noopener noreferrer">Mermaid Live</a> or View code.</p>
+    </section>
 <?php foreach ($catOrder as $cat):
     if (empty($grouped[$cat])) {
         continue;
@@ -1052,7 +1234,9 @@ foreach ($checks as $c) {
     </div>
 <?php endif; ?>
 <?php endforeach; ?>
-    <p class="foot">Critical failures return HTTP 503. Warnings return HTTP 200 with status=degraded. This page does not require login so you can verify a fresh Apache/PHP deploy.</p>
+    <p class="foot">Critical failures return HTTP 503. Warnings return HTTP 200 with status=degraded. This page does not require login so you can verify a fresh Apache/PHP deploy. Direct download: <a href="?format=json&amp;download=1">health.php?format=json&amp;download=1</a></p>
   </div>
+  <div class="toast" id="toast" role="status" aria-live="polite"></div>
+  <textarea id="health-payload" readonly hidden aria-hidden="true"><?php echo $esc($payloadJson); ?></textarea>
 </body>
 </html>
