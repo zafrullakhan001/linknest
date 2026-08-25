@@ -20,6 +20,12 @@ if (!$wantJson && isset($_SERVER['HTTP_ACCEPT']) && str_contains((string)$_SERVE
     $wantJson = true;
 }
 
+/** LinkNest Windows SQLite package (same URLs as package-for-deployment.ps1). */
+const LN_HEALTH_SQLITE_VERSION = '3.53.4';
+const LN_HEALTH_SQLITE_DLL_ZIP = 'sqlite-dll-win-x64-3530400.zip';
+const LN_HEALTH_SQLITE_DLL_URL = 'https://www.sqlite.org/2026/sqlite-dll-win-x64-3530400.zip';
+const LN_HEALTH_SQLITE_TOOLS_URL = 'https://www.sqlite.org/2026/sqlite-tools-win-x64-3530400.zip';
+
 /**
  * @return array{id:string,category:string,ok:bool,level:string,required:string,actual:string,advice:string}
  */
@@ -93,6 +99,78 @@ function lnHealthHasModule(array $mods, string $name): bool {
     return false;
 }
 
+/**
+ * Read PE COFF Machine from a Windows EXE/DLL.
+ *
+ * @return 'x64'|'x86'|null
+ */
+function lnHealthPeMachine(string $path): ?string {
+    if ($path === '' || !is_file($path) || !is_readable($path)) {
+        return null;
+    }
+    $fh = @fopen($path, 'rb');
+    if ($fh === false) {
+        return null;
+    }
+    try {
+        $dos = @fread($fh, 64);
+        if ($dos === false || strlen($dos) < 64 || substr($dos, 0, 2) !== 'MZ') {
+            return null;
+        }
+        $peOffset = unpack('V', substr($dos, 60, 4));
+        if ($peOffset === false) {
+            return null;
+        }
+        $e_lfanew = (int)$peOffset[1];
+        if ($e_lfanew < 64 || $e_lfanew > 1024 * 1024) {
+            return null;
+        }
+        if (@fseek($fh, $e_lfanew) !== 0) {
+            return null;
+        }
+        $pe = @fread($fh, 6);
+        if ($pe === false || strlen($pe) < 6 || substr($pe, 0, 4) !== "PE\0\0") {
+            return null;
+        }
+        $machine = unpack('v', substr($pe, 4, 2));
+        if ($machine === false) {
+            return null;
+        }
+        $code = (int)$machine[1];
+        if ($code === 0x8664) {
+            return 'x64';
+        }
+        if ($code === 0x14c) {
+            return 'x86';
+        }
+        return null;
+    } finally {
+        fclose($fh);
+    }
+}
+
+function lnHealthArchLabel(string $arch): string {
+    if ($arch === 'x64') {
+        return '64-bit (x64)';
+    }
+    if ($arch === 'x86') {
+        return '32-bit (x86)';
+    }
+    return $arch !== '' ? $arch : 'unknown';
+}
+
+/**
+ * @param list<string> $candidates
+ */
+function lnHealthFirstExistingFile(array $candidates): string {
+    foreach ($candidates as $cand) {
+        if ($cand !== '' && is_file($cand)) {
+            return $cand;
+        }
+    }
+    return '';
+}
+
 $root = __DIR__;
 $checks = [];
 $isWindows = strtoupper(substr(PHP_OS, 0, 3)) === 'WIN';
@@ -100,6 +178,164 @@ $sapi = PHP_SAPI;
 $iniFile = (string)(php_ini_loaded_file() ?: '');
 $iniDir = $iniFile !== '' ? dirname($iniFile) : '';
 $mods = function_exists('apache_get_modules') ? apache_get_modules() : [];
+$extDir = (string)ini_get('extension_dir');
+$phpBinaryDir = dirname((string)PHP_BINARY);
+
+$phpArch = PHP_INT_SIZE === 8 ? 'x64' : (PHP_INT_SIZE === 4 ? 'x86' : 'unknown');
+$phpZts = defined('ZEND_THREAD_SAFE') && ZEND_THREAD_SAFE;
+$osArch = (string)php_uname('m');
+
+$libCandidates = [];
+if ($iniDir !== '') {
+    $libCandidates[] = $iniDir . DIRECTORY_SEPARATOR . 'libsqlite3.dll';
+}
+$libCandidates[] = $phpBinaryDir . DIRECTORY_SEPARATOR . 'libsqlite3.dll';
+$libCandidates[] = 'D:\\php\\libsqlite3.dll';
+$libCandidates[] = 'C:\\xampp\\php\\libsqlite3.dll';
+if ($extDir !== '') {
+    $libCandidates[] = dirname($extDir) . DIRECTORY_SEPARATOR . 'libsqlite3.dll';
+}
+$libSqlitePath = $isWindows ? lnHealthFirstExistingFile($libCandidates) : '';
+$libSqliteBytes = $libSqlitePath !== '' ? (int)@filesize($libSqlitePath) : 0;
+$libSqliteArch = $libSqlitePath !== '' ? lnHealthPeMachine($libSqlitePath) : null;
+$libSqliteReplaceTarget = $iniDir !== ''
+    ? $iniDir . DIRECTORY_SEPARATOR . 'libsqlite3.dll'
+    : ($phpBinaryDir !== '' && $phpBinaryDir !== '.'
+        ? $phpBinaryDir . DIRECTORY_SEPARATOR . 'libsqlite3.dll'
+        : 'C:\\xampp\\php\\libsqlite3.dll');
+
+$httpdCandidates = [];
+if ($iniDir !== '') {
+    $httpdCandidates[] = dirname($iniDir) . DIRECTORY_SEPARATOR . 'apache' . DIRECTORY_SEPARATOR . 'bin' . DIRECTORY_SEPARATOR . 'httpd.exe';
+    $httpdCandidates[] = dirname($iniDir, 2) . DIRECTORY_SEPARATOR . 'apache' . DIRECTORY_SEPARATOR . 'bin' . DIRECTORY_SEPARATOR . 'httpd.exe';
+}
+$httpdCandidates[] = 'C:\\xampp\\apache\\bin\\httpd.exe';
+$httpdCandidates[] = 'D:\\Apache\\bin\\httpd.exe';
+$httpdCandidates[] = 'D:\\xampp\\apache\\bin\\httpd.exe';
+$httpdPath = $isWindows ? lnHealthFirstExistingFile($httpdCandidates) : '';
+$apacheArch = $httpdPath !== '' ? lnHealthPeMachine($httpdPath) : null;
+
+$sqlite3DllPath = '';
+$pdoSqliteDllPath = '';
+$sqlite3DllArch = null;
+$pdoSqliteDllArch = null;
+if ($isWindows && $extDir !== '') {
+    $extDirNorm = rtrim(str_replace(['/', '\\'], DIRECTORY_SEPARATOR, $extDir), DIRECTORY_SEPARATOR);
+    $sqlite3DllPath = lnHealthFirstExistingFile([
+        $extDirNorm . DIRECTORY_SEPARATOR . 'php_sqlite3.dll',
+        $extDirNorm . DIRECTORY_SEPARATOR . 'sqlite3.dll',
+    ]);
+    $pdoSqliteDllPath = lnHealthFirstExistingFile([
+        $extDirNorm . DIRECTORY_SEPARATOR . 'php_pdo_sqlite.dll',
+        $extDirNorm . DIRECTORY_SEPARATOR . 'pdo_sqlite.dll',
+    ]);
+    $sqlite3DllArch = $sqlite3DllPath !== '' ? lnHealthPeMachine($sqlite3DllPath) : null;
+    $pdoSqliteDllArch = $pdoSqliteDllPath !== '' ? lnHealthPeMachine($pdoSqliteDllPath) : null;
+    $extDir = $extDirNorm;
+}
+
+// ---- Architecture ----
+$checks[] = lnHealthCheck(
+    'php_architecture',
+    'Architecture',
+    $phpArch === 'x64',
+    'fail',
+    'PHP 64-bit (x64)',
+    lnHealthArchLabel($phpArch) . ' · uname=' . ($osArch !== '' ? $osArch : '?') . ' · PHP_INT_SIZE=' . PHP_INT_SIZE,
+    'LinkNest requires Thread Safe x64 PHP for Apache (php8apache2_4.dll). Install the TS x64 build from downloads.php.net, not x86.'
+);
+$checks[] = lnHealthCheck(
+    'php_thread_safety',
+    'Architecture',
+    $phpZts,
+    'fail',
+    'PHP Thread Safe (ZTS)',
+    $phpZts ? 'Thread Safe (ZTS)' : 'Non-Thread Safe (NTS)',
+    'Use Thread Safe PHP with Apache mod_php. NTS builds are for IIS/FastCGI, not XAMPP LoadModule.'
+);
+
+if ($isWindows) {
+    if ($httpdPath !== '' && $apacheArch !== null) {
+        $checks[] = lnHealthCheck(
+            'apache_architecture',
+            'Architecture',
+            $apacheArch === 'x64',
+            $apacheArch === $phpArch ? 'warn' : 'fail',
+            'Apache httpd.exe 64-bit (x64)',
+            lnHealthArchLabel($apacheArch) . ' · ' . $httpdPath,
+            $apacheArch === 'x64'
+                ? 'Apache matches LinkNest x64 requirement.'
+                : 'Install Apache Lounge Win64 (or XAMPP x64). Mixing 32-bit Apache with 64-bit PHP will not load php8apache2_4.dll.'
+        );
+    } else {
+        $checks[] = lnHealthCheck(
+            'apache_architecture',
+            'Architecture',
+            false,
+            'warn',
+            'Apache httpd.exe architecture readable',
+            $httpdPath !== '' ? ($httpdPath . ' (PE machine unread)') : 'httpd.exe not found in common XAMPP/vanilla paths',
+            'Confirm Win64 Apache next to PHP. Typical paths: C:\\xampp\\apache\\bin\\httpd.exe or D:\\Apache\\bin\\httpd.exe.'
+        );
+    }
+
+    if ($libSqlitePath !== '') {
+        $libArchOk = $libSqliteArch === 'x64' && $phpArch === 'x64';
+        $checks[] = lnHealthCheck(
+            'libsqlite3_architecture',
+            'Architecture',
+            $libArchOk,
+            'fail',
+            'libsqlite3.dll 64-bit (x64), matching PHP',
+            ($libSqliteArch !== null ? lnHealthArchLabel($libSqliteArch) : 'unknown PE') . ' · ' . $libSqlitePath,
+            'Replace with the official sqlite.org Windows x64 DLL (' . LN_HEALTH_SQLITE_DLL_URL . '). Wrong bitness will not load.'
+        );
+    } else {
+        $checks[] = lnHealthCheck(
+            'libsqlite3_architecture',
+            'Architecture',
+            false,
+            'warn',
+            'libsqlite3.dll present and x64',
+            'DLL not found next to php.ini / PHP folder',
+            'Download ' . LN_HEALTH_SQLITE_DLL_URL . ' and place libsqlite3.dll at ' . $libSqliteReplaceTarget . '.'
+        );
+    }
+
+    $extArchParts = [];
+    $extArchMismatch = false;
+    $extArchMissing = false;
+    foreach (
+        [
+            'php_sqlite3.dll' => [$sqlite3DllPath, $sqlite3DllArch],
+            'php_pdo_sqlite.dll' => [$pdoSqliteDllPath, $pdoSqliteDllArch],
+        ] as $label => [$path, $arch]
+    ) {
+        if ($path === '') {
+            $extArchParts[] = $label . '=missing';
+            $extArchMissing = true;
+            continue;
+        }
+        $archLabel = $arch !== null ? lnHealthArchLabel($arch) : 'unknown';
+        $extArchParts[] = $label . '=' . $archLabel;
+        if ($arch !== null && $arch !== $phpArch) {
+            $extArchMismatch = true;
+        }
+        if ($arch !== null && $arch !== 'x64') {
+            $extArchMismatch = true;
+        }
+    }
+    $extArchOk = !$extArchMismatch && !$extArchMissing && $phpArch === 'x64';
+    $checks[] = lnHealthCheck(
+        'sqlite_ext_dll_architecture',
+        'Architecture',
+        $extArchOk,
+        $extArchMismatch ? 'fail' : 'warn',
+        'php_sqlite3.dll / php_pdo_sqlite.dll match PHP x64',
+        implode('; ', $extArchParts) . ($extDir !== '' ? ' · ext=' . $extDir : ''),
+        'These DLLs ship with PHP (extension_dir). Enable extension=sqlite3 and extension=pdo_sqlite in php.ini. Do not replace them with the sqlite.org zip — only replace libsqlite3.dll.'
+    );
+}
 
 // ---- PHP runtime ----
 $checks[] = lnHealthCheck(
@@ -355,6 +591,10 @@ if (extension_loaded('pdo_sqlite')) {
     }
 }
 $sqliteOk = $sqliteVersion !== '' && version_compare($sqliteVersion, '3.53.0', '>=');
+$sqliteDllAdvice = $isWindows
+    ? 'Download ' . LN_HEALTH_SQLITE_DLL_URL . ' → extract libsqlite3.dll → replace ' . $libSqliteReplaceTarget
+        . ' (or run install-sqlite-xampp.bat from a full deploy ZIP), then restart Apache.'
+    : 'Upgrade system libsqlite3 so PHP reports 3.53+.';
 $checks[] = lnHealthCheck(
     'sqlite_version',
     'SQLite',
@@ -362,43 +602,24 @@ $checks[] = lnHealthCheck(
     'fail',
     'SQLite >= 3.53.0 (3.53.4 recommended)',
     $sqliteVersion !== '' ? $sqliteVersion : ('unavailable' . ($sqliteError !== '' ? ': ' . $sqliteError : '')),
-    $isWindows
-        ? 'Replace php/libsqlite3.dll with the official sqlite.org Windows x64 3.53.4 DLL (install-sqlite-xampp.bat), then restart Apache.'
-        : 'Upgrade system libsqlite3 so PHP reports 3.53+.'
+    $sqliteDllAdvice
 );
 
-$libSqlitePath = '';
-$libSqliteBytes = 0;
-$libCandidates = [];
-if ($iniDir !== '') {
-    $libCandidates[] = $iniDir . DIRECTORY_SEPARATOR . 'libsqlite3.dll';
-}
-$libCandidates[] = dirname((string)PHP_BINARY) . DIRECTORY_SEPARATOR . 'libsqlite3.dll';
-$libCandidates[] = 'D:\\php\\libsqlite3.dll';
-$libCandidates[] = 'C:\\xampp\\php\\libsqlite3.dll';
-$extDir = (string)ini_get('extension_dir');
-if ($extDir !== '') {
-    $libCandidates[] = dirname($extDir) . DIRECTORY_SEPARATOR . 'libsqlite3.dll';
-}
-foreach ($libCandidates as $cand) {
-    if ($cand !== '' && is_file($cand)) {
-        $libSqlitePath = $cand;
-        $libSqliteBytes = (int)@filesize($cand);
-        break;
-    }
-}
 if ($isWindows) {
     $dllLooksModern = $libSqlitePath !== '' && $libSqliteBytes >= 2 * 1024 * 1024;
     $checks[] = lnHealthCheck(
         'libsqlite3_dll',
         'SQLite',
-        $sqliteOk && $dllLooksModern,
+        $sqliteOk && $dllLooksModern && $libSqliteArch === 'x64',
         'warn',
-        'Windows libsqlite3.dll from sqlite.org 3.53.4 (~3 MB)',
+        'Windows libsqlite3.dll from sqlite.org 3.53.4 x64 (~3 MB)',
         $libSqlitePath !== ''
-            ? $libSqlitePath . ' (' . lnHealthBytes($libSqliteBytes) . '), runtime ' . ($sqliteVersion !== '' ? $sqliteVersion : '?')
+            ? $libSqlitePath . ' (' . lnHealthBytes($libSqliteBytes) . ', '
+                . ($libSqliteArch !== null ? lnHealthArchLabel($libSqliteArch) : 'arch?')
+                . '), runtime ' . ($sqliteVersion !== '' ? $sqliteVersion : '?')
             : 'DLL not found next to php.ini; runtime ' . ($sqliteVersion !== '' ? $sqliteVersion : '?'),
-        'Official 3.53.x DLLs are ~3 MB. Stock XAMPP 3.39 DLLs were ~1.3 MB and lack mmap. Run install-sqlite-xampp.bat, restart Apache.'
+        'Official 3.53.x x64 DLLs are ~3 MB. Stock XAMPP 3.39 DLLs were ~1.3 MB and lack mmap. Package: '
+            . LN_HEALTH_SQLITE_DLL_ZIP . ' — ' . LN_HEALTH_SQLITE_DLL_URL
     );
 }
 
@@ -428,6 +649,38 @@ foreach ($checks as $c) {
 $status = $fail > 0 ? 'fail' : ($warn > 0 ? 'degraded' : 'ok');
 $http = $fail > 0 ? 503 : 200;
 
+$sqlitePackage = [
+    'required_version' => LN_HEALTH_SQLITE_VERSION,
+    'arch' => 'x64',
+    'archive' => LN_HEALTH_SQLITE_DLL_ZIP,
+    'download_url' => LN_HEALTH_SQLITE_DLL_URL,
+    'tools_url' => LN_HEALTH_SQLITE_TOOLS_URL,
+    'replace_dll' => 'libsqlite3.dll',
+    'replace_path' => $isWindows ? $libSqliteReplaceTarget : null,
+    'note' => 'Only replace libsqlite3.dll from the sqlite.org zip. Keep php_sqlite3.dll / php_pdo_sqlite.dll from PHP ext/; enable them in php.ini. Prefer install-sqlite-xampp.bat from a full LinkNest deploy ZIP.',
+    'installed' => [
+        'runtime_version' => $sqliteVersion !== '' ? $sqliteVersion : null,
+        'path' => $libSqlitePath !== '' ? $libSqlitePath : null,
+        'bytes' => $libSqlitePath !== '' ? $libSqliteBytes : null,
+        'arch' => $libSqliteArch,
+        'looks_modern_size' => $libSqlitePath !== '' && $libSqliteBytes >= 2 * 1024 * 1024,
+        'ext_sqlite3' => $sqlite3DllPath !== '' ? $sqlite3DllPath : null,
+        'ext_pdo_sqlite' => $pdoSqliteDllPath !== '' ? $pdoSqliteDllPath : null,
+        'extension_sqlite3_loaded' => extension_loaded('sqlite3'),
+        'extension_pdo_sqlite_loaded' => extension_loaded('pdo_sqlite'),
+    ],
+];
+
+$archMeta = 'PHP ' . lnHealthArchLabel($phpArch) . ' ' . ($phpZts ? 'TS' : 'NTS');
+if ($libSqliteArch !== null) {
+    $archMeta .= ' · SQLite DLL ' . $libSqliteArch;
+} elseif ($isWindows) {
+    $archMeta .= ' · SQLite DLL ?';
+}
+if ($apacheArch !== null) {
+    $archMeta .= ' · Apache ' . $apacheArch;
+}
+
 $payload = [
     'success' => $fail === 0,
     'status' => $status,
@@ -446,9 +699,17 @@ $payload = [
     'runtime' => [
         'php' => PHP_VERSION,
         'sapi' => $sapi,
+        'php_arch' => $phpArch,
+        'php_zts' => $phpZts,
         'os' => PHP_OS . ' ' . php_uname('s') . ' ' . php_uname('r'),
+        'os_arch' => $osArch,
+        'apache_arch' => $apacheArch,
+        'apache_httpd' => $httpdPath !== '' ? $httpdPath : null,
         'ini' => $iniFile,
         'sqlite' => $sqliteVersion,
+        'libsqlite3_path' => $libSqlitePath !== '' ? $libSqlitePath : null,
+        'libsqlite3_arch' => $libSqliteArch,
+        'sqlite_package' => $sqlitePackage,
         'checked_at' => date('c'),
     ],
     'checks' => $checks,
@@ -471,7 +732,7 @@ $esc = static function ($v): string {
 $badgeClass = $status === 'ok' ? 'ok' : ($status === 'degraded' ? 'warn' : 'fail');
 $badgeLabel = $status === 'ok' ? 'READY' : ($status === 'degraded' ? 'DEGRADED' : 'NOT READY');
 
-$catOrder = ['PHP', 'Extensions', 'OPcache', 'Apache', 'App', 'Filesystem', 'SQLite'];
+$catOrder = ['Architecture', 'PHP', 'Extensions', 'OPcache', 'Apache', 'App', 'Filesystem', 'SQLite'];
 $grouped = [];
 foreach ($checks as $c) {
     $grouped[$c['category']][] = $c;
@@ -513,6 +774,14 @@ foreach ($checks as $c) {
     code { font-size: .78rem; background: #0f172a; padding: .1rem .3rem; border-radius: 4px; }
     a { color: #93c5fd; }
     .foot { margin-top: 1.5rem; color: #64748b; font-size: .8rem; }
+    .pkg { margin: 1rem 0 1.5rem; padding: 1rem 1.15rem; border-radius: 10px; border: 1px solid #334155; background: #1e293b; font-size: .82rem; }
+    .pkg h3 { margin: 0 0 .65rem; font-size: .95rem; }
+    .pkg dl { margin: 0; display: grid; grid-template-columns: minmax(120px, 160px) 1fr; gap: .35rem .75rem; }
+    .pkg dt { color: #94a3b8; }
+    .pkg dd { margin: 0; word-break: break-word; }
+    .pkg ol { margin: .75rem 0 0; padding-left: 1.2rem; color: #cbd5e1; }
+    .pkg li { margin: .25rem 0; }
+    .pkg .note { margin: .75rem 0 0; color: #94a3b8; font-size: .78rem; }
   </style>
 </head>
 <body>
@@ -525,6 +794,7 @@ foreach ($checks as $c) {
     </div>
     <div class="meta">
       <div><b>PHP</b><?php echo $esc(PHP_VERSION); ?> / <?php echo $esc($sapi); ?></div>
+      <div><b>Arch</b><?php echo $esc($archMeta); ?></div>
       <div><b>SQLite</b><?php echo $esc($sqliteVersion !== '' ? $sqliteVersion : 'n/a'); ?></div>
       <div><b>php.ini</b><?php echo $esc($iniFile !== '' ? $iniFile : 'not loaded'); ?></div>
       <div><b>Checked</b><?php echo $esc($payload['runtime']['checked_at']); ?></div>
@@ -550,6 +820,51 @@ foreach ($checks as $c) {
 <?php endforeach; ?>
       </tbody>
     </table>
+<?php if ($cat === 'SQLite' && $isWindows): ?>
+    <div class="pkg">
+      <h3>SQLite package for LinkNest (Windows)</h3>
+      <dl>
+        <dt>Runtime</dt>
+        <dd><?php echo $esc($sqliteVersion !== '' ? $sqliteVersion : 'n/a'); ?>
+          · sqlite3 <?php echo extension_loaded('sqlite3') ? 'loaded' : 'missing'; ?>
+          · pdo_sqlite <?php echo extension_loaded('pdo_sqlite') ? 'loaded' : 'missing'; ?></dd>
+        <dt>Installed DLL</dt>
+        <dd><?php if ($libSqlitePath !== ''): ?>
+          <code><?php echo $esc($libSqlitePath); ?></code>
+          (<?php echo $esc(lnHealthBytes($libSqliteBytes)); ?>,
+          <?php echo $esc($libSqliteArch !== null ? lnHealthArchLabel($libSqliteArch) : 'arch unknown'); ?><?php
+            echo $libSqliteBytes >= 2 * 1024 * 1024 ? ', modern size' : ', likely stock/old XAMPP size'; ?>)
+        <?php else: ?>
+          not found — replace target: <code><?php echo $esc($libSqliteReplaceTarget); ?></code>
+        <?php endif; ?></dd>
+        <dt>Target package</dt>
+        <dd><?php echo $esc(LN_HEALTH_SQLITE_VERSION); ?> Windows <strong>x64</strong>
+          — <code><?php echo $esc(LN_HEALTH_SQLITE_DLL_ZIP); ?></code></dd>
+        <dt>Download</dt>
+        <dd><a href="<?php echo $esc(LN_HEALTH_SQLITE_DLL_URL); ?>"><?php echo $esc(LN_HEALTH_SQLITE_DLL_URL); ?></a>
+          <br><span class="note">CLI tools (optional): <a href="<?php echo $esc(LN_HEALTH_SQLITE_TOOLS_URL); ?>"><?php echo $esc(LN_HEALTH_SQLITE_TOOLS_URL); ?></a></span></dd>
+        <dt>Replace path</dt>
+        <dd><code><?php echo $esc($libSqliteReplaceTarget); ?></code>
+          — only <code>libsqlite3.dll</code> from that zip</dd>
+        <dt>PHP ext DLLs</dt>
+        <dd>Keep in <code>ext\</code> (do not replace from sqlite.org):
+          <code><?php echo $esc($sqlite3DllPath !== '' ? $sqlite3DllPath : 'php_sqlite3.dll'); ?></code>,
+          <code><?php echo $esc($pdoSqliteDllPath !== '' ? $pdoSqliteDllPath : 'php_pdo_sqlite.dll'); ?></code>
+          — enable <code>extension=sqlite3</code> and <code>extension=pdo_sqlite</code> in php.ini</dd>
+      </dl>
+      <ol>
+        <li>Prefer <code>install-sqlite-xampp.bat</code> from a full LinkNest deploy ZIP (elevated).</li>
+        <li>Or: stop Apache → download the zip above → copy <code>libsqlite3.dll</code> over <code><?php echo $esc($libSqliteReplaceTarget); ?></code>.</li>
+        <li>Ensure <code>extension=sqlite3</code> and <code>extension=pdo_sqlite</code> are enabled in php.ini.</li>
+        <li>Start Apache and reload this page — runtime should report SQLite <?php echo $esc(LN_HEALTH_SQLITE_VERSION); ?>+ and a ~3&nbsp;MB x64 DLL.</li>
+      </ol>
+      <?php if ($phpArch !== 'x64'): ?>
+      <p class="note">This PHP build is <?php echo $esc(lnHealthArchLabel($phpArch)); ?>. LinkNest requires <strong>64-bit (x64)</strong> PHP/Apache; the x64 SQLite package above will not load until PHP is upgraded to TS x64.</p>
+      <?php else: ?>
+      <p class="note"><?php echo $esc($sqlitePackage['note']); ?></p>
+      <?php endif; ?>
+    </div>
+<?php endif; ?>
 <?php endforeach; ?>
     <p class="foot">Critical failures return HTTP 503. Warnings return HTTP 200 with status=degraded. This page does not require login so you can verify a fresh Apache/PHP deploy.</p>
   </div>
