@@ -799,6 +799,7 @@ function handleUpdateSettings() {
                 'qr_branding_emoji',
                 'footer_text',
                 'guest_access_enabled',
+                'local_registration_enabled',
                 'public_tile_animation',
                 'show_database_path_in_footer',
                 'disabled_tabs',

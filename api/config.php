@@ -163,6 +163,23 @@ function markSchemaPatchesApplied(): void {
 }
 
 /**
+ * Existing installs skip full schema init; seed public self-signup default once per process.
+ */
+function ensureLocalRegistrationSetting(PDO $db): void {
+    static $done = false;
+    if ($done) {
+        return;
+    }
+    try {
+        $stmt = $db->prepare('INSERT OR IGNORE INTO settings (key, value, updated_at) VALUES (?, ?, ?)');
+        $stmt->execute(['local_registration_enabled', '1', time()]);
+    } catch (PDOException $e) {
+        // Table may not exist yet during first bootstrap
+    }
+    $done = true;
+}
+
+/**
  * Generate a RFC 4122 UUID v4 string.
  */
 function generateUuid(): string {
@@ -3655,6 +3672,7 @@ function initDatabase() {
             ['logo_icon', '🔗', time()], // emoji or icon identifier
             ['logo_image', '', time()], // URL or base64 image
             ['public_tile_animation', 'fade-in', time()],
+            ['local_registration_enabled', '1', time()], // Allow self-signup from login dialog
         ];
         
         foreach ($defaultSettings as $setting) {
@@ -3903,6 +3921,7 @@ function getDB($clear = false) {
     
     // Create new connection (fast-path when schema version is current)
     $dbInstance = initDatabase();
+    ensureLocalRegistrationSetting($dbInstance);
     return $dbInstance;
 }
 

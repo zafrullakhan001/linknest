@@ -110,6 +110,8 @@ export interface AppSettings {
   qr_branding_emoji?: string;
   footer_text?: string; // Footer text displayed at the bottom of pages
   guest_access_enabled?: string; // '0' or '1' - controls whether guests can view spaces
+  /** '0' or '1' - when '0', hide Sign up on the login dialog and reject POST /auth/register. Admins can still create local users. */
+  local_registration_enabled?: string;
   /** Default tile entrance animation for first-time visitors (until they pick their own). */
   public_tile_animation?: string;
   show_database_path_in_footer?: string; // '0' or '1' - controls whether database path is shown in footer
@@ -288,6 +290,7 @@ export const settingsService = {
       qr_branding_emoji: data.settings?.qr_branding_emoji || '❤️',
       footer_text: data.settings?.footer_text || '© 2025 Adventhealth - Designed and developed by AIT Architecture team',
       guest_access_enabled: data.settings?.guest_access_enabled || '1', // Default to enabled
+      local_registration_enabled: data.settings?.local_registration_enabled || '1', // Default to enabled
       public_tile_animation: data.settings?.public_tile_animation || 'fade-in',
       show_database_path_in_footer: data.settings?.show_database_path_in_footer || '1', // Default to enabled
       disabled_tabs: data.settings?.disabled_tabs || '[]',

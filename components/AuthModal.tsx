@@ -137,6 +137,16 @@ export const AuthModal: React.FC<AuthModalProps> = ({ isOpen, onClose, initialMo
 
   const { login, register } = useAuth();
   const { settings: appSettings, loading: settingsLoading } = useSettings();
+  const localRegistrationEnabled =
+    String(appSettings.local_auth_enabled || '1') === '1' &&
+    String(appSettings.local_registration_enabled || '1') === '1';
+
+  useEffect(() => {
+    if (!isOpen || localRegistrationEnabled || mode !== 'register') return;
+    setMode('login');
+    setError('');
+    setSuccess('');
+  }, [isOpen, localRegistrationEnabled, mode]);
 
   // Load settings to check LDAP configuration
   useEffect(() => {
@@ -449,6 +459,12 @@ export const AuthModal: React.FC<AuthModalProps> = ({ isOpen, onClose, initialMo
         setProgress(0);
         setCurrentMethod(null);
       } else {
+        if (!localRegistrationEnabled) {
+          setError('Local account registration is disabled. Contact an administrator.');
+          setLoading(false);
+          setMode('login');
+          return;
+        }
         // Register: validate username, password strength and confirmation
         const trimmedUsername = username.trim();
         if (trimmedUsername.length < 3) {
@@ -1134,8 +1150,10 @@ export const AuthModal: React.FC<AuthModalProps> = ({ isOpen, onClose, initialMo
           </div>
         )}
 
+        {(mode === 'register' || localRegistrationEnabled) && (
         <div className="mt-3 sm:mt-4 text-center">
           <button
+            type="button"
             onClick={() => {
               setMode(mode === 'login' ? 'register' : 'login');
               setError('');
@@ -1149,6 +1167,7 @@ export const AuthModal: React.FC<AuthModalProps> = ({ isOpen, onClose, initialMo
               : 'Already have an account? Sign in'}
           </button>
         </div>
+        )}
         </div>
       </div>
     </div>,

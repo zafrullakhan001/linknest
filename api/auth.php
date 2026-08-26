@@ -174,6 +174,11 @@ function ldap_escape_dn($value) {
 }
 
 function handleRegister() {
+    if ((string)getSetting('local_auth_enabled', '1') === '0'
+        || (string)getSetting('local_registration_enabled', '1') === '0') {
+        sendJSON(['error' => 'Local account registration is disabled. Contact an administrator.'], 403);
+    }
+
     $data = getJSONInput();
     
     if (!isset($data['username']) || !isset($data['email']) || !isset($data['password'])) {
