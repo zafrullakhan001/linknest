@@ -596,6 +596,7 @@ function sendAdvancedNotifications($monitor, $newStatus, $prevStatus, $details, 
         
         // Prepare email content with template variables
         $subject = replaceTemplateVariables($rule['subject_template'], $monitor, $newStatus, $details, $responseTime);
+        $subject = ln_ensure_monitor_email_subject_has_status($subject, (string)$newStatus);
         $body = replaceTemplateVariables($rule['body_template'], $monitor, $newStatus, $details, $responseTime);
         
         error_log("[EMAIL] Rule {$rule['id']} - Prepared email - subject: $subject");
@@ -674,7 +675,7 @@ function sendEmailMultiWithRuleFromOverride(array $toList, array $ccList, $subje
         (string)$details,
         $responseTime,
         time(),
-        (string)$body,
+        null,
         $appName
     );
 
@@ -850,7 +851,7 @@ function sendNotification($monitor, $message, $statusTrigger = 'both', $response
     if (!empty($recipients)) {
         // Build templated subject/body (monitor overrides), fallback to existing message
         $appName = getAppName() ?: 'LinkNest';
-        $defaultSubjectTpl = "[{$appName} Monitor] {monitor_name} Status Update";
+        $defaultSubjectTpl = "[{$appName} Monitor] {status}: {monitor_name}";
         $defaultBodyTpl =
             "{status}: {monitor_name}\n" .
             "Target: {monitor_target}\n" .
@@ -866,6 +867,7 @@ function sendNotification($monitor, $message, $statusTrigger = 'both', $response
         $effectiveStatus = ($statusTrigger === 'up' || $statusTrigger === 'down') ? $statusTrigger : 'both';
         $detailsForTemplate = $message; // includes "DOWN/UP: ..." plus error; good fallback for {details}
         $subject = replaceTemplateVariables($subjectTpl, $monitor, $effectiveStatus, $detailsForTemplate, $responseTime);
+        $subject = ln_ensure_monitor_email_subject_has_status($subject, $effectiveStatus);
         $bodyText = replaceTemplateVariables($bodyTpl, $monitor, $effectiveStatus, $detailsForTemplate, $responseTime);
 
         $ts = is_int($checkedAt) ? $checkedAt : time();
@@ -880,7 +882,7 @@ function sendNotification($monitor, $message, $statusTrigger = 'both', $response
             $detailsForTemplate,
             $responseTime,
             $ts,
-            $bodyText,
+            null,
             $appName
         );
 

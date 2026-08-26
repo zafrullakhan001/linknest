@@ -32,6 +32,8 @@ from linknest_worker_lib import (
     time_window_active,
     send_smtp_email,
     ln_render_monitor_notification_html,
+    _ln_ensure_monitor_email_subject_has_status,
+    _monitor_email_details_from_body,
 )
 
 
@@ -294,6 +296,8 @@ def main() -> int:
                 )
                 continue
 
+            subject = _ln_ensure_monitor_email_subject_has_status(str(subject or ""), str(status_trigger or ""))
+
             # Now we can attempt a send.
             html_body = None
             try:
@@ -306,12 +310,12 @@ def main() -> int:
                 rt = None
                 if mrow is not None:
                     rt = mrow["last_response_time"]
+                body_text = str(r["body"] or "")
                 html_body = ln_render_monitor_notification_html(
                     monitor_name=monitor_name,
                     target=target,
                     status=str(status_trigger or ""),
-                    subject=str(subject or ""),
-                    message_text=str(r["body"] or ""),
+                    details=_monitor_email_details_from_body(body_text),
                     response_time_ms=(f"{int(rt)} ms" if rt not in (None, "", False) else None),
                     app_name=app_name,
                     db_conn=conn,

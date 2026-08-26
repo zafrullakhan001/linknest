@@ -712,13 +712,38 @@ def ln_email_base_layout(
 </html>"""
 
 
+def _ln_ensure_monitor_email_subject_has_status(subject: str, status: str) -> str:
+    subject = (subject or "").strip()
+    status_label = (status or "").strip().upper()
+    if not subject or status_label in ("", "UNKNOWN", "BOTH"):
+        return subject
+    if re.search(r"\b" + re.escape(status_label) + r"\b", subject, re.I):
+        return subject
+    m = re.match(r"^(\[[^\]]+\]\s*)(.+)$", subject)
+    if m:
+        return f"{m.group(1)}{status_label}: {m.group(2).lstrip()}"
+    return f"{status_label}: {subject}"
+
+
+def _monitor_email_details_from_body(body: str) -> str:
+    """Short details line for HTML (avoid duplicating full plain-text body)."""
+    text = (body or "").strip()
+    if not text:
+        return "N/A"
+    for line in text.splitlines():
+        stripped = line.strip()
+        if stripped.lower().startswith("details:"):
+            return stripped.split(":", 1)[1].strip() or stripped
+    first = next((ln.strip() for ln in text.splitlines() if ln.strip()), text)
+    return first
+
+
 def ln_render_monitor_notification_html(
     *,
     monitor_name: str,
     target: str,
     status: str,
-    subject: str,
-    message_text: str,
+    details: str,
     response_time_ms: Optional[object] = None,
     app_name: str = "LinkNest",
     db_conn: Optional[sqlite3.Connection] = None,
@@ -730,8 +755,7 @@ def ln_render_monitor_notification_html(
     accent = _ln_accent_for_status(status)
     pill_bg = accent
 
-    safe_message = _ln_nl2br_escaped(message_text or "")
-    safe_subject = _ln_html_escape(subject)
+    safe_details = _ln_nl2br_escaped(details or "N/A")
     safe_target = _ln_html_escape(target or "N/A")
     target_cell = safe_target
     if re.match(r"^https?://", target or "", re.I):
@@ -772,16 +796,10 @@ def ln_render_monitor_notification_html(
           </td>
         </tr>
         <tr>
-          <td style="font-family:Arial,Helvetica,sans-serif;font-size:13px;font-weight:700;color:#0f172a;padding:16px 0 8px 0;">Subject</td>
+          <td style="font-family:Arial,Helvetica,sans-serif;font-size:13px;font-weight:700;color:#0f172a;padding:16px 0 8px 0;">Details</td>
         </tr>
         <tr>
-          <td bgcolor="#ffffff" style="background-color:#ffffff;border:1px solid #e2e8f0;border-left:4px solid {accent};padding:12px 14px;font-family:Arial,Helvetica,sans-serif;font-size:13px;line-height:1.6;color:#334155;">{safe_subject}</td>
-        </tr>
-        <tr>
-          <td style="font-family:Arial,Helvetica,sans-serif;font-size:13px;font-weight:700;color:#0f172a;padding:16px 0 8px 0;">Message</td>
-        </tr>
-        <tr>
-          <td bgcolor="#f8fafc" style="background-color:#f8fafc;border:1px solid #e2e8f0;padding:12px 14px;font-family:Consolas,Courier New,monospace;font-size:12px;line-height:1.6;color:#0f172a;">{safe_message}</td>
+          <td bgcolor="#ffffff" style="background-color:#ffffff;border:1px solid #e2e8f0;border-left:4px solid {accent};padding:12px 14px;font-family:Arial,Helvetica,sans-serif;font-size:13px;line-height:1.6;color:#334155;">{safe_details}</td>
         </tr>
       </table>
     """

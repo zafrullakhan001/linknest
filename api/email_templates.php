@@ -14,6 +14,24 @@ function ln_format_status_label(string $status): string {
     return $s;
 }
 
+/**
+ * Ensure UP/DOWN/WARNING appears in monitor email subjects when templates omit {status}.
+ */
+function ln_ensure_monitor_email_subject_has_status(string $subject, string $status): string {
+    $subject = trim($subject);
+    $statusLabel = ln_format_status_label($status);
+    if ($subject === '' || $statusLabel === 'UNKNOWN' || $statusLabel === 'BOTH') {
+        return $subject;
+    }
+    if (preg_match('/\b' . preg_quote($statusLabel, '/') . '\b/i', $subject)) {
+        return $subject;
+    }
+    if (preg_match('/^(\[[^\]]+\]\s*)(.+)$/u', $subject, $m)) {
+        return $m[1] . $statusLabel . ': ' . ltrim($m[2]);
+    }
+    return $statusLabel . ': ' . $subject;
+}
+
 function ln_format_response_time($ms): string {
     if ($ms === null || $ms === '') return 'N/A';
     if (!is_numeric($ms)) return 'N/A';

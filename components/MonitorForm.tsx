@@ -148,7 +148,7 @@ export const MonitorForm: React.FC<MonitorFormProps> = ({ monitor, onSave, onCan
     const [legacyEmailFromEmail, setLegacyEmailFromEmail] = useState(monitor?.legacy_email_from_email || '');
     const [legacyEmailDisabled, setLegacyEmailDisabled] = useState((monitor?.legacy_email_disabled ?? 0) === 1);
     const [legacyEmailSubjectTemplate, setLegacyEmailSubjectTemplate] = useState(
-        monitor?.legacy_email_subject_template || `[{app_name} Monitor] {monitor_name} Status Update`
+        monitor?.legacy_email_subject_template || `[{app_name} Monitor] {status}: {monitor_name}`
     );
     const [legacyEmailBodyTemplate, setLegacyEmailBodyTemplate] = useState(
         monitor?.legacy_email_body_template ||
