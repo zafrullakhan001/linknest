@@ -31,6 +31,8 @@ switch ($method) {
             handleGetVersionDetails($matches[1], $matches[2]);
         } elseif (preg_match('#^/([^/]+)/info$#', $path, $matches)) {
             handleGetTileInfo($matches[1]);
+        } elseif (preg_match('#^/([^/]+)/visit$#', $path, $matches)) {
+            handleGetTileVisitStats($matches[1]);
         } elseif ($path === '/staging-template') {
             handleGetStagingTemplate();
         } elseif ($path === '/staging-prompt') {
@@ -7698,10 +7700,10 @@ function getTileVisitStats($tileId, $db = null) {
 }
 
 /**
- * Record a tile visit (hit). Unique visitors are derived from visitor_key.
- * Accepts optional visitorKey in JSON body for guests; authenticated users use u:{id}.
+ * Ensure the current user may see visit stats / record a visit for this tile.
+ * Sends JSON error and exits on failure. Returns [user, db] on success.
  */
-function handleRecordTileVisit($tileId) {
+function assertTileAccessibleForVisit($tileId) {
     $user = getAuthenticatedUser();
     $db = getDB();
 
@@ -7761,6 +7763,27 @@ function handleRecordTileVisit($tileId) {
     if (!$isTileVisible) {
         sendJSON(['error' => 'Tile not found'], 404);
     }
+
+    return [$user, $db];
+}
+
+/**
+ * GET visit stats for a tile (no increment).
+ */
+function handleGetTileVisitStats($tileId) {
+    [, $db] = assertTileAccessibleForVisit($tileId);
+    sendJSON([
+        'success' => true,
+        'stats' => getTileVisitStats($tileId, $db)
+    ]);
+}
+
+/**
+ * Record a tile visit (hit). Unique visitors are derived from visitor_key.
+ * Accepts optional visitorKey in JSON body for guests; authenticated users use u:{id}.
+ */
+function handleRecordTileVisit($tileId) {
+    [$user, $db] = assertTileAccessibleForVisit($tileId);
 
     $input = json_decode(file_get_contents('php://input'), true);
     if (!is_array($input)) {

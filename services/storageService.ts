@@ -1077,31 +1077,62 @@ function getOrCreateVisitorKey(): string {
   }
 }
 
-/** Record a tile open for hit / unique-visitor stats. Best-effort; never throws. */
-export const recordTileVisit = async (tileId: string): Promise<void> => {
-  if (!tileId) return;
+export type TileVisitStats = {
+  hitCount: number;
+  uniqueVisitors: number;
+};
+
+function parseTileVisitStats(data: unknown): TileVisitStats | null {
+  const stats = (data as { stats?: { hitCount?: unknown; uniqueVisitors?: unknown } })?.stats;
+  if (!stats) return null;
+  const hitCount = typeof stats.hitCount === 'number' ? stats.hitCount : Number(stats.hitCount);
+  const uniqueVisitors = typeof stats.uniqueVisitors === 'number' ? stats.uniqueVisitors : Number(stats.uniqueVisitors);
+  if (!Number.isFinite(hitCount)) return null;
+  return {
+    hitCount,
+    uniqueVisitors: Number.isFinite(uniqueVisitors) ? uniqueVisitors : 0,
+  };
+}
+
+/** Record a tile open for hit / unique-visitor stats. Returns stats; never throws. */
+export const recordTileVisit = async (tileId: string): Promise<TileVisitStats | null> => {
+  if (!tileId) return null;
   try {
     // Avoid double-count from React Strict Mode remounts in the same tab
     const debounceKey = `tile_visit_sent_${tileId}`;
+    let shouldRecord = true;
     try {
       const last = sessionStorage.getItem(debounceKey);
       if (last && Date.now() - Number(last) < 15000) {
-        return;
+        shouldRecord = false;
+      } else {
+        sessionStorage.setItem(debounceKey, String(Date.now()));
       }
-      sessionStorage.setItem(debounceKey, String(Date.now()));
     } catch {
       // sessionStorage unavailable — continue
     }
 
-    await fetch(`${API_BASE}/tiles/${encodeURIComponent(tileId)}/visit`, {
-      method: 'POST',
+    if (shouldRecord) {
+      const response = await fetch(`${API_BASE}/tiles/${encodeURIComponent(tileId)}/visit`, {
+        method: 'POST',
+        credentials: 'include',
+        keepalive: true,
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ visitorKey: getOrCreateVisitorKey() }),
+      });
+      if (!response.ok) return null;
+      return parseTileVisitStats(await response.json());
+    }
+
+    const response = await fetch(`${API_BASE}/tiles/${encodeURIComponent(tileId)}/visit`, {
+      method: 'GET',
       credentials: 'include',
-      keepalive: true,
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ visitorKey: getOrCreateVisitorKey() }),
     });
+    if (!response.ok) return null;
+    return parseTileVisitStats(await response.json());
   } catch (e) {
     console.debug('Tile visit recording skipped:', e);
+    return null;
   }
 };
 

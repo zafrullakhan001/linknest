@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useRef, useCallback, useMemo, lazy, Suspense } from 'react';
 import { Tile, Link } from './types';
-import { getTiles, getTile, saveTiles, createTile, deleteTile, cloneTile, toSummaryTile } from './services/storageService';
+import { getTiles, getTile, saveTiles, createTile, deleteTile, cloneTile, toSummaryTile, recordTileVisit } from './services/storageService';
 import { settingsService, isSignInButtonVisible } from './services/settingsService';
 import { authService } from './services/authService';
 import { Navigation } from './components/Navigation';
@@ -36,6 +36,7 @@ import { useMobile } from './hooks/useMobile';
 import { getAllowedWidgets } from './services/widgetService';
 import { performanceAnalyticsService } from './services/performanceAnalyticsService';
 import { collectFingerprint } from './services/fingerprintService';
+import { recordAndGetPageVisits } from './services/pageVisitService';
 
 // Lazy load heavy components for better initial load performance
 const TileGrid = lazy(() => import('./components/TileGrid').then(m => ({ default: m.TileGrid })));
@@ -151,10 +152,42 @@ const AppContent: React.FC = () => {
     const saved = localStorage.getItem('linknest_show_footer_details');
     return saved !== null ? saved === 'true' : true;
   });
+  const [pageVisitCount, setPageVisitCount] = useState<number | null>(null);
+  const [spaceVisitCount, setSpaceVisitCount] = useState<number | null>(null);
 
   useEffect(() => {
     localStorage.setItem('linknest_show_footer_details', showFooterDetails.toString());
   }, [showFooterDetails]);
+
+  // Public page visit counter (once per browser session)
+  useEffect(() => {
+    let cancelled = false;
+    void recordAndGetPageVisits().then((count) => {
+      if (!cancelled && count !== null) {
+        setPageVisitCount(count);
+      }
+    });
+    return () => {
+      cancelled = true;
+    };
+  }, []);
+
+  // Space visit counter when a space is open
+  useEffect(() => {
+    if (!detailTile?.id) {
+      setSpaceVisitCount(null);
+      return;
+    }
+    let cancelled = false;
+    void recordTileVisit(detailTile.id).then((stats) => {
+      if (!cancelled && stats) {
+        setSpaceVisitCount(stats.hitCount);
+      }
+    });
+    return () => {
+      cancelled = true;
+    };
+  }, [detailTile?.id]);
 
   // Clock Widget Visibility State
   const [showClock, setShowClock] = useState(() => {
@@ -1628,6 +1661,19 @@ const AppContent: React.FC = () => {
                   )}
                 </div>
               )}
+
+              {detailTile && spaceVisitCount !== null ? (
+                <p className="text-[9px] sm:text-[10px] italic text-slate-400/80 dark:text-slate-500/80 leading-none -mt-1 text-center px-2">
+                  {detailTile.title} space{' '}
+                  {spaceVisitCount === 1 ? 'visit' : 'visits'}:{' '}
+                  {spaceVisitCount.toLocaleString('en-US')}
+                </p>
+              ) : pageVisitCount !== null ? (
+                <p className="text-[9px] sm:text-[10px] italic text-slate-400/80 dark:text-slate-500/80 leading-none -mt-1 text-center px-2">
+                  {pageVisitCount.toLocaleString('en-US')} website{' '}
+                  {pageVisitCount === 1 ? 'visit' : 'visits'}
+                </p>
+              ) : null}
             </div>
           </div>
         </footer>

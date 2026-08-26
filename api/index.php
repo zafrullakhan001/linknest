@@ -286,6 +286,15 @@ if ($path === '/') {
     }
     require __DIR__ . '/broadcast.php';
     exit;
+} elseif (strpos($path, '/page-visits') === 0) {
+    $remainingPath = substr($path, 12); // Remove '/page-visits'
+    if (empty($remainingPath) || $remainingPath === '/') {
+        $_SERVER['PATH_INFO'] = '/';
+    } else {
+        $_SERVER['PATH_INFO'] = ($remainingPath[0] === '/') ? $remainingPath : '/' . $remainingPath;
+    }
+    require __DIR__ . '/page_visits.php';
+    exit;
 } elseif (strpos($path, '/analytics/config') === 0) {
     require __DIR__ . '/analytics/config.php';
     exit;
