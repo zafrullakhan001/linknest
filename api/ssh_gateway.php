@@ -45,6 +45,24 @@ function sshGatewayMaxPerUser(): int {
     return min(sshGatewayMaxConnectionsCeiling(), $n);
 }
 
+/** Admin kill-switch for the SSH Gateway add-on (default on for existing installs). */
+function sshGatewayIsEnabled(): bool {
+    return ((string)getSetting('ssh_gateway_enabled', '1')) === '1';
+}
+
+/** Stop every tracked ttyd session and sweep untracked listeners (used when disabling the add-on). */
+function sshGatewayStopEverything(): array {
+    $sessions = sshGatewayCleanup(sshGatewayLoadSessions());
+    $stopped = 0;
+    foreach ($sessions as $s) {
+        $stopped++;
+        sshGatewayDestroySessionRecord($s);
+    }
+    $swept = sshGatewaySweepUntrackedListeners([]);
+    sshGatewaySaveSessions([]);
+    return ['stopped' => $stopped, 'sweptUntracked' => $swept];
+}
+
 if (SSH_GATEWAY_PORT_MIN < 1024 || SSH_GATEWAY_PORT_MAX > 65535 || SSH_GATEWAY_PORT_MIN > SSH_GATEWAY_PORT_MAX) {
     // Keep safe defaults if env is misconfigured
     // (constants already set; allocatePort still bounds-checks each port)
@@ -616,6 +634,7 @@ function handleSshGatewayGetConfig() {
 
     sendJSON([
         'config' => [
+            'enabled' => sshGatewayIsEnabled(),
             'ttydPath' => $ttydConfigured,
             'sshPath' => $sshConfigured,
             'x11Display' => sshGatewayDefaultDisplay(),
@@ -648,6 +667,19 @@ function handleSshGatewayPutConfig() {
     $maxConnections = array_key_exists('maxConnections', $data) || array_key_exists('max_connections', $data)
         ? ($data['maxConnections'] ?? $data['max_connections'])
         : null;
+
+    $wasEnabled = sshGatewayIsEnabled();
+    if (array_key_exists('enabled', $data)) {
+        $nowEnabled = !empty($data['enabled']);
+        setSetting('ssh_gateway_enabled', $nowEnabled ? '1' : '0');
+        if (function_exists('responseCacheInvalidate')) {
+            responseCacheInvalidate('settings_public');
+        }
+        // Disabling the add-on tears down every Easy-mode ttyd on this server.
+        if ($wasEnabled && !$nowEnabled) {
+            sshGatewayStopEverything();
+        }
+    }
 
     if ($ttydPath !== null) {
         if ($ttydPath !== '' && preg_match('/[;\|&<>]/i', $ttydPath)) {
@@ -1024,8 +1056,18 @@ function handleSshGatewayStatus() {
         $hint = 'Start VcXsrv (or another X server) on this PC before using GUI mode. XLaunch → Multiple windows → Start no client → Disable access control (recommended).';
     }
 
+    $enabled = sshGatewayIsEnabled();
+    $binariesOk = $ttydPath !== null && $sshPath !== null;
+    $disabledHint = 'SSH Gateway add-on is disabled. An administrator can re-enable it under Admin → Add-ons → SSH Gateway.';
+    $binaryHint = ($ttydPath === null
+        ? 'ttyd was not found. Deploy bin/ttyd.exe with the package (package-for-deployment / ensure-ttyd-runtime.ps1), or set Admin → Add-ons → SSH Gateway path.'
+        : ($sshPath === null
+            ? 'OpenSSH ssh.exe was not found. Deploy bin/OpenSSH/ssh.exe with the package (package-for-deployment / ensure-openssh-runtime.ps1), or set Admin → Add-ons → SSH Gateway path.'
+            : null));
+
     $payload = [
-        'available' => $ttydPath !== null && $sshPath !== null,
+        'enabled' => $enabled,
+        'available' => $enabled && $binariesOk,
         'ttydPath' => $ttydPath,
         'sshPath' => $sshPath,
         'ttydFound' => $ttydPath !== null,
@@ -1034,11 +1076,7 @@ function handleSshGatewayStatus() {
             $ttydPath === null ? 'ttyd' : null,
             $sshPath === null ? 'ssh' : null,
         ])),
-        'hint' => ($ttydPath === null
-            ? 'ttyd was not found. Deploy bin/ttyd.exe with the package (package-for-deployment / ensure-ttyd-runtime.ps1), or set Admin → Add-ons → SSH Gateway path.'
-            : ($sshPath === null
-                ? 'OpenSSH ssh.exe was not found. Deploy bin/OpenSSH/ssh.exe with the package (package-for-deployment / ensure-openssh-runtime.ps1), or set Admin → Add-ons → SSH Gateway path.'
-                : null)),
+        'hint' => !$enabled ? $disabledHint : $binaryHint,
         'platform' => PHP_OS,
         'docker' => $inDocker,
         'maxConnections' => $maxPerUser,
@@ -1617,6 +1655,13 @@ function sshGatewaySpawnTtyd(
 function handleSshGatewayStart() {
     $user = requireAuth();
     $data = getJSONInput();
+
+    if (!sshGatewayIsEnabled()) {
+        sendJSON([
+            'error' => 'SSH Gateway add-on is disabled. Ask an administrator to enable it under Admin → Add-ons → SSH Gateway.',
+            'code' => 'addon_disabled',
+        ], 403);
+    }
 
     foreach (['password', 'passwd', 'privateKey', 'private_key', 'authToken'] as $k) {
         if (!empty($data[$k])) {

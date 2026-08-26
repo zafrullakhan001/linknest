@@ -81,6 +81,9 @@ export interface VncGatewaySessionStatusRow {
 
 export interface VncGatewayStatus {
   available: boolean;
+  /** Admin kill-switch; false when VNC Gateway add-on is disabled. */
+  enabled?: boolean;
+  hint?: string | null;
   pythonPath?: string | null;
   websockifyPath?: string | null;
   websockifyModule?: boolean;
@@ -102,6 +105,7 @@ export interface VncGatewayStatus {
 
 export interface VncGatewayConfigResponse {
   config: {
+    enabled: boolean;
     pythonPath: string;
     websockifyPath: string;
     maxConnections: number;
@@ -139,6 +143,7 @@ export const vncGatewayService = {
   },
 
   async putConfig(input: {
+    enabled?: boolean;
     pythonPath?: string;
     websockifyPath?: string;
     maxConnections?: number;

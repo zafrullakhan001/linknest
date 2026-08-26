@@ -120,6 +120,10 @@ export interface AppSettings {
   local_registration_enabled?: string;
   /** '0' or '1' - when '0', hide the Sign In button in the UI. Login still opens via #/signin or ?signin in the URL. */
   signin_button_enabled?: string;
+  /** '0' or '1' - SSH Gateway / Easy-mode add-on (default enabled when unset). */
+  ssh_gateway_enabled?: string;
+  /** '0' or '1' - VNC Gateway / Easy-mode add-on (default enabled when unset). */
+  vnc_gateway_enabled?: string;
   /** Default tile entrance animation for first-time visitors (until they pick their own). */
   public_tile_animation?: string;
   show_database_path_in_footer?: string; // '0' or '1' - controls whether database path is shown in footer

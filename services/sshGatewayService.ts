@@ -91,6 +91,8 @@ export interface SshGatewaySessionStatusRow {
 
 export interface SshGatewayStatus {
   available: boolean;
+  /** Admin kill-switch; false when SSH Gateway add-on is disabled. */
+  enabled?: boolean;
   ttydPath?: string | null;
   sshPath?: string | null;
   ttydFound?: boolean;
@@ -127,6 +129,7 @@ export interface SshGatewayStatus {
 
 export interface SshGatewayConfigResponse {
   config: {
+    enabled: boolean;
     ttydPath: string;
     sshPath: string;
     x11Display: string;
@@ -164,6 +167,7 @@ export const sshGatewayService = {
   },
 
   async putConfig(input: {
+    enabled?: boolean;
     ttydPath?: string;
     sshPath?: string;
     x11Display?: string;

@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { FaTimes, FaEnvelope, FaServer, FaKey, FaCheckCircle, FaExclamationTriangle, FaBellSlash, FaClock, FaPlus, FaTrash, FaEdit, FaCheck, FaVial } from 'react-icons/fa';
-import { SMTPServer, smtpService } from '../services/smtpService';
+import { SMTPServer, smtpService, SMTP_PROVIDER_PRESETS, detectSmtpProvider, getSmtpProviderPreset, type SmtpProviderId } from '../services/smtpService';
 import { useSettings } from '../contexts/SettingsContext';
 
 interface SMTPSettingsModalProps {
@@ -18,6 +18,7 @@ export const SMTPSettingsModal: React.FC<SMTPSettingsModalProps> = ({ onClose })
     const [isSaving, setIsSaving] = useState(false);
     const [isTesting, setIsTesting] = useState(false);
     const [testResult, setTestResult] = useState<{ success: boolean; message: string } | null>(null);
+    const [smtpProvider, setSmtpProvider] = useState<SmtpProviderId>('custom');
 
     const [formData, setFormData] = useState<Partial<SMTPServer>>({
         name: '',
@@ -33,6 +34,28 @@ export const SMTPSettingsModal: React.FC<SMTPSettingsModalProps> = ({ onClose })
         pause_start: '',
         pause_end: ''
     });
+
+    const applySmtpProvider = (id: SmtpProviderId) => {
+        setSmtpProvider(id);
+        const preset = getSmtpProviderPreset(id);
+        setFormData((prev) => ({
+            ...prev,
+            name: id === 'custom' ? (prev.name || '') : preset.nameHint,
+            host: id === 'custom' ? (prev.host || '') : preset.host,
+            port: id === 'custom' ? (prev.port || 587) : preset.port,
+            encryption: id === 'custom' ? (prev.encryption || 'tls') : preset.encryption,
+        }));
+    };
+
+    const updateFormField = <K extends keyof SMTPServer>(key: K, value: SMTPServer[K]) => {
+        setFormData((prev) => {
+            const next = { ...prev, [key]: value };
+            if (key === 'host' || key === 'port' || key === 'encryption') {
+                setSmtpProvider(detectSmtpProvider(String(next.host || ''), Number(next.port) || 587, String(next.encryption || 'tls')));
+            }
+            return next;
+        });
+    };
 
     // Dragging logic
     const [position, setPosition] = useState({ x: 0, y: 0 });
@@ -121,6 +144,7 @@ export const SMTPSettingsModal: React.FC<SMTPSettingsModalProps> = ({ onClose })
         setIsCreating(true);
         setIsEditing(true);
         setSelectedServer(null);
+        setSmtpProvider('custom');
         setFormData({
             name: '',
             host: '',
@@ -142,6 +166,7 @@ export const SMTPSettingsModal: React.FC<SMTPSettingsModalProps> = ({ onClose })
         setIsCreating(false);
         setIsEditing(true);
         setSelectedServer(server);
+        setSmtpProvider(detectSmtpProvider(server.host, server.port, server.encryption));
         setFormData({
             name: server.name,
             host: server.host,
@@ -347,14 +372,37 @@ export const SMTPSettingsModal: React.FC<SMTPSettingsModalProps> = ({ onClose })
                             </div>
                         ) : isEditing || isCreating ? (
                             <>
+                                {/* Provider preset */}
+                                <div>
+                                    <label className="block text-xs font-bold text-slate-700 dark:text-slate-300 mb-2">Provider</label>
+                                    <select
+                                        value={smtpProvider}
+                                        onChange={(e) => applySmtpProvider(e.target.value as SmtpProviderId)}
+                                        className="w-full px-4 py-2 rounded-xl border border-slate-200 dark:border-[#333] bg-white dark:bg-[#1e1e1e] text-slate-900 dark:text-white focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                                    >
+                                        {SMTP_PROVIDER_PRESETS.map((p) => (
+                                            <option key={p.id} value={p.id}>{p.label}</option>
+                                        ))}
+                                    </select>
+                                    <p className="mt-2 text-xs text-slate-500 dark:text-gray-400 leading-relaxed">
+                                        {getSmtpProviderPreset(smtpProvider).help}
+                                    </p>
+                                    {smtpProvider === 'office365' && (
+                                        <div className="mt-2 rounded-xl border border-sky-200 dark:border-sky-800 bg-sky-50 dark:bg-sky-950/40 px-3 py-2 text-xs text-sky-900 dark:text-sky-100 leading-relaxed">
+                                            <strong>Office 365:</strong> Enable Authenticated SMTP for the mailbox in Microsoft 365 admin.
+                                            Username = full email. Use an app password if MFA is enabled. From address should match that mailbox.
+                                        </div>
+                                    )}
+                                </div>
+
                                 {/* Server Name */}
                                 <div>
                                     <label className="block text-xs font-bold text-slate-700 dark:text-slate-300 mb-2">Server Name</label>
                                     <input
                                         type="text"
                                         value={formData.name}
-                                        onChange={(e) => setFormData({ ...formData, name: e.target.value })}
-                                        placeholder="e.g., Primary SMTP, Backup SMTP"
+                                        onChange={(e) => updateFormField('name', e.target.value)}
+                                        placeholder="e.g., Primary SMTP, Office 365"
                                         className="w-full px-4 py-2 rounded-xl border border-slate-200 dark:border-[#333] bg-white dark:bg-[#1e1e1e] text-slate-900 dark:text-white focus:ring-2 focus:ring-blue-500 focus:border-transparent"
                                     />
                                 </div>
@@ -371,8 +419,8 @@ export const SMTPSettingsModal: React.FC<SMTPSettingsModalProps> = ({ onClose })
                                             <input
                                                 type="text"
                                                 value={formData.host}
-                                                onChange={(e) => setFormData({ ...formData, host: e.target.value })}
-                                                placeholder="smtp.gmail.com"
+                                                onChange={(e) => updateFormField('host', e.target.value)}
+                                                placeholder="smtp.office365.com"
                                                 className="w-full px-4 py-2 rounded-xl border border-slate-200 dark:border-[#333] bg-white dark:bg-[#1e1e1e] text-slate-900 dark:text-white focus:ring-2 focus:ring-blue-500 focus:border-transparent"
                                             />
                                         </div>
@@ -382,7 +430,7 @@ export const SMTPSettingsModal: React.FC<SMTPSettingsModalProps> = ({ onClose })
                                             <input
                                                 type="number"
                                                 value={formData.port}
-                                                onChange={(e) => setFormData({ ...formData, port: parseInt(e.target.value) })}
+                                                onChange={(e) => updateFormField('port', parseInt(e.target.value) || 587)}
                                                 placeholder="587"
                                                 className="w-full px-4 py-2 rounded-xl border border-slate-200 dark:border-[#333] bg-white dark:bg-[#1e1e1e] text-slate-900 dark:text-white focus:ring-2 focus:ring-blue-500 focus:border-transparent"
                                             />
@@ -392,12 +440,12 @@ export const SMTPSettingsModal: React.FC<SMTPSettingsModalProps> = ({ onClose })
                                             <label className="block text-xs font-bold text-slate-700 dark:text-slate-300 mb-2">Encryption</label>
                                             <select
                                                 value={formData.encryption}
-                                                onChange={(e) => setFormData({ ...formData, encryption: e.target.value as any })}
+                                                onChange={(e) => updateFormField('encryption', e.target.value as 'none' | 'ssl' | 'tls')}
                                                 className="w-full px-4 py-2 rounded-xl border border-slate-200 dark:border-[#333] bg-white dark:bg-[#1e1e1e] text-slate-900 dark:text-white focus:ring-2 focus:ring-blue-500 focus:border-transparent"
                                             >
                                                 <option value="none">None</option>
                                                 <option value="ssl">SSL</option>
-                                                <option value="tls">TLS</option>
+                                                <option value="tls">TLS (STARTTLS)</option>
                                             </select>
                                         </div>
                                     </div>
@@ -415,8 +463,8 @@ export const SMTPSettingsModal: React.FC<SMTPSettingsModalProps> = ({ onClose })
                                             <input
                                                 type="text"
                                                 value={formData.username}
-                                                onChange={(e) => setFormData({ ...formData, username: e.target.value })}
-                                                placeholder="your-email@example.com"
+                                                onChange={(e) => updateFormField('username', e.target.value)}
+                                                placeholder={getSmtpProviderPreset(smtpProvider).usernamePlaceholder}
                                                 className="w-full px-4 py-2 rounded-xl border border-slate-200 dark:border-[#333] bg-white dark:bg-[#1e1e1e] text-slate-900 dark:text-white focus:ring-2 focus:ring-blue-500 focus:border-transparent"
                                             />
                                         </div>
@@ -426,8 +474,8 @@ export const SMTPSettingsModal: React.FC<SMTPSettingsModalProps> = ({ onClose })
                                             <input
                                                 type="password"
                                                 value={formData.password}
-                                                onChange={(e) => setFormData({ ...formData, password: e.target.value })}
-                                                placeholder="••••••••"
+                                                onChange={(e) => updateFormField('password', e.target.value)}
+                                                placeholder={getSmtpProviderPreset(smtpProvider).passwordHint}
                                                 className="w-full px-4 py-2 rounded-xl border border-slate-200 dark:border-[#333] bg-white dark:bg-[#1e1e1e] text-slate-900 dark:text-white focus:ring-2 focus:ring-blue-500 focus:border-transparent"
                                             />
                                         </div>
@@ -446,8 +494,8 @@ export const SMTPSettingsModal: React.FC<SMTPSettingsModalProps> = ({ onClose })
                                             <input
                                                 type="email"
                                                 value={formData.from_email}
-                                                onChange={(e) => setFormData({ ...formData, from_email: e.target.value })}
-                                                placeholder="noreply@example.com"
+                                                onChange={(e) => updateFormField('from_email', e.target.value)}
+                                                placeholder={smtpProvider === 'office365' ? 'user@yourdomain.com' : 'noreply@example.com'}
                                                 className="w-full px-4 py-2 rounded-xl border border-slate-200 dark:border-[#333] bg-white dark:bg-[#1e1e1e] text-slate-900 dark:text-white focus:ring-2 focus:ring-blue-500 focus:border-transparent"
                                             />
                                         </div>
@@ -457,7 +505,7 @@ export const SMTPSettingsModal: React.FC<SMTPSettingsModalProps> = ({ onClose })
                                             <input
                                                 type="text"
                                                 value={formData.from_name}
-                                                onChange={(e) => setFormData({ ...formData, from_name: e.target.value })}
+                                                onChange={(e) => updateFormField('from_name', e.target.value)}
                                                 placeholder={`${appName} Monitor`}
                                                 className="w-full px-4 py-2 rounded-xl border border-slate-200 dark:border-[#333] bg-white dark:bg-[#1e1e1e] text-slate-900 dark:text-white focus:ring-2 focus:ring-blue-500 focus:border-transparent"
                                             />

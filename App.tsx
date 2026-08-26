@@ -461,6 +461,14 @@ const AppContent: React.FC = () => {
       return false;
     }
 
+    // Global add-on kill-switches (Admin → Add-ons); unset defaults to enabled
+    if (widgetId === 'ssh-terminal' && settings.ssh_gateway_enabled === '0') {
+      return false;
+    }
+    if (widgetId === 'vnc-viewer' && settings.vnc_gateway_enabled === '0') {
+      return false;
+    }
+
     // Admins can see all widgets
     if (user?.is_admin) return true;
 
@@ -470,7 +478,7 @@ const AppContent: React.FC = () => {
     }
 
     return allowedWidgetIds.has(widgetId);
-  }, [isAuthenticated, user, allowedWidgetIds, widgetsLoading]);
+  }, [isAuthenticated, user, allowedWidgetIds, widgetsLoading, settings.ssh_gateway_enabled, settings.vnc_gateway_enabled]);
 
   // Theme State — keep in sync with index.html bootstrap + browser-only preferences
   const [darkMode, setDarkMode] = useState(() => {

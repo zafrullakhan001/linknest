@@ -3,6 +3,13 @@ import { SecurePasswordInput } from './SecurePasswordInput';
 import { resolveApiBase } from '../services/apiHelpers';
 import { sshGatewayService, type SshGatewayConfigResponse, type SshGatewayStatus } from '../services/sshGatewayService';
 import { vncGatewayService, type VncGatewayConfigResponse, type VncGatewayStatus } from '../services/vncGatewayService';
+import { useSettings } from '../contexts/SettingsContext';
+import {
+    SMTP_PROVIDER_PRESETS,
+    detectSmtpProvider,
+    getSmtpProviderPreset,
+    type SmtpProviderId,
+} from '../services/smtpService';
 
 // Resolve API base URL once at module load
 const API_BASE = resolveApiBase();
@@ -1793,11 +1800,13 @@ const Monitorv2AddonCard: React.FC = () => {
 // SSH Gateway Addon Card Component
 // ============================================
 const SshGatewayAddonCard: React.FC = () => {
+    const { refreshSettings } = useSettings();
     const [expanded, setExpanded] = useState(false);
     const [loading, setLoading] = useState(true);
     const [saving, setSaving] = useState(false);
     const [error, setError] = useState<string | null>(null);
     const [savedMsg, setSavedMsg] = useState<string | null>(null);
+    const [enabled, setEnabled] = useState(true);
     const [ttydPath, setTtydPath] = useState('');
     const [sshPath, setSshPath] = useState('');
     const [x11Display, setX11Display] = useState('127.0.0.1:0.0');
@@ -1810,6 +1819,7 @@ const SshGatewayAddonCard: React.FC = () => {
     const [usageError, setUsageError] = useState<string | null>(null);
 
     const applyResponse = (data: SshGatewayConfigResponse) => {
+        setEnabled(data.config.enabled !== false);
         setTtydPath(data.config.ttydPath || '');
         setSshPath(data.config.sshPath || '');
         setX11Display(data.config.x11Display || '127.0.0.1:0.0');
@@ -1859,6 +1869,34 @@ const SshGatewayAddonCard: React.FC = () => {
         return () => window.clearInterval(t);
     }, [expanded]);
 
+    const handleToggleEnabled = async (next: boolean) => {
+        if (
+            !next &&
+            !window.confirm(
+                'Disable SSH Gateway? Easy-mode SSH sessions will stop and new Easy-mode connections will be blocked until re-enabled.'
+            )
+        ) {
+            return;
+        }
+        const prev = enabled;
+        setEnabled(next);
+        try {
+            setSaving(true);
+            setError(null);
+            setSavedMsg(null);
+            const data = await sshGatewayService.putConfig({ enabled: next });
+            applyResponse(data);
+            setSavedMsg(next ? 'SSH Gateway enabled.' : 'SSH Gateway disabled. Active Easy-mode sessions were stopped.');
+            void refreshSettings();
+            void loadUsage();
+        } catch (err: any) {
+            setEnabled(prev);
+            setError(err.message || 'Failed to update enabled state');
+        } finally {
+            setSaving(false);
+        }
+    };
+
     const handleSave = async () => {
         try {
             setSaving(true);
@@ -1866,6 +1904,7 @@ const SshGatewayAddonCard: React.FC = () => {
             setSavedMsg(null);
             const clamped = Math.min(maxCeiling, Math.max(1, Math.floor(Number(maxConnections) || 1)));
             const data = await sshGatewayService.putConfig({
+                enabled,
                 ttydPath: ttydPath.trim(),
                 sshPath: sshPath.trim(),
                 x11Display: x11Display.trim(),
@@ -1881,9 +1920,17 @@ const SshGatewayAddonCard: React.FC = () => {
         }
     };
 
-    const ready = Boolean(resolved?.ttydExists && resolved?.sshExists);
+    const ready = Boolean(enabled && resolved?.ttydExists && resolved?.sshExists);
     const usage = usageStatus?.usage;
     const sessionRows = usageStatus?.allSessions ?? usageStatus?.sessions ?? [];
+
+    const statusBadge = () => {
+        if (loading) return { text: 'Checking…', className: 'bg-slate-100 text-slate-700 dark:bg-slate-800 dark:text-slate-200' };
+        if (!enabled) return { text: 'Disabled', className: 'bg-gray-100 text-gray-700 dark:bg-slate-800 dark:text-slate-300' };
+        if (ready) return { text: 'Ready', className: 'bg-emerald-100 text-emerald-800 dark:bg-emerald-900/40 dark:text-emerald-200' };
+        return { text: 'Needs paths', className: 'bg-amber-100 text-amber-800 dark:bg-amber-900/40 dark:text-amber-200' };
+    };
+    const badge = statusBadge();
 
     const stopMyLeftovers = async () => {
         if (!window.confirm('Stop all of your leftover ttyd gateways? Open SSH tabs will disconnect.')) {
@@ -1942,14 +1989,8 @@ const SshGatewayAddonCard: React.FC = () => {
                         <div className="flex-1">
                             <div className="flex items-center gap-3 mb-2">
                                 <h2 className="text-xl font-bold text-slate-900 dark:text-white">SSH Gateway</h2>
-                                <span
-                                    className={`px-2.5 py-0.5 rounded-full text-xs font-medium ${
-                                        ready
-                                            ? 'bg-emerald-100 text-emerald-800 dark:bg-emerald-900/40 dark:text-emerald-200'
-                                            : 'bg-amber-100 text-amber-800 dark:bg-amber-900/40 dark:text-amber-200'
-                                    }`}
-                                >
-                                    {loading ? 'Checking…' : ready ? 'Ready' : 'Needs paths'}
+                                <span className={`px-2.5 py-0.5 rounded-full text-xs font-medium ${badge.className}`}>
+                                    {badge.text}
                                 </span>
                             </div>
                             <p className="text-sm text-slate-600 dark:text-slate-400 mb-3">
@@ -2026,13 +2067,25 @@ const SshGatewayAddonCard: React.FC = () => {
                         </div>
                     </div>
 
-                    <button
-                        type="button"
-                        onClick={() => setExpanded(!expanded)}
-                        className="px-4 py-2 text-sm text-emerald-700 dark:text-emerald-300 hover:bg-emerald-50 dark:hover:bg-emerald-950/40 rounded-lg transition-colors"
-                    >
-                        {expanded ? 'Hide' : 'Configure'}
-                    </button>
+                    <div className="flex items-center gap-3">
+                        <button
+                            type="button"
+                            onClick={() => setExpanded(!expanded)}
+                            className="px-4 py-2 text-sm text-emerald-700 dark:text-emerald-300 hover:bg-emerald-50 dark:hover:bg-emerald-950/40 rounded-lg transition-colors"
+                        >
+                            {expanded ? 'Hide' : 'Configure'}
+                        </button>
+                        <label className="relative inline-flex items-center cursor-pointer" title={enabled ? 'Disable SSH Gateway' : 'Enable SSH Gateway'}>
+                            <input
+                                type="checkbox"
+                                checked={enabled}
+                                disabled={loading || saving}
+                                onChange={(e) => void handleToggleEnabled(e.target.checked)}
+                                className="sr-only peer"
+                            />
+                            <div className="w-11 h-6 bg-slate-200 peer-focus:outline-none peer-focus:ring-4 peer-focus:ring-emerald-300 dark:peer-focus:ring-emerald-800 rounded-full peer dark:bg-slate-700 peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-slate-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all dark:border-slate-600 peer-checked:bg-emerald-600 peer-disabled:opacity-50"></div>
+                        </label>
+                    </div>
                 </div>
             </div>
 
@@ -2330,11 +2383,13 @@ const SshGatewayAddonCard: React.FC = () => {
 };
 
 const VncGatewayAddonCard: React.FC = () => {
+    const { refreshSettings } = useSettings();
     const [expanded, setExpanded] = useState(false);
     const [loading, setLoading] = useState(true);
     const [saving, setSaving] = useState(false);
     const [error, setError] = useState<string | null>(null);
     const [savedMsg, setSavedMsg] = useState<string | null>(null);
+    const [enabled, setEnabled] = useState(true);
     const [pythonPath, setPythonPath] = useState('');
     const [websockifyPath, setWebsockifyPath] = useState('');
     const [maxConnections, setMaxConnections] = useState(8);
@@ -2346,6 +2401,7 @@ const VncGatewayAddonCard: React.FC = () => {
     const [usageError, setUsageError] = useState<string | null>(null);
 
     const applyResponse = (data: VncGatewayConfigResponse) => {
+        setEnabled(data.config.enabled !== false);
         setPythonPath(data.config.pythonPath || '');
         setWebsockifyPath(data.config.websockifyPath || '');
         setMaxConnections(Math.max(1, Number(data.config.maxConnections) || 8));
@@ -2394,6 +2450,34 @@ const VncGatewayAddonCard: React.FC = () => {
         return () => window.clearInterval(t);
     }, [expanded]);
 
+    const handleToggleEnabled = async (next: boolean) => {
+        if (
+            !next &&
+            !window.confirm(
+                'Disable VNC Gateway? Easy-mode VNC sessions will stop and new Easy-mode connections will be blocked until re-enabled.'
+            )
+        ) {
+            return;
+        }
+        const prev = enabled;
+        setEnabled(next);
+        try {
+            setSaving(true);
+            setError(null);
+            setSavedMsg(null);
+            const data = await vncGatewayService.putConfig({ enabled: next });
+            applyResponse(data);
+            setSavedMsg(next ? 'VNC Gateway enabled.' : 'VNC Gateway disabled. Active Easy-mode sessions were stopped.');
+            void refreshSettings();
+            void loadUsage();
+        } catch (err: any) {
+            setEnabled(prev);
+            setError(err.message || 'Failed to update enabled state');
+        } finally {
+            setSaving(false);
+        }
+    };
+
     const handleSave = async () => {
         try {
             setSaving(true);
@@ -2401,6 +2485,7 @@ const VncGatewayAddonCard: React.FC = () => {
             setSavedMsg(null);
             const clamped = Math.min(maxCeiling, Math.max(1, Math.floor(Number(maxConnections) || 1)));
             const data = await vncGatewayService.putConfig({
+                enabled,
                 pythonPath: pythonPath.trim(),
                 websockifyPath: websockifyPath.trim(),
                 maxConnections: clamped,
@@ -2415,9 +2500,17 @@ const VncGatewayAddonCard: React.FC = () => {
         }
     };
 
-    const ready = Boolean(resolved?.websockifyExists && resolved?.pythonExists);
+    const ready = Boolean(enabled && resolved?.websockifyExists && resolved?.pythonExists);
     const usage = usageStatus?.usage;
     const sessionRows = usageStatus?.allSessions ?? usageStatus?.sessions ?? [];
+
+    const statusBadge = () => {
+        if (loading) return { text: 'Checking…', className: 'bg-slate-100 text-slate-700 dark:bg-slate-800 dark:text-slate-200' };
+        if (!enabled) return { text: 'Disabled', className: 'bg-gray-100 text-gray-700 dark:bg-slate-800 dark:text-slate-300' };
+        if (ready) return { text: 'Ready', className: 'bg-emerald-100 text-emerald-800 dark:bg-emerald-900/40 dark:text-emerald-200' };
+        return { text: 'Needs setup', className: 'bg-amber-100 text-amber-800 dark:bg-amber-900/40 dark:text-amber-200' };
+    };
+    const badge = statusBadge();
 
     const stopMyLeftovers = async () => {
         if (!window.confirm('Stop all of your leftover websockify gateways? Open VNC tabs will disconnect.')) {
@@ -2476,14 +2569,8 @@ const VncGatewayAddonCard: React.FC = () => {
                         <div className="flex-1">
                             <div className="flex items-center gap-3 mb-2">
                                 <h2 className="text-xl font-bold text-slate-900 dark:text-white">VNC Gateway</h2>
-                                <span
-                                    className={`px-2.5 py-0.5 rounded-full text-xs font-medium ${
-                                        ready
-                                            ? 'bg-emerald-100 text-emerald-800 dark:bg-emerald-900/40 dark:text-emerald-200'
-                                            : 'bg-amber-100 text-amber-800 dark:bg-amber-900/40 dark:text-amber-200'
-                                    }`}
-                                >
-                                    {loading ? 'Checking…' : ready ? 'Ready' : 'Needs setup'}
+                                <span className={`px-2.5 py-0.5 rounded-full text-xs font-medium ${badge.className}`}>
+                                    {badge.text}
                                 </span>
                             </div>
                             <p className="text-sm text-slate-600 dark:text-slate-400 mb-3">
@@ -2559,13 +2646,25 @@ const VncGatewayAddonCard: React.FC = () => {
                         </div>
                     </div>
 
-                    <button
-                        type="button"
-                        onClick={() => setExpanded(!expanded)}
-                        className="px-4 py-2 text-sm text-violet-700 dark:text-violet-300 hover:bg-violet-50 dark:hover:bg-violet-950/40 rounded-lg transition-colors"
-                    >
-                        {expanded ? 'Hide' : 'Configure'}
-                    </button>
+                    <div className="flex items-center gap-3">
+                        <button
+                            type="button"
+                            onClick={() => setExpanded(!expanded)}
+                            className="px-4 py-2 text-sm text-violet-700 dark:text-violet-300 hover:bg-violet-50 dark:hover:bg-violet-950/40 rounded-lg transition-colors"
+                        >
+                            {expanded ? 'Hide' : 'Configure'}
+                        </button>
+                        <label className="relative inline-flex items-center cursor-pointer" title={enabled ? 'Disable VNC Gateway' : 'Enable VNC Gateway'}>
+                            <input
+                                type="checkbox"
+                                checked={enabled}
+                                disabled={loading || saving}
+                                onChange={(e) => void handleToggleEnabled(e.target.checked)}
+                                className="sr-only peer"
+                            />
+                            <div className="w-11 h-6 bg-slate-200 peer-focus:outline-none peer-focus:ring-4 peer-focus:ring-violet-300 dark:peer-focus:ring-violet-800 rounded-full peer dark:bg-slate-700 peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-slate-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all dark:border-slate-600 peer-checked:bg-violet-600 peer-disabled:opacity-50"></div>
+                        </label>
+                    </div>
                 </div>
             </div>
 
@@ -2844,6 +2943,7 @@ const SystemEmailAddonCard: React.FC = () => {
     const [testTo, setTestTo] = useState('');
     const [detectedPublicUrl, setDetectedPublicUrl] = useState('');
     const [healthStatus, setHealthStatus] = useState<{ status: string; message: string } | null>(null);
+    const [smtpProvider, setSmtpProvider] = useState<SmtpProviderId>('custom');
     const [config, setConfig] = useState<SystemEmailConfig>({
         enabled: false,
         publicUrl: '',
@@ -2893,6 +2993,55 @@ const SystemEmailAddonCard: React.FC = () => {
         }
     };
 
+    const applyConfigResponse = (data: any, prevPassword = '') => {
+        setConfig((prev) => ({
+            enabled: !!data.config?.enabled,
+            publicUrl: data.config?.publicUrl || '',
+            notifyRegistration: data.config?.notifyRegistration !== false,
+            notifyApproval: data.config?.notifyApproval !== false,
+            passwordRecovery: data.config?.passwordRecovery !== false,
+            smtp: {
+                id: data.config?.smtp?.id ?? prev.smtp.id,
+                name: data.config?.smtp?.name || 'Primary SMTP',
+                host: data.config?.smtp?.host || '',
+                port: Number(data.config?.smtp?.port) || 587,
+                username: data.config?.smtp?.username || '',
+                password: prevPassword,
+                from_email: data.config?.smtp?.from_email || '',
+                from_name: data.config?.smtp?.from_name || '{app_name}',
+                encryption: (data.config?.smtp?.encryption || 'tls') as 'none' | 'ssl' | 'tls',
+                is_enabled: data.config?.smtp?.is_enabled !== false,
+                has_password: !!data.config?.smtp?.has_password,
+            },
+        }));
+        setSmtpProvider(
+            detectSmtpProvider(
+                data.config?.smtp?.host || '',
+                Number(data.config?.smtp?.port) || 587,
+                data.config?.smtp?.encryption || 'tls'
+            )
+        );
+    };
+
+    const buildSavePayload = (overrides?: { enabled?: boolean }) => ({
+        enabled: overrides?.enabled ?? config.enabled,
+        publicUrl: config.publicUrl,
+        notifyRegistration: config.notifyRegistration,
+        notifyApproval: config.notifyApproval,
+        passwordRecovery: config.passwordRecovery,
+        smtp: {
+            name: config.smtp.name,
+            host: config.smtp.host,
+            port: config.smtp.port,
+            username: config.smtp.username,
+            password: config.smtp.password || undefined,
+            from_email: config.smtp.from_email,
+            from_name: config.smtp.from_name,
+            encryption: config.smtp.encryption,
+            is_enabled: config.smtp.is_enabled,
+        },
+    });
+
     const loadConfiguration = async () => {
         try {
             setLoading(true);
@@ -2900,26 +3049,7 @@ const SystemEmailAddonCard: React.FC = () => {
             const response = await fetch(`${API_BASE}/addons/system-email`, { credentials: 'include' });
             if (!response.ok) throw new Error('Failed to load System Email configuration');
             const data = await response.json();
-            setConfig({
-                enabled: !!data.config?.enabled,
-                publicUrl: data.config?.publicUrl || '',
-                notifyRegistration: data.config?.notifyRegistration !== false,
-                notifyApproval: data.config?.notifyApproval !== false,
-                passwordRecovery: data.config?.passwordRecovery !== false,
-                smtp: {
-                    id: data.config?.smtp?.id ?? null,
-                    name: data.config?.smtp?.name || 'Primary SMTP',
-                    host: data.config?.smtp?.host || '',
-                    port: Number(data.config?.smtp?.port) || 587,
-                    username: data.config?.smtp?.username || '',
-                    password: '',
-                    from_email: data.config?.smtp?.from_email || '',
-                    from_name: data.config?.smtp?.from_name || '{app_name}',
-                    encryption: (data.config?.smtp?.encryption || 'tls') as 'none' | 'ssl' | 'tls',
-                    is_enabled: data.config?.smtp?.is_enabled !== false,
-                    has_password: !!data.config?.smtp?.has_password,
-                },
-            });
+            applyConfigResponse(data, '');
             setDetectedPublicUrl(data.detectedPublicUrl || '');
             if (data.config?.enabled) setExpanded(true);
             await checkHealth();
@@ -2935,7 +3065,65 @@ const SystemEmailAddonCard: React.FC = () => {
     }, []);
 
     const updateSmtp = <K extends keyof SystemEmailSmtpForm>(key: K, value: SystemEmailSmtpForm[K]) => {
-        setConfig((prev) => ({ ...prev, smtp: { ...prev.smtp, [key]: value } }));
+        setConfig((prev) => {
+            const nextSmtp = { ...prev.smtp, [key]: value };
+            if (key === 'host' || key === 'port' || key === 'encryption') {
+                setSmtpProvider(detectSmtpProvider(String(nextSmtp.host), Number(nextSmtp.port), String(nextSmtp.encryption)));
+            }
+            return { ...prev, smtp: nextSmtp };
+        });
+    };
+
+    const applySmtpProvider = (id: SmtpProviderId) => {
+        setSmtpProvider(id);
+        const preset = getSmtpProviderPreset(id);
+        setConfig((prev) => ({
+            ...prev,
+            smtp: {
+                ...prev.smtp,
+                name: id === 'custom' ? prev.smtp.name : preset.nameHint,
+                host: id === 'custom' ? prev.smtp.host : preset.host,
+                port: id === 'custom' ? prev.smtp.port : preset.port,
+                encryption: id === 'custom' ? prev.smtp.encryption : preset.encryption,
+            },
+        }));
+    };
+
+    const handleToggleEnabled = async (next: boolean) => {
+        if (
+            !next &&
+            !window.confirm(
+                'Disable System Email? Registration, approval, and password-recovery emails will stop sending until re-enabled.'
+            )
+        ) {
+            return;
+        }
+        const prevEnabled = config.enabled;
+        setConfig((p) => ({ ...p, enabled: next }));
+        try {
+            setSaving(true);
+            setError(null);
+            setSavedMsg(null);
+            const response = await fetch(`${API_BASE}/addons/system-email`, {
+                method: 'PUT',
+                credentials: 'include',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify(buildSavePayload({ enabled: next })),
+            });
+            if (!response.ok) {
+                const err = await response.json().catch(() => ({}));
+                throw new Error(err.error || 'Failed to update enabled state');
+            }
+            const data = await response.json();
+            applyConfigResponse(data, '');
+            setSavedMsg(next ? 'System Email enabled.' : 'System Email disabled.');
+            await checkHealth();
+        } catch (err: any) {
+            setConfig((p) => ({ ...p, enabled: prevEnabled }));
+            setError(err.message || 'Failed to update enabled state');
+        } finally {
+            setSaving(false);
+        }
     };
 
     const handleSave = async () => {
@@ -2947,52 +3135,14 @@ const SystemEmailAddonCard: React.FC = () => {
                 method: 'PUT',
                 credentials: 'include',
                 headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({
-                    enabled: config.enabled,
-                    publicUrl: config.publicUrl,
-                    notifyRegistration: config.notifyRegistration,
-                    notifyApproval: config.notifyApproval,
-                    passwordRecovery: config.passwordRecovery,
-                    smtp: {
-                        name: config.smtp.name,
-                        host: config.smtp.host,
-                        port: config.smtp.port,
-                        username: config.smtp.username,
-                        password: config.smtp.password || undefined,
-                        from_email: config.smtp.from_email,
-                        from_name: config.smtp.from_name,
-                        encryption: config.smtp.encryption,
-                        is_enabled: config.smtp.is_enabled,
-                    },
-                }),
+                body: JSON.stringify(buildSavePayload()),
             });
             if (!response.ok) {
                 const err = await response.json().catch(() => ({}));
                 throw new Error(err.error || 'Failed to save');
             }
             const data = await response.json();
-            setConfig((prev) => ({
-                ...prev,
-                enabled: !!data.config?.enabled,
-                publicUrl: data.config?.publicUrl || '',
-                notifyRegistration: data.config?.notifyRegistration !== false,
-                notifyApproval: data.config?.notifyApproval !== false,
-                passwordRecovery: data.config?.passwordRecovery !== false,
-                smtp: {
-                    ...prev.smtp,
-                    id: data.config?.smtp?.id ?? prev.smtp.id,
-                    name: data.config?.smtp?.name || prev.smtp.name,
-                    host: data.config?.smtp?.host || '',
-                    port: Number(data.config?.smtp?.port) || 587,
-                    username: data.config?.smtp?.username || '',
-                    password: '',
-                    from_email: data.config?.smtp?.from_email || '',
-                    from_name: data.config?.smtp?.from_name || '{app_name}',
-                    encryption: (data.config?.smtp?.encryption || 'tls') as 'none' | 'ssl' | 'tls',
-                    is_enabled: data.config?.smtp?.is_enabled !== false,
-                    has_password: !!data.config?.smtp?.has_password,
-                },
-            }));
+            applyConfigResponse(data, '');
             setSavedMsg('System Email settings saved');
             await checkHealth();
         } catch (err: any) {
@@ -3051,15 +3201,36 @@ const SystemEmailAddonCard: React.FC = () => {
                             {healthStatus?.message && (
                                 <p className="text-xs text-slate-500 dark:text-slate-400">{healthStatus.message}</p>
                             )}
+                            {savedMsg && !expanded && (
+                                <p className="mt-2 text-xs text-emerald-700 dark:text-emerald-300">{savedMsg}</p>
+                            )}
+                            {error && !expanded && (
+                                <p className="mt-2 text-xs text-red-600 dark:text-red-400">{error}</p>
+                            )}
                         </div>
                     </div>
-                    <button
-                        type="button"
-                        onClick={() => setExpanded(!expanded)}
-                        className="px-4 py-2 text-sm font-medium rounded-lg bg-white dark:bg-slate-800 border border-sky-200 dark:border-sky-700 text-sky-700 dark:text-sky-300 hover:bg-sky-50 dark:hover:bg-sky-950/40"
-                    >
-                        {expanded ? 'Collapse' : 'Configure'}
-                    </button>
+                    <div className="flex items-center gap-3">
+                        <button
+                            type="button"
+                            onClick={() => setExpanded(!expanded)}
+                            className="px-4 py-2 text-sm font-medium rounded-lg bg-white dark:bg-slate-800 border border-sky-200 dark:border-sky-700 text-sky-700 dark:text-sky-300 hover:bg-sky-50 dark:hover:bg-sky-950/40"
+                        >
+                            {expanded ? 'Collapse' : 'Configure'}
+                        </button>
+                        <label
+                            className="relative inline-flex items-center cursor-pointer"
+                            title={config.enabled ? 'Disable System Email' : 'Enable System Email'}
+                        >
+                            <input
+                                type="checkbox"
+                                checked={config.enabled}
+                                disabled={saving}
+                                onChange={(e) => void handleToggleEnabled(e.target.checked)}
+                                className="sr-only peer"
+                            />
+                            <div className="w-11 h-6 bg-slate-200 peer-focus:outline-none peer-focus:ring-4 peer-focus:ring-sky-300 dark:peer-focus:ring-sky-800 rounded-full peer dark:bg-slate-700 peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-slate-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all dark:border-slate-600 peer-checked:bg-sky-600 peer-disabled:opacity-50"></div>
+                        </label>
+                    </div>
                 </div>
             </div>
 
@@ -3075,19 +3246,6 @@ const SystemEmailAddonCard: React.FC = () => {
                             {savedMsg}
                         </div>
                     )}
-
-                    <label className="flex items-center justify-between gap-4 p-4 rounded-xl border border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-900/40">
-                        <div>
-                            <div className="font-semibold text-slate-900 dark:text-white">Enable System Email</div>
-                            <div className="text-xs text-slate-500 dark:text-slate-400">Send branded auth emails when SMTP is enabled</div>
-                        </div>
-                        <input
-                            type="checkbox"
-                            checked={config.enabled}
-                            onChange={(e) => setConfig((p) => ({ ...p, enabled: e.target.checked }))}
-                            className="h-5 w-5 rounded border-slate-300 text-sky-600 focus:ring-sky-500"
-                        />
-                    </label>
 
                     <div className="grid sm:grid-cols-3 gap-3">
                         <label className="flex items-center gap-2 text-sm text-slate-700 dark:text-slate-300">
@@ -3126,6 +3284,23 @@ const SystemEmailAddonCard: React.FC = () => {
                                 SMTP enabled
                             </label>
                         </div>
+                        <div className="grid sm:grid-cols-2 gap-3 mb-3">
+                            <div className="sm:col-span-2">
+                                <label className="block text-xs font-medium text-slate-500 mb-1">Provider</label>
+                                <select
+                                    value={smtpProvider}
+                                    onChange={(e) => applySmtpProvider(e.target.value as SmtpProviderId)}
+                                    className="w-full px-3 py-2 rounded-lg border border-slate-300 dark:border-slate-600 bg-white dark:bg-slate-900 text-sm"
+                                >
+                                    {SMTP_PROVIDER_PRESETS.map((p) => (
+                                        <option key={p.id} value={p.id}>{p.label}</option>
+                                    ))}
+                                </select>
+                                <p className="mt-1.5 text-xs text-slate-500 dark:text-slate-400 leading-relaxed">
+                                    {getSmtpProviderPreset(smtpProvider).help}
+                                </p>
+                            </div>
+                        </div>
                         <div className="grid sm:grid-cols-2 gap-3">
                             <div>
                                 <label className="block text-xs font-medium text-slate-500 mb-1">Host</label>
@@ -3145,7 +3320,13 @@ const SystemEmailAddonCard: React.FC = () => {
                             </div>
                             <div>
                                 <label className="block text-xs font-medium text-slate-500 mb-1">Username</label>
-                                <input value={config.smtp.username} onChange={(e) => updateSmtp('username', e.target.value)} className="w-full px-3 py-2 rounded-lg border border-slate-300 dark:border-slate-600 bg-white dark:bg-slate-900 text-sm" autoComplete="off" />
+                                <input
+                                    value={config.smtp.username}
+                                    onChange={(e) => updateSmtp('username', e.target.value)}
+                                    className="w-full px-3 py-2 rounded-lg border border-slate-300 dark:border-slate-600 bg-white dark:bg-slate-900 text-sm"
+                                    autoComplete="off"
+                                    placeholder={getSmtpProviderPreset(smtpProvider).usernamePlaceholder}
+                                />
                             </div>
                             <div className="sm:col-span-2">
                                 <label className="block text-xs font-medium text-slate-500 mb-1">Password {config.smtp.has_password ? '(leave blank to keep current)' : ''}</label>
@@ -3154,17 +3335,30 @@ const SystemEmailAddonCard: React.FC = () => {
                                     onChange={(e) => updateSmtp('password', e.target.value)}
                                     className="w-full px-3 py-2 rounded-lg border border-slate-300 dark:border-slate-600 bg-white dark:bg-slate-900 text-sm"
                                     autoComplete="new-password"
+                                    placeholder={getSmtpProviderPreset(smtpProvider).passwordHint}
                                 />
                             </div>
                             <div>
                                 <label className="block text-xs font-medium text-slate-500 mb-1">From email</label>
-                                <input type="email" value={config.smtp.from_email} onChange={(e) => updateSmtp('from_email', e.target.value)} className="w-full px-3 py-2 rounded-lg border border-slate-300 dark:border-slate-600 bg-white dark:bg-slate-900 text-sm" placeholder="noreply@example.com" />
+                                <input
+                                    type="email"
+                                    value={config.smtp.from_email}
+                                    onChange={(e) => updateSmtp('from_email', e.target.value)}
+                                    className="w-full px-3 py-2 rounded-lg border border-slate-300 dark:border-slate-600 bg-white dark:bg-slate-900 text-sm"
+                                    placeholder={smtpProvider === 'office365' ? 'user@yourdomain.com (same mailbox)' : 'noreply@example.com'}
+                                />
                             </div>
                             <div>
                                 <label className="block text-xs font-medium text-slate-500 mb-1">From name</label>
                                 <input value={config.smtp.from_name} onChange={(e) => updateSmtp('from_name', e.target.value)} className="w-full px-3 py-2 rounded-lg border border-slate-300 dark:border-slate-600 bg-white dark:bg-slate-900 text-sm" placeholder="{app_name}" />
                             </div>
                         </div>
+                        {smtpProvider === 'office365' && (
+                            <div className="mt-3 rounded-lg border border-sky-200 dark:border-sky-800 bg-sky-50 dark:bg-sky-950/30 px-3 py-2.5 text-xs text-sky-900 dark:text-sky-100 leading-relaxed">
+                                <strong>Office 365 checklist:</strong> Enable <em>Authenticated SMTP</em> for the mailbox in Microsoft 365 admin → Users → Mail → Manage email apps.
+                                Username = full email. Prefer an app password if MFA is required. From address should be that mailbox (or an alias with Send As).
+                            </div>
+                        )}
                     </div>
 
                     <div className="border-t border-slate-200 dark:border-slate-700 pt-4 space-y-3">

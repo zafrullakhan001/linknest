@@ -44,6 +44,24 @@ function vncGatewayMaxPerUser(): int {
     return min(vncGatewayMaxConnectionsCeiling(), $n);
 }
 
+/** Admin kill-switch for the VNC Gateway add-on (default on for existing installs). */
+function vncGatewayIsEnabled(): bool {
+    return ((string)getSetting('vnc_gateway_enabled', '1')) === '1';
+}
+
+/** Stop every tracked websockify session and sweep untracked listeners (used when disabling the add-on). */
+function vncGatewayStopEverything(): array {
+    $sessions = vncGatewayCleanup(vncGatewayLoadSessions());
+    $stopped = 0;
+    foreach ($sessions as $s) {
+        $stopped++;
+        vncGatewayDestroySessionRecord($s);
+    }
+    $swept = vncGatewaySweepUntrackedListeners([]);
+    vncGatewaySaveSessions([]);
+    return ['stopped' => $stopped, 'sweptUntracked' => $swept];
+}
+
 if ($method === 'GET' && ($path === '/' || $path === '/status')) {
     handleVncGatewayStatus();
 } elseif ($method === 'GET' && $path === '/config') {
@@ -814,10 +832,18 @@ function handleVncGatewayStatus() {
     $python = vncGatewaySoftResolvePython();
     $launcher = vncGatewaySoftResolveLauncher();
     $moduleOk = vncGatewayWebsockifyModuleAvailable($python);
-    $available = ($python && $moduleOk) || $launcher !== null;
+    $binariesOk = ($python && $moduleOk) || $launcher !== null;
+    $enabled = vncGatewayIsEnabled();
+    $available = $enabled && $binariesOk;
 
     $payload = [
+        'enabled' => $enabled,
         'available' => $available,
+        'hint' => !$enabled
+            ? 'VNC Gateway add-on is disabled. An administrator can re-enable it under Admin → Add-ons → VNC Gateway.'
+            : (!$binariesOk
+                ? 'websockify was not found. Install Python 3 + websockify, or set paths in Admin → Add-ons → VNC Gateway.'
+                : null),
         'pythonPath' => $python,
         'websockifyPath' => $launcher,
         'websockifyModule' => $moduleOk,
@@ -865,6 +891,7 @@ function handleVncGatewayGetConfig() {
     $launcher = vncGatewaySoftResolveLauncher();
     sendJSON([
         'config' => [
+            'enabled' => vncGatewayIsEnabled(),
             'pythonPath' => trim((string)getSetting('vnc_gateway_python_path', '')),
             'websockifyPath' => trim((string)getSetting('vnc_gateway_websockify_path', '')),
             'maxConnections' => vncGatewayMaxPerUser(),
@@ -890,6 +917,18 @@ function handleVncGatewayGetConfig() {
 function handleVncGatewayPutConfig() {
     requireAdmin();
     $data = getJSONInput();
+
+    $wasEnabled = vncGatewayIsEnabled();
+    if (array_key_exists('enabled', $data)) {
+        $nowEnabled = !empty($data['enabled']);
+        setSetting('vnc_gateway_enabled', $nowEnabled ? '1' : '0');
+        if (function_exists('responseCacheInvalidate')) {
+            responseCacheInvalidate('settings_public');
+        }
+        if ($wasEnabled && !$nowEnabled) {
+            vncGatewayStopEverything();
+        }
+    }
 
     if (array_key_exists('pythonPath', $data) || array_key_exists('python_path', $data)) {
         $path = trim((string)($data['pythonPath'] ?? $data['python_path'] ?? ''));
@@ -927,6 +966,13 @@ function handleVncGatewayPutConfig() {
 function handleVncGatewayStart() {
     $user = requireAuth();
     $data = getJSONInput();
+
+    if (!vncGatewayIsEnabled()) {
+        sendJSON([
+            'error' => 'VNC Gateway add-on is disabled. Ask an administrator to enable it under Admin → Add-ons → VNC Gateway.',
+            'code' => 'addon_disabled',
+        ], 403);
+    }
 
     foreach (['password', 'passwd', 'privateKey', 'private_key', 'authToken'] as $k) {
         if (!empty($data[$k])) {

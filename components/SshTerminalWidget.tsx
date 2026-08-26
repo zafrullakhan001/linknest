@@ -1836,14 +1836,21 @@ export const SshTerminalWidget: React.FC<SshTerminalWidgetProps> = ({
         if (cancelled) return;
         setGatewayAvailable(Boolean(st.available));
         if (!st.available) {
-          const parts: string[] = [];
-          if (st.ttydFound === false || (Array.isArray(st.missing) && st.missing.includes('ttyd'))) {
-            parts.push('ttyd missing (deploy bin/ttyd.exe or set Admin → Add-ons → SSH Gateway)');
+          if (st.enabled === false) {
+            setGatewayHint(
+              st.hint ||
+                'SSH Gateway add-on is disabled. An administrator can re-enable it under Admin → Add-ons → SSH Gateway.'
+            );
+          } else {
+            const parts: string[] = [];
+            if (st.ttydFound === false || (Array.isArray(st.missing) && st.missing.includes('ttyd'))) {
+              parts.push('ttyd missing (deploy bin/ttyd.exe or set Admin → Add-ons → SSH Gateway)');
+            }
+            if (st.sshFound === false || (Array.isArray(st.missing) && st.missing.includes('ssh'))) {
+              parts.push('OpenSSH ssh.exe missing (install OpenSSH Client)');
+            }
+            setGatewayHint(st.hint || (parts.length ? parts.join(' · ') : 'SSH gateway unavailable — check Admin → Add-ons → SSH Gateway'));
           }
-          if (st.sshFound === false || (Array.isArray(st.missing) && st.missing.includes('ssh'))) {
-            parts.push('OpenSSH ssh.exe missing (install OpenSSH Client)');
-          }
-          setGatewayHint(st.hint || (parts.length ? parts.join(' · ') : 'SSH gateway unavailable — check Admin → Add-ons → SSH Gateway'));
         } else {
           setGatewayHint(null);
         }
