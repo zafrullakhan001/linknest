@@ -847,7 +847,13 @@ export const AuthModal: React.FC<AuthModalProps> = ({ isOpen, onClose, initialMo
                     disabled={loading}
                     autoComplete="username"
                     className={`w-full bg-slate-50 dark:bg-slate-900 border rounded-xl px-3 py-2 sm:px-4 sm:py-2.5 text-slate-900 dark:text-white focus:outline-none focus:ring-2 disabled:opacity-50 disabled:cursor-not-allowed text-sm transition-shadow ${(authMethod === 'ldap' || authMethod === 'auto') && ldapEnabled ? 'border-sky-200 dark:border-sky-800/50 focus:ring-sky-400 focus:border-sky-400' : 'border-slate-200 dark:border-slate-700 focus:ring-brand-500 focus:border-brand-400'}`}
-                    placeholder={ldapEnabled ? "Enter username (LDAP or local account)" : "Enter username (local account)"}
+                    placeholder={
+                      ldapEnabled && localAuthEnabled
+                        ? 'Enter username (LDAP or local account)'
+                        : ldapEnabled
+                          ? 'Enter username (LDAP account)'
+                          : 'Enter username (local account)'
+                    }
                   />
                 </div>
               )}
@@ -864,7 +870,7 @@ export const AuthModal: React.FC<AuthModalProps> = ({ isOpen, onClose, initialMo
             </>
           )}
 
-          {mode === 'login' && !localAuthEnabled && !samlEnabled && (
+          {mode === 'login' && !localAuthEnabled && !samlEnabled && !ldapEnabled && (
             <div className="bg-amber-50 dark:bg-amber-900/20 border border-amber-200 dark:border-amber-800 rounded-xl p-3 sm:p-4 text-center">
               <p className="text-xs sm:text-sm text-amber-800 dark:text-amber-200">
                 <span className="mr-1" aria-hidden>🚧</span>
@@ -1094,6 +1100,7 @@ export const AuthModal: React.FC<AuthModalProps> = ({ isOpen, onClose, initialMo
 
         {mode === 'login' && (
           <div className="mt-2 sm:mt-3 space-y-1.5 sm:space-y-2">
+            {localAuthEnabled && (
             <div className="text-center">
               <button
                 type="button"
@@ -1105,6 +1112,7 @@ export const AuthModal: React.FC<AuthModalProps> = ({ isOpen, onClose, initialMo
                 Forgot your password?
               </button>
             </div>
+            )}
             {(samlEnabled || ldapEnabled || localAuthEnabled) && (
               <div>
                 <button
