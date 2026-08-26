@@ -9480,7 +9480,12 @@ export const TileDetail: React.FC<TileDetailProps> = ({
                                                             />
                                                         ) : (
                                                             <>
-                                                                <span className="truncate">{section.title || 'Untitled'}</span>
+                                                                <span
+                                                                    className="truncate min-w-0"
+                                                                    title={section.title || 'Untitled'}
+                                                                >
+                                                                    {section.title || 'Untitled'}
+                                                                </span>
                                                                 {(canQuickEditTitles || canQuickCloneSections || canQuickDeleteSections) && activeViewTab && (
                                                                     <span className="inline-flex items-center gap-0.5 shrink-0">
                                                                         {canQuickEditTitles && (
@@ -10004,7 +10009,8 @@ export const TileDetail: React.FC<TileDetailProps> = ({
                                                     ${getTileAnimationClass(resolveLinkAnimation(link.animation, tile.linksAnimation))}
                                                 `}
                                                             >
-                                                                {canReorderItems && (
+                                                                {/* Grid: corner handle (health sits above the icon). List/compact: inline so handle never covers the status dot. */}
+                                                                {canReorderItems && isGridCards && (
                                                                     <ViewModeDragHandle
                                                                         attributes={itemDragAttrs}
                                                                         listeners={itemDragListeners}
@@ -10020,6 +10026,14 @@ export const TileDetail: React.FC<TileDetailProps> = ({
                                                                             ? 'flex items-center gap-1.5'
                                                                             : 'flex items-center gap-2'
                                                                 }`}>
+                                                                    {canReorderItems && !isGridCards && (
+                                                                        <ViewModeDragHandle
+                                                                            attributes={itemDragAttrs}
+                                                                            listeners={itemDragListeners}
+                                                                            title={itemDragTitle}
+                                                                            className="-ml-1 bg-white/90 dark:bg-slate-900/80 shadow-sm"
+                                                                        />
+                                                                    )}
                                                                     <div className={`linknest-content-link-health flex flex-col items-center gap-1 shrink-0 ${
                                                                         isGridCards
                                                                             ? 'absolute bottom-full left-1/2 -translate-x-1/2 mb-[5px] z-10'
