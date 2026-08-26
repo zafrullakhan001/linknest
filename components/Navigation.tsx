@@ -4,6 +4,7 @@ import { useSettings } from '../contexts/SettingsContext';
 import { useMobile } from '../hooks/useMobile';
 import { getDisabledTabsFromSettings } from '../services/tabVisibilityService';
 import { getUpdaterStatus } from '../services/updaterService';
+import { isSignInButtonVisible } from '../services/settingsService';
 import { ProfileMenu } from './ProfileMenu';
 import { ThemeModeMenu } from './ThemeModeMenu';
 
@@ -49,6 +50,7 @@ export const Navigation: React.FC<NavigationProps> = ({ darkMode, showClock, tog
   const { logout } = useAuth();
   const { settings, loading: settingsLoading } = useSettings();
   const disabledTabs = getDisabledTabsFromSettings(settings);
+  const showSignInButton = isSignInButtonVisible(settings, settingsLoading);
   // Tablets / narrow desktops: hide company logo so centered brand + widgets don't collide
   const isCompactNav = useMobile(1280);
   const [showAppQrDialog, setShowAppQrDialog] = useState(false);
@@ -227,7 +229,7 @@ export const Navigation: React.FC<NavigationProps> = ({ darkMode, showClock, tog
                 )}
               </>
             ) : (
-              settings.signin_button_enabled !== '0' && (
+              showSignInButton && (
               <button
                 onClick={onLoginClick}
                 className="px-5 py-2 text-sm bg-brand-600 hover:bg-brand-500 text-white rounded-full font-medium transition-all shadow-md hover:shadow-lg transform hover:-translate-y-0.5"

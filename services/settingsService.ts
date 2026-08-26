@@ -204,6 +204,18 @@ export interface AppSettings {
 /** Default PWA exclude list: real-time monitors, auth (impersonation), maintenance APIs, opcache, settings. */
 export const SEMI_PWA_EXCLUDE_PATHS_DEFAULT = 'monitors,monitorv2,auth,maintenance,opcache,settings';
 
+/**
+ * Whether the Sign In button should render.
+ * Only shows when the setting is explicitly '1' (including hydrated cache).
+ * Unknown/missing values stay hidden so a disabled button does not flash before settings load.
+ */
+export function isSignInButtonVisible(
+  settings: Pick<AppSettings, 'signin_button_enabled'> | null | undefined,
+  _settingsLoading = false
+): boolean {
+  return settings?.signin_button_enabled === '1';
+}
+
 export const settingsService = {
   async getSettings(noCache: boolean = false): Promise<AppSettings> {
     const url = `${API_BASE}/settings${noCache ? '?_t=' + Date.now() : ''}`;

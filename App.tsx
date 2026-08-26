@@ -1,7 +1,7 @@
 import React, { useState, useEffect, useRef, useCallback, useMemo, lazy, Suspense } from 'react';
 import { Tile, Link } from './types';
 import { getTiles, getTile, saveTiles, createTile, deleteTile, cloneTile, toSummaryTile } from './services/storageService';
-import { settingsService } from './services/settingsService';
+import { settingsService, isSignInButtonVisible } from './services/settingsService';
 import { authService } from './services/authService';
 import { Navigation } from './components/Navigation';
 import { AuthProvider, useAuth } from './contexts/AuthContext';
@@ -739,7 +739,7 @@ const AppContent: React.FC = () => {
 
   // Check guest access setting
   const guestAccessEnabled = settings.guest_access_enabled !== '0'; // Default to enabled if not set
-  const signInButtonEnabled = settings.signin_button_enabled !== '0'; // Default to show Sign In
+  const signInButtonEnabled = isSignInButtonVisible(settings, settingsLoading);
 
   // Load tiles as soon as we know session state — do not wait for settings/styles APIs
   useEffect(() => {
