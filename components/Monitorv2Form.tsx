@@ -28,7 +28,7 @@ export const Monitorv2Form: React.FC<Monitorv2FormProps> = ({ monitor, onSave, o
         legacy_email_cc: '',
         legacy_email_from_name: '',
         legacy_email_from_email: '',
-        legacy_email_subject_template: '[{app_name} Monitor] {monitor_name} Status: {status}',
+        legacy_email_subject_template: '[{app_name} Monitor] {monitor_name} - {status}',
         legacy_email_body_template: 'Monitor: {monitor_name}\nStatus: {status}\nTime: {time}\nDetails: {details}',
         allowed_user_ids: []
     });

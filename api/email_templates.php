@@ -15,21 +15,39 @@ function ln_format_status_label(string $status): string {
 }
 
 /**
- * Ensure UP/DOWN/WARNING appears in monitor email subjects when templates omit {status}.
+ * Normalize monitor email subjects to: [App Monitor] Monitor Name - STATUS
  */
-function ln_ensure_monitor_email_subject_has_status(string $subject, string $status): string {
+function ln_ensure_monitor_email_subject_has_status(string $subject, string $status, ?string $monitorName = null): string {
     $subject = trim($subject);
     $statusLabel = ln_format_status_label($status);
     if ($subject === '' || $statusLabel === 'UNKNOWN' || $statusLabel === 'BOTH') {
         return $subject;
     }
-    if (preg_match('/\b' . preg_quote($statusLabel, '/') . '\b/i', $subject)) {
+    if (preg_match('/\s-\s' . preg_quote($statusLabel, '/') . '\s*$/i', $subject)) {
         return $subject;
     }
-    if (preg_match('/^(\[[^\]]+\]\s*)(.+)$/u', $subject, $m)) {
-        return $m[1] . $statusLabel . ': ' . ltrim($m[2]);
+
+    $prefix = '';
+    $namePart = $subject;
+    if (preg_match('/^(\[[^\]]+\]\s*)(.*)$/u', $subject, $m)) {
+        $prefix = $m[1];
+        $namePart = trim($m[2]);
     }
-    return $statusLabel . ': ' . $subject;
+
+    $namePart = preg_replace('/\s+Status(\s+Update)?\s*$/i', '', $namePart);
+    $namePart = preg_replace('/^(UP|DOWN|WARNING):\s*/i', '', $namePart);
+    $namePart = preg_replace('/\s+Status:\s*(UP|DOWN|WARNING)\s*$/i', '', $namePart);
+    $namePart = preg_replace('/\s-\s(UP|DOWN|WARNING)\s*$/i', '', $namePart);
+    $namePart = trim((string)$namePart);
+
+    if ($monitorName !== null && trim($monitorName) !== '') {
+        $namePart = trim($monitorName);
+    }
+    if ($namePart === '') {
+        $namePart = 'Monitor';
+    }
+
+    return $prefix . $namePart . ' - ' . $statusLabel;
 }
 
 function ln_format_response_time($ms): string {

@@ -296,15 +296,20 @@ def main() -> int:
                 )
                 continue
 
-            subject = _ln_ensure_monitor_email_subject_has_status(str(subject or ""), str(status_trigger or ""))
+            mrow = None
+            if monitor_id is not None:
+                mrow = conn.execute("SELECT * FROM monitors WHERE id = ? LIMIT 1", (int(monitor_id),)).fetchone()
+
+            subject = _ln_ensure_monitor_email_subject_has_status(
+                str(subject or ""),
+                str(status_trigger or ""),
+                str(mrow["name"]) if mrow and mrow["name"] is not None else None,
+            )
 
             # Now we can attempt a send.
             html_body = None
             try:
                 # Use LinkNest HTML template (like legacy PHP emails) for BOTH legacy and rule-based notifications.
-                mrow = None
-                if monitor_id is not None:
-                    mrow = conn.execute("SELECT * FROM monitors WHERE id = ? LIMIT 1", (int(monitor_id),)).fetchone()
                 monitor_name = str(mrow["name"]) if mrow and mrow["name"] is not None else "Monitor"
                 target = str(mrow["target"]) if mrow and mrow["target"] is not None else ""
                 rt = None

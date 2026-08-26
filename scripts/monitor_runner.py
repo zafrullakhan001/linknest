@@ -231,7 +231,7 @@ def queue_legacy_notification(conn, monitor_row, new_status: str, prev_status: O
     if not to_list and not cc_list:
         return 0
 
-    default_subject_tpl = f"[{app_name} Monitor] {{status}}: {{monitor_name}}"
+    default_subject_tpl = f"[{app_name} Monitor] {{monitor_name}} - {{status}}"
     default_body_tpl = (
         "{status}: {monitor_name}\n"
         "Target: {monitor_target}\n"
@@ -243,7 +243,7 @@ def queue_legacy_notification(conn, monitor_row, new_status: str, prev_status: O
     body_tpl = (monitor_row["legacy_email_body_template"] or "").strip() or default_body_tpl
 
     subject = replace_template_vars(subject_tpl, monitor_row, subject_status, message_details or "", int(response_ms), app_name=app_name)
-    subject = _ln_ensure_monitor_email_subject_has_status(subject, subject_status)
+    subject = _ln_ensure_monitor_email_subject_has_status(subject, subject_status, str(monitor_row["name"] or ""))
     body = replace_template_vars(body_tpl, monitor_row, subject_status, message_details or "", int(response_ms), app_name=app_name)
 
     from_name = (monitor_row["legacy_email_from_name"] or "").strip() or None

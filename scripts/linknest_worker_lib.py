@@ -712,17 +712,33 @@ def ln_email_base_layout(
 </html>"""
 
 
-def _ln_ensure_monitor_email_subject_has_status(subject: str, status: str) -> str:
+def _ln_ensure_monitor_email_subject_has_status(subject: str, status: str, monitor_name: Optional[str] = None) -> str:
     subject = (subject or "").strip()
     status_label = (status or "").strip().upper()
     if not subject or status_label in ("", "UNKNOWN", "BOTH"):
         return subject
-    if re.search(r"\b" + re.escape(status_label) + r"\b", subject, re.I):
+    if re.search(r"\s-\s" + re.escape(status_label) + r"\s*$", subject, re.I):
         return subject
-    m = re.match(r"^(\[[^\]]+\]\s*)(.+)$", subject)
+
+    prefix = ""
+    name_part = subject
+    m = re.match(r"^(\[[^\]]+\]\s*)(.*)$", subject)
     if m:
-        return f"{m.group(1)}{status_label}: {m.group(2).lstrip()}"
-    return f"{status_label}: {subject}"
+        prefix = m.group(1)
+        name_part = m.group(2).strip()
+
+    name_part = re.sub(r"\s+Status(\s+Update)?\s*$", "", name_part, flags=re.I)
+    name_part = re.sub(r"^(UP|DOWN|WARNING):\s*", "", name_part, flags=re.I)
+    name_part = re.sub(r"\s+Status:\s*(UP|DOWN|WARNING)\s*$", "", name_part, flags=re.I)
+    name_part = re.sub(r"\s-\s(UP|DOWN|WARNING)\s*$", "", name_part, flags=re.I)
+    name_part = name_part.strip()
+
+    if monitor_name and str(monitor_name).strip():
+        name_part = str(monitor_name).strip()
+    if not name_part:
+        name_part = "Monitor"
+
+    return f"{prefix}{name_part} - {status_label}"
 
 
 def _monitor_email_details_from_body(body: str) -> str:

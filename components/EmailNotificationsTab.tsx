@@ -45,7 +45,7 @@ export const EmailNotificationsTab: React.FC<EmailNotificationsTabProps> = ({ mo
             name: '',
             monitor_id: monitorId,
             status_trigger: 'down',
-            subject_template: `[{app_name} Monitor] {monitor_name} Status: {status}`,
+            subject_template: `[{app_name} Monitor] {monitor_name} - {status}`,
             body_template: "Monitor: {monitor_name}\nStatus: {status}\nTime: {time}\nDetails: {details}",
             is_enabled: 1,
             recipients: [],
