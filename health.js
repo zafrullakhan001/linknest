@@ -98,7 +98,7 @@
 
     exportBtn.addEventListener('click', function (ev) {
       var el = document.getElementById('health-payload');
-      var name = exportBtn.getAttribute('data-filename') || 'linknest-health.json';
+      var name = exportBtn.getAttribute('data-filename') || 'health.json';
       var raw = '';
       if (el) {
         raw = typeof el.value === 'string' && el.value !== '' ? el.value : (el.textContent || '');

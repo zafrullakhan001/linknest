@@ -1,8 +1,9 @@
 <?php
 /**
- * LinkNest Apache + PHP deploy health check.
+ * Apache + PHP deploy health check.
  *
  * Does not load api/config.php first — a missing pdo_sqlite must still render.
+ * Branding (app_name, favicon) is read from settings when the database is available.
  *
  *   HTML:  /health.php
  *   JSON:  /health.php?format=json
@@ -20,7 +21,7 @@ if (!$wantJson && isset($_SERVER['HTTP_ACCEPT']) && str_contains((string)$_SERVE
     $wantJson = true;
 }
 
-/** LinkNest Windows SQLite package (same URLs as package-for-deployment.ps1). */
+/** Windows SQLite package (same URLs as package-for-deployment.ps1). */
 const LN_HEALTH_SQLITE_VERSION = '3.53.4';
 const LN_HEALTH_SQLITE_DLL_ZIP = 'sqlite-dll-win-x64-3530400.zip';
 const LN_HEALTH_SQLITE_DLL_URL = 'https://www.sqlite.org/2026/sqlite-dll-win-x64-3530400.zip';
@@ -195,7 +196,8 @@ function lnHealthBuildArchDiagram(
     string $sqliteVersion,
     ?string $libSqliteArch,
     string $nodeVersion,
-    ?string $nodeArch
+    ?string $nodeArch,
+    string $appName = 'Application'
 ): string {
     $phpLabel = 'PHP ' . $phpVersion . ' ' . ($phpZts ? 'TS' : 'NTS') . ' ' . ($phpArch !== '' ? $phpArch : '?');
     $sapiLabel = $sapi !== '' ? $sapi : 'sapi?';
@@ -206,6 +208,7 @@ function lnHealthBuildArchDiagram(
     $nodeLabel = $nodeVersion !== ''
         ? ('Node.js v' . $nodeVersion . ($nodeArch !== null ? ' ' . $nodeArch : ''))
         : 'Node.js 20+ optional';
+    $runtimeLabel = lnHealthMermaidLabel($appName);
 
     // Keep Mermaid node IDs simple (no spaces). Solid edges; JS draws moving packets.
     return <<<MERMAID
@@ -217,7 +220,7 @@ flowchart TB
     Apache["{$apacheLabel}"]
     ModPhp["{$phpLabel} / {$sapiLabel}"]
   end
-  subgraph runtime [LinkNest]
+  subgraph runtime [{$runtimeLabel}]
     Health[health.php]
     App[API + SPA routes]
     Ext[pdo_sqlite sqlite3 curl]
@@ -448,7 +451,103 @@ function lnHealthDetectNode(bool $isWindows): array {
     return ['version' => $version, 'arch' => $arch, 'path' => $nodePath, 'error' => ''];
 }
 
+/**
+ * Branding from settings without loading api/config.php (health must render if SQLite is broken).
+ *
+ * @return array{app_name:string,favicon:string}
+ */
+function lnHealthLoadBranding(string $dbFile): array {
+    $out = ['app_name' => 'Application', 'favicon' => ''];
+    if ($dbFile === '' || !is_file($dbFile) || !is_readable($dbFile) || !extension_loaded('pdo_sqlite')) {
+        return $out;
+    }
+    try {
+        $db = new PDO('sqlite:' . $dbFile, null, null, [
+            PDO::ATTR_ERRMODE => PDO::ERRMODE_EXCEPTION,
+        ]);
+        $stmt = $db->query("SELECT key, value FROM settings WHERE key IN ('app_name', 'page_title', 'favicon')");
+        if (!$stmt) {
+            return $out;
+        }
+        $map = [];
+        while ($row = $stmt->fetch(PDO::FETCH_ASSOC)) {
+            $map[(string) ($row['key'] ?? '')] = trim((string) ($row['value'] ?? ''));
+        }
+        $name = $map['app_name'] ?? '';
+        if ($name === '') {
+            $name = $map['page_title'] ?? '';
+        }
+        if ($name !== '') {
+            $out['app_name'] = $name;
+        }
+        if (($map['favicon'] ?? '') !== '') {
+            $out['favicon'] = $map['favicon'];
+        }
+    } catch (Throwable $e) {
+        // Keep defaults so the health page still renders.
+    }
+    return $out;
+}
+
+function lnHealthNormalizeFavicon(string $favicon): string {
+    $favicon = trim($favicon);
+    if ($favicon === '' || preg_match('#^https?://#i', $favicon) === 1 || str_starts_with($favicon, 'data:')) {
+        return $favicon;
+    }
+    $normalized = preg_replace('#^/[^/]+/uploads/#', '/uploads/', $favicon);
+    $favicon = is_string($normalized) ? $normalized : $favicon;
+    if (!str_starts_with($favicon, '/')) {
+        $favicon = '/' . $favicon;
+    }
+    $scriptName = str_replace('\\', '/', (string) ($_SERVER['SCRIPT_NAME'] ?? ''));
+    $base = rtrim(str_replace('\\', '/', dirname($scriptName)), '/');
+    if ($base === '/' || $base === '.' || $base === '\\') {
+        $base = '';
+    }
+    if ($base !== '' && str_starts_with($favicon, '/uploads/')) {
+        return $base . $favicon;
+    }
+    return $favicon;
+}
+
+function lnHealthMermaidLabel(string $text): string {
+    $text = trim(str_replace(["\r", "\n", "\t"], ' ', $text));
+    $text = str_replace(['[', ']', '"', '{', '}', '|', ';'], ['(', ')', "'", '(', ')', '/', ','], $text);
+    $text = preg_replace('/\s+/', ' ', $text) ?? $text;
+    return $text !== '' ? $text : 'App';
+}
+
+function lnHealthFileSlug(string $name): string {
+    $slug = strtolower(trim($name));
+    $slug = preg_replace('/[^a-z0-9]+/', '-', $slug) ?? '';
+    $slug = trim($slug, '-');
+    return $slug !== '' ? $slug : 'app';
+}
+
+/** Inline tech marks (no CDN) so the health page still looks good offline. */
+function lnHealthTechMark(string $id): string {
+    switch ($id) {
+        case 'php':
+            return '<svg viewBox="0 0 80 42" aria-hidden="true"><ellipse cx="40" cy="21" rx="39" ry="20" fill="#fff"/><text x="40" y="27" text-anchor="middle" fill="#4F5B93" font-family="Georgia,Times,serif" font-size="20" font-weight="700" font-style="italic">php</text></svg>';
+        case 'apache':
+            return '<svg viewBox="0 0 24 24" aria-hidden="true"><path fill="#fff" d="M12.2 2.2c.4 2.6 1.3 4.9 2.6 7.1.5 1 1.2 1.9 1.4 3 .3 1.5-.3 2.9-1.4 4.1 1.9-.4 3.6-1.5 4.8-3.1-1.9 4.3-5.6 6.9-10.2 7.4C5.4 21.2 2.6 18.7 2 15.4c.9 1.3 2.3 2.1 3.9 2.3-1.7-1.5-2.5-3.6-2.2-5.8.4 1.2 1.3 2.1 2.5 2.6-.9-2.1-.5-4.4.9-6.3C8.6 5.8 10.3 3.8 12.2 2.2z"/></svg>';
+        case 'sqlite':
+            return '<svg viewBox="0 0 24 24" aria-hidden="true"><ellipse cx="12" cy="6" rx="8" ry="3.2" fill="#fff"/><path fill="#93c5fd" d="M4 6v11.2c0 1.8 3.6 3.2 8 3.2s8-1.4 8-3.2V6c0 1.8-3.6 3.2-8 3.2S4 7.8 4 6z"/><ellipse cx="12" cy="17.2" rx="8" ry="3.2" fill="#fff"/><ellipse cx="12" cy="6" rx="8" ry="3.2" fill="none" stroke="#dbeafe" stroke-width=".6"/></svg>';
+        case 'node':
+            return '<svg viewBox="0 0 24 24" aria-hidden="true"><path fill="#fff" d="M12 1.7 21.3 7v10L12 22.3 2.7 17V7L12 1.7zm0 2.3L5.2 8v8L12 20l6.8-4V8L12 4zm0 2.6 4.2 2.4v4.9L12 16.3 7.8 13.9V9L12 6.6z"/></svg>';
+        case 'ini':
+            return '<svg viewBox="0 0 24 24" aria-hidden="true"><path fill="#fff" d="M7 3h7l5 5v13a1 1 0 0 1-1 1H7a1 1 0 0 1-1-1V4a1 1 0 0 1 1-1zm7 1.8V9h4.2L14 4.8zM8.5 12h7v1.4h-7V12zm0 3.2h7v1.4h-7v-1.4z"/></svg>';
+        case 'time':
+            return '<svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="9" fill="none" stroke="#fff" stroke-width="1.8"/><path fill="none" stroke="#fff" stroke-width="1.8" stroke-linecap="round" d="M12 7.2V12l3.4 2.2"/></svg>';
+        default:
+            return '';
+    }
+}
+
 $root = __DIR__;
+$branding = lnHealthLoadBranding($root . DIRECTORY_SEPARATOR . 'data' . DIRECTORY_SEPARATOR . 'linknest.db');
+$appName = $branding['app_name'];
+$favicon = lnHealthNormalizeFavicon($branding['favicon']);
 $checks = [];
 $isWindows = strtoupper(substr(PHP_OS, 0, 3)) === 'WIN';
 $sapi = PHP_SAPI;
@@ -519,7 +618,7 @@ $checks[] = lnHealthCheck(
     'fail',
     'PHP 64-bit (x64)',
     lnHealthArchLabel($phpArch) . ' · uname=' . ($osArch !== '' ? $osArch : '?') . ' · PHP_INT_SIZE=' . PHP_INT_SIZE,
-    'LinkNest requires Thread Safe x64 PHP for Apache (php8apache2_4.dll). Install the TS x64 build from downloads.php.net, not x86.'
+    $appName . ' requires Thread Safe x64 PHP for Apache (php8apache2_4.dll). Install the TS x64 build from downloads.php.net, not x86.'
 );
 $checks[] = lnHealthCheck(
     'php_thread_safety',
@@ -541,7 +640,7 @@ if ($isWindows) {
             'Apache httpd.exe 64-bit (x64)',
             lnHealthArchLabel($apacheArch) . ' · ' . $httpdPath,
             $apacheArch === 'x64'
-                ? 'Apache matches LinkNest x64 requirement.'
+                ? 'Apache matches the ' . $appName . ' x64 requirement.'
                 : 'Install Apache Lounge Win64 (or XAMPP x64). Mixing 32-bit Apache with 64-bit PHP will not load php8apache2_4.dll.'
         );
     } else {
@@ -644,7 +743,7 @@ if ($nodeVersion !== '' && $nodeArch !== null) {
         'warn',
         'Node.js 64-bit (x64 or arm64)',
         lnHealthArchLabel($nodeArch) . ($nodePath !== '' ? ' · ' . $nodePath : ''),
-        'Prefer the 64-bit Node installer. 32-bit Node is not recommended for LinkNest builds.'
+        'Prefer the 64-bit Node installer. 32-bit Node is not recommended for ' . $appName . ' builds.'
     );
 }
 
@@ -656,7 +755,7 @@ $checks[] = lnHealthCheck(
     'fail',
     'PHP >= 8.2 (8.5 recommended)',
     PHP_VERSION,
-    'Install PHP 8.2+ Thread Safe x64 for Apache. PHP 8.5.x is verified for LinkNest.'
+    'Install PHP 8.2+ Thread Safe x64 for Apache. PHP 8.5.x is verified for ' . $appName . '.'
 );
 $checks[] = lnHealthCheck(
     'php_sapi',
@@ -852,7 +951,7 @@ $checks[] = lnHealthCheck(
     'fail',
     '.htaccess present in app root',
     is_file($htaccess) ? $htaccess : 'missing',
-    'Deploy the LinkNest .htaccess. Apache needs AllowOverride All on htdocs.'
+    'Deploy the ' . $appName . ' .htaccess. Apache needs AllowOverride All on htdocs.'
 );
 
 $distIndex = $root . DIRECTORY_SEPARATOR . 'dist' . DIRECTORY_SEPARATOR . 'index.html';
@@ -968,7 +1067,7 @@ $sqlitePackage = [
     'tools_url' => LN_HEALTH_SQLITE_TOOLS_URL,
     'replace_dll' => 'libsqlite3.dll',
     'replace_path' => $isWindows ? $libSqliteReplaceTarget : null,
-    'note' => 'Only replace libsqlite3.dll from the sqlite.org zip. Keep php_sqlite3.dll / php_pdo_sqlite.dll from PHP ext/; enable them in php.ini. Prefer install-sqlite-xampp.bat from a full LinkNest deploy ZIP.',
+    'note' => 'Only replace libsqlite3.dll from the sqlite.org zip. Keep php_sqlite3.dll / php_pdo_sqlite.dll from PHP ext/; enable them in php.ini. Prefer install-sqlite-xampp.bat from a full ' . $appName . ' deploy ZIP.',
     'installed' => [
         'runtime_version' => $sqliteVersion !== '' ? $sqliteVersion : null,
         'path' => $libSqlitePath !== '' ? $libSqlitePath : null,
@@ -1004,7 +1103,8 @@ $archDiagram = lnHealthBuildArchDiagram(
     $sqliteVersion,
     $libSqliteArch,
     $nodeVersion,
-    $nodeArch
+    $nodeArch,
+    $appName
 );
 $seqDiagram = lnHealthBuildSeqDiagram(
     PHP_VERSION,
@@ -1023,11 +1123,13 @@ $seqDiagramLiveUrl = lnHealthMermaidLiveUrl($seqDiagram);
 $payload = [
     'success' => $fail === 0,
     'status' => $status,
+    'app_name' => $appName,
+    'favicon' => $favicon !== '' ? $favicon : null,
     'summary' => $fail === 0
         ? ($warn === 0
-            ? 'LinkNest Apache/PHP runtime looks ready.'
+            ? $appName . ' Apache/PHP runtime looks ready.'
             : "Runtime usable, but {$warn} recommended check(s) need attention.")
-        : "{$fail} critical check(s) failed — LinkNest will not run correctly until those are fixed.",
+        : "{$fail} critical check(s) failed — {$appName} will not run correctly until those are fixed.",
     'verdict' => [
         'ready' => $fail === 0,
         'passed' => $pass,
@@ -1069,7 +1171,7 @@ if ($wantJson) {
     $wantDownload = isset($_GET['download']) && in_array(strtolower((string)$_GET['download']), ['1', 'true', 'yes'], true);
     if ($wantDownload) {
         $stamp = date('Ymd-His');
-        header('Content-Disposition: attachment; filename="linknest-health-' . $stamp . '.json"');
+        header('Content-Disposition: attachment; filename="' . lnHealthFileSlug($appName) . '-health-' . $stamp . '.json"');
         header('X-Content-Type-Options: nosniff');
     }
     echo $jsonBody;
@@ -1081,6 +1183,18 @@ header('Content-Type: text/html; charset=utf-8');
 $esc = static function ($v): string {
     return htmlspecialchars((string)$v, ENT_QUOTES | ENT_SUBSTITUTE, 'UTF-8');
 };
+
+$faviconTags = '';
+if ($favicon !== '') {
+    $lower = strtolower(explode('?', $favicon, 2)[0]);
+    $favType = str_ends_with($lower, '.svg')
+        ? 'image/svg+xml'
+        : (str_ends_with($lower, '.ico') ? 'image/x-icon' : 'image/png');
+    $safeFav = $esc($favicon);
+    $faviconTags = '<link rel="icon" href="' . $safeFav . '" type="' . $favType . '">'
+        . '<link rel="shortcut icon" href="' . $safeFav . '" type="' . $favType . '">'
+        . '<link rel="apple-touch-icon" href="' . $safeFav . '">';
+}
 
 $badgeClass = $status === 'ok' ? 'ok' : ($status === 'degraded' ? 'warn' : 'fail');
 $badgeLabel = $status === 'ok' ? 'READY' : ($status === 'degraded' ? 'DEGRADED' : 'NOT READY');
@@ -1095,7 +1209,7 @@ $payloadJson = json_encode($payload, JSON_UNESCAPED_SLASHES | JSON_UNESCAPED_UNI
 if ($payloadJson === false) {
     $payloadJson = '{}';
 }
-$exportName = 'linknest-health-' . date('Ymd-His') . '.json';
+$exportName = lnHealthFileSlug($appName) . '-health-' . date('Ymd-His') . '.json';
 
 $themeCookie = isset($_COOKIE['ln_health_theme']) ? (string)$_COOKIE['ln_health_theme'] : '';
 $pageTheme = ($themeCookie === 'light' || $themeCookie === 'dark') ? $themeCookie : 'dark';
@@ -1112,7 +1226,8 @@ $healthJsVer = max(
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <meta name="color-scheme" content="dark light">
-  <title>LinkNest deploy health</title>
+  <title><?php echo $esc($appName); ?> deploy health</title>
+  <?php echo $faviconTags; ?>
   <link rel="stylesheet" href="health.css?v=<?php echo (int)$healthJsVer; ?>">
   <script src="health.js?v=<?php echo (int)$healthJsVer; ?>" defer></script>
 </head>
@@ -1120,7 +1235,7 @@ $healthJsVer = max(
   <div class="wrap">
     <div class="top">
       <div>
-        <h1>LinkNest deploy health</h1>
+        <h1><?php echo $esc($appName); ?> deploy health</h1>
         <p class="sub">Apache + PHP + SQLite checks for this install. Use day/night for readability, and export JSON for support or deploy notes.</p>
       </div>
       <div class="actions">
@@ -1135,38 +1250,70 @@ $healthJsVer = max(
       <span class="pill <?php echo $esc($badgeClass); ?>"><?php echo $esc($badgeLabel); ?></span>
       <div><?php echo $esc($payload['summary']); ?> (<?php echo (int)$pass; ?> pass, <?php echo (int)$warn; ?> warn, <?php echo (int)$fail; ?> fail)</div>
     </div>
-    <div class="meta">
-      <div><b>PHP</b><?php echo $esc(PHP_VERSION); ?> / <?php echo $esc($sapi); ?></div>
-      <div><b>Node</b><?php echo $esc($nodeVersion !== '' ? ('v' . $nodeVersion . ($nodeArch !== null ? ' / ' . $nodeArch : '')) : 'n/a'); ?></div>
-      <div><b>Arch</b><?php echo $esc($archMeta); ?></div>
-      <div><b>SQLite</b><?php echo $esc($sqliteVersion !== '' ? $sqliteVersion : 'n/a'); ?></div>
-      <div><b>php.ini</b><?php echo $esc($iniFile !== '' ? $iniFile : 'not loaded'); ?></div>
-      <div><b>Checked</b><?php echo $esc($payload['runtime']['checked_at']); ?></div>
-    </div>
-
-    <section class="diagram" data-mermaid-diagram="1" data-diagram-mode="flow" data-live-flow="<?php echo $esc($archDiagramLiveUrl); ?>" data-live-seq="<?php echo $esc($seqDiagramLiveUrl); ?>" aria-label="Deploy architecture diagram">
-      <div class="diagram-head">
-        <h2 class="cat diagram-title" id="diagramTitle">Architecture diagram</h2>
-        <div class="diagram-actions">
-          <button type="button" class="btn btn-primary" id="diagramModeFlow" data-diagram-mode-btn="flow" aria-pressed="true" title="Show flowchart architecture">Flow</button>
-          <button type="button" class="btn" id="diagramModeSeq" data-diagram-mode-btn="seq" aria-pressed="false" title="Show Mermaid sequence diagram">Seq diagram</button>
-          <button type="button" class="btn" id="flowToggle" data-flow="on" title="Pause or resume data-flow animation" aria-pressed="true">Pause flow</button>
-          <button type="button" class="btn" data-mermaid-action="view" title="Toggle Mermaid source">View code</button>
-          <button type="button" class="btn" data-mermaid-action="copy" title="Copy Mermaid source">Copy</button>
-          <a class="btn" id="mermaidLiveLink" data-mermaid-action="live" href="<?php echo $esc($archDiagramLiveUrl); ?>" target="_blank" rel="noopener noreferrer" title="Open in Mermaid Live">Mermaid Live</a>
-          <button type="button" class="btn" data-mermaid-action="refresh" title="Re-render diagram">Refresh</button>
+    <div class="stack" role="list">
+      <article class="stack-card tech-php" role="listitem">
+        <div class="stack-mark"><?php echo lnHealthTechMark('php'); ?></div>
+        <div class="stack-body">
+          <div class="stack-label">🐘 PHP</div>
+          <div class="stack-value"><?php echo $esc(PHP_VERSION); ?></div>
+          <div class="stack-detail"><?php echo $esc($sapi . ' · ' . ($phpZts ? 'Thread Safe' : 'NTS') . ' · ' . lnHealthArchLabel($phpArch)); ?></div>
         </div>
-      </div>
-      <p class="diagram-sub" id="diagramSub">Runtime layout for this host. Colored balls travel solid edges to show request / data flow (Pause flow to stop).</p>
-      <div class="mermaid-canvas ln-flow-on" id="mermaid-canvas">
-        <div class="mermaid" id="health-mermaid"></div>
-      </div>
-      <pre class="mermaid-source" data-mermaid-source-view hidden></pre>
-      <textarea id="health-mermaid-source-flow" readonly hidden aria-hidden="true"><?php echo $esc($archDiagram); ?></textarea>
-      <textarea id="health-mermaid-source-seq" readonly hidden aria-hidden="true"><?php echo $esc($seqDiagram); ?></textarea>
-      <textarea id="health-mermaid-source" readonly hidden aria-hidden="true"><?php echo $esc($archDiagram); ?></textarea>
-      <p class="diagram-fallback" id="mermaid-fallback" hidden>Diagram could not render in this browser. Use <a id="mermaidFallbackLink" href="<?php echo $esc($archDiagramLiveUrl); ?>" target="_blank" rel="noopener noreferrer">Mermaid Live</a> or View code.</p>
-    </section>
+      </article>
+      <article class="stack-card tech-apache" role="listitem">
+        <div class="stack-mark"><?php echo lnHealthTechMark('apache'); ?></div>
+        <div class="stack-body">
+          <div class="stack-label">🪶 Apache</div>
+          <div class="stack-value"><?php echo $esc($apacheArch !== null ? lnHealthArchLabel($apacheArch) : ($isWindows ? 'Not found' : PHP_OS)); ?></div>
+          <div class="stack-detail"><?php echo $esc($httpdPath !== '' ? $httpdPath : ($isWindows ? 'httpd.exe not in common paths' : 'mod_php / ' . $sapi)); ?></div>
+        </div>
+      </article>
+      <article class="stack-card tech-sqlite" role="listitem">
+        <div class="stack-mark"><?php echo lnHealthTechMark('sqlite'); ?></div>
+        <div class="stack-body">
+          <div class="stack-label">🗄️ SQLite</div>
+          <div class="stack-value"><?php echo $esc($sqliteVersion !== '' ? $sqliteVersion : 'n/a'); ?></div>
+          <div class="stack-detail"><?php
+            $sqliteBits = [];
+            if ($libSqliteArch !== null) {
+                $sqliteBits[] = lnHealthArchLabel($libSqliteArch) . ' DLL';
+            }
+            if ($libSqlitePath !== '') {
+                $sqliteBits[] = basename($libSqlitePath);
+            }
+            if (extension_loaded('pdo_sqlite')) {
+                $sqliteBits[] = 'pdo_sqlite';
+            }
+            echo $esc($sqliteBits !== [] ? implode(' · ', $sqliteBits) : 'engine not loaded');
+          ?></div>
+        </div>
+      </article>
+      <article class="stack-card tech-node" role="listitem">
+        <div class="stack-mark"><?php echo lnHealthTechMark('node'); ?></div>
+        <div class="stack-body">
+          <div class="stack-label">🌿 Node.js</div>
+          <div class="stack-value"><?php echo $esc($nodeVersion !== '' ? 'v' . $nodeVersion : 'n/a'); ?></div>
+          <div class="stack-detail"><?php echo $esc($nodeVersion !== ''
+              ? (($nodeArch !== null ? lnHealthArchLabel($nodeArch) : 'arch ?') . ($nodePath !== '' ? ' · ' . $nodePath : ''))
+              : ($nodeError !== '' ? $nodeError : 'optional for serving dist/')); ?></div>
+        </div>
+      </article>
+      <article class="stack-card tech-ini" role="listitem">
+        <div class="stack-mark"><?php echo lnHealthTechMark('ini'); ?></div>
+        <div class="stack-body">
+          <div class="stack-label">⚙️ php.ini</div>
+          <div class="stack-value"><?php echo $esc($iniFile !== '' ? basename($iniFile) : 'not loaded'); ?></div>
+          <div class="stack-detail"><?php echo $esc($iniFile !== '' ? $iniFile : 'Set PHPIniDir in httpd.conf'); ?></div>
+        </div>
+      </article>
+      <article class="stack-card tech-time" role="listitem">
+        <div class="stack-mark"><?php echo lnHealthTechMark('time'); ?></div>
+        <div class="stack-body">
+          <div class="stack-label">🕒 Checked</div>
+          <div class="stack-value"><?php echo $esc(date('M j, Y')); ?></div>
+          <div class="stack-detail"><?php echo $esc(date('H:i:s T') . ' · ' . $payload['runtime']['checked_at']); ?></div>
+        </div>
+      </article>
+    </div>
 <?php foreach ($catOrder as $cat):
     if (empty($grouped[$cat])) {
         continue;
@@ -1190,7 +1337,7 @@ $healthJsVer = max(
     </table>
 <?php if ($cat === 'SQLite' && $isWindows): ?>
     <div class="pkg">
-      <h3>SQLite package for LinkNest (Windows)</h3>
+      <h3>SQLite package for <?php echo $esc($appName); ?> (Windows)</h3>
       <dl>
         <dt>Runtime</dt>
         <dd><?php echo $esc($sqliteVersion !== '' ? $sqliteVersion : 'n/a'); ?>
@@ -1221,19 +1368,42 @@ $healthJsVer = max(
           — enable <code>extension=sqlite3</code> and <code>extension=pdo_sqlite</code> in php.ini</dd>
       </dl>
       <ol>
-        <li>Prefer <code>install-sqlite-xampp.bat</code> from a full LinkNest deploy ZIP (elevated).</li>
+        <li>Prefer <code>install-sqlite-xampp.bat</code> from a full <?php echo $esc($appName); ?> deploy ZIP (elevated).</li>
         <li>Or: stop Apache → download the zip above → copy <code>libsqlite3.dll</code> over <code><?php echo $esc($libSqliteReplaceTarget); ?></code>.</li>
         <li>Ensure <code>extension=sqlite3</code> and <code>extension=pdo_sqlite</code> are enabled in php.ini.</li>
         <li>Start Apache and reload this page — runtime should report SQLite <?php echo $esc(LN_HEALTH_SQLITE_VERSION); ?>+ and a ~3&nbsp;MB x64 DLL.</li>
       </ol>
       <?php if ($phpArch !== 'x64'): ?>
-      <p class="note">This PHP build is <?php echo $esc(lnHealthArchLabel($phpArch)); ?>. LinkNest requires <strong>64-bit (x64)</strong> PHP/Apache; the x64 SQLite package above will not load until PHP is upgraded to TS x64.</p>
+      <p class="note">This PHP build is <?php echo $esc(lnHealthArchLabel($phpArch)); ?>. <?php echo $esc($appName); ?> requires <strong>64-bit (x64)</strong> PHP/Apache; the x64 SQLite package above will not load until PHP is upgraded to TS x64.</p>
       <?php else: ?>
       <p class="note"><?php echo $esc($sqlitePackage['note']); ?></p>
       <?php endif; ?>
     </div>
 <?php endif; ?>
 <?php endforeach; ?>
+    <section class="diagram" data-mermaid-diagram="1" data-diagram-mode="flow" data-live-flow="<?php echo $esc($archDiagramLiveUrl); ?>" data-live-seq="<?php echo $esc($seqDiagramLiveUrl); ?>" aria-label="Deploy architecture diagram">
+      <div class="diagram-head">
+        <h2 class="cat diagram-title" id="diagramTitle">Architecture diagram</h2>
+        <div class="diagram-actions">
+          <button type="button" class="btn btn-primary" id="diagramModeFlow" data-diagram-mode-btn="flow" aria-pressed="true" title="Show flowchart architecture">Flow</button>
+          <button type="button" class="btn" id="diagramModeSeq" data-diagram-mode-btn="seq" aria-pressed="false" title="Show Mermaid sequence diagram">Seq diagram</button>
+          <button type="button" class="btn" id="flowToggle" data-flow="on" title="Pause or resume data-flow animation" aria-pressed="true">Pause flow</button>
+          <button type="button" class="btn" data-mermaid-action="view" title="Toggle Mermaid source">View code</button>
+          <button type="button" class="btn" data-mermaid-action="copy" title="Copy Mermaid source">Copy</button>
+          <a class="btn" id="mermaidLiveLink" data-mermaid-action="live" href="<?php echo $esc($archDiagramLiveUrl); ?>" target="_blank" rel="noopener noreferrer" title="Open in Mermaid Live">Mermaid Live</a>
+          <button type="button" class="btn" data-mermaid-action="refresh" title="Re-render diagram">Refresh</button>
+        </div>
+      </div>
+      <p class="diagram-sub" id="diagramSub">Runtime layout for this host. Colored balls travel solid edges to show request / data flow (Pause flow to stop).</p>
+      <div class="mermaid-canvas ln-flow-on" id="mermaid-canvas">
+        <div class="mermaid" id="health-mermaid"></div>
+      </div>
+      <pre class="mermaid-source" data-mermaid-source-view hidden></pre>
+      <textarea id="health-mermaid-source-flow" readonly hidden aria-hidden="true"><?php echo $esc($archDiagram); ?></textarea>
+      <textarea id="health-mermaid-source-seq" readonly hidden aria-hidden="true"><?php echo $esc($seqDiagram); ?></textarea>
+      <textarea id="health-mermaid-source" readonly hidden aria-hidden="true"><?php echo $esc($archDiagram); ?></textarea>
+      <p class="diagram-fallback" id="mermaid-fallback" hidden>Diagram could not render in this browser. Use <a id="mermaidFallbackLink" href="<?php echo $esc($archDiagramLiveUrl); ?>" target="_blank" rel="noopener noreferrer">Mermaid Live</a> or View code.</p>
+    </section>
     <p class="foot">Critical failures return HTTP 503. Warnings return HTTP 200 with status=degraded. This page does not require login so you can verify a fresh Apache/PHP deploy. Direct download: <a href="?format=json&amp;download=1">health.php?format=json&amp;download=1</a></p>
   </div>
   <div class="toast" id="toast" role="status" aria-live="polite"></div>
