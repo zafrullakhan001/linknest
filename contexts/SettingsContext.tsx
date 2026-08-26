@@ -30,7 +30,9 @@ const BRANDING_HYDRATE_KEYS = [
   'hero_overlay_color', 'hero_overlay_to', 'hero_overlay_opacity', 'hero_icon_bg_from', 'hero_icon_bg_to',
   'auth_wash_from', 'auth_wash_to', 'favicon',
   'guest_access_enabled', 'signin_button_enabled', 'public_tile_animation', 'maintenance_enabled', 'maintenance_message',
-  'disabled_tabs', 'footer_text', 'show_database_path_in_footer', 'semi_pwa_enabled',
+  'disabled_tabs', 'footer_text', 'footer_font_size', 'footer_font_family', 'footer_font_weight',
+  'footer_font_style', 'footer_font_color', 'footer_font_color_dark',
+  'show_database_path_in_footer', 'semi_pwa_enabled',
 ] as const;
 
 /** Branding keys that can be live-previewed before Save Settings */
@@ -101,6 +103,13 @@ export const BRANDING_PREVIEW_KEYS = [
   'auth_wash_to',
   'page_title',
   'page_title_pattern',
+  'footer_text',
+  'footer_font_size',
+  'footer_font_family',
+  'footer_font_weight',
+  'footer_font_style',
+  'footer_font_color',
+  'footer_font_color_dark',
 ] as const;
 
 interface SettingsContextType {
@@ -186,6 +195,12 @@ export const emptyBrandingDefaults: AppSettings = {
   qr_branding_mode: 'favicon',
   qr_branding_emoji: '❤️',
   footer_text: '© 2025 Adventhealth - Designed and developed by AIT Architecture team',
+  footer_font_size: '14',
+  footer_font_family: 'inherit',
+  footer_font_weight: 'normal',
+  footer_font_style: 'normal',
+  footer_font_color: '',
+  footer_font_color_dark: '',
   public_tile_animation: 'fade-in',
 };
 
@@ -398,6 +413,22 @@ nav.linknest-nav .linknest-brand-subheading {
     rules.push(`.auth-modal-wash { background: linear-gradient(135deg, ${s.auth_wash_from}, ${s.auth_wash_to}) !important; }`);
   } else if (s.auth_wash_from) {
     rules.push(`.auth-modal-wash { background: ${s.auth_wash_from} !important; }`);
+  }
+
+  const footerSize = parseInt(s.footer_font_size || '14', 10) || 14;
+  const footerFamily = s.footer_font_family && s.footer_font_family !== 'inherit' ? s.footer_font_family : null;
+  rules.push(`.linknest-footer .linknest-footer-text {
+  font-size: ${footerSize}px !important;
+  font-weight: ${s.footer_font_weight || 'normal'} !important;
+  font-style: ${s.footer_font_style || 'normal'} !important;
+  ${footerFamily ? `font-family: ${footerFamily} !important;` : ''}
+  ${s.footer_font_color ? `color: ${s.footer_font_color} !important;` : ''}
+}
+@media (max-width: 639px) {
+  .linknest-footer .linknest-footer-text { font-size: ${Math.min(footerSize, 12)}px !important; }
+}`);
+  if (s.footer_font_color_dark) {
+    rules.push(`.dark .linknest-footer .linknest-footer-text { color: ${s.footer_font_color_dark} !important; }`);
   }
 
   el.textContent = rules.join('\n').trim();

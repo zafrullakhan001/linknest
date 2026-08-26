@@ -138,7 +138,7 @@ if (!defined('SYSTEM_TOKEN')) {
 
 // Bump when schema/migrations in initDatabase() change. Enables fast-path getDB().
 if (!defined('LINKNEST_SCHEMA_VERSION')) {
-    define('LINKNEST_SCHEMA_VERSION', 95);
+    define('LINKNEST_SCHEMA_VERSION', 96);
 }
 
 function getSchemaPatchFlagPath(): string {
@@ -1076,6 +1076,31 @@ function ensureTabSectionEmojiColumns(PDO $db): void {
     }
 }
 
+/** Ensure password reset token columns exist on users. */
+function ensurePasswordResetColumns(PDO $db): void {
+    static $ensured = false;
+    if ($ensured) {
+        return;
+    }
+    try {
+        $exists = $db->query("SELECT name FROM sqlite_master WHERE type='table' AND name='users'")->fetchColumn();
+        if (!$exists) {
+            return;
+        }
+        $columns = $db->query('PRAGMA table_info(users)')->fetchAll(PDO::FETCH_ASSOC);
+        $names = array_column($columns, 'name');
+        if (!in_array('password_reset_token_hash', $names, true)) {
+            $db->exec('ALTER TABLE users ADD COLUMN password_reset_token_hash TEXT');
+        }
+        if (!in_array('password_reset_expires_at', $names, true)) {
+            $db->exec('ALTER TABLE users ADD COLUMN password_reset_expires_at INTEGER');
+        }
+        $ensured = true;
+    } catch (PDOException $e) {
+        error_log('ensurePasswordResetColumns warning: ' . $e->getMessage());
+    }
+}
+
 /** Ensure SSH connection color column exists (identification strip in SSH Terminal). */
 function ensureSshConnectionColorColumn(PDO $db): void {
     static $ensured = false;
@@ -1423,6 +1448,7 @@ function initDatabase() {
             ensureMcpTokensTable($db);
             ensureCategoryVisibilityPresetsTable($db);
             ensureTilesVideoColumns($db);
+            ensurePasswordResetColumns($db);
             if (!schemaPatchesAlreadyApplied()) {
                 ensureTilesHeaderImageColumns($db);
                 ensureTilesSearchTagsColumn($db);
@@ -1456,6 +1482,7 @@ function initDatabase() {
             ensureMcpTokensTable($db);
             ensureCategoryVisibilityPresetsTable($db);
             ensureTilesVideoColumns($db);
+            ensurePasswordResetColumns($db);
             if (!schemaPatchesAlreadyApplied()) {
                 ensureTilesHeaderImageColumns($db);
                 ensureTilesSearchTagsColumn($db);
@@ -1536,6 +1563,16 @@ function initDatabase() {
         }
         try {
             $db->exec('ALTER TABLE users ADD COLUMN notes TEXT');
+        } catch (PDOException $e) {
+            // Column already exists, ignore
+        }
+        try {
+            $db->exec('ALTER TABLE users ADD COLUMN password_reset_token_hash TEXT');
+        } catch (PDOException $e) {
+            // Column already exists, ignore
+        }
+        try {
+            $db->exec('ALTER TABLE users ADD COLUMN password_reset_expires_at INTEGER');
         } catch (PDOException $e) {
             // Column already exists, ignore
         }

@@ -5,6 +5,9 @@
  */
 
 require_once __DIR__ . '/config.php';
+require_once __DIR__ . '/mailer.php';
+require_once __DIR__ . '/email_templates.php';
+require_once __DIR__ . '/auth_mail.php';
 
 if (session_status() === PHP_SESSION_NONE) {
     session_start();
@@ -32,6 +35,10 @@ switch ($method) {
             handleBackupMonitorv2Db();
         } elseif ($path === '/monitorv2/schema-backup' || $path === '/monitorv2/schema-backup/') {
             handleBackupMonitorv2Schema();
+        } elseif ($path === '/system-email' || $path === '/system-email/') {
+            handleGetSystemEmailConfig();
+        } elseif ($path === '/system-email/status' || $path === '/system-email/status/') {
+            handleCheckSystemEmailStatus();
         } else {
             sendJSON(['error' => 'Invalid endpoint'], 404);
         }
@@ -60,6 +67,8 @@ switch ($method) {
             handlePurgeMonitorv2Data();
         } elseif ($path === '/monitorv2/restore' || $path === '/monitorv2/restore/') {
             handleRestoreMonitorv2Db();
+        } elseif ($path === '/system-email/test' || $path === '/system-email/test/') {
+            handleTestSystemEmail();
         } else {
             sendJSON(['error' => 'Invalid endpoint'], 404);
         }
@@ -70,6 +79,8 @@ switch ($method) {
             handleUpdateAnalyticsConfig();
         } elseif ($path === '/monitorv2' || $path === '/monitorv2/') {
             handleUpdateMonitorv2Config();
+        } elseif ($path === '/system-email' || $path === '/system-email/') {
+            handleUpdateSystemEmailConfig();
         } else {
             sendJSON(['error' => 'Invalid endpoint'], 404);
         }
@@ -1869,5 +1880,278 @@ function handleInstallMonitorv2Extensions() {
             'success' => false,
             'error' => 'Failed to connect to database: ' . $e->getMessage()
         ], 500);
+    }
+}
+
+/**
+ * System Email (SMTP) add-on — uses shared smtp_servers table
+ */
+
+function systemEmailEnsureAddonStatusRow(PDO $db): void {
+    $stmt = $db->prepare("SELECT addon_name FROM addon_status WHERE addon_name = 'system_email'");
+    $stmt->execute();
+    if (!$stmt->fetch()) {
+        $ins = $db->prepare('INSERT INTO addon_status (addon_name, is_enabled, is_available, last_check_at) VALUES (?, 0, 0, ?)');
+        $ins->execute(['system_email', time()]);
+    }
+}
+
+function systemEmailGetActiveServer(PDO $db): ?array {
+    $stmt = $db->prepare('SELECT id, name, host, port, username, from_email, from_name, encryption, is_active, is_enabled, pause_start, pause_end FROM smtp_servers WHERE is_active = 1 LIMIT 1');
+    $stmt->execute();
+    $server = $stmt->fetch(PDO::FETCH_ASSOC);
+    if (!$server) {
+        $stmt = $db->prepare('SELECT id, name, host, port, username, from_email, from_name, encryption, is_active, is_enabled, pause_start, pause_end FROM smtp_servers ORDER BY id ASC LIMIT 1');
+        $stmt->execute();
+        $server = $stmt->fetch(PDO::FETCH_ASSOC);
+    }
+    if (!$server) {
+        return null;
+    }
+    $server['id'] = (int)$server['id'];
+    $server['port'] = (int)$server['port'];
+    $server['is_active'] = (bool)$server['is_active'];
+    $server['is_enabled'] = (bool)$server['is_enabled'];
+    $server['password'] = '';
+    $server['has_password'] = false;
+    $pwStmt = $db->prepare('SELECT password FROM smtp_servers WHERE id = ?');
+    $pwStmt->execute([$server['id']]);
+    $pw = $pwStmt->fetchColumn();
+    $server['has_password'] = is_string($pw) && $pw !== '';
+    return $server;
+}
+
+function handleGetSystemEmailConfig() {
+    try {
+        $db = getDB();
+        systemEmailEnsureAddonStatusRow($db);
+
+        $statusStmt = $db->prepare("SELECT * FROM addon_status WHERE addon_name = 'system_email'");
+        $statusStmt->execute();
+        $status = $statusStmt->fetch(PDO::FETCH_ASSOC) ?: null;
+
+        $server = systemEmailGetActiveServer($db);
+
+        sendJSON([
+            'config' => [
+                'enabled' => ((string)getSetting('auth_email_enabled', '0')) === '1',
+                'publicUrl' => (string)getSetting('auth_email_public_url', ''),
+                'notifyRegistration' => ((string)getSetting('auth_email_notify_registration', '1')) === '1',
+                'notifyApproval' => ((string)getSetting('auth_email_notify_approval', '1')) === '1',
+                'passwordRecovery' => ((string)getSetting('auth_email_password_recovery', '1')) === '1',
+                'smtp' => $server ? [
+                    'id' => $server['id'],
+                    'name' => $server['name'] ?: 'Primary SMTP',
+                    'host' => $server['host'] ?? '',
+                    'port' => $server['port'] ?? 587,
+                    'username' => $server['username'] ?? '',
+                    'from_email' => $server['from_email'] ?? '',
+                    'from_name' => $server['from_name'] ?? '',
+                    'encryption' => $server['encryption'] ?? 'tls',
+                    'is_enabled' => !empty($server['is_enabled']),
+                    'has_password' => !empty($server['has_password']),
+                ] : [
+                    'id' => null,
+                    'name' => 'Primary SMTP',
+                    'host' => '',
+                    'port' => 587,
+                    'username' => '',
+                    'from_email' => '',
+                    'from_name' => '{app_name}',
+                    'encryption' => 'tls',
+                    'is_enabled' => false,
+                    'has_password' => false,
+                ],
+            ],
+            'status' => $status ? [
+                'addon_name' => $status['addon_name'],
+                'is_enabled' => (bool)$status['is_enabled'],
+                'is_available' => (bool)$status['is_available'],
+                'last_check_at' => (int)($status['last_check_at'] ?? 0),
+                'error_message' => $status['error_message'] ?? null,
+            ] : null,
+            'detectedPublicUrl' => ln_email_public_base_url(),
+        ]);
+    } catch (Throwable $e) {
+        sendJSON(['error' => 'Failed to load System Email config: ' . $e->getMessage()], 500);
+    }
+}
+
+function handleUpdateSystemEmailConfig() {
+    try {
+        $data = getJSONInput();
+        $db = getDB();
+        systemEmailEnsureAddonStatusRow($db);
+
+        $enabled = !empty($data['enabled']);
+        setSetting('auth_email_enabled', $enabled ? '1' : '0');
+        setSetting('auth_email_public_url', trim((string)($data['publicUrl'] ?? '')));
+        setSetting('auth_email_notify_registration', !empty($data['notifyRegistration']) ? '1' : '0');
+        setSetting('auth_email_notify_approval', !empty($data['notifyApproval']) ? '1' : '0');
+        setSetting('auth_email_password_recovery', !empty($data['passwordRecovery']) ? '1' : '0');
+
+        $smtp = is_array($data['smtp'] ?? null) ? $data['smtp'] : [];
+        $host = trim((string)($smtp['host'] ?? ''));
+        $port = (int)($smtp['port'] ?? 587);
+        if ($port <= 0) {
+            $port = 587;
+        }
+        $username = trim((string)($smtp['username'] ?? ''));
+        $fromEmail = trim((string)($smtp['from_email'] ?? ''));
+        if ($fromEmail === '') {
+            $fromEmail = 'noreply@localhost';
+        }
+        $fromName = trim((string)($smtp['from_name'] ?? ''));
+        if ($fromName === '') {
+            $fromName = '{app_name}';
+        }
+        $encryption = strtolower(trim((string)($smtp['encryption'] ?? 'tls')));
+        if (!in_array($encryption, ['none', 'ssl', 'tls'], true)) {
+            $encryption = 'tls';
+        }
+        $smtpEnabled = array_key_exists('is_enabled', $smtp) ? !empty($smtp['is_enabled']) : true;
+        $name = trim((string)($smtp['name'] ?? 'Primary SMTP'));
+        if ($name === '') {
+            $name = 'Primary SMTP';
+        }
+        $password = $smtp['password'] ?? null;
+        $now = time();
+
+        $active = systemEmailGetActiveServer($db);
+        if ($active && !empty($active['id'])) {
+            $fields = [
+                'name' => $name,
+                'host' => $host,
+                'port' => $port,
+                'username' => $username,
+                'from_email' => $fromEmail,
+                'from_name' => $fromName,
+                'encryption' => $encryption,
+                'is_enabled' => $smtpEnabled ? 1 : 0,
+                'is_active' => 1,
+                'updated_at' => $now,
+            ];
+            if (is_string($password) && $password !== '') {
+                $fields['password'] = base64_encode($password);
+            }
+            $sets = [];
+            $vals = [];
+            foreach ($fields as $k => $v) {
+                $sets[] = "$k = ?";
+                $vals[] = $v;
+            }
+            $vals[] = $active['id'];
+            $stmt = $db->prepare('UPDATE smtp_servers SET ' . implode(', ', $sets) . ' WHERE id = ?');
+            $stmt->execute($vals);
+            $db->exec('UPDATE smtp_servers SET is_active = 0 WHERE id != ' . (int)$active['id']);
+        } elseif ($host !== '') {
+            $encodedPw = is_string($password) ? base64_encode($password) : base64_encode('');
+            $db->exec('UPDATE smtp_servers SET is_active = 0');
+            $stmt = $db->prepare('INSERT INTO smtp_servers (name, host, port, username, password, from_email, from_name, encryption, is_active, is_enabled, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, 1, ?, ?, ?)');
+            $stmt->execute([$name, $host, $port, $username, $encodedPw, $fromEmail, $fromName, $encryption, $smtpEnabled ? 1 : 0, $now, $now]);
+        }
+
+        $available = $host !== '' && $smtpEnabled;
+        $upd = $db->prepare('UPDATE addon_status SET is_enabled = ?, is_available = ?, last_check_at = ?, error_message = NULL WHERE addon_name = ?');
+        $upd->execute([$enabled ? 1 : 0, $available ? 1 : 0, $now, 'system_email']);
+
+        handleGetSystemEmailConfig();
+    } catch (Throwable $e) {
+        sendJSON(['error' => 'Failed to save System Email config: ' . $e->getMessage()], 500);
+    }
+}
+
+function handleCheckSystemEmailStatus() {
+    try {
+        $enabled = auth_email_addon_enabled();
+        $smtpReady = auth_email_smtp_ready();
+        $config = getSMTPConfig();
+        $host = trim((string)($config['host'] ?? ''));
+
+        if (!$enabled) {
+            $status = 'disabled';
+            $message = 'System Email add-on is disabled';
+        } elseif ($host === '') {
+            $status = 'not_configured';
+            $message = 'SMTP host is not configured';
+        } elseif (!$smtpReady) {
+            $status = 'unavailable';
+            $message = 'SMTP is configured but not enabled';
+        } else {
+            $status = 'available';
+            $message = 'SMTP ready for auth emails (' . $host . ')';
+        }
+
+        sendJSON([
+            'status' => $status,
+            'message' => $message,
+            'enabled' => $enabled,
+            'smtp_ready' => $smtpReady,
+            'smtp_host' => $host,
+            'notify_registration' => auth_email_flag('auth_email_notify_registration', '1'),
+            'notify_approval' => auth_email_flag('auth_email_notify_approval', '1'),
+            'password_recovery' => auth_email_flag('auth_email_password_recovery', '1'),
+            'public_url' => ln_email_public_base_url(),
+        ]);
+    } catch (Throwable $e) {
+        sendJSON([
+            'status' => 'error',
+            'message' => $e->getMessage(),
+        ], 500);
+    }
+}
+
+function handleTestSystemEmail() {
+    try {
+        $data = getJSONInput();
+        $to = trim((string)($data['to'] ?? $data['email'] ?? ''));
+        if ($to === '') {
+            global $AUTH_USER;
+            $to = trim((string)($AUTH_USER['email'] ?? ''));
+        }
+        if ($to === '' || !isValidEmailLocal($to)) {
+            sendJSON(['success' => false, 'message' => 'A valid recipient email is required'], 400);
+            return;
+        }
+
+        $config = getSMTPConfig();
+        if (empty($config['host'])) {
+            sendJSON(['success' => false, 'message' => 'SMTP is not configured. Save SMTP settings first.'], 400);
+            return;
+        }
+
+        // Force-enabled config for the test send (do not require add-on toggle)
+        $testConfig = $config;
+        $testConfig['enabled'] = '1';
+
+        $appName = getAppName() ?: 'LinkNest';
+        $result = sendEmail(
+            $to,
+            $appName . ' System Email Test',
+            ln_render_auth_smtp_test_email_text($to, $appName),
+            $testConfig,
+            [],
+            [
+                'html' => ln_render_auth_smtp_test_email_html($to, $appName),
+                'text' => ln_render_auth_smtp_test_email_text($to, $appName),
+            ]
+        );
+
+        if ($result === true) {
+            $db = getDB();
+            systemEmailEnsureAddonStatusRow($db);
+            $upd = $db->prepare('UPDATE addon_status SET is_available = 1, last_check_at = ?, error_message = NULL WHERE addon_name = ?');
+            $upd->execute([time(), 'system_email']);
+            sendJSON(['success' => true, 'message' => 'Test email sent successfully to ' . $to]);
+        } else {
+            $db = getDB();
+            systemEmailEnsureAddonStatusRow($db);
+            $msg = is_string($result) ? $result : 'Send failed';
+            $upd = $db->prepare('UPDATE addon_status SET last_check_at = ?, error_message = ? WHERE addon_name = ?');
+            $upd->execute([time(), $msg, 'system_email']);
+            sendJSON(['success' => false, 'message' => 'Failed to send test email: ' . $msg]);
+        }
+    } catch (Throwable $e) {
+        sendJSON(['success' => false, 'message' => 'Error: ' . $e->getMessage()], 500);
     }
 }

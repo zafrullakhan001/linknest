@@ -1498,14 +1498,6 @@ export const styleService = {
         font-style: ${styles.spacesTitleFontStyle} !important;
       }
       
-      .linknest-footer {
-        font-family: ${styles.footerFontFamily} !important;
-        font-size: ${styles.footerFontSize}px !important;
-        font-weight: ${styles.footerFontWeight} !important;
-        font-style: ${styles.footerFontStyle} !important;
-        color: ${styles.footerColor} !important;
-      }
-      
       /* Spaces Grid Tabs */
       ${generateSpacesTabCSS(styles, isDark)}
       

@@ -5,11 +5,13 @@ import { useSettings } from '../contexts/SettingsContext';
 import { SecurePasswordInput } from './SecurePasswordInput';
 import { PasswordCriteriaList } from './PasswordCriteriaList';
 import { validatePassword } from '../services/passwordValidation';
+import { authService } from '../services/authService';
 
 interface AuthModalProps {
   isOpen: boolean;
   onClose: () => void;
-  initialMode?: 'login' | 'register';
+  initialMode?: 'login' | 'register' | 'forgot' | 'reset';
+  resetToken?: string | null;
 }
 
 // Helper function to extract domain from LDAP base DN
@@ -109,8 +111,8 @@ function resolveDefaultAuthMethod(ldapOn: boolean, localOn: boolean, samlOn: boo
   return 'local';
 }
 
-export const AuthModal: React.FC<AuthModalProps> = ({ isOpen, onClose, initialMode = 'login' }) => {
-  const [mode, setMode] = useState<'login' | 'register'>(initialMode);
+export const AuthModal: React.FC<AuthModalProps> = ({ isOpen, onClose, initialMode = 'login', resetToken = null }) => {
+  const [mode, setMode] = useState<'login' | 'register' | 'forgot' | 'reset'>(initialMode);
   const [username, setUsername] = useState('');
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
@@ -132,6 +134,7 @@ export const AuthModal: React.FC<AuthModalProps> = ({ isOpen, onClose, initialMo
   const [currentMethod, setCurrentMethod] = useState<'ldap' | 'local' | null>(null);
   const [showHelpInfo, setShowHelpInfo] = useState(false);
   const [showPasswordResetInfo, setShowPasswordResetInfo] = useState(false);
+  const [activeResetToken, setActiveResetToken] = useState<string | null>(resetToken);
   const progressIntervalRef = useRef<NodeJS.Timeout | null>(null);
   const countdownTimerRef = useRef<NodeJS.Timeout | null>(null);
 
@@ -140,6 +143,28 @@ export const AuthModal: React.FC<AuthModalProps> = ({ isOpen, onClose, initialMo
   const localRegistrationEnabled =
     String(appSettings.local_auth_enabled || '1') === '1' &&
     String(appSettings.local_registration_enabled || '1') === '1';
+
+  useEffect(() => {
+    if (!isOpen) return;
+    if (initialMode === 'reset' && resetToken) {
+      setMode('reset');
+      setActiveResetToken(resetToken);
+      setError('');
+      setSuccess('');
+      setPassword('');
+      setConfirmPassword('');
+      return;
+    }
+    if (initialMode === 'forgot') {
+      setMode('forgot');
+      setError('');
+      setSuccess('');
+      return;
+    }
+    if (initialMode === 'register' || initialMode === 'login') {
+      setMode(initialMode);
+    }
+  }, [isOpen, initialMode, resetToken]);
 
   useEffect(() => {
     if (!isOpen || localRegistrationEnabled || mode !== 'register') return;
@@ -363,6 +388,65 @@ export const AuthModal: React.FC<AuthModalProps> = ({ isOpen, onClose, initialMo
     if (mode === 'login' && authMethod === 'saml') {
       const API_BASE = import.meta.env.VITE_API_BASE || '/api';
       window.location.href = `${API_BASE}/saml?action=login`;
+      return;
+    }
+
+    if (mode === 'forgot') {
+      setLoading(true);
+      try {
+        const trimmedEmail = email.trim();
+        if (!trimmedEmail) {
+          setError('Please enter your email address');
+          return;
+        }
+        const result = await authService.forgotPassword(trimmedEmail);
+        setSuccess(result.message);
+        setEmail('');
+      } catch (err: any) {
+        setError(err.message || 'Failed to request password reset');
+      } finally {
+        setLoading(false);
+      }
+      return;
+    }
+
+    if (mode === 'reset') {
+      setLoading(true);
+      try {
+        if (!activeResetToken) {
+          setError('Invalid or missing reset token. Request a new password reset link.');
+          return;
+        }
+        const strength = validatePassword(password);
+        if (!strength.valid) {
+          setError(strength.message || 'Password does not meet requirements');
+          return;
+        }
+        if (password !== confirmPassword) {
+          setError('Password and confirmation do not match');
+          return;
+        }
+        const result = await authService.resetPasswordWithToken(activeResetToken, password, confirmPassword);
+        setSuccess(result.message);
+        setPassword('');
+        setConfirmPassword('');
+        setActiveResetToken(null);
+        setTimeout(() => {
+          setMode('login');
+          setSuccess('');
+          try {
+            if (window.location.hash.toLowerCase().startsWith('#/reset-password')) {
+              window.location.hash = '#/signin';
+            }
+          } catch {
+            // ignore
+          }
+        }, 1500);
+      } catch (err: any) {
+        setError(err.message || 'Failed to reset password');
+      } finally {
+        setLoading(false);
+      }
       return;
     }
     
@@ -611,6 +695,14 @@ export const AuthModal: React.FC<AuthModalProps> = ({ isOpen, onClose, initialMo
                 <>
                   <span className="mr-1.5" aria-hidden>👋</span>Sign In
                 </>
+              ) : mode === 'forgot' ? (
+                <>
+                  <span className="mr-1.5" aria-hidden>🔑</span>Reset Password
+                </>
+              ) : mode === 'reset' ? (
+                <>
+                  <span className="mr-1.5" aria-hidden>🔒</span>Choose New Password
+                </>
               ) : (
                 <>
                   <span className="mr-1.5" aria-hidden>✨</span>Create Account
@@ -619,7 +711,11 @@ export const AuthModal: React.FC<AuthModalProps> = ({ isOpen, onClose, initialMo
             </h2>
             {!settingsLoading && appSettings.app_name ? (
               <p className="text-xs sm:text-sm text-slate-500 dark:text-slate-300 font-medium mt-0.5">
-                Welcome to {appSettings.app_name}
+                {mode === 'forgot'
+                  ? 'Enter your local account email to receive a reset link'
+                  : mode === 'reset'
+                    ? 'Set a new password for your local account'
+                    : `Welcome to ${appSettings.app_name}`}
               </p>
             ) : null}
           </div>
@@ -670,6 +766,86 @@ export const AuthModal: React.FC<AuthModalProps> = ({ isOpen, onClose, initialMo
         )}
 
         <form onSubmit={handleSubmit} className="space-y-3 sm:space-y-4">
+          {(mode === 'forgot' || mode === 'reset') && (
+            <>
+              {mode === 'forgot' && (
+                <div>
+                  <label className="block text-xs sm:text-sm font-medium text-slate-700 dark:text-slate-300 mb-1.5 sm:mb-2">
+                    Email
+                  </label>
+                  <input
+                    type="email"
+                    value={email}
+                    onChange={(e) => setEmail(e.target.value)}
+                    required
+                    disabled={loading}
+                    autoComplete="email"
+                    className="w-full bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-xl px-3 py-2 sm:px-4 sm:py-2.5 text-slate-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-brand-500 disabled:opacity-50 disabled:cursor-not-allowed text-sm"
+                    placeholder="Enter your account email"
+                  />
+                </div>
+              )}
+              {mode === 'reset' && (
+                <>
+                  <div>
+                    <label className="block text-xs sm:text-sm font-medium text-slate-700 dark:text-slate-300 mb-1.5 sm:mb-2">
+                      New password
+                    </label>
+                    <SecurePasswordInput
+                      value={password}
+                      onChange={(e) => setPassword(e.target.value)}
+                      required
+                      disabled={loading}
+                      autoComplete="new-password"
+                      className="w-full bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-xl px-3 py-2 sm:px-4 sm:py-2.5 text-slate-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-brand-500 disabled:opacity-50 disabled:cursor-not-allowed text-sm"
+                      placeholder="Min 8 chars, 1 upper, 1 number, 1 special"
+                    />
+                    <PasswordCriteriaList password={password} />
+                  </div>
+                  <div>
+                    <label className="block text-xs sm:text-sm font-medium text-slate-700 dark:text-slate-300 mb-1.5 sm:mb-2">
+                      Confirm password
+                    </label>
+                    <SecurePasswordInput
+                      value={confirmPassword}
+                      onChange={(e) => setConfirmPassword(e.target.value)}
+                      required
+                      disabled={loading}
+                      autoComplete="new-password"
+                      className="w-full bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-xl px-3 py-2 sm:px-4 sm:py-2.5 text-slate-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-brand-500 disabled:opacity-50 disabled:cursor-not-allowed text-sm"
+                      placeholder="Re-enter your new password"
+                    />
+                  </div>
+                </>
+              )}
+              <div className="flex gap-2 sm:gap-3 pt-1">
+                <button
+                  type="button"
+                  onClick={() => {
+                    setMode('login');
+                    setError('');
+                    setSuccess('');
+                    setPassword('');
+                    setConfirmPassword('');
+                    setActiveResetToken(null);
+                  }}
+                  className="px-4 sm:px-6 py-2.5 sm:py-3 bg-white dark:bg-slate-700 border border-slate-300 dark:border-slate-600 text-slate-700 dark:text-slate-300 rounded-xl font-medium hover:bg-slate-50 dark:hover:bg-slate-600 transition-colors text-xs sm:text-sm"
+                >
+                  Back to Sign In
+                </button>
+                <button
+                  type="submit"
+                  disabled={loading}
+                  className="auth-modal-btn-shimmer flex-1 disabled:opacity-50 disabled:cursor-not-allowed text-white px-4 sm:px-6 py-2.5 rounded-xl font-semibold transition-all shadow-lg shadow-brand-500/30 hover:shadow-brand-500/45 hover:-translate-y-0.5 active:translate-y-0 text-xs sm:text-sm"
+                >
+                  {loading ? 'Please wait...' : mode === 'forgot' ? 'Send reset link' : 'Update password'}
+                </button>
+              </div>
+            </>
+          )}
+
+          {(mode === 'login' || mode === 'register') && (
+          <>
           {mode === 'login' && (localAuthEnabled || samlEnabled || ldapEnabled) && (
             <>
               {/* Authentication Method Selection */}
@@ -1096,6 +1272,8 @@ export const AuthModal: React.FC<AuthModalProps> = ({ isOpen, onClose, initialMo
                   : '✨ Create Account'}
             </button>
           </div>
+          </>
+          )}
         </form>
 
         {mode === 'login' && (
@@ -1105,7 +1283,10 @@ export const AuthModal: React.FC<AuthModalProps> = ({ isOpen, onClose, initialMo
               <button
                 type="button"
                 onClick={() => {
-                  setError('Password reset functionality coming soon. Please contact your administrator.');
+                  setMode('forgot');
+                  setError('');
+                  setSuccess('');
+                  setEmail('');
                 }}
                 className="text-xs sm:text-sm text-brand-600 dark:text-brand-400 hover:underline font-medium"
               >
@@ -1139,7 +1320,7 @@ export const AuthModal: React.FC<AuthModalProps> = ({ isOpen, onClose, initialMo
                       <p>🏢 LDAP Users: Use your enterprise password reset option</p>
                     )}
                     {localAuthEnabled && (
-                      <p>👤 Local Accounts: Click above to reset via email</p>
+                      <p>👤 Local Accounts: Use Forgot password above to receive a reset email (requires System Email SMTP)</p>
                     )}
                   </div>
                 )}
@@ -1158,7 +1339,7 @@ export const AuthModal: React.FC<AuthModalProps> = ({ isOpen, onClose, initialMo
           </div>
         )}
 
-        {(mode === 'register' || localRegistrationEnabled) && (
+        {(mode === 'register' || (mode === 'login' && localRegistrationEnabled)) && (
         <div className="mt-3 sm:mt-4 text-center">
           <button
             type="button"

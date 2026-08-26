@@ -1,6 +1,5 @@
 import React, { useEffect, useState } from 'react';
-import { settingsService } from '../services/settingsService';
-import { AppSettings } from '../services/settingsService';
+import { settingsService, AppSettings, applyAuthMethodToggle, isAuthMethodEnabled, countEnabledAuthMethods, AUTH_METHOD_KEEP_ONE_WARNING } from '../services/settingsService';
 import { WizardNavButton } from './AccessWizardShell';
 
 interface SamlConfigModalProps {
@@ -39,6 +38,7 @@ const toggleTrackClassName =
 const DEFAULT_SETTINGS: Partial<AppSettings> = {
   saml_enabled: '0',
   local_auth_enabled: '1',
+  ldap_enabled: '0',
   sp_entity_id: '',
   sp_assertion_consumer_service: '',
   sp_single_logout_service: '',
@@ -78,6 +78,7 @@ const SamlConfigModal: React.FC<SamlConfigModalProps> = ({ isOpen, onClose }) =>
           ...DEFAULT_SETTINGS,
           saml_enabled: result.saml_enabled || '0',
           local_auth_enabled: result.local_auth_enabled || '1',
+          ldap_enabled: result.ldap_enabled || '0',
           sp_entity_id: result.sp_entity_id || '',
           sp_assertion_consumer_service: result.sp_assertion_consumer_service || '',
           sp_single_logout_service: result.sp_single_logout_service || '',
@@ -327,9 +328,10 @@ const SamlConfigModal: React.FC<SamlConfigModalProps> = ({ isOpen, onClose }) =>
     checked: boolean,
     onChange: (checked: boolean) => void,
     iconBg: string,
-    icon: React.ReactNode
+    icon: React.ReactNode,
+    disabled = false
   ) => (
-    <div className={cardClassName}>
+    <div className={`${cardClassName} ${disabled ? 'opacity-90' : ''}`}>
       <div className="flex items-center justify-between gap-4">
         <div className="flex items-center gap-3 min-w-0">
           <div className={`w-10 h-10 rounded-lg flex items-center justify-center shrink-0 ${iconBg}`}>
@@ -340,11 +342,12 @@ const SamlConfigModal: React.FC<SamlConfigModalProps> = ({ isOpen, onClose }) =>
             <p className="text-xs text-slate-500 dark:text-slate-400">{description}</p>
           </div>
         </div>
-        <label className="relative inline-flex items-center cursor-pointer shrink-0">
+        <label className={`relative inline-flex items-center shrink-0 ${disabled ? 'cursor-not-allowed' : 'cursor-pointer'}`}>
           <input
             type="checkbox"
             className="sr-only peer"
             checked={checked}
+            disabled={disabled}
             onChange={(e) => onChange(e.target.checked)}
           />
           <div className={toggleTrackClassName}></div>
@@ -352,6 +355,17 @@ const SamlConfigModal: React.FC<SamlConfigModalProps> = ({ isOpen, onClose }) =>
       </div>
     </div>
   );
+
+  const setAuthMethod = (key: 'local_auth_enabled' | 'ldap_enabled' | 'saml_enabled', checked: boolean) => {
+    setSettings((prev) => {
+      const patch = applyAuthMethodToggle(prev as AppSettings, key, checked);
+      if (!patch) {
+        alert(AUTH_METHOD_KEEP_ONE_WARNING);
+        return prev;
+      }
+      return { ...prev, ...patch };
+    });
+  };
 
   const renderServiceProviderTab = () => (
     <div className="space-y-5">
@@ -502,23 +516,40 @@ const SamlConfigModal: React.FC<SamlConfigModalProps> = ({ isOpen, onClose }) =>
         Control which authentication methods are enabled for your application. Users will see enabled options on the login page.
       </div>
 
-      <div className="space-y-3">
-        {renderToggleRow(
-          'SAML 2.0 Authentication',
-          'Enterprise single sign-on',
-          settings.saml_enabled === '1',
-          (checked) => setSettings((s) => ({ ...s, saml_enabled: checked ? '1' : '0' })),
-          'bg-sky-100 dark:bg-sky-900/40 text-sky-700 dark:text-sky-200',
-          <span className="text-lg" aria-hidden>🔐</span>
-        )}
+      <div className="rounded-xl border border-amber-200 dark:border-amber-800/60 bg-amber-50/80 dark:bg-amber-950/30 px-4 py-3 text-sm text-amber-900 dark:text-amber-100">
+        <span className="mr-1.5" aria-hidden>⚠️</span>
+        {AUTH_METHOD_KEEP_ONE_WARNING} At least one method must stay on.
+      </div>
 
+      <div className="space-y-3">
         {renderToggleRow(
           'Local Authentication',
           'Username and password login',
-          settings.local_auth_enabled === '1',
-          (checked) => setSettings((s) => ({ ...s, local_auth_enabled: checked ? '1' : '0' })),
+          isAuthMethodEnabled(settings, 'local_auth_enabled'),
+          (checked) => setAuthMethod('local_auth_enabled', checked),
           'bg-sky-100 dark:bg-sky-900/40 text-sky-700 dark:text-sky-200',
-          <span className="text-lg" aria-hidden>👤</span>
+          <span className="text-lg" aria-hidden>👤</span>,
+          isAuthMethodEnabled(settings, 'local_auth_enabled') && countEnabledAuthMethods(settings) === 1
+        )}
+
+        {renderToggleRow(
+          'LDAP Authentication',
+          'Enterprise directory / Active Directory',
+          isAuthMethodEnabled(settings, 'ldap_enabled'),
+          (checked) => setAuthMethod('ldap_enabled', checked),
+          'bg-sky-100 dark:bg-sky-900/40 text-sky-700 dark:text-sky-200',
+          <span className="text-lg" aria-hidden>🏢</span>,
+          isAuthMethodEnabled(settings, 'ldap_enabled') && countEnabledAuthMethods(settings) === 1
+        )}
+
+        {renderToggleRow(
+          'SAML 2.0 Authentication',
+          'Enterprise single sign-on',
+          isAuthMethodEnabled(settings, 'saml_enabled'),
+          (checked) => setAuthMethod('saml_enabled', checked),
+          'bg-sky-100 dark:bg-sky-900/40 text-sky-700 dark:text-sky-200',
+          <span className="text-lg" aria-hidden>🔐</span>,
+          isAuthMethodEnabled(settings, 'saml_enabled') && countEnabledAuthMethods(settings) === 1
         )}
       </div>
     </div>

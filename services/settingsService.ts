@@ -109,6 +109,12 @@ export interface AppSettings {
   qr_branding_mode?: 'favicon' | 'emoji';
   qr_branding_emoji?: string;
   footer_text?: string; // Footer text displayed at the bottom of pages
+  footer_font_size?: string;
+  footer_font_family?: string;
+  footer_font_weight?: string;
+  footer_font_style?: string;
+  footer_font_color?: string;
+  footer_font_color_dark?: string;
   guest_access_enabled?: string; // '0' or '1' - controls whether guests can view spaces
   /** '0' or '1' - when '0', hide Sign up on the login dialog and reject POST /auth/register. Admins can still create local users. */
   local_registration_enabled?: string;
@@ -216,6 +222,54 @@ export function isSignInButtonVisible(
   return settings?.signin_button_enabled === '1';
 }
 
+export type AuthMethodToggleKey = 'local_auth_enabled' | 'ldap_enabled' | 'saml_enabled';
+
+export const AUTH_METHOD_KEEP_ONE_WARNING =
+  'Keep at least one sign-in method enabled (Local, LDAP, or SAML) so you can still access the system.';
+
+export function isAuthMethodEnabled(
+  settings: Pick<AppSettings, AuthMethodToggleKey> | null | undefined,
+  key: AuthMethodToggleKey
+): boolean {
+  if (key === 'local_auth_enabled') {
+    return settings?.local_auth_enabled !== '0';
+  }
+  return settings?.[key] === '1';
+}
+
+export function countEnabledAuthMethods(
+  settings: Pick<AppSettings, AuthMethodToggleKey> | null | undefined
+): number {
+  return (
+    (isAuthMethodEnabled(settings, 'local_auth_enabled') ? 1 : 0) +
+    (isAuthMethodEnabled(settings, 'ldap_enabled') ? 1 : 0) +
+    (isAuthMethodEnabled(settings, 'saml_enabled') ? 1 : 0)
+  );
+}
+
+/**
+ * Apply an auth-method on/off change. Returns null when turning off the last remaining method.
+ */
+export function applyAuthMethodToggle(
+  settings: Pick<AppSettings, AuthMethodToggleKey>,
+  key: AuthMethodToggleKey,
+  enable: boolean
+): Partial<AppSettings> | null {
+  if (enable) {
+    return { [key]: '1' };
+  }
+  const next: Pick<AppSettings, AuthMethodToggleKey> = {
+    local_auth_enabled: settings.local_auth_enabled,
+    ldap_enabled: settings.ldap_enabled,
+    saml_enabled: settings.saml_enabled,
+    [key]: '0',
+  };
+  if (countEnabledAuthMethods(next) < 1) {
+    return null;
+  }
+  return { [key]: '0' };
+}
+
 export const settingsService = {
   async getSettings(noCache: boolean = false): Promise<AppSettings> {
     const url = `${API_BASE}/settings${noCache ? '?_t=' + Date.now() : ''}`;
@@ -303,6 +357,12 @@ export const settingsService = {
       qr_branding_mode: data.settings?.qr_branding_mode === 'emoji' ? 'emoji' : 'favicon',
       qr_branding_emoji: data.settings?.qr_branding_emoji || '❤️',
       footer_text: data.settings?.footer_text || '© 2025 Adventhealth - Designed and developed by AIT Architecture team',
+      footer_font_size: data.settings?.footer_font_size || '14',
+      footer_font_family: data.settings?.footer_font_family || 'inherit',
+      footer_font_weight: data.settings?.footer_font_weight || 'normal',
+      footer_font_style: data.settings?.footer_font_style || 'normal',
+      footer_font_color: data.settings?.footer_font_color || '',
+      footer_font_color_dark: data.settings?.footer_font_color_dark || '',
       guest_access_enabled: data.settings?.guest_access_enabled || '1', // Default to enabled
       local_registration_enabled: data.settings?.local_registration_enabled || '1', // Default to enabled
       signin_button_enabled: data.settings?.signin_button_enabled || '1', // Default to show Sign In

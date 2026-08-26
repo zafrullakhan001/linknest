@@ -156,6 +156,36 @@ export const authService = {
     return { pending: data.pending || false, message: data.message };
   },
 
+  async forgotPassword(email: string): Promise<{ success: boolean; message: string }> {
+    const response = await fetch(`${API_BASE}/auth/forgot-password`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      credentials: 'include',
+      body: JSON.stringify({ email }),
+    });
+    const data = await response.json();
+    if (!response.ok) {
+      throw new Error(data.error || 'Failed to request password reset');
+    }
+    return { success: !!data.success, message: data.message || 'If an account with that email exists, a password reset link has been sent.' };
+  },
+
+  async resetPasswordWithToken(token: string, newPassword: string, confirmPassword?: string): Promise<{ success: boolean; message: string }> {
+    const body: Record<string, string> = { token, new_password: newPassword };
+    if (confirmPassword !== undefined) body.confirm_password = confirmPassword;
+    const response = await fetch(`${API_BASE}/auth/reset-password-with-token`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      credentials: 'include',
+      body: JSON.stringify(body),
+    });
+    const data = await response.json();
+    if (!response.ok) {
+      throw new Error(data.error || 'Failed to reset password');
+    }
+    return { success: !!data.success, message: data.message || 'Password updated successfully.' };
+  },
+
   async login(username: string, password: string, authMethod?: 'local' | 'ldap' | 'auto', rememberMe?: boolean, ldapServerIndex?: number, signal?: AbortSignal): Promise<User> {
     const body: any = { username, password, auth_method: authMethod, remember_me: rememberMe || false };
     if (ldapServerIndex !== undefined && ldapServerIndex !== null) {

@@ -388,7 +388,7 @@ export const HelpAboutDialog: React.FC<HelpAboutDialogProps> = ({
                   <div className="bg-emerald-50 dark:bg-emerald-900/20 rounded-lg p-4 space-y-2 border border-emerald-200 dark:border-emerald-800">
                     <p className="font-medium text-emerald-900 dark:text-emerald-100">Guides tab:</p>
                     <p className="text-sm">
-                      Open the <strong>Guides</strong> tab in this dialog for searchable in-app docs (MCP / AI, Your Bookmarks, Bookmark Sync Extension, setup, architecture, App Updates, Docker deployment &amp; database, SSH / VNC, Package for Deployment, Vanilla Apache + PHP 8.5, and more). Start with <strong>MCP / AI</strong> to let Cursor or Claude create spaces and links, <strong>Your Bookmarks</strong> or <strong>Bookmark Sync Extension</strong> for guest bookmark Sync / OutSync, or App Updates / Docker Deployment / Architecture for admin workflows.
+                      Open the <strong>Guides</strong> tab in this dialog for searchable in-app docs (MCP / AI, Your Bookmarks, Bookmark Sync Extension, setup, architecture, App Updates, Docker deployment &amp; database, Admin password &amp; lockout recovery, SSH / VNC, Package for Deployment, Vanilla Apache + PHP 8.5, and more). Start with <strong>MCP / AI</strong> to let Cursor or Claude create spaces and links, <strong>Your Bookmarks</strong> or <strong>Bookmark Sync Extension</strong> for guest bookmark Sync / OutSync, <strong>Admin Password &amp; Lockout Recovery</strong> if you cannot sign in, or App Updates / Docker Deployment / Architecture for admin workflows.
                     </p>
                   </div>
                 </div>
@@ -619,6 +619,13 @@ export const HelpAboutDialog: React.FC<HelpAboutDialogProps> = ({
                     <h4 className="font-semibold text-slate-900 dark:text-white mb-2">Access Manager</h4>
                     <p className="text-sm text-slate-700 dark:text-slate-300">
                       Clear access tools for roles (what people can see), teams (shared roles), and space editors (who can edit specific spaces). Fine-tune permissions control add, edit, and delete actions. Built for admins who should not need a training manual.
+                    </p>
+                  </div>
+                  <div className="bg-slate-50 dark:bg-slate-900/50 rounded-lg p-4">
+                    <h4 className="font-semibold text-slate-900 dark:text-white mb-2">Sign-in &amp; Lockout Recovery</h4>
+                    <p className="text-sm text-slate-700 dark:text-slate-300">
+                      Toggle Local, LDAP, and SAML under Settings → Access → Sign-in (at least one stays on). If Local auth is off or the admin password is lost, run{' '}
+                      <code className="text-xs bg-slate-200 dark:bg-slate-800 px-1 rounded">scripts/reset_admin_password.php</code> on the server — Help → Admin password &amp; lockout recovery / Guides → Admin Password &amp; Lockout Recovery.
                     </p>
                   </div>
                   <div className="bg-slate-50 dark:bg-slate-900/50 rounded-lg p-4">
@@ -1881,9 +1888,10 @@ docker\\docker-sync-database.bat -Direction Out -HostBasePath "/ArchLinks"`}</pr
                     <li>Schedule maintenance windows to suppress monitoring alerts</li>
                     <li>Pause/resume email notifications globally when needed</li>
                     <li>Use SAML/SSO for enterprise Single Sign-On authentication (admin only)</li>
+                    <li>Locked out of local admin? Run <code className="text-xs">scripts/reset_admin_password.php</code> on the server (re-enables Local auth + resets password) — Help → Admin password &amp; lockout recovery / Guides → Admin Password &amp; Lockout Recovery</li>
                     <li>Control tab visibility to show/hide specific tabs application-wide (admin only)</li>
                     <li>Send broadcast messages that scroll across the application (admin only)</li>
-                    <li>Open the <strong>Guides</strong> tab for searchable docs (Your Bookmarks, Architecture, App Updates, Package for Deployment, Windows Bootstrap Bundles, Vanilla Apache + PHP 8.5, XAMPP PHP upgrade, deployment, and more)</li>
+                    <li>Open the <strong>Guides</strong> tab for searchable docs (Your Bookmarks, Architecture, App Updates, Admin Password &amp; Lockout Recovery, Package for Deployment, Windows Bootstrap Bundles, Vanilla Apache + PHP 8.5, XAMPP PHP upgrade, deployment, and more)</li>
                   </ul>
                 </div>
               </section>
@@ -1928,6 +1936,60 @@ docker\\docker-sync-database.bat -Direction Out -HostBasePath "/ArchLinks"`}</pr
               <section>
                 <h3 className="text-xl font-semibold text-slate-900 dark:text-white mb-3 flex items-center gap-2">
                   <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor" className="w-5 h-5 text-brand-600 dark:text-brand-400">
+                    <path fillRule="evenodd" d="M10 1a4.5 4.5 0 00-4.5 4.5V9H5a2 2 0 00-2 2v6a2 2 0 002 2h10a2 2 0 002-2v-6a2 2 0 00-2-2h-.5V5.5A4.5 4.5 0 0010 1zm3 8V5.5a3 3 0 10-6 0V9h6z" clipRule="evenodd" />
+                  </svg>
+                  Admin password &amp; lockout recovery
+                </h3>
+                <div className="space-y-3 text-slate-700 dark:text-slate-300">
+                  <p>
+                    If you cannot sign in as a local administrator — forgotten password, or <strong>Local authentication</strong> turned off —
+                    recover from the server with <code className="text-sm bg-slate-100 dark:bg-slate-800 px-1 rounded">scripts/reset_admin_password.php</code>.
+                    Full walkthrough: <strong>Guides → Admin Password &amp; Lockout Recovery</strong>. The same steps appear under{' '}
+                    <strong>Admin → Settings → Access → Sign-in → Lockout recovery</strong>.
+                  </p>
+                  <div className="bg-rose-50 dark:bg-rose-900/20 rounded-lg p-4 space-y-2 border border-rose-200 dark:border-rose-800/50">
+                    <p className="font-medium text-rose-900 dark:text-rose-100">When to use it:</p>
+                    <ul className="list-disc list-inside space-y-1 ml-2 text-sm">
+                      <li>Local admin password forgotten or unknown</li>
+                      <li><strong>Local authentication</strong> was switched off and you cannot use LDAP/SAML either</li>
+                      <li>SSO is broken and you need Local auth back on to reach the Admin UI</li>
+                    </ul>
+                  </div>
+                  <div className="bg-emerald-50 dark:bg-emerald-900/20 rounded-lg p-4 space-y-2 border border-emerald-200 dark:border-emerald-800/50">
+                    <p className="font-medium text-emerald-900 dark:text-emerald-100">What the script does (one command):</p>
+                    <ol className="list-decimal list-inside space-y-1 ml-2 text-sm">
+                      <li>Enables Local authentication (<code className="bg-white dark:bg-slate-800 px-1 rounded text-xs">local_auth_enabled = 1</code>) if it was off</li>
+                      <li>Clears cached public settings so the login dialog shows Local auth again</li>
+                      <li>Resets the local admin password hash</li>
+                    </ol>
+                  </div>
+                  <div className="bg-slate-50 dark:bg-slate-900/50 rounded-lg p-4 space-y-2">
+                    <p className="font-medium text-slate-900 dark:text-white">Examples:</p>
+                    <p className="text-xs font-semibold text-slate-600 dark:text-slate-400 mb-1">Windows / XAMPP</p>
+                    <pre className="text-[11px] sm:text-xs leading-relaxed overflow-x-auto rounded-lg bg-slate-900 text-emerald-300 border border-slate-700 px-3 py-3 font-mono mb-3">{`cd C:\\xampp\\htdocs\\linknest
+php scripts\\reset_admin_password.php admin "NewStrongPass1!"`}</pre>
+                    <p className="text-xs font-semibold text-slate-600 dark:text-slate-400 mb-1">Linux / Docker</p>
+                    <pre className="text-[11px] sm:text-xs leading-relaxed overflow-x-auto rounded-lg bg-slate-900 text-sky-300 border border-slate-700 px-3 py-3 font-mono">{`cd /var/www/linknest
+php scripts/reset_admin_password.php admin 'NewStrongPass1!'`}</pre>
+                    <p className="text-xs text-slate-500 dark:text-slate-400 mt-2">
+                      Replace <code className="bg-slate-200 dark:bg-slate-800 px-1 rounded">admin</code> with your local admin username if different. Works for <strong>local</strong> accounts only — not LDAP/SAML passwords.
+                    </p>
+                  </div>
+                  <div className="bg-amber-50 dark:bg-amber-900/20 rounded-lg p-4 space-y-2 border border-amber-200 dark:border-amber-800/50">
+                    <p className="font-medium text-amber-900 dark:text-amber-100">After you regain access:</p>
+                    <ul className="list-disc list-inside space-y-1 ml-2 text-sm">
+                      <li>Sign in with Local authentication and the new password</li>
+                      <li>Check <strong>Admin → Settings → Access → Sign-in</strong> (keep at least one method on)</li>
+                      <li>Change the temporary password again from your profile</li>
+                      <li>On production, restrict or remove the recovery script after use</li>
+                    </ul>
+                  </div>
+                </div>
+              </section>
+
+              <section>
+                <h3 className="text-xl font-semibold text-slate-900 dark:text-white mb-3 flex items-center gap-2">
+                  <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor" className="w-5 h-5 text-brand-600 dark:text-brand-400">
                     <path fillRule="evenodd" d="M18 10a8 8 0 11-16 0 8 8 0 0116 0zm-7-4a1 1 0 11-2 0 1 1 0 012 0zM9 9a.75.75 0 000 1.5h.253a.25.25 0 01.244.304l-.459 2.066A1.75 1.75 0 0010.747 15H11a.75.75 0 000-1.5h-.253a.25.25 0 01-.244-.304l.459-2.066A1.75 1.75 0 009.253 9H9z" clipRule="evenodd" />
                   </svg>
                   Administrator Features
@@ -1948,7 +2010,8 @@ docker\\docker-sync-database.bat -Direction Out -HostBasePath "/ArchLinks"`}</pr
                       <li><strong>Space editors:</strong> Let people or teams edit specific spaces without full admin rights</li>
                       <li><strong>Fine-tune permissions:</strong> Control what space editors can add, edit, or delete</li>
                       <li><strong>Assign access:</strong> Add, replace, or remove roles for people or teams in bulk</li>
-                      <li><strong>Branding &amp; Settings:</strong> App name, logos, favicon, header logo, fonts, QR branding, footer, guest access, and global short URL rotation</li>
+                      <li><strong>Branding &amp; Settings:</strong> App name, logos, favicon, header logo, fonts, QR branding, footer, guest access, Sign-in methods (Local / LDAP / SAML), and global short URL rotation</li>
+                      <li><strong>Lockout recovery:</strong> If Local auth is off or the admin password is lost, use <code className="text-xs bg-white dark:bg-slate-800 px-1 rounded">scripts/reset_admin_password.php</code> (enables Local auth + resets password) — Help → Admin password &amp; lockout recovery / Guides → Admin Password &amp; Lockout Recovery</li>
                       <li><strong>Style Management:</strong> Create style profiles, page backgrounds, and switch themes instantly</li>
                       <li><strong>App Updates:</strong> Check GitHub commits/releases, preview changes, apply with DB backup, and roll back</li>
                       <li><strong>Add-ons:</strong> Enable Performance Analytics and Monitorv2 (PostgreSQL), test connections, and manage retention</li>
@@ -1996,6 +2059,7 @@ docker\\docker-sync-database.bat -Direction Out -HostBasePath "/ArchLinks"`}</pr
                 <h3 className="text-xl font-semibold text-slate-900 dark:text-white mb-3">What&apos;s New in 2.2.0</h3>
                 <div className="bg-emerald-50 dark:bg-emerald-900/20 rounded-lg p-4 space-y-2 text-sm text-slate-700 dark:text-slate-300">
                   <ul className="list-disc list-inside space-y-1 ml-2">
+                    <li><strong>Sign-in methods &amp; lockout recovery:</strong> Toggle Local / LDAP / SAML under Admin → Settings → Access → Sign-in (at least one stays on). If Local auth is off or the admin password is lost, <code className="text-xs bg-slate-200 dark:bg-slate-800 px-1 rounded">scripts/reset_admin_password.php</code> re-enables Local auth and resets the password — Help → Admin password &amp; lockout recovery / Guides → Admin Password &amp; Lockout Recovery</li>
                     <li><strong>MCP / AI:</strong> Admin tokens let Cursor, Claude Desktop, and other MCP clients list spaces, search links, create or edit bookmarks, and (with admin scope) manage users, roles, LDAP/SAML, Device Presets, and database export/import. Copy-ready statements: Admin → MCP / AI → Example prompts — Help → MCP / AI / Guides → MCP / AI</li>
                     <li><strong>Mobile Link Preview:</strong> Phone action on Quick Links opens an in-app device mockup (phone / tablet / watch) or a device-sized window for DevTools testing</li>
                     <li><strong>In-app App Updates:</strong> Check GitHub commits/releases, preview changes, apply with DB backup, and roll back from Admin (XAMPP installs). Office tip: publish a <strong>portable Release</strong> (default relative base) and apply the same Release on ArchLinks and ERP3 — see Help → In-app App Updates</li>
@@ -2004,7 +2068,7 @@ docker\\docker-sync-database.bat -Direction Out -HostBasePath "/ArchLinks"`}</pr
                     <li><strong>Package for Deployment:</strong> <code className="text-xs bg-slate-200 dark:bg-slate-800 px-1 rounded">package-for-deployment.bat</code> builds a full XAMPP ZIP with SQLite runtime, remote-widget binaries, and optional DB/uploads flags</li>
                     <li><strong>Docker database sync:</strong> <code className="text-xs bg-slate-200 dark:bg-slate-800 px-1 rounded">docker\docker-sync-database.bat</code> copies SQLite + uploads in or out of the container (<code className="text-xs">-Direction Out</code>, <code className="text-xs">-DatabaseOnly</code>, <code className="text-xs">-UploadsOnly</code>)</li>
                     <li><strong>Bookmark Sync extension:</strong> Origin allowlist, Bookmark sync Off by default, same-origin messages, per-browser-profile isolation, and OutSync (app → Other Bookmarks → LinkNest) — Help → Guides → Bookmark Sync Extension</li>
-                    <li><strong>Guides tab:</strong> Searchable in-app documentation (MCP / AI, Your Bookmarks, Bookmark Sync Extension, Architecture, App Updates, Docker Deployment, Package for Deployment, Windows Bootstrap Bundles, Vanilla Apache + PHP 8.5, XAMPP PHP upgrade, SSH / VNC Manual Deployment, SSH Session Shared Worker, Remote Widgets Setup, and more)</li>
+                    <li><strong>Guides tab:</strong> Searchable in-app documentation (MCP / AI, Your Bookmarks, Bookmark Sync Extension, Architecture, App Updates, Admin Password &amp; Lockout Recovery, Docker Deployment, Package for Deployment, Windows Bootstrap Bundles, Vanilla Apache + PHP 8.5, XAMPP PHP upgrade, SSH / VNC Manual Deployment, SSH Session Shared Worker, Remote Widgets Setup, and more)</li>
                     <li><strong>SSH sessions across refresh:</strong> SharedWorker in browser memory keeps live SSH sockets through page reload; close the widget to disconnect — Help → SSH sessions across refresh / Guides → SSH Session Shared Worker</li>
                     <li><strong>SSH / VNC manual deploy:</strong> Online, air-gapped runtime pack, HTTPS WSS proxy, Easy mode, <code className="text-xs bg-slate-200 dark:bg-slate-800 px-1 rounded">ssh://</code> / <code className="text-xs bg-slate-200 dark:bg-slate-800 px-1 rounded">vnc://</code> space links — Help and Guides</li>
                     <li><strong>QR sharing:</strong> Branded QR codes for the app URL and spaces (desktop + mobile)</li>
@@ -2114,6 +2178,8 @@ docker\\docker-sync-database.bat -Direction Out -HostBasePath "/ArchLinks"`}</pr
                     'LDAP Directory User Details',
                     'LDAP Short-Name User Search',
                     'SAML/SSO Authentication',
+                    'Sign-in Method Toggles (Local / LDAP / SAML)',
+                    'Admin Password & Lockout Recovery Script',
                     'Admin Panel',
                     'Admin Change Local Password',
                     'Branding (Logo, Favicon, Header Logo)',

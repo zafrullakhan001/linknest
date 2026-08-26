@@ -1,7 +1,7 @@
 import React, { useState, useEffect, useMemo, useRef } from 'react';
 import { createPortal } from 'react-dom';
 import { authService, PendingUser, AllUser, LdapUserDetail } from '../services/authService';
-import { settingsService, AppSettings, SEMI_PWA_EXCLUDE_PATHS_DEFAULT } from '../services/settingsService';
+import { settingsService, AppSettings, SEMI_PWA_EXCLUDE_PATHS_DEFAULT, applyAuthMethodToggle, isAuthMethodEnabled, countEnabledAuthMethods, AUTH_METHOD_KEEP_ONE_WARNING, AuthMethodToggleKey } from '../services/settingsService';
 import { databaseService } from '../services/databaseService';
 import { useSettings, resolvePageTitle, resolveBrandedAssetHref } from '../contexts/SettingsContext';
 import { BrandingFontFamilyOptions } from './BrandingFontFamilyOptions';
@@ -245,6 +245,21 @@ const ADMIN_SUBTAB_INACTIVE =
 const ADMIN_TOGGLE_TRACK =
   'w-11 h-6 bg-slate-200 peer-focus:outline-none peer-focus:ring-4 peer-focus:ring-sky-300 dark:peer-focus:ring-sky-800 rounded-full peer dark:bg-slate-700 peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[\'\'] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-slate-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all dark:border-slate-600 peer-checked:bg-sky-600';
 
+function applyAuthMethodSettingChange(
+  current: AppSettings,
+  key: AuthMethodToggleKey,
+  enable: boolean,
+  setSettings: React.Dispatch<React.SetStateAction<AppSettings>>
+): boolean {
+  const patch = applyAuthMethodToggle(current, key, enable);
+  if (!patch) {
+    alert(AUTH_METHOD_KEEP_ONE_WARNING);
+    return false;
+  }
+  setSettings({ ...current, ...patch });
+  return true;
+}
+
 function authSourceSelectClass(source?: string): string {
   const normalized = (source || 'local').toLowerCase();
   const color =
@@ -388,10 +403,19 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({ onUserApproved }) => {
     qr_branding_mode: 'favicon',
     qr_branding_emoji: '❤️',
     footer_text: '© 2025 Adventhealth - Designed and developed by AIT Architecture team',
+    footer_font_size: '14',
+    footer_font_family: 'inherit',
+    footer_font_weight: 'normal',
+    footer_font_style: 'normal',
+    footer_font_color: '',
+    footer_font_color_dark: '',
     show_database_path_in_footer: '1',
     guest_access_enabled: '1',
     local_registration_enabled: '1',
     signin_button_enabled: '1',
+    local_auth_enabled: '1',
+    ldap_enabled: '0',
+    saml_enabled: '0',
     public_tile_animation: DEFAULT_TILE_ANIMATION,
     disabled_tabs: '[]',
     device_presets: '',
@@ -408,7 +432,15 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({ onUserApproved }) => {
     if (localStorage.getItem('adminPanelActiveTab') === 'footer') return 'branding';
     const saved = localStorage.getItem('adminSettingsSubTab');
     if (saved === 'general') return 'hero'; // migrate old General tab id
+    // Migrate former top-level Sign-in tab into Access → Sign-in
+    if (saved === 'signin') return 'access';
     return saved === 'hero' || saved === 'access' || saved === 'branding' || saved === 'shortUrls' ? saved : 'branding';
+  });
+  const [accessInnerTab, setAccessInnerTab] = useState<'guest' | 'signin'>(() => {
+    const savedOuter = localStorage.getItem('adminSettingsSubTab');
+    const savedInner = localStorage.getItem('adminAccessInnerTab');
+    if (savedOuter === 'signin' || savedInner === 'signin') return 'signin';
+    return 'guest';
   });
   const [adminPasswordModal, setAdminPasswordModal] = useState(false);
   const [currentPassword, setCurrentPassword] = useState('');
@@ -1422,6 +1454,10 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({ onUserApproved }) => {
   useEffect(() => {
     localStorage.setItem('adminSettingsSubTab', settingsSubTab);
   }, [settingsSubTab]);
+
+  useEffect(() => {
+    localStorage.setItem('adminAccessInnerTab', accessInnerTab);
+  }, [accessInnerTab]);
 
   // Persist accessSubTab to localStorage whenever it changes
   useEffect(() => {
@@ -6915,7 +6951,9 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({ onUserApproved }) => {
                               type="checkbox"
                               className="sr-only peer"
                               checked={settings.ldap_enabled === '1'}
-                              onChange={(e) => setSettings({ ...settings, ldap_enabled: e.target.checked ? '1' : '0' })}
+                              onChange={(e) => {
+                                applyAuthMethodSettingChange(settings, 'ldap_enabled', e.target.checked, setSettings);
+                              }}
                             />
                             {isMobile ? (
                               // Mobile: Larger toggle with better touch target
@@ -8875,8 +8913,11 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({ onUserApproved }) => {
                               className="sr-only peer"
                               checked={settings.saml_enabled === '1'}
                               onChange={async (e) => {
-                                const newValue = e.target.checked ? '1' : '0';
-                                setSettings({ ...settings, saml_enabled: newValue });
+                                const wantEnable = e.target.checked;
+                                if (!applyAuthMethodSettingChange(settings, 'saml_enabled', wantEnable, setSettings)) {
+                                  return;
+                                }
+                                const newValue = wantEnable ? '1' : '0';
 
                                 // Auto-save the setting
                                 try {
@@ -8892,7 +8933,7 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({ onUserApproved }) => {
                                   setSettingsSaving(false);
                                 }
                               }}
-                              disabled={settingsSaving}
+                              disabled={settingsSaving || (settings.saml_enabled === '1' && countEnabledAuthMethods(settings) === 1)}
                             />
                             <div className="w-11 h-6 bg-slate-200 peer-focus:outline-none peer-focus:ring-4 peer-focus:ring-sky-300 dark:peer-focus:ring-sky-800 rounded-full peer dark:bg-slate-700 peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all dark:border-gray-600 peer-checked:bg-sky-600 peer-disabled:opacity-50"></div>
                             <span className="ml-3 text-sm font-medium text-slate-900 dark:text-slate-300">
@@ -12215,7 +12256,7 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({ onUserApproved }) => {
                                 </label>
                                 <textarea
                                   value={settings.footer_text || '© 2025 Adventhealth - Designed and developed by AIT Architecture team'}
-                                  onChange={(e) => setSettings({ ...settings, footer_text: e.target.value })}
+                                  onChange={(e) => updateBranding({ footer_text: e.target.value })}
                                   className="w-full bg-white dark:bg-slate-900/50 border border-slate-200 dark:border-slate-700 rounded-lg px-3 py-2 text-sm text-slate-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-sky-400/50 focus:border-sky-400"
                                   placeholder="© 2025 Adventhealth - Designed and developed by AIT Architecture team"
                                   rows={3}
@@ -12225,11 +12266,126 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({ onUserApproved }) => {
                                 </p>
                               </div>
 
+                              <details className="rounded-lg border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800/80 group" open>
+                                <summary className="cursor-pointer list-none [&::-webkit-details-marker]:hidden flex items-center justify-between px-3 py-2.5 text-sm font-medium text-slate-700 dark:text-slate-300 hover:bg-slate-50 dark:hover:bg-slate-700/40 rounded-lg select-none">
+                                  <span>Text style</span>
+                                  <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor" className="w-4 h-4 text-slate-500 transition-transform group-open:rotate-180">
+                                    <path fillRule="evenodd" d="M5.23 7.21a.75.75 0 011.06.02L10 11.168l3.71-3.938a.75.75 0 111.08 1.04l-4.25 4.5a.75.75 0 01-1.08 0l-4.25-4.5a.75.75 0 01.02-1.06z" clipRule="evenodd" />
+                                  </svg>
+                                </summary>
+                                <div className="px-3 pb-3 pt-1 grid grid-cols-1 sm:grid-cols-2 gap-3 border-t border-slate-200 dark:border-slate-700">
+                                  <div>
+                                    <label className="block text-xs font-medium text-slate-600 dark:text-slate-400 mb-1">
+                                      Font Size: {settings.footer_font_size || '14'}px
+                                    </label>
+                                    <input
+                                      type="range"
+                                      min={10}
+                                      max={24}
+                                      step={1}
+                                      value={parseInt(settings.footer_font_size || '14', 10) || 14}
+                                      onChange={(e) => updateBranding({ footer_font_size: e.target.value })}
+                                      className="w-full accent-sky-600"
+                                    />
+                                  </div>
+                                  <div>
+                                    <label className="block text-xs font-medium text-slate-600 dark:text-slate-400 mb-1">Font Family</label>
+                                    <select
+                                      value={settings.footer_font_family || 'inherit'}
+                                      onChange={(e) => updateBranding({ footer_font_family: e.target.value })}
+                                      className="w-full bg-slate-50 dark:bg-slate-900/50 border border-slate-200 dark:border-slate-700 rounded-lg px-3 py-2 text-sm text-slate-900 dark:text-white"
+                                    >
+                                      <BrandingFontFamilyOptions />
+                                    </select>
+                                  </div>
+                                  <div>
+                                    <label className="block text-xs font-medium text-slate-600 dark:text-slate-400 mb-1">Font Weight</label>
+                                    <select
+                                      value={settings.footer_font_weight || 'normal'}
+                                      onChange={(e) => updateBranding({ footer_font_weight: e.target.value })}
+                                      className="w-full bg-slate-50 dark:bg-slate-900/50 border border-slate-200 dark:border-slate-700 rounded-lg px-3 py-2 text-sm text-slate-900 dark:text-white"
+                                    >
+                                      <option value="normal">Normal</option>
+                                      <option value="bold">Bold</option>
+                                      <option value="300">Light (300)</option>
+                                      <option value="500">Medium (500)</option>
+                                      <option value="600">Semi Bold (600)</option>
+                                      <option value="700">Bold (700)</option>
+                                      <option value="800">Extra Bold (800)</option>
+                                    </select>
+                                  </div>
+                                  <div>
+                                    <label className="block text-xs font-medium text-slate-600 dark:text-slate-400 mb-1">Font Style</label>
+                                    <select
+                                      value={settings.footer_font_style || 'normal'}
+                                      onChange={(e) => updateBranding({ footer_font_style: e.target.value })}
+                                      className="w-full bg-slate-50 dark:bg-slate-900/50 border border-slate-200 dark:border-slate-700 rounded-lg px-3 py-2 text-sm text-slate-900 dark:text-white"
+                                    >
+                                      <option value="normal">Normal</option>
+                                      <option value="italic">Italic</option>
+                                      <option value="oblique">Oblique</option>
+                                    </select>
+                                  </div>
+                                  <div>
+                                    <label className="block text-xs font-medium text-slate-600 dark:text-slate-400 mb-1">Text Color (Light)</label>
+                                    <div className="flex items-center gap-2">
+                                      <input
+                                        type="color"
+                                        value={settings.footer_font_color || '#94a3b8'}
+                                        onChange={(e) => updateBranding({ footer_font_color: e.target.value })}
+                                        className="h-9 w-12 rounded border border-slate-200 dark:border-slate-700 cursor-pointer bg-transparent"
+                                      />
+                                      <input
+                                        type="text"
+                                        value={settings.footer_font_color || ''}
+                                        onChange={(e) => updateBranding({ footer_font_color: e.target.value })}
+                                        className="flex-1 bg-slate-50 dark:bg-slate-900/50 border border-slate-200 dark:border-slate-700 rounded-lg px-3 py-2 text-sm text-slate-900 dark:text-white"
+                                        placeholder="Default (theme)"
+                                      />
+                                      {settings.footer_font_color ? (
+                                        <button type="button" onClick={() => updateBranding({ footer_font_color: '' })} className="text-xs text-slate-500 hover:text-red-600 dark:hover:text-red-400 whitespace-nowrap">Reset</button>
+                                      ) : null}
+                                    </div>
+                                  </div>
+                                  <div>
+                                    <label className="block text-xs font-medium text-slate-600 dark:text-slate-400 mb-1">Text Color (Dark)</label>
+                                    <div className="flex items-center gap-2">
+                                      <input
+                                        type="color"
+                                        value={settings.footer_font_color_dark || '#94a3b8'}
+                                        onChange={(e) => updateBranding({ footer_font_color_dark: e.target.value })}
+                                        className="h-9 w-12 rounded border border-slate-200 dark:border-slate-700 cursor-pointer bg-transparent"
+                                      />
+                                      <input
+                                        type="text"
+                                        value={settings.footer_font_color_dark || ''}
+                                        onChange={(e) => updateBranding({ footer_font_color_dark: e.target.value })}
+                                        className="flex-1 bg-slate-50 dark:bg-slate-900/50 border border-slate-200 dark:border-slate-700 rounded-lg px-3 py-2 text-sm text-slate-900 dark:text-white"
+                                        placeholder="Default (theme)"
+                                      />
+                                      {settings.footer_font_color_dark ? (
+                                        <button type="button" onClick={() => updateBranding({ footer_font_color_dark: '' })} className="text-xs text-slate-500 hover:text-red-600 dark:hover:text-red-400 whitespace-nowrap">Reset</button>
+                                      ) : null}
+                                    </div>
+                                  </div>
+                                </div>
+                              </details>
+
                               <div>
                                 <h4 className="text-sm font-semibold text-slate-900 dark:text-white mb-2">Preview</h4>
                                 <div className="bg-white dark:bg-slate-900/50 border border-slate-200 dark:border-slate-700 rounded-lg p-4">
-                                  <footer className="py-6 text-center text-slate-400 dark:text-slate-500 text-sm">
-                                    <p dangerouslySetInnerHTML={{ __html: settings.footer_text || '© 2025 Adventhealth - Designed and developed by AIT Architecture team' }}></p>
+                                  <footer className="linknest-footer py-6 text-center text-slate-400 dark:text-slate-500">
+                                    <p
+                                      className="linknest-footer-text"
+                                      style={{
+                                        fontSize: `${parseInt(settings.footer_font_size || '14', 10) || 14}px`,
+                                        fontFamily: settings.footer_font_family && settings.footer_font_family !== 'inherit' ? settings.footer_font_family : undefined,
+                                        fontWeight: (settings.footer_font_weight || 'normal') as React.CSSProperties['fontWeight'],
+                                        fontStyle: (settings.footer_font_style || 'normal') as React.CSSProperties['fontStyle'],
+                                        color: settings.footer_font_color || undefined,
+                                      }}
+                                      dangerouslySetInnerHTML={{ __html: settings.footer_text || '© 2025 Adventhealth - Designed and developed by AIT Architecture team' }}
+                                    ></p>
                                   </footer>
                                 </div>
                               </div>
@@ -12287,10 +12443,30 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({ onUserApproved }) => {
                       )}
 
                       {settingsSubTab === 'access' && (
+                        <div className="space-y-4">
+                          <div className="bg-gradient-to-r from-sky-50 via-violet-50/80 to-fuchsia-50/60 dark:from-sky-950/30 dark:via-violet-950/25 dark:to-fuchsia-950/20 border border-sky-200/60 dark:border-sky-800/40 p-1 rounded-xl flex flex-wrap gap-1 shadow-sm">
+                            {([
+                              { id: 'guest' as const, label: 'Guest & UI', emoji: '🔓', active: 'bg-sky-600 text-white shadow-sm shadow-sky-500/30', idle: 'text-sky-800/80 dark:text-sky-200/80 hover:bg-white/70 dark:hover:bg-slate-800/50' },
+                              { id: 'signin' as const, label: 'Sign-in', emoji: '🔑', active: 'bg-violet-600 text-white shadow-sm shadow-violet-500/30', idle: 'text-violet-800/80 dark:text-violet-200/80 hover:bg-white/70 dark:hover:bg-slate-800/50' },
+                            ]).map((item) => (
+                              <button
+                                key={item.id}
+                                type="button"
+                                onClick={() => setAccessInnerTab(item.id)}
+                                className={`flex-1 min-w-[8rem] px-3 py-2 text-sm font-semibold transition-colors rounded-lg ${
+                                  accessInnerTab === item.id ? item.active : item.idle
+                                }`}
+                              >
+                                <span aria-hidden className="mr-1">{item.emoji}</span>{item.label}
+                              </button>
+                            ))}
+                          </div>
+
+                          {accessInnerTab === 'guest' && (
                         <div className={ADMIN_SECTION_CARD}>
                           <div className={ADMIN_SECTION_HEADER}>
                             <h3 className={ADMIN_SECTION_TITLE}><span aria-hidden>🔓</span> Guest Access</h3>
-                            <p className={ADMIN_SECTION_SUBTITLE}>Control guest visibility, Sign In button visibility, and whether visitors can create local accounts from the login dialog.</p>
+                            <p className={ADMIN_SECTION_SUBTITLE}>Control guest visibility, Sign In button visibility, and local account creation.</p>
                           </div>
                           <div className="p-6">
                           <div className="space-y-4">
@@ -12491,6 +12667,243 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({ onUserApproved }) => {
                             </button>
                           </div>
                           </div>
+                        </div>
+                          )}
+
+                          {accessInnerTab === 'signin' && (
+                        <div className="space-y-6">
+                          <div className="bg-white dark:bg-slate-800 border border-violet-200/70 dark:border-violet-800/40 rounded-xl overflow-hidden shadow-sm shadow-violet-500/10">
+                            <div className="bg-gradient-to-r from-violet-50 via-fuchsia-50/80 to-sky-50/70 dark:from-violet-950/40 dark:via-fuchsia-950/30 dark:to-sky-950/20 border-b border-violet-100 dark:border-violet-800/40 px-6 py-5">
+                              <h3 className="text-lg font-bold text-slate-900 dark:text-white flex items-center gap-2">
+                                <span aria-hidden>🔑</span> Sign-in methods
+                              </h3>
+                              <p className="text-sm text-violet-800/70 dark:text-violet-200/70 mt-0.5">
+                                Choose which authentication options appear on the login dialog.
+                              </p>
+                            </div>
+                            <div className="p-6 space-y-4">
+                              <div className="rounded-xl border border-amber-200 dark:border-amber-800/60 bg-gradient-to-r from-amber-50 to-orange-50/80 dark:from-amber-950/40 dark:to-orange-950/30 px-4 py-3 text-sm text-amber-950 dark:text-amber-100">
+                                <div className="flex items-start gap-2">
+                                  <span className="text-lg leading-none" aria-hidden>⚠️</span>
+                                  <div>
+                                    <p className="font-semibold mb-0.5">Keep one way in</p>
+                                    <p className="text-xs sm:text-sm text-amber-900/90 dark:text-amber-100/90">
+                                      {AUTH_METHOD_KEEP_ONE_WARNING} The last enabled method cannot be turned off.
+                                    </p>
+                                  </div>
+                                </div>
+                              </div>
+
+                              <div className="grid grid-cols-1 gap-3">
+                                {([
+                                  {
+                                    key: 'local_auth_enabled' as const,
+                                    title: 'Local authentication',
+                                    description: 'Username and password accounts stored in LinkNest',
+                                    emoji: '👤',
+                                    onClass: 'bg-emerald-600',
+                                    cardClass: 'border-emerald-200/80 dark:border-emerald-800/50 bg-gradient-to-br from-emerald-50/90 to-white dark:from-emerald-950/30 dark:to-slate-900/40',
+                                    iconClass: 'bg-emerald-100 dark:bg-emerald-900/50 text-emerald-700 dark:text-emerald-200',
+                                  },
+                                  {
+                                    key: 'ldap_enabled' as const,
+                                    title: 'LDAP authentication',
+                                    description: 'Enterprise directory / Active Directory sign-in',
+                                    emoji: '🏢',
+                                    onClass: 'bg-sky-600',
+                                    cardClass: 'border-sky-200/80 dark:border-sky-800/50 bg-gradient-to-br from-sky-50/90 to-white dark:from-sky-950/30 dark:to-slate-900/40',
+                                    iconClass: 'bg-sky-100 dark:bg-sky-900/50 text-sky-700 dark:text-sky-200',
+                                  },
+                                  {
+                                    key: 'saml_enabled' as const,
+                                    title: 'SAML authentication',
+                                    description: 'Enterprise single sign-on via your identity provider',
+                                    emoji: '🔐',
+                                    onClass: 'bg-violet-600',
+                                    cardClass: 'border-violet-200/80 dark:border-violet-800/50 bg-gradient-to-br from-violet-50/90 to-white dark:from-violet-950/30 dark:to-slate-900/40',
+                                    iconClass: 'bg-violet-100 dark:bg-violet-900/50 text-violet-700 dark:text-violet-200',
+                                  },
+                                ]).map((method) => {
+                                  const enabled = isAuthMethodEnabled(settings, method.key);
+                                  const isLastEnabled = enabled && countEnabledAuthMethods(settings) === 1;
+                                  return (
+                                    <div
+                                      key={method.key}
+                                      className={`flex items-center justify-between gap-3 rounded-xl border px-4 py-3.5 ${method.cardClass} ${isLastEnabled ? 'opacity-95' : ''}`}
+                                    >
+                                      <div className="flex items-start gap-3 min-w-0 flex-1">
+                                        <div className={`w-11 h-11 rounded-xl flex items-center justify-center shrink-0 text-xl ${method.iconClass}`} aria-hidden>
+                                          {method.emoji}
+                                        </div>
+                                        <div className="min-w-0">
+                                          <div className="flex flex-wrap items-center gap-2">
+                                            <span className="text-sm font-semibold text-slate-800 dark:text-slate-100">{method.title}</span>
+                                            <span className={`text-[10px] font-semibold uppercase tracking-wide px-2 py-0.5 rounded-full ${enabled
+                                              ? 'bg-emerald-100 text-emerald-800 dark:bg-emerald-900/40 dark:text-emerald-200'
+                                              : 'bg-slate-200 text-slate-600 dark:bg-slate-700 dark:text-slate-300'
+                                              }`}>
+                                              {enabled ? 'On' : 'Off'}
+                                            </span>
+                                          </div>
+                                          <p className="text-xs text-slate-500 dark:text-slate-400 mt-0.5">
+                                            {method.description}
+                                            {isLastEnabled ? ' — last enabled method (cannot disable)' : ''}
+                                          </p>
+                                        </div>
+                                      </div>
+                                      <button
+                                        type="button"
+                                        disabled={isLastEnabled}
+                                        title={isLastEnabled ? AUTH_METHOD_KEEP_ONE_WARNING : undefined}
+                                        onClick={() => {
+                                          applyAuthMethodSettingChange(settings, method.key, !enabled, setSettings);
+                                        }}
+                                        className={`relative inline-flex h-6 w-11 items-center rounded-full transition-colors disabled:cursor-not-allowed shrink-0 ${enabled
+                                          ? method.onClass
+                                          : 'bg-slate-300 dark:bg-slate-600'
+                                          }`}
+                                      >
+                                        <span
+                                          className={`inline-block h-4 w-4 transform rounded-full bg-white transition-transform ${enabled ? 'translate-x-6' : 'translate-x-1'}`}
+                                        />
+                                      </button>
+                                    </div>
+                                  );
+                                })}
+                              </div>
+
+                              <button
+                                onClick={async () => {
+                                  try {
+                                    setSettingsSaving(true);
+                                    setError('');
+                                    await settingsService.updateSettings({
+                                      local_auth_enabled: settings.local_auth_enabled,
+                                      ldap_enabled: settings.ldap_enabled,
+                                      saml_enabled: settings.saml_enabled,
+                                    });
+                                    await loadSettings();
+                                    await refreshSettings();
+                                    alert('Sign-in settings saved successfully!');
+                                  } catch (err: any) {
+                                    setError(err.message || 'Failed to save settings');
+                                  } finally {
+                                    setSettingsSaving(false);
+                                  }
+                                }}
+                                disabled={settingsSaving}
+                                className={`w-full px-4 py-2.5 bg-violet-600 hover:bg-violet-500 disabled:opacity-50 disabled:cursor-not-allowed text-white rounded-lg text-sm font-semibold transition-colors shadow-sm shadow-violet-500/20`}
+                              >
+                                {settingsSaving ? 'Saving...' : '💾 Save Sign-in Settings'}
+                              </button>
+                            </div>
+                          </div>
+
+                          <div className="bg-white dark:bg-slate-800 border border-rose-200/70 dark:border-rose-800/40 rounded-xl overflow-hidden shadow-sm shadow-rose-500/10">
+                            <div className="bg-gradient-to-r from-rose-50 via-orange-50/80 to-amber-50/70 dark:from-rose-950/40 dark:via-orange-950/30 dark:to-amber-950/20 border-b border-rose-100 dark:border-rose-800/40 px-6 py-5">
+                              <h3 className="text-lg font-bold text-slate-900 dark:text-white flex items-center gap-2">
+                                <span aria-hidden>🛟</span> Lockout recovery
+                              </h3>
+                              <p className="text-sm text-rose-800/70 dark:text-rose-200/70 mt-0.5">
+                                Use this when Local authentication was turned off, LDAP/SAML is broken, or the local admin password is lost.
+                              </p>
+                            </div>
+                            <div className="p-6 space-y-4">
+                              <div className="rounded-xl border border-fuchsia-200 dark:border-fuchsia-800/50 bg-gradient-to-r from-fuchsia-50 via-violet-50/80 to-sky-50/70 dark:from-fuchsia-950/35 dark:via-violet-950/25 dark:to-sky-950/20 px-4 py-3.5">
+                                <p className="text-sm font-semibold text-fuchsia-950 dark:text-fuchsia-100 flex items-center gap-1.5 mb-1">
+                                  <span aria-hidden>👤</span> If Local authentication is OFF
+                                </p>
+                                <p className="text-xs sm:text-sm text-fuchsia-900/90 dark:text-fuchsia-100/85">
+                                  You cannot sign in with a local admin account until Local auth is turned back on.
+                                  The recovery script below <strong>enables Local authentication first</strong>, then resets the admin password so you can regain access.
+                                </p>
+                              </div>
+
+                              <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
+                                <div className="rounded-xl border border-sky-200 dark:border-sky-800/50 bg-sky-50/70 dark:bg-sky-950/30 p-4">
+                                  <div className="text-2xl mb-2" aria-hidden>1️⃣</div>
+                                  <p className="text-sm font-semibold text-sky-900 dark:text-sky-100 mb-1">Server access</p>
+                                  <p className="text-xs text-sky-800/80 dark:text-sky-200/80">
+                                    Log in to the host that runs LinkNest (SSH, RDP, or the console) with a Windows/Linux admin account.
+                                  </p>
+                                </div>
+                                <div className="rounded-xl border border-violet-200 dark:border-violet-800/50 bg-violet-50/70 dark:bg-violet-950/30 p-4">
+                                  <div className="text-2xl mb-2" aria-hidden>2️⃣</div>
+                                  <p className="text-sm font-semibold text-violet-900 dark:text-violet-100 mb-1">Open the app folder</p>
+                                  <p className="text-xs text-violet-800/80 dark:text-violet-200/80">
+                                    Go to your LinkNest install directory (for example <code className="bg-white/70 dark:bg-slate-900/50 px-1 rounded">C:\xampp\htdocs\linknest</code>).
+                                  </p>
+                                </div>
+                                <div className="rounded-xl border border-emerald-200 dark:border-emerald-800/50 bg-emerald-50/70 dark:bg-emerald-950/30 p-4">
+                                  <div className="text-2xl mb-2" aria-hidden>3️⃣</div>
+                                  <p className="text-sm font-semibold text-emerald-900 dark:text-emerald-100 mb-1">Enable Local + reset</p>
+                                  <p className="text-xs text-emerald-800/80 dark:text-emerald-200/80">
+                                    Run the script once — it turns <strong>Local authentication</strong> on (if off), resets the password, then sign in.
+                                  </p>
+                                </div>
+                              </div>
+
+                              <div className="rounded-xl border border-slate-200 dark:border-slate-700 bg-slate-50/80 dark:bg-slate-900/40 p-4 space-y-3">
+                                <div className="flex items-center gap-2">
+                                  <span className="text-lg" aria-hidden>📜</span>
+                                  <h4 className="text-sm font-semibold text-slate-900 dark:text-white">Admin lockout recovery script</h4>
+                                </div>
+                                <p className="text-xs text-slate-600 dark:text-slate-400">
+                                  Script path: <code className="bg-white dark:bg-slate-950 px-1.5 py-0.5 rounded border border-slate-200 dark:border-slate-700">scripts/reset_admin_password.php</code>
+                                  {' '}— enables <strong>Local authentication</strong> if it was off, then resets a <strong>local</strong> admin password (not LDAP/SAML).
+                                </p>
+
+                                <div className="rounded-lg border border-emerald-200 dark:border-emerald-800/50 bg-emerald-50/50 dark:bg-emerald-950/20 px-3 py-2 text-xs text-emerald-950 dark:text-emerald-100">
+                                  <p className="font-semibold mb-1 flex items-center gap-1.5"><span aria-hidden>✅</span> What the script does</p>
+                                  <ol className="list-decimal list-inside space-y-0.5 text-emerald-900/90 dark:text-emerald-100/90">
+                                    <li>Sets <code className="bg-white/70 dark:bg-slate-900/50 px-1 rounded">local_auth_enabled = 1</code> in the database</li>
+                                    <li>Clears cached public settings so the login dialog shows Local auth again</li>
+                                    <li>Resets the local admin <code className="bg-white/70 dark:bg-slate-900/50 px-1 rounded">password_hash</code></li>
+                                  </ol>
+                                </div>
+
+                                <div>
+                                  <p className="text-xs font-semibold text-slate-700 dark:text-slate-300 mb-1.5 flex items-center gap-1.5">
+                                    <span aria-hidden>💻</span> Command-line example (Windows / XAMPP)
+                                  </p>
+                                  <pre className="text-[11px] sm:text-xs leading-relaxed overflow-x-auto rounded-lg bg-slate-900 text-emerald-300 border border-slate-700 px-3 py-3 font-mono">{`cd C:\\xampp\\htdocs\\linknest
+php scripts\\reset_admin_password.php admin "NewStrongPass1!"`}</pre>
+                                  <p className="mt-1.5 text-[11px] text-slate-500 dark:text-slate-400">
+                                    Output will say if Local auth was re-enabled, then confirm the password reset.
+                                  </p>
+                                </div>
+
+                                <div>
+                                  <p className="text-xs font-semibold text-slate-700 dark:text-slate-300 mb-1.5 flex items-center gap-1.5">
+                                    <span aria-hidden>🐧</span> Command-line example (Linux / Docker)
+                                  </p>
+                                  <pre className="text-[11px] sm:text-xs leading-relaxed overflow-x-auto rounded-lg bg-slate-900 text-sky-300 border border-slate-700 px-3 py-3 font-mono">{`cd /var/www/linknest
+php scripts/reset_admin_password.php admin 'NewStrongPass1!'`}</pre>
+                                </div>
+
+                                <div className="rounded-lg border border-amber-200 dark:border-amber-800/50 bg-amber-50/60 dark:bg-amber-950/25 px-3 py-2.5 text-xs text-amber-950 dark:text-amber-100 space-y-1.5">
+                                  <p className="font-semibold flex items-center gap-1.5"><span aria-hidden>🛡️</span> Security tips</p>
+                                  <ul className="list-disc list-inside space-y-1 text-amber-900/90 dark:text-amber-100/90">
+                                    <li>Replace <code className="bg-white/70 dark:bg-slate-900/50 px-1 rounded">admin</code> with your local admin username if different.</li>
+                                    <li>Choose a strong temporary password, then change it again after you regain access.</li>
+                                    <li>LDAP/SAML passwords cannot be reset here — fix those in your directory / IdP.</li>
+                                    <li>In production, restrict or remove <code className="bg-white/70 dark:bg-slate-900/50 px-1 rounded">scripts/reset_admin_password.php</code> after use.</li>
+                                  </ul>
+                                </div>
+
+                                <div className="rounded-lg border border-sky-200 dark:border-sky-800/50 bg-sky-50/50 dark:bg-sky-950/20 px-3 py-2.5 text-xs text-sky-950 dark:text-sky-100">
+                                  <p className="font-semibold mb-1 flex items-center gap-1.5"><span aria-hidden>🌐</span> Optional browser form</p>
+                                  <p>
+                                    On some installs you can open the script in a browser (for example{' '}
+                                    <code className="bg-white/80 dark:bg-slate-900/60 px-1 rounded">/linknest/scripts/reset_admin_password.php</code>
+                                    ) and submit the username + new password. Prefer the CLI when possible, and block public web access to <code className="bg-white/80 dark:bg-slate-900/60 px-1 rounded">scripts/</code>.
+                                  </p>
+                                </div>
+                              </div>
+                            </div>
+                          </div>
+                        </div>
+                          )}
                         </div>
                       )}
 

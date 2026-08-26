@@ -12,6 +12,7 @@ error_reporting(E_ALL);
 require_once __DIR__ . '/config.php';
 require_once __DIR__ . '/user_notes_helper.php';
 require_once __DIR__ . '/user_audit_helper.php';
+require_once __DIR__ . '/auth_mail.php';
 
 if (session_status() === PHP_SESSION_NONE) {
     session_start();
@@ -34,6 +35,10 @@ switch ($method) {
             handleRegister();
         } elseif ($path === '/login') {
             handleLogin();
+        } elseif ($path === '/forgot-password') {
+            handleForgotPassword();
+        } elseif ($path === '/reset-password-with-token') {
+            handleResetPasswordWithToken();
         } elseif ($path === '/search-ldap-users') {
             handleSearchLdapUsers();
         } elseif ($path === '/ldap-group-members') {
@@ -140,6 +145,126 @@ function validatePasswordStrength($password) {
     return null;
 }
 
+/**
+ * Always returns a generic success message (does not reveal whether the email exists).
+ */
+function handleForgotPassword() {
+    $generic = [
+        'success' => true,
+        'message' => 'If an account with that email exists, a password reset link has been sent.',
+    ];
+
+    try {
+        $data = getJSONInput();
+        $email = trim((string)($data['email'] ?? ''));
+        if ($email === '') {
+            sendJSON($generic);
+            return;
+        }
+
+        // Light rate limit by session
+        if (session_status() === PHP_SESSION_NONE) {
+            session_start();
+        }
+        $now = time();
+        $last = (int)($_SESSION['forgot_password_last'] ?? 0);
+        if ($last > 0 && ($now - $last) < 30) {
+            sendJSON($generic);
+            return;
+        }
+        $_SESSION['forgot_password_last'] = $now;
+
+        if (!auth_email_is_enabled('auth_email_password_recovery')) {
+            sendJSON($generic);
+            return;
+        }
+
+        ensurePasswordResetColumns(getDB());
+        $db = getDB();
+        $stmt = $db->prepare("SELECT id, username, email, auth_source, is_approved, COALESCE(is_disabled, 0) AS is_disabled
+            FROM users WHERE LOWER(email) = LOWER(?) LIMIT 1");
+        $stmt->execute([$email]);
+        $user = $stmt->fetch(PDO::FETCH_ASSOC);
+
+        if ($user
+            && ($user['auth_source'] ?? 'local') === 'local'
+            && !empty($user['is_approved'])
+            && empty($user['is_disabled'])
+        ) {
+            $token = bin2hex(random_bytes(32));
+            $tokenHash = hash('sha256', $token);
+            $expiresAt = $now + 3600;
+            $upd = $db->prepare('UPDATE users SET password_reset_token_hash = ?, password_reset_expires_at = ? WHERE id = ?');
+            $upd->execute([$tokenHash, $expiresAt, (int)$user['id']]);
+
+            $resetUrl = ln_email_public_base_url() . '/#/reset-password?token=' . urlencode($token);
+            auth_email_send_password_reset((string)$user['username'], (string)$user['email'], $resetUrl, 60);
+        }
+    } catch (Throwable $e) {
+        error_log('[AUTH] forgot-password: ' . $e->getMessage());
+    }
+
+    sendJSON($generic);
+}
+
+function handleResetPasswordWithToken() {
+    $data = getJSONInput();
+    $token = trim((string)($data['token'] ?? ''));
+    $newPassword = (string)($data['new_password'] ?? $data['password'] ?? '');
+    $confirm = $data['confirm_password'] ?? null;
+
+    if ($token === '' || strlen($token) < 32) {
+        sendJSON(['error' => 'Invalid or expired reset link'], 400);
+        return;
+    }
+    $err = validatePasswordStrength($newPassword);
+    if ($err !== null) {
+        sendJSON(['error' => $err], 400);
+        return;
+    }
+    if ($confirm !== null && $confirm !== '' && $confirm !== $newPassword) {
+        sendJSON(['error' => 'Password and confirmation do not match'], 400);
+        return;
+    }
+
+    try {
+        ensurePasswordResetColumns(getDB());
+        $db = getDB();
+        $tokenHash = hash('sha256', $token);
+        $stmt = $db->prepare("SELECT id, username, auth_source, COALESCE(is_disabled, 0) AS is_disabled, password_reset_expires_at
+            FROM users WHERE password_reset_token_hash = ? LIMIT 1");
+        $stmt->execute([$tokenHash]);
+        $user = $stmt->fetch(PDO::FETCH_ASSOC);
+
+        if (!$user
+            || ($user['auth_source'] ?? 'local') !== 'local'
+            || !empty($user['is_disabled'])
+            || empty($user['password_reset_expires_at'])
+            || (int)$user['password_reset_expires_at'] < time()
+        ) {
+            sendJSON(['error' => 'Invalid or expired reset link'], 400);
+            return;
+        }
+
+        $hash = password_hash($newPassword, PASSWORD_DEFAULT);
+        $upd = $db->prepare('UPDATE users SET password_hash = ?, password_reset_token_hash = NULL, password_reset_expires_at = NULL WHERE id = ?');
+        $upd->execute([$hash, (int)$user['id']]);
+
+        logUserAudit('user.password_reset_self', [
+            'actor_id' => (int)$user['id'],
+            'actor_username' => $user['username'] ?? null,
+            'target_user_id' => (int)$user['id'],
+            'target_username' => $user['username'] ?? null,
+            'details' => ['via' => 'email_token'],
+        ]);
+
+        sendJSON(['success' => true, 'message' => 'Password updated successfully. You can sign in now.']);
+    } catch (Throwable $e) {
+        error_log('[AUTH] reset-password-with-token: ' . $e->getMessage());
+        sendJSON(['error' => 'Failed to reset password'], 500);
+    }
+}
+
 // Helper function to escape LDAP filter values (for PHP < 5.6 compatibility)
 function ldap_escape_filter($value) {
     if (function_exists('ldap_escape')) {
@@ -237,6 +362,12 @@ function handleRegister() {
             'target_username' => $username,
             'details' => ['email' => $email, 'source' => 'self_register'],
         ]);
+
+        try {
+            auth_email_notify_registration($username, $email);
+        } catch (Throwable $e) {
+            error_log('[AUTH_EMAIL] register notify: ' . $e->getMessage());
+        }
 
         // Don't auto-login, user needs approval
         sendJSON([
@@ -1037,7 +1168,7 @@ function handleApproveUser($userId) {
     requireAdmin(); // Only admins can approve users
     
     $db = getDB();
-    $stmt = $db->prepare('SELECT id, username FROM users WHERE id = ? AND is_admin = 0 AND is_approved = 0');
+    $stmt = $db->prepare('SELECT id, username, email FROM users WHERE id = ? AND is_admin = 0 AND is_approved = 0');
     $stmt->execute([$userId]);
     $pendingUser = $stmt->fetch();
 
@@ -1049,6 +1180,13 @@ function handleApproveUser($userId) {
             'target_user_id' => (int) $userId,
             'target_username' => $pendingUser['username'] ?? null,
         ]);
+        if ($pendingUser) {
+            try {
+                auth_email_notify_approved((string)$pendingUser['username'], (string)($pendingUser['email'] ?? ''));
+            } catch (Throwable $e) {
+                error_log('[AUTH_EMAIL] approve notify: ' . $e->getMessage());
+            }
+        }
         sendJSON(['success' => true, 'message' => 'User approved successfully']);
     } else {
         sendJSON(['error' => 'User not found or already approved'], 404);
@@ -1097,6 +1235,13 @@ function handleBulkApproveUsers() {
     
     if ($approvedCount > 0) {
         logUserAuditForUsers('user.approved', $toApprove, ['bulk' => true]);
+        foreach ($toApprove as $u) {
+            try {
+                auth_email_notify_approved((string)($u['username'] ?? ''), (string)($u['email'] ?? ''));
+            } catch (Throwable $e) {
+                error_log('[AUTH_EMAIL] bulk approve notify: ' . $e->getMessage());
+            }
+        }
         sendJSON([
             'success' => true, 
             'message' => "Successfully approved $approvedCount user(s)",
@@ -3045,6 +3190,11 @@ function handleAddLocalUser() {
             'target_username' => $username,
             'details' => ['email' => $email, 'source' => 'local', 'notes' => $notes ? true : false],
         ]);
+        try {
+            auth_email_notify_registration($username, $email);
+        } catch (Throwable $e) {
+            error_log('[AUTH_EMAIL] add-local-user notify: ' . $e->getMessage());
+        }
         sendJSON([
             'success' => true,
             'message' => 'Local user created successfully. User is pending admin approval.',

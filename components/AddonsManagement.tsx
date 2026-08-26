@@ -959,6 +959,9 @@ export const AddonsManagement: React.FC = () => {
             {/* Monitorv2 Add-on Card */}
             <Monitorv2AddonCard />
 
+            {/* System Email (SMTP) */}
+            <SystemEmailAddonCard />
+
             {/* SSH Gateway paths */}
             <SshGatewayAddonCard />
 
@@ -2798,6 +2801,420 @@ const VncGatewayAddonCard: React.FC = () => {
                             </div>
                         </>
                     )}
+                </div>
+            )}
+        </div>
+    );
+};
+
+// ============================================
+// System Email (SMTP) Addon Card
+// ============================================
+interface SystemEmailSmtpForm {
+    id: number | null;
+    name: string;
+    host: string;
+    port: number;
+    username: string;
+    password: string;
+    from_email: string;
+    from_name: string;
+    encryption: 'none' | 'ssl' | 'tls';
+    is_enabled: boolean;
+    has_password: boolean;
+}
+
+interface SystemEmailConfig {
+    enabled: boolean;
+    publicUrl: string;
+    notifyRegistration: boolean;
+    notifyApproval: boolean;
+    passwordRecovery: boolean;
+    smtp: SystemEmailSmtpForm;
+}
+
+const SystemEmailAddonCard: React.FC = () => {
+    const [expanded, setExpanded] = useState(false);
+    const [loading, setLoading] = useState(true);
+    const [saving, setSaving] = useState(false);
+    const [testing, setTesting] = useState(false);
+    const [error, setError] = useState<string | null>(null);
+    const [savedMsg, setSavedMsg] = useState<string | null>(null);
+    const [testResult, setTestResult] = useState<{ success: boolean; message: string } | null>(null);
+    const [testTo, setTestTo] = useState('');
+    const [detectedPublicUrl, setDetectedPublicUrl] = useState('');
+    const [healthStatus, setHealthStatus] = useState<{ status: string; message: string } | null>(null);
+    const [config, setConfig] = useState<SystemEmailConfig>({
+        enabled: false,
+        publicUrl: '',
+        notifyRegistration: true,
+        notifyApproval: true,
+        passwordRecovery: true,
+        smtp: {
+            id: null,
+            name: 'Primary SMTP',
+            host: '',
+            port: 587,
+            username: '',
+            password: '',
+            from_email: '',
+            from_name: '{app_name}',
+            encryption: 'tls',
+            is_enabled: true,
+            has_password: false,
+        },
+    });
+
+    const getStatusBadge = () => {
+        const status = healthStatus?.status || (config.enabled ? 'not_configured' : 'disabled');
+        const badges: Record<string, { text: string; class: string }> = {
+            disabled: { text: 'Disabled', class: 'bg-gray-100 text-gray-700 dark:bg-slate-700 dark:text-slate-200' },
+            not_configured: { text: 'Not Configured', class: 'bg-yellow-100 text-yellow-800 dark:bg-yellow-900/40 dark:text-yellow-200' },
+            unavailable: { text: 'SMTP Off', class: 'bg-orange-100 text-orange-800 dark:bg-orange-900/40 dark:text-orange-200' },
+            available: { text: 'Active', class: 'bg-green-100 text-green-800 dark:bg-green-900/40 dark:text-green-200' },
+            error: { text: 'Error', class: 'bg-red-100 text-red-800 dark:bg-red-900/40 dark:text-red-200' },
+        };
+        const badge = badges[status] || badges.disabled;
+        return (
+            <span className={`px-3 py-1 rounded-full text-xs font-semibold ${badge.class}`}>
+                {badge.text}
+            </span>
+        );
+    };
+
+    const checkHealth = async () => {
+        try {
+            const response = await fetch(`${API_BASE}/addons/system-email/status`, { credentials: 'include' });
+            if (!response.ok) return;
+            const data = await response.json();
+            setHealthStatus({ status: data.status, message: data.message });
+        } catch {
+            // ignore
+        }
+    };
+
+    const loadConfiguration = async () => {
+        try {
+            setLoading(true);
+            setError(null);
+            const response = await fetch(`${API_BASE}/addons/system-email`, { credentials: 'include' });
+            if (!response.ok) throw new Error('Failed to load System Email configuration');
+            const data = await response.json();
+            setConfig({
+                enabled: !!data.config?.enabled,
+                publicUrl: data.config?.publicUrl || '',
+                notifyRegistration: data.config?.notifyRegistration !== false,
+                notifyApproval: data.config?.notifyApproval !== false,
+                passwordRecovery: data.config?.passwordRecovery !== false,
+                smtp: {
+                    id: data.config?.smtp?.id ?? null,
+                    name: data.config?.smtp?.name || 'Primary SMTP',
+                    host: data.config?.smtp?.host || '',
+                    port: Number(data.config?.smtp?.port) || 587,
+                    username: data.config?.smtp?.username || '',
+                    password: '',
+                    from_email: data.config?.smtp?.from_email || '',
+                    from_name: data.config?.smtp?.from_name || '{app_name}',
+                    encryption: (data.config?.smtp?.encryption || 'tls') as 'none' | 'ssl' | 'tls',
+                    is_enabled: data.config?.smtp?.is_enabled !== false,
+                    has_password: !!data.config?.smtp?.has_password,
+                },
+            });
+            setDetectedPublicUrl(data.detectedPublicUrl || '');
+            if (data.config?.enabled) setExpanded(true);
+            await checkHealth();
+        } catch (err: any) {
+            setError(err.message || 'Failed to load configuration');
+        } finally {
+            setLoading(false);
+        }
+    };
+
+    useEffect(() => {
+        loadConfiguration();
+    }, []);
+
+    const updateSmtp = <K extends keyof SystemEmailSmtpForm>(key: K, value: SystemEmailSmtpForm[K]) => {
+        setConfig((prev) => ({ ...prev, smtp: { ...prev.smtp, [key]: value } }));
+    };
+
+    const handleSave = async () => {
+        try {
+            setSaving(true);
+            setError(null);
+            setSavedMsg(null);
+            const response = await fetch(`${API_BASE}/addons/system-email`, {
+                method: 'PUT',
+                credentials: 'include',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({
+                    enabled: config.enabled,
+                    publicUrl: config.publicUrl,
+                    notifyRegistration: config.notifyRegistration,
+                    notifyApproval: config.notifyApproval,
+                    passwordRecovery: config.passwordRecovery,
+                    smtp: {
+                        name: config.smtp.name,
+                        host: config.smtp.host,
+                        port: config.smtp.port,
+                        username: config.smtp.username,
+                        password: config.smtp.password || undefined,
+                        from_email: config.smtp.from_email,
+                        from_name: config.smtp.from_name,
+                        encryption: config.smtp.encryption,
+                        is_enabled: config.smtp.is_enabled,
+                    },
+                }),
+            });
+            if (!response.ok) {
+                const err = await response.json().catch(() => ({}));
+                throw new Error(err.error || 'Failed to save');
+            }
+            const data = await response.json();
+            setConfig((prev) => ({
+                ...prev,
+                enabled: !!data.config?.enabled,
+                publicUrl: data.config?.publicUrl || '',
+                notifyRegistration: data.config?.notifyRegistration !== false,
+                notifyApproval: data.config?.notifyApproval !== false,
+                passwordRecovery: data.config?.passwordRecovery !== false,
+                smtp: {
+                    ...prev.smtp,
+                    id: data.config?.smtp?.id ?? prev.smtp.id,
+                    name: data.config?.smtp?.name || prev.smtp.name,
+                    host: data.config?.smtp?.host || '',
+                    port: Number(data.config?.smtp?.port) || 587,
+                    username: data.config?.smtp?.username || '',
+                    password: '',
+                    from_email: data.config?.smtp?.from_email || '',
+                    from_name: data.config?.smtp?.from_name || '{app_name}',
+                    encryption: (data.config?.smtp?.encryption || 'tls') as 'none' | 'ssl' | 'tls',
+                    is_enabled: data.config?.smtp?.is_enabled !== false,
+                    has_password: !!data.config?.smtp?.has_password,
+                },
+            }));
+            setSavedMsg('System Email settings saved');
+            await checkHealth();
+        } catch (err: any) {
+            setError(err.message || 'Failed to save');
+        } finally {
+            setSaving(false);
+        }
+    };
+
+    const handleTest = async () => {
+        try {
+            setTesting(true);
+            setTestResult(null);
+            setError(null);
+            const response = await fetch(`${API_BASE}/addons/system-email/test`, {
+                method: 'POST',
+                credentials: 'include',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ to: testTo.trim() || undefined }),
+            });
+            const data = await response.json().catch(() => ({}));
+            setTestResult({
+                success: !!data.success,
+                message: data.message || (data.success ? 'Sent' : 'Failed'),
+            });
+            await checkHealth();
+        } catch (err: any) {
+            setTestResult({ success: false, message: err.message || 'Test failed' });
+        } finally {
+            setTesting(false);
+        }
+    };
+
+    if (loading) {
+        return (
+            <div className="bg-white dark:bg-slate-800 rounded-xl shadow-sm border border-sky-200/70 dark:border-sky-800/40 p-6">
+                <div className="text-sm text-slate-500">Loading System Email…</div>
+            </div>
+        );
+    }
+
+    return (
+        <div className="bg-white dark:bg-slate-800 rounded-xl shadow-sm border border-sky-200/70 dark:border-sky-800/40 overflow-hidden shadow-sky-500/5">
+            <div className="p-6 bg-gradient-to-r from-sky-50 via-teal-50/80 to-cyan-50/60 dark:from-sky-950/40 dark:via-teal-950/30 dark:to-cyan-950/20 border-b border-sky-100 dark:border-sky-800/40">
+                <div className="flex items-start justify-between gap-4">
+                    <div className="flex items-start gap-4 flex-1">
+                        <div className="text-4xl" aria-hidden>✉️</div>
+                        <div className="flex-1">
+                            <div className="flex items-center gap-3 mb-2 flex-wrap">
+                                <h2 className="text-xl font-bold text-slate-900 dark:text-white">System Email (SMTP)</h2>
+                                {getStatusBadge()}
+                            </div>
+                            <p className="text-sm text-slate-600 dark:text-slate-400 mb-1">
+                                Configure SMTP for registration, admin approval, and local password recovery emails. Uses the same SMTP servers as Monitoring.
+                            </p>
+                            {healthStatus?.message && (
+                                <p className="text-xs text-slate-500 dark:text-slate-400">{healthStatus.message}</p>
+                            )}
+                        </div>
+                    </div>
+                    <button
+                        type="button"
+                        onClick={() => setExpanded(!expanded)}
+                        className="px-4 py-2 text-sm font-medium rounded-lg bg-white dark:bg-slate-800 border border-sky-200 dark:border-sky-700 text-sky-700 dark:text-sky-300 hover:bg-sky-50 dark:hover:bg-sky-950/40"
+                    >
+                        {expanded ? 'Collapse' : 'Configure'}
+                    </button>
+                </div>
+            </div>
+
+            {expanded && (
+                <div className="p-6 space-y-5">
+                    {error && (
+                        <div className="rounded-lg border border-red-200 bg-red-50 dark:bg-red-900/20 dark:border-red-800 px-4 py-3 text-sm text-red-700 dark:text-red-200">
+                            {error}
+                        </div>
+                    )}
+                    {savedMsg && (
+                        <div className="rounded-lg border border-green-200 bg-green-50 dark:bg-green-900/20 dark:border-green-800 px-4 py-3 text-sm text-green-700 dark:text-green-200">
+                            {savedMsg}
+                        </div>
+                    )}
+
+                    <label className="flex items-center justify-between gap-4 p-4 rounded-xl border border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-900/40">
+                        <div>
+                            <div className="font-semibold text-slate-900 dark:text-white">Enable System Email</div>
+                            <div className="text-xs text-slate-500 dark:text-slate-400">Send branded auth emails when SMTP is enabled</div>
+                        </div>
+                        <input
+                            type="checkbox"
+                            checked={config.enabled}
+                            onChange={(e) => setConfig((p) => ({ ...p, enabled: e.target.checked }))}
+                            className="h-5 w-5 rounded border-slate-300 text-sky-600 focus:ring-sky-500"
+                        />
+                    </label>
+
+                    <div className="grid sm:grid-cols-3 gap-3">
+                        <label className="flex items-center gap-2 text-sm text-slate-700 dark:text-slate-300">
+                            <input type="checkbox" checked={config.notifyRegistration} onChange={(e) => setConfig((p) => ({ ...p, notifyRegistration: e.target.checked }))} className="rounded border-slate-300 text-sky-600" />
+                            Registration emails
+                        </label>
+                        <label className="flex items-center gap-2 text-sm text-slate-700 dark:text-slate-300">
+                            <input type="checkbox" checked={config.notifyApproval} onChange={(e) => setConfig((p) => ({ ...p, notifyApproval: e.target.checked }))} className="rounded border-slate-300 text-sky-600" />
+                            Approval emails
+                        </label>
+                        <label className="flex items-center gap-2 text-sm text-slate-700 dark:text-slate-300">
+                            <input type="checkbox" checked={config.passwordRecovery} onChange={(e) => setConfig((p) => ({ ...p, passwordRecovery: e.target.checked }))} className="rounded border-slate-300 text-sky-600" />
+                            Password recovery
+                        </label>
+                    </div>
+
+                    <div>
+                        <label className="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-1">Public app URL (for email links)</label>
+                        <input
+                            type="url"
+                            value={config.publicUrl}
+                            onChange={(e) => setConfig((p) => ({ ...p, publicUrl: e.target.value }))}
+                            placeholder={detectedPublicUrl || 'https://example.com/linknest'}
+                            className="w-full px-3 py-2 rounded-lg border border-slate-300 dark:border-slate-600 bg-white dark:bg-slate-900 text-slate-900 dark:text-white text-sm"
+                        />
+                        {detectedPublicUrl && (
+                            <p className="mt-1 text-xs text-slate-500">Detected: {detectedPublicUrl}</p>
+                        )}
+                    </div>
+
+                    <div className="border-t border-slate-200 dark:border-slate-700 pt-4">
+                        <div className="flex items-center justify-between mb-3">
+                            <h3 className="font-semibold text-slate-900 dark:text-white">SMTP server</h3>
+                            <label className="flex items-center gap-2 text-sm text-slate-600 dark:text-slate-300">
+                                <input type="checkbox" checked={config.smtp.is_enabled} onChange={(e) => updateSmtp('is_enabled', e.target.checked)} className="rounded border-slate-300 text-sky-600" />
+                                SMTP enabled
+                            </label>
+                        </div>
+                        <div className="grid sm:grid-cols-2 gap-3">
+                            <div>
+                                <label className="block text-xs font-medium text-slate-500 mb-1">Host</label>
+                                <input value={config.smtp.host} onChange={(e) => updateSmtp('host', e.target.value)} className="w-full px-3 py-2 rounded-lg border border-slate-300 dark:border-slate-600 bg-white dark:bg-slate-900 text-sm" placeholder="smtp.example.com" />
+                            </div>
+                            <div>
+                                <label className="block text-xs font-medium text-slate-500 mb-1">Port</label>
+                                <input type="number" value={config.smtp.port} onChange={(e) => updateSmtp('port', Number(e.target.value) || 587)} className="w-full px-3 py-2 rounded-lg border border-slate-300 dark:border-slate-600 bg-white dark:bg-slate-900 text-sm" />
+                            </div>
+                            <div>
+                                <label className="block text-xs font-medium text-slate-500 mb-1">Encryption</label>
+                                <select value={config.smtp.encryption} onChange={(e) => updateSmtp('encryption', e.target.value as 'none' | 'ssl' | 'tls')} className="w-full px-3 py-2 rounded-lg border border-slate-300 dark:border-slate-600 bg-white dark:bg-slate-900 text-sm">
+                                    <option value="none">None</option>
+                                    <option value="tls">TLS (STARTTLS)</option>
+                                    <option value="ssl">SSL</option>
+                                </select>
+                            </div>
+                            <div>
+                                <label className="block text-xs font-medium text-slate-500 mb-1">Username</label>
+                                <input value={config.smtp.username} onChange={(e) => updateSmtp('username', e.target.value)} className="w-full px-3 py-2 rounded-lg border border-slate-300 dark:border-slate-600 bg-white dark:bg-slate-900 text-sm" autoComplete="off" />
+                            </div>
+                            <div className="sm:col-span-2">
+                                <label className="block text-xs font-medium text-slate-500 mb-1">Password {config.smtp.has_password ? '(leave blank to keep current)' : ''}</label>
+                                <SecurePasswordInput
+                                    value={config.smtp.password}
+                                    onChange={(e) => updateSmtp('password', e.target.value)}
+                                    className="w-full px-3 py-2 rounded-lg border border-slate-300 dark:border-slate-600 bg-white dark:bg-slate-900 text-sm"
+                                    autoComplete="new-password"
+                                />
+                            </div>
+                            <div>
+                                <label className="block text-xs font-medium text-slate-500 mb-1">From email</label>
+                                <input type="email" value={config.smtp.from_email} onChange={(e) => updateSmtp('from_email', e.target.value)} className="w-full px-3 py-2 rounded-lg border border-slate-300 dark:border-slate-600 bg-white dark:bg-slate-900 text-sm" placeholder="noreply@example.com" />
+                            </div>
+                            <div>
+                                <label className="block text-xs font-medium text-slate-500 mb-1">From name</label>
+                                <input value={config.smtp.from_name} onChange={(e) => updateSmtp('from_name', e.target.value)} className="w-full px-3 py-2 rounded-lg border border-slate-300 dark:border-slate-600 bg-white dark:bg-slate-900 text-sm" placeholder="{app_name}" />
+                            </div>
+                        </div>
+                    </div>
+
+                    <div className="border-t border-slate-200 dark:border-slate-700 pt-4 space-y-3">
+                        <h3 className="font-semibold text-slate-900 dark:text-white">Send test email</h3>
+                        <div className="flex flex-col sm:flex-row gap-2">
+                            <input
+                                type="email"
+                                value={testTo}
+                                onChange={(e) => setTestTo(e.target.value)}
+                                placeholder="recipient@example.com (defaults to your admin email)"
+                                className="flex-1 px-3 py-2 rounded-lg border border-slate-300 dark:border-slate-600 bg-white dark:bg-slate-900 text-sm"
+                            />
+                            <button
+                                type="button"
+                                onClick={handleTest}
+                                disabled={testing}
+                                className="px-4 py-2 rounded-lg bg-teal-600 hover:bg-teal-500 text-white text-sm font-medium disabled:opacity-50"
+                            >
+                                {testing ? 'Sending…' : 'Send test'}
+                            </button>
+                        </div>
+                        {testResult && (
+                            <div className={`rounded-lg px-4 py-3 text-sm ${testResult.success ? 'bg-green-50 text-green-800 border border-green-200 dark:bg-green-900/20 dark:text-green-200 dark:border-green-800' : 'bg-red-50 text-red-800 border border-red-200 dark:bg-red-900/20 dark:text-red-200 dark:border-red-800'}`}>
+                                {testResult.message}
+                            </div>
+                        )}
+                    </div>
+
+                    <div className="flex justify-end gap-3 pt-2 border-t border-slate-200 dark:border-slate-700">
+                        <button
+                            type="button"
+                            onClick={() => {
+                                setExpanded(false);
+                                loadConfiguration();
+                                setSavedMsg(null);
+                                setTestResult(null);
+                            }}
+                            className="px-5 py-2 text-slate-700 dark:text-slate-200 bg-white border border-slate-300 dark:border-slate-600 rounded-lg hover:bg-slate-50 dark:hover:bg-slate-800 transition-colors"
+                        >
+                            Cancel
+                        </button>
+                        <button
+                            type="button"
+                            onClick={handleSave}
+                            disabled={saving}
+                            className="px-5 py-2 bg-sky-600 hover:bg-sky-500 text-white rounded-lg transition-colors disabled:opacity-50 font-medium"
+                        >
+                            {saving ? 'Saving…' : 'Save Settings'}
+                        </button>
+                    </div>
                 </div>
             )}
         </div>

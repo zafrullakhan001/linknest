@@ -119,6 +119,8 @@ const AppContent: React.FC = () => {
   const [tiles, setTiles] = useState<Tile[]>([]);
   const [loading, setLoading] = useState(true);
   const [authModalOpen, setAuthModalOpen] = useState(false);
+  const [authModalMode, setAuthModalMode] = useState<'login' | 'register' | 'forgot' | 'reset'>('login');
+  const [authResetToken, setAuthResetToken] = useState<string | null>(null);
   const [styleManagerOpen, setStyleManagerOpen] = useState(false);
   const [styleManagerInitialTab, setStyleManagerInitialTab] = useState<'spaces' | 'hero' | 'content' | undefined>(undefined);
   const [pageBackgroundDialogOpen, setPageBackgroundDialogOpen] = useState(false);
@@ -929,15 +931,30 @@ const AppContent: React.FC = () => {
 
     const openLoginFromUrl = () => {
       const params = new URLSearchParams(window.location.search);
-      const hash = (window.location.hash || '').toLowerCase();
+      const hash = (window.location.hash || '');
+      const hashLower = hash.toLowerCase();
       const path = (window.location.pathname || '').toLowerCase();
 
+      const resetMatch = hash.match(/^#\/reset-password(?:\?([^#]*))?$/i);
+      if (resetMatch) {
+        const tokenParams = new URLSearchParams(resetMatch[1] || '');
+        const token = tokenParams.get('token') || '';
+        if (token && !isAuthenticated) {
+          setAuthResetToken(token);
+          setAuthModalMode('reset');
+          setAuthModalOpen(true);
+        }
+        return;
+      }
+
       const signinQuery = params.has('signin') || params.get('ln_login') === '1';
-      const signinHash = hash === '#/signin' || hash === '#signin' || hash.startsWith('#/signin?');
+      const signinHash = hashLower === '#/signin' || hashLower === '#signin' || hashLower.startsWith('#/signin?');
       const signinPath = /(?:^|\/)signin\/?$/.test(path);
       if (!signinQuery && !signinHash && !signinPath) return;
 
       if (!isAuthenticated) {
+        setAuthModalMode('login');
+        setAuthResetToken(null);
         setAuthModalOpen(true);
       }
       cleanSigninUrlMarkers(signinHash);
@@ -1165,7 +1182,13 @@ const AppContent: React.FC = () => {
         </div>
         <AuthModal
           isOpen={authModalOpen}
-          onClose={() => setAuthModalOpen(false)}
+          onClose={() => {
+            setAuthModalOpen(false);
+            setAuthModalMode('login');
+            setAuthResetToken(null);
+          }}
+          initialMode={authModalMode}
+          resetToken={authResetToken}
         />
       </div>
     );
@@ -1187,7 +1210,13 @@ const AppContent: React.FC = () => {
         />
         <AuthModal
           isOpen={authModalOpen}
-          onClose={() => setAuthModalOpen(false)}
+          onClose={() => {
+            setAuthModalOpen(false);
+            setAuthModalMode('login');
+            setAuthResetToken(null);
+          }}
+          initialMode={authModalMode}
+          resetToken={authResetToken}
         />
       </>
     );
@@ -1573,15 +1602,15 @@ const AppContent: React.FC = () => {
               </div>
 
               {(showFooterDetails || isMobile) && (
-                <div className="w-full max-w-xl flex flex-col gap-2.5 sm:gap-3 animate-in fade-in slide-in-from-top-2 duration-300 px-1">
-                  <div className="text-center text-slate-500 dark:text-slate-400">
+                <div className="w-full flex flex-col items-center gap-2.5 sm:gap-3 animate-in fade-in slide-in-from-top-2 duration-300 px-1">
+                  <div className="w-full text-center text-slate-500 dark:text-slate-400">
                     <p
-                      className="font-medium text-[11px] sm:text-sm leading-relaxed break-words [&_a]:underline [&_a]:text-brand-600 dark:[&_a]:text-brand-400"
+                      className="linknest-footer-text font-medium leading-relaxed [&_a]:underline [&_a]:text-brand-600 dark:[&_a]:text-brand-400"
                       dangerouslySetInnerHTML={{ __html: settings.footer_text || '© 2025 Adventhealth - Designed and developed by AIT Architecture team' }}
                     ></p>
                   </div>
                   {((user?.is_admin && databasePathAbsolute) || (databasePath && settings.show_database_path_in_footer !== '0')) && (
-                    <div className="text-center text-[10px] sm:text-xs text-slate-400 dark:text-slate-500">
+                    <div className="w-full max-w-xl text-center text-[10px] sm:text-xs text-slate-400 dark:text-slate-500">
                       <div className="inline-flex flex-wrap items-center justify-center gap-1.5 sm:gap-2 bg-slate-100 dark:bg-slate-800/50 px-2.5 sm:px-3 py-1.5 rounded-xl sm:rounded-full border border-slate-200 dark:border-slate-700/50 shadow-sm max-w-full">
                         <span className="font-semibold text-[9px] sm:text-[10px] uppercase tracking-wider opacity-70 shrink-0">Database</span>
                         <span className="hidden sm:block h-3 w-px bg-slate-300 dark:bg-slate-700 shrink-0"></span>
@@ -1702,7 +1731,13 @@ const AppContent: React.FC = () => {
       )}
       <AuthModal
         isOpen={authModalOpen}
-        onClose={() => setAuthModalOpen(false)}
+        onClose={() => {
+          setAuthModalOpen(false);
+          setAuthModalMode('login');
+          setAuthResetToken(null);
+        }}
+        initialMode={authModalMode}
+        resetToken={authResetToken}
       />
       {user?.is_admin && (
         <Suspense fallback={null}>

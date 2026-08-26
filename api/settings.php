@@ -769,6 +769,35 @@ function handleUpdateSettings() {
     if (!isset($data['settings']) || !is_array($data['settings'])) {
         sendJSON(['error' => 'Settings data is required'], 400);
     }
+
+    // Never allow Local + LDAP + SAML to all be disabled (would lock admins out)
+    $authKeys = ['local_auth_enabled', 'ldap_enabled', 'saml_enabled'];
+    $touchesAuth = false;
+    foreach ($authKeys as $authKey) {
+        if (array_key_exists($authKey, $data['settings'])) {
+            $touchesAuth = true;
+            break;
+        }
+    }
+    if ($touchesAuth) {
+        $local = array_key_exists('local_auth_enabled', $data['settings'])
+            ? (string)$data['settings']['local_auth_enabled']
+            : (string)getSetting('local_auth_enabled', '1');
+        $ldap = array_key_exists('ldap_enabled', $data['settings'])
+            ? (string)$data['settings']['ldap_enabled']
+            : (string)getSetting('ldap_enabled', '0');
+        $saml = array_key_exists('saml_enabled', $data['settings'])
+            ? (string)$data['settings']['saml_enabled']
+            : (string)getSetting('saml_enabled', '0');
+        $localOn = $local !== '0';
+        $ldapOn = $ldap === '1';
+        $samlOn = $saml === '1';
+        if (!$localOn && !$ldapOn && !$samlOn) {
+            sendJSON([
+                'error' => 'Keep at least one sign-in method enabled (Local, LDAP, or SAML) so you can still access the system.'
+            ], 400);
+        }
+    }
     
     $db = getDB();
     $db->beginTransaction();
@@ -798,6 +827,12 @@ function handleUpdateSettings() {
                 'qr_branding_mode',
                 'qr_branding_emoji',
                 'footer_text',
+                'footer_font_size',
+                'footer_font_family',
+                'footer_font_weight',
+                'footer_font_style',
+                'footer_font_color',
+                'footer_font_color_dark',
                 'guest_access_enabled',
                 'local_registration_enabled',
                 'signin_button_enabled',
