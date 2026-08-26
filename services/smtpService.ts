@@ -131,15 +131,23 @@ export const smtpService = {
         return data.settings;
     },
 
-    async testConnection(settings: Partial<SMTPSettings> | { server_id: number }): Promise<{ success: boolean; message: string }> {
+    async testConnection(
+        settings: (Partial<SMTPSettings> | Partial<SMTPServer> | { server_id: number }) & { to?: string }
+    ): Promise<{ success: boolean; message: string }> {
         const response = await fetch('api/smtp-settings.php/test', {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify(settings)
+            body: JSON.stringify(settings),
+            credentials: 'include',
         });
-        if (!response.ok) throw new Error('Failed to test SMTP connection');
-        const data = await response.json();
-        return data;
+        const data = await response.json().catch(() => ({}));
+        if (!response.ok && data?.message == null && data?.error == null) {
+            throw new Error('Failed to test SMTP connection');
+        }
+        return {
+            success: !!data.success,
+            message: data.message || data.error || (data.success ? 'Sent' : 'Failed'),
+        };
     },
 
     // New multi-server methods
