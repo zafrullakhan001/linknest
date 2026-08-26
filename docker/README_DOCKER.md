@@ -135,6 +135,19 @@ This will:
 - Set restart policy to `always`
 - Include health checks, SSH/VNC gateway ports, and workers
 
+### Monitoring workers (built-in)
+
+The container entrypoint runs `monitor_runner.py` + `email_sender.py` on a loop. You do **not** need Windows Task Scheduler when using Docker.
+
+| Variable | Default | Purpose |
+|----------|---------|---------|
+| `LINKNEST_WORKERS_ENABLED` | `1` | Set `0` to disable |
+| `LINKNEST_WORKER_INTERVAL_SECONDS` | `60` | Seconds between cycles |
+| `LINKNEST_WORKER_MAX_WORKERS` | `10` | Concurrent checks |
+| `LINKNEST_EMAIL_LIMIT` | `50` | Max emails per sender run |
+
+For **Windows/XAMPP** (non-Docker), register Task Scheduler jobs once with `scripts\schedule-monitor-workers.bat`. See `docs/PYTHON_WORKERS.md`.
+
 ## Environment Variables
 
 Create a `.env` file in the project root:

@@ -60,18 +60,7 @@ function ln_email_public_base_url(?string $override = null): string {
  * Absolute logo URL for email clients (optional).
  */
 function ln_email_brand_logo_url(?string $publicBase = null): string {
-    $logo = '';
-    try {
-        $logo = trim((string)getSetting('header_logo_image', ''));
-        if ($logo === '') {
-            $logo = trim((string)getSetting('logo_image', ''));
-        }
-        if ($logo === '') {
-            $logo = trim((string)getSetting('favicon', ''));
-        }
-    } catch (Throwable $e) {
-        $logo = '';
-    }
+    $logo = ln_email_brand_logo_setting_raw();
     if ($logo === '') {
         return '';
     }
@@ -91,6 +80,93 @@ function ln_email_brand_logo_url(?string $publicBase = null): string {
     return ln_email_public_base_url($publicBase) . $normalized;
 }
 
+/** Raw logo setting value (relative /uploads path, http(s), or data URI). */
+function ln_email_brand_logo_setting_raw(): string {
+    $logo = '';
+    try {
+        $logo = trim((string)getSetting('header_logo_image', ''));
+        if ($logo === '') {
+            $logo = trim((string)getSetting('logo_image', ''));
+        }
+        if ($logo === '') {
+            $logo = trim((string)getSetting('favicon', ''));
+        }
+    } catch (Throwable $e) {
+        $logo = '';
+    }
+    return $logo;
+}
+
+/**
+ * Resolve brand logo to a local uploads file path (for CID embedding in Outlook).
+ */
+function ln_email_brand_logo_filesystem_path(): ?string {
+    $logo = ln_email_brand_logo_setting_raw();
+    if ($logo === '' || preg_match('#^https?://#i', $logo) || str_starts_with($logo, 'data:')) {
+        return null;
+    }
+    $normalized = preg_replace('#^/[^/]+/uploads/#', '/uploads/', $logo);
+    if (!is_string($normalized) || strpos($normalized, '/uploads/') !== 0) {
+        if (strpos($logo, '/uploads/') === 0) {
+            $normalized = $logo;
+        } else {
+            return null;
+        }
+    }
+    $filename = basename($normalized);
+    if (!preg_match('/^[a-zA-Z0-9._-]+$/', $filename)) {
+        return null;
+    }
+    $disk = dirname(__DIR__) . DIRECTORY_SEPARATOR . 'uploads' . DIRECTORY_SEPARATOR . $filename;
+    return is_file($disk) ? $disk : null;
+}
+
+/** Content-ID used when embedding the brand logo inline (Outlook-friendly). */
+function ln_email_brand_logo_cid(): string {
+    return 'ln-brand-logo';
+}
+
+/**
+ * Inline image attachments referenced by cid: in HTML (for multipart/related).
+ *
+ * @return list<array{cid:string,path:string,mime:string,name:string}>
+ */
+function ln_email_inline_attachments_for_html(string $html): array {
+    $out = [];
+    $cid = ln_email_brand_logo_cid();
+    if (stripos($html, 'cid:' . $cid) === false) {
+        return $out;
+    }
+    $path = ln_email_brand_logo_filesystem_path();
+    if ($path === null) {
+        return $out;
+    }
+    $mime = 'image/png';
+    if (function_exists('finfo_open')) {
+        $f = @finfo_open(FILEINFO_MIME_TYPE);
+        if ($f) {
+            $detected = @finfo_file($f, $path);
+            @finfo_close($f);
+            if (is_string($detected) && str_starts_with($detected, 'image/')) {
+                $mime = $detected;
+            }
+        }
+    } else {
+        $ext = strtolower(pathinfo($path, PATHINFO_EXTENSION));
+        $map = ['jpg' => 'image/jpeg', 'jpeg' => 'image/jpeg', 'gif' => 'image/gif', 'webp' => 'image/webp', 'png' => 'image/png'];
+        if (isset($map[$ext])) {
+            $mime = $map[$ext];
+        }
+    }
+    $out[] = [
+        'cid' => $cid,
+        'path' => $path,
+        'mime' => $mime,
+        'name' => basename($path),
+    ];
+    return $out;
+}
+
 function ln_email_brand_accent(): string {
     $candidates = ['nav_bg_light', 'nav_icon_color_light', 'auth_wash_from', 'app_name_font_color'];
     foreach ($candidates as $key) {
@@ -107,9 +183,9 @@ function ln_email_brand_accent(): string {
 }
 
 /**
- * Table-based layout for wide email client support.
+ * Table-based layout tuned for Outlook 365 / Word HTML engine.
  *
- * @param array{logo_url?:string,footer_label?:string,public_base?:string} $options
+ * @param array{logo_url?:string,footer_label?:string,public_base?:string,skip_logo?:bool} $options
  */
 function ln_email_base_layout(
     string $title,
@@ -123,56 +199,111 @@ function ln_email_base_layout(
     $safeTitle = ln_html_escape($title);
     $safeSubtitle = ln_html_escape($subtitle);
     $safePreheader = ln_html_escape($preheader);
+    $safeApp = ln_html_escape($appName);
     $accent = preg_match('/^#[0-9a-fA-F]{6}$/', $accentHex) ? $accentHex : '#4f46e5';
     $footerLabel = trim((string)($options['footer_label'] ?? ''));
     if ($footerLabel === '') {
         $footerLabel = 'Sent by ' . $appName;
     }
-    $logoUrl = trim((string)($options['logo_url'] ?? ''));
-    if ($logoUrl === '' && empty($options['skip_logo'])) {
-        $logoUrl = ln_email_brand_logo_url($options['public_base'] ?? null);
+
+    $logoSrc = '';
+    if (empty($options['skip_logo'])) {
+        $customLogo = trim((string)($options['logo_url'] ?? ''));
+        if ($customLogo !== '') {
+            $logoSrc = $customLogo;
+        } elseif (ln_email_brand_logo_filesystem_path() !== null) {
+            // Prefer CID so Outlook shows the logo without downloading remote images
+            $logoSrc = 'cid:' . ln_email_brand_logo_cid();
+        } else {
+            $logoSrc = ln_email_brand_logo_url($options['public_base'] ?? null);
+        }
     }
-    $logoBlock = '';
-    if ($logoUrl !== '') {
-        $logoBlock = '<div style="margin-bottom:12px;">
-              <img src="' . ln_html_escape($logoUrl) . '" alt="' . ln_html_escape($appName) . '" width="48" height="48" style="display:block;width:48px;height:48px;border-radius:12px;object-fit:contain;background:rgba(255,255,255,0.15);" />
-            </div>';
+
+    $logoRow = '';
+    if ($logoSrc !== '') {
+        // White band + fixed width (not a forced square) so wide wordmarks render correctly in Outlook
+        $logoRow = '
+          <tr>
+            <td bgcolor="#ffffff" style="background-color:#ffffff;padding:18px 24px 12px 24px;border-bottom:1px solid #e2e8f0;">
+              <img src="' . ln_html_escape($logoSrc) . '" alt="' . $safeApp . '" width="180" border="0" style="display:block;border:0;outline:none;text-decoration:none;height:auto;max-width:180px;width:180px;" />
+            </td>
+          </tr>';
     }
 
     return '<!doctype html>
-<html>
+<html xmlns="http://www.w3.org/1999/xhtml" xmlns:o="urn:schemas-microsoft-com:office:office" xmlns:v="urn:schemas-microsoft-com:vml">
 <head>
   <meta http-equiv="Content-Type" content="text/html; charset=UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <meta name="x-apple-disable-message-reformatting" />
+  <meta name="format-detection" content="telephone=no,address=no,email=no,date=no,url=no" />
+  <!--[if mso]>
+  <noscript>
+    <xml>
+      <o:OfficeDocumentSettings>
+        <o:PixelsPerInch>96</o:PixelsPerInch>
+      </o:OfficeDocumentSettings>
+    </xml>
+  </noscript>
+  <style type="text/css">
+    table, td, div, span, a { font-family: Arial, Helvetica, sans-serif !important; }
+  </style>
+  <![endif]-->
   <title>' . $safeTitle . '</title>
+  <style type="text/css">
+    body, table, td, a { -webkit-text-size-adjust: 100%; -ms-text-size-adjust: 100%; }
+    table, td { mso-table-lspace: 0pt; mso-table-rspace: 0pt; border-collapse: collapse !important; }
+    img { -ms-interpolation-mode: bicubic; border: 0; outline: none; text-decoration: none; }
+    a { color: #2563eb; }
+  </style>
 </head>
-<body style="margin:0;padding:0;background:#f6f7fb;">
-  <div style="display:none;max-height:0;overflow:hidden;opacity:0;color:transparent;">' . $safePreheader . '</div>
-  <table role="presentation" cellpadding="0" cellspacing="0" width="100%" style="background:#f6f7fb;padding:24px 0;">
+<body style="margin:0;padding:0;background-color:#f1f5f9;width:100% !important;">
+  <div style="display:none;font-size:1px;line-height:1px;max-height:0;max-width:0;opacity:0;overflow:hidden;mso-hide:all;">' . $safePreheader . '</div>
+  <table role="presentation" cellpadding="0" cellspacing="0" border="0" width="100%" bgcolor="#f1f5f9" style="background-color:#f1f5f9;width:100%;">
     <tr>
-      <td align="center">
-        <table role="presentation" cellpadding="0" cellspacing="0" width="600" style="width:600px;max-width:100%;background:#ffffff;border-radius:18px;overflow:hidden;box-shadow:0 10px 25px rgba(15,23,42,0.06);">
+      <td align="center" style="padding:24px 12px;">
+        <!--[if mso]>
+        <table role="presentation" cellpadding="0" cellspacing="0" border="0" width="600"><tr><td>
+        <![endif]-->
+        <table role="presentation" cellpadding="0" cellspacing="0" border="0" width="600" style="width:100%;max-width:600px;background-color:#ffffff;">
+          ' . $logoRow . '
           <tr>
-            <td style="background:' . $accent . ';padding:28px 28px 22px 28px;">
-              ' . $logoBlock . '
-              <div style="font-family:Segoe UI,Arial,sans-serif;color:#ffffff;font-size:12px;font-weight:700;letter-spacing:0.08em;text-transform:uppercase;opacity:0.9;margin-bottom:8px;">' . ln_html_escape($appName) . '</div>
-              <div style="font-family:Segoe UI,Arial,sans-serif;color:#ffffff;font-size:20px;font-weight:800;letter-spacing:0.2px;line-height:1.2;">' . $safeTitle . '</div>
-              <div style="font-family:Segoe UI,Arial,sans-serif;color:rgba(255,255,255,0.9);font-size:13px;font-weight:600;margin-top:6px;line-height:1.4;">' . $safeSubtitle . '</div>
+            <td bgcolor="' . $accent . '" style="background-color:' . $accent . ';padding:22px 24px;">
+              <table role="presentation" cellpadding="0" cellspacing="0" border="0" width="100%">
+                <tr>
+                  <td style="font-family:Arial,Helvetica,sans-serif;color:#ffffff;font-size:11px;font-weight:700;letter-spacing:1px;text-transform:uppercase;padding:0 0 8px 0;">
+                    ' . $safeApp . '
+                  </td>
+                </tr>
+                <tr>
+                  <td style="font-family:Arial,Helvetica,sans-serif;color:#ffffff;font-size:22px;font-weight:700;line-height:28px;padding:0 0 6px 0;">
+                    ' . $safeTitle . '
+                  </td>
+                </tr>
+                <tr>
+                  <td style="font-family:Arial,Helvetica,sans-serif;color:#ffffff;font-size:14px;font-weight:600;line-height:20px;">
+                    ' . $safeSubtitle . '
+                  </td>
+                </tr>
+              </table>
             </td>
           </tr>
           <tr>
-            <td style="padding:24px 28px 10px 28px;">
+            <td bgcolor="#ffffff" style="background-color:#ffffff;padding:24px;">
               ' . $innerHtml . '
             </td>
           </tr>
           <tr>
-            <td style="padding:18px 28px 24px 28px;border-top:1px solid #eef2ff;">
-              <div style="font-family:Segoe UI,Arial,sans-serif;color:#64748b;font-size:12px;line-height:1.4;">
-                ' . ln_html_escape($footerLabel) . ' • ' . ln_html_escape(ln_format_datetime()) . '
-              </div>
+            <td bgcolor="#f8fafc" style="background-color:#f8fafc;padding:16px 24px;border-top:1px solid #e2e8f0;">
+              <p style="margin:0;font-family:Arial,Helvetica,sans-serif;color:#64748b;font-size:12px;line-height:18px;text-align:center;">
+                ' . ln_html_escape($footerLabel) . ' &bull; ' . ln_html_escape(ln_format_datetime()) . '
+              </p>
             </td>
           </tr>
         </table>
+        <!--[if mso]>
+        </td></tr></table>
+        <![endif]-->
       </td>
     </tr>
   </table>
@@ -435,45 +566,69 @@ function ln_render_monitor_status_email_html(string $monitorName, string $target
     }
 
     $safeDetails = nl2br(ln_html_escape($details));
+    $safeTarget = ln_html_escape($target);
+    $targetCell = $safeTarget;
+    if (preg_match('#^https?://#i', $target)) {
+        $targetCell = '<a href="' . $safeTarget . '" style="color:#2563eb;text-decoration:underline;">' . $safeTarget . '</a>';
+    }
+
     $safeCustom = $customMessageText !== null && trim($customMessageText) !== ''
-        ? '<div style="margin-top:16px;">
-             <div style="font-size:13px;font-weight:900;color:#0f172a;margin-bottom:8px;">Message</div>
-             <div style="background:#ffffff;border:1px solid #e2e8f0;border-radius:14px;padding:12px 14px;font-family:ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;font-size:12px;line-height:1.6;color:#0f172a;">' . nl2br(ln_html_escape($customMessageText)) . '</div>
-           </div>'
+        ? '<table role="presentation" cellpadding="0" cellspacing="0" border="0" width="100%" style="margin-top:16px;">
+             <tr><td style="font-family:Arial,Helvetica,sans-serif;font-size:13px;font-weight:700;color:#0f172a;padding:0 0 8px 0;">Message</td></tr>
+             <tr>
+               <td bgcolor="#f8fafc" style="background-color:#f8fafc;border:1px solid #e2e8f0;padding:12px 14px;font-family:Consolas,Courier New,monospace;font-size:12px;line-height:1.6;color:#0f172a;">'
+                 . nl2br(ln_html_escape($customMessageText)) .
+               '</td>
+             </tr>
+           </table>'
         : '';
 
     $inner = '
-      <div style="font-family:Segoe UI,Arial,sans-serif;color:#0f172a;">
-        <div style="display:flex;align-items:center;justify-content:space-between;gap:12px;flex-wrap:wrap;">
-          <div style="font-size:18px;font-weight:900;margin:0;">' . ln_html_escape($monitorName) . '</div>
-          <div>
-            <span style="display:inline-block;background:' . $pillBg . ';color:#fff;padding:6px 12px;border-radius:999px;font-weight:900;font-size:12px;letter-spacing:0.6px;">' . ln_html_escape($statusLabel) . '</span>
-          </div>
-        </div>
-
-        <div style="margin-top:14px;background:#f8fafc;border:1px solid #e2e8f0;border-radius:16px;padding:14px 16px;">
-          <table role="presentation" cellpadding="0" cellspacing="0" width="100%">
-            <tr>
-              <td style="font-size:13px;color:#334155;padding:4px 0;"><strong>Target</strong></td>
-              <td style="font-size:13px;color:#334155;padding:4px 0;" align="right">' . ln_html_escape($target) . '</td>
-            </tr>
-            <tr>
-              <td style="font-size:13px;color:#334155;padding:4px 0;"><strong>Response time</strong></td>
-              <td style="font-size:13px;color:#334155;padding:4px 0;" align="right">' . ln_html_escape(ln_format_response_time($responseTimeMs)) . '</td>
-            </tr>
-            <tr>
-              <td style="font-size:13px;color:#334155;padding:4px 0;"><strong>Time</strong></td>
-              <td style="font-size:13px;color:#334155;padding:4px 0;" align="right">' . ln_html_escape(date('Y-m-d H:i:s', $ts)) . '</td>
-            </tr>
-          </table>
-        </div>
-
-        <div style="margin-top:16px;">
-          <div style="font-size:13px;font-weight:900;color:#0f172a;margin-bottom:8px;">Details</div>
-          <div style="background:#ffffff;border:1px solid #e2e8f0;border-left:5px solid ' . $accent . ';border-radius:14px;padding:12px 14px;font-size:13px;line-height:1.6;color:#334155;">' . $safeDetails . '</div>
-        </div>
-        ' . $safeCustom . '
-      </div>
+      <table role="presentation" cellpadding="0" cellspacing="0" border="0" width="100%">
+        <tr>
+          <td style="font-family:Arial,Helvetica,sans-serif;font-size:18px;font-weight:700;color:#0f172a;padding:0 0 10px 0;">'
+            . ln_html_escape($monitorName) .
+          '</td>
+        </tr>
+        <tr>
+          <td style="padding:0 0 14px 0;">
+            <table role="presentation" cellpadding="0" cellspacing="0" border="0">
+              <tr>
+                <td bgcolor="' . $pillBg . '" style="background-color:' . $pillBg . ';color:#ffffff;font-family:Arial,Helvetica,sans-serif;font-size:12px;font-weight:700;letter-spacing:0.6px;padding:6px 14px;">'
+                  . ln_html_escape($statusLabel) .
+                '</td>
+              </tr>
+            </table>
+          </td>
+        </tr>
+        <tr>
+          <td bgcolor="#f8fafc" style="background-color:#f8fafc;border:1px solid #e2e8f0;padding:0;">
+            <table role="presentation" cellpadding="0" cellspacing="0" border="0" width="100%">
+              <tr>
+                <td width="34%" style="font-family:Arial,Helvetica,sans-serif;font-size:13px;color:#334155;padding:10px 14px;border-bottom:1px solid #e2e8f0;"><strong>Target</strong></td>
+                <td width="66%" align="right" style="font-family:Arial,Helvetica,sans-serif;font-size:13px;color:#334155;padding:10px 14px;border-bottom:1px solid #e2e8f0;word-break:break-all;">' . $targetCell . '</td>
+              </tr>
+              <tr>
+                <td style="font-family:Arial,Helvetica,sans-serif;font-size:13px;color:#334155;padding:10px 14px;border-bottom:1px solid #e2e8f0;"><strong>Response time</strong></td>
+                <td align="right" style="font-family:Arial,Helvetica,sans-serif;font-size:13px;color:#334155;padding:10px 14px;border-bottom:1px solid #e2e8f0;">' . ln_html_escape(ln_format_response_time($responseTimeMs)) . '</td>
+              </tr>
+              <tr>
+                <td style="font-family:Arial,Helvetica,sans-serif;font-size:13px;color:#334155;padding:10px 14px;"><strong>Time</strong></td>
+                <td align="right" style="font-family:Arial,Helvetica,sans-serif;font-size:13px;color:#334155;padding:10px 14px;">' . ln_html_escape(date('Y-m-d H:i:s', $ts)) . '</td>
+              </tr>
+            </table>
+          </td>
+        </tr>
+        <tr>
+          <td style="font-family:Arial,Helvetica,sans-serif;font-size:13px;font-weight:700;color:#0f172a;padding:16px 0 8px 0;">Details</td>
+        </tr>
+        <tr>
+          <td bgcolor="#ffffff" style="background-color:#ffffff;border:1px solid #e2e8f0;border-left:4px solid ' . $accent . ';padding:12px 14px;font-family:Arial,Helvetica,sans-serif;font-size:13px;line-height:1.6;color:#334155;">'
+            . $safeDetails .
+          '</td>
+        </tr>
+      </table>
+      ' . $safeCustom . '
     ';
 
     $pre = $statusLabel . ' - ' . $monitorName . ' (' . ln_format_response_time($responseTimeMs) . ')';

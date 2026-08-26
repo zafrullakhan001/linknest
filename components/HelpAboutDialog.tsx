@@ -1301,6 +1301,25 @@ docker\\docker-sync-database.bat -Direction Out -HostBasePath "/ArchLinks"`}</pr
                       <li>Bulk operations and duplicate monitors</li>
                     </ul>
                   </div>
+                  <div className="bg-violet-50 dark:bg-violet-900/20 rounded-lg p-4 space-y-2">
+                    <p className="font-medium text-violet-900 dark:text-violet-100">Automatic scheduling:</p>
+                    <ul className="list-disc list-inside space-y-1 ml-2 text-sm">
+                      <li>
+                        <strong>Windows / XAMPP:</strong> run{' '}
+                        <code className="text-xs bg-white/70 dark:bg-slate-800 px-1 rounded">scripts\schedule-monitor-workers.bat</code>{' '}
+                        to register Task Scheduler jobs every 1–2 minutes (Python workers).
+                      </li>
+                      <li>
+                        <strong>Docker:</strong> workers run automatically in the container entrypoint
+                        (<code className="text-xs bg-white/70 dark:bg-slate-800 px-1 rounded">LINKNEST_WORKERS_ENABLED=1</code>,
+                        interval via <code className="text-xs bg-white/70 dark:bg-slate-800 px-1 rounded">LINKNEST_WORKER_INTERVAL_SECONDS</code>).
+                      </li>
+                      <li>
+                        In-app help: Monitoring dashboard → Scheduler Setup. Full docs:{' '}
+                        <code className="text-xs bg-white/70 dark:bg-slate-800 px-1 rounded">docs/PYTHON_WORKERS.md</code>
+                      </li>
+                    </ul>
+                  </div>
                   <div className="bg-emerald-50 dark:bg-emerald-900/20 rounded-lg p-4 space-y-2">
                     <p className="font-medium text-emerald-900 dark:text-emerald-100">Email Notifications:</p>
                     <ul className="list-disc list-inside space-y-1 ml-2 text-sm">

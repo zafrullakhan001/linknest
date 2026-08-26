@@ -484,6 +484,7 @@ def send_smtp_email(
     from_name: Optional[str],
     from_email: Optional[str],
     timeout_seconds: int = 20,
+    db_conn: Optional[sqlite3.Connection] = None,
 ) -> Tuple[bool, Optional[str]]:
     enabled = str(smtp_cfg.get("enabled", "")).strip().lower()
     if enabled not in ("1", "true"):
@@ -517,6 +518,25 @@ def send_smtp_email(
     if html_body:
         # Provide an HTML alternative (many clients prefer this), while keeping the plain-text fallback.
         msg.add_alternative(str(html_body), subtype="html")
+        # Inline brand logo for Outlook (cid:ln-brand-logo)
+        if "cid:ln-brand-logo" in str(html_body):
+            logo_path = resolve_brand_logo_filesystem_path(db_conn)
+            if logo_path and os.path.isfile(logo_path):
+                try:
+                    with open(logo_path, "rb") as fh:
+                        img_bytes = fh.read()
+                    ext = os.path.splitext(logo_path)[1].lower().lstrip(".")
+                    subtype = {"jpg": "jpeg", "jpeg": "jpeg", "gif": "gif", "webp": "webp"}.get(ext, "png")
+                    html_part = msg.get_payload()[-1]
+                    html_part.add_related(
+                        img_bytes,
+                        maintype="image",
+                        subtype=subtype,
+                        cid="ln-brand-logo",
+                        filename=os.path.basename(logo_path),
+                    )
+                except Exception:
+                    pass
 
     try:
         import smtplib
@@ -563,45 +583,128 @@ def _ln_nl2br_escaped(text: str) -> str:
     return _ln_html_escape(text).replace("\r\n", "\n").replace("\r", "\n").replace("\n", "<br/>")
 
 
-def ln_email_base_layout(title: str, subtitle: str, accent_hex: str, inner_html: str, preheader: str = "", app_name: str = "LinkNest") -> str:
+def _setting_value(conn: Optional[sqlite3.Connection], key: str) -> str:
+    if conn is None:
+        try:
+            with open_db(DEFAULT_DB_PATH) as c:
+                row = c.execute("SELECT value FROM settings WHERE key = ? LIMIT 1", (key,)).fetchone()
+                return str(row["value"]) if row and row["value"] is not None else ""
+        except Exception:
+            return ""
+    try:
+        row = conn.execute("SELECT value FROM settings WHERE key = ? LIMIT 1", (key,)).fetchone()
+        return str(row["value"]) if row and row["value"] is not None else ""
+    except Exception:
+        return ""
+
+
+def resolve_brand_logo_filesystem_path(conn: Optional[sqlite3.Connection] = None) -> Optional[str]:
+    """Map header/logo setting to uploads/<file> on disk for CID embedding."""
+    raw = ""
+    for key in ("header_logo_image", "logo_image", "favicon"):
+        raw = (_setting_value(conn, key) or "").strip()
+        if raw:
+            break
+    if not raw or raw.startswith("http://") or raw.startswith("https://") or raw.startswith("data:"):
+        return None
+    normalized = re.sub(r"^/[^/]+/uploads/", "/uploads/", raw)
+    if not normalized.startswith("/uploads/"):
+        return None
+    filename = os.path.basename(normalized)
+    if not re.match(r"^[a-zA-Z0-9._-]+$", filename):
+        return None
+    disk = os.path.normpath(os.path.join(os.path.dirname(__file__), "..", "uploads", filename))
+    return disk if os.path.isfile(disk) else None
+
+
+def ln_email_base_layout(
+    title: str,
+    subtitle: str,
+    accent_hex: str,
+    inner_html: str,
+    preheader: str = "",
+    app_name: str = "LinkNest",
+    footer_label: Optional[str] = None,
+    db_conn: Optional[sqlite3.Connection] = None,
+) -> str:
+    """Outlook-safe table layout (mirrors api/email_templates.php)."""
     accent = accent_hex if re.match(r"^#[0-9a-fA-F]{6}$", accent_hex or "") else "#4f46e5"
     safe_title = _ln_html_escape(title)
     safe_subtitle = _ln_html_escape(subtitle)
     safe_preheader = _ln_html_escape(preheader)
     safe_app_name = _ln_html_escape(app_name)
-    # Table-based layout for wide email client support (mirrors PHP template styling)
+    foot = footer_label or f"Sent by {app_name} Monitoring"
+    safe_foot = _ln_html_escape(foot)
+    now_s = _ln_html_escape(_dt.datetime.now().strftime("%Y-%m-%d %H:%M:%S"))
+
+    logo_row = ""
+    if resolve_brand_logo_filesystem_path(db_conn):
+        logo_row = f"""
+          <tr>
+            <td bgcolor="#ffffff" style="background-color:#ffffff;padding:18px 24px 12px 24px;border-bottom:1px solid #e2e8f0;">
+              <img src="cid:ln-brand-logo" alt="{safe_app_name}" width="180" border="0" style="display:block;border:0;outline:none;text-decoration:none;height:auto;max-width:180px;width:180px;" />
+            </td>
+          </tr>"""
+
     return f"""<!doctype html>
-<html>
+<html xmlns="http://www.w3.org/1999/xhtml" xmlns:o="urn:schemas-microsoft-com:office:office" xmlns:v="urn:schemas-microsoft-com:vml">
 <head>
   <meta http-equiv="Content-Type" content="text/html; charset=UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <meta name="x-apple-disable-message-reformatting" />
+  <!--[if mso]>
+  <style type="text/css">
+    table, td, div, span, a {{ font-family: Arial, Helvetica, sans-serif !important; }}
+  </style>
+  <![endif]-->
   <title>{safe_title}</title>
+  <style type="text/css">
+    body, table, td, a {{ -webkit-text-size-adjust: 100%; -ms-text-size-adjust: 100%; }}
+    table, td {{ mso-table-lspace: 0pt; mso-table-rspace: 0pt; border-collapse: collapse !important; }}
+    img {{ -ms-interpolation-mode: bicubic; border: 0; outline: none; text-decoration: none; }}
+  </style>
 </head>
-<body style="margin:0;padding:0;background:#f6f7fb;">
-  <div style="display:none;max-height:0;overflow:hidden;opacity:0;color:transparent;">{safe_preheader}</div>
-  <table role="presentation" cellpadding="0" cellspacing="0" width="100%" style="background:#f6f7fb;padding:24px 0;">
+<body style="margin:0;padding:0;background-color:#f1f5f9;width:100% !important;">
+  <div style="display:none;font-size:1px;line-height:1px;max-height:0;max-width:0;opacity:0;overflow:hidden;mso-hide:all;">{safe_preheader}</div>
+  <table role="presentation" cellpadding="0" cellspacing="0" border="0" width="100%" bgcolor="#f1f5f9" style="background-color:#f1f5f9;width:100%;">
     <tr>
-      <td align="center">
-        <table role="presentation" cellpadding="0" cellspacing="0" width="600" style="width:600px;max-width:100%;background:#ffffff;border-radius:18px;overflow:hidden;box-shadow:0 10px 25px rgba(15,23,42,0.06);">
+      <td align="center" style="padding:24px 12px;">
+        <!--[if mso]>
+        <table role="presentation" cellpadding="0" cellspacing="0" border="0" width="600"><tr><td>
+        <![endif]-->
+        <table role="presentation" cellpadding="0" cellspacing="0" border="0" width="600" style="width:100%;max-width:600px;background-color:#ffffff;">
+          {logo_row}
           <tr>
-            <td style="background:{accent};padding:28px 28px 22px 28px;">
-              <div style="font-family:Segoe UI,Arial,sans-serif;color:#ffffff;font-size:20px;font-weight:800;letter-spacing:0.2px;line-height:1.2;">{safe_title}</div>
-              <div style="font-family:Segoe UI,Arial,sans-serif;color:rgba(255,255,255,0.9);font-size:13px;font-weight:600;margin-top:6px;line-height:1.4;">{safe_subtitle}</div>
+            <td bgcolor="{accent}" style="background-color:{accent};padding:22px 24px;">
+              <table role="presentation" cellpadding="0" cellspacing="0" border="0" width="100%">
+                <tr>
+                  <td style="font-family:Arial,Helvetica,sans-serif;color:#ffffff;font-size:11px;font-weight:700;letter-spacing:1px;text-transform:uppercase;padding:0 0 8px 0;">{safe_app_name}</td>
+                </tr>
+                <tr>
+                  <td style="font-family:Arial,Helvetica,sans-serif;color:#ffffff;font-size:22px;font-weight:700;line-height:28px;padding:0 0 6px 0;">{safe_title}</td>
+                </tr>
+                <tr>
+                  <td style="font-family:Arial,Helvetica,sans-serif;color:#ffffff;font-size:14px;font-weight:600;line-height:20px;">{safe_subtitle}</td>
+                </tr>
+              </table>
             </td>
           </tr>
           <tr>
-            <td style="padding:24px 28px 10px 28px;">
+            <td bgcolor="#ffffff" style="background-color:#ffffff;padding:24px;">
               {inner_html}
             </td>
           </tr>
           <tr>
-            <td style="padding:18px 28px 24px 28px;border-top:1px solid #eef2ff;">
-              <div style="font-family:Segoe UI,Arial,sans-serif;color:#64748b;font-size:12px;line-height:1.4;">
-                Sent by {safe_app_name} Monitoring • {_ln_html_escape(_dt.datetime.now().strftime("%Y-%m-%d %H:%M:%S"))}
-              </div>
+            <td bgcolor="#f8fafc" style="background-color:#f8fafc;padding:16px 24px;border-top:1px solid #e2e8f0;">
+              <p style="margin:0;font-family:Arial,Helvetica,sans-serif;color:#64748b;font-size:12px;line-height:18px;text-align:center;">
+                {safe_foot} &bull; {now_s}
+              </p>
             </td>
           </tr>
         </table>
+        <!--[if mso]>
+        </td></tr></table>
+        <![endif]-->
       </td>
     </tr>
   </table>
@@ -618,11 +721,10 @@ def ln_render_monitor_notification_html(
     message_text: str,
     response_time_ms: Optional[object] = None,
     app_name: str = "LinkNest",
+    db_conn: Optional[sqlite3.Connection] = None,
 ) -> str:
     """
-    Render a styled HTML email similar to the PHP legacy template.
-    Works for both legacy and rule-based notifications by placing the template-rendered message
-    into a "Message" section.
+    Render Outlook-safe HTML similar to the PHP monitor status template.
     """
     status_label = (status or "").strip().upper() or "UNKNOWN"
     accent = _ln_accent_for_status(status)
@@ -630,45 +732,69 @@ def ln_render_monitor_notification_html(
 
     safe_message = _ln_nl2br_escaped(message_text or "")
     safe_subject = _ln_html_escape(subject)
+    safe_target = _ln_html_escape(target or "N/A")
+    target_cell = safe_target
+    if re.match(r"^https?://", target or "", re.I):
+        target_cell = f'<a href="{safe_target}" style="color:#2563eb;text-decoration:underline;">{safe_target}</a>'
+    rt = _ln_html_escape(str(response_time_ms) if response_time_ms not in (None, "") else "N/A")
+    now_s = _ln_html_escape(_dt.datetime.now().strftime("%Y-%m-%d %H:%M:%S"))
 
-    # Basic "details card" with monitor metadata + message block
     inner = f"""
-      <div style="font-family:Segoe UI,Arial,sans-serif;color:#0f172a;">
-        <div style="display:flex;align-items:center;justify-content:space-between;gap:12px;flex-wrap:wrap;">
-          <div style="font-size:18px;font-weight:900;margin:0;">{_ln_html_escape(monitor_name or "Monitor")}</div>
-          <div>
-            <span style="display:inline-block;background:{pill_bg};color:#fff;padding:6px 12px;border-radius:999px;font-weight:900;font-size:12px;letter-spacing:0.6px;">{_ln_html_escape(status_label)}</span>
-          </div>
-        </div>
-
-        <div style="margin-top:14px;background:#f8fafc;border:1px solid #e2e8f0;border-radius:16px;padding:14px 16px;">
-          <table role="presentation" cellpadding="0" cellspacing="0" width="100%">
-            <tr>
-              <td style="font-size:13px;color:#334155;padding:4px 0;"><strong>Target</strong></td>
-              <td style="font-size:13px;color:#334155;padding:4px 0;" align="right">{_ln_html_escape(target or "N/A")}</td>
-            </tr>
-            <tr>
-              <td style="font-size:13px;color:#334155;padding:4px 0;"><strong>Response time</strong></td>
-              <td style="font-size:13px;color:#334155;padding:4px 0;" align="right">{_ln_html_escape(str(response_time_ms) if response_time_ms not in (None, "") else "N/A")}</td>
-            </tr>
-            <tr>
-              <td style="font-size:13px;color:#334155;padding:4px 0;"><strong>Time</strong></td>
-              <td style="font-size:13px;color:#334155;padding:4px 0;" align="right">{_ln_html_escape(_dt.datetime.now().strftime("%Y-%m-%d %H:%M:%S"))}</td>
-            </tr>
-          </table>
-        </div>
-
-        <div style="margin-top:16px;">
-          <div style="font-size:13px;font-weight:900;color:#0f172a;margin-bottom:8px;">Subject</div>
-          <div style="background:#ffffff;border:1px solid #e2e8f0;border-left:5px solid {accent};border-radius:14px;padding:12px 14px;font-size:13px;line-height:1.6;color:#334155;">{safe_subject}</div>
-        </div>
-
-        <div style="margin-top:16px;">
-          <div style="font-size:13px;font-weight:900;color:#0f172a;margin-bottom:8px;">Message</div>
-          <div style="background:#ffffff;border:1px solid #e2e8f0;border-radius:14px;padding:12px 14px;font-family:ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;font-size:12px;line-height:1.6;color:#0f172a;">{safe_message}</div>
-        </div>
-      </div>
+      <table role="presentation" cellpadding="0" cellspacing="0" border="0" width="100%">
+        <tr>
+          <td style="font-family:Arial,Helvetica,sans-serif;font-size:18px;font-weight:700;color:#0f172a;padding:0 0 10px 0;">{_ln_html_escape(monitor_name or "Monitor")}</td>
+        </tr>
+        <tr>
+          <td style="padding:0 0 14px 0;">
+            <table role="presentation" cellpadding="0" cellspacing="0" border="0">
+              <tr>
+                <td bgcolor="{pill_bg}" style="background-color:{pill_bg};color:#ffffff;font-family:Arial,Helvetica,sans-serif;font-size:12px;font-weight:700;letter-spacing:0.6px;padding:6px 14px;">{_ln_html_escape(status_label)}</td>
+              </tr>
+            </table>
+          </td>
+        </tr>
+        <tr>
+          <td bgcolor="#f8fafc" style="background-color:#f8fafc;border:1px solid #e2e8f0;padding:0;">
+            <table role="presentation" cellpadding="0" cellspacing="0" border="0" width="100%">
+              <tr>
+                <td width="34%" style="font-family:Arial,Helvetica,sans-serif;font-size:13px;color:#334155;padding:10px 14px;border-bottom:1px solid #e2e8f0;"><strong>Target</strong></td>
+                <td width="66%" align="right" style="font-family:Arial,Helvetica,sans-serif;font-size:13px;color:#334155;padding:10px 14px;border-bottom:1px solid #e2e8f0;word-break:break-all;">{target_cell}</td>
+              </tr>
+              <tr>
+                <td style="font-family:Arial,Helvetica,sans-serif;font-size:13px;color:#334155;padding:10px 14px;border-bottom:1px solid #e2e8f0;"><strong>Response time</strong></td>
+                <td align="right" style="font-family:Arial,Helvetica,sans-serif;font-size:13px;color:#334155;padding:10px 14px;border-bottom:1px solid #e2e8f0;">{rt}</td>
+              </tr>
+              <tr>
+                <td style="font-family:Arial,Helvetica,sans-serif;font-size:13px;color:#334155;padding:10px 14px;"><strong>Time</strong></td>
+                <td align="right" style="font-family:Arial,Helvetica,sans-serif;font-size:13px;color:#334155;padding:10px 14px;">{now_s}</td>
+              </tr>
+            </table>
+          </td>
+        </tr>
+        <tr>
+          <td style="font-family:Arial,Helvetica,sans-serif;font-size:13px;font-weight:700;color:#0f172a;padding:16px 0 8px 0;">Subject</td>
+        </tr>
+        <tr>
+          <td bgcolor="#ffffff" style="background-color:#ffffff;border:1px solid #e2e8f0;border-left:4px solid {accent};padding:12px 14px;font-family:Arial,Helvetica,sans-serif;font-size:13px;line-height:1.6;color:#334155;">{safe_subject}</td>
+        </tr>
+        <tr>
+          <td style="font-family:Arial,Helvetica,sans-serif;font-size:13px;font-weight:700;color:#0f172a;padding:16px 0 8px 0;">Message</td>
+        </tr>
+        <tr>
+          <td bgcolor="#f8fafc" style="background-color:#f8fafc;border:1px solid #e2e8f0;padding:12px 14px;font-family:Consolas,Courier New,monospace;font-size:12px;line-height:1.6;color:#0f172a;">{safe_message}</td>
+        </tr>
+      </table>
     """
+
     pre = f"{status_label} - {monitor_name}"
-    return ln_email_base_layout("Monitor Status Update", "Rule-based notification email", accent, inner, preheader=pre, app_name=app_name)
+    return ln_email_base_layout(
+        "Monitor Status Update",
+        "Real-time status change notification",
+        accent,
+        inner,
+        preheader=pre,
+        app_name=app_name,
+        footer_label=f"Sent by {app_name} Monitoring",
+        db_conn=db_conn,
+    )
 

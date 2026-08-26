@@ -1048,7 +1048,7 @@ export const MonitoringDashboard: React.FC = () => {
                                 <button
                                     onClick={() => setShowCronModal(true)}
                                     className="p-2 rounded-lg transition-all text-slate-400 hover:text-purple-500 hover:bg-white dark:hover:bg-[#333]"
-                                    title="Cron Setup"
+                                    title="Scheduler Setup"
                                 >
                                     <FaClock size={14} />
                                 </button>
@@ -2372,15 +2372,15 @@ export const MonitoringDashboard: React.FC = () => {
 
             {showCronModal && (
                 <div className="fixed inset-0 z-[100] flex items-center justify-center p-4 bg-black/60 backdrop-blur-sm">
-                    <div className="bg-white dark:bg-[#1e1e1e] rounded-3xl w-full max-w-2xl border border-slate-200 dark:border-[#333] shadow-2xl overflow-hidden animate-in fade-in zoom-in duration-200">
-                        <div className="p-6 border-b border-slate-100 dark:border-[#333] flex items-center justify-between">
+                    <div className="bg-white dark:bg-[#1e1e1e] rounded-3xl w-full max-w-3xl max-h-[90vh] border border-slate-200 dark:border-[#333] shadow-2xl overflow-hidden animate-in fade-in zoom-in duration-200 flex flex-col">
+                        <div className="p-6 border-b border-slate-100 dark:border-[#333] flex items-center justify-between shrink-0">
                             <div className="flex items-center gap-3">
                                 <div className="w-10 h-10 rounded-xl bg-purple-500/10 flex items-center justify-center">
                                     <FaClock size={20} {...({ className: "text-purple-500" } as any)} />
                                 </div>
                                 <div>
-                                    <h2 className="text-xl font-bold text-slate-900 dark:text-white">Cron Setup</h2>
-                                    <p className="text-sm text-slate-500">Automate your monitoring checks</p>
+                                    <h2 className="text-xl font-bold text-slate-900 dark:text-white">Scheduler Setup</h2>
+                                    <p className="text-sm text-slate-500">Keep monitors checking automatically every few minutes</p>
                                 </div>
                             </div>
                             <button onClick={() => setShowCronModal(false)} className="p-2 hover:bg-slate-100 dark:hover:bg-[#333] rounded-xl transition-all text-slate-500">
@@ -2388,65 +2388,130 @@ export const MonitoringDashboard: React.FC = () => {
                             </button>
                         </div>
 
-                        <div className="p-6 space-y-6">
+                        <div className="p-6 space-y-6 overflow-y-auto">
                             <div className="p-4 bg-blue-50 dark:bg-blue-500/5 rounded-2xl border border-blue-100 dark:border-blue-500/20">
                                 <p className="text-sm text-blue-700 dark:text-blue-400">
-                                    To keep your monitors updated automatically, you should set up a scheduled task (cron job).
-                                    Run the following command every minute to execute all active monitor checks.
+                                    Recommended: run the Python workers on a schedule. They check due monitors and send queued alert emails
+                                    without freezing PHP. Manual &quot;Check now&quot; in this dashboard still works anytime.
                                 </p>
                             </div>
 
-                            <div className="space-y-4">
-                                <div className="space-y-2">
-                                    <h3 className="text-xs font-black uppercase tracking-widest text-slate-400">Linux (Cron)</h3>
-                                    <div className="relative group">
-                                        <div className="bg-slate-900 text-slate-300 p-4 rounded-xl font-mono text-xs overflow-x-auto break-all">
-                                            {`* * * * * curl -X POST "${window.location.protocol}//${window.location.host}${window.location.pathname.replace(/\/[^/]*$/, '')}/api/monitors.php/check-all" -H "Authorization: Bearer linknest_secret_token_123"`}
-                                        </div>
-                                        <button
-                                            onClick={() => {
-                                                navigator.clipboard.writeText(`* * * * * curl -X POST "${window.location.protocol}//${window.location.host}${window.location.pathname.replace(/\/[^/]*$/, '')}/api/monitors.php/check-all" -H "Authorization: Bearer linknest_secret_token_123"`);
-                                                alert('Command copied to clipboard!');
-                                            }}
-                                            className="absolute top-2 right-2 p-2 bg-white/10 hover:bg-white/20 rounded-lg text-white opacity-0 group-hover:opacity-100 transition-opacity"
-                                        >
-                                            <FaCopy size={12} />
-                                        </button>
+                            <div className="space-y-3">
+                                <h3 className="text-xs font-black uppercase tracking-widest text-slate-400">Windows (Task Scheduler) — XAMPP / host</h3>
+                                <p className="text-sm text-slate-600 dark:text-slate-400">
+                                    From the LinkNest project root, register two repeating tasks (monitor runner + email sender):
+                                </p>
+                                <div className="relative group">
+                                    <div className="bg-slate-900 text-slate-300 p-4 rounded-xl font-mono text-xs overflow-x-auto break-all">
+                                        {`scripts\\schedule-monitor-workers.bat`}
                                     </div>
-                                    <p className="text-[10px] text-slate-500">Add this to your crontab using <code className="bg-slate-100 dark:bg-[#333] px-1 rounded text-blue-500">crontab -e</code></p>
+                                    <button
+                                        type="button"
+                                        onClick={() => {
+                                            navigator.clipboard.writeText('scripts\\schedule-monitor-workers.bat');
+                                            alert('Command copied to clipboard!');
+                                        }}
+                                        className="absolute top-2 right-2 p-2 bg-white/10 hover:bg-white/20 rounded-lg text-white opacity-0 group-hover:opacity-100 transition-opacity"
+                                    >
+                                        <FaCopy size={12} />
+                                    </button>
                                 </div>
+                                <p className="text-[10px] text-slate-500">
+                                    Or in PowerShell:{' '}
+                                    <code className="bg-slate-100 dark:bg-[#333] px-1 rounded text-blue-500">
+                                        .\scripts\schedule-monitor-workers.ps1 -IntervalMinutes 2
+                                    </code>
+                                    {' '}· Useful:{' '}
+                                    <code className="bg-slate-100 dark:bg-[#333] px-1 rounded">-Action status</code>
+                                    {' / '}
+                                    <code className="bg-slate-100 dark:bg-[#333] px-1 rounded">run-once</code>
+                                    {' / '}
+                                    <code className="bg-slate-100 dark:bg-[#333] px-1 rounded">uninstall</code>
+                                </p>
+                                <ul className="text-xs text-slate-600 dark:text-slate-400 list-disc list-inside space-y-1">
+                                    <li>Requires Python 3.9+ on the Windows host</li>
+                                    <li>Default interval: every 1 minute (pass <code className="bg-slate-100 dark:bg-[#333] px-1 rounded">2</code> as the second bat argument for every 2 minutes)</li>
+                                    <li>Tasks: <strong>LinkNest - Monitor Runner</strong> and <strong>LinkNest - Email Sender</strong></li>
+                                    <li>Full walkthrough: <code className="bg-slate-100 dark:bg-[#333] px-1 rounded">docs/PYTHON_WORKERS.md</code></li>
+                                </ul>
+                            </div>
 
-                                <div className="space-y-2">
-                                    <h3 className="text-xs font-black uppercase tracking-widest text-slate-400">Windows (PowerShell)</h3>
-                                    <div className="relative group">
-                                        <div className="bg-slate-900 text-slate-300 p-4 rounded-xl font-mono text-xs overflow-x-auto break-all">
-                                            {`$headers = @{ "Authorization" = "Bearer linknest_secret_token_123" }; Invoke-RestMethod -Method Post -Uri "${window.location.protocol}//${window.location.host}${window.location.pathname.replace(/\/[^/]*$/, '')}/api/monitors.php/check-all" -Headers $headers`}
-                                        </div>
-                                        <button
-                                            onClick={() => {
-                                                navigator.clipboard.writeText(`$headers = @{ "Authorization" = "Bearer linknest_secret_token_123" }; Invoke-RestMethod -Method Post -Uri "${window.location.protocol}//${window.location.host}${window.location.pathname.replace(/\/[^/]*$/, '')}/api/monitors.php/check-all" -Headers $headers`);
-                                                alert('Command copied to clipboard!');
-                                            }}
-                                            className="absolute top-2 right-2 p-2 bg-white/10 hover:bg-white/20 rounded-lg text-white opacity-0 group-hover:opacity-100 transition-opacity"
-                                        >
-                                            <FaCopy size={12} />
-                                        </button>
+                            <div className="space-y-3">
+                                <h3 className="text-xs font-black uppercase tracking-widest text-slate-400">Docker</h3>
+                                <p className="text-sm text-slate-600 dark:text-slate-400">
+                                    Monitoring workers already run inside the container entrypoint. No Windows Task Scheduler needed.
+                                </p>
+                                <ul className="text-xs text-slate-600 dark:text-slate-400 list-disc list-inside space-y-1">
+                                    <li>
+                                        Enabled by default: <code className="bg-slate-100 dark:bg-[#333] px-1 rounded">LINKNEST_WORKERS_ENABLED=1</code>
+                                    </li>
+                                    <li>
+                                        Interval (seconds): <code className="bg-slate-100 dark:bg-[#333] px-1 rounded">LINKNEST_WORKER_INTERVAL_SECONDS=60</code>
+                                    </li>
+                                    <li>
+                                        Disable workers: <code className="bg-slate-100 dark:bg-[#333] px-1 rounded">LINKNEST_WORKERS_ENABLED=0</code>
+                                    </li>
+                                </ul>
+                                <div className="relative group">
+                                    <div className="bg-slate-900 text-slate-300 p-4 rounded-xl font-mono text-xs overflow-x-auto break-all">
+                                        {`# Verify workers inside the container\ndocker compose -f docker/docker-compose.yml exec -T linknest python3 /var/www/html/scripts/monitor_runner.py --db /var/www/html/data/linknest.db --verbose`}
                                     </div>
-                                    <p className="text-[10px] text-slate-500">Schedule this in Task Scheduler as a PowerShell script.</p>
+                                    <button
+                                        type="button"
+                                        onClick={() => {
+                                            navigator.clipboard.writeText(
+                                                'docker compose -f docker/docker-compose.yml exec -T linknest python3 /var/www/html/scripts/monitor_runner.py --db /var/www/html/data/linknest.db --verbose'
+                                            );
+                                            alert('Command copied to clipboard!');
+                                        }}
+                                        className="absolute top-2 right-2 p-2 bg-white/10 hover:bg-white/20 rounded-lg text-white opacity-0 group-hover:opacity-100 transition-opacity"
+                                    >
+                                        <FaCopy size={12} />
+                                    </button>
                                 </div>
                             </div>
 
-                            <div className="p-4 bg-amber-50 dark:bg-amber-500/5 rounded-2xl border border-amber-100 dark:border-amber-500/20">
-                                <h4 className="text-xs font-bold text-amber-700 dark:text-amber-400 mb-1 flex items-center gap-2">
-                                    <FaQuestion size={10} /> Note on Security
-                                </h4>
-                                <p className="text-[10px] text-amber-700 dark:text-amber-400 mt-1">
-                                    The <code className="font-mono">linknest_secret_token_123</code> is the default system token. You should change this in <code className="font-mono">api/config.php</code> for better security if your dashboard is public.
+                            <div className="space-y-3">
+                                <h3 className="text-xs font-black uppercase tracking-widest text-slate-400">Linux (cron) — host install</h3>
+                                <div className="relative group">
+                                    <div className="bg-slate-900 text-slate-300 p-4 rounded-xl font-mono text-xs overflow-x-auto whitespace-pre-wrap">
+                                        {`* * * * * cd /var/www/linknest && /usr/bin/python3 scripts/monitor_runner.py\n* * * * * cd /var/www/linknest && /usr/bin/python3 scripts/email_sender.py --limit 50`}
+                                    </div>
+                                    <button
+                                        type="button"
+                                        onClick={() => {
+                                            navigator.clipboard.writeText(
+                                                '* * * * * cd /var/www/linknest && /usr/bin/python3 scripts/monitor_runner.py\n* * * * * cd /var/www/linknest && /usr/bin/python3 scripts/email_sender.py --limit 50'
+                                            );
+                                            alert('Command copied to clipboard!');
+                                        }}
+                                        className="absolute top-2 right-2 p-2 bg-white/10 hover:bg-white/20 rounded-lg text-white opacity-0 group-hover:opacity-100 transition-opacity"
+                                    >
+                                        <FaCopy size={12} />
+                                    </button>
+                                </div>
+                                <p className="text-[10px] text-slate-500">
+                                    Add with <code className="bg-slate-100 dark:bg-[#333] px-1 rounded text-blue-500">crontab -e</code>. Adjust the path to your install.
                                 </p>
                             </div>
+
+                            <details className="rounded-2xl border border-slate-200 dark:border-[#333] p-4">
+                                <summary className="cursor-pointer text-xs font-bold text-slate-600 dark:text-slate-300">
+                                    Optional: legacy PHP HTTP check-all (not recommended)
+                                </summary>
+                                <div className="mt-3 space-y-3">
+                                    <p className="text-xs text-slate-500">
+                                        Can time out under load. Prefer Python workers above. Token must match your install
+                                        (<code className="bg-slate-100 dark:bg-[#333] px-1 rounded">SYSTEM_TOKEN</code> / install identity), not always the default below.
+                                    </p>
+                                    <div className="bg-slate-900 text-slate-300 p-4 rounded-xl font-mono text-xs overflow-x-auto break-all">
+                                        {`$headers = @{ "Authorization" = "Bearer linknest_secret_token_123" }; Invoke-RestMethod -Method Post -Uri "${window.location.protocol}//${window.location.host}${window.location.pathname.replace(/\/[^/]*$/, '')}/api/monitors.php/check-all" -Headers $headers`}
+                                    </div>
+                                </div>
+                            </details>
                         </div>
 
-                        <div className="p-6 bg-slate-50 dark:bg-[#252525] border-t border-slate-100 dark:border-[#333] flex justify-end">
+                        <div className="p-6 bg-slate-50 dark:bg-[#252525] border-t border-slate-100 dark:border-[#333] flex justify-end shrink-0">
                             <button onClick={() => setShowCronModal(false)} className="px-6 py-2.5 bg-slate-200 dark:bg-[#333] hover:bg-slate-300 dark:hover:bg-[#444] text-slate-700 dark:text-slate-200 rounded-xl font-bold transition-all active:scale-95">
                                 Close
                             </button>

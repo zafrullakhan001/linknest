@@ -314,6 +314,7 @@ def main() -> int:
                     message_text=str(r["body"] or ""),
                     response_time_ms=(f"{int(rt)} ms" if rt not in (None, "", False) else None),
                     app_name=app_name,
+                    db_conn=conn,
                 )
             except Exception:
                 # Never fail sending because of HTML rendering issues; plain-text fallback will still send.
@@ -329,6 +330,7 @@ def main() -> int:
                 from_name=(str(r["from_name"]) if r["from_name"] is not None else None),
                 from_email=(str(r["from_email"]) if r["from_email"] is not None else None),
                 timeout_seconds=int(args.smtp_timeout),
+                db_conn=conn,
             )
 
             attempt_n = int(r["attempts"] or 0) + 1

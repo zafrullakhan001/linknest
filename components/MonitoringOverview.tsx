@@ -134,6 +134,27 @@ export const MonitoringOverview: React.FC<MonitoringOverviewProps> = ({ hasMonit
           </div>
 
           <div className="bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-xl p-5">
+            <h4 className="text-sm font-semibold text-slate-900 dark:text-white mb-2">Automatic scheduling</h4>
+            <p className="text-sm text-slate-600 dark:text-slate-400 mb-3">
+              Monitors only check on a schedule if a worker is running. Open the dashboard clock / Scheduler Setup button for copy-paste commands.
+            </p>
+            <ul className="text-sm text-slate-600 dark:text-slate-400 list-disc list-inside space-y-1.5">
+              <li>
+                <strong className="text-slate-800 dark:text-slate-200">Windows / XAMPP:</strong> run{' '}
+                <code className="text-xs bg-slate-100 dark:bg-slate-700 px-1.5 py-0.5 rounded">scripts\schedule-monitor-workers.bat</code>{' '}
+                once to register Task Scheduler jobs (every 1–2 minutes).
+              </li>
+              <li>
+                <strong className="text-slate-800 dark:text-slate-200">Docker:</strong> workers already loop in the container
+                (<code className="text-xs bg-slate-100 dark:bg-slate-700 px-1.5 py-0.5 rounded">LINKNEST_WORKERS_ENABLED=1</code>).
+              </li>
+            </ul>
+            <p className="text-xs text-slate-500 dark:text-slate-500 mt-3">
+              Details: <code className="bg-slate-100 dark:bg-slate-700 px-1 rounded">docs/PYTHON_WORKERS.md</code>
+            </p>
+          </div>
+
+          <div className="bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-xl p-5">
             <h4 className="text-sm font-semibold text-slate-900 dark:text-white mb-4">Monitoring workflow</h4>
             <div className="overflow-x-auto">
               <div className="min-w-[640px] flex flex-wrap items-center gap-2 text-sm">

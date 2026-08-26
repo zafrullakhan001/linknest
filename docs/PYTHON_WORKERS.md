@@ -42,7 +42,34 @@ python scripts\email_sender.py --db C:\path\to\linknest.db --verbose
 
 ## Windows Task Scheduler (recommended)
 
-Create **two scheduled tasks**:
+### Quick install (recommended)
+
+From the LinkNest project root (as your normal Windows user):
+
+```bat
+scripts\schedule-monitor-workers.bat
+```
+
+Or PowerShell:
+
+```powershell
+.\scripts\schedule-monitor-workers.ps1
+.\scripts\schedule-monitor-workers.ps1 -IntervalMinutes 2
+.\scripts\schedule-monitor-workers.ps1 -Action run-once
+.\scripts\schedule-monitor-workers.ps1 -Action status
+.\scripts\schedule-monitor-workers.ps1 -Action uninstall
+```
+
+This creates two Task Scheduler jobs:
+
+- **LinkNest - Monitor Runner** — `scripts\monitor_runner.py`
+- **LinkNest - Email Sender** — `scripts\email_sender.py`
+
+Default interval is **every 1 minute**. Pass `2` as the second argument to the `.bat` (or `-IntervalMinutes 2`) for every 2 minutes.
+
+### Manual Task Scheduler setup
+
+If you prefer to create tasks by hand:
 
 ### Task 1: Monitor Runner
 
@@ -50,6 +77,7 @@ Create **two scheduled tasks**:
 - **Arguments**: `scripts\monitor_runner.py --verbose`
 - **Start in**: `C:\xampp\htdocs\linknest`
 - **Trigger**: every 1 minute (or 2 minutes)
+- **Settings**: If the task is already running → **Do not start a new instance**
 
 ### Task 2: Email Sender
 
@@ -57,6 +85,28 @@ Create **two scheduled tasks**:
 - **Arguments**: `scripts\email_sender.py --limit 25 --smtp-timeout 20 --verbose`
 - **Start in**: `C:\xampp\htdocs\linknest`
 - **Trigger**: every 1 minute
+- **Settings**: If the task is already running → **Do not start a new instance**
+
+## Docker (automatic — no Task Scheduler)
+
+Official Docker images start a background loop in `docker/linknest-entrypoint.sh` that runs `monitor_runner.py` then `email_sender.py` on an interval.
+
+| Env var | Default | Meaning |
+|---------|---------|---------|
+| `LINKNEST_WORKERS_ENABLED` | `1` | Set to `0` to disable workers |
+| `LINKNEST_WORKER_INTERVAL_SECONDS` | `60` | Seconds between worker cycles |
+| `LINKNEST_WORKER_MAX_WORKERS` | `10` | Concurrent monitor checks |
+| `LINKNEST_EMAIL_LIMIT` | `50` | Max emails per email_sender run |
+| `LINKNEST_DB_PATH` | `/var/www/html/data/linknest.db` | SQLite path inside the container |
+
+Verify once:
+
+```bash
+docker compose -f docker/docker-compose.yml exec -T linknest \
+  python3 /var/www/html/scripts/monitor_runner.py --db /var/www/html/data/linknest.db --verbose
+```
+
+> On Docker you normally **do not** also install the Windows Task Scheduler scripts on the host (that would double-check the same DB if the DB is bind-mounted).
 
 ## Linux cron examples
 

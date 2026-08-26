@@ -35,6 +35,20 @@ There are **two supported approaches**:
 
 ## Windows — Task Scheduler (recommended on Windows)
 
+### Quick install (this repo)
+
+From the clone (or main) root:
+
+```powershell
+.\scripts\schedule-monitor-workers.ps1
+# every 2 minutes:
+.\scripts\schedule-monitor-workers.ps1 -IntervalMinutes 2
+# point at a clone DB:
+.\scripts\schedule-monitor-workers.ps1 -Root "C:\xampp\htdocs\linknest_clone" -DbPath "C:\xampp\htdocs\linknest_clone\data\linknest.db"
+```
+
+Double-click alternative: `scripts\schedule-monitor-workers.bat`
+
 ### Choose your clone path
 
 Example clone:
