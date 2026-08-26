@@ -31,7 +31,7 @@ import {
   shouldBeDarkNow,
   subscribeThemePreference,
 } from './services/themePreferenceService';
-import { getMessages } from './services/chatService';
+import { getMessages, isChatMessageUnread } from './services/chatService';
 import { useMobile } from './hooks/useMobile';
 import { getAllowedWidgets } from './services/widgetService';
 import { performanceAnalyticsService } from './services/performanceAnalyticsService';
@@ -337,18 +337,17 @@ const AppContent: React.FC = () => {
     const checkUnreadMessages = async () => {
       try {
         // Fetch a batch so we don't miss unread when the latest message is from yourself
-        const messages = await getMessages(30, 0, null, { scope: 'inbox' });
+        const messages = await getMessages(100, 0, null, { scope: 'inbox' });
         if (messages.length === 0) {
           setHasUnreadChatMessages(false);
           return;
         }
-        const lastSeenId = parseInt(localStorage.getItem(`linknest_last_seen_message_${user.id}`) || '0', 10);
-        if (lastChatNotifiedIdRef.current < lastSeenId) {
-          lastChatNotifiedIdRef.current = lastSeenId;
+        const unreadFromOthers = messages.filter((msg) => isChatMessageUnread(msg, user.id));
+        const newestUnreadId = unreadFromOthers.reduce((max, msg) => Math.max(max, msg.id), 0);
+        if (newestUnreadId === 0 && lastChatNotifiedIdRef.current === 0) {
+          const fallbackSeen = messages.reduce((max, msg) => Math.max(max, msg.id), 0);
+          lastChatNotifiedIdRef.current = fallbackSeen;
         }
-        const unreadFromOthers = messages.filter(
-          (msg) => msg.user_id !== user.id && msg.id > lastSeenId
-        );
         const hasUnread = unreadFromOthers.length > 0;
         setHasUnreadChatMessages(hasUnread);
         if (hasUnread) {

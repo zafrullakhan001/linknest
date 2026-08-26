@@ -1,5 +1,17 @@
 import React, { useState, useEffect, useRef, useMemo } from 'react';
-import { ChatMessage, getMessages, sendMessage, sendTile, deleteMessage, clearConversation } from '../services/chatService';
+import {
+  ChatMessage,
+  getMessages,
+  sendMessage,
+  sendTile,
+  deleteMessage,
+  clearConversation,
+  getMessageRecipientId,
+  getConversationLastSeen,
+  setConversationLastSeen,
+  isChatMessageUnread,
+  PUBLIC_CHAT_CONVERSATION,
+} from '../services/chatService';
 import { Tile } from '../types';
 import { useAuth } from '../contexts/AuthContext';
 import { authService, UserListItem } from '../services/authService';
@@ -170,13 +182,6 @@ const PUBLIC_DESTINATION_PILL = {
   title: 'Sent to Public Chat',
 };
 
-const getMessageRecipientId = (message: ChatMessage): number | null => {
-  const raw = message.recipient_user_id as unknown;
-  if (raw === null || raw === undefined || raw === '') return null;
-  const id = Number(raw);
-  return Number.isFinite(id) && id > 0 ? id : null;
-};
-
 const isMessageInConversation = (
   message: ChatMessage,
   recipientId: number | null,
@@ -316,6 +321,8 @@ interface ChatWidgetProps {
 
 export const ChatWidget: React.FC<ChatWidgetProps> = ({ tiles, onTileShared, onTileImported, onClose, onUnreadChange }) => {
   const [messages, setMessages] = useState<ChatMessage[]>([]);
+  const [directMessages, setDirectMessages] = useState<ChatMessage[]>([]);
+  const [lastSeenMap, setLastSeenMap] = useState<Record<string, number>>({});
   const [users, setUsers] = useState<UserListItem[]>([]);
   const [selectedRecipient, setSelectedRecipient] = useState<number | null>(null); // null for public chat
   const [inputMessage, setInputMessage] = useState('');
@@ -401,21 +408,57 @@ export const ChatWidget: React.FC<ChatWidgetProps> = ({ tiles, onTileShared, onT
       window.removeEventListener('keydown', handleEscape, true);
     };
   }, [onClose, showTileSelector, showJsonInput, duplicateDialog, showEmojiPicker]);
-   // Get last seen message ID from localStorage, or initialize to 0
-  const getLastSeenMessageId = (): number => {
-    if (!user) return 0;
-    const stored = localStorage.getItem(`linknest_last_seen_message_${user.id}`);
-    return stored ? parseInt(stored, 10) : 0;
-  };
-  
-  const setLastSeenMessageId = (id: number) => {
-    if (!user) return;
-    localStorage.setItem(`linknest_last_seen_message_${user.id}`, id.toString());
-  };
-  
-  const lastSeenMessageIdRef = useRef<number>(getLastSeenMessageId());
 
-  // Filter users based on search term, showing first/last name first
+  const conversationIdFor = (recipientId: number | null): string | number =>
+    recipientId === null ? PUBLIC_CHAT_CONVERSATION : recipientId;
+
+  const markConversationSeen = (recipientId: number | null, messageList: ChatMessage[]) => {
+    if (!user || messageList.length === 0) return;
+    const convId = conversationIdFor(recipientId);
+    const maxId = Math.max(...messageList.map((msg) => msg.id));
+    if (maxId <= 0) return;
+    setConversationLastSeen(user.id, convId, maxId);
+    const key = String(convId);
+    setLastSeenMap((prev) => {
+      if ((prev[key] || 0) >= maxId) return prev;
+      return { ...prev, [key]: maxId };
+    });
+  };
+
+  const lastSeenFor = (conversationId: string | number): number => {
+    if (!user) return 0;
+    return lastSeenMap[String(conversationId)] ?? getConversationLastSeen(user.id, conversationId);
+  };
+
+  const personActivity = useMemo(() => {
+    const map = new Map<number, { lastAt: number; lastId: number; unreadCount: number }>();
+    if (!user) return map;
+    const me = Number(user.id);
+    for (const msg of directMessages) {
+      const destId = getMessageRecipientId(msg);
+      if (destId === null) continue;
+      const senderId = Number(msg.user_id);
+      const otherId = senderId === me ? destId : senderId;
+      if (!Number.isFinite(otherId) || otherId === me) continue;
+      const prev = map.get(otherId) || { lastAt: 0, lastId: 0, unreadCount: 0 };
+      const created = Number(msg.created_at) || 0;
+      if (created > prev.lastAt || msg.id > prev.lastId) {
+        prev.lastAt = Math.max(prev.lastAt, created);
+        prev.lastId = Math.max(prev.lastId, msg.id);
+      }
+      const isIncoming = senderId !== me && destId === me;
+      const lastSeen = selectedRecipient === otherId
+        ? Number.MAX_SAFE_INTEGER
+        : lastSeenFor(otherId);
+      if (isIncoming && msg.id > lastSeen) {
+        prev.unreadCount += 1;
+      }
+      map.set(otherId, prev);
+    }
+    return map;
+  }, [directMessages, user, selectedRecipient, lastSeenMap]);
+
+  // Filter users based on search term, then put unread / recent DMs at the top
   const filteredUsers = useMemo(() => {
     const searchLower = userSearchTerm.trim().toLowerCase();
     const searchDigits = searchLower.replace(/^#/, '');
@@ -430,10 +473,22 @@ export const ChatWidget: React.FC<ChatWidgetProps> = ({ tiles, onTileShared, onT
           if (displayName.toLowerCase().includes(searchLower)) return true;
           return false;
         });
-    return [...list].sort((a, b) =>
-      getPersonDisplayName(a).localeCompare(getPersonDisplayName(b), undefined, { sensitivity: 'base' })
-    );
-  }, [users, userSearchTerm]);
+    return [...list].sort((a, b) => {
+      const actA = personActivity.get(a.id);
+      const actB = personActivity.get(b.id);
+      const unreadA = actA?.unreadCount || 0;
+      const unreadB = actB?.unreadCount || 0;
+      if (unreadA > 0 && unreadB === 0) return -1;
+      if (unreadB > 0 && unreadA === 0) return 1;
+      const lastA = actA?.lastAt || 0;
+      const lastB = actB?.lastAt || 0;
+      if (lastA !== lastB) return lastB - lastA;
+      const idA = actA?.lastId || 0;
+      const idB = actB?.lastId || 0;
+      if (idA !== idB) return idB - idA;
+      return getPersonDisplayName(a).localeCompare(getPersonDisplayName(b), undefined, { sensitivity: 'base' });
+    });
+  }, [users, userSearchTerm, personActivity]);
 
   // Filter messages based on the open conversation, then the search term
   const conversationMessages = useMemo(
@@ -558,29 +613,48 @@ export const ChatWidget: React.FC<ChatWidgetProps> = ({ tiles, onTileShared, onT
     }
   }, [user]);
 
+  const sameMessageList = (prev: ChatMessage[], next: ChatMessage[]): boolean =>
+    prev.length === next.length && prev.every((msg, index) => msg.id === next[index].id);
+
+  const loadMessages = async (recipientId: number | null = conversationKeyRef.current) => {
+    try {
+      const fetchedMessages = await getMessages(100, 0, recipientId);
+      if (conversationKeyRef.current !== recipientId) return;
+      setMessages((prev) => (sameMessageList(prev, fetchedMessages) ? prev : fetchedMessages));
+    } catch (error) {
+      console.error('Failed to load messages:', error);
+    }
+  };
+
+  const loadDirectMessages = async () => {
+    try {
+      const fetched = await getMessages(200, 0, null, { scope: 'direct' });
+      setDirectMessages((prev) => (sameMessageList(prev, fetched) ? prev : fetched));
+    } catch (error) {
+      console.error('Failed to load direct messages:', error);
+    }
+  };
+
   // Load messages when chat widget is rendered or recipient changes
   useEffect(() => {
     conversationKeyRef.current = selectedRecipient;
     stickToBottomRef.current = true;
     setMessages([]);
     void loadMessages(selectedRecipient);
+    void loadDirectMessages();
     const interval = setInterval(() => {
       void loadMessages(selectedRecipient);
+      void loadDirectMessages();
     }, 3000);
     return () => clearInterval(interval);
   }, [selectedRecipient]);
 
-  // Mark existing messages as read when widget first opens or recipient changes (only if tab is visible)
+  // Mark the open conversation as read while the tab is visible
   useEffect(() => {
-    if (messages.length > 0 && user && onUnreadChange && document.visibilityState === 'visible') {
-      const maxId = Math.max(...messages.map(m => m.id));
-      if (maxId > lastSeenMessageIdRef.current) {
-        lastSeenMessageIdRef.current = maxId;
-        setLastSeenMessageId(maxId);
-        onUnreadChange(false);
-      }
-    }
-  }, [selectedRecipient, messages, user, onUnreadChange]); // Run when recipient changes or messages load
+    if (messages.length === 0 || !user) return;
+    if (document.visibilityState !== 'visible') return;
+    markConversationSeen(selectedRecipient, messages);
+  }, [selectedRecipient, messages, user]);
 
   // Auto-scroll only when the user is already at (or near) the latest message
   useEffect(() => {
@@ -623,11 +697,21 @@ export const ChatWidget: React.FC<ChatWidgetProps> = ({ tiles, onTileShared, onT
 
     const checkInboxUnread = async () => {
       try {
-        const inbox = await getMessages(50, 0, null, { scope: 'inbox' });
+        const inbox = await getMessages(100, 0, null, { scope: 'inbox' });
         if (cancelled) return;
-        const unreadMessages = inbox.filter(
-          (msg) => Number(msg.user_id) !== Number(user.id) && msg.id > lastSeenMessageIdRef.current
-        );
+        const unreadMessages = inbox.filter((msg) => {
+          if (!isChatMessageUnread(msg, user.id, lastSeenMap)) return false;
+          const destId = getMessageRecipientId(msg);
+          const senderId = Number(msg.user_id);
+          const isCurrentConversation =
+            (selectedRecipient === null && destId === null) ||
+            (selectedRecipient !== null &&
+              destId !== null &&
+              ((senderId === Number(user.id) && destId === selectedRecipient) ||
+                (senderId === selectedRecipient && destId === Number(user.id))));
+          if (isCurrentConversation && document.visibilityState === 'visible') return false;
+          return true;
+        });
         onUnreadChange(unreadMessages.length > 0);
         if (unreadMessages.length > 0 && document.visibilityState === 'hidden') {
           const newest = unreadMessages.reduce((a, b) => (a.id > b.id ? a : b));
@@ -646,65 +730,29 @@ export const ChatWidget: React.FC<ChatWidgetProps> = ({ tiles, onTileShared, onT
       cancelled = true;
       clearInterval(interval);
     };
-  }, [user, onUnreadChange, messages, selectedRecipient]);
-
-  // Mark new messages as read when they arrive while widget is open AND tab is visible
-  useEffect(() => {
-    if (messages.length === 0 || !user) return;
-    if (document.visibilityState !== 'visible') return;
-
-    const maxId = Math.max(...messages.map((m) => m.id));
-    if (maxId > lastSeenMessageIdRef.current) {
-      lastSeenMessageIdRef.current = maxId;
-      setLastSeenMessageId(maxId);
-      if (onUnreadChange) {
-        onUnreadChange(false);
-      }
-    }
-  }, [messages, user, onUnreadChange]);
+  }, [user, onUnreadChange, messages, selectedRecipient, lastSeenMap]);
 
   // When tab becomes visible again with chat open, mark current messages as read
   useEffect(() => {
     const onVisibility = () => {
       if (document.visibilityState !== 'visible' || !user || messages.length === 0) return;
-      const maxId = Math.max(...messages.map((m) => m.id));
-      if (maxId > lastSeenMessageIdRef.current) {
-        lastSeenMessageIdRef.current = maxId;
-        setLastSeenMessageId(maxId);
-      }
-      onUnreadChange?.(false);
+      markConversationSeen(selectedRecipient, messages);
     };
     document.addEventListener('visibilitychange', onVisibility);
     return () => document.removeEventListener('visibilitychange', onVisibility);
-  }, [messages, user, onUnreadChange]);
-  
-  // Initialize last seen message ID from localStorage on mount
-  useEffect(() => {
-    if (user) {
-      lastSeenMessageIdRef.current = getLastSeenMessageId();
-      lastNotifiedMessageIdRef.current = lastSeenMessageIdRef.current;
-    }
-  }, [user]);
-
-  const loadMessages = async (recipientId: number | null = conversationKeyRef.current) => {
-    try {
-      const fetchedMessages = await getMessages(100, 0, recipientId);
-      if (conversationKeyRef.current !== recipientId) return;
-      setMessages((prev) => {
-        if (
-          prev.length === fetchedMessages.length &&
-          prev.every((msg, index) => msg.id === fetchedMessages[index].id)
-        ) {
-          return prev;
-        }
-        return fetchedMessages;
-      });
-    } catch (error) {
-      console.error('Failed to load messages:', error);
-    }
-  };
+  }, [messages, user, selectedRecipient]);
 
   const selectConversation = (recipientId: number | null) => {
+    if (user) {
+      if (recipientId === null) {
+        markConversationSeen(null, messages.filter((msg) => getMessageRecipientId(msg) === null));
+      } else {
+        markConversationSeen(
+          recipientId,
+          directMessages.filter((msg) => isMessageInConversation(msg, recipientId, user.id))
+        );
+      }
+    }
     if (recipientId === selectedRecipient) return;
     conversationKeyRef.current = recipientId;
     stickToBottomRef.current = true;
@@ -763,7 +811,7 @@ export const ChatWidget: React.FC<ChatWidgetProps> = ({ tiles, onTileShared, onT
         setInputMessage('');
       }
       stickToBottomRef.current = true;
-      await loadMessages();
+      await Promise.all([loadMessages(), loadDirectMessages()]);
       scrollToBottom();
     } catch (error) {
       console.error('Failed to send message:', error);
@@ -789,7 +837,7 @@ export const ChatWidget: React.FC<ChatWidgetProps> = ({ tiles, onTileShared, onT
 
     try {
       await deleteMessage(messageId);
-      await loadMessages();
+      await Promise.all([loadMessages(), loadDirectMessages()]);
     } catch (error) {
       console.error('Failed to delete message:', error);
       alert('Failed to delete message. Please try again.');
@@ -806,6 +854,7 @@ export const ChatWidget: React.FC<ChatWidgetProps> = ({ tiles, onTileShared, onT
     try {
       await clearConversation(selectedRecipient);
       setMessages([]);
+      await loadDirectMessages();
     } catch (error) {
       console.error('Failed to clear conversation:', error);
       alert('Failed to clear this private chat. Please try again.');
@@ -1368,6 +1417,8 @@ export const ChatWidget: React.FC<ChatWidgetProps> = ({ tiles, onTileShared, onT
                 const isSelected = selectedRecipient === userItem.id;
                 const displayName = getPersonDisplayName(userItem);
                 const loginId = getPersonLoginId(userItem);
+                const unreadCount = personActivity.get(userItem.id)?.unreadCount || 0;
+                const hasUnread = unreadCount > 0;
                 return (
                   <button
                     key={userItem.id}
@@ -1381,7 +1432,17 @@ export const ChatWidget: React.FC<ChatWidgetProps> = ({ tiles, onTileShared, onT
                       {renderAvatar(displayName)}
                       <div className="flex-1 min-w-0">
                         <div className="flex items-center gap-1.5 min-w-0">
-                          <span className="font-semibold truncate">{displayName}</span>
+                          <span className={`${hasUnread ? 'font-bold' : 'font-medium'} truncate`}>
+                            {displayName}
+                          </span>
+                          {hasUnread && (
+                            <span
+                              className="ml-auto shrink-0 min-w-[18px] h-[18px] px-1 rounded-full bg-red-500 text-white text-[10px] font-bold leading-none flex items-center justify-center shadow-sm"
+                              aria-label={`${unreadCount} unread message${unreadCount === 1 ? '' : 's'}`}
+                            >
+                              {unreadCount > 99 ? '99+' : unreadCount}
+                            </span>
+                          )}
                         </div>
                         {loginId && (
                           <div className={`text-[11px] truncate ${isSelected ? 'text-white/80' : 'text-slate-500 dark:text-slate-400'}`}>

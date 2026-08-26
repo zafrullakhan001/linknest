@@ -17,16 +17,83 @@ export interface ChatMessage {
   created_at_iso?: string; // ISO date string
 }
 
+export const PUBLIC_CHAT_CONVERSATION = 'public';
+
+const conversationLastSeenKey = (userId: number, conversationId: string | number): string =>
+  `linknest_last_seen_conv_${userId}_${conversationId}`;
+
+const legacyLastSeenKey = (userId: number): string => `linknest_last_seen_message_${userId}`;
+
+export const getMessageRecipientId = (message: Pick<ChatMessage, 'recipient_user_id'>): number | null => {
+  const raw = message.recipient_user_id as unknown;
+  if (raw === null || raw === undefined || raw === '') return null;
+  const id = Number(raw);
+  return Number.isFinite(id) && id > 0 ? id : null;
+};
+
+/** Public thread, or the other person's user id for a 1-to-1. */
+export const getChatConversationId = (
+  message: Pick<ChatMessage, 'user_id' | 'recipient_user_id'>,
+  currentUserId: number
+): string | number => {
+  const destId = getMessageRecipientId(message);
+  if (destId === null) return PUBLIC_CHAT_CONVERSATION;
+  const senderId = Number(message.user_id);
+  if (senderId === Number(currentUserId)) return destId;
+  return senderId;
+};
+
+export const getConversationLastSeen = (userId: number, conversationId: string | number): number => {
+  try {
+    const raw = localStorage.getItem(conversationLastSeenKey(userId, conversationId));
+    if (raw != null && raw !== '') {
+      const parsed = parseInt(raw, 10);
+      if (Number.isFinite(parsed)) return parsed;
+    }
+    const legacy = parseInt(localStorage.getItem(legacyLastSeenKey(userId)) || '0', 10);
+    return Number.isFinite(legacy) ? legacy : 0;
+  } catch {
+    return 0;
+  }
+};
+
+export const setConversationLastSeen = (
+  userId: number,
+  conversationId: string | number,
+  messageId: number
+): void => {
+  if (!Number.isFinite(messageId) || messageId <= 0) return;
+  try {
+    const current = getConversationLastSeen(userId, conversationId);
+    if (messageId <= current) return;
+    localStorage.setItem(conversationLastSeenKey(userId, conversationId), String(messageId));
+  } catch {
+    // ignore quota / private mode
+  }
+};
+
+export const isChatMessageUnread = (
+  message: ChatMessage,
+  currentUserId: number,
+  lastSeenOverride?: Record<string, number>
+): boolean => {
+  if (Number(message.user_id) === Number(currentUserId)) return false;
+  const convId = getChatConversationId(message, currentUserId);
+  const lastSeen =
+    lastSeenOverride?.[String(convId)] ?? getConversationLastSeen(currentUserId, convId);
+  return message.id > lastSeen;
+};
+
 export const getMessages = async (
   limit: number = 100,
   offset: number = 0,
   recipientId?: number | null,
-  options?: { scope?: 'inbox' }
+  options?: { scope?: 'inbox' | 'direct' }
 ): Promise<ChatMessage[]> => {
   try {
     let url = `${API_BASE}/chat?limit=${limit}&offset=${offset}`;
-    if (options?.scope === 'inbox') {
-      url += '&scope=inbox';
+    if (options?.scope === 'inbox' || options?.scope === 'direct') {
+      url += `&scope=${options.scope}`;
     } else if (recipientId !== null && recipientId !== undefined) {
       url += `&recipient_id=${recipientId}`;
     }

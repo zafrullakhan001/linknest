@@ -91,6 +91,10 @@ function handleGetMessages() {
             // Unread polling: public messages plus DMs sent to/from the current user
             $stmt = $db->prepare($select . ' WHERE m.recipient_user_id IS NULL OR m.user_id = ? OR m.recipient_user_id = ? ORDER BY m.created_at DESC LIMIT ? OFFSET ?');
             $stmt->execute([$user['id'], $user['id'], $limit, $offset]);
+        } elseif ($scope === 'direct') {
+            // Direct messages only so public chat volume cannot hide DM activity
+            $stmt = $db->prepare($select . ' WHERE m.recipient_user_id IS NOT NULL AND (m.user_id = ? OR m.recipient_user_id = ?) ORDER BY m.created_at DESC LIMIT ? OFFSET ?');
+            $stmt->execute([$user['id'], $user['id'], $limit, $offset]);
         } elseif ($recipientId !== null && $recipientId > 0) {
             // 1-to-1 only: messages between current user and this recipient (no public)
             $stmt = $db->prepare($select . ' WHERE ((m.user_id = ? AND m.recipient_user_id = ?) OR (m.user_id = ? AND m.recipient_user_id = ?)) AND m.recipient_user_id IS NOT NULL ORDER BY m.created_at DESC LIMIT ? OFFSET ?');
