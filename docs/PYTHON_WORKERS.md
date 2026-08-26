@@ -44,20 +44,31 @@ python scripts\email_sender.py --db C:\path\to\linknest.db --verbose
 
 ### Quick install (recommended)
 
-From the LinkNest project root (as your normal Windows user):
+From the LinkNest project root (as your normal Windows user — **admin not required**):
 
 ```bat
 scripts\schedule-monitor-workers.bat
 ```
 
-Or PowerShell:
+This runs **preflight → install both tasks → verify (Task Scheduler + schtasks.exe) → smoke test** (one foreground run of monitor + email workers).
 
 ```powershell
 .\scripts\schedule-monitor-workers.ps1
 .\scripts\schedule-monitor-workers.ps1 -IntervalMinutes 2
-.\scripts\schedule-monitor-workers.ps1 -Action run-once
+.\scripts\schedule-monitor-workers.ps1 -Action verify
 .\scripts\schedule-monitor-workers.ps1 -Action status
+.\scripts\schedule-monitor-workers.ps1 -Action run-once
 .\scripts\schedule-monitor-workers.ps1 -Action uninstall
+.\scripts\schedule-monitor-workers.ps1 -SkipSmoke   # install without immediate smoke test
+```
+
+Or via the `.bat`:
+
+```bat
+scripts\schedule-monitor-workers.bat verify
+scripts\schedule-monitor-workers.bat status
+scripts\schedule-monitor-workers.bat run-once
+scripts\schedule-monitor-workers.bat install 2
 ```
 
 This creates two Task Scheduler jobs:
