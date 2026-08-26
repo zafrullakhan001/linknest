@@ -112,6 +112,8 @@ export interface AppSettings {
   guest_access_enabled?: string; // '0' or '1' - controls whether guests can view spaces
   /** '0' or '1' - when '0', hide Sign up on the login dialog and reject POST /auth/register. Admins can still create local users. */
   local_registration_enabled?: string;
+  /** '0' or '1' - when '0', hide the Sign In button in the UI. Login still opens via #/signin or ?signin in the URL. */
+  signin_button_enabled?: string;
   /** Default tile entrance animation for first-time visitors (until they pick their own). */
   public_tile_animation?: string;
   show_database_path_in_footer?: string; // '0' or '1' - controls whether database path is shown in footer
@@ -291,6 +293,7 @@ export const settingsService = {
       footer_text: data.settings?.footer_text || '© 2025 Adventhealth - Designed and developed by AIT Architecture team',
       guest_access_enabled: data.settings?.guest_access_enabled || '1', // Default to enabled
       local_registration_enabled: data.settings?.local_registration_enabled || '1', // Default to enabled
+      signin_button_enabled: data.settings?.signin_button_enabled || '1', // Default to show Sign In
       public_tile_animation: data.settings?.public_tile_animation || 'fade-in',
       show_database_path_in_footer: data.settings?.show_database_path_in_footer || '1', // Default to enabled
       disabled_tabs: data.settings?.disabled_tabs || '[]',

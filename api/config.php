@@ -163,7 +163,7 @@ function markSchemaPatchesApplied(): void {
 }
 
 /**
- * Existing installs skip full schema init; seed public self-signup default once per process.
+ * Existing installs skip full schema init; seed access-related defaults once per process.
  */
 function ensureLocalRegistrationSetting(PDO $db): void {
     static $done = false;
@@ -172,7 +172,9 @@ function ensureLocalRegistrationSetting(PDO $db): void {
     }
     try {
         $stmt = $db->prepare('INSERT OR IGNORE INTO settings (key, value, updated_at) VALUES (?, ?, ?)');
-        $stmt->execute(['local_registration_enabled', '1', time()]);
+        $now = time();
+        $stmt->execute(['local_registration_enabled', '1', $now]);
+        $stmt->execute(['signin_button_enabled', '1', $now]);
     } catch (PDOException $e) {
         // Table may not exist yet during first bootstrap
     }
@@ -3673,6 +3675,7 @@ function initDatabase() {
             ['logo_image', '', time()], // URL or base64 image
             ['public_tile_animation', 'fade-in', time()],
             ['local_registration_enabled', '1', time()], // Allow self-signup from login dialog
+            ['signin_button_enabled', '1', time()], // Show Sign In button in the UI
         ];
         
         foreach ($defaultSettings as $setting) {

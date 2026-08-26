@@ -227,12 +227,14 @@ export const Navigation: React.FC<NavigationProps> = ({ darkMode, showClock, tog
                 )}
               </>
             ) : (
+              settings.signin_button_enabled !== '0' && (
               <button
                 onClick={onLoginClick}
                 className="px-5 py-2 text-sm bg-brand-600 hover:bg-brand-500 text-white rounded-full font-medium transition-all shadow-md hover:shadow-lg transform hover:-translate-y-0.5"
               >
                 Sign In
               </button>
+              )
             )}
           </div>
 

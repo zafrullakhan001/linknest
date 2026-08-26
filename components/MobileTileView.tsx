@@ -857,7 +857,7 @@ export const MobileTileView: React.FC<MobileTileViewProps> = ({
               )}
 
               {/* Sign In Button - At top of menu if not authenticated */}
-              {!isAuthenticated && onLoginClick && (
+              {!isAuthenticated && onLoginClick && settings?.signin_button_enabled !== '0' && (
                 <div className="px-4 py-3 border-b border-slate-200 dark:border-slate-800">
                   <button
                     onClick={() => {
@@ -1434,7 +1434,7 @@ export const MobileTileView: React.FC<MobileTileViewProps> = ({
                     ? "Tap the star icon on any tile to add it to your favorites"
                     : "Browser storage is not available. Sign in to save favorites, or check your browser settings."}
                 </p>
-                {!localStorageAvailable && onLoginClick && (
+                {!localStorageAvailable && onLoginClick && settings?.signin_button_enabled !== '0' && (
                   <button
                     onClick={() => {
                       if (onLoginClick) onLoginClick();

@@ -739,6 +739,7 @@ const AppContent: React.FC = () => {
 
   // Check guest access setting
   const guestAccessEnabled = settings.guest_access_enabled !== '0'; // Default to enabled if not set
+  const signInButtonEnabled = settings.signin_button_enabled !== '0'; // Default to show Sign In
 
   // Load tiles as soon as we know session state — do not wait for settings/styles APIs
   useEffect(() => {
@@ -910,20 +911,57 @@ const AppContent: React.FC = () => {
 
   useEffect(() => {
     if (typeof window === 'undefined') return;
+    if (authLoading) return;
+
+    const cleanSigninUrlMarkers = (signinHash: boolean) => {
+      try {
+        const url = new URL(window.location.href);
+        url.searchParams.delete('signin');
+        url.searchParams.delete('ln_login');
+        if (signinHash) {
+          url.hash = '#/';
+        }
+        window.history.replaceState(null, '', url.pathname + url.search + url.hash);
+      } catch {
+        // ignore URL cleanup errors
+      }
+    };
+
+    const openLoginFromUrl = () => {
+      const params = new URLSearchParams(window.location.search);
+      const hash = (window.location.hash || '').toLowerCase();
+      const path = (window.location.pathname || '').toLowerCase();
+
+      const signinQuery = params.has('signin') || params.get('ln_login') === '1';
+      const signinHash = hash === '#/signin' || hash === '#signin' || hash.startsWith('#/signin?');
+      const signinPath = /(?:^|\/)signin\/?$/.test(path);
+      if (!signinQuery && !signinHash && !signinPath) return;
+
+      if (!isAuthenticated) {
+        setAuthModalOpen(true);
+      }
+      cleanSigninUrlMarkers(signinHash);
+    };
+
+    openLoginFromUrl();
+    window.addEventListener('hashchange', openLoginFromUrl);
+    return () => window.removeEventListener('hashchange', openLoginFromUrl);
+  }, [isAuthenticated, authLoading]);
+
+  // After login, honor ln_next short-URL redirect
+  useEffect(() => {
+    if (typeof window === 'undefined' || !isAuthenticated) return;
     const params = new URLSearchParams(window.location.search);
     const next = params.get('ln_next') || '';
-    const wantLogin = params.get('ln_login') === '1';
-    if (wantLogin && !isAuthenticated && !authLoading) {
-      setAuthModalOpen(true);
-    }
-    if (isAuthenticated && next.startsWith('/') && /\/s\/[A-Za-z0-9]+$/.test(next)) {
+    if (next.startsWith('/') && /\/s\/[A-Za-z0-9]+$/.test(next)) {
       const url = new URL(window.location.href);
       url.searchParams.delete('ln_login');
       url.searchParams.delete('ln_next');
+      url.searchParams.delete('signin');
       window.history.replaceState(null, '', url.pathname + url.search + url.hash);
       window.location.href = next;
     }
-  }, [isAuthenticated, authLoading]);
+  }, [isAuthenticated]);
 
   // Session cookies are HttpOnly, so a refresh can render #/admin before getCurrentUser
   // finishes. Wait for that check so admins are not bounced to the dashboard.
@@ -1401,12 +1439,14 @@ const AppContent: React.FC = () => {
             </p>
             <p className="text-xs text-slate-600 dark:text-slate-400">
               👋 Guest Mode: You're viewing all public links.
+              {signInButtonEnabled && (
               <button
                 onClick={() => setAuthModalOpen(true)}
                 className="ml-1.5 text-slate-700 dark:text-slate-300 hover:underline"
               >
                 Sign in to edit
               </button>
+              )}
             </p>
           </div>
         </div>
