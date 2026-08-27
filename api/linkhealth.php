@@ -110,7 +110,7 @@ function determineHealthStatus($httpCode, $errno, $error, $redirectCount = 0) {
         $status = 'redirected';
         $error = 'Redirected (HTTP ' . $httpCode . ')';
     } elseif ($httpCode >= 200 && $httpCode < 300) {
-        // Success (2xx) â€” mark as redirected when the check followed one or more redirects
+        // Success (2xx) — mark as redirected when the check followed one or more redirects
         if ($redirectCount > 0) {
             $status = 'redirected';
             $error = 'Reached after ' . (int)$redirectCount . ' redirect(s)';
@@ -351,7 +351,7 @@ function releaseSessionLock() {
 }
 
 /**
- * Non-HTTP schemes (SSH, VNC, RDP, etc.) cannot be probed with cURL HEAD â€” skip health checks.
+ * Non-HTTP schemes (SSH, VNC, RDP, etc.) cannot be probed with cURL HEAD — skip health checks.
  */
 function isNonHttpHealthUrl($url) {
     return isNonHttpLinkHealthUrl($url);
@@ -1669,7 +1669,7 @@ function handleCheckTileLinks() {
             $lastChecked = isset($link['health_checked_at']) ? (int)$link['health_checked_at'] : null;
             $currentStatus = $link['health_status'] ?? null;
 
-            // Skip SSH / RDP / non-HTTP / exception-listed URLs â€” never mark them broken via HTTP probe
+            // Skip SSH / RDP / non-HTTP / exception-listed URLs — never mark them broken via HTTP probe
             if (shouldSkipLinkHealthCheck($link['url'])) {
                 clearLinkHealth($link['id']);
                 $results[$link['id']] = [

@@ -319,13 +319,13 @@ const loadSectionLinkLayouts = (tileId: string): Record<string, ViewLayoutMode> 
     }
 };
 
-/** Persist link animation: inherit/empty â†’ omit; 'none' and others â†’ store as-is. */
+/** Persist link animation: inherit/empty → omit; 'none' and others → store as-is. */
 const linkAnimationForSave = (animation?: string): string | undefined => {
     if (!animation || animation === 'inherit') return undefined;
     return animation;
 };
 
-/** UI value for link animation picker (missing â†’ inherit space default). */
+/** UI value for link animation picker (missing → inherit space default). */
 const linkAnimationForEdit = (animation?: string): TileAnimation =>
     (animation as TileAnimation) || 'inherit';
 
@@ -735,8 +735,8 @@ const VisibilityProtectionBadge: React.FC<{
   const isAuth = visibility === 'authenticated';
   const label = isAuth ? 'Auth' : 'Restricted';
   const title = isAuth
-    ? 'Authenticated users only â€” not public'
-    : 'Restricted to specific users/groups â€” not public';
+    ? 'Authenticated users only — not public'
+    : 'Restricted to specific users/groups — not public';
   const colorClass = isAuth
     ? 'bg-yellow-100 text-yellow-800 ring-yellow-300/70 dark:bg-yellow-900/40 dark:text-yellow-200 dark:ring-yellow-700/50'
     : 'bg-orange-100 text-orange-800 ring-orange-300/70 dark:bg-orange-900/40 dark:text-orange-200 dark:ring-orange-700/50';
@@ -1519,7 +1519,7 @@ export const TileDetail: React.FC<TileDetailProps> = ({
             setEditSections(clonedSections);
         }
 
-        // Load health status from tile data (skip ssh:// / vnc:// â€” not HTTP-probed)
+        // Load health status from tile data (skip ssh:// / vnc:// — not HTTP-probed)
         const healthMap: LinkHealthMap = {};
         const sectionsToCheck = tile.tabs ? tile.tabs.flatMap(tab => tab.sections) : (tile.sections || []);
         sectionsToCheck.forEach(section => {
@@ -1764,7 +1764,7 @@ export const TileDetail: React.FC<TileDetailProps> = ({
         const floating = loadTabsMenuFloating(tile.id);
         try {
             const saved = localStorage.getItem(`tile_tab_nav_layout_${tile.id}`);
-            // Floating menu is the vertical panel â€” keep layout vertical while floated
+            // Floating menu is the vertical panel — keep layout vertical while floated
             setTabNavLayout(floating ? 'vertical' : (saved === 'vertical' ? 'vertical' : 'horizontal'));
         } catch {
             setTabNavLayout(floating ? 'vertical' : 'horizontal');
@@ -3170,7 +3170,7 @@ export const TileDetail: React.FC<TileDetailProps> = ({
 
         const updatedTiles = allTiles.map(t => t.id === updatedTile.id ? updatedTile : t);
 
-        // Push the updated tiles up; App will persist them and reâ€‘pass
+        // Push the updated tiles up; App will persist them and re‑pass
         // the updated `tile` prop back down.
         // Note: onUpdateTiles will reload from server, which should include richTextContent
         // The backend will handle change detection via temp version comparison
@@ -4535,7 +4535,7 @@ export const TileDetail: React.FC<TileDetailProps> = ({
         let tabs = [...(tile.tabs || [])];
         let tabId = resolveViewTabId();
 
-        // No tabs yet â€” create a default tab first, then add the section into it
+        // No tabs yet — create a default tab first, then add the section into it
         if (!tabId || tabs.length === 0) {
             if (tile.canAddTabs === false) {
                 alert('Cannot add a section: create a tab first.');
@@ -5319,7 +5319,7 @@ export const TileDetail: React.FC<TileDetailProps> = ({
             allowedUsers = [...allowedUsers, user.id];
         }
 
-        const emoji = (link.icon && link.icon.length <= 8) ? link.icon : (tile.emoji || 'ðŸ”—');
+        const emoji = (link.icon && link.icon.length <= 8) ? link.icon : (tile.emoji || '🔗');
         const newLink: Link = {
             id: generateId(),
             label: link.label || title,
@@ -5374,7 +5374,7 @@ export const TileDetail: React.FC<TileDetailProps> = ({
                 onUpdateTiles(updatedTiles, true);
             }
             setConvertLinkDialog(null);
-            alert(`Created independent ${asHyperlink ? 'hyperlink tile' : 'space'} â€œ${title}â€. Youâ€™ll find it on the dashboard. The original link is still in this space.`);
+            alert(`Created independent ${asHyperlink ? 'hyperlink tile' : 'space'} “${title}”. You’ll find it on the dashboard. The original link is still in this space.`);
         } catch (err) {
             console.error(err);
             alert(err instanceof Error ? err.message : 'Failed to create tile from this link.');
@@ -5501,8 +5501,8 @@ export const TileDetail: React.FC<TileDetailProps> = ({
                 return;
             }
             const title = stripHtmlTags(tab.title || '').trim() || 'Untitled';
-            const emoji = (tab.emoji && tab.emoji.trim()) ? tab.emoji : (tile.emoji || 'ðŸ“');
-            const sourceLabel = `tab â€œ${title}â€`;
+            const emoji = (tab.emoji && tab.emoji.trim()) ? tab.emoji : (tile.emoji || '📁');
+            const sourceLabel = `tab “${title}”`;
             const { visibility, allowedUsers, allowedGroups } = resolveConvertedSpaceVisibility(
                 tab.visibility,
                 tab.allowedUsers,
@@ -5543,7 +5543,7 @@ export const TileDetail: React.FC<TileDetailProps> = ({
                         onUpdateTiles(updatedTiles, true);
                     }
                     setConvertTabSectionDialog(null);
-                    alert(`Created a new space from ${sourceLabel}. Youâ€™ll find it on the dashboard. The original tab is still in this space.`);
+                    alert(`Created a new space from ${sourceLabel}. You’ll find it on the dashboard. The original tab is still in this space.`);
                 }
             } catch (err) {
                 console.error(err);
@@ -5554,7 +5554,7 @@ export const TileDetail: React.FC<TileDetailProps> = ({
             return;
         }
 
-        // Section â†’ space
+        // Section → space
         const parentTab = editTabs.find((t) => t.id === dialog.tabId);
         const section = parentTab?.sections.find((s) => s.id === dialog.sectionId);
         if (!parentTab || !section) {
@@ -5562,8 +5562,8 @@ export const TileDetail: React.FC<TileDetailProps> = ({
             return;
         }
         const title = stripHtmlTags(section.title || '').trim() || 'Untitled';
-        const emoji = (section.emoji && section.emoji.trim()) ? section.emoji : (tile.emoji || 'ðŸ“');
-        const sourceLabel = `section â€œ${title}â€`;
+        const emoji = (section.emoji && section.emoji.trim()) ? section.emoji : (tile.emoji || '📁');
+        const sourceLabel = `section “${title}”`;
         const { visibility, allowedUsers, allowedGroups } = resolveConvertedSpaceVisibility(
             section.visibility,
             section.allowedUsers,
@@ -5615,7 +5615,7 @@ export const TileDetail: React.FC<TileDetailProps> = ({
                     onUpdateTiles(updatedTiles, true);
                 }
                 setConvertTabSectionDialog(null);
-                alert(`Created a new space from ${sourceLabel}. Youâ€™ll find it on the dashboard. The original section is still in this space.`);
+                alert(`Created a new space from ${sourceLabel}. You’ll find it on the dashboard. The original section is still in this space.`);
             }
         } catch (err) {
             console.error(err);
@@ -6960,7 +6960,7 @@ export const TileDetail: React.FC<TileDetailProps> = ({
                                             <span>Short URLs</span>
                                         </label>
                                     )}
-                                    {/* Space page entrance animation â€” applies to whole link sections */}
+                                    {/* Space page entrance animation — applies to whole link sections */}
                                     {tile.canEdit && (
                                         <div className="relative flex items-center">
                                             <TileAnimationSelector
@@ -7533,7 +7533,7 @@ export const TileDetail: React.FC<TileDetailProps> = ({
                                                     ? 'bg-white dark:bg-slate-700 text-brand-600 dark:text-brand-400 shadow-sm'
                                                     : 'text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-slate-200'
                                                     }`}
-                                                title="Stacked list â€” links appear vertically (combine with side-by-side sections)"
+                                                title="Stacked list — links appear vertically (combine with side-by-side sections)"
                                                 aria-label="Stacked list view"
                                                 aria-pressed={viewLayout === 'stacked'}
                                             >
@@ -7551,7 +7551,7 @@ export const TileDetail: React.FC<TileDetailProps> = ({
                                                     ? 'bg-orange-500 text-white shadow-sm ring-1 ring-orange-600/40 dark:bg-orange-500 dark:text-white dark:ring-orange-400/50'
                                                     : 'text-slate-600 dark:text-slate-400 hover:text-orange-600 dark:hover:text-orange-400'
                                                     }`}
-                                                title="Side-by-side sections â€” sticky toggle (orange when on); works with any link view"
+                                                title="Side-by-side sections — sticky toggle (orange when on); works with any link view"
                                                 aria-label="Toggle side-by-side sections"
                                                 aria-pressed={sectionsSideBySide}
                                             >
@@ -7593,7 +7593,7 @@ export const TileDetail: React.FC<TileDetailProps> = ({
                                             <button
                                                 type="button"
                                                 onClick={() => {
-                                                    // QR needs full-width section cards â€” sync top view so section icons match content
+                                                    // QR needs full-width section cards — sync top view so section icons match content
                                                     setSyncSectionViews(true);
                                                     setViewLayout('qr');
                                                 }}
@@ -7788,7 +7788,7 @@ export const TileDetail: React.FC<TileDetailProps> = ({
                         </>
                     )}
 
-                    {/* Vertical menu outside section cards â€” aligned with section start */}
+                    {/* Vertical menu outside section cards — aligned with section start */}
                     <div
                         className={useVerticalTabsDocked ? 'flex flex-row gap-6 items-start w-full' : 'flex flex-col gap-8'}
                         data-tab-nav-layout={useVerticalTabsDocked ? 'vertical' : (useVerticalTabs && verticalTabsFloating ? 'vertical-floating' : (useMobileTabHamburger ? 'hamburger' : 'horizontal'))}
@@ -7846,7 +7846,7 @@ export const TileDetail: React.FC<TileDetailProps> = ({
                                         type="button"
                                         onClick={cycleVerticalTabsMenuView}
                                         className="p-1.5 rounded-lg text-slate-500 hover:text-slate-800 dark:hover:text-slate-200 hover:bg-white/70 dark:hover:bg-slate-700 transition-colors"
-                                        title={`${tabsMenuViewLabel} â€” ${tabsMenuNextViewLabel}`}
+                                        title={`${tabsMenuViewLabel} — ${tabsMenuNextViewLabel}`}
                                         aria-label={tabsMenuNextViewLabel}
                                     >
                                         {verticalTabsMenuView === 'tiles' ? (
@@ -8831,7 +8831,7 @@ export const TileDetail: React.FC<TileDetailProps> = ({
                                                         ? 'p-4'
                                                         : 'p-6'
                                             } ${
-                                                // Do not put animate-in on the sortable root when reorder is enabled â€”
+                                                // Do not put animate-in on the sortable root when reorder is enabled —
                                                 // animation fill-mode locks transform and hides the drag preview.
                                                 canReorderSections || isQrLayout
                                                     ? ''
@@ -8989,7 +8989,7 @@ export const TileDetail: React.FC<TileDetailProps> = ({
                                                             syncSectionViews ? 'opacity-60' : ''
                                                         }`}
                                                         title={syncSectionViews
-                                                            ? 'Following top View â€” click a layout to unlock per-section control'
+                                                            ? 'Following top View — click a layout to unlock per-section control'
                                                             : 'Link layout for this section'}
                                                         onClick={(e) => e.stopPropagation()}
                                                     >
@@ -9316,7 +9316,7 @@ export const TileDetail: React.FC<TileDetailProps> = ({
                                                                         )}
                                                                         {link.url ? (
                                                                             <>
-                                                                                <span className="text-slate-300 dark:text-slate-600" aria-hidden>Â·</span>
+                                                                                <span className="text-slate-300 dark:text-slate-600" aria-hidden>·</span>
                                                                                 <button
                                                                                     type="button"
                                                                                     className="text-xs font-medium text-slate-500 dark:text-slate-400 hover:text-brand-600 dark:hover:text-brand-400"
@@ -9332,7 +9332,7 @@ export const TileDetail: React.FC<TileDetailProps> = ({
                                                                         ) : null}
                                                                         {canQuickEditLinks && activeViewTab ? (
                                                                             <>
-                                                                                <span className="text-slate-300 dark:text-slate-600" aria-hidden>Â·</span>
+                                                                                <span className="text-slate-300 dark:text-slate-600" aria-hidden>·</span>
                                                                                 <button
                                                                                     type="button"
                                                                                     className="text-xs font-medium text-slate-500 dark:text-slate-400 hover:text-brand-600 dark:hover:text-brand-400"
@@ -9348,7 +9348,7 @@ export const TileDetail: React.FC<TileDetailProps> = ({
                                                                         ) : null}
                                                                         {canQuickCloneLinks && activeViewTab ? (
                                                                             <>
-                                                                                <span className="text-slate-300 dark:text-slate-600" aria-hidden>Â·</span>
+                                                                                <span className="text-slate-300 dark:text-slate-600" aria-hidden>·</span>
                                                                                 <button
                                                                                     type="button"
                                                                                     className="text-xs font-medium text-slate-500 dark:text-slate-400 hover:text-violet-600 dark:hover:text-violet-400"
@@ -9364,7 +9364,7 @@ export const TileDetail: React.FC<TileDetailProps> = ({
                                                                         ) : null}
                                                                         {canQuickDeleteLinks && activeViewTab ? (
                                                                             <>
-                                                                                <span className="text-slate-300 dark:text-slate-600" aria-hidden>Â·</span>
+                                                                                <span className="text-slate-300 dark:text-slate-600" aria-hidden>·</span>
                                                                                 <button
                                                                                     type="button"
                                                                                     className="text-xs font-medium text-slate-500 dark:text-slate-400 hover:text-red-600 dark:hover:text-red-400"
@@ -9454,7 +9454,7 @@ export const TileDetail: React.FC<TileDetailProps> = ({
                                                                                 ? 'w-7 h-7 text-sm rounded-lg'
                                                                                 : 'w-11 h-11 text-lg'
                                                                     }`}>
-                                                                        {link.icon || 'ðŸ”—'}
+                                                                        {link.icon || '🔗'}
                                                                     </div>
                                                                 </div>
 
@@ -9558,7 +9558,7 @@ export const TileDetail: React.FC<TileDetailProps> = ({
                                                                                         }`}
                                                                                     title={link.visibility === 'authenticated' ? 'Authenticated users only' : 'Private - specific users only'}
                                                                                 >
-                                                                                    {link.visibility === 'authenticated' ? 'ðŸ”’' : 'ðŸ”'}
+                                                                                    {link.visibility === 'authenticated' ? '🔒' : '🔐'}
                                                                                 </span>
                                                                             )}
                                                                             {isBroken && (
@@ -9570,7 +9570,7 @@ export const TileDetail: React.FC<TileDetailProps> = ({
                                                                             {isNetwork && (
                                                                                 <span
                                                                                     className="text-slate-500 dark:text-slate-400 text-xs font-medium flex items-center gap-1 shrink-0"
-                                                                                    title="Network not reachable â€” this is not a broken link"
+                                                                                    title="Network not reachable — this is not a broken link"
                                                                                 >
                                                                                     <span className="w-1.5 h-1.5 rounded-full bg-slate-400"></span>
                                                                                     Unreachable
@@ -9651,7 +9651,7 @@ export const TileDetail: React.FC<TileDetailProps> = ({
                                                                                             : 'text-slate-700 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-700'
                                                                                         }`}
                                                                                 >
-                                                                                    <span className="text-xs">ðŸŒ</span>
+                                                                                    <span className="text-xs">🌐</span>
                                                                                     <span>Default Browser</span>
                                                                                 </button>
                                                                                 {availableBrowsers.length > 0 ? (
@@ -9686,7 +9686,7 @@ export const TileDetail: React.FC<TileDetailProps> = ({
                                                                                                     : 'text-slate-700 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-700'
                                                                                                     }`}
                                                                                             >
-                                                                                                <span className="text-xs">{isCurrentlySelected ? 'âœ“' : 'â—‹'}</span>
+                                                                                                <span className="text-xs">{isCurrentlySelected ? '✓' : '○'}</span>
                                                                                                 <span className="truncate">{displayName || browserId}</span>
                                                                                             </button>
                                                                                         );
@@ -9770,7 +9770,7 @@ export const TileDetail: React.FC<TileDetailProps> = ({
                                                                             title="Clone link"
                                                                             aria-label="Clone link"
                                                                         >
-                                                                            {/* DocumentDuplicate â€” distinct from Copy URL (square-2-stack) */}
+                                                                            {/* DocumentDuplicate — distinct from Copy URL (square-2-stack) */}
                                                                             <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" strokeWidth={1.75} stroke="currentColor" className="w-4 h-4" aria-hidden>
                                                                                 <path strokeLinecap="round" strokeLinejoin="round" d="M15.75 17.25v3.375c0 .621-.504 1.125-1.125 1.125h-9.75a1.125 1.125 0 01-1.125-1.125V7.875c0-.621.504-1.125 1.125-1.125H6.75a9.06 9.06 0 011.5.124m7.5 10.376h3.375c.621 0 1.125-.504 1.125-1.125V11.25c0-4.46-3.243-8.161-7.5-8.876a9.06 9.06 0 00-1.5-.124H9.375c-.621 0-1.125.504-1.125 1.125v3.5m7.5 10.375H9.375a1.125 1.125 0 01-1.125-1.125v-9.25m12 6.625v-1.875a3.375 3.375 0 00-3.375-3.375h-1.5a1.125 1.125 0 01-1.125-1.125v-1.5a3.375 3.375 0 00-3.375-3.375H9.75" />
                                                                             </svg>
@@ -9828,7 +9828,7 @@ export const TileDetail: React.FC<TileDetailProps> = ({
                                                                                         tile: {
                                                                                             id: tile.id,
                                                                                             title: tile.title,
-                                                                                            emoji: tile.emoji || 'âœ¨',
+                                                                                            emoji: tile.emoji || '✨',
                                                                                             themeColor: tile.themeColor || 'blue'
                                                                                         }
                                                                                     });
@@ -9859,7 +9859,7 @@ export const TileDetail: React.FC<TileDetailProps> = ({
                                                                     </button>
                                                                     )}
 
-                                                                    {/* Re-check button (HTTP(S) only â€” SSH/VNC are not HTTP-probed) */}
+                                                                    {/* Re-check button (HTTP(S) only — SSH/VNC are not HTTP-probed) */}
                                                                     {showHealthAction && (
                                                                     <button
                                                                         onClick={(e) => {
@@ -10285,13 +10285,13 @@ export const TileDetail: React.FC<TileDetailProps> = ({
                 )}
                 {!isMobile && (
                 <div className="animate-in fade-in duration-300 w-full">
-                    {/* Enhanced Header â€” sticky under the site nav so Quick Nav stays on screen */}
+                    {/* Enhanced Header — sticky under the site nav so Quick Nav stays on screen */}
                     <div className="ln-edit-page-toolbar bg-gradient-to-r from-slate-50 to-white dark:from-slate-900 dark:to-slate-800 border-b border-slate-200 dark:border-slate-700 -mx-6 px-6 py-4 mb-8 rounded-b-xl shadow-sm">
                         <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4">
                             <div>
                                 <h1 className="text-2xl font-bold text-slate-800 dark:text-white mb-1">Edit Page</h1>
                                 <p className="text-sm text-slate-500 dark:text-slate-400 flex items-center gap-2">
-                                    <span className="text-lg">{editEmoji || 'âœ¨'}</span>
+                                    <span className="text-lg">{editEmoji || '✨'}</span>
                                     <span className="font-medium">{editTitle || 'Untitled Page'}</span>
                                 </p>
                             </div>
@@ -10325,7 +10325,7 @@ export const TileDetail: React.FC<TileDetailProps> = ({
                                     <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" strokeWidth={2} stroke="currentColor" className="w-5 h-5">
                                         <path strokeLinecap="round" strokeLinejoin="round" d="M9 12.75L11.25 15 15 9.75M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
                                     </svg>
-                                    Save Changes {editTabs.length !== (tile.tabs?.length || 0) ? 'âš ï¸' : ''}
+                                    Save Changes {editTabs.length !== (tile.tabs?.length || 0) ? '⚠️' : ''}
                                 </button>
                             </div>
                         </div>
@@ -10971,12 +10971,12 @@ export const TileDetail: React.FC<TileDetailProps> = ({
                                             value={editLinksAnimation}
                                             onAnimationChange={setEditLinksAnimation}
                                             scopeLabel="LINKS ANIMATION"
-                                            scopeHint="Default for all links â€” each link can inherit, disable, or override"
+                                            scopeHint="Default for all links — each link can inherit, disable, or override"
                                             buttonTitle="Choose default entrance animation for all links"
                                         />
                                         <span className="text-xs text-slate-500 dark:text-slate-400">
                                             {getAnimationOption(editLinksAnimation).name}
-                                            <span className="block text-[10px] mt-0.5">Applies to all links â€” each link can inherit, disable, or override</span>
+                                            <span className="block text-[10px] mt-0.5">Applies to all links — each link can inherit, disable, or override</span>
                                         </span>
                                     </div>
                                 </div>
@@ -11413,7 +11413,7 @@ export const TileDetail: React.FC<TileDetailProps> = ({
                                     hierarchyView !== 'cards' ? (
                                         <div className="space-y-3">
                                             <p className="text-xs text-slate-500 dark:text-slate-400">
-                                                {hierarchyView === 'tree' ? 'Tree' : 'Compact'} view â€” use the â‹¯ menu for actions. Opening Edit / Add switches to Cards for the full form (your preferred view stays saved).
+                                                {hierarchyView === 'tree' ? 'Tree' : 'Compact'} view — use the ⋯ menu for actions. Opening Edit / Add switches to Cards for the full form (your preferred view stays saved).
                                             </p>
                                             <TileHierarchyViews
                                                 mode={hierarchyView}
@@ -11652,7 +11652,7 @@ export const TileDetail: React.FC<TileDetailProps> = ({
                                                     </button>
                                                     {(tab.visibleFrom || tab.expiresAt) && (
                                                         <span className="text-xs px-2 py-1 rounded bg-green-100 dark:bg-green-900/30 text-green-600 dark:text-green-400">
-                                                            ðŸ“… Scheduled
+                                                            📅 Scheduled
                                                         </span>
                                                     )}
                                                     {tab.visibility && tab.visibility !== 'public' && (
@@ -11677,7 +11677,7 @@ export const TileDetail: React.FC<TileDetailProps> = ({
                                                         className="text-slate-400 hover:text-amber-600 dark:hover:text-amber-400 p-2"
                                                         title="Tab access restrictions"
                                                     >
-                                                        <span className="text-base leading-none">ðŸ›¡ï¸</span>
+                                                        <span className="text-base leading-none">🛡️</span>
                                                     </button>
                                                     <AccessRestrictionsBadge rules={tab.accessRestrictions} />
                                                     {(tile.canDeleteTabs !== false && (tile.canDeleteTabs !== undefined || tile.canEdit)) && (
@@ -12005,7 +12005,7 @@ export const TileDetail: React.FC<TileDetailProps> = ({
                                                                     </button>
                                                                     {(section.visibleFrom || section.expiresAt) && (
                                                                         <span className="text-xs px-2 py-1 rounded bg-green-100 dark:bg-green-900/30 text-green-600 dark:text-green-400">
-                                                                            ðŸ“… Scheduled
+                                                                            📅 Scheduled
                                                                         </span>
                                                                     )}
                                                                     {section.visibility && section.visibility !== 'public' && (
@@ -12223,7 +12223,7 @@ export const TileDetail: React.FC<TileDetailProps> = ({
                                                                                                 className="w-4 h-4 rounded border-slate-300 dark:border-slate-600 text-brand-600 focus:ring-brand-500 cursor-pointer"
                                                                                             />
                                                                                         </div>
-                                                                                        <div className="w-8 h-8 rounded bg-slate-100 dark:bg-slate-800 flex items-center justify-center text-sm">{link.icon || 'ðŸ”—'}</div>
+                                                                                        <div className="w-8 h-8 rounded bg-slate-100 dark:bg-slate-800 flex items-center justify-center text-sm">{link.icon || '🔗'}</div>
                                                                                         <div className="flex-1 min-w-0">
                                                                                             <div className="flex items-center gap-2">
                                                                                                 <div
@@ -12249,7 +12249,7 @@ export const TileDetail: React.FC<TileDetailProps> = ({
                                                                                                         ? 'bg-blue-100 dark:bg-blue-900/30 text-blue-600 dark:text-blue-400'
                                                                                                         : 'bg-purple-100 dark:bg-purple-900/30 text-purple-600 dark:text-purple-400'
                                                                                                         }`}>
-                                                                                                        {link.visibility === 'authenticated' ? 'ðŸ”’' : 'ðŸ”'}
+                                                                                                        {link.visibility === 'authenticated' ? '🔒' : '🔐'}
                                                                                                     </span>
                                                                                                 )}
                                                                                                 {user?.is_admin && link.published === false && (
@@ -12259,7 +12259,7 @@ export const TileDetail: React.FC<TileDetailProps> = ({
                                                                                                 )}
                                                                                                 {(link.visibleFrom || link.expiresAt) && (
                                                                                                     <span className="text-xs px-1.5 py-0.5 rounded shrink-0 bg-green-100 dark:bg-green-900/30 text-green-600 dark:text-green-400">
-                                                                                                        ðŸ“…
+                                                                                                        📅
                                                                                                     </span>
                                                                                                 )}
                                                                                             </div>
@@ -12397,7 +12397,7 @@ export const TileDetail: React.FC<TileDetailProps> = ({
                                                                                         title="Select emoji"
                                                                                     >
                                                                                         <span className="text-xl">
-                                                                                            {newLinkState[section.id]?.icon || 'ðŸ˜€'}
+                                                                                            {newLinkState[section.id]?.icon || '😀'}
                                                                                         </span>
                                                                                     </button>
                                                                                     <input
@@ -12481,7 +12481,7 @@ export const TileDetail: React.FC<TileDetailProps> = ({
                                                                                                         <span key={userId} className="inline-flex items-center gap-1 px-2 py-1 bg-brand-100 dark:bg-brand-900/40 text-brand-700 dark:text-brand-300 rounded text-xs font-medium">
                                                                                                             {user?.username || `User ${userId}`}
                                                                                                             <AuthSourceBadge source={user?.auth_source} />
-                                                                                                            <button type="button" onClick={() => toggleUserSelection(section.id, userId)} className="hover:text-red-600">Ã—</button>
+                                                                                                            <button type="button" onClick={() => toggleUserSelection(section.id, userId)} className="hover:text-red-600">×</button>
                                                                                                         </span>
                                                                                                     );
                                                                                                 })}
@@ -12506,7 +12506,7 @@ export const TileDetail: React.FC<TileDetailProps> = ({
                                                                                                             onClick={() => setLinkUserSearch(prev => ({ ...prev, [section.id]: '' }))}
                                                                                                             className="absolute right-2 top-1.5 text-slate-400 hover:text-slate-600 dark:hover:text-slate-300"
                                                                                                         >
-                                                                                                            Ã—
+                                                                                                            ×
                                                                                                         </button>
                                                                                                     )}
                                                                                                 </div>
@@ -12544,7 +12544,7 @@ export const TileDetail: React.FC<TileDetailProps> = ({
                                                                                                     return (
                                                                                                         <span key={groupId} className="inline-flex items-center gap-1 px-2 py-1 bg-purple-100 dark:bg-purple-900/40 text-purple-700 dark:text-purple-300 rounded text-xs font-medium">
                                                                                                             {group?.name || `Group ${groupId}`}
-                                                                                                            <button type="button" onClick={() => toggleGroupSelection(section.id, groupId)} className="hover:text-red-600">Ã—</button>
+                                                                                                            <button type="button" onClick={() => toggleGroupSelection(section.id, groupId)} className="hover:text-red-600">×</button>
                                                                                                         </span>
                                                                                                     );
                                                                                                 })}
@@ -12568,7 +12568,7 @@ export const TileDetail: React.FC<TileDetailProps> = ({
                                                                                                         onClick={() => setLinkGroupSearch(prev => ({ ...prev, [section.id]: '' }))}
                                                                                                         className="absolute right-2 top-1.5 text-slate-400 hover:text-slate-600 dark:hover:text-slate-300"
                                                                                                     >
-                                                                                                        Ã—
+                                                                                                        ×
                                                                                                     </button>
                                                                                                 )}
                                                                                             </div>
@@ -12626,7 +12626,7 @@ export const TileDetail: React.FC<TileDetailProps> = ({
                                                                                 <div>
                                                                                     <div className="text-xs font-semibold uppercase tracking-wider text-slate-600 dark:text-slate-400">Short URLs</div>
                                                                                     <div className="text-sm font-medium text-slate-800 dark:text-slate-200">
-                                                                                        {(newLinkState[section.id]?.inheritShortUrls !== false) ? 'Inherit from parent' : 'Override â€” original URL'}
+                                                                                        {(newLinkState[section.id]?.inheritShortUrls !== false) ? 'Inherit from parent' : 'Override — original URL'}
                                                                                     </div>
                                                                                 </div>
                                                                                 <button
@@ -12726,7 +12726,7 @@ export const TileDetail: React.FC<TileDetailProps> = ({
                                                                                 <div>
                                                                                     <div className="text-xs font-semibold uppercase tracking-wider text-slate-600 dark:text-slate-400">Maintenance window</div>
                                                                                     <div className="text-sm font-medium text-slate-800 dark:text-slate-200">
-                                                                                        {newLinkState[section.id]?.maintenanceEnabled ? 'Clicks show the maintenance message' : 'Off â€” link opens normally'}
+                                                                                        {newLinkState[section.id]?.maintenanceEnabled ? 'Clicks show the maintenance message' : 'Off — link opens normally'}
                                                                                     </div>
                                                                                 </div>
                                                                                 <button
@@ -12820,7 +12820,7 @@ export const TileDetail: React.FC<TileDetailProps> = ({
                                                                             </div>
 
                                                                             <LinkEditSection
-                                                                                emoji="ðŸ›¡ï¸"
+                                                                                emoji="🛡️"
                                                                                 title="Additional access restrictions"
                                                                                 subtitle="Optional extra gate when opening this link"
                                                                                 accent="slate"
@@ -13201,7 +13201,7 @@ export const TileDetail: React.FC<TileDetailProps> = ({
                                                         className="w-4 h-4"
                                                     />
                                                     <div>
-                                                        <div className="font-semibold text-slate-900 dark:text-white">ðŸŒ Public</div>
+                                                        <div className="font-semibold text-slate-900 dark:text-white">🌐 Public</div>
                                                         <div className="text-xs text-slate-500">Available for everyone</div>
                                                     </div>
                                                 </label>
@@ -13217,7 +13217,7 @@ export const TileDetail: React.FC<TileDetailProps> = ({
                                                         className="w-4 h-4"
                                                     />
                                                     <div>
-                                                        <div className="font-semibold text-slate-900 dark:text-white">ðŸ”’ Authenticated</div>
+                                                        <div className="font-semibold text-slate-900 dark:text-white">🔒 Authenticated</div>
                                                         <div className="text-xs text-slate-500">Logged in users only</div>
                                                     </div>
                                                 </label>
@@ -13232,7 +13232,7 @@ export const TileDetail: React.FC<TileDetailProps> = ({
                                                     className="w-4 h-4"
                                                 />
                                                 <div>
-                                                    <div className="font-semibold text-slate-900 dark:text-white">ðŸ” Private</div>
+                                                    <div className="font-semibold text-slate-900 dark:text-white">🔐 Private</div>
                                                     <div className="text-xs text-slate-500">Specific users and/or groups only</div>
                                                 </div>
                                             </label>
@@ -13316,7 +13316,7 @@ export const TileDetail: React.FC<TileDetailProps> = ({
                                                 onClick={() => setRestrictionsDialogTab(null)}
                                                 className="text-slate-400 hover:text-slate-600 dark:hover:text-slate-300 p-1 rounded-lg hover:bg-slate-100 dark:hover:bg-slate-700"
                                             >
-                                                Ã—
+                                                ×
                                             </button>
                                         </div>
                                         <AccessRestrictionsEditor
@@ -13389,7 +13389,7 @@ export const TileDetail: React.FC<TileDetailProps> = ({
                                                         className="w-4 h-4"
                                                     />
                                                     <div>
-                                                        <div className="font-semibold text-slate-900 dark:text-white">ðŸŒ Public</div>
+                                                        <div className="font-semibold text-slate-900 dark:text-white">🌐 Public</div>
                                                         <div className="text-xs text-slate-500">Available for everyone</div>
                                                     </div>
                                                 </label>
@@ -13405,7 +13405,7 @@ export const TileDetail: React.FC<TileDetailProps> = ({
                                                         className="w-4 h-4"
                                                     />
                                                     <div>
-                                                        <div className="font-semibold text-slate-900 dark:text-white">ðŸ”’ Authenticated</div>
+                                                        <div className="font-semibold text-slate-900 dark:text-white">🔒 Authenticated</div>
                                                         <div className="text-xs text-slate-500">Logged in users only</div>
                                                     </div>
                                                 </label>
@@ -13420,7 +13420,7 @@ export const TileDetail: React.FC<TileDetailProps> = ({
                                                     className="w-4 h-4"
                                                 />
                                                 <div>
-                                                    <div className="font-semibold text-slate-900 dark:text-white">ðŸ” Private</div>
+                                                    <div className="font-semibold text-slate-900 dark:text-white">🔐 Private</div>
                                                     <div className="text-xs text-slate-500">Specific users and/or groups only</div>
                                                 </div>
                                             </label>
@@ -13706,8 +13706,8 @@ export const TileDetail: React.FC<TileDetailProps> = ({
                                             onClick={() => void handleConvertLinkToIndependentTile(false)}
                                             className="w-full text-left rounded-xl border border-sky-200 dark:border-sky-800 bg-sky-50/80 dark:bg-sky-950/30 hover:border-sky-400 px-4 py-3 transition-colors disabled:opacity-50"
                                         >
-                                            <div className="text-sm font-semibold text-slate-900 dark:text-white">ðŸ“ Space</div>
-                                            <div className="text-xs text-slate-600 dark:text-slate-400 mt-0.5">New space with this URL in a General section â€” you can add more links later</div>
+                                            <div className="text-sm font-semibold text-slate-900 dark:text-white">📁 Space</div>
+                                            <div className="text-xs text-slate-600 dark:text-slate-400 mt-0.5">New space with this URL in a General section — you can add more links later</div>
                                         </button>
                                         <button
                                             type="button"
@@ -13715,7 +13715,7 @@ export const TileDetail: React.FC<TileDetailProps> = ({
                                             onClick={() => void handleConvertLinkToIndependentTile(true)}
                                             className="w-full text-left rounded-xl border border-indigo-200 dark:border-indigo-800 bg-indigo-50/80 dark:bg-indigo-950/30 hover:border-indigo-400 px-4 py-3 transition-colors disabled:opacity-50"
                                         >
-                                            <div className="text-sm font-semibold text-slate-900 dark:text-white">ðŸ”— Hyperlink tile</div>
+                                            <div className="text-sm font-semibold text-slate-900 dark:text-white">🔗 Hyperlink tile</div>
                                             <div className="text-xs text-slate-600 dark:text-slate-400 mt-0.5">Direct click-through to this URL from the dashboard</div>
                                         </button>
                                     </div>
@@ -13726,7 +13726,7 @@ export const TileDetail: React.FC<TileDetailProps> = ({
                                             onClick={() => setConvertLinkDialog(null)}
                                             className="px-4 py-2 text-sm font-medium text-slate-600 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-700 rounded-lg"
                                         >
-                                            {convertingLinkToTile ? 'Creatingâ€¦' : 'Cancel'}
+                                            {convertingLinkToTile ? 'Creating…' : 'Cancel'}
                                         </button>
                                     </div>
                                 </div>
@@ -13783,7 +13783,7 @@ export const TileDetail: React.FC<TileDetailProps> = ({
                                             >
                                                 <div className="text-sm font-semibold text-slate-900 dark:text-white">Copy into new space</div>
                                                 <div className="text-xs text-slate-600 dark:text-slate-400 mt-0.5">
-                                                    New space on the dashboard â€” original {isTab ? 'tab' : 'section'} stays here
+                                                    New space on the dashboard — original {isTab ? 'tab' : 'section'} stays here
                                                 </div>
                                             </button>
                                             <button
@@ -13791,13 +13791,13 @@ export const TileDetail: React.FC<TileDetailProps> = ({
                                                 disabled={convertingTabSectionToSpace || moveDisabled}
                                                 onClick={() => void handleConvertTabOrSectionToSpace('move')}
                                                 className="w-full text-left rounded-xl border border-amber-200 dark:border-amber-800 bg-amber-50/80 dark:bg-amber-950/30 hover:border-amber-400 px-4 py-3 transition-colors disabled:opacity-50"
-                                                title={moveDisabled ? 'Cannot move the last tab â€” a space must keep at least one tab' : undefined}
+                                                title={moveDisabled ? 'Cannot move the last tab — a space must keep at least one tab' : undefined}
                                             >
                                                 <div className="text-sm font-semibold text-slate-900 dark:text-white">Move into new space</div>
                                                 <div className="text-xs text-slate-600 dark:text-slate-400 mt-0.5">
                                                     {moveDisabled
-                                                        ? 'Unavailable â€” this is the only tab in this space'
-                                                        : `New space on the dashboard â€” remove original ${isTab ? 'tab' : 'section'} from here`}
+                                                        ? 'Unavailable — this is the only tab in this space'
+                                                        : `New space on the dashboard — remove original ${isTab ? 'tab' : 'section'} from here`}
                                                 </div>
                                             </button>
                                         </div>
@@ -13808,7 +13808,7 @@ export const TileDetail: React.FC<TileDetailProps> = ({
                                                 onClick={() => setConvertTabSectionDialog(null)}
                                                 className="px-4 py-2 text-sm font-medium text-slate-600 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-700 rounded-lg"
                                             >
-                                                {convertingTabSectionToSpace ? 'Creatingâ€¦' : 'Cancel'}
+                                                {convertingTabSectionToSpace ? 'Creating…' : 'Cancel'}
                                             </button>
                                         </div>
                                     </div>

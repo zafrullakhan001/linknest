@@ -3687,11 +3687,15 @@ function lnStripCsvBom(string $value): string {
  * (e.g. Excel saving without UTF-8: 🚀 becomes ðŸš€).
  */
 function lnRepairUtf8Mojibake(string $value): string {
-    if ($value === '' || !preg_match('/[ðÃâ]/u', $value)) {
+    if ($value === '' || !preg_match('/[ðÃâŸïÂ]/u', $value)) {
         return $value;
     }
-    // Reinterpret Latin-1 code units as the original UTF-8 byte sequence
-    $asBytes = @mb_convert_encoding($value, 'ISO-8859-1', 'UTF-8');
+    // Reinterpret Windows-1252 (then Latin-1) code units as the original UTF-8 bytes.
+    // ISO-8859-1 cannot round-trip 🔗 (bytes 0x9F/0x94/0x97 are cp1252 Ÿ “ —).
+    $asBytes = @mb_convert_encoding($value, 'Windows-1252', 'UTF-8');
+    if ($asBytes === false || $asBytes === '') {
+        $asBytes = @mb_convert_encoding($value, 'ISO-8859-1', 'UTF-8');
+    }
     if ($asBytes !== false && $asBytes !== '' && mb_check_encoding($asBytes, 'UTF-8')) {
         // Prefer repaired form when it contains a valid emoji / fewer replacement chars
         if (preg_match('/[\x{1F300}-\x{1FAFF}\x{2600}-\x{27BF}]/u', $asBytes)) {

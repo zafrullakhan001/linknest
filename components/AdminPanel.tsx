@@ -1634,7 +1634,7 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({ onUserApproved }) => {
         const win = window as any;
         if (typeof win.BrowserLauncher === 'undefined') {
           statusDiv.className = 'p-4 rounded-lg bg-amber-50 dark:bg-amber-900/20 border border-amber-200 dark:border-amber-800';
-          statusDiv.innerHTML = '<div class="text-sm text-amber-800 dark:text-amber-300"><strong>âš  Error:</strong> Browser Launcher Pro integration script not loaded. Please check the script path in index.html.</div>';
+          statusDiv.innerHTML = '<div class="text-sm text-amber-800 dark:text-amber-300"><strong>⚠ Error:</strong> Browser Launcher Pro integration script not loaded. Please check the script path in index.html.</div>';
           return;
         }
 
@@ -1654,7 +1654,7 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({ onUserApproved }) => {
             statusDiv.innerHTML = `<div class="text-sm text-emerald-800 dark:text-emerald-300"><strong>✓ Extension Available:</strong> Browser Launcher Pro is ready!<br><small>Extension ID: ${BrowserLauncher.extensionId || 'Auto-detected'} | ${message}</small></div>`;
           } else {
             statusDiv.className = 'p-4 rounded-lg bg-amber-50 dark:bg-amber-900/20 border border-amber-200 dark:border-amber-800';
-            statusDiv.innerHTML = `<div class="text-sm text-amber-800 dark:text-amber-300"><strong>âš  Extension Status:</strong> ${message}<br><small><strong>Tips:</strong><br>1. Make sure Browser Launcher Pro extension is installed<br>2. Go to chrome://extensions and reload the extension<br>3. Refresh this page</small></div>`;
+            statusDiv.innerHTML = `<div class="text-sm text-amber-800 dark:text-amber-300"><strong>⚠ Extension Status:</strong> ${message}<br><small><strong>Tips:</strong><br>1. Make sure Browser Launcher Pro extension is installed<br>2. Go to chrome://extensions and reload the extension<br>3. Refresh this page</small></div>`;
           }
         }, 5, 1000);
 
@@ -8283,7 +8283,7 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({ onUserApproved }) => {
                               // Fall back to legacy single-server settings
                               const bindPassword = String(ldapBindPasswordRef.current || settings.ldap_bind_password || '').trim();
 
-                              if (isMaskedPassword(bindPassword) || bindPassword.includes('•') || bindPassword.includes('â€¢')) {
+                              if (isMaskedPassword(bindPassword) || bindPassword.includes('•')) {
                                 setLdapTestResult({
                                   success: false,
                                   message: 'Password field contains invalid/masked characters. Clear the field, re-enter the real password, then test again.'
@@ -13030,7 +13030,7 @@ php scripts/reset_admin_password.php admin 'NewStrongPass1!'`}</pre>
                             const win = window as any;
                             if (typeof win.BrowserLauncher === 'undefined') {
                               statusDiv.className = 'p-4 rounded-lg bg-amber-50 dark:bg-amber-900/20 border border-amber-200 dark:border-amber-800';
-                              statusDiv.innerHTML = '<div class="text-sm text-amber-800 dark:text-amber-300"><strong>âš  Error:</strong> Browser Launcher Pro integration script not loaded. Please check the script path in index.html.</div>';
+                              statusDiv.innerHTML = '<div class="text-sm text-amber-800 dark:text-amber-300"><strong>⚠ Error:</strong> Browser Launcher Pro integration script not loaded. Please check the script path in index.html.</div>';
                               return;
                             }
 
@@ -13048,7 +13048,7 @@ php scripts/reset_admin_password.php admin 'NewStrongPass1!'`}</pre>
                                 statusDiv.innerHTML = `<div class="text-sm text-emerald-800 dark:text-emerald-300"><strong>✓ Extension Available:</strong> Browser Launcher Pro is ready!<br><small>Extension ID: ${BrowserLauncher.extensionId || 'Auto-detected'} | ${message}</small></div>`;
                               } else {
                                 statusDiv.className = 'p-4 rounded-lg bg-amber-50 dark:bg-amber-900/20 border border-amber-200 dark:border-amber-800';
-                                statusDiv.innerHTML = `<div class="text-sm text-amber-800 dark:text-amber-300"><strong>âš  Extension Status:</strong> ${message}<br><small><strong>Tips:</strong><br>1. Make sure Browser Launcher Pro extension is installed<br>2. Go to chrome://extensions and reload the extension<br>3. Refresh this page</small></div>`;
+                                statusDiv.innerHTML = `<div class="text-sm text-amber-800 dark:text-amber-300"><strong>⚠ Extension Status:</strong> ${message}<br><small><strong>Tips:</strong><br>1. Make sure Browser Launcher Pro extension is installed<br>2. Go to chrome://extensions and reload the extension<br>3. Refresh this page</small></div>`;
                               }
                             }, 5, 1000);
                           }}
@@ -13064,7 +13064,7 @@ php scripts/reset_admin_password.php admin 'NewStrongPass1!'`}</pre>
 
                             if (typeof (window as any).BrowserLauncher === 'undefined') {
                               statusDiv.className = 'p-4 rounded-lg bg-amber-50 dark:bg-amber-900/20 border border-amber-200 dark:border-amber-800';
-                              statusDiv.innerHTML = '<div class="text-sm text-amber-800 dark:text-amber-300"><strong>âš  Error:</strong> BrowserLauncher object not found.</div>';
+                              statusDiv.innerHTML = '<div class="text-sm text-amber-800 dark:text-amber-300"><strong>⚠ Error:</strong> BrowserLauncher object not found.</div>';
                               return;
                             }
 
@@ -13082,7 +13082,7 @@ php scripts/reset_admin_password.php admin 'NewStrongPass1!'`}</pre>
                                 statusDiv.innerHTML = '<div class="text-sm text-emerald-800 dark:text-emerald-300"><strong>✓ Test Successful!</strong> Extension is working! The link should have opened in Chrome.</div>';
                               } else {
                                 statusDiv.className = 'p-4 rounded-lg bg-amber-50 dark:bg-amber-900/20 border border-amber-200 dark:border-amber-800';
-                                statusDiv.innerHTML = `<div class="text-sm text-amber-800 dark:text-amber-300"><strong>âš  Test Result:</strong> ${response ? response.error : 'No response from extension. Check console for details.'}</div>`;
+                                statusDiv.innerHTML = `<div class="text-sm text-amber-800 dark:text-amber-300"><strong>⚠ Test Result:</strong> ${response ? response.error : 'No response from extension. Check console for details.'}</div>`;
                               }
                             });
                           }}
@@ -13155,7 +13155,7 @@ php scripts/reset_admin_password.php admin 'NewStrongPass1!'`}</pre>
                                 if (response && response.success !== false) {
                                   alert('✓ Opening GitHub in Chrome Stable!');
                                 } else {
-                                  alert('âœ— Error: ' + (response?.error || 'Unknown error'));
+                                  alert('✗ Error: ' + (response?.error || 'Unknown error'));
                                 }
                               });
                             }
@@ -13176,7 +13176,7 @@ php scripts/reset_admin_password.php admin 'NewStrongPass1!'`}</pre>
                                 if (response && response.success !== false) {
                                   alert('✓ Opening Microsoft in Edge Stable!');
                                 } else {
-                                  alert('âœ— Error: ' + (response?.error || 'Unknown error'));
+                                  alert('✗ Error: ' + (response?.error || 'Unknown error'));
                                 }
                               });
                             }
@@ -13197,7 +13197,7 @@ php scripts/reset_admin_password.php admin 'NewStrongPass1!'`}</pre>
                                 if (response && response.success !== false) {
                                   alert('✓ Opening Google in Chrome Beta!');
                                 } else {
-                                  alert('âœ— Error: ' + (response?.error || 'Unknown error'));
+                                  alert('✗ Error: ' + (response?.error || 'Unknown error'));
                                 }
                               });
                             }
@@ -13288,7 +13288,7 @@ php scripts/reset_admin_password.php admin 'NewStrongPass1!'`}</pre>
                               if (response.ok) {
                                 const data = await response.json();
                                 if (data.success && data.browsers && data.browsers.length > 0) {
-                                  const browserList = data.browsers.map((b: any) => `â€¢ ${b.browser_name} (${b.browser_id})`).join('\n');
+                                  const browserList = data.browsers.map((b: any) => `• ${b.browser_name} (${b.browser_id})`).join('\n');
                                   const lastUpdated = data.metadata?.last_updated
                                     ? new Date(data.metadata.last_updated * 1000).toLocaleString()
                                     : 'Unknown';
@@ -13410,7 +13410,7 @@ php scripts/reset_admin_password.php admin 'NewStrongPass1!'`}</pre>
                                   ))}
                                 </>
                               ) : (
-                                <option value="">ðŸ” Detecting browsers...</option>
+                                <option value="">🔍 Detecting browsers...</option>
                               )}
                             </select>
                           </div>
@@ -13438,7 +13438,7 @@ php scripts/reset_admin_password.php admin 'NewStrongPass1!'`}</pre>
                                   const message = response.message || 'Browser launch initiated';
                                   setTestResult({ success: true, message: `✓ Success! ${message}` });
                                 } else {
-                                  setTestResult({ success: false, message: `âœ— Error: ${response ? response.error : 'No response from extension'}` });
+                                  setTestResult({ success: false, message: `✗ Error: ${response ? response.error : 'No response from extension'}` });
                                 }
                               });
                             }}
@@ -13483,7 +13483,7 @@ php scripts/reset_admin_password.php admin 'NewStrongPass1!'`}</pre>
                         </div>
                       ) : (
                         <div className="bg-slate-50 dark:bg-slate-900/20 border-l-4 border-slate-400 p-4 rounded text-sm text-slate-600 dark:text-slate-400 italic">
-                          ðŸ” Scanning system for installed browsers...
+                          🔍 Scanning system for installed browsers...
                         </div>
                       )}
                     </div>
