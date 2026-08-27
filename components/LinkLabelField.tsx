@@ -66,7 +66,7 @@ export const LinkLabelField: React.FC<LinkLabelFieldProps> = ({
       ) : (
         <input
           type="text"
-          value={stripHtmlToPlainText(value) || value}
+          value={looksLikeHtml(value) ? stripHtmlToPlainText(value) : value}
           onChange={(e) => onChange(e.target.value)}
           placeholder="Enter link name..."
           className={
