@@ -132,6 +132,41 @@ function validateMonitorType($type): bool {
     return in_array($type, ['url', 'keyword', 'port', 'ping', 'ssl', 'dns', 'json'], true);
 }
 
+/**
+ * Interval is stored in minutes. SSL cert checks are whole days (1–30), default 1 day.
+ */
+function normalizeMonitorTabName(string $type, $tabName): string {
+    $tab = trim((string)$tabName);
+    if ($type === 'ssl') {
+        return 'SSL Certificates';
+    }
+    if (strcasecmp($tab, 'SSL Certificates') === 0) {
+        return 'General';
+    }
+    return $tab;
+}
+
+function normalizeMonitorInterval(string $type, $interval, int $defaultMinutes = 5): int {
+    $minutes = (int)$interval;
+    if ($type === 'ssl') {
+        if ($minutes < 1) {
+            $minutes = 1440;
+        }
+        $days = (int)round($minutes / 1440);
+        if ($days < 1) {
+            $days = 1;
+        }
+        if ($days > 30) {
+            $days = 30;
+        }
+        return $days * 1440;
+    }
+    if ($minutes < 1) {
+        return $defaultMinutes;
+    }
+    return $minutes;
+}
+
 function validateMonitorTypeFields(array $data): ?string {
     $type = $data['type'] ?? '';
     if ($type === 'port') {
@@ -226,6 +261,9 @@ function monitorExportNotificationSettings(): array {
 
 function monitorImportMonitorRowValues(array $m, int $now): array {
     $warningThreshold = isset($m['warning_threshold']) ? (int)$m['warning_threshold'] : 1;
+    if (($m['type'] ?? '') === 'ssl') {
+        $warningThreshold = 1;
+    }
     if ($warningThreshold < 1) {
         $warningThreshold = 1;
     }
@@ -255,7 +293,7 @@ function monitorImportMonitorRowValues(array $m, int $now): array {
         $m['target'],
         isset($m['port']) ? (int)$m['port'] : null,
         $m['keyword'] ?? null,
-        isset($m['interval']) ? (int)$m['interval'] : 5,
+        normalizeMonitorInterval((string)($m['type'] ?? ''), $m['interval'] ?? (($m['type'] ?? '') === 'ssl' ? 1440 : 5), ($m['type'] ?? '') === 'ssl' ? 1440 : 5),
         $warningThreshold,
         isset($m['consecutive_failures']) ? (int)$m['consecutive_failures'] : 0,
         $timeout,
@@ -276,7 +314,7 @@ function monitorImportMonitorRowValues(array $m, int $now): array {
         isset($m['last_response_time']) ? (int)$m['last_response_time'] : null,
         isset($m['created_at']) ? (int)$m['created_at'] : $now,
         isset($m['updated_at']) ? (int)$m['updated_at'] : $now,
-        $m['tab_name'] ?? null,
+        normalizeMonitorTabName((string)($m['type'] ?? ''), $m['tab_name'] ?? ''),
         $m['group_name'] ?? null,
         isset($m['maintenance_start']) ? (int)$m['maintenance_start'] : null,
         isset($m['maintenance_end']) ? (int)$m['maintenance_end'] : null,
@@ -741,6 +779,9 @@ function insertMonitorFromPayload(PDO $db, array $data): array {
     }
 
     $warningThreshold = isset($data['warning_threshold']) ? (int)$data['warning_threshold'] : 1;
+    if (($data['type'] ?? '') === 'ssl') {
+        $warningThreshold = 1;
+    }
     if ($warningThreshold < 1) $warningThreshold = 1;
     if ($warningThreshold > 20) $warningThreshold = 20;
 
@@ -752,6 +793,9 @@ function insertMonitorFromPayload(PDO $db, array $data): array {
 
     $allowedUserIds = normalizeAllowedUserIds($data['allowed_user_ids'] ?? []);
     $permissionsMode = !empty($allowedUserIds) ? 1 : 0;
+
+    $intervalDefault = ($data['type'] ?? '') === 'ssl' ? 1440 : 5;
+    $interval = normalizeMonitorInterval((string)$data['type'], $data['interval'] ?? $intervalDefault, $intervalDefault);
 
     $stmt = $db->prepare('INSERT INTO monitors (
         name, type, target, port, keyword, interval,
@@ -769,7 +813,7 @@ function insertMonitorFromPayload(PDO $db, array $data): array {
         $data['target'],
         isset($data['port']) ? (int)$data['port'] : null,
         $data['keyword'] ?? null,
-        isset($data['interval']) ? (int)$data['interval'] : 5,
+        $interval,
         $warningThreshold,
         0,
         $timeout,
@@ -778,7 +822,7 @@ function insertMonitorFromPayload(PDO $db, array $data): array {
         isset($data['email_notification']) ? (int)$data['email_notification'] : 0,
         $now,
         $now,
-        $data['tab_name'] ?? null,
+        normalizeMonitorTabName((string)$data['type'], $data['tab_name'] ?? ''),
         $data['group_name'] ?? null,
         isset($data['maintenance_start']) ? (int)$data['maintenance_start'] : null,
         isset($data['maintenance_end']) ? (int)$data['maintenance_end'] : null,
@@ -1034,7 +1078,7 @@ function handleUpdateMonitor($id) {
     $db = getDB();
     
     // Check if exists
-    $stmt = $db->prepare('SELECT id, email_notification FROM monitors WHERE id = ?');
+    $stmt = $db->prepare('SELECT id, email_notification, type, interval FROM monitors WHERE id = ?');
     $stmt->execute([$id]);
     $existing = $stmt->fetch();
     if (!$existing) {
@@ -1067,11 +1111,18 @@ function handleUpdateMonitor($id) {
                     }
                 }
                 if ($field === 'warning_threshold') {
-                    $v = (int)$data[$field];
+                    $typeForWt = isset($data['type']) ? (string)$data['type'] : (string)($existing['type'] ?? 'url');
+                    $v = $typeForWt === 'ssl' ? 1 : (int)$data[$field];
                     if ($v < 1) $v = 1;
                     if ($v > 20) $v = 20;
                     $fields[] = "$field = ?";
                     $values[] = $v;
+                    continue;
+                }
+                if ($field === 'interval') {
+                    $typeForInterval = isset($data['type']) ? (string)$data['type'] : (string)($existing['type'] ?? 'url');
+                    $fields[] = "$field = ?";
+                    $values[] = normalizeMonitorInterval($typeForInterval, $data[$field]);
                     continue;
                 }
                 if ($field === 'timeout') {
@@ -1089,8 +1140,31 @@ function handleUpdateMonitor($id) {
                     continue;
                 }
 
+                if ($field === 'tab_name') {
+                    $typeForTab = isset($data['type']) ? (string)$data['type'] : (string)($existing['type'] ?? 'url');
+                    $fields[] = "$field = ?";
+                    $values[] = normalizeMonitorTabName($typeForTab, $data[$field]);
+                    continue;
+                }
+
                 $fields[] = "$field = ?";
                 $values[] = $data[$field];
+            }
+        }
+
+        $typeAfter = isset($data['type']) ? (string)$data['type'] : (string)($existing['type'] ?? '');
+        if ($typeAfter === 'ssl') {
+            if (!isset($data['interval'])) {
+                $fields[] = 'interval = ?';
+                $values[] = normalizeMonitorInterval('ssl', $existing['interval'] ?? 1440);
+            }
+            if (!isset($data['warning_threshold'])) {
+                $fields[] = 'warning_threshold = ?';
+                $values[] = 1;
+            }
+            if (!isset($data['tab_name'])) {
+                $fields[] = 'tab_name = ?';
+                $values[] = 'SSL Certificates';
             }
         }
 

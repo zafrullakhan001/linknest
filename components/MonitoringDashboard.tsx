@@ -2,8 +2,11 @@ import React, { useState, useEffect, useCallback, useRef, useMemo } from 'react'
 import { Monitor, MonitorLog, monitoringService } from '../services/monitoringService';
 import { MonitorForm } from './MonitorForm';
 import { MonitorBulkImportDialog } from './MonitorBulkImportDialog';
+import { MonitorSslBulkImportDialog } from './MonitorSslBulkImportDialog';
 import { MonitorTargetLabel } from './MonitorTargetLabel';
 import { FaServer, FaGlobe, FaSearch, FaCheck, FaTimes, FaQuestion, FaPlus, FaRedo, FaSyncAlt, FaTrash, FaEdit, FaClock, FaThLarge, FaList, FaCopy, FaBars, FaDownload, FaUpload, FaHistory, FaCalendarAlt, FaEnvelope, FaArrowsAlt, FaPalette, FaCircle, FaExpand, FaCompress, FaBell, FaBellSlash, FaFileExport, FaLock, FaCode, FaMagic } from 'react-icons/fa';
+import { formatMonitorInterval } from '../utils/monitorSuggestTiming';
+import { SSL_CERTS_TAB, isSslCertsTab, isSslMonitor } from '../utils/monitorSsl';
 import { useTileAnimation, getTileAnimationClass, getTileDecorationClass } from './TileAnimationSelector';
 import { SMTPSettingsModal } from './SMTPSettingsModal';
 import { MonitoringTileStyleModal, TileStyle } from './MonitoringTileStyleModal';
@@ -19,6 +22,8 @@ export const MonitoringDashboard: React.FC = () => {
     const [isLoading, setIsLoading] = useState(true);
     const [isEditing, setIsEditing] = useState(false);
     const [showBulkImport, setShowBulkImport] = useState(false);
+    const [showSslBulkImport, setShowSslBulkImport] = useState(false);
+    const [addMonitorType, setAddMonitorType] = useState<Monitor['type'] | undefined>(undefined);
     const [selectedMonitor, setSelectedMonitor] = useState<Monitor | undefined>(undefined);
     const [isDuplicate, setIsDuplicate] = useState(false);
     const [isAddingNew, setIsAddingNew] = useState(false); // Track if we're adding a new monitor
@@ -352,6 +357,15 @@ export const MonitoringDashboard: React.FC = () => {
         localStorage.setItem('linknest_monitor_auto_refresh_mode', autoRefreshMode);
     }, [autoRefreshMode]);
 
+    const openAddMonitor = (type?: Monitor['type']) => {
+        setSelectedMonitor(undefined);
+        setIsDuplicate(false);
+        setIsAddingNew(true);
+        setCreatedMonitorId(undefined);
+        setAddMonitorType(type ?? (isSslCertsTab(activeTab) ? 'ssl' : undefined));
+        setIsEditing(true);
+    };
+
     const handleSave = async (data: Partial<Monitor>) => {
         if (!isAdmin) {
             throw new Error('Admin access required');
@@ -371,6 +385,9 @@ export const MonitoringDashboard: React.FC = () => {
                 setCreatedMonitorId(createdMonitor.id);
                 // Keep isAddingNew true so we know we're still in "add mode"
                 setIsAddingNew(true);
+            }
+            if (data.type === 'ssl') {
+                setActiveTab(SSL_CERTS_TAB);
             }
             fetchMonitors();
         } catch (error) {
@@ -567,22 +584,33 @@ export const MonitoringDashboard: React.FC = () => {
     }, [chartData, brushRange]);
 
     const groupedByTabs = useMemo<Record<string, Monitor[]>>(() => {
-        const tabs: { [key: string]: Monitor[] } = {};
-        if (monitors.length === 0) return tabs;
-
+        const tabs: { [key: string]: Monitor[] } = { [SSL_CERTS_TAB]: [] };
         monitors.forEach(m => {
-            const tab = m.tab_name || 'General';
+            if (isSslMonitor(m)) {
+                tabs[SSL_CERTS_TAB].push(m);
+                return;
+            }
+            const stored = (m.tab_name || 'General').trim() || 'General';
+            const tab = isSslCertsTab(stored) ? 'General' : stored;
             if (!tabs[tab]) tabs[tab] = [];
             tabs[tab].push(m);
         });
         return tabs;
     }, [monitors]);
 
-    const tabNames = useMemo(() => Object.keys(groupedByTabs).sort((a, b) => {
-        if (a === 'General') return -1;
-        if (b === 'General') return 1;
-        return a.localeCompare(b);
-    }), [groupedByTabs]);
+    const tabNames = useMemo(() => {
+        const names = Object.keys(groupedByTabs).filter(
+            (tab) => isSslCertsTab(tab) || groupedByTabs[tab].length > 0
+        );
+        if (!names.includes(SSL_CERTS_TAB)) names.unshift(SSL_CERTS_TAB);
+        return names.sort((a, b) => {
+            if (isSslCertsTab(a)) return -1;
+            if (isSslCertsTab(b)) return 1;
+            if (a === 'General') return -1;
+            if (b === 'General') return 1;
+            return a.localeCompare(b);
+        });
+    }, [groupedByTabs]);
 
     useEffect(() => {
         if (isLoading) return;
@@ -672,6 +700,10 @@ export const MonitoringDashboard: React.FC = () => {
 
     const handleTabRename = async (oldName: string) => {
         if (!isAdmin) {
+            setEditingTabName(null);
+            return;
+        }
+        if (isSslCertsTab(oldName)) {
             setEditingTabName(null);
             return;
         }
@@ -1108,22 +1140,23 @@ export const MonitoringDashboard: React.FC = () => {
                     {isAdmin && (
                         <>
                             <button
+                                onClick={() => setShowSslBulkImport(true)}
+                                className="flex items-center justify-center w-10 h-10 bg-amber-600 hover:bg-amber-700 text-white font-bold rounded-xl transition-all shadow-lg shadow-amber-600/20 active:scale-95"
+                                title="Bulk add SSL certificate expiry checks"
+                            >
+                                <FaLock size={14} />
+                            </button>
+                            <button
                                 onClick={() => setShowBulkImport(true)}
                                 className="flex items-center justify-center w-10 h-10 bg-emerald-600 hover:bg-emerald-700 text-white font-bold rounded-xl transition-all shadow-lg shadow-emerald-600/20 active:scale-95"
-                                title="Bulk add monitors from URLs/IPs"
+                                title="Bulk add uptime monitors from URLs/IPs"
                             >
                                 <FaMagic size={14} />
                             </button>
                             <button
-                                onClick={() => {
-                                    setSelectedMonitor(undefined);
-                                    setIsDuplicate(false);
-                                    setIsAddingNew(true);
-                                    setCreatedMonitorId(undefined);
-                                    setIsEditing(true);
-                                }}
+                                onClick={() => openAddMonitor()}
                                 className="flex items-center justify-center w-10 h-10 bg-blue-600 hover:bg-blue-700 text-white font-bold rounded-xl transition-all shadow-lg shadow-blue-600/20 active:scale-95"
-                                title="Add New Monitor"
+                                title={isSslCertsTab(activeTab) ? 'Add SSL certificate check' : 'Add New Monitor'}
                             >
                                 <FaPlus size={14} />
                             </button>
@@ -1172,72 +1205,42 @@ export const MonitoringDashboard: React.FC = () => {
                     <div className="w-12 h-12 border-4 border-blue-500/20 border-t-blue-500 rounded-full animate-spin mb-4"></div>
                     <div className="text-slate-900 dark:text-white font-medium">Loading monitors...</div>
                 </div>
-            ) : monitors.length === 0 ? (
-                <div className="text-center py-20 bg-white dark:bg-[#1e1e1e] rounded-3xl border border-dashed border-slate-200 dark:border-[#333] shadow-sm">
-                    <div className="inline-flex w-20 h-20 items-center justify-center rounded-full bg-slate-50 dark:bg-[#252525] mb-6 text-4xl">
-                        📊
-                    </div>
-                    <h2 className="text-xl font-bold text-slate-900 dark:text-white mb-2">No monitors configured</h2>
-                    <p className="text-slate-500 dark:text-gray-400 mb-6 max-w-sm mx-auto">
-                        Track the uptime and performance of your websites, APIs, and servers.
-                    </p>
-                    {isAdmin ? (
-                        <button
-                            onClick={() => {
-                                setSelectedMonitor(undefined);
-                                setIsDuplicate(false);
-                                setIsAddingNew(true);
-                                setCreatedMonitorId(undefined);
-                                setIsEditing(true);
-                            }}
-                            className="px-6 py-2.5 bg-blue-600 text-white rounded-xl font-bold hover:bg-blue-700 transition-colors"
-                        >
-                            Create your first monitor
-                        </button>
-                    ) : (
-                        <div className="text-sm text-slate-500 dark:text-gray-400">
-                            You don’t have permission to create monitors. An admin can assign monitors for you to view here.
-                        </div>
-                    )}
-                </div>
             ) : (
                 <div className="space-y-8">
-                    {/* Tabs Navigation */}
-                    {tabNames.length > 1 && (
-                        <div className="flex flex-wrap gap-2 p-1.5 bg-white dark:bg-[#1e1e1e] rounded-2xl border border-slate-200 dark:border-[#333] mb-6 w-fit">
-                            {tabNames.map(tab => (
+                    {/* Tabs Navigation — SSL Certificates is always pinned and type-isolated */}
+                    <div className="flex flex-wrap gap-2 p-1.5 bg-white dark:bg-[#1e1e1e] rounded-2xl border border-slate-200 dark:border-[#333] mb-6 w-fit">
+                        {tabNames.map(tab => {
+                            const sslTab = isSslCertsTab(tab);
+                            const isActive = activeTab === tab;
+                            return (
                                 <div
                                     key={tab}
-                                    className={`relative group/tab flex items-center gap-2 px-4 py-2 rounded-xl transition-all ${activeTab === tab ? 'bg-blue-600 text-white shadow-lg shadow-blue-600/20' : 'text-slate-500 hover:text-slate-700 dark:text-slate-400 dark:hover:text-white'}`}
+                                    className={`relative group/tab flex items-center gap-2 px-4 py-2 rounded-xl transition-all ${
+                                        isActive
+                                            ? sslTab
+                                                ? 'bg-amber-600 text-white shadow-lg shadow-amber-600/20'
+                                                : 'bg-blue-600 text-white shadow-lg shadow-blue-600/20'
+                                            : sslTab
+                                                ? 'text-amber-700 hover:text-amber-900 dark:text-amber-300 dark:hover:text-amber-100'
+                                                : 'text-slate-500 hover:text-slate-700 dark:text-slate-400 dark:hover:text-white'
+                                    }`}
                                 >
-                                    {editingTabName === tab ? (
-                                        <input
-                                            autoFocus
-                                            type="text"
-                                            value={tempTabName}
-                                            onChange={(e) => setTempTabName(e.target.value)}
-                                            onBlur={() => handleTabRename(tab)}
-                                            onKeyDown={(e) => e.key === 'Enter' && handleTabRename(tab)}
-                                            className="w-24 bg-transparent border-b border-white outline-none text-sm font-bold p-0"
-                                            onClick={(e) => e.stopPropagation()}
-                                        />
-                                    ) : (
-                                        <button
-                                            onClick={() => setActiveTab(tab)}
-                                            onDoubleClick={() => {
-                                                setEditingTabName(tab);
-                                                setTempTabName(tab);
-                                            }}
-                                            className="text-sm font-bold cursor-pointer"
-                                        >
-                                            {tab}
-                                        </button>
-                                    )}
-                                    <span className={`px-1.5 py-0.5 rounded-md text-[10px] ${activeTab === tab ? 'bg-white/20 text-white' : 'bg-slate-100 dark:bg-[#252525] text-slate-400'}`}>
-                                        {groupedByTabs[tab].length}
+                                    <button
+                                        onClick={() => setActiveTab(tab)}
+                                        onDoubleClick={() => {
+                                            if (sslTab || !isAdmin) return;
+                                            setEditingTabName(tab);
+                                            setTempTabName(tab);
+                                        }}
+                                        className="text-sm font-bold cursor-pointer flex items-center gap-1.5"
+                                    >
+                                        {sslTab && <FaLock size={11} />}
+                                        {tab}
+                                    </button>
+                                    <span className={`px-1.5 py-0.5 rounded-md text-[10px] ${isActive ? 'bg-white/20 text-white' : sslTab ? 'bg-amber-100 dark:bg-amber-950/40 text-amber-700 dark:text-amber-300' : 'bg-slate-100 dark:bg-[#252525] text-slate-400'}`}>
+                                        {(groupedByTabs[tab] || []).length}
                                     </span>
-                                    {/* Edit icon for tab visible on hover */}
-                                    {activeTab === tab && editingTabName !== tab && (
+                                    {isActive && !sslTab && editingTabName !== tab && isAdmin && (
                                         <button
                                             onClick={(e) => {
                                                 e.stopPropagation();
@@ -1250,10 +1253,61 @@ export const MonitoringDashboard: React.FC = () => {
                                             <FaEdit size={10} />
                                         </button>
                                     )}
+                                    {isActive && editingTabName === tab && !sslTab && (
+                                        <input
+                                            autoFocus
+                                            type="text"
+                                            value={tempTabName}
+                                            onChange={(e) => setTempTabName(e.target.value)}
+                                            onBlur={() => handleTabRename(tab)}
+                                            onKeyDown={(e) => e.key === 'Enter' && handleTabRename(tab)}
+                                            className="w-24 bg-transparent border-b border-white outline-none text-sm font-bold p-0 absolute inset-x-3 top-2"
+                                            onClick={(e) => e.stopPropagation()}
+                                        />
+                                    )}
                                 </div>
-                            ))}
+                            );
+                        })}
+                    </div>
+
+                    {monitorsInActiveTab.length === 0 ? (
+                        <div className={`text-center py-20 bg-white dark:bg-[#1e1e1e] rounded-3xl border border-dashed shadow-sm ${isSslCertsTab(activeTab) ? 'border-amber-200 dark:border-amber-900/40' : 'border-slate-200 dark:border-[#333]'}`}>
+                            <div className={`inline-flex w-20 h-20 items-center justify-center rounded-full mb-6 text-4xl ${isSslCertsTab(activeTab) ? 'bg-amber-50 dark:bg-amber-950/30' : 'bg-slate-50 dark:bg-[#252525]'}`}>
+                                {isSslCertsTab(activeTab) ? '🔒' : '📊'}
+                            </div>
+                            <h2 className="text-xl font-bold text-slate-900 dark:text-white mb-2">
+                                {isSslCertsTab(activeTab) ? 'No SSL certificate checks yet' : 'No monitors in this tab'}
+                            </h2>
+                            <p className="text-slate-500 dark:text-gray-400 mb-6 max-w-md mx-auto">
+                                {isSslCertsTab(activeTab)
+                                    ? 'Paste a list of hostnames to bulk-add expiry checks. These stay on this tab and are not mixed with uptime monitors.'
+                                    : 'Track the uptime and performance of your websites, APIs, and servers.'}
+                            </p>
+                            {isAdmin ? (
+                                <div className="flex flex-wrap items-center justify-center gap-3">
+                                    {isSslCertsTab(activeTab) && (
+                                        <button
+                                            onClick={() => setShowSslBulkImport(true)}
+                                            className="px-6 py-2.5 bg-amber-600 text-white rounded-xl font-bold hover:bg-amber-700 transition-colors"
+                                        >
+                                            Bulk add SSL certs
+                                        </button>
+                                    )}
+                                    <button
+                                        onClick={() => openAddMonitor(isSslCertsTab(activeTab) ? 'ssl' : undefined)}
+                                        className="px-6 py-2.5 bg-blue-600 text-white rounded-xl font-bold hover:bg-blue-700 transition-colors"
+                                    >
+                                        {isSslCertsTab(activeTab) ? 'Add SSL check' : 'Create a monitor'}
+                                    </button>
+                                </div>
+                            ) : (
+                                <div className="text-sm text-slate-500 dark:text-gray-400">
+                                    You don’t have permission to create monitors. An admin can assign monitors for you to view here.
+                                </div>
+                            )}
                         </div>
-                    )}
+                    ) : (
+                    <>
 
                     {sortedGroups.map((groupName) => (
                         <div key={groupName} className="space-y-4">
@@ -1494,7 +1548,7 @@ export const MonitoringDashboard: React.FC = () => {
                                                         {monitor.last_response_time !== null && monitor.last_response_time !== undefined ? `${monitor.last_response_time}ms` : '-'}
                                                     </div>
                                                     <div className="opacity-70">
-                                                        {monitor.interval}m
+                                                        {formatMonitorInterval(monitor.type, monitor.interval)}
                                                     </div>
                                                 </div>
                                                 <div
@@ -1763,7 +1817,7 @@ export const MonitoringDashboard: React.FC = () => {
                                                             className={`text-xs font-bold ${monitor.last_status === 'up' || monitor.last_status === 'down' ? '' : 'text-slate-500 dark:text-slate-400'}`}
                                                             style={monitor.last_status === 'up' || monitor.last_status === 'down' ? { ...getTileTextStyle(monitor.last_status), opacity: 0.8 } : {}}
                                                         >
-                                                            {monitor.interval}m
+                                                            {formatMonitorInterval(monitor.type, monitor.interval)}
                                                         </span>
                                                     </td>
                                                     <td className="px-6 py-4 text-right">
@@ -1827,13 +1881,25 @@ export const MonitoringDashboard: React.FC = () => {
                             )}
                         </div>
                     ))}
+                    </>
+                    )}
                 </div>
             )}
 
 
+            {showSslBulkImport && isAdmin && (
+                <MonitorSslBulkImportDialog
+                    onClose={() => setShowSslBulkImport(false)}
+                    onCreated={() => {
+                        setActiveTab(SSL_CERTS_TAB);
+                        fetchMonitors();
+                    }}
+                />
+            )}
+
             {showBulkImport && isAdmin && (
                 <MonitorBulkImportDialog
-                    defaultTab={activeTab}
+                    defaultTab={isSslCertsTab(activeTab) ? 'General' : activeTab}
                     onClose={() => setShowBulkImport(false)}
                     onCreated={fetchMonitors}
                 />
@@ -1842,6 +1908,8 @@ export const MonitoringDashboard: React.FC = () => {
             {isEditing && (
                 <MonitorForm
                     monitor={isAddingNew ? undefined : selectedMonitor}
+                    initialType={isAddingNew ? addMonitorType : undefined}
+                    initialTab={isAddingNew ? (addMonitorType === 'ssl' || isSslCertsTab(activeTab) ? SSL_CERTS_TAB : activeTab) : undefined}
                     onSave={handleSave}
                     onCancel={() => {
                         setIsEditing(false);
@@ -1849,6 +1917,7 @@ export const MonitoringDashboard: React.FC = () => {
                         setIsAddingNew(false);
                         setSelectedMonitor(undefined);
                         setCreatedMonitorId(undefined);
+                        setAddMonitorType(undefined);
                     }}
                     isAddingNew={isAddingNew}
                     createdMonitorId={createdMonitorId}
@@ -1908,7 +1977,10 @@ export const MonitoringDashboard: React.FC = () => {
                                         Move to Tab
                                     </h3>
                                     <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 gap-3">
-                                        {tabNames.map(t => (
+                                        {(isSslMonitor(monitorToMove)
+                                            ? [SSL_CERTS_TAB]
+                                            : tabNames.filter((t) => !isSslCertsTab(t))
+                                        ).map(t => (
                                             <button
                                                 key={t}
                                                 onClick={() => {

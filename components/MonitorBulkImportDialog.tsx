@@ -17,7 +17,7 @@ interface MonitorBulkImportDialogProps {
     onCreated: () => void;
 }
 
-const MONITOR_TYPES: MonitorType[] = ['url', 'keyword', 'port', 'ping', 'ssl', 'dns', 'json'];
+const MONITOR_TYPES: MonitorType[] = ['url', 'keyword', 'port', 'ping', 'dns', 'json'];
 
 const MONITOR_TYPE_EMOJI: Record<MonitorType, string> = {
     url: '🌐',
@@ -223,6 +223,7 @@ export const MonitorBulkImportDialog: React.FC<MonitorBulkImportDialogProps> = (
                 text,
                 tab_name: tabName.trim() || 'General',
                 fast: fastMode,
+                exclude_ssl: true,
             });
             setDrafts(result.drafts);
             setStep('review');
@@ -335,7 +336,7 @@ export const MonitorBulkImportDialog: React.FC<MonitorBulkImportDialogProps> = (
                             Bulk Add Monitors
                         </h2>
                         <p className="text-sm text-emerald-900/75 dark:text-emerald-200/70 mt-0.5">
-                            Paste URLs and IPs — we pick the best check type for each.
+                            Paste URLs and IPs — we pick the best uptime check for each. SSL expiry has its own bulk loader.
                         </p>
                     </div>
                     <div className="flex items-center gap-3 shrink-0">

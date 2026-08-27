@@ -295,6 +295,7 @@ export const monitoringService = {
         targets?: string[];
         tab_name?: string;
         fast?: boolean;
+        exclude_ssl?: boolean;
     }): Promise<MonitorBulkSuggestResult> {
         const response = await fetch('api/monitors.php/suggest-bulk', {
             method: 'POST',

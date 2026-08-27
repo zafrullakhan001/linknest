@@ -848,6 +848,34 @@ function buildMonitorDraftFromAnalysis(string $input, array $analysis, string $d
     ];
 }
 
+function stripSslFromMonitorDraft(array $draft, string $input, string $defaultTab): array {
+    $alts = array_values(array_filter(
+        $draft['alternatives'] ?? [],
+        fn($s) => ($s['type'] ?? '') !== 'ssl'
+    ));
+    $draft['alternatives'] = $alts;
+    if (($draft['monitor']['type'] ?? '') !== 'ssl') {
+        return $draft;
+    }
+    if (!empty($alts)) {
+        $best = $alts[0];
+        $draft['monitor'] = monitorDraftPayloadFromSuggestion($best, $input, $defaultTab);
+        $draft['confidence'] = $best['confidence'] ?? $draft['confidence'];
+        $draft['reason'] = $best['reason'] ?? $draft['reason'];
+        $draft['alternatives'] = array_slice($alts, 1);
+        return $draft;
+    }
+    if (!empty($draft['monitor']) && is_array($draft['monitor'])) {
+        $draft['monitor']['type'] = 'url';
+        $draft['monitor']['interval'] = 5;
+        $draft['monitor']['warning_threshold'] = 2;
+        $draft['monitor']['keyword'] = null;
+        $draft['monitor']['tab_name'] = $defaultTab;
+        $draft['reason'] = 'URL check — SSL expiry uses the SSL Certificates bulk loader';
+    }
+    return $draft;
+}
+
 function handleMonitorSuggestBulk(): void {
     requireAdmin();
 
@@ -857,6 +885,7 @@ function handleMonitorSuggestBulk(): void {
         $defaultTab = 'General';
     }
     $fastMode = !empty($data['fast']);
+    $excludeSsl = !isset($data['exclude_ssl']) || !empty($data['exclude_ssl']);
 
     $lines = [];
     if (isset($data['targets']) && is_array($data['targets'])) {
@@ -899,6 +928,9 @@ function handleMonitorSuggestBulk(): void {
             } else {
                 $draft = buildMonitorDraftFromAnalysis($line, $analysis, $defaultTab);
             }
+        }
+        if ($excludeSsl) {
+            $draft = stripSslFromMonitorDraft($draft, $line, $defaultTab);
         }
         $drafts[] = $draft;
     }

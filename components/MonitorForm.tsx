@@ -6,9 +6,16 @@ import { useAuth } from '../contexts/AuthContext';
 import { authService, UserListItem } from '../services/authService';
 import { useSettings } from '../contexts/SettingsContext';
 import { MONITOR_TYPE_LABELS, parseMonitorInputHint } from '../utils/monitorSuggestHeuristics';
-import { enrichMonitorConfigWithTiming } from '../utils/monitorSuggestTiming';
+import {
+    clampMonitorIntervalMinutes,
+    enrichMonitorConfigWithTiming,
+    getMonitorSuggestTimingDefaults,
+    sslDaysToMinutes,
+    sslMinutesToDays,
+} from '../utils/monitorSuggestTiming';
 import { MonitorQuickToggles, MonitorTogglePill } from './MonitorTogglePill';
 import { LinkUrlField } from './LinkUrlField';
+import { SSL_CERTS_TAB, isSslCertsTab } from '../utils/monitorSsl';
 
 interface MonitorFormProps {
     monitor?: Monitor;
@@ -16,6 +23,8 @@ interface MonitorFormProps {
     onCancel: () => void;
     isAddingNew?: boolean; // Track if we're adding a new monitor (even after creation)
     createdMonitorId?: number; // ID of newly created monitor for tabs
+    initialType?: Monitor['type'];
+    initialTab?: string;
 }
 
 interface MonitorPreset {
@@ -177,21 +186,28 @@ const SettingsSection: React.FC<{
 const MONITOR_INPUT_CLASS =
     'w-full bg-white/90 border border-gray-200 rounded-lg px-3 py-2 text-gray-900 outline-none focus:border-blue-400 focus:ring-2 focus:ring-blue-100 transition-colors';
 
-export const MonitorForm: React.FC<MonitorFormProps> = ({ monitor, onSave, onCancel, isAddingNew = false, createdMonitorId }) => {
+export const MonitorForm: React.FC<MonitorFormProps> = ({ monitor, onSave, onCancel, isAddingNew = false, createdMonitorId, initialType, initialTab }) => {
     const { user } = useAuth();
     const isAdmin = !!user?.is_admin;
     const { settings } = useSettings();
     const appName = settings?.app_name || 'LinkNest';
 
     const [name, setName] = useState(monitor?.name || '');
-    const [type, setType] = useState<Monitor['type']>(monitor?.type || 'url');
+    const [type, setType] = useState<Monitor['type']>(monitor?.type || initialType || 'url');
     const [target, setTarget] = useState(monitor?.target || '');
     const [port, setPort] = useState(monitor?.port?.toString() || '');
-    const [keyword, setKeyword] = useState(monitor?.keyword || '');
-    const [interval, setInterval] = useState(monitor?.interval?.toString() || '5');
+    const [keyword, setKeyword] = useState(monitor?.keyword || ((monitor?.type || initialType) === 'ssl' ? '30' : ''));
+    const [interval, setInterval] = useState(
+        monitor?.interval?.toString()
+        || ((monitor?.type || initialType) === 'ssl' ? String(getMonitorSuggestTimingDefaults('ssl').interval) : '5')
+    );
     const [warningThreshold, setWarningThreshold] = useState((monitor?.warning_threshold ?? 1).toString());
     const [timeoutSec, setTimeoutSec] = useState(monitor?.timeout !== null && monitor?.timeout !== undefined ? String(monitor?.timeout) : '');
-    const [tabName, setTabName] = useState(monitor?.tab_name || '');
+    const [tabName, setTabName] = useState(
+        (monitor?.type || initialType) === 'ssl'
+            ? SSL_CERTS_TAB
+            : (monitor?.tab_name || initialTab || '')
+    );
     const [groupName, setGroupName] = useState(monitor?.group_name || '');
     const [emailNotification, setEmailNotification] = useState(!!monitor?.email_notification);
     const [legacyEmailTo, setLegacyEmailTo] = useState(monitor?.legacy_email_to || '');
@@ -385,6 +401,7 @@ export const MonitorForm: React.FC<MonitorFormProps> = ({ monitor, onSave, onCan
         if (timing.timeout != null) setTimeoutSec(String(timing.timeout));
         else setTimeoutSec('');
         setWarningThreshold(String(timing.warning_threshold));
+        setTabName(suggestion.type === 'ssl' ? SSL_CERTS_TAB : (tabName && !isSslCertsTab(tabName) ? tabName : (initialTab || 'General')));
         setShowSmartSetup(false);
         setShowPresets(false);
         setAnalyzeError(null);
@@ -477,11 +494,11 @@ export const MonitorForm: React.FC<MonitorFormProps> = ({ monitor, onSave, onCan
                 return;
             }
 
-            const wt = Math.max(1, Math.min(20, parseInt(warningThreshold || '1')));
+            const wt = type === 'ssl' ? 1 : Math.max(1, Math.min(20, parseInt(warningThreshold || '1')));
             const timeoutVal = timeoutSec.trim() === '' ? undefined : Math.max(1, Math.min(60, parseInt(timeoutSec)));
-            const intervalVal = parseInt(interval) || 5;
-            if (intervalVal < 1 || intervalVal > 1440) {
-                setError('Interval must be between 1 and 1440 minutes');
+            const intervalParsed = clampMonitorIntervalMinutes(type, parseInt(interval, 10) || 0);
+            if (intervalParsed.error) {
+                setError(intervalParsed.error);
                 setIsSubmitting(false);
                 return;
             }
@@ -492,11 +509,11 @@ export const MonitorForm: React.FC<MonitorFormProps> = ({ monitor, onSave, onCan
                 target: target.trim(),
                 port: port ? parseInt(port) : undefined,
                 keyword: keyword.trim() || undefined,
-                interval: intervalVal,
+                interval: intervalParsed.value,
                 warning_threshold: wt,
                 timeout: timeoutVal,
                 allowed_user_ids: isAdmin ? allowedUsers : undefined,
-                tab_name: tabName.trim() || undefined,
+                tab_name: type === 'ssl' ? SSL_CERTS_TAB : (tabName.trim() || undefined),
                 group_name: groupName.trim() || undefined,
                 email_notification: emailNotification ? 1 : 0,
                 is_active: isActive ? 1 : 0,
@@ -621,19 +638,24 @@ export const MonitorForm: React.FC<MonitorFormProps> = ({ monitor, onSave, onCan
                                         setIsSubmitting(true);
                                         setError(null);
                                         setWaitingForMonitorId(true);
-                                        const wt = Math.max(1, Math.min(20, parseInt(warningThreshold || '1')));
+                                        const wt = type === 'ssl' ? 1 : Math.max(1, Math.min(20, parseInt(warningThreshold || '1')));
                                         const timeoutVal = timeoutSec.trim() === '' ? undefined : Math.max(1, Math.min(60, parseInt(timeoutSec)));
+                                        const intervalParsed = clampMonitorIntervalMinutes(type, parseInt(interval, 10) || 0);
+                                        if (intervalParsed.error) {
+                                            setError(intervalParsed.error);
+                                            return;
+                                        }
                                         await onSave({
                                             name: name.trim(),
                                             type,
                                             target: target.trim(),
                                             port: port ? parseInt(port) : undefined,
                                             keyword: keyword.trim() || undefined,
-                                            interval: parseInt(interval) || 5,
+                                            interval: intervalParsed.value,
                                             warning_threshold: wt,
                                             timeout: timeoutVal,
                                             allowed_user_ids: isAdmin ? allowedUsers : undefined,
-                                            tab_name: tabName.trim() || undefined,
+                                            tab_name: type === 'ssl' ? SSL_CERTS_TAB : (tabName.trim() || undefined),
                                             group_name: groupName.trim() || undefined,
                                             email_notification: emailNotification ? 1 : 0,
                                             is_active: isActive ? 1 : 0,
@@ -893,7 +915,25 @@ export const MonitorForm: React.FC<MonitorFormProps> = ({ monitor, onSave, onCan
                                         </label>
                                         <select
                                             value={type}
-                                            onChange={(e) => setType(e.target.value as Monitor['type'])}
+                                            onChange={(e) => {
+                                                const next = e.target.value as Monitor['type'];
+                                                const prev = type;
+                                                setType(next);
+                                                if (next === 'ssl' && prev !== 'ssl') {
+                                                    const timing = getMonitorSuggestTimingDefaults('ssl');
+                                                    setInterval(String(timing.interval));
+                                                    setWarningThreshold(String(timing.warning_threshold));
+                                                    setTabName(SSL_CERTS_TAB);
+                                                    if (!keyword.trim()) setKeyword('30');
+                                                } else if (prev === 'ssl' && next !== 'ssl') {
+                                                    const timing = getMonitorSuggestTimingDefaults(next);
+                                                    setInterval(String(timing.interval));
+                                                    setWarningThreshold(String(timing.warning_threshold));
+                                                    if (isSslCertsTab(tabName)) {
+                                                        setTabName(initialTab && !isSslCertsTab(initialTab) ? initialTab : 'General');
+                                                    }
+                                                }
+                                            }}
                                             className={inputClass}
                                         >
                                             <option value="url">🌐 URL Check</option>
@@ -1011,7 +1051,7 @@ export const MonitorForm: React.FC<MonitorFormProps> = ({ monitor, onSave, onCan
                                                 min="1"
                                                 max="365"
                                             />
-                                            <FieldHelp text="Monitor is marked down when the certificate expires within this many days. Default is 30. Daily check interval is recommended." />
+                                            <FieldHelp text="Monitor is marked down when the certificate expires within this many days. Default is 30." />
                                         </div>
                                     )}
 
@@ -1050,23 +1090,39 @@ export const MonitorForm: React.FC<MonitorFormProps> = ({ monitor, onSave, onCan
                                     )}
                                 </SettingsSection>
 
-                                <SettingsSection emoji="⏱️" title="Monitoring Settings" subtitle="Schedule and failure sensitivity" tone="amber">
+                                <SettingsSection emoji="⏱️" title="Monitoring Settings" subtitle={type === 'ssl' ? 'How often to check the certificate' : 'Schedule and failure sensitivity'} tone="amber">
                                     <div>
                                         <label className="block text-sm font-medium text-gray-700 mb-1">
-                                            <span aria-hidden="true">🔄 </span>Check Interval (minutes) <span className="text-red-500">*</span>
+                                            <span aria-hidden="true">🔄 </span>
+                                            {type === 'ssl' ? 'Check Interval (days)' : 'Check Interval (minutes)'}{' '}
+                                            <span className="text-red-500">*</span>
                                         </label>
                                         <input
                                             type="number"
-                                            value={interval}
-                                            onChange={(e) => setInterval(e.target.value)}
+                                            value={type === 'ssl' ? String(sslMinutesToDays(parseInt(interval, 10) || 1440)) : interval}
+                                            onChange={(e) => {
+                                                if (type === 'ssl') {
+                                                    const days = parseInt(e.target.value, 10);
+                                                    setInterval(String(sslDaysToMinutes(Number.isFinite(days) ? days : 1)));
+                                                } else {
+                                                    setInterval(e.target.value);
+                                                }
+                                            }}
                                             min="1"
-                                            max="1440"
+                                            max={type === 'ssl' ? '30' : '1440'}
                                             className={inputClass}
                                             required
                                         />
-                                        <FieldHelp text="How often the monitor should check the target on its normal schedule (cron/worker). Lower values provide faster alerts but use more resources. Note: 'Check Now' / 'Force refresh' runs immediately and does not wait for this interval." />
+                                        <FieldHelp
+                                            text={
+                                                type === 'ssl'
+                                                    ? "How often to re-check the certificate. Daily is enough for expiry monitoring. 'Check Now' / 'Force refresh' still runs immediately."
+                                                    : "How often the monitor should check the target on its normal schedule (cron/worker). Lower values provide faster alerts but use more resources. Note: 'Check Now' / 'Force refresh' runs immediately and does not wait for this interval."
+                                            }
+                                        />
                                     </div>
 
+                                    {type !== 'ssl' && (
                                     <div>
                                         <label className="block text-sm font-medium text-gray-700 mb-1">
                                             <span aria-hidden="true">⚠️ </span>Warning Threshold (failures) <span className="text-red-500">*</span>
@@ -1082,6 +1138,7 @@ export const MonitorForm: React.FC<MonitorFormProps> = ({ monitor, onSave, onCan
                                         />
                                         <FieldHelp text="Number of consecutive failed checks before the monitor is considered DOWN. Failures below this threshold show as WARNING." />
                                     </div>
+                                    )}
                                 </SettingsSection>
 
                                 <SettingsSection emoji="📁" title="Organization" subtitle="Optional tab and group labels" tone="violet">
@@ -1092,12 +1149,19 @@ export const MonitorForm: React.FC<MonitorFormProps> = ({ monitor, onSave, onCan
                                             </label>
                                             <input
                                                 type="text"
-                                                value={tabName}
+                                                value={type === 'ssl' ? SSL_CERTS_TAB : tabName}
                                                 onChange={(e) => setTabName(e.target.value)}
-                                                className={inputClass}
+                                                className={`${inputClass} ${type === 'ssl' ? 'bg-amber-50 text-amber-900' : ''}`}
                                                 placeholder="General"
+                                                readOnly={type === 'ssl'}
                                             />
-                                            <FieldHelp text="Organize monitors into tabs for easier navigation (e.g., 'Production', 'Development', 'External')" />
+                                            <FieldHelp
+                                                text={
+                                                    type === 'ssl'
+                                                        ? 'SSL expiry checks always live on the SSL Certificates tab so they stay separate from uptime monitors.'
+                                                        : "Organize monitors into tabs for easier navigation (e.g., 'Production', 'Development', 'External')"
+                                                }
+                                            />
                                         </div>
                                         <div>
                                             <label className="block text-sm font-medium text-gray-700 mb-1">
