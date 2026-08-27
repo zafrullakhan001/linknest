@@ -117,12 +117,18 @@ AddDefaultCharset UTF-8
     RewriteCond %{REQUEST_URI} /tinymce/
     RewriteCond %{REQUEST_FILENAME} !-f
     RewriteRule (^|/)tinymce/(.*)$ dist/tinymce/$2 [L]
+
+    # Mermaid (Help & About diagrams) — Vite public/vendor → dist/vendor
+    RewriteCond %{REQUEST_URI} /vendor/mermaid\.min\.js$
+    RewriteCond %{REQUEST_FILENAME} !-f
+    RewriteRule (^|/)vendor/mermaid\.min\.js$ dist/vendor/mermaid.min.js [L]
     
     # Block direct access to source files in production
     RewriteCond %{DOCUMENT_ROOT}%{REQUEST_URI}dist/index.html -f
     RewriteCond %{REQUEST_URI} \.(tsx?|jsx?)$
     RewriteCond %{REQUEST_URI} !dist/
     RewriteCond %{REQUEST_URI} !api/
+    RewriteCond %{REQUEST_URI} !/vendor/
     RewriteRule . - [F,L]
     
     # PRODUCTION MODE: If dist/index.html exists, always serve from dist/

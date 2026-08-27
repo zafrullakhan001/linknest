@@ -107,6 +107,11 @@ AddDefaultCharset UTF-8
     RewriteCond %{REQUEST_URI} /tinymce/
     RewriteCond %{REQUEST_FILENAME} !-f
     RewriteRule (^|/)tinymce/(.*)$ dist/tinymce/$2 [L]
+
+    # Mermaid (Help & About diagrams) — Vite public/vendor → dist/vendor
+    RewriteCond %{REQUEST_URI} /vendor/mermaid\.min\.js$
+    RewriteCond %{REQUEST_FILENAME} !-f
+    RewriteRule (^|/)vendor/mermaid\.min\.js$ dist/vendor/mermaid.min.js [L]
     
     # Route API requests to api/index.php
     RewriteCond %{REQUEST_URI} ^/api/
@@ -132,6 +137,7 @@ AddDefaultCharset UTF-8
     RewriteCond %{REQUEST_URI} !^/land
     RewriteCond %{REQUEST_URI} !^/extensions
     RewriteCond %{REQUEST_URI} !^/tinymce
+    RewriteCond %{REQUEST_URI} !/vendor/
     RewriteCond %{REQUEST_URI} !^/index\.tsx$
     RewriteRule . - [R=404,L]
     

@@ -2,6 +2,112 @@
 
 These scripts offload scheduled monitoring and SMTP sending from PHP to Python, preventing the **PHP cron job from freezing** when endpoints or SMTP are slow.
 
+Also in-app: **Help & About → Help → System Monitoring Dashboard**, **About**, and **Guides → Python Workers (Monitoring + Email)**.
+
+Workers run as **separate OS processes** (Windows Task Scheduler, Linux cron, or the Docker entrypoint). They are not Apache/PHP request handlers, so a slow URL or stuck SMTP server does not occupy a PHP worker.
+
+## Architecture
+
+Apache/PHP serves the dashboard and stores monitor definitions. Checks and outbound mail run in Python and only share SQLite with PHP.
+
+```mermaid
+flowchart TB
+  subgraph ApacheUI["Apache / PHP - UI only"]
+    Dash["Monitoring dashboard"]
+    API["PHP API"]
+  end
+
+  subgraph Sched["OS scheduler - outside Apache"]
+    Win["Windows Task Scheduler"]
+    Dock["Docker entrypoint loop"]
+    Cron["Linux cron"]
+  end
+
+  subgraph Py["Python workers"]
+    MR["monitor_runner.py"]
+    ES["email_sender.py"]
+  end
+
+  DB[("SQLite<br/>data/linknest.db")]
+  Targets["URL / keyword / port / ping<br/>SSL / DNS / JSON"]
+  SMTP["SMTP"]
+
+  Dash -->|"configure + read status"| API
+  API --> DB
+  Win --> MR
+  Win --> ES
+  Dock --> MR
+  Dock --> ES
+  Cron --> MR
+  Cron --> ES
+  MR -->|"probe with hard timeouts"| Targets
+  MR -->|"monitors + monitor_logs + email_outbox"| DB
+  ES -->|"read email_outbox"| DB
+  ES --> SMTP
+  ES -->|"monitor_notification_logs"| DB
+
+  classDef ui fill:#EFF6FF,stroke:#2563EB,color:#1E3A8A,stroke-width:1.5px
+  classDef sched fill:#F8FAFC,stroke:#64748B,color:#334155,stroke-width:1.5px
+  classDef work fill:#F5F3FF,stroke:#7C3AED,color:#4C1D95,stroke-width:1.5px
+  classDef data fill:#FFFBEB,stroke:#D97706,color:#92400E,stroke-width:1.5px
+  classDef ext fill:#F0FDFA,stroke:#0D9488,color:#134E4A,stroke-width:1.5px
+
+  class Dash,API ui
+  class Win,Dock,Cron sched
+  class MR,ES work
+  class DB data
+  class Targets,SMTP ext
+```
+
+### Monitor runner
+
+`scripts/monitor_runner.py` loads due monitors, probes them concurrently, then writes results in one SQLite transaction. It **queues** mail; it does not send SMTP.
+
+```mermaid
+sequenceDiagram
+  autonumber
+  participant Sched as Task Scheduler / cron / Docker
+  participant MR as monitor_runner.py
+  participant T as Target
+  participant DB as SQLite
+
+  Sched->>MR: Interval job (1–2 min)
+  MR->>DB: Load active monitors
+  Note over MR: Network work is off Apache
+  loop Due monitors concurrently
+    MR->>T: URL / keyword / port / ping / SSL / DNS / JSON
+    T-->>MR: Status + latency or timeout
+  end
+  MR->>DB: UPDATE monitors + INSERT monitor_logs
+  alt Status changed and notifications not paused
+    MR->>DB: INSERT email_outbox
+  end
+  Note over DB: Dashboard reads the same tables
+```
+
+### Email sender
+
+`scripts/email_sender.py` is a second process so slow SMTP cannot block checks (or Apache).
+
+```mermaid
+sequenceDiagram
+  autonumber
+  participant Sched as Task Scheduler / cron / Docker
+  participant ES as email_sender.py
+  participant DB as SQLite
+  participant SMTP as SMTP server
+
+  Sched->>ES: Interval job
+  ES->>DB: Claim due email_outbox rows
+  loop Each claimed message
+    ES->>DB: Re-check pause / maintenance / rules
+    ES->>SMTP: Send with timeout
+    SMTP-->>ES: OK or error
+    ES->>DB: Mark sent or backoff retry
+    ES->>DB: INSERT monitor_notification_logs
+  end
+```
+
 ## Files
 
 - `scripts/monitor_runner.py`
@@ -128,6 +234,8 @@ docker compose -f docker/docker-compose.yml exec -T linknest \
 
 ## Notes / Behavior
 
+- Workers are **independent of Apache/PHP**: they are OS scheduled processes. A hung target cannot occupy a PHP request worker.
+- They still share `data/linknest.db` with PHP (WAL + busy timeout). Brief lock waits can occur during writes.
 - Monitoring checks are executed concurrently, but DB writes are serialized inside one transaction.
 - Emails are queued into `email_outbox` and sent separately, so slow SMTP cannot block monitoring.
 - Sent email results are stored in `monitor_notification_logs`, matching how LinkNest UI reads email history today.

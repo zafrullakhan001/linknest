@@ -78,6 +78,7 @@ const DOCS_FILE_PRIORITY = [
     'MCP.md' => 0,
     'DEVICE_PRESETS.md' => 1,
     'ADMIN_LOCKOUT_RECOVERY.md' => 0,
+    'PYTHON_WORKERS.md' => 1,
     'DEPLOYMENT_INSTRUCTIONS.md' => 4,
     'PRODUCTION.md' => 5,
     'CREATE_BUNDLE.md' => 6,

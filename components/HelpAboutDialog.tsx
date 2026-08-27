@@ -3,6 +3,7 @@ import { createPortal } from 'react-dom';
 import { useSettings } from '../contexts/SettingsContext';
 import { HelpGuidesPanel } from './HelpGuidesPanel';
 import { HelpFingerprintPanel } from './HelpFingerprintPanel';
+import { HelpMonitorArchitecture } from './HelpMonitorArchitecture';
 import { MCP_EXAMPLE_NEED_LABEL, MCP_EXAMPLE_PROMPTS } from '../utils/mcpExamplePrompts';
 
 type TabType = 'help' | 'guides' | 'about' | 'fingerprint';
@@ -388,7 +389,7 @@ export const HelpAboutDialog: React.FC<HelpAboutDialogProps> = ({
                   <div className="bg-emerald-50 dark:bg-emerald-900/20 rounded-lg p-4 space-y-2 border border-emerald-200 dark:border-emerald-800">
                     <p className="font-medium text-emerald-900 dark:text-emerald-100">Guides tab:</p>
                     <p className="text-sm">
-                      Open the <strong>Guides</strong> tab in this dialog for searchable in-app docs (MCP / AI, Your Bookmarks, Bookmark Sync Extension, setup, architecture, App Updates, Docker deployment &amp; database, Admin password &amp; lockout recovery, SSH / VNC, Package for Deployment, Vanilla Apache + PHP 8.5, and more). Start with <strong>MCP / AI</strong> to let Cursor or Claude create spaces and links, <strong>Your Bookmarks</strong> or <strong>Bookmark Sync Extension</strong> for guest bookmark Sync / OutSync, <strong>Admin Password &amp; Lockout Recovery</strong> if you cannot sign in, or App Updates / Docker Deployment / Architecture for admin workflows.
+                      Open the <strong>Guides</strong> tab in this dialog for searchable in-app docs (MCP / AI, Your Bookmarks, Bookmark Sync Extension, setup, architecture, Python workers / monitoring, App Updates, Docker deployment &amp; database, Admin password &amp; lockout recovery, SSH / VNC, Package for Deployment, Vanilla Apache + PHP 8.5, and more). Start with <strong>MCP / AI</strong> to let Cursor or Claude create spaces and links, <strong>Your Bookmarks</strong> or <strong>Bookmark Sync Extension</strong> for guest bookmark Sync / OutSync, <strong>Admin Password &amp; Lockout Recovery</strong> if you cannot sign in, <strong>Python Workers (Monitoring + Email)</strong> for the monitor architecture diagrams, or App Updates / Docker Deployment / Architecture for admin workflows.
                     </p>
                   </div>
                 </div>
@@ -673,7 +674,8 @@ export const HelpAboutDialog: React.FC<HelpAboutDialogProps> = ({
                   <div className="bg-slate-50 dark:bg-slate-900/50 rounded-lg p-4">
                     <h4 className="font-semibold text-slate-900 dark:text-white mb-2">System Monitoring</h4>
                     <p className="text-sm text-slate-700 dark:text-slate-300">
-                      Monitor URLs, keywords, ports, and ping targets. Track response times, view historical charts, set up maintenance windows, and receive email notifications with advanced rule-based alerts.
+                      Monitor URLs, keywords, ports, ping, SSL, DNS, and JSON targets. Checks run in Python workers outside Apache so slow endpoints do not freeze PHP.
+                      Track response times, view historical charts, set maintenance windows, and receive email via a separate sender process. Diagrams: Guides → Python Workers (Monitoring + Email).
                     </p>
                   </div>
                   <div className="bg-slate-50 dark:bg-slate-900/50 rounded-lg p-4">
@@ -1274,7 +1276,9 @@ docker\\docker-sync-database.bat -Direction Out -HostBasePath "/ArchLinks"`}</pr
                 </h3>
                 <div className="space-y-3 text-slate-700 dark:text-slate-300">
                   <p>
-                    Monitor the health and availability of your systems, services, and websites with comprehensive monitoring tools.
+                    Monitor the health and availability of your systems, services, and websites. Scheduled checks run in{' '}
+                    <strong>Python workers outside Apache/PHP</strong>, so a slow endpoint or stuck SMTP server does not freeze the site.
+                    Architecture diagrams: <strong>Guides → Python Workers (Monitoring + Email)</strong> and <strong>Guides → Architecture</strong>.
                   </p>
                   <div className="bg-brand-50 dark:bg-brand-900/20 rounded-lg p-4 space-y-2">
                     <p className="font-medium text-brand-900 dark:text-brand-100">Monitor Types:</p>
@@ -1283,6 +1287,7 @@ docker\\docker-sync-database.bat -Direction Out -HostBasePath "/ArchLinks"`}</pr
                       <li><strong>Keyword Monitoring:</strong> Verify specific text appears on web pages</li>
                       <li><strong>Port Monitoring:</strong> Check if network ports are open and accepting connections</li>
                       <li><strong>Ping Monitoring:</strong> Verify host/IP address reachability</li>
+                      <li><strong>SSL / DNS / JSON:</strong> Certificate expiry, DNS resolution, and JSON path checks</li>
                     </ul>
                   </div>
                   <div className="bg-slate-50 dark:bg-slate-900/50 rounded-lg p-4 space-y-2">
@@ -1302,12 +1307,26 @@ docker\\docker-sync-database.bat -Direction Out -HostBasePath "/ArchLinks"`}</pr
                     </ul>
                   </div>
                   <div className="bg-violet-50 dark:bg-violet-900/20 rounded-lg p-4 space-y-2">
-                    <p className="font-medium text-violet-900 dark:text-violet-100">Automatic scheduling:</p>
+                    <p className="font-medium text-violet-900 dark:text-violet-100">How checks run (outside Apache):</p>
                     <ul className="list-disc list-inside space-y-1 ml-2 text-sm">
+                      <li>
+                        <strong>monitor_runner.py</strong> probes due monitors concurrently (hard timeouts), writes{' '}
+                        <code className="text-xs bg-white/70 dark:bg-slate-800 px-1 rounded">monitors</code> /{' '}
+                        <code className="text-xs bg-white/70 dark:bg-slate-800 px-1 rounded">monitor_logs</code>, and queues mail into{' '}
+                        <code className="text-xs bg-white/70 dark:bg-slate-800 px-1 rounded">email_outbox</code>.
+                      </li>
+                      <li>
+                        <strong>email_sender.py</strong> is a second process that sends queued mail via SMTP and records{' '}
+                        <code className="text-xs bg-white/70 dark:bg-slate-800 px-1 rounded">monitor_notification_logs</code>. Slow SMTP cannot block checks or Apache.
+                      </li>
+                      <li>
+                        PHP/Apache only serves the dashboard and stores configuration. Both workers share the same SQLite file{' '}
+                        (<code className="text-xs bg-white/70 dark:bg-slate-800 px-1 rounded">data/linknest.db</code>).
+                      </li>
                       <li>
                         <strong>Windows / XAMPP:</strong> run{' '}
                         <code className="text-xs bg-white/70 dark:bg-slate-800 px-1 rounded">scripts\schedule-monitor-workers.bat</code>{' '}
-                        to register Task Scheduler jobs every 1–2 minutes (Python workers).
+                        to register Task Scheduler jobs every 1–2 minutes.
                       </li>
                       <li>
                         <strong>Docker:</strong> workers run automatically in the container entrypoint
@@ -1315,11 +1334,13 @@ docker\\docker-sync-database.bat -Direction Out -HostBasePath "/ArchLinks"`}</pr
                         interval via <code className="text-xs bg-white/70 dark:bg-slate-800 px-1 rounded">LINKNEST_WORKER_INTERVAL_SECONDS</code>).
                       </li>
                       <li>
-                        In-app help: Monitoring dashboard → Scheduler Setup. Full docs:{' '}
-                        <code className="text-xs bg-white/70 dark:bg-slate-800 px-1 rounded">docs/PYTHON_WORKERS.md</code>
+                        In-app: Monitoring dashboard → Scheduler Setup. Diagrams:{' '}
+                        <strong>Guides → Python Workers (Monitoring + Email)</strong>
+                        {' '}(<code className="text-xs bg-white/70 dark:bg-slate-800 px-1 rounded">docs/PYTHON_WORKERS.md</code>).
                       </li>
                     </ul>
                   </div>
+                  <HelpMonitorArchitecture />
                   <div className="bg-emerald-50 dark:bg-emerald-900/20 rounded-lg p-4 space-y-2">
                     <p className="font-medium text-emerald-900 dark:text-emerald-100">Email Notifications:</p>
                     <ul className="list-disc list-inside space-y-1 ml-2 text-sm">
@@ -1901,8 +1922,9 @@ docker\\docker-sync-database.bat -Direction Out -HostBasePath "/ArchLinks"`}</pr
                     <li>Use the Notes and Chat widgets when signed in; Password Generator and Zoom Control are available from the widgets pill</li>
                     <li>For SSH/VNC: follow Help → Remote Widgets — SSH / VNC Manual Deployment (or Guides → SSH / VNC Manual Deployment) before first Connect</li>
                     <li>SSH page refresh: sessions can stay alive in a browser SharedWorker — close the widget to disconnect (Guides → SSH Session Shared Worker)</li>
-                    <li>Monitor system health with URL, keyword, port, and ping checks</li>
-                    <li>Set up email notifications with advanced rules and multiple SMTP servers</li>
+                    <li>Monitor system health with URL, keyword, port, ping, SSL, DNS, and JSON checks — Python workers run outside Apache so checks do not freeze PHP</li>
+                    <li>Install workers with <code className="text-xs">scripts\schedule-monitor-workers.bat</code>; diagrams in Guides → Python Workers (Monitoring + Email)</li>
+                    <li>Set up email notifications with advanced rules and multiple SMTP servers (email_sender.py sends the queue separately)</li>
                     <li>View monitoring history with interactive charts and graphs</li>
                     <li>Schedule maintenance windows to suppress monitoring alerts</li>
                     <li>Pause/resume email notifications globally when needed</li>
@@ -1910,7 +1932,7 @@ docker\\docker-sync-database.bat -Direction Out -HostBasePath "/ArchLinks"`}</pr
                     <li>Locked out of local admin? Run <code className="text-xs">scripts/reset_admin_password.php</code> on the server (re-enables Local auth + resets password) — Help → Admin password &amp; lockout recovery / Guides → Admin Password &amp; Lockout Recovery</li>
                     <li>Control tab visibility to show/hide specific tabs application-wide (admin only)</li>
                     <li>Send broadcast messages that scroll across the application (admin only)</li>
-                    <li>Open the <strong>Guides</strong> tab for searchable docs (Your Bookmarks, Architecture, App Updates, Admin Password &amp; Lockout Recovery, Package for Deployment, Windows Bootstrap Bundles, Vanilla Apache + PHP 8.5, XAMPP PHP upgrade, deployment, and more)</li>
+                    <li>Open the <strong>Guides</strong> tab for searchable docs (Your Bookmarks, Architecture, Python Workers / monitoring, App Updates, Admin Password &amp; Lockout Recovery, Package for Deployment, Windows Bootstrap Bundles, Vanilla Apache + PHP 8.5, XAMPP PHP upgrade, deployment, and more)</li>
                   </ul>
                 </div>
               </section>
@@ -2047,7 +2069,7 @@ php scripts/reset_admin_password.php admin 'NewStrongPass1!'`}</pre>
                       <li><strong>Tab Visibility:</strong> Control which tabs are visible in the application</li>
                       <li><strong>Custom Widgets:</strong> Create, enable/disable, and manage custom widgets</li>
                       <li><strong>Broadcast Messages:</strong> Display scrolling messages across the application</li>
-                      <li><strong>Monitoring Management:</strong> Create, edit, and manage system monitors with advanced configuration</li>
+                      <li><strong>Monitoring Management:</strong> Create, edit, and manage system monitors. Scheduled checks run in Python (<code className="text-xs bg-white dark:bg-slate-800 px-1 rounded">monitor_runner.py</code> + <code className="text-xs bg-white dark:bg-slate-800 px-1 rounded">email_sender.py</code>) outside Apache — Help → System Monitoring Dashboard / Guides → Python Workers (Monitoring + Email)</li>
                       <li><strong>SMTP Configuration:</strong> Configure multiple SMTP servers for email notifications</li>
                       <li><strong>Email Templates:</strong> Customize email notification templates and manage notification rules</li>
                       <li><strong>Load Test:</strong> Run and review load-test tooling from Admin → Tools</li>
@@ -2087,7 +2109,8 @@ php scripts/reset_admin_password.php admin 'NewStrongPass1!'`}</pre>
                     <li><strong>Package for Deployment:</strong> <code className="text-xs bg-slate-200 dark:bg-slate-800 px-1 rounded">package-for-deployment.bat</code> builds a full XAMPP ZIP with SQLite runtime, remote-widget binaries, and optional DB/uploads flags</li>
                     <li><strong>Docker database sync:</strong> <code className="text-xs bg-slate-200 dark:bg-slate-800 px-1 rounded">docker\docker-sync-database.bat</code> copies SQLite + uploads in or out of the container (<code className="text-xs">-Direction Out</code>, <code className="text-xs">-DatabaseOnly</code>, <code className="text-xs">-UploadsOnly</code>)</li>
                     <li><strong>Bookmark Sync extension:</strong> Origin allowlist, Bookmark sync Off by default, same-origin messages, per-browser-profile isolation, and OutSync (app → Other Bookmarks → LinkNest) — Help → Guides → Bookmark Sync Extension</li>
-                    <li><strong>Guides tab:</strong> Searchable in-app documentation (MCP / AI, Your Bookmarks, Bookmark Sync Extension, Architecture, App Updates, Admin Password &amp; Lockout Recovery, Docker Deployment, Package for Deployment, Windows Bootstrap Bundles, Vanilla Apache + PHP 8.5, XAMPP PHP upgrade, SSH / VNC Manual Deployment, SSH Session Shared Worker, Remote Widgets Setup, and more)</li>
+                    <li><strong>Python monitor workers:</strong> <code className="text-xs bg-slate-200 dark:bg-slate-800 px-1 rounded">monitor_runner.py</code> and <code className="text-xs bg-slate-200 dark:bg-slate-800 px-1 rounded">email_sender.py</code> run outside Apache/PHP (Task Scheduler / cron / Docker) so slow checks or SMTP cannot freeze the site. Install with <code className="text-xs bg-slate-200 dark:bg-slate-800 px-1 rounded">scripts\schedule-monitor-workers.bat</code> — Help → System Monitoring Dashboard / Guides → Python Workers (Monitoring + Email) (Mermaid architecture diagrams)</li>
+                    <li><strong>Guides tab:</strong> Searchable in-app documentation (MCP / AI, Your Bookmarks, Bookmark Sync Extension, Architecture, Python Workers / monitoring, App Updates, Admin Password &amp; Lockout Recovery, Docker Deployment, Package for Deployment, Windows Bootstrap Bundles, Vanilla Apache + PHP 8.5, XAMPP PHP upgrade, SSH / VNC Manual Deployment, SSH Session Shared Worker, Remote Widgets Setup, and more)</li>
                     <li><strong>SSH sessions across refresh:</strong> SharedWorker in browser memory keeps live SSH sockets through page reload; close the widget to disconnect — Help → SSH sessions across refresh / Guides → SSH Session Shared Worker</li>
                     <li><strong>SSH / VNC manual deploy:</strong> Online, air-gapped runtime pack, HTTPS WSS proxy, Easy mode, <code className="text-xs bg-slate-200 dark:bg-slate-800 px-1 rounded">ssh://</code> / <code className="text-xs bg-slate-200 dark:bg-slate-800 px-1 rounded">vnc://</code> space links — Help and Guides</li>
                     <li><strong>QR sharing:</strong> Branded QR codes for the app URL and spaces (desktop + mobile)</li>
@@ -2116,7 +2139,7 @@ php scripts/reset_admin_password.php admin 'NewStrongPass1!'`}</pre>
                   {appName} helps you create beautiful, organized landing pages for your important links.
                   Organize links into visual tiles, customize their appearance (including header images and boxed rich text), and share them with your team — via roles, space editors, user shares, or QR codes.
                   With <strong>Access Manager</strong>, <strong>Staging &amp; AI Offline Kit</strong>, <strong>MCP / AI</strong> for Cursor and Claude, <strong>version control</strong>, <strong>mobile link preview</strong> for small-screen testing, <strong>in-app App Updates</strong>, browser integration, scheduling, link health monitoring, visitor insights,
-                  style management, system monitoring and optional add-ons, email notifications, floating widgets, SAML/SSO, and 200+ tile animations,
+                  style management, system monitoring via independent Python workers, optional add-ons, email notifications, floating widgets, SAML/SSO, and 200+ tile animations,
                   {appName} makes managing and sharing links simple, powerful, and elegant.
                 </p>
               </section>
@@ -2140,9 +2163,20 @@ php scripts/reset_admin_password.php admin 'NewStrongPass1!'`}</pre>
                       <li>• SQLite</li>
                       <li>• RESTful API</li>
                       <li>• Apache/Nginx</li>
+                      <li>• Python 3.9+ workers (monitor + email)</li>
                     </ul>
                   </div>
                 </div>
+              </section>
+
+              <section>
+                <h3 className="text-xl font-semibold text-slate-900 dark:text-white mb-3">Monitor architecture</h3>
+                <p className="text-sm text-slate-700 dark:text-slate-300 mb-2">
+                  Scheduled checks run in Python outside Apache/PHP. Full sequences:{' '}
+                  <strong>Help → System Monitoring Dashboard</strong> and{' '}
+                  <strong>Guides → Python Workers (Monitoring + Email)</strong>.
+                </p>
+                <HelpMonitorArchitecture compact />
               </section>
 
               <section>
@@ -2224,7 +2258,9 @@ php scripts/reset_admin_password.php admin 'NewStrongPass1!'`}</pre>
                     'SSH Terminal Widget (ttyd)',
                     'VNC Viewer Widget (noVNC)',
                     'System Monitoring Dashboard',
-                    'URL / Keyword / Port / Ping Monitoring',
+                    'Python Monitor Runner (outside Apache)',
+                    'Python Email Sender (outbox / SMTP)',
+                    'URL / Keyword / Port / Ping / SSL / DNS / JSON Monitoring',
                     'Monitorv2 Add-on (PostgreSQL)',
                     'Performance Analytics Add-on',
                     'Response Time Tracking',

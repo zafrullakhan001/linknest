@@ -388,53 +388,83 @@ sequenceDiagram
 
 ## Operations workers
 
-Optional Python workers for monitoring and outbound email, sharing the same SQLite database and SMTP settings.
+Scheduled **Python** processes (not Apache/PHP) run monitor probes and SMTP. PHP only reads/writes SQLite for the dashboard. Install on Windows with `scripts/schedule-monitor-workers.bat`. Full walkthrough: **Guides → Python Workers (Monitoring + Email)** (`docs/PYTHON_WORKERS.md`).
 
 ```mermaid
-flowchart LR
-  Cron["⏱️ Scheduler / OS task"]
-  MW["📡 Monitoring worker"]
-  EW["✉️ Email worker"]
-  DB[("🗄️ SQLite")]
-  SMTP["📨 SMTP"]
+flowchart TB
+  subgraph ApacheUI["Apache / PHP - UI only"]
+    Dash["Monitoring dashboard"]
+    API["PHP API"]
+  end
 
-  Cron --> MW
-  Cron --> EW
-  MW --> DB
-  EW --> DB
-  EW --> SMTP
+  subgraph Sched["OS scheduler - outside Apache"]
+    Win["Windows Task Scheduler"]
+    Dock["Docker entrypoint"]
+    Cron["Linux cron"]
+  end
 
+  subgraph Py["Python workers"]
+    MR["monitor_runner.py"]
+    ES["email_sender.py"]
+  end
+
+  DB[("SQLite data/linknest.db")]
+  Targets["URL / keyword / port / ping<br/>SSL / DNS / JSON"]
+  SMTP["SMTP"]
+
+  Dash --> API
+  API -->|"read/write config + status"| DB
+  Win --> MR
+  Win --> ES
+  Dock --> MR
+  Dock --> ES
+  Cron --> MR
+  Cron --> ES
+  MR -->|"timeouts"| Targets
+  MR -->|"monitors + logs + email_outbox"| DB
+  ES --> DB
+  ES --> SMTP
+
+  classDef ui fill:#EFF6FF,stroke:#2563EB,color:#1E3A8A,stroke-width:1.5px
   classDef sched fill:#F8FAFC,stroke:#64748B,color:#334155,stroke-width:1.5px
-  classDef work fill:#EEF2FF,stroke:#4F46E5,color:#312E81,stroke-width:1.5px
+  classDef work fill:#F5F3FF,stroke:#7C3AED,color:#4C1D95,stroke-width:1.5px
   classDef data fill:#FFFBEB,stroke:#D97706,color:#92400E,stroke-width:1.5px
-  classDef mail fill:#F0FDFA,stroke:#0D9488,color:#134E4A,stroke-width:1.5px
+  classDef ext fill:#F0FDFA,stroke:#0D9488,color:#134E4A,stroke-width:1.5px
 
-  class Cron sched
-  class MW,EW work
+  class Dash,API ui
+  class Win,Dock,Cron sched
+  class MR,ES work
   class DB data
-  class SMTP mail
+  class Targets,SMTP ext
 ```
 
 ## Monitoring check (sequence)
 
-How a scheduled worker records link health for the monitoring UI.
+`monitor_runner.py` probes due monitors concurrently, then writes status. `email_sender.py` sends queued mail in a separate process so SMTP cannot block checks or Apache.
 
 ```mermaid
 sequenceDiagram
   autonumber
-  participant Cron as Scheduler
-  participant W as Monitoring worker
+  participant Sched as Scheduler
+  participant MR as monitor_runner.py
+  participant T as Target
   participant DB as SQLite
-  participant T as Target URL
+  participant ES as email_sender.py
+  participant SMTP as SMTP
 
-  Cron->>W: Trigger interval job
-  W->>DB: Load monitors / links
-  loop Each target
-    W->>T: HTTP probe
-    T-->>W: Status / latency
-    W->>DB: Write result + history
+  Sched->>MR: Interval job
+  MR->>DB: Load due monitors
+  loop Concurrent probes
+    MR->>T: Check with hard timeout
+    T-->>MR: Up / down / warning
   end
-  Note over W,DB: Dashboard reads same tables
+  MR->>DB: UPDATE monitors + INSERT monitor_logs
+  MR->>DB: Queue email_outbox if status changed
+  Sched->>ES: Interval job
+  ES->>DB: Claim outbox rows
+  ES->>SMTP: Send with timeout
+  ES->>DB: monitor_notification_logs
+  Note over DB: Dashboard reads SQLite only — Apache is not in this loop
 ```
 
 ## Deploy shapes
@@ -447,4 +477,4 @@ sequenceDiagram
 
 ---
 
-For setup and day-to-day ops, see **Getting Started** and **Updates & Deploy** in this same Guides panel.
+For setup and day-to-day ops, see **Getting Started**, **Updates & Deploy**, and **Operations → Python Workers (Monitoring + Email)** in this same Guides panel.
