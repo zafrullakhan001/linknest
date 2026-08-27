@@ -6,7 +6,7 @@ import { MonitorSslBulkImportDialog } from './MonitorSslBulkImportDialog';
 import { MonitorAuditLogDialog } from './MonitorAuditLogDialog';
 import { MonitorTargetLabel } from './MonitorTargetLabel';
 import { MonitorUptimeCalendar, MonitorUptimeDayBanner } from './MonitorUptimeCalendar';
-import { FaServer, FaGlobe, FaSearch, FaCheck, FaTimes, FaQuestion, FaPlus, FaRedo, FaSyncAlt, FaTrash, FaEdit, FaClock, FaThLarge, FaList, FaCopy, FaBars, FaDownload, FaUpload, FaHistory, FaCalendarAlt, FaEnvelope, FaArrowsAlt, FaPalette, FaCircle, FaExpand, FaCompress, FaBell, FaBellSlash, FaFileExport, FaLock, FaCode, FaMagic, FaStream, FaClipboardList } from 'react-icons/fa';
+import { FaServer, FaGlobe, FaSearch, FaCheck, FaTimes, FaQuestion, FaPlus, FaRedo, FaSyncAlt, FaTrash, FaEdit, FaClock, FaThLarge, FaList, FaCopy, FaBars, FaDownload, FaUpload, FaHistory, FaCalendarAlt, FaEnvelope, FaArrowsAlt, FaPalette, FaCircle, FaExpand, FaCompress, FaBell, FaBellSlash, FaFileExport, FaFileCsv, FaLock, FaCode, FaMagic, FaStream, FaClipboardList } from 'react-icons/fa';
 import { SSL_CERTS_TAB, formatMonitorCornerMetric, isSslCertsTab, isSslMonitor } from '../utils/monitorSsl';
 import { dayKeyFromUnix } from '../utils/monitorUptimeCalendar';
 import { useTileAnimation, getTileAnimationClass, getTileDecorationClass } from './TileAnimationSelector';
@@ -477,6 +477,36 @@ export const MonitoringDashboard: React.FC = () => {
         link.setAttribute(
             'download',
             `uptime_history_${viewingLogsMonitor.name.replace(/[^a-z0-9]/gi, '_')}_${new Date().toISOString().split('T')[0]}.json`
+        );
+        link.style.visibility = 'hidden';
+        document.body.appendChild(link);
+        link.click();
+        document.body.removeChild(link);
+        URL.revokeObjectURL(url);
+    };
+
+    const handleExportHistoryCSV = () => {
+        if (!viewingLogsMonitor) return;
+        const rows = detailLogs.length ? detailLogs : logs;
+        if (!rows.length) return;
+        const csvEscape = (value: string) => (/[",\n]/.test(value) ? `"${value.replace(/"/g, '""')}"` : value);
+        const header = ['Time', 'Status', 'Response Time (ms)', 'Details', 'Monitor', 'Monitor ID'];
+        const body = rows.map((log) => [
+            new Date(log.checked_at * 1000).toLocaleString(),
+            log.status,
+            String(log.response_time ?? ''),
+            log.details || '',
+            viewingLogsMonitor.name,
+            String(viewingLogsMonitor.id),
+        ]);
+        const csv = [header, ...body].map((cols) => cols.map((c) => csvEscape(c)).join(',')).join('\n');
+        const blob = new Blob([csv], { type: 'text/csv;charset=utf-8;' });
+        const url = URL.createObjectURL(blob);
+        const link = document.createElement('a');
+        link.setAttribute('href', url);
+        link.setAttribute(
+            'download',
+            `uptime_history_${viewingLogsMonitor.name.replace(/[^a-z0-9]/gi, '_')}_${new Date().toISOString().split('T')[0]}.csv`
         );
         link.style.visibility = 'hidden';
         document.body.appendChild(link);
@@ -2154,6 +2184,14 @@ export const MonitoringDashboard: React.FC = () => {
                                     disabled={logs.length === 0}
                                 >
                                     <FaFileExport size={14} />
+                                </button>
+                                <button
+                                    onClick={handleExportHistoryCSV}
+                                    className="p-2 bg-slate-100 dark:bg-[#252525] hover:bg-slate-200 dark:hover:bg-[#333] rounded-xl transition-all text-slate-500 hover:text-teal-600"
+                                    title="Export History (CSV)"
+                                    disabled={(detailDayKey && historyViewMode !== 'calendar' ? detailLogs : logs).length === 0}
+                                >
+                                    <FaFileCsv size={14} />
                                 </button>
                                 <div className="h-6 w-px bg-slate-200 dark:bg-slate-700 mx-1"></div>
                                 <div className="text-xs font-bold text-slate-400 uppercase tracking-widest bg-slate-50 dark:bg-[#252525] px-3 py-1.5 rounded-lg border border-slate-100 dark:border-[#333]">
