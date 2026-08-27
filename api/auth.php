@@ -987,16 +987,37 @@ function handleLogin() {
         
         // Check if user is disabled
         if ($user['is_disabled'] && !$user['is_admin']) {
+            logUserAudit('auth.login_failed', [
+                'actor_id' => (int)$user['id'],
+                'actor_username' => (string)$user['username'],
+                'target_user_id' => (int)$user['id'],
+                'target_username' => (string)$user['username'],
+                'details' => ['method' => 'ldap', 'reason' => 'disabled', 'username' => $username],
+            ]);
             sendJSON(['error' => 'Your account has been disabled. Please contact your administrator.'], 403);
         }
         
         // Check approval
         if (!$user['is_approved'] && !$user['is_admin']) {
+            logUserAudit('auth.login_failed', [
+                'actor_id' => (int)$user['id'],
+                'actor_username' => (string)$user['username'],
+                'target_user_id' => (int)$user['id'],
+                'target_username' => (string)$user['username'],
+                'details' => ['method' => 'ldap', 'reason' => 'pending', 'username' => $username],
+            ]);
             sendJSON(['error' => 'Your account is pending admin approval. Please wait for approval before logging in.'], 403);
         }
         
         // Check maintenance mode - only admins can login during maintenance
         if ($maintenanceEnabled && !$user['is_admin']) {
+            logUserAudit('auth.login_failed', [
+                'actor_id' => (int)$user['id'],
+                'actor_username' => (string)$user['username'],
+                'target_user_id' => (int)$user['id'],
+                'target_username' => (string)$user['username'],
+                'details' => ['method' => 'ldap', 'reason' => 'maintenance', 'username' => $username],
+            ]);
             sendJSON(['error' => 'The application is currently in maintenance mode. Only administrators can log in at this time.'], 503);
         }
         
@@ -1009,6 +1030,13 @@ function handleLogin() {
         
         // Track user login for performance analytics (if enabled)
         trackUserLogin($user['id'], $user['username']);
+        logUserAudit('auth.login', [
+            'actor_id' => (int)$user['id'],
+            'actor_username' => (string)$user['username'],
+            'target_user_id' => (int)$user['id'],
+            'target_username' => (string)$user['username'],
+            'details' => ['method' => 'ldap', 'remember_me' => (bool)$rememberMe],
+        ]);
         
         // Set session cookie expiration based on remember me
         // Cookie path/name are instance-scoped (see session_bootstrap.php)
@@ -1039,6 +1067,11 @@ function handleLogin() {
     if (($authMethod === 'ldap' && !$ldapSuccess) || ($ldapError && strpos($ldapError, 'required groups') !== false)) {
         // Return specific error message if available, otherwise generic message
         $errorMessage = $ldapError ?? 'LDAP authentication failed. Please check your credentials.';
+        logUserAudit('auth.login_failed', [
+            'actor_id' => null,
+            'actor_username' => $username !== '' ? $username : null,
+            'details' => ['method' => 'ldap', 'reason' => 'ldap_failed', 'username' => $username],
+        ]);
         sendJSON(['error' => $errorMessage], 401);
     }
     
@@ -1047,6 +1080,13 @@ function handleLogin() {
     $user = $stmt->fetch();
     
     if (!$user || !password_verify($password, $user['password_hash'])) {
+        logUserAudit('auth.login_failed', [
+            'actor_id' => $user ? (int)$user['id'] : null,
+            'actor_username' => $username !== '' ? $username : null,
+            'target_user_id' => $user ? (int)$user['id'] : null,
+            'target_username' => $user ? (string)$user['username'] : null,
+            'details' => ['method' => 'local', 'reason' => 'invalid_credentials', 'username' => $username],
+        ]);
         sendJSON(['error' => 'Invalid username or password'], 401);
     }
     
@@ -1060,16 +1100,37 @@ function handleLogin() {
     
     // Check if user is disabled
     if ($user['is_disabled'] && !$user['is_admin']) {
+        logUserAudit('auth.login_failed', [
+            'actor_id' => (int)$user['id'],
+            'actor_username' => (string)$user['username'],
+            'target_user_id' => (int)$user['id'],
+            'target_username' => (string)$user['username'],
+            'details' => ['method' => 'local', 'reason' => 'disabled', 'username' => $username],
+        ]);
         sendJSON(['error' => 'Your account has been disabled. Please contact your administrator.'], 403);
     }
     
     // Check if user is approved
     if (!$user['is_approved'] && !$user['is_admin']) {
+        logUserAudit('auth.login_failed', [
+            'actor_id' => (int)$user['id'],
+            'actor_username' => (string)$user['username'],
+            'target_user_id' => (int)$user['id'],
+            'target_username' => (string)$user['username'],
+            'details' => ['method' => 'local', 'reason' => 'pending', 'username' => $username],
+        ]);
         sendJSON(['error' => 'Your account is pending admin approval. Please wait for approval before logging in.'], 403);
     }
     
     // Check maintenance mode - only admins can login during maintenance
     if ($maintenanceEnabled && !$user['is_admin']) {
+        logUserAudit('auth.login_failed', [
+            'actor_id' => (int)$user['id'],
+            'actor_username' => (string)$user['username'],
+            'target_user_id' => (int)$user['id'],
+            'target_username' => (string)$user['username'],
+            'details' => ['method' => 'local', 'reason' => 'maintenance', 'username' => $username],
+        ]);
         sendJSON(['error' => 'The application is currently in maintenance mode. Only administrators can log in at this time.'], 503);
     }
     
@@ -1082,6 +1143,13 @@ function handleLogin() {
     
     // Track user login for performance analytics (if enabled)
     trackUserLogin($user['id'], $user['username']);
+    logUserAudit('auth.login', [
+        'actor_id' => (int)$user['id'],
+        'actor_username' => (string)$user['username'],
+        'target_user_id' => (int)$user['id'],
+        'target_username' => (string)$user['username'],
+        'details' => ['method' => 'local', 'remember_me' => (bool)$rememberMe],
+    ]);
     
     // Set session cookie expiration based on remember me
     // Cookie path/name are instance-scoped (see session_bootstrap.php)
@@ -1139,6 +1207,17 @@ function handleGetMe() {
 function handleLogout() {
     if (session_status() === PHP_SESSION_NONE) {
         session_start();
+    }
+    $actorId = $_SESSION['user_id'] ?? null;
+    $actorUsername = isset($_SESSION['username']) ? (string)$_SESSION['username'] : null;
+    if ($actorId !== null || ($actorUsername !== null && $actorUsername !== '')) {
+        logUserAudit('auth.logout', [
+            'actor_id' => $actorId !== null && $actorId !== '' ? (int)$actorId : null,
+            'actor_username' => $actorUsername,
+            'target_user_id' => $actorId !== null && $actorId !== '' ? (int)$actorId : null,
+            'target_username' => $actorUsername,
+            'details' => ['method' => 'session'],
+        ]);
     }
     $_SESSION = [];
     if (session_status() === PHP_SESSION_ACTIVE) {

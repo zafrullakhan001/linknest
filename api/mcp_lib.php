@@ -4,6 +4,7 @@
  */
 
 require_once __DIR__ . '/upload_video_lib.php';
+require_once __DIR__ . '/user_audit_helper.php';
 
 const MCP_SUPPORTED_PROTOCOL_VERSIONS = [
     '2025-11-25',
@@ -1019,6 +1020,15 @@ function mcpToolCreateSpace(array $user, array $args): array {
         }
     }
     mcpInvalidateGuestCache();
+    logUserAudit('space.created', [
+        'actor' => $user,
+        'details' => [
+            'tile_id' => $tileId,
+            'title' => $title,
+            'group' => trim((string)($args['group'] ?? '')) !== '' ? trim((string)$args['group']) : 'General',
+            'via' => 'mcp',
+        ],
+    ]);
     return ['ok' => true, 'id' => $tileId, 'title' => $title, 'linksAdded' => count($added)];
 }
 
@@ -1054,6 +1064,21 @@ function mcpToolUpdateSpace(array $user, array $args): array {
     $sql = 'UPDATE tiles SET ' . implode(', ', $sets) . ' WHERE id = ?';
     $db->prepare($sql)->execute($params);
     mcpInvalidateGuestCache();
+    $title = array_key_exists('title', $args) && is_string($args['title'])
+        ? $args['title']
+        : (string)($row['title'] ?? '');
+    $group = array_key_exists('group', $args) && is_string($args['group'])
+        ? $args['group']
+        : (string)($row['group'] ?? '');
+    logUserAudit('space.updated', [
+        'actor' => $user,
+        'details' => [
+            'tile_id' => $spaceId,
+            'title' => $title,
+            'group' => $group,
+            'via' => 'mcp',
+        ],
+    ]);
     return ['ok' => true, 'id' => $spaceId];
 }
 
@@ -1179,6 +1204,15 @@ function mcpToolDeleteSpace(array $user, array $args): array {
     purgeTileMaintvidUploads($db, $spaceId, true);
     $db->prepare('UPDATE tiles SET deleted_at = ?, archived_at = NULL WHERE id = ?')->execute([time(), $spaceId]);
     mcpInvalidateGuestCache();
+    logUserAudit('space.deleted', [
+        'actor' => $user,
+        'details' => [
+            'tile_id' => $spaceId,
+            'title' => (string)($row['title'] ?? ''),
+            'group' => (string)($row['group'] ?? ''),
+            'via' => 'mcp',
+        ],
+    ]);
     return ['ok' => true, 'id' => $spaceId, 'movedTo' => 'recycle_bin'];
 }
 

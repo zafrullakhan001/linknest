@@ -17,6 +17,7 @@ if ($action !== 'metadata') {
 
 require_once __DIR__ . '/../config/SamlConfig.php';
 require_once __DIR__ . '/saml_dependency_response.php';
+require_once __DIR__ . '/user_audit_helper.php';
 
 // Composer autoload (OneLogin SAML)
 $vendorAutoload = __DIR__ . '/../vendor/autoload.php';
@@ -402,6 +403,11 @@ class SamlAPI {
                 $errors = $auth->getErrors();
                 $this->logAuth("ACS_ERROR", "SAML validation errors", ['errors' => $errors]);
                 error_log('SAML ACS errors: ' . implode(', ', $errors));
+                logUserAudit('auth.login_failed', [
+                    'actor_id' => null,
+                    'actor_username' => null,
+                    'details' => ['method' => 'saml', 'reason' => 'saml_invalid'],
+                ]);
                 $redirect = $this->getDefaultBaseUrl() . '/?saml_error=invalid_response';
                 header('Location: ' . $redirect);
                 exit;
@@ -409,6 +415,11 @@ class SamlAPI {
             
             if (!$auth->isAuthenticated()) {
                 $this->logAuth("ACS_NOT_AUTH", "Not authenticated after processing", []);
+                logUserAudit('auth.login_failed', [
+                    'actor_id' => null,
+                    'actor_username' => null,
+                    'details' => ['method' => 'saml', 'reason' => 'saml_not_authenticated'],
+                ]);
                 $redirect = $this->getDefaultBaseUrl() . '/?saml_error=not_authenticated';
                 header('Location: ' . $redirect);
                 exit;
@@ -446,6 +457,11 @@ class SamlAPI {
 
             if (empty($username)) {
                 $this->logAuth("ACS_NO_USERNAME", "ERROR: Username mapping failed", []);
+                logUserAudit('auth.login_failed', [
+                    'actor_id' => null,
+                    'actor_username' => null,
+                    'details' => ['method' => 'saml', 'reason' => 'saml_attribute_mapping'],
+                ]);
                 $redirect = $this->getDefaultBaseUrl() . '/?saml_error=attribute_mapping';
                 header('Location: ' . $redirect);
                 exit;
@@ -467,22 +483,36 @@ class SamlAPI {
                 ]);
                 
                 // Check if user exists but is pending approval
-                $checkStmt = $this->conn->prepare("SELECT is_approved FROM users WHERE username = ? OR email = ? LIMIT 1");
+                $checkStmt = $this->conn->prepare("SELECT id, is_approved FROM users WHERE username = ? OR email = ? LIMIT 1");
                 $checkStmt->execute([$username, $email]);
                 $pendingUser = $checkStmt->fetch(PDO::FETCH_ASSOC);
                 
                 if ($pendingUser && !$pendingUser['is_approved']) {
+                    logUserAudit('auth.login_failed', [
+                        'actor_id' => isset($pendingUser['id']) ? (int)$pendingUser['id'] : null,
+                        'actor_username' => $username,
+                        'target_user_id' => isset($pendingUser['id']) ? (int)$pendingUser['id'] : null,
+                        'target_username' => $username,
+                        'details' => ['method' => 'saml', 'reason' => 'pending', 'username' => $username],
+                    ]);
                     $redirectUrl = $this->getDefaultBaseUrl() . '/?saml_error=pending_approval&username=' . urlencode($username);
                     header('Location: ' . $redirectUrl);
                     exit;
                 }
 
                 // Check if user is disabled
-                $checkStmt = $this->conn->prepare("SELECT is_disabled FROM users WHERE username = ? OR email = ? LIMIT 1");
+                $checkStmt = $this->conn->prepare("SELECT id, is_disabled FROM users WHERE username = ? OR email = ? LIMIT 1");
                 $checkStmt->execute([$username, $email]);
                 $disabledUser = $checkStmt->fetch(PDO::FETCH_ASSOC);
                 
                 if ($disabledUser && $disabledUser['is_disabled']) {
+                    logUserAudit('auth.login_failed', [
+                        'actor_id' => isset($disabledUser['id']) ? (int)$disabledUser['id'] : null,
+                        'actor_username' => $username,
+                        'target_user_id' => isset($disabledUser['id']) ? (int)$disabledUser['id'] : null,
+                        'target_username' => $username,
+                        'details' => ['method' => 'saml', 'reason' => 'disabled', 'username' => $username],
+                    ]);
                     $redirectUrl = $this->getDefaultBaseUrl() . '/?saml_error=account_disabled';
                     header('Location: ' . $redirectUrl);
                     exit;
@@ -490,12 +520,22 @@ class SamlAPI {
 
                 // Auto-provisioning disabled
                 if (!$autoProvision) {
+                    logUserAudit('auth.login_failed', [
+                        'actor_id' => null,
+                        'actor_username' => $username,
+                        'details' => ['method' => 'saml', 'reason' => 'provisioning_disabled', 'username' => $username],
+                    ]);
                     $redirectUrl = $this->getDefaultBaseUrl() . '/?saml_error=provisioning_disabled&username=' . urlencode($username);
                     header('Location: ' . $redirectUrl);
                     exit;
                 }
 
                 // Generic not allowed
+                logUserAudit('auth.login_failed', [
+                    'actor_id' => null,
+                    'actor_username' => $username,
+                    'details' => ['method' => 'saml', 'reason' => 'not_allowed', 'username' => $username],
+                ]);
                 $redirectUrl = $this->getDefaultBaseUrl() . '/?saml_error=not_allowed';
                 header('Location: ' . $redirectUrl);
                 exit;
@@ -510,6 +550,14 @@ class SamlAPI {
             
             $_SESSION['user_id'] = $userId;
             $_SESSION['username'] = $username;
+
+            logUserAudit('auth.login', [
+                'actor_id' => (int)$userId,
+                'actor_username' => $username,
+                'target_user_id' => (int)$userId,
+                'target_username' => $username,
+                'details' => ['method' => 'saml'],
+            ]);
             
             // Record successful login time
             try {
@@ -547,6 +595,28 @@ class SamlAPI {
 
     private function logout() {
         try {
+            if (session_status() === PHP_SESSION_NONE) {
+                session_start();
+            }
+            $actorId = $_SESSION['user_id'] ?? null;
+            $actorUsername = isset($_SESSION['username']) ? (string)$_SESSION['username'] : null;
+            if ($actorId !== null || ($actorUsername !== null && $actorUsername !== '')) {
+                logUserAudit('auth.logout', [
+                    'actor_id' => $actorId !== null && $actorId !== '' ? (int)$actorId : null,
+                    'actor_username' => $actorUsername,
+                    'target_user_id' => $actorId !== null && $actorId !== '' ? (int)$actorId : null,
+                    'target_username' => $actorUsername,
+                    'details' => ['method' => 'saml'],
+                ]);
+            }
+            // Clear local session before IdP SLO redirect
+            $_SESSION = [];
+            if (session_status() === PHP_SESSION_ACTIVE) {
+                session_destroy();
+            }
+            if (function_exists('linknestClearSessionCookie')) {
+                linknestClearSessionCookie();
+            }
             $auth = $this->buildAuth();
             $auth->logout();
             return null;

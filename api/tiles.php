@@ -3,6 +3,7 @@ require_once __DIR__ . '/config.php';
 require_once __DIR__ . '/access_restrictions_lib.php';
 require_once __DIR__ . '/short_urls_lib.php';
 require_once __DIR__ . '/upload_video_lib.php';
+require_once __DIR__ . '/user_audit_helper.php';
 
 $method = $_SERVER['REQUEST_METHOD'];
 $path = $_SERVER['PATH_INFO'] ?? $_SERVER['REDIRECT_PATH_INFO'] ?? '';
@@ -2261,6 +2262,13 @@ function handleCreateTile() {
     }
 
     invalidateGuestTilesListCache();
+    logUserAudit('space.created', [
+        'details' => [
+            'tile_id' => $tileId,
+            'title' => (string)($data['title'] ?? ''),
+            'group' => (string)($data['group'] ?? 'General'),
+        ],
+    ]);
     sendJSON(['success' => true, 'id' => $tileId], 201);
     } catch (PDOException $e) {
         error_log('Database error in handleCreateTile: ' . $e->getMessage());
@@ -2291,7 +2299,17 @@ function handleUpdateTile($tileId) {
         // updateTileInternal has:
         // if (!canUserEditTile($user['id'], $tileId, $db)) throw new Exception(...)
         
+        $isFinal = !empty($data['is_final']);
         updateTileInternal($tileId, $data, $db, $user, false, $data['is_final'] ?? false);
+        if ($isFinal) {
+            logUserAudit('space.updated', [
+                'details' => [
+                    'tile_id' => $tileId,
+                    'title' => (string)($data['title'] ?? ''),
+                    'group' => (string)($data['group'] ?? ''),
+                ],
+            ]);
+        }
         sendJSON(['success' => true]);
     } catch (Exception $e) {
         $code = 500;
@@ -2309,7 +2327,7 @@ function handleDeleteTile($tileId) {
     
     // Verify tile exists and is not already deleted
     // Allow deleting from archive (archived_at IS NOT NULL) or regular tiles (archived_at IS NULL)
-    $checkStmt = $db->prepare('SELECT id, archived_at FROM tiles WHERE id = ? AND deleted_at IS NULL');
+    $checkStmt = $db->prepare('SELECT id, title, "group" AS group_name, archived_at FROM tiles WHERE id = ? AND deleted_at IS NULL');
     $checkStmt->execute([$tileId]);
     $tile = $checkStmt->fetch();
     
@@ -2333,6 +2351,13 @@ function handleDeleteTile($tileId) {
     $stmt->execute([time(), $tileId]);
     
     invalidateGuestTilesListCache();
+    logUserAudit('space.deleted', [
+        'details' => [
+            'tile_id' => $tileId,
+            'title' => (string)($tile['title'] ?? ''),
+            'group' => (string)($tile['group_name'] ?? ''),
+        ],
+    ]);
     sendJSON(['success' => true]);
 }
 

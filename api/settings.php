@@ -2,6 +2,7 @@
 require_once __DIR__ . '/config.php';
 require_once __DIR__ . '/image_helpers.php';
 require_once __DIR__ . '/device_presets_lib.php';
+require_once __DIR__ . '/user_audit_helper.php';
 
 if (session_status() === PHP_SESSION_NONE) {
     session_start();
@@ -812,6 +813,7 @@ function handleUpdateSettings() {
     $db = getDB();
     $db->beginTransaction();
     $ldapPurged = false;
+    $changedKeys = [];
     
     try {
         foreach ($data['settings'] as $key => $value) {
@@ -930,6 +932,8 @@ function handleUpdateSettings() {
                     $db->prepare('INSERT OR REPLACE INTO settings (key, value, updated_at) VALUES (?, ?, ?)')
                         ->execute(['ldap_enabled', '0', time()]);
                     $ldapPurged = true;
+                    $changedKeys[] = 'ldap_servers';
+                    $changedKeys[] = 'ldap_enabled';
                     // Already persisted special keys — skip the generic INSERT below for this key
                     continue;
                 } else {
@@ -1231,6 +1235,7 @@ function handleUpdateSettings() {
             // Store setting in database
             $stmt = $db->prepare('INSERT OR REPLACE INTO settings (key, value, updated_at) VALUES (?, ?, ?)');
             $stmt->execute([$key, $value, time()]);
+            $changedKeys[] = (string)$key;
             
             // Log SAML setting changes for debugging
             if ($key === 'saml_enabled') {
@@ -1241,6 +1246,12 @@ function handleUpdateSettings() {
         $db->commit();
         responseCacheInvalidate('settings_public');
         responseCacheInvalidate('setting_guest_access_enabled');
+        $changedKeys = array_values(array_unique($changedKeys));
+        if ($changedKeys !== []) {
+            logUserAudit('settings.updated', [
+                'details' => ['keys' => $changedKeys],
+            ]);
+        }
         sendJSON(['success' => true, 'message' => 'Settings updated successfully']);
     } catch (Exception $e) {
         $db->rollBack();

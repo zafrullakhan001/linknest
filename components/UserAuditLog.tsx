@@ -33,6 +33,13 @@ const ACTION_LABELS: Record<string, string> = {
   'user.group_added': 'Added to team',
   'user.group_removed': 'Removed from team',
   'user.bulk_import': 'Bulk import',
+  'auth.login': 'Logged in',
+  'auth.logout': 'Logged out',
+  'auth.login_failed': 'Login failed',
+  'space.created': 'Space created',
+  'space.updated': 'Space updated',
+  'space.deleted': 'Space deleted',
+  'settings.updated': 'Settings updated',
   'monitor.created': 'Monitor created',
   'monitor.updated': 'Monitor updated',
   'monitor.deleted': 'Monitor deleted',
@@ -67,6 +74,13 @@ const ACTION_BADGE: Record<string, string> = {
   'user.group_added': 'bg-cyan-100 text-cyan-800 dark:bg-cyan-900/40 dark:text-cyan-200',
   'user.group_removed': 'bg-cyan-100 text-cyan-800 dark:bg-cyan-900/40 dark:text-cyan-200',
   'user.bulk_import': 'bg-blue-100 text-blue-800 dark:bg-blue-900/40 dark:text-blue-200',
+  'auth.login': 'bg-emerald-100 text-emerald-800 dark:bg-emerald-900/40 dark:text-emerald-200',
+  'auth.logout': 'bg-slate-100 text-slate-800 dark:bg-slate-700/60 dark:text-slate-200',
+  'auth.login_failed': 'bg-rose-100 text-rose-800 dark:bg-rose-900/40 dark:text-rose-200',
+  'space.created': 'bg-sky-100 text-sky-800 dark:bg-sky-900/40 dark:text-sky-200',
+  'space.updated': 'bg-indigo-100 text-indigo-800 dark:bg-indigo-900/40 dark:text-indigo-200',
+  'space.deleted': 'bg-rose-100 text-rose-800 dark:bg-rose-900/40 dark:text-rose-200',
+  'settings.updated': 'bg-amber-100 text-amber-800 dark:bg-amber-900/40 dark:text-amber-200',
   'monitor.created': 'bg-emerald-100 text-emerald-800 dark:bg-emerald-900/40 dark:text-emerald-200',
   'monitor.updated': 'bg-indigo-100 text-indigo-800 dark:bg-indigo-900/40 dark:text-indigo-200',
   'monitor.deleted': 'bg-rose-100 text-rose-800 dark:bg-rose-900/40 dark:text-rose-200',
@@ -79,7 +93,7 @@ const ACTION_BADGE: Record<string, string> = {
 };
 
 function actionLabel(action: string): string {
-  return ACTION_LABELS[action] || action.replace(/^(user|monitor)\./, '').replace(/_/g, ' ');
+  return ACTION_LABELS[action] || action.replace(/^(user|monitor|auth|space|settings)\./, '').replace(/_/g, ' ');
 }
 
 function formatTime(unix: number): string {
