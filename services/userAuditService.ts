@@ -61,4 +61,26 @@ export const userAuditService = {
       actions: data.actions || [],
     };
   },
+
+  async purge(olderThanDays?: number): Promise<{ success: boolean; deleted_count: number; older_than_days: number | null }> {
+    const body: { older_than_days?: number } = {};
+    if (olderThanDays !== undefined && olderThanDays > 0) {
+      body.older_than_days = olderThanDays;
+    }
+    const response = await fetch(`${API_BASE}/user-audit/purge`, {
+      method: 'POST',
+      credentials: 'include',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(body),
+    });
+    const data = await response.json();
+    if (!response.ok) {
+      throw new Error(data.error || 'Failed to purge audit log');
+    }
+    return {
+      success: !!data.success,
+      deleted_count: typeof data.deleted_count === 'number' ? data.deleted_count : 0,
+      older_than_days: data.older_than_days ?? null,
+    };
+  },
 };

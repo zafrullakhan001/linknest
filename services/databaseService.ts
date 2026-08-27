@@ -181,6 +181,32 @@ export const databaseService = {
     const result = await response.json();
     if (!response.ok) throw new Error(result.error || 'Failed to delete all snapshots');
     return result;
+  },
+
+  /**
+   * SQLite maintenance on the live database (Admin → Database).
+   * Actions: status | integrity | analyze | optimize | checkpoint | vacuum | full
+   */
+  async maintainDatabase(action: 'status' | 'integrity' | 'analyze' | 'optimize' | 'checkpoint' | 'vacuum' | 'full' = 'status'): Promise<any> {
+    const method = action === 'status' ? 'GET' : 'POST';
+    const url = action === 'status'
+      ? `${API_BASE}/database/maintain?action=status`
+      : `${API_BASE}/database/maintain`;
+    const response = await fetch(url, {
+      method,
+      credentials: 'include',
+      ...(method === 'POST'
+        ? {
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ action }),
+          }
+        : {}),
+    });
+    const result = await response.json();
+    if (!response.ok) {
+      throw new Error(result.error || result.message || `Maintenance (${action}) failed`);
+    }
+    return result;
   }
 };
 

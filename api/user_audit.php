@@ -4,15 +4,23 @@ require_once __DIR__ . '/user_audit_helper.php';
 
 $method = $_SERVER['REQUEST_METHOD'];
 $path = $_SERVER['PATH_INFO'] ?? $_SERVER['REDIRECT_PATH_INFO'] ?? '';
-
-if ($method !== 'GET') {
-    sendJSON(['error' => 'Method not allowed'], 405);
+$path = rtrim((string)$path, '/');
+if ($path === '') {
+    $path = '/';
 }
 
 requireAdmin();
 
 $db = getDB();
 ensureUserAuditLogTable($db);
+
+if ($method === 'POST' && ($path === '/purge' || $path === 'purge')) {
+    handlePurgeUserAuditLog($db);
+}
+
+if ($method !== 'GET' || ($path !== '/' && $path !== '')) {
+    sendJSON(['error' => 'Method not allowed'], 405);
+}
 
 $page = max(1, (int) ($_GET['page'] ?? 1));
 $perPage = (int) ($_GET['per_page'] ?? 50);
@@ -113,3 +121,65 @@ sendJSON([
     'per_page' => $perPage,
     'actions' => $actionRows ?: [],
 ]);
+
+/**
+ * Delete audit rows (all, or older than N days), then record audit.purged.
+ */
+function handlePurgeUserAuditLog(PDO $db): void
+{
+    $data = [];
+    try {
+        $data = getJSONInput();
+        if (!is_array($data)) {
+            $data = [];
+        }
+    } catch (Throwable $e) {
+        $data = [];
+    }
+
+    $olderThanDays = isset($data['older_than_days']) ? (int)$data['older_than_days'] : 0;
+    if ($olderThanDays < 0) {
+        sendJSON(['error' => 'older_than_days must be 0 or greater'], 400);
+    }
+
+    try {
+        $db->beginTransaction();
+
+        if ($olderThanDays > 0) {
+            $cutoff = time() - ($olderThanDays * 86400);
+            $countStmt = $db->prepare('SELECT COUNT(*) FROM user_audit_log WHERE created_at < ?');
+            $countStmt->execute([$cutoff]);
+            $deletedCount = (int)$countStmt->fetchColumn();
+            $delStmt = $db->prepare('DELETE FROM user_audit_log WHERE created_at < ?');
+            $delStmt->execute([$cutoff]);
+        } else {
+            $deletedCount = (int)$db->query('SELECT COUNT(*) FROM user_audit_log')->fetchColumn();
+            $db->exec('DELETE FROM user_audit_log');
+        }
+
+        $db->commit();
+    } catch (Throwable $e) {
+        if ($db->inTransaction()) {
+            $db->rollBack();
+        }
+        error_log('user audit purge failed: ' . $e->getMessage());
+        sendJSON(['error' => 'Failed to purge audit log'], 500);
+    }
+
+    $details = [
+        'deleted_count' => $deletedCount,
+        'scope' => $olderThanDays > 0 ? 'older_than_days' : 'all',
+    ];
+    if ($olderThanDays > 0) {
+        $details['older_than_days'] = $olderThanDays;
+    }
+
+    // Written after delete so this event remains as proof of the purge.
+    logUserAudit('audit.purged', ['details' => $details]);
+
+    sendJSON([
+        'success' => true,
+        'deleted_count' => $deletedCount,
+        'older_than_days' => $olderThanDays > 0 ? $olderThanDays : null,
+    ]);
+}

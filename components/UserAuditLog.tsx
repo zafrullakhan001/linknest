@@ -40,6 +40,7 @@ const ACTION_LABELS: Record<string, string> = {
   'space.updated': 'Space updated',
   'space.deleted': 'Space deleted',
   'settings.updated': 'Settings updated',
+  'audit.purged': 'Audit log purged',
   'monitor.created': 'Monitor created',
   'monitor.updated': 'Monitor updated',
   'monitor.deleted': 'Monitor deleted',
@@ -81,6 +82,7 @@ const ACTION_BADGE: Record<string, string> = {
   'space.updated': 'bg-indigo-100 text-indigo-800 dark:bg-indigo-900/40 dark:text-indigo-200',
   'space.deleted': 'bg-rose-100 text-rose-800 dark:bg-rose-900/40 dark:text-rose-200',
   'settings.updated': 'bg-amber-100 text-amber-800 dark:bg-amber-900/40 dark:text-amber-200',
+  'audit.purged': 'bg-rose-100 text-rose-800 dark:bg-rose-900/40 dark:text-rose-200',
   'monitor.created': 'bg-emerald-100 text-emerald-800 dark:bg-emerald-900/40 dark:text-emerald-200',
   'monitor.updated': 'bg-indigo-100 text-indigo-800 dark:bg-indigo-900/40 dark:text-indigo-200',
   'monitor.deleted': 'bg-rose-100 text-rose-800 dark:bg-rose-900/40 dark:text-rose-200',
@@ -93,7 +95,7 @@ const ACTION_BADGE: Record<string, string> = {
 };
 
 function actionLabel(action: string): string {
-  return ACTION_LABELS[action] || action.replace(/^(user|monitor|auth|space|settings)\./, '').replace(/_/g, ' ');
+  return ACTION_LABELS[action] || action.replace(/^(user|monitor|auth|space|settings|audit)\./, '').replace(/_/g, ' ');
 }
 
 function formatTime(unix: number): string {
@@ -164,7 +166,10 @@ export const UserAuditLog: React.FC = () => {
   const [actionFilter, setActionFilter] = useState('');
   const [loading, setLoading] = useState(true);
   const [exporting, setExporting] = useState(false);
+  const [purging, setPurging] = useState(false);
+  const [purgeOlderDays, setPurgeOlderDays] = useState<number>(0);
   const [error, setError] = useState('');
+  const [successMessage, setSuccessMessage] = useState('');
 
   useEffect(() => {
     const t = window.setTimeout(() => setDebouncedSearch(search.trim()), 300);
@@ -205,6 +210,7 @@ export const UserAuditLog: React.FC = () => {
     try {
       setExporting(true);
       setError('');
+      setSuccessMessage('');
       const all: UserAuditLogEntry[] = [];
       let fetchPage = 1;
       while (all.length < 2000) {
@@ -241,6 +247,35 @@ export const UserAuditLog: React.FC = () => {
       setError(err instanceof Error ? err.message : 'Failed to export audit log');
     } finally {
       setExporting(false);
+    }
+  };
+
+  const handlePurge = async () => {
+    const scopeLabel =
+      purgeOlderDays > 0
+        ? `all audit events older than ${purgeOlderDays} days`
+        : 'ALL audit log events';
+    if (
+      !confirm(
+        `Permanently delete ${scopeLabel}?\n\nThis cannot be undone. A single “Audit log purged” event will be recorded.`
+      )
+    ) {
+      return;
+    }
+    try {
+      setPurging(true);
+      setError('');
+      setSuccessMessage('');
+      const result = await userAuditService.purge(purgeOlderDays > 0 ? purgeOlderDays : undefined);
+      setSuccessMessage(
+        `Purged ${result.deleted_count} event${result.deleted_count === 1 ? '' : 's'}. The purge was recorded in the audit log.`
+      );
+      setPage(1);
+      await loadLogs();
+    } catch (err: unknown) {
+      setError(err instanceof Error ? err.message : 'Failed to purge audit log');
+    } finally {
+      setPurging(false);
     }
   };
 
@@ -283,12 +318,32 @@ export const UserAuditLog: React.FC = () => {
                 ))}
               </select>
             </div>
-            <div className={`flex ${isMobile ? 'w-full' : ''} items-center gap-2`}>
+            <div className={`flex ${isMobile ? 'w-full flex-col' : ''} items-stretch sm:items-center gap-2`}>
+              <select
+                value={purgeOlderDays}
+                onChange={(e) => setPurgeOlderDays(Number(e.target.value))}
+                disabled={purging || total === 0}
+                className={`${isMobile ? 'w-full' : ''} bg-white dark:bg-slate-900 border border-sky-200/70 dark:border-sky-800/40 rounded-lg px-3 py-2 text-sm text-slate-900 dark:text-white disabled:opacity-50`}
+                title="Purge scope"
+              >
+                <option value={0}>Purge all</option>
+                <option value={30}>Older than 30 days</option>
+                <option value={90}>Older than 90 days</option>
+                <option value={365}>Older than 1 year</option>
+              </select>
+              <button
+                type="button"
+                onClick={() => void handlePurge()}
+                disabled={purging || total === 0}
+                className={`${isMobile ? 'w-full' : ''} px-4 py-2 text-sm font-semibold bg-rose-600 hover:bg-rose-500 disabled:opacity-50 text-white rounded-lg`}
+              >
+                {purging ? 'Purging...' : 'Purge'}
+              </button>
               <button
                 type="button"
                 onClick={() => void loadLogs()}
                 disabled={loading}
-                className={`${isMobile ? 'flex-1' : ''} px-4 py-2 text-sm font-medium bg-white dark:bg-slate-900 border border-sky-200/70 dark:border-sky-800/40 hover:bg-sky-50 dark:hover:bg-sky-950/40 text-slate-700 dark:text-slate-200 rounded-lg disabled:opacity-50`}
+                className={`${isMobile ? 'w-full' : ''} px-4 py-2 text-sm font-medium bg-white dark:bg-slate-900 border border-sky-200/70 dark:border-sky-800/40 hover:bg-sky-50 dark:hover:bg-sky-950/40 text-slate-700 dark:text-slate-200 rounded-lg disabled:opacity-50`}
               >
                 Refresh
               </button>
@@ -296,7 +351,7 @@ export const UserAuditLog: React.FC = () => {
                 type="button"
                 onClick={() => void handleExport()}
                 disabled={exporting || total === 0}
-                className={`${isMobile ? 'flex-1' : ''} px-4 py-2 text-sm font-semibold bg-sky-600 hover:bg-sky-500 disabled:opacity-50 text-white rounded-lg`}
+                className={`${isMobile ? 'w-full' : ''} px-4 py-2 text-sm font-semibold bg-sky-600 hover:bg-sky-500 disabled:opacity-50 text-white rounded-lg`}
               >
                 {exporting ? 'Exporting...' : 'Export CSV'}
               </button>
@@ -306,6 +361,12 @@ export const UserAuditLog: React.FC = () => {
           {error && (
             <div className="p-3 bg-red-50 dark:bg-red-900/20 border border-red-200 dark:border-red-800 rounded-lg text-red-600 dark:text-red-400 text-sm">
               {error}
+            </div>
+          )}
+
+          {successMessage && (
+            <div className="p-3 bg-emerald-50 dark:bg-emerald-900/20 border border-emerald-200 dark:border-emerald-800 rounded-lg text-emerald-700 dark:text-emerald-300 text-sm">
+              {successMessage}
             </div>
           )}
 

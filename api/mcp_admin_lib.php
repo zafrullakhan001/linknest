@@ -7,6 +7,7 @@
 require_once __DIR__ . '/user_notes_helper.php';
 require_once __DIR__ . '/user_audit_helper.php';
 require_once __DIR__ . '/database_transfer_lib.php';
+require_once __DIR__ . '/database_maintain_lib.php';
 
 // mcp_user_lib.php and mcp_device_presets_lib.php are loaded at the bottom after shared helpers.
 
@@ -38,6 +39,7 @@ function mcpAdminReadActionNames(): array {
         'get_database_info',
         'list_database_exports',
         'export_database',
+        'maintain_database',
     ];
 }
 
@@ -66,6 +68,7 @@ function mcpAdminWriteActionNames(): array {
         'add_team_members',
         'set_space_editor',
         'import_database',
+        'maintain_database',
     ];
 }
 
@@ -310,7 +313,7 @@ function mcpAdminReadTools(): array {
     return [
         [
             'name' => 'admin_query',
-            'description' => 'Admin read (administrator + write scope, or explicit admin scope). tool: get_auth_status, test_ldap, test_saml, list_users, list_pending_users, get_user, search_ldap_users, list_roles, get_role, list_teams, list_space_editors, get_database_info, list_database_exports, export_database. Pass tool plus that handler\'s normal fields. Secrets are never returned.',
+            'description' => 'Admin read (administrator + write scope, or explicit admin scope). tool: get_auth_status, test_ldap, test_saml, list_users, list_pending_users, get_user, search_ldap_users, list_roles, get_role, list_teams, list_space_editors, get_database_info, list_database_exports, export_database, maintain_database (status/integrity). Pass tool plus that handler\'s normal fields. Secrets are never returned.',
             'inputSchema' => [
                 'type' => 'object',
                 'properties' => [
@@ -327,7 +330,7 @@ function mcpAdminWriteTools(): array {
     return [
         [
             'name' => 'admin_manage',
-            'description' => 'Admin write (administrator + write scope). tool: update_ldap, update_saml, purge_ldap_settings, create_local_user, add_ldap_user, update_user, set_user_status, reset_user_password, change_admin_password, delete_user, set_user_admin, bulk_user_action, transfer_space_ownership, create_role, update_role, assign_user_roles, set_role_spaces, set_role_widgets, set_role_tabs, assign_team_roles, add_team_members, set_space_editor, import_database. Pass tool plus that handler\'s fields. Passwords write-only. import_database and purge_ldap_settings need confirm=true.',
+            'description' => 'Admin write (administrator + write scope). tool: update_ldap, update_saml, purge_ldap_settings, create_local_user, add_ldap_user, update_user, set_user_status, reset_user_password, change_admin_password, delete_user, set_user_admin, bulk_user_action, transfer_space_ownership, create_role, update_role, assign_user_roles, set_role_spaces, set_role_widgets, set_role_tabs, assign_team_roles, add_team_members, set_space_editor, import_database, maintain_database (analyze/optimize/checkpoint/vacuum/full). Pass tool plus that handler\'s fields. Passwords write-only. import_database and purge_ldap_settings need confirm=true.',
             'inputSchema' => [
                 'type' => 'object',
                 'properties' => [
@@ -458,6 +461,21 @@ function mcpAdminReadToolsDetailed(): array {
                     'filename' => [
                         'type' => 'string',
                         'description' => 'Optional basename ending in .json. Default: linknest-database-export-YYYY-MM-DD-His.json',
+                    ],
+                ],
+                'additionalProperties' => false,
+            ],
+        ],
+        [
+            'name' => 'maintain_database',
+            'description' => 'SQLite maintenance (same as Admin → Database → SQLite Maintenance). Read actions: status (performance/freelist/WAL/suggestions), integrity. For analyze/optimize/checkpoint/vacuum/full use admin_manage with tool maintain_database.',
+            'inputSchema' => [
+                'type' => 'object',
+                'properties' => [
+                    'action' => [
+                        'type' => 'string',
+                        'enum' => ['status', 'integrity'],
+                        'description' => 'Default status',
                     ],
                 ],
                 'additionalProperties' => false,
@@ -710,6 +728,21 @@ function mcpAdminWriteToolsDetailed(): array {
                 'additionalProperties' => false,
             ],
         ],
+        [
+            'name' => 'maintain_database',
+            'description' => 'SQLite maintenance on the live DB (Admin → Database → SQLite Maintenance). action: status, integrity, analyze, optimize, checkpoint, vacuum, full. vacuum/full briefly lock the DB — prefer a snapshot first.',
+            'inputSchema' => [
+                'type' => 'object',
+                'properties' => [
+                    'action' => [
+                        'type' => 'string',
+                        'enum' => ['status', 'integrity', 'analyze', 'optimize', 'checkpoint', 'vacuum', 'full'],
+                        'description' => 'Default status',
+                    ],
+                ],
+                'additionalProperties' => false,
+            ],
+        ],
     ];
     if (function_exists('mcpAdminUserWriteToolsExtra')) {
         $tools = array_merge($tools, mcpAdminUserWriteToolsExtra());
@@ -753,6 +786,14 @@ function mcpAdminDispatch(string $name, array $args, array $user): array {
             return ['error' => 'admin_manage requires write scope on the token.'];
         }
         return mcpAdminManageTool($args, $user);
+    }
+    if ($name === 'maintain_database') {
+        $action = strtolower(trim((string)($args['action'] ?? 'status')));
+        $mutating = !in_array($action, ['status', 'integrity', ''], true);
+        if ($mutating && !mcpHasWriteScope($user)) {
+            return ['error' => 'Mutating SQLite maintenance (analyze/optimize/checkpoint/vacuum/full) requires write scope. Use action status or integrity for read-only checks.'];
+        }
+        return mcpAdminMaintainDatabase($args, $user);
     }
     $write = array_merge(mcpAdminWriteActionNames(), ['admin_manage']);
     if (in_array($name, $write, true) && !mcpHasWriteScope($user)) {
@@ -812,6 +853,8 @@ function mcpAdminDispatch(string $name, array $args, array $user): array {
             return mcpAdminExportDatabase($args, $user);
         case 'import_database':
             return mcpAdminImportDatabase($args, $user);
+        case 'maintain_database':
+            return mcpAdminMaintainDatabase($args, $user);
         default:
             if (function_exists('mcpAdminUserDispatch')) {
                 $userResult = mcpAdminUserDispatch($name, $args, $user);
@@ -1810,6 +1853,55 @@ function mcpAdminArgIsTrue($value): bool
 function mcpAdminGetDatabaseInfo(): array
 {
     return linknestGetDatabaseInfo();
+}
+
+/**
+ * SQLite maintenance. Read path allows status/integrity; write path allows all actions.
+ *
+ * @param array<string,mixed> $args
+ * @param array<string,mixed> $user
+ * @return array<string,mixed>
+ */
+function mcpAdminMaintainDatabase(array $args, array $user): array
+{
+    $action = strtolower(trim((string)($args['action'] ?? 'status')));
+    if ($action === '') {
+        $action = 'status';
+    }
+
+    $readOnlyActions = ['status', 'integrity'];
+    if (!in_array($action, linknestMaintainAllowedActions(), true)) {
+        return [
+            'error' => 'Invalid action. Allowed: ' . implode(', ', linknestMaintainAllowedActions()),
+        ];
+    }
+
+    try {
+        $result = linknestMaintainRun(getDB(), $action);
+    } catch (Throwable $e) {
+        return ['error' => 'Maintenance failed: ' . $e->getMessage()];
+    }
+
+    if (function_exists('logUserAudit') && !in_array($action, $readOnlyActions, true)) {
+        logUserAudit('mcp.database_maintain', [
+            'actor' => $user,
+            'details' => [
+                'action' => $action,
+                'success' => !empty($result['success']),
+            ],
+        ]);
+    }
+
+    // Keep payload compact for chat — drop huge index name lists unless short
+    if (isset($result['indexesCreated']) && is_array($result['indexesCreated']) && count($result['indexesCreated']) > 20) {
+        $result['indexes_created_count'] = count($result['indexesCreated']);
+        unset($result['indexesCreated']);
+    }
+    if (isset($result['indexes_skipped_list']) && is_array($result['indexes_skipped_list']) && count($result['indexes_skipped_list']) > 20) {
+        unset($result['indexes_skipped_list']);
+    }
+
+    return $result;
 }
 
 function mcpAdminListDatabaseExports(): array

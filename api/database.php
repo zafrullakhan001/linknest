@@ -1,6 +1,7 @@
 <?php
 require_once __DIR__ . '/config.php';
 require_once __DIR__ . '/database_transfer_lib.php';
+require_once __DIR__ . '/database_maintain_lib.php';
 
 if (session_status() === PHP_SESSION_NONE) {
     session_start();
@@ -15,6 +16,8 @@ switch ($method) {
             handleExportDatabase();
         } elseif ($path === '/info' || $path === '/info/') {
             handleGetDatabaseInfo();
+        } elseif ($path === '/maintain' || $path === '/maintain/') {
+            handleMaintainDatabase();
         } elseif ($path === '/snapshots' || $path === '/snapshots/') {
             handleGetSnapshots();
         } elseif (preg_match('/^\/snapshots\/(.+)\/download$/', $path, $matches)) {
@@ -27,6 +30,8 @@ switch ($method) {
     case 'POST':
         if ($path === '/import' || $path === '/import/') {
             handleImportDatabase();
+        } elseif ($path === '/maintain' || $path === '/maintain/') {
+            handleMaintainDatabase();
         } elseif ($path === '/snapshot' || $path === '/snapshot/') {
             handleCreateSnapshot();
         } elseif ($path === '/restore' || $path === '/restore/') {
@@ -161,6 +166,41 @@ function handleExportDatabase() {
         exit;
     } catch (PDOException $e) {
         sendJSON(['error' => 'Failed to export database: ' . $e->getMessage()], 500);
+    }
+}
+
+/**
+ * SQLite maintenance: status / integrity / analyze / optimize / checkpoint / vacuum / full.
+ * GET ?action=status (default) or POST { "action": "vacuum" }.
+ */
+function handleMaintainDatabase() {
+    requireAdmin();
+
+    $action = 'status';
+    if ($_SERVER['REQUEST_METHOD'] === 'POST') {
+        $data = getJSONInput();
+        if (is_array($data) && isset($data['action']) && is_string($data['action'])) {
+            $action = $data['action'];
+        }
+    } elseif (isset($_GET['action']) && is_string($_GET['action'])) {
+        $action = $_GET['action'];
+    }
+
+    try {
+        $result = linknestMaintainRun(getDB(), $action);
+        $code = !empty($result['success']) ? 200 : 500;
+        sendJSON($result, $code);
+    } catch (InvalidArgumentException $e) {
+        sendJSON([
+            'success' => false,
+            'error' => $e->getMessage(),
+            'allowed_actions' => linknestMaintainAllowedActions(),
+        ], 400);
+    } catch (Throwable $e) {
+        sendJSON([
+            'success' => false,
+            'error' => 'Maintenance failed: ' . $e->getMessage(),
+        ], 500);
     }
 }
 

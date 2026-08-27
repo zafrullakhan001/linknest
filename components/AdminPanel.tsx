@@ -746,6 +746,10 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({ onUserApproved }) => {
     };
   } | null>(null);
 
+  // SQLite maintenance (Database Export / Import tab)
+  const [sqliteMaintLoading, setSqliteMaintLoading] = useState<string | null>(null);
+  const [sqliteMaintResult, setSqliteMaintResult] = useState<any | null>(null);
+
   // Database Health Report state
   const [healthLoading, setHealthLoading] = useState(false);
   const [healthResult, setHealthResult] = useState<{
@@ -5805,6 +5809,196 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({ onUserApproved }) => {
                             <li>Note: The clones table is excluded from export/import as it contains operational/temporary data</li>
                           </ul>
                         </div>
+                      </div>
+                    </div>
+
+                    {/* SQLite Maintenance — vacuum, analyze, integrity, optimize */}
+                    <div className={`${isMobile ? 'mt-6' : 'mt-8'} ${isMobile ? 'pt-6' : 'pt-8'} border-t border-slate-200 dark:border-slate-700`}>
+                      <div className={`flex ${isMobile ? 'flex-col' : 'items-start justify-between'} ${isMobile ? 'gap-2' : 'gap-4'} mb-4`}>
+                        <div>
+                          <h3 className={`${isMobile ? 'text-base' : 'text-lg'} font-bold text-slate-900 dark:text-white flex items-center gap-2`}>
+                            <span aria-hidden>🛠️</span> SQLite Maintenance
+                          </h3>
+                          <p className={`${isMobile ? 'text-xs' : 'text-sm'} text-slate-600 dark:text-slate-400 mt-1`}>
+                            Check health, refresh planner stats, optimize indexes, checkpoint WAL, and vacuum/defrag the live SQLite3 database. Prefer a snapshot before Vacuum or Full Maintenance.
+                          </p>
+                        </div>
+                      </div>
+
+                      <div className={`grid grid-cols-1 ${isMobile ? '' : 'sm:grid-cols-2 lg:grid-cols-3'} gap-3 mb-4`}>
+                        {([
+                          { action: 'status' as const, label: 'Performance Check', desc: 'Size, freelist, WAL, pragmas, suggestions', color: 'bg-sky-600 hover:bg-sky-500', confirm: false },
+                          { action: 'integrity' as const, label: 'Integrity Check', desc: 'Full PRAGMA integrity_check', color: 'bg-teal-600 hover:bg-teal-500', confirm: false },
+                          { action: 'analyze' as const, label: 'Analyze', desc: 'Refresh query planner statistics', color: 'bg-indigo-600 hover:bg-indigo-500', confirm: false },
+                          { action: 'optimize' as const, label: 'Optimize Indexes', desc: 'Indexes + performance PRAGMAs + ANALYZE', color: 'bg-violet-600 hover:bg-violet-500', confirm: false },
+                          { action: 'checkpoint' as const, label: 'WAL Checkpoint', desc: 'Truncate WAL into main DB file', color: 'bg-amber-600 hover:bg-amber-500', confirm: false },
+                          { action: 'vacuum' as const, label: 'Vacuum / Defrag', desc: 'Reclaim free pages and compact file', color: 'bg-orange-600 hover:bg-orange-500', confirm: true },
+                          { action: 'full' as const, label: 'Full Maintenance', desc: 'Checkpoint → optimize → vacuum', color: 'bg-rose-600 hover:bg-rose-500', confirm: true },
+                        ]).map((item) => (
+                          <button
+                            key={item.action}
+                            type="button"
+                            disabled={sqliteMaintLoading !== null}
+                            onClick={async () => {
+                              if (item.confirm) {
+                                const ok = confirm(
+                                  item.action === 'full'
+                                    ? 'Run full SQLite maintenance (WAL checkpoint, optimize indexes, ANALYZE, VACUUM)? This can lock the database briefly. Create a snapshot first if unsure.'
+                                    : 'Run VACUUM to reclaim space and defragment the database? This can lock the database briefly. Create a snapshot first if unsure.'
+                                );
+                                if (!ok) return;
+                              }
+                              try {
+                                setSqliteMaintLoading(item.action);
+                                setError('');
+                                setSqliteMaintResult(null);
+                                const data = await databaseService.maintainDatabase(item.action);
+                                setSqliteMaintResult(data);
+                              } catch (err: any) {
+                                setSqliteMaintResult({ success: false, action: item.action, error: err.message || 'Maintenance failed' });
+                                setError(err.message || 'Maintenance failed');
+                              } finally {
+                                setSqliteMaintLoading(null);
+                              }
+                            }}
+                            className={`text-left ${item.color} disabled:opacity-50 disabled:cursor-not-allowed text-white ${isMobile ? 'p-3' : 'p-4'} rounded-xl transition-colors touch-manipulation`}
+                            style={isMobile ? { minHeight: '44px' } : {}}
+                          >
+                            <div className={`${isMobile ? 'text-sm' : 'text-sm'} font-semibold flex items-center gap-2`}>
+                              {sqliteMaintLoading === item.action ? (
+                                <svg className="animate-spin h-4 w-4 flex-shrink-0" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
+                                  <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle>
+                                  <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
+                                </svg>
+                              ) : null}
+                              {item.label}
+                            </div>
+                            <p className={`${isMobile ? 'text-[11px]' : 'text-xs'} text-white/85 mt-1`}>{item.desc}</p>
+                          </button>
+                        ))}
+                      </div>
+
+                      {sqliteMaintResult && (
+                        <div className={`mb-4 p-4 rounded-lg border ${sqliteMaintResult.success ? 'bg-green-50 dark:bg-green-900/20 border-green-200 dark:border-green-800' : 'bg-red-50 dark:bg-red-900/20 border-red-200 dark:border-red-800'}`}>
+                          <div className="flex items-start justify-between gap-3 mb-2">
+                            <div className="flex items-center gap-2 min-w-0">
+                              {sqliteMaintResult.success ? (
+                                <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor" className="w-5 h-5 text-green-600 dark:text-green-400 flex-shrink-0">
+                                  <path fillRule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zm3.857-9.809a.75.75 0 00-1.214-.882l-3.483 4.79-1.88-1.88a.75.75 0 10-1.06 1.061l2.5 2.5a.75.75 0 001.137-.089l4-5.5z" clipRule="evenodd" />
+                                </svg>
+                              ) : (
+                                <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor" className="w-5 h-5 text-red-600 dark:text-red-400 flex-shrink-0">
+                                  <path fillRule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zM8.28 7.22a.75.75 0 00-1.06 1.06L8.94 10l-1.72 1.72a.75.75 0 101.06 1.06L10 11.06l1.72 1.72a.75.75 0 101.06-1.06L11.06 10l1.72-1.72a.75.75 0 00-1.06-1.06L10 8.94 8.28 7.22z" clipRule="evenodd" />
+                                </svg>
+                              )}
+                              <div className="min-w-0">
+                                <p className={`text-sm font-semibold ${sqliteMaintResult.success ? 'text-green-900 dark:text-green-100' : 'text-red-900 dark:text-red-100'}`}>
+                                  {sqliteMaintResult.message || sqliteMaintResult.error || (sqliteMaintResult.success ? 'Done' : 'Failed')}
+                                </p>
+                                {sqliteMaintResult.action && (
+                                  <p className="text-xs text-slate-500 dark:text-slate-400 mt-0.5">Action: {sqliteMaintResult.action}{sqliteMaintResult.health_status ? ` · Health: ${sqliteMaintResult.health_status}` : ''}</p>
+                                )}
+                              </div>
+                            </div>
+                            <button
+                              type="button"
+                              onClick={() => setSqliteMaintResult(null)}
+                              className="text-xs px-2 py-1 rounded bg-white/70 dark:bg-slate-800/70 text-slate-600 dark:text-slate-300 hover:bg-white dark:hover:bg-slate-800 flex-shrink-0"
+                            >
+                              Clear
+                            </button>
+                          </div>
+
+                          {(sqliteMaintResult.measure || sqliteMaintResult.before || sqliteMaintResult.after) && (
+                            <div className={`grid grid-cols-1 ${isMobile ? '' : 'sm:grid-cols-3'} gap-3 mt-3`}>
+                              {(sqliteMaintResult.measure || sqliteMaintResult.after) && (
+                                <div className="bg-white dark:bg-slate-800 rounded-lg p-3 border border-slate-200 dark:border-slate-700">
+                                  <div className="text-[10px] uppercase tracking-wide text-slate-500 dark:text-slate-400">Size</div>
+                                  <div className="text-lg font-bold text-slate-900 dark:text-white">
+                                    {(sqliteMaintResult.measure || sqliteMaintResult.after)?.total_disk_human || '—'}
+                                  </div>
+                                  <div className="text-xs text-slate-500 dark:text-slate-400 mt-1">
+                                    DB {(sqliteMaintResult.measure || sqliteMaintResult.after)?.db_human || '—'}
+                                    {(sqliteMaintResult.measure || sqliteMaintResult.after)?.wal_human && (sqliteMaintResult.measure || sqliteMaintResult.after).wal_human !== '0 B'
+                                      ? ` · WAL ${(sqliteMaintResult.measure || sqliteMaintResult.after).wal_human}`
+                                      : ''}
+                                  </div>
+                                  {(sqliteMaintResult.measure?.fragmentation_percent != null || sqliteMaintResult.after?.fragmentation_percent != null) && (
+                                    <div className="text-xs text-slate-500 dark:text-slate-400 mt-0.5">
+                                      Freelist frag: {(sqliteMaintResult.measure || sqliteMaintResult.after).fragmentation_percent}%
+                                    </div>
+                                  )}
+                                </div>
+                              )}
+                              {sqliteMaintResult.reclaimed && (
+                                <div className="bg-white dark:bg-slate-800 rounded-lg p-3 border border-slate-200 dark:border-slate-700">
+                                  <div className="text-[10px] uppercase tracking-wide text-slate-500 dark:text-slate-400">Reclaimed</div>
+                                  <div className="text-lg font-bold text-emerald-700 dark:text-emerald-300">{sqliteMaintResult.reclaimed.disk_human || '0 B'}</div>
+                                  <div className="text-xs text-slate-500 dark:text-slate-400 mt-1">
+                                    {sqliteMaintResult.reclaimed.percent != null ? `${sqliteMaintResult.reclaimed.percent}% of previous size` : ''}
+                                    {sqliteMaintResult.reclaimed.freelist_pages ? ` · ${sqliteMaintResult.reclaimed.freelist_pages} free pages` : ''}
+                                  </div>
+                                </div>
+                              )}
+                              {sqliteMaintResult.pragmas && (
+                                <div className="bg-white dark:bg-slate-800 rounded-lg p-3 border border-slate-200 dark:border-slate-700">
+                                  <div className="text-[10px] uppercase tracking-wide text-slate-500 dark:text-slate-400">Engine</div>
+                                  <div className="text-sm font-semibold text-slate-900 dark:text-white">SQLite {sqliteMaintResult.pragmas.sqlite_version || '—'}</div>
+                                  <div className="text-xs text-slate-500 dark:text-slate-400 mt-1">
+                                    {sqliteMaintResult.pragmas.journal_mode || '—'} · page {sqliteMaintResult.pragmas.page_size || '—'} · sync {String(sqliteMaintResult.pragmas.synchronous ?? '—')}
+                                  </div>
+                                </div>
+                              )}
+                            </div>
+                          )}
+
+                          {sqliteMaintResult.integrity && (
+                            <div className="mt-3 text-xs text-slate-700 dark:text-slate-300">
+                              <span className="font-semibold">Integrity:</span>{' '}
+                              {sqliteMaintResult.integrity.ok ? (
+                                <span className="text-green-700 dark:text-green-300">ok</span>
+                              ) : (
+                                <span className="text-red-700 dark:text-red-300 break-all">{(sqliteMaintResult.integrity.result || []).join('; ') || 'failed'}</span>
+                              )}
+                              {sqliteMaintResult.integrity.quick_check && (
+                                <span className="text-slate-500 dark:text-slate-400"> · quick_check: {sqliteMaintResult.integrity.quick_check}</span>
+                              )}
+                            </div>
+                          )}
+
+                          {sqliteMaintResult.suggestions && sqliteMaintResult.suggestions.length > 0 && (
+                            <ul className="mt-3 text-xs text-slate-700 dark:text-slate-300 list-disc list-inside space-y-1">
+                              {sqliteMaintResult.suggestions.map((s: string, i: number) => (
+                                <li key={i}>{s}</li>
+                              ))}
+                            </ul>
+                          )}
+
+                          {sqliteMaintResult.indexesCreated && sqliteMaintResult.indexesCreated.length > 0 && (
+                            <p className="mt-2 text-xs text-slate-600 dark:text-slate-400">
+                              Indexes created/verified: {sqliteMaintResult.indexesCreated.length}
+                              {sqliteMaintResult.total_indexes != null ? ` · total indexes: ${sqliteMaintResult.total_indexes}` : ''}
+                            </p>
+                          )}
+
+                          {sqliteMaintResult.table_counts && (
+                            <div className="mt-3 flex flex-wrap gap-2">
+                              {Object.entries(sqliteMaintResult.table_counts as Record<string, number | null>).map(([table, count]) => (
+                                count != null ? (
+                                  <span key={table} className="text-[11px] px-2 py-1 rounded bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 text-slate-600 dark:text-slate-300">
+                                    {table}: <span className="font-semibold text-slate-900 dark:text-white">{count}</span>
+                                  </span>
+                                ) : null
+                              ))}
+                            </div>
+                          )}
+                        </div>
+                      )}
+
+                      <div className={`${isMobile ? 'p-3' : 'p-4'} bg-slate-50 dark:bg-slate-900/50 border border-slate-200 dark:border-slate-700 rounded-lg`}>
+                        <p className={`${isMobile ? 'text-[11px]' : 'text-xs'} text-slate-600 dark:text-slate-400`}>
+                          <span className="font-semibold text-slate-900 dark:text-white">Tip:</span> After a large import or cleanup, run <strong>Analyze</strong>, then <strong>Vacuum / Defrag</strong>. Use <strong>Full Maintenance</strong> before a snapshot if the freelist or WAL has grown. These tools also appear under Maintenance Scripts for orphan/duplicate cleanup.
+                        </p>
                       </div>
                     </div>
 
