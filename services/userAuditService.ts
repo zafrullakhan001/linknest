@@ -24,6 +24,7 @@ export interface UserAuditLogQuery {
   page?: number;
   per_page?: number;
   action?: string;
+  action_prefix?: string;
   q?: string;
   target_user_id?: number;
   actor_id?: number;
@@ -34,6 +35,7 @@ function buildQuery(params: UserAuditLogQuery): string {
   if (params.page) search.set('page', String(params.page));
   if (params.per_page) search.set('per_page', String(params.per_page));
   if (params.action) search.set('action', params.action);
+  if (params.action_prefix) search.set('action_prefix', params.action_prefix);
   if (params.q) search.set('q', params.q);
   if (params.target_user_id) search.set('target_user_id', String(params.target_user_id));
   if (params.actor_id) search.set('actor_id', String(params.actor_id));

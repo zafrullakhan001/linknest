@@ -33,6 +33,15 @@ const ACTION_LABELS: Record<string, string> = {
   'user.group_added': 'Added to team',
   'user.group_removed': 'Removed from team',
   'user.bulk_import': 'Bulk import',
+  'monitor.created': 'Monitor created',
+  'monitor.updated': 'Monitor updated',
+  'monitor.deleted': 'Monitor deleted',
+  'monitor.deleted_all': 'All monitors deleted',
+  'monitor.duplicated': 'Monitor duplicated',
+  'monitor.bulk_created': 'Monitors bulk created',
+  'monitor.imported': 'Monitors imported',
+  'monitor.tab_renamed': 'Monitor tab renamed',
+  'monitor.group_renamed': 'Monitor group renamed',
 };
 
 const ACTION_BADGE: Record<string, string> = {
@@ -58,10 +67,19 @@ const ACTION_BADGE: Record<string, string> = {
   'user.group_added': 'bg-cyan-100 text-cyan-800 dark:bg-cyan-900/40 dark:text-cyan-200',
   'user.group_removed': 'bg-cyan-100 text-cyan-800 dark:bg-cyan-900/40 dark:text-cyan-200',
   'user.bulk_import': 'bg-blue-100 text-blue-800 dark:bg-blue-900/40 dark:text-blue-200',
+  'monitor.created': 'bg-emerald-100 text-emerald-800 dark:bg-emerald-900/40 dark:text-emerald-200',
+  'monitor.updated': 'bg-indigo-100 text-indigo-800 dark:bg-indigo-900/40 dark:text-indigo-200',
+  'monitor.deleted': 'bg-rose-100 text-rose-800 dark:bg-rose-900/40 dark:text-rose-200',
+  'monitor.deleted_all': 'bg-rose-100 text-rose-800 dark:bg-rose-900/40 dark:text-rose-200',
+  'monitor.duplicated': 'bg-sky-100 text-sky-800 dark:bg-sky-900/40 dark:text-sky-200',
+  'monitor.bulk_created': 'bg-teal-100 text-teal-800 dark:bg-teal-900/40 dark:text-teal-200',
+  'monitor.imported': 'bg-blue-100 text-blue-800 dark:bg-blue-900/40 dark:text-blue-200',
+  'monitor.tab_renamed': 'bg-amber-100 text-amber-800 dark:bg-amber-900/40 dark:text-amber-200',
+  'monitor.group_renamed': 'bg-amber-100 text-amber-800 dark:bg-amber-900/40 dark:text-amber-200',
 };
 
 function actionLabel(action: string): string {
-  return ACTION_LABELS[action] || action.replace(/^user\./, '').replace(/_/g, ' ');
+  return ACTION_LABELS[action] || action.replace(/^(user|monitor)\./, '').replace(/_/g, ' ');
 }
 
 function formatTime(unix: number): string {

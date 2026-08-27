@@ -24,6 +24,7 @@ if ($perPage > 200) {
 }
 
 $action = trim((string) ($_GET['action'] ?? ''));
+$actionPrefix = trim((string) ($_GET['action_prefix'] ?? ''));
 $q = trim((string) ($_GET['q'] ?? ''));
 $targetUserId = (int) ($_GET['target_user_id'] ?? 0);
 $actorId = (int) ($_GET['actor_id'] ?? 0);
@@ -34,6 +35,14 @@ $params = [];
 if ($action !== '') {
     $where[] = 'action = ?';
     $params[] = $action;
+} elseif ($actionPrefix !== '') {
+    // e.g. action_prefix=monitor. → action LIKE 'monitor.%'
+    $prefix = rtrim($actionPrefix, '%');
+    if (substr($prefix, -1) !== '.') {
+        $prefix .= '.';
+    }
+    $where[] = 'action LIKE ?';
+    $params[] = $prefix . '%';
 }
 if ($targetUserId > 0) {
     $where[] = 'target_user_id = ?';
@@ -85,7 +94,17 @@ foreach ($rows as $row) {
     ];
 }
 
-$actionRows = $db->query('SELECT DISTINCT action FROM user_audit_log ORDER BY action')->fetchAll(PDO::FETCH_COLUMN);
+if ($actionPrefix !== '') {
+    $prefix = rtrim($actionPrefix, '%');
+    if (substr($prefix, -1) !== '.') {
+        $prefix .= '.';
+    }
+    $actionStmt = $db->prepare('SELECT DISTINCT action FROM user_audit_log WHERE action LIKE ? ORDER BY action');
+    $actionStmt->execute([$prefix . '%']);
+    $actionRows = $actionStmt->fetchAll(PDO::FETCH_COLUMN);
+} else {
+    $actionRows = $db->query('SELECT DISTINCT action FROM user_audit_log ORDER BY action')->fetchAll(PDO::FETCH_COLUMN);
+}
 
 sendJSON([
     'logs' => $logs,

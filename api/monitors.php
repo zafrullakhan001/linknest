@@ -2,9 +2,42 @@
 require_once __DIR__ . '/config.php';
 require_once __DIR__ . '/monitor_check.php'; // Include check logic for immediate "check now"
 require_once __DIR__ . '/monitor_suggest.php';
+require_once __DIR__ . '/user_audit_helper.php';
 
 if (session_status() === PHP_SESSION_NONE) {
     session_start();
+}
+
+/**
+ * Write a monitoring-related entry to user_audit_log (never blocks the main action).
+ */
+function logMonitorAudit(string $action, array $details = []): void {
+    logUserAudit($action, ['details' => $details]);
+}
+
+/**
+ * Compact monitor identity for audit details.
+ */
+function monitorAuditIdentity(?array $monitor, $fallbackId = null): array {
+    $id = null;
+    if (is_array($monitor) && isset($monitor['id'])) {
+        $id = (int)$monitor['id'];
+    } elseif ($fallbackId !== null && $fallbackId !== '') {
+        $id = (int)$fallbackId;
+    }
+    $out = [];
+    if ($id !== null && $id > 0) {
+        $out['monitor_id'] = $id;
+    }
+    if (is_array($monitor)) {
+        if (!empty($monitor['name'])) $out['name'] = (string)$monitor['name'];
+        if (!empty($monitor['type'])) $out['type'] = (string)$monitor['type'];
+        if (!empty($monitor['target'])) $out['target'] = (string)$monitor['target'];
+        if (array_key_exists('tab_name', $monitor) && $monitor['tab_name'] !== null && $monitor['tab_name'] !== '') {
+            $out['tab_name'] = (string)$monitor['tab_name'];
+        }
+    }
+    return $out;
 }
 
 $method = $_SERVER['REQUEST_METHOD'];
@@ -615,7 +648,13 @@ function handleImportMonitorsBundle() {
         }
 
         $db->commit();
-        sendJSON(['success' => true, 'count' => count($bundleMonitors)]);
+        $importedCount = count($bundleMonitors);
+        logMonitorAudit('monitor.imported', [
+            'count' => $importedCount,
+            'replace' => !empty($replace),
+            'single' => !empty($isSingleMonitor),
+        ]);
+        sendJSON(['success' => true, 'count' => $importedCount]);
     } catch (Exception $e) {
         if ($db->inTransaction()) $db->rollBack();
         sendJSON(['error' => 'Import failed: ' . $e->getMessage()], 500);
@@ -760,6 +799,7 @@ function handleCreateMonitor() {
             return;
         }
         $db->commit();
+        logMonitorAudit('monitor.created', monitorAuditIdentity($result['monitor'] ?? null));
         sendJSON(['success' => true, 'monitor' => $result['monitor']]);
     } catch (PDOException $e) {
         if ($db->inTransaction()) $db->rollBack();
@@ -911,6 +951,17 @@ function handleBulkCreateMonitors(): void {
             $created[] = $result['monitor'];
         }
         $db->commit();
+        if (count($created) > 0) {
+            $summaries = [];
+            foreach (array_slice($created, 0, 25) as $m) {
+                $summaries[] = monitorAuditIdentity(is_array($m) ? $m : null);
+            }
+            logMonitorAudit('monitor.bulk_created', [
+                'count' => count($created),
+                'error_count' => count($errors),
+                'monitors' => $summaries,
+            ]);
+        }
         sendJSON([
             'success' => true,
             'count' => count($created),
@@ -1069,6 +1120,11 @@ function handleDuplicateMonitor($id) {
         }
         
         $db->commit();
+
+        $dupDetails = monitorAuditIdentity($newMonitor);
+        $dupDetails['source_monitor_id'] = (int)$id;
+        $dupDetails['source_name'] = (string)($original['name'] ?? '');
+        logMonitorAudit('monitor.duplicated', $dupDetails);
         
         sendJSON(['success' => true, 'monitor' => $newMonitor], 201);
         
@@ -1084,9 +1140,9 @@ function handleUpdateMonitor($id) {
     $db = getDB();
     
     // Check if exists
-    $stmt = $db->prepare('SELECT id, email_notification, type, interval FROM monitors WHERE id = ?');
+    $stmt = $db->prepare('SELECT * FROM monitors WHERE id = ?');
     $stmt->execute([$id]);
-    $existing = $stmt->fetch();
+    $existing = $stmt->fetch(PDO::FETCH_ASSOC);
     if (!$existing) {
         sendJSON(['error' => 'Monitor not found'], 404);
         return;
@@ -1256,6 +1312,19 @@ function handleUpdateMonitor($id) {
         $monitor['allowed_user_ids'] = array_map('intval', $stmt->fetchAll(PDO::FETCH_COLUMN));
 
         $db->commit();
+
+        $changedFields = [];
+        foreach ($allowedFields as $field) {
+            if (isset($data[$field])) {
+                $changedFields[] = $field;
+            }
+        }
+        if (isset($data['allowed_user_ids'])) {
+            $changedFields[] = 'allowed_user_ids';
+        }
+        $updateDetails = monitorAuditIdentity($monitor);
+        $updateDetails['changed_fields'] = array_values(array_unique($changedFields));
+        logMonitorAudit('monitor.updated', $updateDetails);
         
         sendJSON(['success' => true, 'monitor' => $monitor]);
         
@@ -1270,9 +1339,10 @@ function handleDeleteMonitor($id) {
     $db = getDB();
     
     // Check if exists
-    $stmt = $db->prepare('SELECT id FROM monitors WHERE id = ?');
+    $stmt = $db->prepare('SELECT id, name, type, target, tab_name FROM monitors WHERE id = ?');
     $stmt->execute([$id]);
-    if (!$stmt->fetch()) {
+    $existing = $stmt->fetch(PDO::FETCH_ASSOC);
+    if (!$existing) {
         sendJSON(['error' => 'Monitor not found'], 404);
         return;
     }
@@ -1280,6 +1350,8 @@ function handleDeleteMonitor($id) {
     try {
         $stmt = $db->prepare('DELETE FROM monitors WHERE id = ?');
         $stmt->execute([$id]);
+
+        logMonitorAudit('monitor.deleted', monitorAuditIdentity($existing, $id));
         
         sendJSON(['success' => true]);
         
@@ -1538,8 +1610,10 @@ function handleDeleteAllMonitors() {
     requireAdmin(); // Only admins can delete all monitors
     $db = getDB();
     try {
+        $count = (int)$db->query('SELECT COUNT(*) FROM monitors')->fetchColumn();
         $db->exec('DELETE FROM monitors');
         $db->exec('DELETE FROM monitor_logs'); // Also clear logs
+        logMonitorAudit('monitor.deleted_all', ['count' => $count]);
         sendJSON(['success' => true]);
     } catch (PDOException $e) {
         sendJSON(['error' => 'Database error: ' . $e->getMessage()], 500);
@@ -1558,6 +1632,12 @@ function handleUpdateTabName() {
     try {
         $stmt = $db->prepare("UPDATE monitors SET tab_name = ? WHERE tab_name = ?");
         $stmt->execute([$data['new_name'], $data['old_name']]);
+        $affected = (int)$stmt->rowCount();
+        logMonitorAudit('monitor.tab_renamed', [
+            'from' => (string)$data['old_name'],
+            'to' => (string)$data['new_name'],
+            'affected' => $affected,
+        ]);
         sendJSON(['success' => true]);
     } catch (PDOException $e) {
         sendJSON(['error' => 'Database error: ' . $e->getMessage()], 500);
@@ -1576,6 +1656,13 @@ function handleUpdateGroupName() {
     try {
         $stmt = $db->prepare("UPDATE monitors SET group_name = ? WHERE tab_name = ? AND group_name = ?");
         $stmt->execute([$data['new_name'], $data['tab_name'], $data['old_name']]);
+        $affected = (int)$stmt->rowCount();
+        logMonitorAudit('monitor.group_renamed', [
+            'tab_name' => (string)$data['tab_name'],
+            'from' => (string)$data['old_name'],
+            'to' => (string)$data['new_name'],
+            'affected' => $affected,
+        ]);
         sendJSON(['success' => true]);
     } catch (PDOException $e) {
         sendJSON(['error' => 'Database error: ' . $e->getMessage()], 500);

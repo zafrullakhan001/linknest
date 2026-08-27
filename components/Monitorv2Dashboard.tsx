@@ -2,6 +2,7 @@ import React, { useState, useEffect, useCallback, useRef, useMemo } from 'react'
 import { Monitorv2 as Monitor, Monitorv2Log as MonitorLog, monitorv2Service as monitoringService } from '../services/monitorv2Service';
 import { Monitorv2Form as MonitorForm } from './Monitorv2Form';
 import { MonitorTargetLabel } from './MonitorTargetLabel';
+import { MonitorUptimeCalendar, MonitorUptimeDayBanner } from './MonitorUptimeCalendar';
 import { FaServer, FaGlobe, FaSearch, FaCheck, FaTimes, FaQuestion, FaPlus, FaRedo, FaSyncAlt, FaTrash, FaEdit, FaClock, FaThLarge, FaList, FaCopy, FaBars, FaDownload, FaUpload, FaHistory, FaCalendarAlt, FaEnvelope, FaArrowsAlt, FaPalette, FaCircle, FaExpand, FaCompress, FaBell, FaBellSlash, FaFileExport } from 'react-icons/fa';
 import { useTileAnimation, getTileAnimationClass, getTileDecorationClass } from './TileAnimationSelector';
 import { SMTPSettingsModal } from './SMTPSettingsModal';
@@ -16,6 +17,7 @@ import {
 import { AreaChart, Area, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, ReferenceLine, Brush, BarChart, Bar, Cell } from 'recharts';
 import { useAuth } from '../contexts/AuthContext';
 import { useEscapeToClose } from '../hooks/useEscapeToClose';
+import { dayKeyFromUnix } from '../utils/monitorUptimeCalendar';
 
 export const Monitorv2Dashboard: React.FC = () => {
     const { user } = useAuth();
@@ -99,7 +101,9 @@ export const Monitorv2Dashboard: React.FC = () => {
     const [editingGroupName, setEditingGroupName] = useState<string | null>(null);
     const [tempTabName, setTempTabName] = useState('');
     const [tempGroupName, setTempGroupName] = useState('');
-    const [historyViewMode, setHistoryViewMode] = useState<'list' | 'chart'>('chart');
+    const [historyViewMode, setHistoryViewMode] = useState<'list' | 'chart' | 'calendar'>('chart');
+    const [lastDetailView, setLastDetailView] = useState<'list' | 'chart'>('chart');
+    const [detailDayKey, setDetailDayKey] = useState<string | null>(null);
     const [brushRange, setBrushRange] = useState<{ startIndex: number; endIndex: number } | null>(null);
     const [modalStyle, setModalStyle] = useState({ x: 0, y: 0, width: 1000, height: 750, isMaximized: false });
     const [isDragging, setIsDragging] = useState(false);
@@ -483,20 +487,26 @@ export const Monitorv2Dashboard: React.FC = () => {
     }, [viewingLogsMonitor, logFilter, fetchLogs]);
 
     useEffect(() => {
-        // Reset brush range when logs change or dialog closes
+        // Reset brush range when logs change, day filter changes, or dialog closes
         setBrushRange(null);
-    }, [logs]);
+    }, [logs, detailDayKey]);
 
     useEffect(() => {
         // Reset brush range when dialog closes
         if (!viewingLogsMonitor) {
             setBrushRange(null);
+            setDetailDayKey(null);
         }
     }, [viewingLogsMonitor]);
 
+    const detailLogs = useMemo(() => {
+        if (!detailDayKey || historyViewMode === 'calendar') return logs;
+        return logs.filter((log) => dayKeyFromUnix(log.checked_at) === detailDayKey);
+    }, [logs, detailDayKey, historyViewMode]);
+
     const groupedLogs = useMemo<Record<string, MonitorLog[]>>(() => {
         const groups: { [key: string]: MonitorLog[] } = {};
-        logs.forEach(log => {
+        detailLogs.forEach(log => {
             const date = new Date(log.checked_at * 1000).toLocaleDateString(undefined, {
                 weekday: 'long',
                 year: 'numeric',
@@ -507,10 +517,10 @@ export const Monitorv2Dashboard: React.FC = () => {
             groups[date].push(log);
         });
         return groups;
-    }, [logs]);
+    }, [detailLogs]);
 
     const chartData = useMemo(() => {
-        return [...logs].reverse().map(log => {
+        return [...detailLogs].reverse().map(log => {
             const dateObj = new Date(log.checked_at * 1000);
             return {
                 time: dateObj.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
@@ -523,7 +533,7 @@ export const Monitorv2Dashboard: React.FC = () => {
                 color: log.status === 'up' ? '#10b981' : (log.status === 'warning' ? '#f59e0b' : '#ef4444')
             };
         });
-    }, [logs]);
+    }, [detailLogs]);
 
     const filteredChartData = useMemo(() => {
         if (!brushRange) return chartData;
@@ -851,7 +861,7 @@ export const Monitorv2Dashboard: React.FC = () => {
                 className="hidden"
                 accept=".json"
             />
-            <div className="flex flex-col lg:flex-row lg:items-center justify-between gap-4 mb-8">
+            <div className="flex flex-col gap-4 mb-8">
                 <div className="flex items-center gap-4">
                     <div className="w-12 h-12 rounded-2xl bg-blue-600/10 dark:bg-blue-500/20 flex items-center justify-center border border-blue-500/20">
                         <FaServer {...({ className: "text-blue-600 dark:text-blue-400 text-xl" } as any)} />
@@ -866,7 +876,7 @@ export const Monitorv2Dashboard: React.FC = () => {
                     </div>
                 </div>
 
-                <div className="flex flex-wrap items-center gap-3 bg-white dark:bg-[#1e1e1e] p-2 rounded-2xl shadow-sm border border-slate-200 dark:border-[#333]">
+                <div className="flex flex-wrap items-center gap-3 bg-white dark:bg-[#1e1e1e] p-2 rounded-2xl shadow-sm border border-slate-200 dark:border-[#333] w-full">
                     {/* Data Management Group */}
                     <div className="flex items-center gap-1 bg-slate-100 dark:bg-[#252525] p-1 rounded-xl">
                         {isAdmin && (
@@ -1430,7 +1440,7 @@ export const Monitorv2Dashboard: React.FC = () => {
 
                                             <div className={`${viewMode === 'tiles' ? 'mb-5' : 'mb-3'} min-w-0`}>
                                                 <div
-                                                    className={`${viewMode === 'tiles' ? 'text-[11px] px-3 h-9' : 'text-[9px] px-1.5 h-7'} flex items-center min-w-0 rounded-xl border ${monitor.last_status === 'up' || monitor.last_status === 'down' || monitor.last_status === 'warning' ? 'bg-black/20 border-white/10' : 'text-slate-600 dark:text-gray-400 bg-slate-50 dark:bg-[#252525] border-slate-100 dark:border-[#333]'}`}
+                                                    className={`${viewMode === 'tiles' ? 'text-[11px] pl-3 pr-1.5 h-9' : 'text-[9px] pl-1.5 pr-0.5 h-7'} flex items-center min-w-0 rounded-xl border ${monitor.last_status === 'up' || monitor.last_status === 'down' || monitor.last_status === 'warning' ? 'bg-black/20 border-white/10' : 'text-slate-600 dark:text-gray-400 bg-slate-50 dark:bg-[#252525] border-slate-100 dark:border-[#333]'}`}
                                                     style={monitor.last_status === 'up' || monitor.last_status === 'down' || monitor.last_status === 'warning' ? { ...getTileTextStyle(monitor.last_status), opacity: 0.9 } : {}}
                                                 >
                                                     <MonitorTargetLabel
@@ -1959,7 +1969,10 @@ export const Monitorv2Dashboard: React.FC = () => {
                                         ].map(filter => (
                                             <button
                                                 key={filter.id}
-                                                onClick={() => setLogFilter(filter.id as any)}
+                                                onClick={() => {
+                                                    setDetailDayKey(null);
+                                                    setLogFilter(filter.id as any);
+                                                }}
                                                 className={`px-4 py-1.5 text-xs font-bold rounded-lg transition-all ${logFilter === filter.id ? 'bg-white dark:bg-[#333] text-blue-600 dark:text-blue-400 shadow-sm' : 'text-slate-500 hover:text-slate-700 dark:hover:text-slate-300'}`}
                                             >
                                                 {filter.label}
@@ -1995,13 +2008,29 @@ export const Monitorv2Dashboard: React.FC = () => {
 
                                 <div className="flex bg-slate-100 dark:bg-[#252525] p-1 rounded-xl">
                                     <button
-                                        onClick={() => setHistoryViewMode('chart')}
+                                        onClick={() => {
+                                            setLastDetailView('chart');
+                                            setHistoryViewMode('chart');
+                                        }}
                                         className={`px-4 py-1.5 text-xs font-bold rounded-lg transition-all flex items-center gap-2 ${historyViewMode === 'chart' ? 'bg-white dark:bg-[#333] text-blue-600 dark:text-blue-400 shadow-sm' : 'text-slate-500 hover:text-slate-700 dark:hover:text-slate-300'}`}
                                     >
                                         <FaThLarge size={12} /> Chart
                                     </button>
                                     <button
-                                        onClick={() => setHistoryViewMode('list')}
+                                        onClick={() => {
+                                            setHistoryViewMode('calendar');
+                                            setDetailDayKey(null);
+                                            if (logFilter === '1d') setLogFilter('1m');
+                                        }}
+                                        className={`px-4 py-1.5 text-xs font-bold rounded-lg transition-all flex items-center gap-2 ${historyViewMode === 'calendar' ? 'bg-white dark:bg-[#333] text-blue-600 dark:text-blue-400 shadow-sm' : 'text-slate-500 hover:text-slate-700 dark:hover:text-slate-300'}`}
+                                    >
+                                        <FaCalendarAlt size={12} /> Calendar
+                                    </button>
+                                    <button
+                                        onClick={() => {
+                                            setLastDetailView('list');
+                                            setHistoryViewMode('list');
+                                        }}
                                         className={`px-4 py-1.5 text-xs font-bold rounded-lg transition-all flex items-center gap-2 ${historyViewMode === 'list' ? 'bg-white dark:bg-[#333] text-blue-600 dark:text-blue-400 shadow-sm' : 'text-slate-500 hover:text-slate-700 dark:hover:text-slate-300'}`}
                                     >
                                         <FaList size={12} /> List
@@ -2027,7 +2056,7 @@ export const Monitorv2Dashboard: React.FC = () => {
                                 </button>
                                 <div className="h-6 w-px bg-slate-200 dark:bg-slate-700 mx-1"></div>
                                 <div className="text-xs font-bold text-slate-400 uppercase tracking-widest bg-slate-50 dark:bg-[#252525] px-3 py-1.5 rounded-lg border border-slate-100 dark:border-[#333]">
-                                    {logs.length} Checks Found
+                                    {detailDayKey && historyViewMode !== 'calendar' ? `${detailLogs.length} of ${logs.length} Checks` : `${logs.length} Checks Found`}
                                 </div>
                             </div>
                         </div>
@@ -2039,12 +2068,32 @@ export const Monitorv2Dashboard: React.FC = () => {
                                     <div className="w-10 h-10 border-4 border-blue-500/20 border-t-blue-500 rounded-full animate-spin mb-4"></div>
                                     <p className="text-slate-500 dark:text-gray-400">Loading history...</p>
                                 </div>
-                            ) : logs.length === 0 ? (
+                            ) : logs.length === 0 && historyViewMode !== 'calendar' ? (
                                 <div className="text-center py-20 bg-slate-50 dark:bg-[#202020] rounded-3xl border border-dashed border-slate-200 dark:border-[#333]">
                                     <p className="text-slate-500 dark:text-gray-400">No event logs found for this period.</p>
                                 </div>
+                            ) : historyViewMode === 'calendar' ? (
+                                <MonitorUptimeCalendar
+                                    logs={logs}
+                                    intervalMinutes={viewingLogsMonitor.interval || 5}
+                                    onSelectDay={(dayKey) => {
+                                        setDetailDayKey(dayKey);
+                                        setHistoryViewMode(lastDetailView);
+                                    }}
+                                />
                             ) : historyViewMode === 'chart' ? (
                                 <div className="flex-1 w-full bg-slate-50/50 dark:bg-[#202020]/30 rounded-3xl p-6 border border-slate-100 dark:border-[#333] flex flex-col gap-4 min-h-0 h-full">
+                                    {detailDayKey && (
+                                        <MonitorUptimeDayBanner
+                                            dayKey={detailDayKey}
+                                            checkCount={detailLogs.length}
+                                            onBackToCalendar={() => {
+                                                setDetailDayKey(null);
+                                                setHistoryViewMode('calendar');
+                                            }}
+                                            onShowFullRange={() => setDetailDayKey(null)}
+                                        />
+                                    )}
                                     <div className="flex-1 min-h-0">
                                         <ResponsiveContainer width="100%" height="100%">
                                             <AreaChart data={filteredChartData} margin={{ top: 10, right: 10, left: 0, bottom: 0 }}>
@@ -2179,6 +2228,17 @@ export const Monitorv2Dashboard: React.FC = () => {
                                 </div>
                             ) : (
                                 <div className="space-y-8">
+                                    {detailDayKey && (
+                                        <MonitorUptimeDayBanner
+                                            dayKey={detailDayKey}
+                                            checkCount={detailLogs.length}
+                                            onBackToCalendar={() => {
+                                                setDetailDayKey(null);
+                                                setHistoryViewMode('calendar');
+                                            }}
+                                            onShowFullRange={() => setDetailDayKey(null)}
+                                        />
+                                    )}
                                     {(Object.entries(groupedLogs) as [string, MonitorLog[]][]).map(([date, dateLogs]) => (
                                         <div key={date} className="space-y-3">
                                             <div className="flex items-center gap-2 mb-2">
