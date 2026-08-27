@@ -2,43 +2,26 @@ import React, { useState, useEffect, useRef } from 'react';
 import { FaTimes, FaPalette, FaDownload, FaUpload } from 'react-icons/fa';
 import { userPreferencesService } from '../services/userPreferencesService';
 import { useEscapeToClose } from '../hooks/useEscapeToClose';
+import {
+    DEFAULT_FONT_FAMILY,
+    DEFAULT_MONITOR_TILE_STYLES,
+    hasMonitorTileStylePreferences,
+    readCachedMonitorTileStyles,
+    tileStylesFromPreferences,
+    tileStylesToPreferences,
+    writeCachedMonitorTileStyles,
+} from '../utils/monitorTileStyles';
+import type { TileStyle } from '../utils/monitorTileStyles';
 
-export interface TileStyle {
-    // UP State
-    upBackgroundColor: string;
-    upTextColor: string;
-    upUseGradient: boolean;
-    upGradientStart: string;
-    upGradientEnd: string;
-    upFontFamily: string;
-    
-    // DOWN State
-    downBackgroundColor: string;
-    downTextColor: string;
-    downUseGradient: boolean;
-    downGradientStart: string;
-    downGradientEnd: string;
-    downFontFamily: string;
-
-    // WARNING State
-    warningBackgroundColor: string;
-    warningTextColor: string;
-    warningUseGradient: boolean;
-    warningGradientStart: string;
-    warningGradientEnd: string;
-    warningFontFamily: string;
-
-    // Shared
-    borderRadius: number;
-}
+export type { TileStyle } from '../utils/monitorTileStyles';
 
 interface MonitoringTileStyleModalProps {
     isOpen: boolean;
     onClose: () => void;
     onStylesChange: (styles: TileStyle) => void;
+    initialStyles?: TileStyle;
 }
 
-const DEFAULT_FONT_FAMILY = 'system-ui, -apple-system, Segoe UI, Roboto, Arial, sans-serif';
 const FONT_OPTIONS: { label: string; value: string }[] = [
     { label: 'System (Default)', value: DEFAULT_FONT_FAMILY },
     { label: 'Arial', value: 'Arial, Helvetica, sans-serif' },
@@ -50,81 +33,47 @@ const FONT_OPTIONS: { label: string; value: string }[] = [
     { label: 'Courier New', value: '"Courier New", Courier, monospace' },
 ];
 
-const defaultStyles: TileStyle = {
-    upBackgroundColor: '#10b981', // emerald-600
-    upTextColor: '#ffffff',
-    upUseGradient: false,
-    upGradientStart: '#10b981',
-    upGradientEnd: '#059669',
-    upFontFamily: DEFAULT_FONT_FAMILY,
-    downBackgroundColor: '#dc2626', // red-600
-    downTextColor: '#ffffff',
-    downUseGradient: false,
-    downGradientStart: '#dc2626',
-    downGradientEnd: '#b91c1c',
-    downFontFamily: DEFAULT_FONT_FAMILY,
-    warningBackgroundColor: '#f59e0b', // amber-500
-    warningTextColor: '#ffffff',
-    warningUseGradient: true,
-    warningGradientStart: '#f59e0b',
-    warningGradientEnd: '#d97706',
-    warningFontFamily: DEFAULT_FONT_FAMILY,
-    borderRadius: 16, // matches Tailwind rounded-2xl
-};
+const defaultStyles: TileStyle = DEFAULT_MONITOR_TILE_STYLES;
 
 export const MonitoringTileStyleModal: React.FC<MonitoringTileStyleModalProps> = ({
     isOpen,
     onClose,
-    onStylesChange
+    onStylesChange,
+    initialStyles
 }) => {
-    const [styles, setStyles] = useState<TileStyle>(defaultStyles);
-    const [isLoading, setIsLoading] = useState(true);
+    const [styles, setStyles] = useState<TileStyle>(initialStyles || readCachedMonitorTileStyles);
+    const [isLoading, setIsLoading] = useState(false);
     const [isSaving, setIsSaving] = useState(false);
     const fileInputRef = useRef<HTMLInputElement>(null);
 
     useEscapeToClose(isOpen, onClose);
 
     useEffect(() => {
-        if (isOpen) {
-            loadStyles();
+        if (!isOpen) return;
+        if (initialStyles) {
+            setStyles(initialStyles);
+            setIsLoading(false);
         }
+        void loadStyles(!initialStyles);
+        // Seed once per open from parent/cache; do not re-run when live preview updates parent.
+        // eslint-disable-next-line react-hooks/exhaustive-deps
     }, [isOpen]);
 
-    const loadStyles = async () => {
-        setIsLoading(true);
+    const loadStyles = async (showSpinner: boolean) => {
+        if (showSpinner) setIsLoading(true);
         try {
             const preferences = await userPreferencesService.getPreferences();
-            
-            const loadedStyles: TileStyle = {
-                upBackgroundColor: preferences['monitor_tile_up_bg'] as string || defaultStyles.upBackgroundColor,
-                upTextColor: preferences['monitor_tile_up_text'] as string || defaultStyles.upTextColor,
-                upUseGradient: preferences['monitor_tile_up_gradient'] === 'true' || preferences['monitor_tile_up_gradient'] === true,
-                upGradientStart: preferences['monitor_tile_up_gradient_start'] as string || defaultStyles.upGradientStart,
-                upGradientEnd: preferences['monitor_tile_up_gradient_end'] as string || defaultStyles.upGradientEnd,
-                upFontFamily: preferences['monitor_tile_up_font'] as string || defaultStyles.upFontFamily,
-                downBackgroundColor: preferences['monitor_tile_down_bg'] as string || defaultStyles.downBackgroundColor,
-                downTextColor: preferences['monitor_tile_down_text'] as string || defaultStyles.downTextColor,
-                downUseGradient: preferences['monitor_tile_down_gradient'] === 'true' || preferences['monitor_tile_down_gradient'] === true,
-                downGradientStart: preferences['monitor_tile_down_gradient_start'] as string || defaultStyles.downGradientStart,
-                downGradientEnd: preferences['monitor_tile_down_gradient_end'] as string || defaultStyles.downGradientEnd,
-                downFontFamily: preferences['monitor_tile_down_font'] as string || defaultStyles.downFontFamily,
-                warningBackgroundColor: preferences['monitor_tile_warning_bg'] as string || defaultStyles.warningBackgroundColor,
-                warningTextColor: preferences['monitor_tile_warning_text'] as string || defaultStyles.warningTextColor,
-                warningUseGradient: preferences['monitor_tile_warning_gradient'] === 'true' || preferences['monitor_tile_warning_gradient'] === true,
-                warningGradientStart: preferences['monitor_tile_warning_gradient_start'] as string || defaultStyles.warningGradientStart,
-                warningGradientEnd: preferences['monitor_tile_warning_gradient_end'] as string || defaultStyles.warningGradientEnd,
-                warningFontFamily: preferences['monitor_tile_warning_font'] as string || defaultStyles.warningFontFamily,
-                borderRadius: Number.isFinite(parseFloat(preferences['monitor_tile_radius'] as any))
-                    ? Math.max(0, Math.min(48, parseFloat(preferences['monitor_tile_radius'] as any)))
-                    : defaultStyles.borderRadius,
-            };
-            
-            setStyles(loadedStyles);
-            onStylesChange(loadedStyles);
+            if (hasMonitorTileStylePreferences(preferences)) {
+                const loadedStyles = tileStylesFromPreferences(preferences);
+                writeCachedMonitorTileStyles(loadedStyles);
+                setStyles(loadedStyles);
+                onStylesChange(loadedStyles);
+            }
         } catch (error) {
             console.error('Failed to load tile styles:', error);
-            setStyles(defaultStyles);
-            onStylesChange(defaultStyles);
+            const fallback = initialStyles || readCachedMonitorTileStyles();
+            setStyles(fallback);
+            onStylesChange(fallback);
         } finally {
             setIsLoading(false);
         }
@@ -133,28 +82,8 @@ export const MonitoringTileStyleModal: React.FC<MonitoringTileStyleModalProps> =
     const handleSave = async () => {
         setIsSaving(true);
         try {
-            await userPreferencesService.updatePreferences({
-                'monitor_tile_up_bg': styles.upBackgroundColor,
-                'monitor_tile_up_text': styles.upTextColor,
-                'monitor_tile_up_gradient': styles.upUseGradient ? 'true' : 'false',
-                'monitor_tile_up_gradient_start': styles.upGradientStart,
-                'monitor_tile_up_gradient_end': styles.upGradientEnd,
-                'monitor_tile_up_font': styles.upFontFamily,
-                'monitor_tile_down_bg': styles.downBackgroundColor,
-                'monitor_tile_down_text': styles.downTextColor,
-                'monitor_tile_down_gradient': styles.downUseGradient ? 'true' : 'false',
-                'monitor_tile_down_gradient_start': styles.downGradientStart,
-                'monitor_tile_down_gradient_end': styles.downGradientEnd,
-                'monitor_tile_down_font': styles.downFontFamily,
-                'monitor_tile_warning_bg': styles.warningBackgroundColor,
-                'monitor_tile_warning_text': styles.warningTextColor,
-                'monitor_tile_warning_gradient': styles.warningUseGradient ? 'true' : 'false',
-                'monitor_tile_warning_gradient_start': styles.warningGradientStart,
-                'monitor_tile_warning_gradient_end': styles.warningGradientEnd,
-                'monitor_tile_warning_font': styles.warningFontFamily,
-                'monitor_tile_radius': String(styles.borderRadius),
-            });
-            
+            await userPreferencesService.updatePreferences(tileStylesToPreferences(styles));
+            writeCachedMonitorTileStyles(styles);
             onStylesChange(styles);
             onClose();
         } catch (error) {
@@ -260,27 +189,8 @@ export const MonitoringTileStyleModal: React.FC<MonitoringTileStyleModalProps> =
                     const saveImportedStyles = async () => {
                         setIsSaving(true);
                         try {
-                            await userPreferencesService.updatePreferences({
-                                'monitor_tile_up_bg': importedStyles.upBackgroundColor,
-                                'monitor_tile_up_text': importedStyles.upTextColor,
-                                'monitor_tile_up_gradient': importedStyles.upUseGradient ? 'true' : 'false',
-                                'monitor_tile_up_gradient_start': importedStyles.upGradientStart,
-                                'monitor_tile_up_gradient_end': importedStyles.upGradientEnd,
-                                'monitor_tile_up_font': importedStyles.upFontFamily,
-                                'monitor_tile_down_bg': importedStyles.downBackgroundColor,
-                                'monitor_tile_down_text': importedStyles.downTextColor,
-                                'monitor_tile_down_gradient': importedStyles.downUseGradient ? 'true' : 'false',
-                                'monitor_tile_down_gradient_start': importedStyles.downGradientStart,
-                                'monitor_tile_down_gradient_end': importedStyles.downGradientEnd,
-                                'monitor_tile_down_font': importedStyles.downFontFamily,
-                                'monitor_tile_warning_bg': importedStyles.warningBackgroundColor,
-                                'monitor_tile_warning_text': importedStyles.warningTextColor,
-                                'monitor_tile_warning_gradient': importedStyles.warningUseGradient ? 'true' : 'false',
-                                'monitor_tile_warning_gradient_start': importedStyles.warningGradientStart,
-                                'monitor_tile_warning_gradient_end': importedStyles.warningGradientEnd,
-                                'monitor_tile_warning_font': importedStyles.warningFontFamily,
-                                'monitor_tile_radius': String(importedStyles.borderRadius),
-                            });
+                            await userPreferencesService.updatePreferences(tileStylesToPreferences(importedStyles));
+                            writeCachedMonitorTileStyles(importedStyles);
                             
                             alert('Styles saved successfully!');
                         } catch (error) {

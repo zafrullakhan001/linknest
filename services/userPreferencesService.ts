@@ -37,27 +37,47 @@ export interface UserPreferences {
   [key: string]: string | number | boolean | null;
 }
 
+let preferencesCache: UserPreferences | null = null;
+let preferencesInflight: Promise<UserPreferences> | null = null;
+
 export const userPreferencesService = {
   /**
    * Get all user preferences. Returns {} on API error (e.g. 500) to avoid console noise.
+   * In-memory cache + in-flight coalescing so dashboard, modal, and widgets share one request.
    */
-  async getPreferences(): Promise<UserPreferences> {
-    try {
-      const response = await fetch(`${API_BASE}/settings/user-preferences`, {
-        method: 'GET',
-        credentials: 'include',
-      });
-
-      const data = await response.json();
-
-      if (!response.ok) {
-        return {};
-      }
-
-      return data.preferences || {};
-    } catch {
-      return {};
+  async getPreferences(options?: { force?: boolean }): Promise<UserPreferences> {
+    if (!options?.force && preferencesCache) {
+      return preferencesCache;
     }
+    if (!options?.force && preferencesInflight) {
+      return preferencesInflight;
+    }
+
+    preferencesInflight = (async () => {
+      try {
+        const response = await fetch(`${API_BASE}/settings/user-preferences`, {
+          method: 'GET',
+          credentials: 'include',
+        });
+
+        const data = await response.json();
+
+        if (!response.ok) {
+          preferencesCache = preferencesCache || {};
+          return preferencesCache;
+        }
+
+        preferencesCache = data.preferences || {};
+        return preferencesCache;
+      } catch {
+        preferencesCache = preferencesCache || {};
+        return preferencesCache;
+      } finally {
+        preferencesInflight = null;
+      }
+    })();
+
+    return preferencesInflight;
   },
 
   /**
@@ -84,6 +104,8 @@ export const userPreferencesService = {
     if (!response.ok) {
       throw new Error(data.error || 'Failed to update user preferences');
     }
+
+    preferencesCache = { ...(preferencesCache || {}), ...preferences };
   },
 
   /**

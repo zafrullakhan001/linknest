@@ -7,6 +7,12 @@ import { useTileAnimation, getTileAnimationClass, getTileDecorationClass } from 
 import { SMTPSettingsModal } from './SMTPSettingsModal';
 import { MonitoringTileStyleModal, TileStyle } from './MonitoringTileStyleModal';
 import { userPreferencesService } from '../services/userPreferencesService';
+import {
+    hasMonitorTileStylePreferences,
+    readCachedMonitorTileStyles,
+    tileStylesFromPreferences,
+    writeCachedMonitorTileStyles,
+} from '../utils/monitorTileStyles';
 import { AreaChart, Area, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, ReferenceLine, Brush, BarChart, Bar, Cell } from 'recharts';
 import { useAuth } from '../contexts/AuthContext';
 import { useEscapeToClose } from '../hooks/useEscapeToClose';
@@ -86,30 +92,8 @@ export const Monitorv2Dashboard: React.FC = () => {
         return () => window.removeEventListener('keydown', handleKeyDown);
     }, [viewingLogsMonitor]);
 
-    // Tile styles state
-    const defaultTileStyles: TileStyle = {
-        upBackgroundColor: '#10b981',
-        upTextColor: '#ffffff',
-        upUseGradient: false,
-        upGradientStart: '#10b981',
-        upGradientEnd: '#059669',
-        upFontFamily: 'system-ui, -apple-system, Segoe UI, Roboto, Arial, sans-serif',
-        downBackgroundColor: '#dc2626',
-        downTextColor: '#ffffff',
-        downUseGradient: false,
-        downGradientStart: '#dc2626',
-        downGradientEnd: '#b91c1c',
-        downFontFamily: 'system-ui, -apple-system, Segoe UI, Roboto, Arial, sans-serif',
-        warningBackgroundColor: '#f59e0b',
-        warningTextColor: '#ffffff',
-        warningUseGradient: true,
-        warningGradientStart: '#f59e0b',
-        warningGradientEnd: '#d97706',
-        warningFontFamily: 'system-ui, -apple-system, Segoe UI, Roboto, Arial, sans-serif',
-        borderRadius: 16,
-    };
-
-    const [tileStyles, setTileStyles] = useState<TileStyle>(defaultTileStyles);
+    // Tile styles: hydrate from local cache so custom colors appear on first paint.
+    const [tileStyles, setTileStyles] = useState<TileStyle>(readCachedMonitorTileStyles);
     const [moveMenuId, setMoveMenuId] = useState<number | null>(null);
     const [editingTabName, setEditingTabName] = useState<string | null>(null);
     const [editingGroupName, setEditingGroupName] = useState<string | null>(null);
@@ -280,43 +264,22 @@ export const Monitorv2Dashboard: React.FC = () => {
         }
     }, [fetchMonitors]);
 
-    useEffect(() => {
-        fetchMonitors();
-        loadTileStyles();
-    }, [fetchMonitors]);
-
     const loadTileStyles = useCallback(async () => {
         try {
             const preferences = await userPreferencesService.getPreferences();
-            const loadedStyles: TileStyle = {
-                upBackgroundColor: preferences['monitor_tile_up_bg'] as string || defaultTileStyles.upBackgroundColor,
-                upTextColor: preferences['monitor_tile_up_text'] as string || defaultTileStyles.upTextColor,
-                upUseGradient: preferences['monitor_tile_up_gradient'] === 'true' || preferences['monitor_tile_up_gradient'] === true,
-                upGradientStart: preferences['monitor_tile_up_gradient_start'] as string || defaultTileStyles.upGradientStart,
-                upGradientEnd: preferences['monitor_tile_up_gradient_end'] as string || defaultTileStyles.upGradientEnd,
-                upFontFamily: preferences['monitor_tile_up_font'] as string || defaultTileStyles.upFontFamily,
-                downBackgroundColor: preferences['monitor_tile_down_bg'] as string || defaultTileStyles.downBackgroundColor,
-                downTextColor: preferences['monitor_tile_down_text'] as string || defaultTileStyles.downTextColor,
-                downUseGradient: preferences['monitor_tile_down_gradient'] === 'true' || preferences['monitor_tile_down_gradient'] === true,
-                downGradientStart: preferences['monitor_tile_down_gradient_start'] as string || defaultTileStyles.downGradientStart,
-                downGradientEnd: preferences['monitor_tile_down_gradient_end'] as string || defaultTileStyles.downGradientEnd,
-                downFontFamily: preferences['monitor_tile_down_font'] as string || defaultTileStyles.downFontFamily,
-                warningBackgroundColor: preferences['monitor_tile_warning_bg'] as string || defaultTileStyles.warningBackgroundColor,
-                warningTextColor: preferences['monitor_tile_warning_text'] as string || defaultTileStyles.warningTextColor,
-                warningUseGradient: preferences['monitor_tile_warning_gradient'] === 'true' || preferences['monitor_tile_warning_gradient'] === true,
-                warningGradientStart: preferences['monitor_tile_warning_gradient_start'] as string || defaultTileStyles.warningGradientStart,
-                warningGradientEnd: preferences['monitor_tile_warning_gradient_end'] as string || defaultTileStyles.warningGradientEnd,
-                warningFontFamily: preferences['monitor_tile_warning_font'] as string || defaultTileStyles.warningFontFamily,
-                borderRadius: Number.isFinite(parseFloat(preferences['monitor_tile_radius'] as any))
-                    ? Math.max(0, Math.min(48, parseFloat(preferences['monitor_tile_radius'] as any)))
-                    : defaultTileStyles.borderRadius,
-            };
+            if (!hasMonitorTileStylePreferences(preferences)) return;
+            const loadedStyles = tileStylesFromPreferences(preferences);
+            writeCachedMonitorTileStyles(loadedStyles);
             setTileStyles(loadedStyles);
         } catch (error) {
             console.error('Failed to load tile styles:', error);
-            setTileStyles(defaultTileStyles);
         }
     }, []);
+
+    useEffect(() => {
+        fetchMonitors();
+        loadTileStyles();
+    }, [fetchMonitors, loadTileStyles]);
 
     const handleTileStylesChange = useCallback((styles: TileStyle) => {
         setTileStyles(styles);
@@ -875,15 +838,9 @@ export const Monitorv2Dashboard: React.FC = () => {
 
     const animationClass = getTileAnimationClass(animation);
     const decorationClass = getTileDecorationClass(decoration);
-    // Only apply `linknest-tile-animated` when an actual tile animation is selected.
-    // If animation is "none", `getTileAnimationClass` returns "", and applying
-    // `linknest-tile-animated` would incorrectly keep tiles at opacity: 0.
-    const fullAnimClass = useMemo(() => {
-        const parts: string[] = [];
-        if (animationClass) parts.push('linknest-tile-animated', animationClass);
-        if (decorationClass) parts.push(decorationClass);
-        return parts.join(' ');
-    }, [animationClass, decorationClass]);
+    // Status tiles must stay visible after refresh. Space-tile entrance
+    // animations use opacity:0 + staggered delay, which hides custom styles.
+    const fullAnimClass = decorationClass;
 
     const content = (
         <>
@@ -1342,7 +1299,6 @@ export const Monitorv2Dashboard: React.FC = () => {
                                             key={monitor.id}
                                             onClick={(e) => handleTileClick(e, monitor)}
                                             style={{
-                                                animationDelay: `${index * 50}ms`,
                                                 ...(monitor.last_status === 'up' || monitor.last_status === 'down' || monitor.last_status === 'warning' ? getTileStyle(monitor.last_status) : {}),
                                                 ...(monitor.last_status === 'up' || monitor.last_status === 'down' || monitor.last_status === 'warning'
                                                     ? { borderColor: getTileBorderColor(monitor.last_status), fontFamily: getTileFontFamily(monitor.last_status) }
@@ -1516,7 +1472,6 @@ export const Monitorv2Dashboard: React.FC = () => {
                                             key={monitor.id}
                                             onClick={(e) => handleTileClick(e, monitor)}
                                             style={{
-                                                animationDelay: `${index * 30}ms`,
                                                 ...(monitor.last_status === 'up' || monitor.last_status === 'down' || monitor.last_status === 'warning' ? getTileStyle(monitor.last_status) : {})
                                             }}
                                             className={`flex items-center gap-4 p-4 rounded-xl cursor-pointer transition-all hover:shadow-lg group ${fullAnimClass} ${monitor.last_status === 'up' || monitor.last_status === 'down' || monitor.last_status === 'warning' ? '' : 'bg-white dark:bg-[#1e1e1e] border border-slate-200 dark:border-[#333]'}`}
@@ -1580,7 +1535,6 @@ export const Monitorv2Dashboard: React.FC = () => {
                                                             key={monitor.id}
                                                             onClick={(e) => handleTileClick(e, monitor)}
                                                             style={{
-                                                                animationDelay: `${index * 30}ms`,
                                                                 ...(monitor.last_status === 'up' || monitor.last_status === 'down' || monitor.last_status === 'warning' ? getTileStyle(monitor.last_status) : {})
                                                             }}
                                                             className={`p-3 rounded-xl cursor-pointer transition-all hover:shadow-lg ${fullAnimClass} ${monitor.last_status === 'up' || monitor.last_status === 'down' || monitor.last_status === 'warning' ? '' : 'bg-white dark:bg-[#1e1e1e] border border-slate-200 dark:border-[#333]'}`}
@@ -1607,13 +1561,10 @@ export const Monitorv2Dashboard: React.FC = () => {
                                 </div>
                             ) : viewMode === 'timeline' ? (
                                 <div className="space-y-1">
-                                    {groupedByGroups[groupName].map((monitor, index) => (
+                                    {groupedByGroups[groupName].map((monitor) => (
                                         <div
                                             key={monitor.id}
                                             onClick={(e) => handleTileClick(e, monitor)}
-                                            style={{
-                                                animationDelay: `${index * 20}ms`
-                                            }}
                                             className={`flex items-center gap-3 p-2 rounded-lg cursor-pointer transition-all hover:bg-slate-50 dark:hover:bg-[#252525] group ${fullAnimClass}`}
                                         >
                                             <div className="flex items-center gap-2 w-[280px] flex-shrink-0">
@@ -1699,7 +1650,6 @@ export const Monitorv2Dashboard: React.FC = () => {
                                                     onClick={(e) => handleTileClick(e, monitor)}
                                                     className={`group cursor-pointer hover:bg-slate-50 dark:hover:bg-[#252525] transition-colors ${monitor.last_status === 'up' || monitor.last_status === 'down' ? '' : ''} ${fullAnimClass}`}
                                                     style={{
-                                                        animationDelay: `${index * 30}ms`,
                                                         ...(monitor.last_status === 'up' || monitor.last_status === 'down' || monitor.last_status === 'warning' ? getTileStyle(monitor.last_status) : {})
                                                     }}
                                                 >
@@ -2303,6 +2253,7 @@ export const Monitorv2Dashboard: React.FC = () => {
                     isOpen={showTileStyleModal}
                     onClose={() => setShowTileStyleModal(false)}
                     onStylesChange={handleTileStylesChange}
+                    initialStyles={tileStyles}
                 />
             )}
 

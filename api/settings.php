@@ -1324,23 +1324,7 @@ function handleGetUserPreferences() {
         }
         $userId = $user['id'];
         $db = getDB();
-        
-        // Ensure table exists
-        try {
-            $db->exec('CREATE TABLE IF NOT EXISTS user_preferences (
-                id INTEGER PRIMARY KEY AUTOINCREMENT,
-                user_id INTEGER NOT NULL,
-                preference_key TEXT NOT NULL,
-                preference_value TEXT,
-                updated_at INTEGER NOT NULL,
-                UNIQUE(user_id, preference_key),
-                FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE
-            )');
-        } catch (Exception $e) {
-            // Table might already exist, continue
-            error_log("User preferences table creation: " . $e->getMessage());
-        }
-        
+
         $stmt = $db->prepare('SELECT preference_key, preference_value FROM user_preferences WHERE user_id = ?');
         $stmt->execute([$userId]);
         $rows = $stmt->fetchAll(PDO::FETCH_ASSOC);

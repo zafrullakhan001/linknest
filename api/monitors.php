@@ -662,7 +662,7 @@ function handleGetMonitors() {
     $monitors = $stmt->fetchAll();
 
     // Fetch history for sparklines (last 24h)
-    $stmtHistory = $db->prepare('SELECT status, response_time, checked_at FROM monitor_logs WHERE monitor_id = ? AND checked_at >= ? ORDER BY checked_at DESC LIMIT 2000');
+    $stmtHistory = $db->prepare('SELECT status, response_time, checked_at FROM monitor_logs WHERE monitor_id = ? AND checked_at >= ? ORDER BY checked_at DESC LIMIT 72');
     $oneDayAgo = time() - 86400;
 
     foreach ($monitors as &$m) {
