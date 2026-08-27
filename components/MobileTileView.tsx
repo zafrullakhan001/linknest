@@ -19,6 +19,7 @@ import { PublicBookmarksPanel } from './PublicBookmarksPanel';
 import { getFavoriteLinks, resolveFavoriteLinks, FavoriteLink } from '../services/storageService';
 import { getDisplayUrl, viewerLinkDisplay, viewerLinkUrl } from '../utils/urlDisplay';
 import { tryHandleSshLinkClick } from '../utils/sshLink';
+import { openLinkUrl } from '../utils/openLinkUrl';
 import { tryHandleVncLinkClick } from '../utils/vncLink';
 import { isLinkInMaintenance } from '../utils/linkMaintenance';
 import { LinkMaintenanceBadge } from './LinkMaintenanceBadge';
@@ -1182,7 +1183,9 @@ export const MobileTileView: React.FC<MobileTileViewProps> = ({
                           });
                           return;
                         }
-                        window.open(link.url, '_blank', 'noopener,noreferrer');
+                        openLinkUrl(link.url, link.openTarget, {
+                          browserId: link.browser && link.browser !== 'default' ? link.browser : null,
+                        });
                       }}
                       className="group relative flex items-center gap-3 p-3.5 w-full text-left bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-xl active:scale-[0.99] transition-all shadow-sm"
                     >
@@ -1254,7 +1257,9 @@ export const MobileTileView: React.FC<MobileTileViewProps> = ({
                         });
                         return;
                       }
-                      window.open(link.url, '_blank', 'noopener,noreferrer');
+                      openLinkUrl(link.url, link.openTarget, {
+                        browserId: link.browser && link.browser !== 'default' ? link.browser : null,
+                      });
                     }}
                     className="group relative flex items-center gap-3 p-3.5 w-full text-left bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-xl active:scale-[0.99] transition-all shadow-sm"
                   >

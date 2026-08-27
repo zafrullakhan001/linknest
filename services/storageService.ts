@@ -1,8 +1,22 @@
 import { Tile } from '../types';
 import { resolveApiBase } from './apiHelpers';
 import { hasAccessRestrictions } from './accessRestrictionService';
+import { readPersistedFingerprintHash } from './fingerprintService';
 
 const API_BASE = resolveApiBase();
+
+function fingerprintRequestHeaders(extra?: HeadersInit): HeadersInit {
+  const headers: Record<string, string> = {
+    ...(extra && !(extra instanceof Headers) && !Array.isArray(extra)
+      ? (extra as Record<string, string>)
+      : {}),
+  };
+  const hash = readPersistedFingerprintHash();
+  if (hash) {
+    headers['X-LinkNest-Fingerprint'] = hash;
+  }
+  return headers;
+}
 
 // Transform API response to Tile format
 const transformTile = (apiTile: any): Tile => {
@@ -112,7 +126,7 @@ const extractSearchLinks = (tile: Tile): Tile['searchLinks'] => {
   }
   const links: NonNullable<Tile['searchLinks']> = [];
   const seen = new Set<string>();
-  const addLinks = (sectionLinks?: { id: string; label: string; url: string; icon?: string; browser?: string; notes?: string; tooltip?: string; notesEnabled?: boolean; tooltipStyle?: 'rich' | 'classic'; richTextContent?: string; richTextEnabled?: boolean; maintenanceEnabled?: boolean; maintenanceMessage?: string; maintenanceVideoUrl?: string; health?: any }[]) => {
+  const addLinks = (sectionLinks?: { id: string; label: string; url: string; icon?: string; browser?: string; openTarget?: string; notes?: string; tooltip?: string; notesEnabled?: boolean; tooltipStyle?: 'rich' | 'classic'; richTextContent?: string; richTextEnabled?: boolean; maintenanceEnabled?: boolean; maintenanceMessage?: string; maintenanceVideoUrl?: string; health?: any }[]) => {
     sectionLinks?.forEach((link) => {
       const key = `${(link.label || '').toLowerCase()}|${(link.url || '').toLowerCase()}`;
       if (seen.has(key)) return;
@@ -123,6 +137,7 @@ const extractSearchLinks = (tile: Tile): Tile['searchLinks'] => {
         url: link.url,
         icon: link.icon,
         browser: link.browser,
+        openTarget: (link.openTarget as any) || undefined,
         notes: link.notes,
         tooltip: link.tooltip,
         notesEnabled: link.notesEnabled,
@@ -189,7 +204,8 @@ export const getTiles = async (options?: GetTilesOptions): Promise<Tile[]> => {
   const url = params.toString() ? `${API_BASE}/tiles?${params.toString()}` : `${API_BASE}/tiles`;
   const response = await fetch(url, {
     method: 'GET',
-    credentials: 'include'
+    credentials: 'include',
+    headers: fingerprintRequestHeaders(),
   });
 
   if (!response.ok) {
@@ -206,7 +222,8 @@ export const getTiles = async (options?: GetTilesOptions): Promise<Tile[]> => {
 export const getTile = async (tileId: string): Promise<Tile | null> => {
   const response = await fetch(`${API_BASE}/tiles/${tileId}`, {
     method: 'GET',
-    credentials: 'include'
+    credentials: 'include',
+    headers: fingerprintRequestHeaders(),
   });
   if (!response.ok) {
     if (response.status === 404) return null;
@@ -673,6 +690,7 @@ export interface FavoriteLink {
   notesEnabled?: boolean;
   tooltipStyle?: 'rich' | 'classic';
   browser?: string;
+  openTarget?: 'same' | 'tab' | 'window' | 'private';
   richTextContent?: string;
   richTextEnabled?: boolean;
   maintenanceEnabled?: boolean;

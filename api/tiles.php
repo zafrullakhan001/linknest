@@ -171,6 +171,9 @@ function handleGetTiles() {
 
         $user = getAuthenticatedUser();
         $db = getDB();
+
+    require_once __DIR__ . '/fingerprint_lock_lib.php';
+    require_fingerprint_lock_access($user);
     
     // Check if guest access is enabled
     $guestAccessEnabled = true;
@@ -666,6 +669,7 @@ function handleGetTiles() {
                 ];
                 applyLinkMaintenanceToApi($searchLink, $linkRow);
                 applyLinkFeatureTogglesToApi($searchLink, $linkRow);
+                applyLinkOpenTargetToApi($searchLink, $linkRow);
                 if (isset($linkRow['health_status']) && !isNonHttpLinkHealthUrl($linkRow['url'] ?? '')) {
                     $searchLink['health'] = [
                         'status' => $linkRow['health_status'] ?? 'unknown',
@@ -1007,6 +1011,7 @@ function handleGetTiles() {
                                     
                                     applyLinkMaintenanceToApi($link, $linkRow);
                                     applyLinkFeatureTogglesToApi($link, $linkRow);
+                applyLinkOpenTargetToApi($link, $linkRow);
                                     $section['links'][] = $link;
                                 }
                             }
@@ -1117,6 +1122,7 @@ function handleGetTiles() {
                             
                             applyLinkMaintenanceToApi($link, $linkRow);
                             applyLinkFeatureTogglesToApi($link, $linkRow);
+                applyLinkOpenTargetToApi($link, $linkRow);
                             $section['links'][] = $link;
                         }
                     }
@@ -1181,6 +1187,9 @@ function handleGetTiles() {
 function handleGetTile($tileId) {
     $user = getAuthenticatedUser();
     $db = getDB();
+
+    require_once __DIR__ . '/fingerprint_lock_lib.php';
+    require_fingerprint_lock_access($user);
     
     // Check if guest access is enabled
     $stmt = $db->prepare("SELECT value FROM settings WHERE key = 'guest_access_enabled'");
@@ -1573,6 +1582,7 @@ function handleGetTile($tileId) {
                 
                 applyLinkMaintenanceToApi($link, $linkRow);
                 applyLinkFeatureTogglesToApi($link, $linkRow);
+                applyLinkOpenTargetToApi($link, $linkRow);
                 $section['links'][] = $link;
             }
             
@@ -1695,6 +1705,7 @@ function handleGetTile($tileId) {
 
                     applyLinkMaintenanceToApi($link, $linkRow);
                     applyLinkFeatureTogglesToApi($link, $linkRow);
+                applyLinkOpenTargetToApi($link, $linkRow);
                     $section['links'][] = $link;
                 }
 
@@ -2079,6 +2090,7 @@ function handleCreateTile() {
                                 ]);
                                 persistInheritShortUrls($db, 'links', $linkId, $link);
                                 persistLinkTooltipStyle($db, $linkId, $link);
+                                persistLinkOpenTarget($db, $linkId, $link);
                             } catch (PDOException $e) {
                                 error_log('Error inserting link: ' . $e->getMessage());
                                 error_log('Link data: ' . json_encode($link));
@@ -2101,6 +2113,7 @@ function handleCreateTile() {
                                         $linkPublished
                                     ]);
                                     persistLinkTooltipStyle($db, $linkId, $link);
+                                persistLinkOpenTarget($db, $linkId, $link);
                                 } catch (PDOException $e2) {
                                     error_log('Error inserting link (fallback): ' . $e2->getMessage());
                                     throw $e2;
@@ -2707,6 +2720,7 @@ function handleCloneTile($tileId) {
                         ...linkFeatureToggleInsertValuesFromRow($link)
                     ]);
                     persistLinkTooltipStyle($db, $newLinkId, $link);
+                                persistLinkOpenTarget($db, $newLinkId, $link);
                 }
                 
                 // Clone rich text content for legacy sections
@@ -2812,6 +2826,7 @@ function handleCloneTile($tileId) {
                     ]);
                     persistInheritShortUrls($db, 'links', $newLinkId, $link);
                     persistLinkTooltipStyle($db, $newLinkId, $link);
+                                persistLinkOpenTarget($db, $newLinkId, $link);
                 }
                 
                 // Clone rich text content for sections
@@ -3222,6 +3237,7 @@ function handleCloneCategory($categoryName) {
                                 ...linkFeatureToggleInsertValuesFromRow($link)
                             ]);
                             persistLinkTooltipStyle($db, $newLinkId, $link);
+                                persistLinkOpenTarget($db, $newLinkId, $link);
                         }
                     }
                 }
@@ -3294,6 +3310,7 @@ function handleCloneCategory($categoryName) {
                                 ...linkFeatureToggleInsertValuesFromRow($link)
                             ]);
                             persistLinkTooltipStyle($db, $newLinkId, $link);
+                                persistLinkOpenTarget($db, $newLinkId, $link);
                         }
                     }
                 }
@@ -4308,6 +4325,7 @@ function mapFavoriteLinkRow(array $row): array {
         ]
     ];
     applyLinkFeatureTogglesToApi($mapped, $row);
+                applyLinkOpenTargetToApi($mapped, $row);
     return $mapped;
 }
 
@@ -4766,6 +4784,7 @@ function handleGetRecycleBin() {
                     
                     applyLinkMaintenanceToApi($link, $linkRow);
                     applyLinkFeatureTogglesToApi($link, $linkRow);
+                applyLinkOpenTargetToApi($link, $linkRow);
                     $section['links'][] = $link;
                 }
                 
@@ -5152,6 +5171,7 @@ function handleGetArchive() {
                         
                     applyLinkMaintenanceToApi($link, $linkRow);
                     applyLinkFeatureTogglesToApi($link, $linkRow);
+                applyLinkOpenTargetToApi($link, $linkRow);
                     $section['links'][] = $link;
                 }
                 
@@ -5695,6 +5715,7 @@ function getTileForVersion($tileId, $db) {
                 ];
                 applyLinkMaintenanceToApi($link, $linkRow);
                 applyLinkFeatureTogglesToApi($link, $linkRow);
+                applyLinkOpenTargetToApi($link, $linkRow);
                 $section['links'][] = $link;
             }
 
@@ -6605,6 +6626,7 @@ function updateTileInternal($tileId, $data, $db, $user, $isRestore = false, $isF
                                 ]);
                                 persistInheritShortUrls($db, 'links', $linkId, $link);
                                 persistLinkTooltipStyle($db, $linkId, $link);
+                                persistLinkOpenTarget($db, $linkId, $link);
                             }
                         }
                         
@@ -6670,6 +6692,7 @@ function updateTileInternal($tileId, $data, $db, $user, $isRestore = false, $isF
                             ...linkFeatureToggleInsertValuesFromInput($link)
                         ]);
                         persistLinkTooltipStyle($db, $linkId, $link);
+                                persistLinkOpenTarget($db, $linkId, $link);
                     }
                     if (isset($section['richTextContent']) && is_array($section['richTextContent'])) {
                         foreach ($section['richTextContent'] as $richText) {

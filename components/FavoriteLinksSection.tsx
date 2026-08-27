@@ -21,6 +21,7 @@ import { favoriteLinkHealthService } from '../services/favoriteLinkHealthService
 import { viewerLinkDisplay, viewerLinkUrl } from '../utils/urlDisplay';
 import { isSshLinkUrl, tryHandleSshLinkClick } from '../utils/sshLink';
 import { isVncLinkUrl, tryHandleVncLinkClick } from '../utils/vncLink';
+import { openLinkUrl, normalizeLinkOpenTarget, prepareSeparateWindowIfNeeded, assignUrlToWindow } from '../utils/openLinkUrl';
 import { getTileAnimationClass, getTileDecorationClass, type TileAnimation, type TileDecoration } from './TileAnimationSelector';
 import { useAccessRestrictionGate } from '../contexts/AccessRestrictionContext';
 import { isLinkInMaintenance } from '../utils/linkMaintenance';
@@ -176,14 +177,21 @@ const SortableFavoriteLinkCard: React.FC<{
   const openLink = async (e: React.MouseEvent) => {
     if (tryHandleSshLinkClick(link.url, e)) return;
     if (tryHandleVncLinkClick(link.url, e)) return;
+    // Open popup before await so "New window" stays a real window.
+    const pendingWindow = prepareSeparateWindowIfNeeded(link.openTarget);
+    const closePending = () => {
+      try { pendingWindow?.close(); } catch { /* ignore */ }
+    };
     const allowed = await assertCanOpen('link', link.id);
     if (!allowed) {
+      closePending();
       e.preventDefault();
       e.stopPropagation();
       return;
     }
 
     if (isLinkInMaintenance(link)) {
+      closePending();
       e.preventDefault();
       e.stopPropagation();
       onOpenMaintenance();
@@ -191,32 +199,49 @@ const SortableFavoriteLinkCard: React.FC<{
     }
 
     if (e.ctrlKey || e.metaKey) {
+      closePending();
       e.preventDefault();
       e.stopPropagation();
       if (shouldOpenInfoDialog(link)) {
         onOpenLinkInfo();
         return;
       }
-      const newWindow = window.open(link.url, '_blank', 'noopener,noreferrer');
+      const newWindow = openLinkUrl(link.url, 'tab', { focus: true });
       if (newWindow) newWindow.focus();
       return;
     }
 
     if (shouldOpenInfoDialog(link)) {
+      closePending();
       e.preventDefault();
       e.stopPropagation();
       onOpenLinkInfo();
       return;
     }
 
+    if (normalizeLinkOpenTarget(link.openTarget) === 'private') {
+      closePending();
+      e.preventDefault();
+      e.stopPropagation();
+      openLinkUrl(link.url, 'private', { browserId: browserToUse });
+      return;
+    }
+
     if (browserSpecificLinksEnabled && browserToUse) {
+      closePending();
       e.preventDefault();
       e.stopPropagation();
       openLinkInBrowser(link.url, browserToUse);
       return;
     }
 
-    window.open(link.url, '_blank');
+    e.preventDefault();
+    e.stopPropagation();
+    if (pendingWindow) {
+      assignUrlToWindow(pendingWindow, link.url);
+      return;
+    }
+    openLinkUrl(link.url, link.openTarget, { browserId: browserToUse });
   };
 
   if (compact) {

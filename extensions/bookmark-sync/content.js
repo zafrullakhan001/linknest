@@ -5,14 +5,16 @@
  * Only allowlisted origins receive replies; postMessage uses this page's origin (not *).
  */
 (function () {
-  const VERSION = '1.8.3';
-  const FEATURES = ['bookmarks', 'bookmarksWrite', 'bookmarksPreview', 'bookmarksBackup'];
+  const VERSION = '1.8.4';
+  const FEATURES = ['bookmarks', 'bookmarksWrite', 'bookmarksPreview', 'bookmarksBackup', 'incognito'];
   const RELOAD_MSG =
     'Extension was reloaded. Refresh this page, then try Sync or OutSync again.';
   const MAX_PUSH_BOOKMARKS = 5000;
   const TITLE_MAX = 300;
   const FOLDER_MAX = 100;
   const DEFAULT_ROOT_FOLDER = 'LinkNest';
+  const OPEN_INCOGNITO_HINT =
+    'Enable “Allow in Incognito” for LinkNest Bookmark Sync in chrome://extensions (or edge://extensions), then try again.';
 
   function isContextValid() {
     try {
@@ -38,6 +40,18 @@
     } catch (_err) {
       /* page may be tearing down */
     }
+  }
+
+  function replyOpen(timestamp, success, error, message) {
+    post({
+      type: 'BROWSER_LAUNCHER_RESPONSE',
+      success: !!success,
+      error: error || undefined,
+      message: message || undefined,
+      timestamp: timestamp,
+      version: VERSION,
+      features: FEATURES
+    });
   }
 
   function failBookmarks(timestamp, error) {
@@ -145,6 +159,7 @@
 
       if (
         type !== 'BROWSER_LAUNCHER_CHECK' &&
+        type !== 'BROWSER_LAUNCHER_OPEN' &&
         type !== 'BROWSER_LAUNCHER_GET_BOOKMARKS' &&
         type !== 'BROWSER_LAUNCHER_PUSH_BOOKMARKS' &&
         type !== 'BROWSER_LAUNCHER_PREVIEW_PUSH_BOOKMARKS' &&
@@ -169,6 +184,57 @@
             writeEnabled: !!gate.writeEnabled,
             timestamp: timestamp
           });
+          return;
+        }
+
+        if (type === 'BROWSER_LAUNCHER_OPEN') {
+          const options = event.data.options || {};
+          const inPrivate = !!(options.inPrivate || options.incognito || options.private);
+          const rawUrl = String(event.data.url || '').trim();
+          if (!inPrivate) {
+            replyOpen(
+              timestamp,
+              false,
+              'LinkNest Bookmark Sync opens links in Incognito / InPrivate only. Install Browser Launcher Pro to open in other browsers.'
+            );
+            return;
+          }
+          if (!isContextValid()) {
+            replyOpen(timestamp, false, RELOAD_MSG);
+            return;
+          }
+          try {
+            const parsed = new URL(rawUrl);
+            if (parsed.protocol !== 'http:' && parsed.protocol !== 'https:') {
+              replyOpen(timestamp, false, 'Only http(s) URLs can open in Incognito / InPrivate');
+              return;
+            }
+          } catch (_err) {
+            replyOpen(timestamp, false, 'Invalid URL');
+            return;
+          }
+          chrome.runtime.sendMessage(
+            { action: 'openInIncognito', url: rawUrl },
+            function (response) {
+              if (!isContextValid()) {
+                replyOpen(timestamp, false, RELOAD_MSG);
+                return;
+              }
+              if (chrome.runtime.lastError) {
+                replyOpen(timestamp, false, chrome.runtime.lastError.message || OPEN_INCOGNITO_HINT);
+                return;
+              }
+              if (response && response.success) {
+                replyOpen(timestamp, true, undefined, response.message || 'Opened in Incognito / InPrivate');
+              } else {
+                replyOpen(
+                  timestamp,
+                  false,
+                  (response && response.error) || OPEN_INCOGNITO_HINT
+                );
+              }
+            }
+          );
           return;
         }
 

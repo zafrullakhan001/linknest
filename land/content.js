@@ -10,12 +10,13 @@ chrome.runtime.onMessage.addListener(function (request, sender, sendResponse) {
   if (typeof window !== 'undefined') {
     window.BrowserLauncherProExtension = {
       available: true,
-      version: '3.0'
+      version: '3.2',
+      features: ['launch', 'incognito', 'bookmarks']
     };
 
     // Also dispatch a custom event
     window.dispatchEvent(new CustomEvent('BrowserLauncherProReady', {
-      detail: { version: '3.0' }
+      detail: { version: '3.2', features: ['launch', 'incognito', 'bookmarks'] }
     }));
   }
 })();
@@ -24,7 +25,7 @@ chrome.runtime.onMessage.addListener(function (request, sender, sendResponse) {
 window.addEventListener('message', function (event) {
   // Security: Only accept messages with the expected type
   if (event.data && event.data.type === 'BROWSER_LAUNCHER_OPEN') {
-    const { url, browserId, timestamp } = event.data;
+    const { url, browserId, timestamp, options } = event.data;
 
     // Validate URL
     try {
@@ -51,7 +52,8 @@ window.addEventListener('message', function (event) {
     chrome.runtime.sendMessage({
       action: 'openLinkInBrowser',
       url: url,
-      browserId: browserId
+      browserId: browserId,
+      inPrivate: !!(options && (options.inPrivate || options.incognito || options.private))
     }, (response) => {
       // Log the result but don't send another response to page
       // (we already sent an immediate response above)
@@ -72,7 +74,9 @@ window.addEventListener('message', function (event) {
     window.postMessage({
       type: 'BROWSER_LAUNCHER_CHECK_RESPONSE',
       available: true,
-      version: '3.0',
+      version: '3.2',
+      name: 'Browser Launcher Pro',
+      features: ['launch', 'incognito', 'bookmarks', 'bookmarksWrite', 'browsers'],
       timestamp: event.data.timestamp
     }, '*');
   }

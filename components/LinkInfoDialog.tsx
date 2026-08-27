@@ -4,6 +4,7 @@ import { useSettings } from '../contexts/SettingsContext';
 import { getDisplayUrl } from '../utils/urlDisplay';
 import { tryHandleSshLinkClick } from '../utils/sshLink';
 import { tryHandleVncLinkClick } from '../utils/vncLink';
+import { openLinkUrl, normalizeLinkOpenTarget, prepareSeparateWindowIfNeeded, assignUrlToWindow } from '../utils/openLinkUrl';
 import { linkifyHtml } from '../utils/richTextDisplay';
 import { useAccessRestrictionGate } from '../contexts/AccessRestrictionContext';
 import { toSpeakableText, useReadAloud } from '../hooks/useReadAloud';
@@ -20,6 +21,7 @@ interface LinkInfoDialogProps {
   richTextContent: string;
   linkUrl?: string;
   browser?: string;
+  openTarget?: string;
 }
 
 const SECTION_EMOJIS: Array<{ match: RegExp; emoji: string }> = [
@@ -90,6 +92,7 @@ export const LinkInfoDialog: React.FC<LinkInfoDialogProps> = ({
   richTextContent,
   linkUrl,
   browser,
+  openTarget,
 }) => {
   const { settings } = useSettings();
   const { assertCanOpen } = useAccessRestrictionGate();
@@ -149,22 +152,31 @@ export const LinkInfoDialog: React.FC<LinkInfoDialogProps> = ({
     return shortAliases[normalized] || browserId;
   };
 
-  const openLinkInBrowser = (url: string, browserId: string) => {
+  const openLinkInBrowser = (url: string, browserId: string, opts?: { inPrivate?: boolean }) => {
     if (typeof window !== 'undefined' && (window as any).BrowserLauncher) {
       const BrowserLauncher = (window as any).BrowserLauncher;
       if (settings.browser_extension_id) {
         BrowserLauncher.setExtensionId(settings.browser_extension_id);
       }
       const normalizedBrowserId = normalizeBrowserId(browserId);
-      BrowserLauncher.open(url, normalizedBrowserId, { fallback: true }, (response: any) => {
+      BrowserLauncher.open(url, normalizedBrowserId, { fallback: true, inPrivate: !!opts?.inPrivate }, (response: any) => {
         if (!(response && response.success !== false)) {
-          window.open(url, '_blank', 'noopener,noreferrer');
+          openLinkUrl(url, opts?.inPrivate ? 'private' : 'tab', {
+            browserId: normalizedBrowserId,
+            extensionId: settings.browser_extension_id,
+          });
         }
       }).catch(() => {
-        window.open(url, '_blank', 'noopener,noreferrer');
+        openLinkUrl(url, opts?.inPrivate ? 'private' : 'tab', {
+          browserId: normalizedBrowserId,
+          extensionId: settings.browser_extension_id,
+        });
       });
     } else {
-      window.open(url, '_blank', 'noopener,noreferrer');
+      openLinkUrl(url, opts?.inPrivate ? 'private' : 'tab', {
+        browserId,
+        extensionId: settings.browser_extension_id,
+      });
     }
   };
 
@@ -367,14 +379,26 @@ export const LinkInfoDialog: React.FC<LinkInfoDialogProps> = ({
                     e.stopPropagation();
                     if (tryHandleSshLinkClick(linkUrl, e)) return;
                     if (tryHandleVncLinkClick(linkUrl, e)) return;
+                    const pendingWindow = prepareSeparateWindowIfNeeded(openTarget);
                     if (linkId) {
                       const allowed = await assertCanOpen('link', linkId);
-                      if (!allowed) return;
+                      if (!allowed) {
+                        try { pendingWindow?.close(); } catch { /* ignore */ }
+                        return;
+                      }
                     }
                     if (settings.browser_specific_links_enabled === '1' && browser && browser !== 'default') {
-                      openLinkInBrowser(linkUrl, browser);
+                      try { pendingWindow?.close(); } catch { /* ignore */ }
+                      openLinkInBrowser(linkUrl, browser, {
+                        inPrivate: normalizeLinkOpenTarget(openTarget) === 'private',
+                      });
+                    } else if (pendingWindow) {
+                      assignUrlToWindow(pendingWindow, linkUrl);
                     } else {
-                      window.open(linkUrl, '_blank', 'noopener,noreferrer');
+                      openLinkUrl(linkUrl, openTarget, {
+                        browserId: browser && browser !== 'default' ? browser : null,
+                        extensionId: settings.browser_extension_id,
+                      });
                     }
                   }}
                   className="px-4 py-2 bg-slate-100 hover:bg-slate-200 dark:bg-slate-700 dark:hover:bg-slate-600 text-slate-700 dark:text-slate-200 rounded-lg text-sm font-medium transition-colors flex items-center gap-2"

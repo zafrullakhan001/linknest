@@ -1450,6 +1450,54 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
   // Handle link opening from third-party landing pages
   if (request.action === 'openLinkInBrowser') {
     const { url, browserId } = request;
+    const inPrivate = !!(request.inPrivate || request.incognito || (request.options && (request.options.inPrivate || request.options.incognito)));
+
+    const privateFlagForBrowser = (id) => {
+      const key = String(id || '').toLowerCase();
+      if (key.includes('edge')) return '--inprivate';
+      if (key.includes('firefox')) return '--private-window';
+      if (key.includes('opera')) return '--private';
+      return '--incognito'; // chrome, brave, default
+    };
+
+    const openCurrentBrowserIncognito = (targetUrl, done) => {
+      try {
+        const parsed = new URL(targetUrl);
+        if (parsed.protocol !== 'http:' && parsed.protocol !== 'https:') {
+          done({ success: false, error: 'Only http(s) URLs can open in Incognito / InPrivate' });
+          return;
+        }
+      } catch (_err) {
+        done({ success: false, error: 'Invalid URL' });
+        return;
+      }
+      chrome.windows.create({ url: targetUrl, incognito: true }, (win) => {
+        if (chrome.runtime.lastError) {
+          const msg = chrome.runtime.lastError.message || 'Failed to open Incognito window';
+          const hint =
+            /incognito/i.test(msg)
+              ? ' Enable “Allow in Incognito” for Browser Launcher Pro in chrome://extensions (or edge://extensions), then try again.'
+              : '';
+          done({ success: false, error: msg + hint });
+          return;
+        }
+        done({ success: true, message: 'Opened in Incognito / InPrivate window', windowId: win && win.id });
+      });
+    };
+
+    const idKey = String(browserId || '').toLowerCase().trim();
+    const useCurrentIncognito =
+      inPrivate &&
+      (!idKey ||
+        idKey === 'default' ||
+        idKey === 'current' ||
+        idKey === 'this' ||
+        idKey === 'same');
+
+    if (useCurrentIncognito) {
+      openCurrentBrowserIncognito(url, sendResponse);
+      return true;
+    }
 
     // Map browserId to command setting
     const browserMap = {
@@ -1467,14 +1515,21 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
       'chrome-dev': 'wslChromeDevPath',
       'firefox': 'wslFirefoxPath',
       'opera': 'wslOperaPath',
-      'brave': 'wslBravePath'
+      'brave': 'wslBravePath',
+      // Friendly aliases from the page bridge
+      'edge': 'edgeStablePath',
+      'chrome': 'chromeStablePath'
     };
 
-    const commandSetting = browserMap[browserId];
+    const commandSetting = browserMap[browserId] || browserMap[idKey];
 
     // Function to execute the browser opening
     const executeOpen = async (command, isWsl) => {
       if (!command || command === 'NA') {
+        if (inPrivate) {
+          openCurrentBrowserIncognito(url, sendResponse);
+          return;
+        }
         sendResponse({
           success: false,
           error: 'Browser path not configured for ' + browserId
@@ -1482,13 +1537,19 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
         return;
       }
 
+      const privateFlag = inPrivate ? privateFlagForBrowser(browserId || idKey) : '';
+
       // Prepare command based on WSL or local
       let finalCommand;
       if (isWsl) {
         finalCommand = await prepareWSLCommand(command);
-        finalCommand = `${finalCommand} "${url}"`;
+        finalCommand = privateFlag
+          ? `${finalCommand} ${privateFlag} "${url}"`
+          : `${finalCommand} "${url}"`;
       } else {
-        finalCommand = `"${command}" "${url}"`;
+        finalCommand = privateFlag
+          ? `"${command}" ${privateFlag} "${url}"`
+          : `"${command}" "${url}"`;
       }
 
       console.log('Opening link in browser:', finalCommand);
@@ -1502,8 +1563,14 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
       }, (response) => {
         if (chrome.runtime.lastError) {
           console.error('Native messaging error:', chrome.runtime.lastError.message);
+          if (inPrivate) {
+            openCurrentBrowserIncognito(url, () => {});
+          }
         } else if (response && response.result && response.result.startsWith("Error:")) {
           console.error('Browser launch error:', response.result);
+          if (inPrivate) {
+            openCurrentBrowserIncognito(url, () => {});
+          }
         } else {
           console.log('Browser launched successfully');
         }
@@ -1511,9 +1578,10 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
     };
 
     if (commandSetting) {
-      // Standard browser
+      // Standard browser (local path keys are not always wsl-prefixed)
       chrome.storage.local.get([commandSetting], function (result) {
-        executeOpen(result[commandSetting], commandSetting.startsWith('wsl'));
+        const isWsl = commandSetting.startsWith('wsl') || String(browserId || '').includes('wsl');
+        executeOpen(result[commandSetting], isWsl);
       });
     } else {
       // Check for custom browser
@@ -1529,6 +1597,8 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
           // Determine if WSL based on platform setting or path
           const isWsl = customBrowser.platform === 'wsl' || (customBrowser.path && customBrowser.path.startsWith('/'));
           executeOpen(customBrowser.path, isWsl);
+        } else if (inPrivate) {
+          openCurrentBrowserIncognito(url, sendResponse);
         } else {
           sendResponse({
             success: false,

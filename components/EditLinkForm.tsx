@@ -1,6 +1,7 @@
 import React, { useCallback, useEffect, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
-import type { AccessRestrictions, Link, LinkVisibility } from '../types';
+import type { AccessRestrictions, Link, LinkOpenTarget, LinkVisibility } from '../types';
+import { normalizeLinkOpenTarget } from '../utils/openLinkUrl';
 import type { UserListItem } from '../services/authService';
 import { hasAccessRestrictions } from '../services/accessRestrictionService';
 import { AccessRestrictionsEditor, AccessRestrictionsBadge } from './AccessRestrictionsEditor';
@@ -118,6 +119,7 @@ export type EditLinkDraft = {
   tooltipStyle: LinkTooltipStyle;
   notesEnabled: boolean;
   browser: string;
+  openTarget: LinkOpenTarget;
   richTextContent: string;
   richTextEnabled: boolean;
   animation: string;
@@ -129,7 +131,7 @@ export type EditLinkDraft = {
 
 type EditLinkField =
   | 'label' | 'url' | 'icon' | 'textColor' | 'visibility' | 'allowedUsers' | 'allowedGroups'
-  | 'notes' | 'tooltip' | 'tooltipStyle' | 'notesEnabled' | 'browser' | 'richTextContent'
+  | 'notes' | 'tooltip' | 'tooltipStyle' | 'notesEnabled' | 'browser' | 'openTarget' | 'richTextContent'
   | 'richTextEnabled' | 'animation' | 'published' | 'inheritShortUrls' | 'maintenanceEnabled'
   | 'maintenanceMessage' | 'maintenanceVideoUrl';
 
@@ -880,6 +882,44 @@ export const EditLinkForm: React.FC<EditLinkFormProps> = (props) => {
         onChange={(value) => onUpdateField('label', value)}
       />
       {urlField}
+      <div>
+        <label className="block text-xs font-semibold uppercase tracking-wider text-slate-600 dark:text-slate-400 mb-1.5">
+          Open URL in
+        </label>
+        <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
+          {([
+            { value: 'same' as const, label: 'Same window' },
+            { value: 'tab' as const, label: 'New tab' },
+            { value: 'window' as const, label: 'New window' },
+            { value: 'private' as const, label: 'InPrivate / Incognito' },
+          ]).map((opt) => {
+            const selected = normalizeLinkOpenTarget(draft.openTarget) === opt.value;
+            return (
+              <label
+                key={opt.value}
+                className={`flex items-center gap-2 cursor-pointer rounded-lg border-2 px-3 py-2 transition-colors ${
+                  selected
+                    ? 'border-brand-500 bg-brand-50 dark:bg-brand-950/40 text-brand-800 dark:text-brand-200'
+                    : 'border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-900 text-slate-700 dark:text-slate-300 hover:border-slate-300 dark:hover:border-slate-600'
+                }`}
+              >
+                <input
+                  type="radio"
+                  name={`openTarget-${link.id}`}
+                  value={opt.value}
+                  checked={selected}
+                  onChange={() => onUpdateField('openTarget', opt.value)}
+                  className="w-4 h-4 text-brand-600 focus:ring-brand-500 focus:ring-2"
+                />
+                <span className="text-sm font-medium">{opt.label}</span>
+              </label>
+            );
+          })}
+        </div>
+        <p className="text-[10px] text-slate-500 dark:text-slate-400 mt-1">
+          InPrivate / Incognito needs the Browser Launcher extension. Browser-launcher overrides still open an external browser.
+        </p>
+      </div>
       <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
         <div className="relative">
           <label className="block text-xs font-semibold uppercase tracking-wider text-slate-600 dark:text-slate-400 mb-1.5">Emoji</label>

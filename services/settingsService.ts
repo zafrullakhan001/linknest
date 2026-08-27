@@ -116,6 +116,13 @@ export interface AppSettings {
   footer_font_color?: string;
   footer_font_color_dark?: string;
   guest_access_enabled?: string; // '0' or '1' - controls whether guests can view spaces
+  /**
+   * '0' or '1' - when '1', only browsers whose fingerprint hash is in fingerprint_lock_hashes
+   * may use the app (guests and signed-in non-admins). Administrators always bypass.
+   */
+  fingerprint_lock_enabled?: string;
+  /** JSON array or newline-separated lnfp_/hex hashes (admin only; blanked for public GET). */
+  fingerprint_lock_hashes?: string;
   /** '0' or '1' - when '0', hide Sign up on the login dialog and reject POST /auth/register. Admins can still create local users. */
   local_registration_enabled?: string;
   /** '0' or '1' - when '0', hide the Sign In button in the UI. Login still opens via #/signin or ?signin in the URL. */
@@ -370,6 +377,8 @@ export const settingsService = {
       footer_font_color: data.settings?.footer_font_color || '',
       footer_font_color_dark: data.settings?.footer_font_color_dark || '',
       guest_access_enabled: data.settings?.guest_access_enabled || '1', // Default to enabled
+      fingerprint_lock_enabled: data.settings?.fingerprint_lock_enabled === '1' ? '1' : '0',
+      fingerprint_lock_hashes: data.settings?.fingerprint_lock_hashes || '',
       local_registration_enabled: data.settings?.local_registration_enabled || '1', // Default to enabled
       signin_button_enabled: data.settings?.signin_button_enabled || '1', // Default to show Sign In
       hide_unique_visitors_public: data.settings?.hide_unique_visitors_public === '1' ? '1' : '0',

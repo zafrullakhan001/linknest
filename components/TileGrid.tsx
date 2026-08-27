@@ -38,6 +38,7 @@ import { useMobile } from '../hooks/useMobile';
 import { useEscapeToClose } from '../hooks/useEscapeToClose';
 import { viewerLinkDisplay, viewerLinkUrl } from '../utils/urlDisplay';
 import { tryHandleSshLinkClick, isSshLinkUrl } from '../utils/sshLink';
+import { openLinkUrl, normalizeLinkOpenTarget, prepareSeparateWindowIfNeeded, assignUrlToWindow } from '../utils/openLinkUrl';
 import { tryHandleVncLinkClick, isVncLinkUrl } from '../utils/vncLink';
 import { isUrlExcludedFromLinkCheck, parseExceptionsSetting } from '../services/linkCheckExceptionsService';
 import { diagnoseLinkUrl, hasBlockingUrlIssues } from '../utils/urlDiagnostics';
@@ -5962,23 +5963,29 @@ You may also wrap the array in an object: { "messages": [ ... ] }.
   };
 
   // Function to open link in a specific browser
-  const openLinkInBrowser = (url: string, browserId: string) => {
+  const openLinkInBrowser = (url: string, browserId: string, opts?: { inPrivate?: boolean }) => {
     if (typeof window !== 'undefined' && (window as any).BrowserLauncher) {
       const BrowserLauncher = (window as any).BrowserLauncher;
       if (settings.browser_extension_id) {
         BrowserLauncher.setExtensionId(settings.browser_extension_id);
       }
       const normalizedBrowserId = normalizeBrowserId(browserId);
-      BrowserLauncher.open(url, normalizedBrowserId, { fallback: true }, (response: any) => {
+      BrowserLauncher.open(url, normalizedBrowserId, { fallback: true, inPrivate: !!opts?.inPrivate }, (response: any) => {
         if (response && response.success !== false) {
           // Success
         } else {
           console.warn('BrowserLauncher failed, falling back to default behavior');
-          window.open(url, '_blank', 'noopener,noreferrer');
+          openLinkUrl(url, opts?.inPrivate ? 'private' : 'tab', {
+            browserId: normalizedBrowserId,
+            extensionId: settings.browser_extension_id,
+          });
         }
       });
     } else {
-      window.open(url, '_blank', 'noopener,noreferrer');
+      openLinkUrl(url, opts?.inPrivate ? 'private' : 'tab', {
+        browserId,
+        extensionId: settings.browser_extension_id,
+      });
     }
   };
 
@@ -9980,14 +9987,20 @@ You may also wrap the array in an object: { "messages": [ ... ] }.
                       onClick={async (e) => {
                         if (tryHandleSshLinkClick(link.url, e)) return;
                         if (tryHandleVncLinkClick(link.url, e)) return;
+                        const pendingWindow = prepareSeparateWindowIfNeeded((link as Link).openTarget);
+                        const closePending = () => {
+                          try { pendingWindow?.close(); } catch { /* ignore */ }
+                        };
                         const allowed = await assertCanOpen('link', link.id);
                         if (!allowed) {
+                          closePending();
                           e.preventDefault();
                           e.stopPropagation();
                           return;
                         }
 
                         if (isLinkInMaintenance(link)) {
+                          closePending();
                           e.preventDefault();
                           e.stopPropagation();
                           setLinkMaintenanceDialog({ link: link as Link });
@@ -9996,6 +10009,7 @@ You may also wrap the array in an object: { "messages": [ ... ] }.
 
                         // If Ctrl/Cmd key is held, always open in default browser (override configured browser)
                         if (e.ctrlKey || e.metaKey) {
+                          closePending();
                           e.preventDefault();
                           e.stopPropagation();
                           // If rich text content exists, still show dialog on Ctrl/Cmd
@@ -10003,13 +10017,14 @@ You may also wrap the array in an object: { "messages": [ ... ] }.
                             setLinkInfoDialog({ link: link as Link });
                             return;
                           }
-                          const newWindow = window.open(link.url, '_blank', 'noopener,noreferrer');
+                          const newWindow = openLinkUrl(link.url, 'tab', { focus: true });
                           if (newWindow) newWindow.focus();
                           return;
                         }
 
                         // If link has rich text content, show dialog instead of opening URL
                         if (shouldOpenInfoDialog(link)) {
+                          closePending();
                           e.preventDefault();
                           e.stopPropagation();
                           setLinkInfoDialog({ link: link as Link });
@@ -10017,14 +10032,26 @@ You may also wrap the array in an object: { "messages": [ ... ] }.
                         }
 
                         if (settings.browser_specific_links_enabled === '1' && browserToUse) {
+                          closePending();
                           e.preventDefault();
                           e.stopPropagation();
-                          openLinkInBrowser(link.url, browserToUse);
+                          openLinkInBrowser(link.url, browserToUse, {
+                            inPrivate: normalizeLinkOpenTarget((link as Link).openTarget) === 'private',
+                          });
                           return;
                         }
 
                         // Default behavior
-                        window.open(link.url, '_blank');
+                        e.preventDefault();
+                        e.stopPropagation();
+                        if (pendingWindow) {
+                          assignUrlToWindow(pendingWindow, link.url);
+                          return;
+                        }
+                        openLinkUrl(link.url, (link as Link).openTarget, {
+                          browserId: browserToUse,
+                          extensionId: settings.browser_extension_id,
+                        });
                       }}
                     >
                       {/* Health Status Indicator (HTTP(S) only — skip ssh:// / vnc://) */}
@@ -14528,6 +14555,7 @@ You may also wrap the array in an object: { "messages": [ ... ] }.
             richTextContent={linkInfoDialog.link.richTextContent || ''}
             linkUrl={linkInfoDialog.link.url}
             browser={linkInfoDialog.link.browser}
+            openTarget={linkInfoDialog.link.openTarget}
           />
         </Suspense>
       )}

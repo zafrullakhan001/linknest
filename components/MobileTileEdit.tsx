@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import { Tile, Tab, LinkSection, Link, LinkVisibility, TileVisibility, ThemeColor, THEME_COLORS, COLOR_STYLES, AccessRestrictions } from '../types';
+import { Tile, Tab, LinkSection, Link, LinkVisibility, LinkOpenTarget, TileVisibility, ThemeColor, THEME_COLORS, COLOR_STYLES, AccessRestrictions } from '../types';
 import { User } from '../services/authService';
 import { AppSettings } from '../services/settingsService';
 import { MobileRichTextEditor } from './MobileRichTextEditor';
@@ -15,6 +15,7 @@ import { isInfoContentEnabled, isNotesTooltipEnabled } from '../utils/linkFeatur
 import { LinkTooltipStyleToggle } from './LinkTooltipStyleToggle';
 import { HoverTooltipEditor } from './HoverTooltipEditor';
 import { normalizeLinkTooltipStyle, type LinkTooltipStyle } from '../utils/linkTooltipPreference';
+import { normalizeLinkOpenTarget } from '../utils/openLinkUrl';
 
 interface MobileTileEditProps {
     tile: Tile;
@@ -115,6 +116,7 @@ export const MobileTileEdit: React.FC<MobileTileEditProps> = ({
         tooltipStyle: LinkTooltipStyle;
         notesEnabled: boolean;
         browser: string;
+        openTarget: LinkOpenTarget;
         richTextContent: string;
         richTextEnabled: boolean;
         maintenanceEnabled: boolean;
@@ -134,6 +136,7 @@ export const MobileTileEdit: React.FC<MobileTileEditProps> = ({
         tooltipStyle: LinkTooltipStyle;
         notesEnabled: boolean;
         browser: string;
+        openTarget: LinkOpenTarget;
         richTextContent: string;
         richTextEnabled: boolean;
         maintenanceEnabled: boolean;
@@ -251,6 +254,7 @@ export const MobileTileEdit: React.FC<MobileTileEditProps> = ({
             tooltipStyle: normalizeLinkTooltipStyle(state.tooltipStyle),
             notesEnabled: state.notesEnabled === true,
             browser: state.browser || 'default',
+            openTarget: normalizeLinkOpenTarget(state.openTarget),
             richTextContent: state.richTextContent || undefined,
             richTextEnabled: state.richTextEnabled === true,
             maintenanceEnabled: state.maintenanceEnabled === true,
@@ -285,6 +289,7 @@ export const MobileTileEdit: React.FC<MobileTileEditProps> = ({
                 tooltipStyle: 'classic',
                 notesEnabled: false,
                 browser: 'default',
+                openTarget: 'tab' as LinkOpenTarget,
                 richTextContent: '',
                 richTextEnabled: false,
                 maintenanceEnabled: false,
@@ -315,6 +320,7 @@ export const MobileTileEdit: React.FC<MobileTileEditProps> = ({
                     tooltipStyle: normalizeLinkTooltipStyle(link.tooltipStyle),
                     notesEnabled: isNotesTooltipEnabled(link),
                     browser: link.browser || 'default',
+                    openTarget: normalizeLinkOpenTarget(link.openTarget),
                     richTextContent: link.richTextContent || '',
                     richTextEnabled: isInfoContentEnabled(link),
                     maintenanceEnabled: link.maintenanceEnabled === true,
@@ -357,6 +363,7 @@ export const MobileTileEdit: React.FC<MobileTileEditProps> = ({
                                             tooltipStyle: normalizeLinkTooltipStyle(state.tooltipStyle),
                                             notesEnabled: state.notesEnabled === true,
                                             browser: state.browser || 'default',
+                                            openTarget: normalizeLinkOpenTarget(state.openTarget),
                                             richTextContent: state.richTextContent || undefined,
                                             richTextEnabled: state.richTextEnabled === true,
                                             maintenanceEnabled: state.maintenanceEnabled === true,
@@ -404,6 +411,7 @@ export const MobileTileEdit: React.FC<MobileTileEditProps> = ({
         tooltipStyle: 'classic',
         notesEnabled: false,
         browser: 'default',
+        openTarget: 'tab',
         richTextContent: '',
         richTextEnabled: false,
         maintenanceEnabled: false,
@@ -427,6 +435,7 @@ export const MobileTileEdit: React.FC<MobileTileEditProps> = ({
         tooltipStyle: normalizeLinkTooltipStyle(state.tooltipStyle),
         notesEnabled: state.notesEnabled === true,
         browser: state.browser || 'default',
+        openTarget: normalizeLinkOpenTarget(state.openTarget),
         richTextContent: state.richTextContent || undefined,
         richTextEnabled: state.richTextEnabled === true,
         maintenanceEnabled: state.maintenanceEnabled === true,
@@ -480,6 +489,7 @@ export const MobileTileEdit: React.FC<MobileTileEditProps> = ({
                 tooltipStyle: normalizeLinkTooltipStyle(state.tooltipStyle),
                 notesEnabled: state.notesEnabled === true,
                 browser: state.browser || 'default',
+                openTarget: normalizeLinkOpenTarget(state.openTarget),
                 richTextContent: state.richTextContent || undefined,
                 richTextEnabled: state.richTextEnabled === true,
                 maintenanceEnabled: state.maintenanceEnabled === true,
@@ -593,6 +603,7 @@ export const MobileTileEdit: React.FC<MobileTileEditProps> = ({
                 tooltipStyle: 'classic',
                     notesEnabled: false,
                     browser: 'default',
+                    openTarget: 'tab' as LinkOpenTarget,
                     richTextContent: '',
                     richTextEnabled: false,
                     maintenanceEnabled: false,
@@ -620,6 +631,7 @@ export const MobileTileEdit: React.FC<MobileTileEditProps> = ({
                 tooltipStyle: 'classic',
                     notesEnabled: false,
                     browser: 'default',
+                    openTarget: 'tab' as LinkOpenTarget,
                     richTextContent: '',
                     richTextEnabled: false,
                     maintenanceEnabled: false,
@@ -1170,6 +1182,22 @@ export const MobileTileEdit: React.FC<MobileTileEditProps> = ({
                                                                 </div>
                                                                 <div>
                                                                     <label className="block text-xs font-semibold uppercase tracking-wider text-slate-600 dark:text-slate-400 mb-1.5">
+                                                                        Open URL in
+                                                                    </label>
+                                                                    <select
+                                                                        value={normalizeLinkOpenTarget(newLinkState[section.id]?.openTarget)}
+                                                                        onChange={(e) => updateNewLinkState(section.id, 'openTarget', e.target.value)}
+                                                                        className="w-full bg-white dark:bg-slate-900 border-2 border-slate-200 dark:border-slate-700 rounded-lg px-3 py-2.5 text-sm text-slate-900 dark:text-white focus:border-brand-500 focus:outline-none focus:ring-2 focus:ring-brand-500/50"
+                                                                        style={{ minHeight: '44px' }}
+                                                                    >
+                                                                        <option value="same">Same window</option>
+                                                                        <option value="tab">New tab</option>
+                                                                        <option value="window">New window</option>
+                                                                        <option value="private">InPrivate / Incognito</option>
+                                                                    </select>
+                                                                </div>
+                                                                <div>
+                                                                    <label className="block text-xs font-semibold uppercase tracking-wider text-slate-600 dark:text-slate-400 mb-1.5">
                                                                         Emoji
                                                                     </label>
                                                                     <input
@@ -1470,6 +1498,22 @@ export const MobileTileEdit: React.FC<MobileTileEditProps> = ({
                                                                                             className="w-full bg-white dark:bg-slate-900 border-2 border-slate-200 dark:border-slate-700 rounded-lg px-3 py-2.5 text-sm text-slate-900 dark:text-white focus:border-brand-500 focus:outline-none focus:ring-2 focus:ring-brand-500/50 font-mono"
                                                                                             style={{ minHeight: '44px' }}
                                                                                         />
+                                                                                    </div>
+                                                                                    <div>
+                                                                                        <label className="block text-xs font-semibold uppercase tracking-wider text-slate-600 dark:text-slate-400 mb-1.5">
+                                                                                            Open URL in
+                                                                                        </label>
+                                                                                        <select
+                                                                                            value={normalizeLinkOpenTarget(editLinkState[link.id]?.openTarget)}
+                                                                                            onChange={(e) => updateEditLinkState(link.id, 'openTarget', e.target.value)}
+                                                                                            className="w-full bg-white dark:bg-slate-900 border-2 border-slate-200 dark:border-slate-700 rounded-lg px-3 py-2.5 text-sm text-slate-900 dark:text-white focus:border-brand-500 focus:outline-none focus:ring-2 focus:ring-brand-500/50"
+                                                                                            style={{ minHeight: '44px' }}
+                                                                                        >
+                                                                                            <option value="same">Same window</option>
+                                                                                            <option value="tab">New tab</option>
+                                                                                            <option value="window">New window</option>
+                                                                                            <option value="private">InPrivate / Incognito</option>
+                                                                                        </select>
                                                                                     </div>
                                                                                     <div>
                                                                                         <label className="block text-xs font-semibold uppercase tracking-wider text-slate-600 dark:text-slate-400 mb-1.5">

@@ -10,6 +10,7 @@ import { StyleProvider, useStyles } from './contexts/StyleContext';
 import { AccessRestrictionProvider, useAccessRestrictionGate } from './contexts/AccessRestrictionContext';
 import { AuthModal } from './components/AuthModal';
 import { FingerprintUnlockPage } from './components/FingerprintUnlockPage';
+import { FingerprintLockPage } from './components/FingerprintLockPage';
 import { getDisabledTabsFromSettings } from './services/tabVisibilityService';
 import { MaintenancePage } from './components/MaintenancePage';
 import { BroadcastBanner } from './components/BroadcastBanner';
@@ -35,7 +36,11 @@ import { getMessages, isChatMessageUnread } from './services/chatService';
 import { useMobile } from './hooks/useMobile';
 import { getAllowedWidgets } from './services/widgetService';
 import { performanceAnalyticsService } from './services/performanceAnalyticsService';
-import { collectFingerprint } from './services/fingerprintService';
+import {
+  checkFingerprintLockGate,
+  collectFingerprint,
+  getFingerprintHash,
+} from './services/fingerprintService';
 import { recordAndGetPageVisits } from './services/pageVisitService';
 
 // Lazy load heavy components for better initial load performance
@@ -131,12 +136,16 @@ const AppContent: React.FC = () => {
   const celebrationContainerRef = useRef<HTMLDivElement>(null);
   const [databasePath, setDatabasePath] = useState<string>('');
   const [databasePathAbsolute, setDatabasePathAbsolute] = useState<string>('');
-  const { user, isAuthenticated, loading: authLoading } = useAuth();
+  const [fingerprintLockDenied, setFingerprintLockDenied] = useState<{ message: string; reason?: string | null } | null>(null);
+  const [fingerprintLockChecked, setFingerprintLockChecked] = useState(false);
+  const [fingerprintLockRetry, setFingerprintLockRetry] = useState(0);
+  const { user, isAuthenticated, loading: authLoading, logout } = useAuth();
   const { assertCanOpen } = useAccessRestrictionGate();
   const { updateStyles, styles } = useStyles();
   const { settings, loading: settingsLoading } = useSettings();
   const disabledTabs = useMemo(() => getDisabledTabsFromSettings(settings), [settings?.disabled_tabs]);
   const isMobile = useMobile(768); // Hide widgets on mobile devices (below 768px width)
+  const fingerprintLockEnabled = settings.fingerprint_lock_enabled === '1';
   
   // Allowed widgets state (for role-based widget filtering)
   const [allowedWidgetIds, setAllowedWidgetIds] = useState<Set<string>>(new Set());
@@ -453,6 +462,66 @@ const AppContent: React.FC = () => {
     const t = window.setTimeout(run, 1500);
     return () => window.clearTimeout(t);
   }, []);
+
+  // Site-wide fingerprint lock (Admin → Access → Fingerprint-only access)
+  useEffect(() => {
+    if (settingsLoading || authLoading) return;
+    if (!fingerprintLockEnabled) {
+      setFingerprintLockDenied(null);
+      setFingerprintLockChecked(true);
+      return;
+    }
+    // Admins always bypass — credentials work even when the browser hash is wrong/changed
+    if (user?.is_admin) {
+      setFingerprintLockDenied(null);
+      setFingerprintLockChecked(true);
+      return;
+    }
+    let cancelled = false;
+    setFingerprintLockChecked(false);
+    const run = async () => {
+      try {
+        let hash: string | undefined;
+        try {
+          hash = await getFingerprintHash({ accessCheck: true });
+        } catch {
+          hash = undefined;
+        }
+        const result = await checkFingerprintLockGate(hash);
+        if (cancelled) return;
+        if (result.allowed) {
+          setFingerprintLockDenied(null);
+        } else {
+          setFingerprintLockDenied({
+            message:
+              result.message ||
+              'This site is locked to specific browser fingerprints. Guests and public users without an allowed hash cannot access spaces. Administrators can still sign in with their username and password.',
+            reason: result.reason,
+          });
+          setTiles([]);
+          setLoading(false);
+        }
+      } catch {
+        if (!cancelled) {
+          setFingerprintLockDenied(null);
+        }
+      } finally {
+        if (!cancelled) setFingerprintLockChecked(true);
+      }
+    };
+    void run();
+    return () => {
+      cancelled = true;
+    };
+  }, [fingerprintLockEnabled, settingsLoading, authLoading, user?.is_admin, fingerprintLockRetry, isAuthenticated]);
+
+  // Clear lock UI immediately when an admin session becomes available
+  useEffect(() => {
+    if (user?.is_admin) {
+      setFingerprintLockDenied(null);
+      setFingerprintLockChecked(true);
+    }
+  }, [user?.is_admin]);
 
   // Fetch allowed widgets when user logs in or auth state changes
   useEffect(() => {
@@ -803,6 +872,15 @@ const AppContent: React.FC = () => {
       return;
     }
 
+    // Wait for fingerprint lock check; skip tile fetch when denied
+    if (fingerprintLockEnabled && (!fingerprintLockChecked || fingerprintLockDenied)) {
+      if (fingerprintLockDenied) {
+        setLoading(false);
+        setTiles([]);
+      }
+      return;
+    }
+
     let cancelled = false;
     const loadData = async () => {
       try {
@@ -821,6 +899,15 @@ const AppContent: React.FC = () => {
             return;
           }
         }
+        if (error?.response?.status === 403 && String(error?.message || '').toLowerCase().includes('fingerprint')) {
+          setTiles([]);
+          setFingerprintLockDenied({
+            message: error.message || 'Fingerprint lock denied',
+            reason: 'fingerprint',
+          });
+          setLoading(false);
+          return;
+        }
         console.error('Failed to load tiles:', error);
         setTiles([]);
         setAuthRequired(false);
@@ -838,7 +925,7 @@ const AppContent: React.FC = () => {
     return () => {
       cancelled = true;
     };
-  }, [isAuthenticated, guestAccessEnabled, settingsLoading, authLoading]);
+  }, [isAuthenticated, guestAccessEnabled, settingsLoading, authLoading, fingerprintLockEnabled, fingerprintLockChecked, fingerprintLockDenied]);
 
   // Allow widgets (e.g. SSH → create private space) to refresh the dashboard tile list
   useEffect(() => {
@@ -1239,6 +1326,63 @@ const AppContent: React.FC = () => {
   // Check maintenance mode - show maintenance page if enabled and user is not admin
   const maintenanceEnabled = settings?.maintenance_enabled === '1';
   const isAdmin = user?.is_admin === true;
+
+  // Site fingerprint lock — blocks guests and non-admin users without an allowlisted hash.
+  // Administrators always bypass (login with credentials works even with a mismatched hash).
+  if (
+    fingerprintLockEnabled &&
+    fingerprintLockDenied &&
+    !isAdmin &&
+    !authLoading &&
+    !settingsLoading &&
+    !route.startsWith('#/fp-unlock')
+  ) {
+    return (
+      <>
+        <FingerprintLockPage
+          message={fingerprintLockDenied.message}
+          appName={settings?.app_name || 'Application'}
+          showAdminLogin
+          onAdminLogin={() => {
+            const openLogin = () => {
+              setAuthModalMode('login');
+              setAuthModalOpen(true);
+            };
+            // Non-admin session must end before admin credentials can establish a bypass session
+            if (isAuthenticated && !user?.is_admin) {
+              void logout().then(openLogin).catch(openLogin);
+              return;
+            }
+            openLogin();
+          }}
+          onRetry={() => {
+            setFingerprintLockChecked(false);
+            setFingerprintLockRetry((n) => n + 1);
+          }}
+          onOpenFingerprintHelp={() => setHelpAboutOpen(true)}
+        />
+        <AuthModal
+          isOpen={authModalOpen}
+          onClose={() => {
+            setAuthModalOpen(false);
+            setAuthModalMode('login');
+            setAuthResetToken(null);
+          }}
+          initialMode={authModalMode}
+          resetToken={authResetToken}
+        />
+        {helpAboutOpen ? (
+          <Suspense fallback={null}>
+            <HelpAboutDialog
+              isOpen={helpAboutOpen}
+              onClose={() => setHelpAboutOpen(false)}
+              initialTab="fingerprint"
+            />
+          </Suspense>
+        ) : null}
+      </>
+    );
+  }
 
   if (maintenanceEnabled && !isAdmin && !authLoading && !settingsLoading) {
     return (

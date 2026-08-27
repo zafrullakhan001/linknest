@@ -29,7 +29,7 @@ const BRANDING_HYDRATE_KEYS = [
   'hero_bg_from', 'hero_bg_to', 'hero_bg_from_dark', 'hero_bg_to_dark', 'hero_bg_angle',
   'hero_overlay_color', 'hero_overlay_to', 'hero_overlay_opacity', 'hero_icon_bg_from', 'hero_icon_bg_to',
   'auth_wash_from', 'auth_wash_to', 'favicon',
-  'guest_access_enabled', 'signin_button_enabled', 'public_tile_animation', 'maintenance_enabled', 'maintenance_message',
+  'guest_access_enabled', 'fingerprint_lock_enabled', 'signin_button_enabled', 'public_tile_animation', 'maintenance_enabled', 'maintenance_message',
   'disabled_tabs', 'footer_text', 'footer_font_size', 'footer_font_family', 'footer_font_weight',
   'footer_font_style', 'footer_font_color', 'footer_font_color_dark',
   'show_database_path_in_footer', 'semi_pwa_enabled',

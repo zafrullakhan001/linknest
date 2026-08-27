@@ -8,6 +8,7 @@
  */
 
 require_once __DIR__ . '/config.php';
+require_once __DIR__ . '/fingerprint_lock_lib.php';
 
 $method = $_SERVER['REQUEST_METHOD'] ?? 'GET';
 $path = $_SERVER['PATH_INFO'] ?? $_SERVER['REDIRECT_PATH_INFO'] ?? '/';
@@ -22,8 +23,34 @@ if ($method === 'GET' && ($path === '/probe' || $path === 'probe')) {
     handleFingerprintLookup();
 } elseif ($method === 'POST' && ($path === '/register' || $path === 'register')) {
     handleFingerprintRegister();
+} elseif (($method === 'GET' || $method === 'POST') && ($path === '/gate' || $path === 'gate')) {
+    handleFingerprintGate();
 } else {
     sendJSON(['error' => 'Invalid endpoint'], 404);
+}
+
+/**
+ * GET|POST /api/fingerprint/gate — check site-wide fingerprint lock.
+ * Body/query may include fingerprintHash. Admins always allowed when lock is on.
+ */
+function handleFingerprintGate(): void {
+    $db = getDB();
+    $user = function_exists('getAuthenticatedUser') ? getAuthenticatedUser() : null;
+    $body = null;
+    if (($_SERVER['REQUEST_METHOD'] ?? '') === 'POST') {
+        $body = function_exists('getJSONInput') ? getJSONInput() : null;
+        if (!is_array($body)) {
+            $body = null;
+        }
+    }
+    $incoming = fingerprint_hash_from_request($body);
+    $result = fingerprint_lock_evaluate($user, $incoming, $db);
+    sendJSON([
+        'allowed' => !empty($result['allowed']),
+        'active' => !empty($result['active']),
+        'message' => $result['message'] ?? null,
+        'reason' => $result['reason'] ?? null,
+    ]);
 }
 
 function fingerprint_normalize_stored_hash($value): ?string {

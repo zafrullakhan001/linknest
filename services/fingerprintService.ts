@@ -1317,6 +1317,44 @@ export async function lookupFingerprintRegistry(hash: string): Promise<Fingerpri
   }
 }
 
+export interface FingerprintLockGateResult {
+  allowed: boolean;
+  active: boolean;
+  message?: string | null;
+  reason?: string | null;
+}
+
+/** Check site-wide fingerprint lock (Admin → Access → Fingerprint-only access). */
+export async function checkFingerprintLockGate(
+  fingerprintHash?: string | null
+): Promise<FingerprintLockGateResult> {
+  try {
+    const res = await fetch(`${API_BASE}/fingerprint/gate`, {
+      method: 'POST',
+      credentials: 'include',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ fingerprintHash: fingerprintHash || undefined }),
+    });
+    const data = (await res.json().catch(() => ({}))) as FingerprintLockGateResult & { error?: string };
+    if (!res.ok) {
+      return {
+        allowed: false,
+        active: true,
+        message: data.error || data.message || 'Fingerprint lock check failed',
+        reason: data.reason || 'error',
+      };
+    }
+    return {
+      allowed: data.allowed !== false,
+      active: !!data.active,
+      message: data.message ?? null,
+      reason: data.reason ?? null,
+    };
+  } catch {
+    return { allowed: true, active: false };
+  }
+}
+
 export async function registerFingerprintTag(
   hash: string,
   tag: string

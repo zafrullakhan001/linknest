@@ -138,7 +138,7 @@ if (!defined('SYSTEM_TOKEN')) {
 
 // Bump when schema/migrations in initDatabase() change. Enables fast-path getDB().
 if (!defined('LINKNEST_SCHEMA_VERSION')) {
-    define('LINKNEST_SCHEMA_VERSION', 97);
+    define('LINKNEST_SCHEMA_VERSION', 98);
 }
 
 function getSchemaPatchFlagPath(): string {
@@ -863,6 +863,58 @@ function persistLinkTooltipStyle(PDO $db, string $linkId, $source): void {
     $stmt->execute([linkTooltipStyleFromSource($source), $linkId]);
 }
 
+/** Per-link open target: same window, new tab (default), or separate browser window. */
+function ensureLinkOpenTargetColumn(PDO $db): void {
+    static $ensured = false;
+    if ($ensured) {
+        return;
+    }
+    try {
+        $exists = $db->query("SELECT name FROM sqlite_master WHERE type='table' AND name='links'")->fetchColumn();
+        if (!$exists) {
+            return;
+        }
+        $columns = $db->query('PRAGMA table_info(links)')->fetchAll(PDO::FETCH_ASSOC);
+        $names = array_column($columns, 'name');
+        if (!in_array('open_target', $names, true)) {
+            $db->exec("ALTER TABLE links ADD COLUMN open_target TEXT DEFAULT 'tab'");
+        }
+        $ensured = true;
+    } catch (PDOException $e) {
+        error_log('ensureLinkOpenTargetColumn warning: ' . $e->getMessage());
+    }
+}
+
+function normalizeLinkOpenTarget($value): string {
+    if ($value === 'same' || $value === 'window' || $value === 'private') {
+        return $value;
+    }
+    return 'tab';
+}
+
+function linkOpenTargetFromSource($source): string {
+    if (!is_array($source)) {
+        return 'tab';
+    }
+    if (array_key_exists('openTarget', $source)) {
+        return normalizeLinkOpenTarget($source['openTarget']);
+    }
+    if (array_key_exists('open_target', $source)) {
+        return normalizeLinkOpenTarget($source['open_target']);
+    }
+    return 'tab';
+}
+
+function applyLinkOpenTargetToApi(array &$link, array $row): void {
+    $link['openTarget'] = normalizeLinkOpenTarget($row['open_target'] ?? ($link['openTarget'] ?? null));
+}
+
+function persistLinkOpenTarget(PDO $db, string $linkId, $source): void {
+    ensureLinkOpenTargetColumn($db);
+    $stmt = $db->prepare('UPDATE links SET open_target = ? WHERE id = ?');
+    $stmt->execute([linkOpenTargetFromSource($source), $linkId]);
+}
+
 function linkToggleFromInput($link, string $jsKey, array $contentKeys): int {
     if (is_array($link) && array_key_exists($jsKey, $link)) {
         return !empty($link[$jsKey]) ? 1 : 0;
@@ -1446,6 +1498,7 @@ function initDatabase() {
             ensureInheritShortUrlsColumns($db);
             ensureLinkMaintenanceColumns($db);
             ensureLinkFeatureToggleColumns($db);
+            ensureLinkOpenTargetColumn($db);
             ensureMcpTokensTable($db);
             ensureCategoryVisibilityPresetsTable($db);
             ensureTilesVideoColumns($db);
@@ -1483,6 +1536,7 @@ function initDatabase() {
             ensureInheritShortUrlsColumns($db);
             ensureLinkMaintenanceColumns($db);
             ensureLinkFeatureToggleColumns($db);
+            ensureLinkOpenTargetColumn($db);
             ensureMcpTokensTable($db);
             ensureCategoryVisibilityPresetsTable($db);
             ensureTilesVideoColumns($db);
@@ -2480,6 +2534,7 @@ function initDatabase() {
 
         ensureLinkMaintenanceColumns($db);
         ensureLinkFeatureToggleColumns($db);
+        ensureLinkOpenTargetColumn($db);
         
         // Create rich_text_content table
         $db->exec('CREATE TABLE IF NOT EXISTS rich_text_content (

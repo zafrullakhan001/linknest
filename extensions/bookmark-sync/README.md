@@ -2,9 +2,9 @@
 
 A **minimal** Chrome / Edge extension that does what LinkNest **Sync** and **OutSync** need: read **this browser profile’s** bookmarks into Your Bookmarks, and push app links back into Chrome (new URLs in each LinkNest folder; URLs already in that folder are skipped).
 
-It is a stripped-down stand-in for **Browser Launcher Pro**. It does **not** launch other browsers, talk to a native host, or require a license.
+It is a stripped-down stand-in for **Browser Launcher Pro**. It does **not** launch other browsers, talk to a native host, or require a license. From **1.8.4** it can open http(s) links in **Incognito / InPrivate** in **this** browser when LinkNest requests private mode (allowlisted origin + **Allow in Incognito** enabled for the extension).
 
-Version **1.8.3** OutSyncs nested folders (`LinkNest → named folder → space`) and only skips a URL if it already exists in that destination folder. Version **1.8.2** can export a Netscape HTML + JSON backup of this profile’s bookmarks before OutSync Apply. Version **1.8.0** splits **Read-only** (Sync) and **Read-write** (OutSync) into separate toggles and stats. OutSync (app → browser) remains from 1.7. Security from 1.6 remains: origin allowlist, both modes **Off** by default, same-origin `postMessage`, and per-profile bookmark isolation.
+Version **1.8.4** adds Incognito / InPrivate open (`BROWSER_LAUNCHER_OPEN` with `inPrivate`). Version **1.8.3** OutSyncs nested folders (`LinkNest → named folder → space`) and only skips a URL if it already exists in that destination folder. Version **1.8.2** can export a Netscape HTML + JSON backup of this profile’s bookmarks before OutSync Apply. Version **1.8.0** splits **Read-only** (Sync) and **Read-write** (OutSync) into separate toggles and stats. OutSync (app → browser) remains from 1.7. Security from 1.6 remains: origin allowlist, both modes **Off** by default, same-origin `postMessage`, and per-profile bookmark isolation.
 
 ## What it does
 
@@ -13,6 +13,7 @@ Version **1.8.3** OutSyncs nested folders (`LinkNest → named folder → space`
 | `BROWSER_LAUNCHER_GET_BOOKMARKS` (Your Bookmarks / Fav Organizer **Sync**) | Yes, if the site is allowlisted and Read-only is On | Yes (3.1+ Bookmark Sync tab; Read-only defaults On; empty origin list allows all sites) |
 | `BROWSER_LAUNCHER_PUSH_BOOKMARKS` (Your Bookmarks **OutSync**) | Yes (v1.8+, Read-write On) | Yes (3.1+, Read-write On) |
 | `BROWSER_LAUNCHER_BACKUP_BOOKMARKS` (browser tree backup) | Yes (v1.8.2+, Read-only or Read-write On) | Yes (3.1+, Read-only or Read-write On) |
+| `BROWSER_LAUNCHER_OPEN` with `inPrivate` (Incognito / InPrivate) | Yes (v1.8.4+, allowlisted origin; enable **Allow in Incognito**) | Yes (CLI flags and/or current-browser Incognito window) |
 | Open links in another installed browser | No | Yes |
 | Native messaging / WSL / license | No | Yes |
 | Read another user’s PC or Chrome profile | No | No |

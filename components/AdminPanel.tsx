@@ -414,6 +414,8 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({ onUserApproved }) => {
     footer_font_color_dark: '',
     show_database_path_in_footer: '1',
     guest_access_enabled: '1',
+    fingerprint_lock_enabled: '0',
+    fingerprint_lock_hashes: '',
     local_registration_enabled: '1',
     signin_button_enabled: '1',
     hide_unique_visitors_public: '0',
@@ -12472,7 +12474,7 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({ onUserApproved }) => {
                         <div className={ADMIN_SECTION_CARD}>
                           <div className={ADMIN_SECTION_HEADER}>
                             <h3 className={ADMIN_SECTION_TITLE}><span aria-hidden>🔓</span> Guest Access</h3>
-                            <p className={ADMIN_SECTION_SUBTITLE}>Control guest visibility, Sign In button visibility, Unique Visitors on public Space Info, and local account creation.</p>
+                            <p className={ADMIN_SECTION_SUBTITLE}>Control guest visibility, fingerprint-only lock, Sign In button visibility, Unique Visitors on public Space Info, and local account creation.</p>
                           </div>
                           <div className="p-6">
                           <div className="space-y-4">
@@ -12507,6 +12509,85 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({ onUserApproved }) => {
                                   </button>
                                 </div>
                               </label>
+                            </div>
+
+                            <div className="pt-4 border-t border-slate-200 dark:border-slate-700 space-y-3">
+                              <label className="flex items-center justify-between cursor-pointer">
+                                <div className="flex-1">
+                                  <span className="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-1">
+                                    Fingerprint-only access
+                                  </span>
+                                  <span className="block text-xs text-slate-500 dark:text-slate-400">
+                                    When enabled, only browsers whose fingerprint hash is listed below can use the site — including guests and signed-in non-admins. Administrators can always sign in with their credentials even if the browser hash is wrong or changed. Copy hashes from Help &amp; About → Fingerprint. If you get locked out of the Admin UI, run <code className="bg-slate-100 dark:bg-slate-900 px-1 rounded">php scripts/unlock_fingerprint_lock.php --yes</code> on the server.
+                                  </span>
+                                </div>
+                                <div className="ml-4">
+                                  <button
+                                    type="button"
+                                    onClick={() => {
+                                      setSettings({
+                                        ...settings,
+                                        fingerprint_lock_enabled: settings.fingerprint_lock_enabled === '1' ? '0' : '1'
+                                      });
+                                    }}
+                                    className={`relative inline-flex h-6 w-11 items-center rounded-full transition-colors ${settings.fingerprint_lock_enabled === '1'
+                                      ? 'bg-sky-600'
+                                      : 'bg-slate-300 dark:bg-slate-600'
+                                      }`}
+                                  >
+                                    <span
+                                      className={`inline-block h-4 w-4 transform rounded-full bg-white transition-transform ${settings.fingerprint_lock_enabled === '1' ? 'translate-x-6' : 'translate-x-1'
+                                        }`}
+                                    />
+                                  </button>
+                                </div>
+                              </label>
+                              {(settings.fingerprint_lock_enabled === '1' || (settings.fingerprint_lock_hashes || '').trim() !== '') && (
+                                <label className="block text-xs font-medium text-slate-700 dark:text-slate-300">
+                                  Allowed fingerprint hashes (one per line)
+                                  <textarea
+                                    rows={4}
+                                    autoComplete="off"
+                                    spellCheck={false}
+                                    className="mt-1 w-full rounded-lg border border-slate-300 dark:border-slate-600 bg-white dark:bg-slate-900 px-3 py-2 text-xs font-mono text-slate-800 dark:text-slate-200"
+                                    placeholder={'lnfp_a1b2c3d4…\nlnfp_…'}
+                                    value={(() => {
+                                      const raw = settings.fingerprint_lock_hashes || '';
+                                      if (!raw.trim()) return '';
+                                      try {
+                                        const parsed = JSON.parse(raw);
+                                        if (Array.isArray(parsed)) return parsed.join('\n');
+                                      } catch {
+                                        /* plain text */
+                                      }
+                                      return raw;
+                                    })()}
+                                    onChange={(e) => {
+                                      setSettings({
+                                        ...settings,
+                                        fingerprint_lock_hashes: e.target.value,
+                                      });
+                                    }}
+                                  />
+                                  {settings.fingerprint_lock_enabled === '1' && !(settings.fingerprint_lock_hashes || '').trim() && (
+                                    <span className="mt-1 block text-xs text-amber-600 dark:text-amber-400">
+                                      Add at least one hash before enabling, or everyone except admins will be locked out.
+                                    </span>
+                                  )}
+                                </label>
+                              )}
+                              <div className="rounded-xl border border-amber-200 dark:border-amber-800/50 bg-amber-50/80 dark:bg-amber-950/20 p-3 text-left">
+                                <p className="text-xs font-semibold text-amber-900 dark:text-amber-200 mb-1">
+                                  Unlock if the hash changes or you cannot reach Admin
+                                </p>
+                                <p className="text-[11px] text-amber-900/90 dark:text-amber-300/90 leading-relaxed mb-2">
+                                  Admins sign in with username/password from the lock screen (hash is ignored for admins). From the server:
+                                </p>
+                                <pre className="text-[11px] font-mono bg-white/90 dark:bg-slate-950/50 border border-amber-200/70 dark:border-amber-800/40 rounded-lg px-2 py-1.5 overflow-x-auto text-slate-800 dark:text-slate-200">{`php scripts/unlock_fingerprint_lock.php --yes`}</pre>
+                                <p className="text-[11px] text-amber-800/80 dark:text-amber-400/80 mt-1.5">
+                                  Optional: <code className="px-1 rounded bg-white/70 dark:bg-slate-900/40">--clear-hashes</code> also clears the allowlist. See Help → Guides → Admin Password &amp; Lockout Recovery.
+                                </p>
+                              </div>
                             </div>
 
                             <div className="pt-4 border-t border-slate-200 dark:border-slate-700">

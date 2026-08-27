@@ -561,6 +561,59 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
     gateAndRun(sender, sendResponse, () => pushBookmarks(request), 'write');
     return true;
   }
+
+  if (request.action === 'openInIncognito' || request.action === 'openLinkInBrowser') {
+    const origin = senderPageOrigin(sender);
+    const url = String((request && request.url) || '').trim();
+    const inPrivate =
+      request.action === 'openInIncognito' ||
+      !!(request.inPrivate || request.incognito || (request.options && (request.options.inPrivate || request.options.incognito)));
+
+    isOriginAllowed(origin).then((allowed) => {
+      if (!allowed) {
+        sendResponse({ success: false, error: 'Origin is not allowlisted for this extension.' });
+        return;
+      }
+      if (!inPrivate) {
+        sendResponse({
+          success: false,
+          error:
+            'LinkNest Bookmark Sync opens links in Incognito / InPrivate only. Install Browser Launcher Pro to open in other browsers.'
+        });
+        return;
+      }
+      try {
+        const parsed = new URL(url);
+        if (parsed.protocol !== 'http:' && parsed.protocol !== 'https:') {
+          sendResponse({
+            success: false,
+            error: 'Only http(s) URLs can open in Incognito / InPrivate'
+          });
+          return;
+        }
+      } catch (_err) {
+        sendResponse({ success: false, error: 'Invalid URL' });
+        return;
+      }
+      chrome.windows.create({ url: url, incognito: true }, (win) => {
+        if (chrome.runtime.lastError) {
+          const msg = chrome.runtime.lastError.message || 'Failed to open Incognito window';
+          const hint =
+            /incognito/i.test(msg)
+              ? ' Enable “Allow in Incognito” for LinkNest Bookmark Sync in chrome://extensions (or edge://extensions), then try again.'
+              : '';
+          sendResponse({ success: false, error: msg + hint });
+          return;
+        }
+        sendResponse({
+          success: true,
+          message: 'Opened in Incognito / InPrivate window',
+          windowId: win && win.id
+        });
+      });
+    });
+    return true;
+  }
 });
 
 function restoreBranding() {

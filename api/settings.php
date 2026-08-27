@@ -365,6 +365,9 @@ function handleGetSettings() {
     if (!$hasSessionUser) {
         $cached = responseCacheGet('settings_public');
         if (is_array($cached)) {
+            if (array_key_exists('fingerprint_lock_hashes', $cached)) {
+                $cached['fingerprint_lock_hashes'] = '';
+            }
             foreach (['favicon', 'logo_image', 'header_logo_image'] as $assetKey) {
                 if (!empty($cached[$assetKey])) {
                     $cached[$assetKey] = normalizeLogoUrl($cached[$assetKey]);
@@ -383,6 +386,9 @@ function handleGetSettings() {
     if ($hasSessionUser && !$isAdmin) {
         $cached = responseCacheGet('settings_public');
         if (is_array($cached)) {
+            if (array_key_exists('fingerprint_lock_hashes', $cached)) {
+                $cached['fingerprint_lock_hashes'] = '';
+            }
             foreach (['favicon', 'logo_image', 'header_logo_image'] as $assetKey) {
                 if (!empty($cached[$assetKey])) {
                     $cached[$assetKey] = normalizeLogoUrl($cached[$assetKey]);
@@ -522,6 +528,10 @@ function handleGetSettings() {
     }
 
     if (!$isAdmin) {
+        // Do not expose the site fingerprint allowlist to guests / non-admins
+        if (array_key_exists('fingerprint_lock_hashes', $settings)) {
+            $settings['fingerprint_lock_hashes'] = '';
+        }
         responseCacheSet('settings_public', $settings);
         responseCacheHitHeader(false);
     }
@@ -834,6 +844,8 @@ function handleUpdateSettings() {
                 'footer_font_color',
                 'footer_font_color_dark',
                 'guest_access_enabled',
+                'fingerprint_lock_enabled',
+                'fingerprint_lock_hashes',
                 'local_registration_enabled',
                 'signin_button_enabled',
                 'hide_unique_visitors_public',
@@ -1188,6 +1200,32 @@ function handleUpdateSettings() {
 
             if ($key === 'iframe_block_domains') {
                 $value = normalizeIframeBlockDomainsSetting($value);
+            }
+
+            if ($key === 'fingerprint_lock_hashes') {
+                require_once __DIR__ . '/access_restrictions_lib.php';
+                if (is_array($value)) {
+                    $normalized = normalize_fingerprint_hash_list($value);
+                } elseif (is_string($value)) {
+                    $trimmed = trim($value);
+                    if ($trimmed === '') {
+                        $normalized = [];
+                    } else {
+                        $decoded = json_decode($trimmed, true);
+                        if (is_array($decoded)) {
+                            $normalized = normalize_fingerprint_hash_list($decoded);
+                        } else {
+                            $normalized = normalize_fingerprint_hash_list($trimmed);
+                        }
+                    }
+                } else {
+                    $normalized = [];
+                }
+                $value = json_encode(array_values($normalized));
+            }
+
+            if ($key === 'fingerprint_lock_enabled') {
+                $value = ($value === '1' || $value === 1 || $value === true || $value === 'true') ? '1' : '0';
             }
             
             // Store setting in database

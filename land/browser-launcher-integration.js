@@ -122,14 +122,14 @@
   }
 
   /**
-   * Open a URL in a specific browser via the extension
-   * 
-   * @param {string} url - The URL to open
-   * @param {string} browserId - Browser ID (e.g., 'chrome-stable', 'edge-beta')
-   * @param {Object} options - Optional settings
-   * @param {function} callback - Optional callback function
-   * @returns {Promise} Promise that resolves when the operation completes
-   */
+ * Open a URL in a specific browser via the extension
+ * 
+ * @param {string} url - The URL to open
+ * @param {string} browserId - Browser ID (e.g., 'chrome-stable', 'edge-beta')
+ * @param {Object} options - Optional settings (fallback, inPrivate / incognito)
+ * @param {function} callback - Optional callback function
+ * @returns {Promise} Promise that resolves when the operation completes
+ */
   function openInBrowser(url, browserId, options = {}, callback) {
     return new Promise((resolve, reject) => {
       // Validate URL
@@ -141,8 +141,15 @@
         return;
       }
 
-      // Normalize browser ID
-      const normalizedBrowserId = normalizeBrowserId(browserId);
+      const wantsPrivate = !!(options && (options.inPrivate || options.incognito || options.private));
+      // Incognito in the current browser: send default so Pro/Lite use windows.create
+      // instead of requiring a configured external browser path.
+      let normalizedBrowserId = wantsPrivate && (!browserId || browserId === 'default')
+        ? 'default'
+        : normalizeBrowserId(browserId);
+      if (!normalizedBrowserId && wantsPrivate) {
+        normalizedBrowserId = 'default';
+      }
       if (!normalizedBrowserId) {
         const error = 'Invalid browser ID: ' + browserId;
         logError(error);
@@ -151,7 +158,7 @@
         return;
       }
 
-      log('Opening URL in browser:', url, '->', normalizedBrowserId);
+      log('Opening URL in browser:', url, '->', normalizedBrowserId, wantsPrivate ? '(inPrivate)' : '');
 
       // Always try to send the message first - the content script might be available
       // even if the marker isn't set yet (race condition)
@@ -411,13 +418,20 @@
           event.data.type === 'BROWSER_LAUNCHER_CHECK_RESPONSE' &&
           event.data.timestamp === timestamp) {
           const features = event.data.features;
-          // Bookmark Sync Lite answers CHECK but cannot launch browsers.
+          // Bookmark Sync Lite answers CHECK but cannot launch other browsers.
+          // It may advertise `incognito` to open InPrivate / Incognito in this browser.
           // Legacy Pro omits features — treat as a full launcher.
           const canLaunch = !Array.isArray(features) ||
             features.indexOf('launch') !== -1 ||
             features.indexOf('open') !== -1 ||
             features.indexOf('browsers') !== -1;
-          if (!canLaunch) {
+          const canIncognito = Array.isArray(features) && features.indexOf('incognito') !== -1;
+          if (!canLaunch && !canIncognito) {
+            sawBookmarkOnly = true;
+            return;
+          }
+          if (!canLaunch && canIncognito) {
+            // Lite with Incognito only — not a full launcher for isAvailable().
             sawBookmarkOnly = true;
             return;
           }

@@ -1991,8 +1991,15 @@ docker\\docker-sync-database.bat -Direction Out -HostBasePath "/ArchLinks"`}</pr
                     Full walkthrough: <strong>Guides → Admin Password &amp; Lockout Recovery</strong>. The same steps appear under{' '}
                     <strong>Admin → Settings → Access → Sign-in → Lockout recovery</strong>.
                   </p>
+                  <div className="bg-sky-50 dark:bg-sky-900/20 rounded-lg p-4 space-y-2 border border-sky-200 dark:border-sky-800/50">
+                    <p className="font-medium text-sky-900 dark:text-sky-100">Fingerprint-only access lock:</p>
+                    <ul className="list-disc list-inside space-y-1 ml-2 text-sm">
+                      <li><strong>Administrators can always sign in</strong> with username/password even when this browser’s fingerprint hash is wrong or changed</li>
+                      <li>After sign-in, update hashes or turn the lock off under <strong>Admin → Settings → Access → Guest &amp; UI</strong> (server unlock steps are documented there for admins)</li>
+                    </ul>
+                  </div>
                   <div className="bg-rose-50 dark:bg-rose-900/20 rounded-lg p-4 space-y-2 border border-rose-200 dark:border-rose-800/50">
-                    <p className="font-medium text-rose-900 dark:text-rose-100">When to use it:</p>
+                    <p className="font-medium text-rose-900 dark:text-rose-100">When to use the password script:</p>
                     <ul className="list-disc list-inside space-y-1 ml-2 text-sm">
                       <li>Local admin password forgotten or unknown</li>
                       <li><strong>Local authentication</strong> was switched off and you cannot use LDAP/SAML either</li>

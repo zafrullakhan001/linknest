@@ -15,7 +15,7 @@ import {
     rectSortingStrategy,
     verticalListSortingStrategy,
 } from '@dnd-kit/sortable';
-import { Tile, Link, LinkSection, Tab, LinkVisibility, TileVisibility, COLOR_STYLES, THEME_COLORS, ThemeColor, TileMessage, AccessRestrictions, LinkRedirectHop } from '../types';
+import { Tile, Link, LinkSection, Tab, LinkVisibility, LinkOpenTarget, TileVisibility, COLOR_STYLES, THEME_COLORS, ThemeColor, TileMessage, AccessRestrictions, LinkRedirectHop } from '../types';
 import { linkHealthService, LinkHealthMap, isLikelyClientNetworkError, isNetworkHealthStatus, networkHealthResult } from '../services/linkHealthService';
 import { performanceAnalyticsService, type AnalyticsMetric } from '../services/performanceAnalyticsService';
 import { authService, UserListItem, User } from '../services/authService';
@@ -96,6 +96,7 @@ import { LinkUrlField } from './LinkUrlField';
 import { UrlProbeBadges } from './UrlProbeBadges';
 import { tryHandleSshLinkClick, isSshLinkUrl } from '../utils/sshLink';
 import { tryHandleVncLinkClick, isVncLinkUrl } from '../utils/vncLink';
+import { normalizeLinkOpenTarget, openLinkUrl, prepareSeparateWindowIfNeeded, assignUrlToWindow } from '../utils/openLinkUrl';
 import {
     coveringLinkCheckException,
     isUrlExcludedFromLinkCheck,
@@ -636,6 +637,7 @@ const cloneLinkItem = (link: Link, opts?: { appendCopyLabel?: boolean }): Link =
         ? { ...link.accessRestrictions, timeRules: link.accessRestrictions.timeRules ? [...link.accessRestrictions.timeRules] : undefined, hostRules: link.accessRestrictions.hostRules ? [...link.accessRestrictions.hostRules] : undefined, browsers: link.accessRestrictions.browsers ? [...link.accessRestrictions.browsers] : undefined, osAllow: link.accessRestrictions.osAllow ? [...link.accessRestrictions.osAllow] : undefined, countryAllow: link.accessRestrictions.countryAllow ? [...link.accessRestrictions.countryAllow] : undefined, countryDeny: link.accessRestrictions.countryDeny ? [...link.accessRestrictions.countryDeny] : undefined, referrerPatterns: link.accessRestrictions.referrerPatterns ? [...link.accessRestrictions.referrerPatterns] : undefined, vpn: link.accessRestrictions.vpn ? { ...link.accessRestrictions.vpn } : undefined }
         : undefined,
     browser: link.browser,
+    openTarget: link.openTarget,
     hasRoleAccess: link.hasRoleAccess === true ? true : undefined,
     position: link.position,
     animation: link.animation,
@@ -945,7 +947,7 @@ export const TileDetail: React.FC<TileDetailProps> = ({
     const [editSections, setEditSections] = useState<LinkSection[]>(tile.sections || []);
 
     // Temporary State for Adding Links (keyed by section ID)
-    const [newLinkState, setNewLinkState] = useState<Record<string, { label: string, url: string, icon: string, textColor: string, visibility: LinkVisibility, published: boolean, inheritShortUrls: boolean, allowedUsers: number[], allowedGroups: number[], notes: string, tooltip: string, tooltipStyle: LinkTooltipStyle, notesEnabled: boolean, browser: string, richTextContent: string, richTextEnabled: boolean, animation: string, accessRestrictions?: AccessRestrictions, maintenanceEnabled: boolean, maintenanceMessage: string, maintenanceVideoUrl: string }>>({});
+    const [newLinkState, setNewLinkState] = useState<Record<string, { label: string, url: string, icon: string, textColor: string, visibility: LinkVisibility, published: boolean, inheritShortUrls: boolean, allowedUsers: number[], allowedGroups: number[], notes: string, tooltip: string, tooltipStyle: LinkTooltipStyle, notesEnabled: boolean, browser: string, openTarget: LinkOpenTarget, richTextContent: string, richTextEnabled: boolean, animation: string, accessRestrictions?: AccessRestrictions, maintenanceEnabled: boolean, maintenanceMessage: string, maintenanceVideoUrl: string }>>({});
 
     // Selection State for Bulk Actions
     const [selectedLinkIds, setSelectedLinkIds] = useState<string[]>([]);
@@ -978,7 +980,7 @@ export const TileDetail: React.FC<TileDetailProps> = ({
         | null
     >(null);
     const [convertingTabSectionToSpace, setConvertingTabSectionToSpace] = useState(false);
-    const [editLinkState, setEditLinkState] = useState<Record<string, { label: string, url: string, icon: string, textColor: string, visibility: LinkVisibility, published: boolean, inheritShortUrls: boolean, allowedUsers: number[], allowedGroups: number[], notes: string, tooltip: string, tooltipStyle: LinkTooltipStyle, notesEnabled: boolean, browser: string, richTextContent: string, richTextEnabled: boolean, animation: string, accessRestrictions?: AccessRestrictions, maintenanceEnabled: boolean, maintenanceMessage: string, maintenanceVideoUrl: string }>>({});
+    const [editLinkState, setEditLinkState] = useState<Record<string, { label: string, url: string, icon: string, textColor: string, visibility: LinkVisibility, published: boolean, inheritShortUrls: boolean, allowedUsers: number[], allowedGroups: number[], notes: string, tooltip: string, tooltipStyle: LinkTooltipStyle, notesEnabled: boolean, browser: string, openTarget: LinkOpenTarget, richTextContent: string, richTextEnabled: boolean, animation: string, accessRestrictions?: AccessRestrictions, maintenanceEnabled: boolean, maintenanceMessage: string, maintenanceVideoUrl: string }>>({});
 
     // Available browsers from BrowserLauncher API
     const [availableBrowsers, setAvailableBrowsers] = useState<string[]>([]);
@@ -2725,6 +2727,7 @@ export const TileDetail: React.FC<TileDetailProps> = ({
         tooltipStyle: normalizeLinkTooltipStyle(state.tooltipStyle),
         notesEnabled: state.notesEnabled === true,
         browser: state.browser && state.browser !== 'default' ? state.browser : undefined,
+        openTarget: normalizeLinkOpenTarget(state.openTarget),
         richTextContent: state.richTextContent?.trim() || undefined,
         richTextEnabled: state.richTextEnabled === true,
         maintenanceEnabled: state.maintenanceEnabled === true,
@@ -2750,6 +2753,7 @@ export const TileDetail: React.FC<TileDetailProps> = ({
         tooltipStyle: normalizeLinkTooltipStyle(state.tooltipStyle),
         notesEnabled: state.notesEnabled === true,
         browser: state.browser && state.browser !== 'default' ? state.browser : undefined,
+        openTarget: normalizeLinkOpenTarget(state.openTarget),
         richTextContent: state.richTextContent?.trim() || undefined,
         richTextEnabled: state.richTextEnabled === true,
         maintenanceEnabled: state.maintenanceEnabled === true,
@@ -2776,6 +2780,7 @@ export const TileDetail: React.FC<TileDetailProps> = ({
         tooltipStyle: 'classic',
         notesEnabled: false,
         browser: 'default',
+        openTarget: 'tab',
         richTextContent: '',
         richTextEnabled: false,
         animation: 'inherit',
@@ -3885,11 +3890,11 @@ export const TileDetail: React.FC<TileDetailProps> = ({
     };
 
     // Link Management
-    const updateNewLinkState = (sectionId: string, field: 'label' | 'url' | 'icon' | 'textColor' | 'visibility' | 'allowedUsers' | 'allowedGroups' | 'notes' | 'tooltip' | 'tooltipStyle' | 'notesEnabled' | 'browser' | 'richTextContent' | 'richTextEnabled' | 'animation' | 'published' | 'inheritShortUrls' | 'maintenanceEnabled' | 'maintenanceMessage' | 'maintenanceVideoUrl', value: string | LinkVisibility | number[] | boolean) => {
+    const updateNewLinkState = (sectionId: string, field: 'label' | 'url' | 'icon' | 'textColor' | 'visibility' | 'allowedUsers' | 'allowedGroups' | 'notes' | 'tooltip' | 'tooltipStyle' | 'notesEnabled' | 'browser' | 'openTarget' | 'richTextContent' | 'richTextEnabled' | 'animation' | 'published' | 'inheritShortUrls' | 'maintenanceEnabled' | 'maintenanceMessage' | 'maintenanceVideoUrl', value: string | LinkVisibility | number[] | boolean) => {
         setNewLinkState(prev => ({
             ...prev,
             [sectionId]: {
-                ...(prev[sectionId] || { label: '', url: '', icon: '', textColor: '', visibility: 'public' as LinkVisibility, published: true, inheritShortUrls: true, allowedUsers: [], allowedGroups: [], notes: '', tooltip: '', tooltipStyle: 'classic' as LinkTooltipStyle, notesEnabled: false, browser: 'default', richTextContent: '', richTextEnabled: false, animation: 'inherit', maintenanceEnabled: false, maintenanceMessage: '', maintenanceVideoUrl: '' }),
+                ...(prev[sectionId] || { label: '', url: '', icon: '', textColor: '', visibility: 'public' as LinkVisibility, published: true, inheritShortUrls: true, allowedUsers: [], allowedGroups: [], notes: '', tooltip: '', tooltipStyle: 'classic' as LinkTooltipStyle, notesEnabled: false, browser: 'default', openTarget: 'tab' as LinkOpenTarget, richTextContent: '', richTextEnabled: false, animation: 'inherit', maintenanceEnabled: false, maintenanceMessage: '', maintenanceVideoUrl: '' }),
                 [field]: value
             }
         }));
@@ -4220,6 +4225,7 @@ export const TileDetail: React.FC<TileDetailProps> = ({
                 tooltipStyle: normalizeLinkTooltipStyle(link.tooltipStyle),
                 notesEnabled: isNotesTooltipEnabled(link),
                 browser: link.browser || 'default',
+                openTarget: normalizeLinkOpenTarget(link.openTarget),
                 richTextContent: link.richTextContent || '',
                 richTextEnabled: isInfoContentEnabled(link),
                 animation: linkAnimationForEdit(link.animation),
@@ -4774,7 +4780,7 @@ export const TileDetail: React.FC<TileDetailProps> = ({
         setLinkGroupSearch(prev => ({ ...prev, [linkId]: '' }));
     };
 
-    const updateEditLinkState = (linkId: string, field: 'label' | 'url' | 'icon' | 'textColor' | 'visibility' | 'allowedUsers' | 'allowedGroups' | 'notes' | 'tooltip' | 'tooltipStyle' | 'notesEnabled' | 'browser' | 'richTextContent' | 'richTextEnabled' | 'animation' | 'published' | 'inheritShortUrls' | 'maintenanceEnabled' | 'maintenanceMessage' | 'maintenanceVideoUrl', value: string | LinkVisibility | number[] | boolean) => {
+    const updateEditLinkState = (linkId: string, field: 'label' | 'url' | 'icon' | 'textColor' | 'visibility' | 'allowedUsers' | 'allowedGroups' | 'notes' | 'tooltip' | 'tooltipStyle' | 'notesEnabled' | 'browser' | 'openTarget' | 'richTextContent' | 'richTextEnabled' | 'animation' | 'published' | 'inheritShortUrls' | 'maintenanceEnabled' | 'maintenanceMessage' | 'maintenanceVideoUrl', value: string | LinkVisibility | number[] | boolean) => {
         setEditLinkState(prev => ({
             ...prev,
             [linkId]: { ...prev[linkId], [field]: value }
@@ -5333,6 +5339,7 @@ export const TileDetail: React.FC<TileDetailProps> = ({
             notes: link.notes,
             tooltip: link.tooltip,
             browser: link.browser,
+            openTarget: link.openTarget,
             animation: link.animation,
         };
 
@@ -5786,7 +5793,7 @@ export const TileDetail: React.FC<TileDetailProps> = ({
     };
 
     // Function to open link in a specific browser
-    const openLinkInBrowser = (url: string, browserId: string) => {
+    const openLinkInBrowser = (url: string, browserId: string, opts?: { inPrivate?: boolean }) => {
         if (typeof window !== 'undefined' && (window as any).BrowserLauncher) {
             const BrowserLauncher = (window as any).BrowserLauncher;
 
@@ -5797,26 +5804,35 @@ export const TileDetail: React.FC<TileDetailProps> = ({
 
             // Normalize browser ID before opening
             const normalizedBrowserId = normalizeBrowserId(browserId);
-            console.log('Opening link in browser:', url, 'browserId:', browserId, 'normalized:', normalizedBrowserId);
+            console.log('Opening link in browser:', url, 'browserId:', browserId, 'normalized:', normalizedBrowserId, 'inPrivate:', !!opts?.inPrivate);
 
             // Open link in specified browser
-            BrowserLauncher.open(url, normalizedBrowserId, { fallback: true }, (response: any) => {
+            BrowserLauncher.open(url, normalizedBrowserId, { fallback: true, inPrivate: !!opts?.inPrivate }, (response: any) => {
                 if (response && response.success !== false) {
                     console.log('Link opened successfully in browser:', normalizedBrowserId);
                 } else {
                     // Fallback to default behavior if extension fails
                     console.warn('Browser extension failed, falling back to default:', response?.error);
-                    window.open(url, '_blank', 'noopener,noreferrer');
+                    openLinkUrl(url, opts?.inPrivate ? 'private' : 'tab', {
+                        browserId: normalizedBrowserId,
+                        extensionId: settings.browser_extension_id,
+                    });
                 }
             }).catch((error: any) => {
                 // Fallback to default behavior on error
                 console.warn('Browser extension error, falling back to default:', error);
-                window.open(url, '_blank', 'noopener,noreferrer');
+                openLinkUrl(url, opts?.inPrivate ? 'private' : 'tab', {
+                    browserId: normalizedBrowserId,
+                    extensionId: settings.browser_extension_id,
+                });
             });
         } else {
             // Fallback to default behavior if BrowserLauncher is not available
             console.warn('BrowserLauncher not available, using default browser');
-            window.open(url, '_blank', 'noopener,noreferrer');
+            openLinkUrl(url, opts?.inPrivate ? 'private' : 'tab', {
+                browserId,
+                extensionId: settings.browser_extension_id,
+            });
         }
     };
 
@@ -9298,15 +9314,29 @@ export const TileDetail: React.FC<TileDetailProps> = ({
                                                                                     if (tryHandleVncLinkClick(link.url, e)) return;
                                                                                     e.preventDefault();
                                                                                     e.stopPropagation();
+                                                                                    const pendingWindow = prepareSeparateWindowIfNeeded(link.openTarget);
                                                                                     const allowed = await assertCanOpen('link', link.id, {
                                                                                         rules: [tile.accessRestrictions, activeViewTab?.accessRestrictions, link.accessRestrictions],
                                                                                     });
-                                                                                    if (!allowed) return;
+                                                                                    if (!allowed) {
+                                                                                        try { pendingWindow?.close(); } catch { /* ignore */ }
+                                                                                        return;
+                                                                                    }
                                                                                     if (isLinkInMaintenance(link)) {
+                                                                                        try { pendingWindow?.close(); } catch { /* ignore */ }
                                                                                         setLinkMaintenanceDialog({ link });
                                                                                         return;
                                                                                     }
-                                                                                    window.open(link.url, '_blank', 'noopener,noreferrer');
+                                                                                    if (pendingWindow) {
+                                                                                        assignUrlToWindow(pendingWindow, link.url);
+                                                                                        return;
+                                                                                    }
+                                                                                    openLinkUrl(link.url, link.openTarget, {
+                                                                                        browserId: (link.browser && link.browser !== 'default')
+                                                                                            ? link.browser
+                                                                                            : (tile.browser && tile.browser !== 'default' ? tile.browser : null),
+                                                                                        extensionId: settings.browser_extension_id,
+                                                                                    });
                                                                                 }}
                                                                             >
                                                                                 Open link
@@ -9460,7 +9490,7 @@ export const TileDetail: React.FC<TileDetailProps> = ({
 
                                                                 <a
                                                                     href={viewerHref}
-                                                                    target="_blank"
+                                                                    target={normalizeLinkOpenTarget(link.openTarget) === 'same' ? '_self' : '_blank'}
                                                                     rel="noopener noreferrer"
                                                                     className={`min-w-0 block focus:outline-none overflow-hidden [&_a]:pointer-events-none ${
                                                                         isGridCards
@@ -9474,23 +9504,33 @@ export const TileDetail: React.FC<TileDetailProps> = ({
                                                                         if (tryHandleVncLinkClick(link.url, e)) return;
                                                                         e.preventDefault();
                                                                         e.stopPropagation();
+                                                                        // Must open popup synchronously before any await, or browsers open a tab instead.
+                                                                        const pendingWindow = prepareSeparateWindowIfNeeded(link.openTarget);
+                                                                        const closePending = () => {
+                                                                            try { pendingWindow?.close(); } catch { /* ignore */ }
+                                                                        };
                                                                         const allowed = await assertCanOpen('link', link.id, {
                                                                             rules: [tile.accessRestrictions, activeViewTab?.accessRestrictions, link.accessRestrictions],
                                                                         });
-                                                                        if (!allowed) return;
+                                                                        if (!allowed) {
+                                                                            closePending();
+                                                                            return;
+                                                                        }
                                                                         if (isLinkInMaintenance(link)) {
+                                                                            closePending();
                                                                             setLinkMaintenanceDialog({ link });
                                                                             return;
                                                                         }
 
                                                                         // If Ctrl/Cmd key is held, always open in default browser (override configured browser)
                                                                         if (e.ctrlKey || e.metaKey) {
+                                                                            closePending();
                                                                             // If rich text content exists, still show dialog on Ctrl/Cmd
                                                                             if (shouldOpenInfoDialog(link)) {
                                                                                 setLinkInfoDialog({ link });
                                                                                 return;
                                                                             }
-                                                                            const newWindow = window.open(link.url, '_blank', 'noopener,noreferrer');
+                                                                            const newWindow = openLinkUrl(link.url, 'tab', { focus: true });
                                                                             if (newWindow) {
                                                                                 newWindow.focus();
                                                                             }
@@ -9499,6 +9539,7 @@ export const TileDetail: React.FC<TileDetailProps> = ({
 
                                                                         // If link has rich text content, show dialog instead of opening URL
                                                                         if (shouldOpenInfoDialog(link)) {
+                                                                            closePending();
                                                                             setLinkInfoDialog({ link });
                                                                             return;
                                                                         }
@@ -9511,11 +9552,23 @@ export const TileDetail: React.FC<TileDetailProps> = ({
                                                                                 : (tile.browser && tile.browser !== 'default' ? tile.browser : null);
 
                                                                             if (browserToUse && typeof window !== 'undefined' && (window as any).BrowserLauncher) {
-                                                                                openLinkInBrowser(link.url, browserToUse);
+                                                                                closePending();
+                                                                                openLinkInBrowser(link.url, browserToUse, {
+                                                                                    inPrivate: normalizeLinkOpenTarget(link.openTarget) === 'private',
+                                                                                });
                                                                                 return;
                                                                             }
                                                                         }
-                                                                        window.open(link.url, '_blank', 'noopener,noreferrer');
+                                                                        if (pendingWindow) {
+                                                                            assignUrlToWindow(pendingWindow, link.url);
+                                                                            return;
+                                                                        }
+                                                                        openLinkUrl(link.url, link.openTarget, {
+                                                                            browserId: (link.browser && link.browser !== 'default')
+                                                                                ? link.browser
+                                                                                : (tile.browser && tile.browser !== 'default' ? tile.browser : null),
+                                                                            extensionId: settings.browser_extension_id,
+                                                                        });
                                                                     }}
                                                                 >
                                                                     <div className={`flex items-center gap-2 ${isGridCards ? 'justify-center' : ''}`}>
@@ -9641,7 +9694,12 @@ export const TileDetail: React.FC<TileDetailProps> = ({
                                                                                         if (!saveBrowserForLink[link.id]) {
                                                                                             // If not saving, just open the link
                                                                                             setShowBrowserMenu(prev => ({ ...prev, [link.id]: false }));
-                                                                                            window.open(link.url, '_blank', 'noopener,noreferrer');
+                                                                                            openLinkUrl(link.url, link.openTarget, {
+                                                                                                browserId: (link.browser && link.browser !== 'default')
+                                                                                                    ? link.browser
+                                                                                                    : (tile.browser && tile.browser !== 'default' ? tile.browser : null),
+                                                                                                extensionId: settings.browser_extension_id,
+                                                                                            });
                                                                                         }
                                                                                     }}
                                                                                     className={`w-full text-left px-2 py-1 text-xs rounded transition-colors flex items-center gap-1.5 ${(!link.browser || link.browser === 'default') && !selectedBrowserForLink[link.id]
@@ -9678,7 +9736,9 @@ export const TileDetail: React.FC<TileDetailProps> = ({
                                                                                                     if (!saveBrowserForLink[link.id]) {
                                                                                                         // If not saving, just open the link
                                                                                                         setShowBrowserMenu(prev => ({ ...prev, [link.id]: false }));
-                                                                                                        openLinkInBrowser(link.url, browserId);
+                                                                                                        openLinkInBrowser(link.url, browserId, {
+                                                                                                            inPrivate: normalizeLinkOpenTarget(link.openTarget) === 'private',
+                                                                                                        });
                                                                                                     }
                                                                                                 }}
                                                                                                 className={`w-full text-left px-2 py-1 text-xs rounded transition-colors flex items-center gap-1.5 ${isCurrentlySelected
@@ -10151,6 +10211,7 @@ export const TileDetail: React.FC<TileDetailProps> = ({
                         richTextContent={linkInfoDialog.link.richTextContent || ''}
                         linkUrl={viewerLinkUrl({ ...linkInfoDialog.link, shortUrl: shortOf('link', linkInfoDialog.link.id, linkInfoDialog.link.shortUrl) }, effectiveShowShortUrls(showShortUrls, activeViewTab, linkInfoDialog.link)) || linkInfoDialog.link.url}
                         browser={linkInfoDialog.link.browser}
+                        openTarget={linkInfoDialog.link.openTarget}
                     />
                 )}
 
@@ -12384,6 +12445,41 @@ export const TileDetail: React.FC<TileDetailProps> = ({
                                                                                     value={newLinkState[section.id]?.url || ''}
                                                                                     onChange={(value) => updateNewLinkState(section.id, 'url', value)}
                                                                                 />
+                                                                                <div>
+                                                                                    <label className="block text-xs font-semibold uppercase tracking-wider text-slate-600 dark:text-slate-400 mb-1.5">
+                                                                                        Open URL in
+                                                                                    </label>
+                                                                                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
+                                                                                        {([
+                                                                                            { value: 'same' as const, label: 'Same window' },
+                                                                                            { value: 'tab' as const, label: 'New tab' },
+                                                                                            { value: 'window' as const, label: 'New window' },
+                                                                                            { value: 'private' as const, label: 'InPrivate / Incognito' },
+                                                                                        ]).map((opt) => {
+                                                                                            const selected = normalizeLinkOpenTarget(newLinkState[section.id]?.openTarget) === opt.value;
+                                                                                            return (
+                                                                                                <label
+                                                                                                    key={opt.value}
+                                                                                                    className={`flex items-center gap-2 cursor-pointer rounded-lg border-2 px-3 py-2 transition-colors ${
+                                                                                                        selected
+                                                                                                            ? 'border-brand-500 bg-brand-50 dark:bg-brand-950/40 text-brand-800 dark:text-brand-200'
+                                                                                                            : 'border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-900 text-slate-700 dark:text-slate-300 hover:border-slate-300 dark:hover:border-slate-600'
+                                                                                                    }`}
+                                                                                                >
+                                                                                                    <input
+                                                                                                        type="radio"
+                                                                                                        name={`new-openTarget-${section.id}`}
+                                                                                                        value={opt.value}
+                                                                                                        checked={selected}
+                                                                                                        onChange={() => updateNewLinkState(section.id, 'openTarget', opt.value)}
+                                                                                                        className="w-4 h-4 text-brand-600 focus:ring-brand-500 focus:ring-2"
+                                                                                                    />
+                                                                                                    <span className="text-sm font-medium">{opt.label}</span>
+                                                                                                </label>
+                                                                                            );
+                                                                                        })}
+                                                                                    </div>
+                                                                                </div>
                                                                             </div>
 
                                                                             {/* Emoji Selection */}

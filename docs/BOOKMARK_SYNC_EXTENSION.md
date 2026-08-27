@@ -2,7 +2,7 @@
 
 This guide explains how **LinkNest Bookmark Sync** (v1.8) connects to **Sync** and **OutSync** in Your Bookmarks (and Fetch in Favorites Organizer), how IT mass-deploys it, and how each person can only sync **their own** browser bookmarks.
 
-The extension lives in `extensions/bookmark-sync`. Load it unpacked for testing, or **force-install a packed CRX** in production. It is a small stand-in for **Browser Launcher Pro**: bookmarks only — no other-browser launching, native host, or license. **Browser Launcher Pro 3.1+** implements the same Sync / OutSync / backup protocol on its **Bookmark Sync** tab, so you do not need this extension if Pro is installed.
+The extension lives in `extensions/bookmark-sync`. Load it unpacked for testing, or **force-install a packed CRX** in production. It is a small stand-in for **Browser Launcher Pro**: bookmarks Sync/OutSync (and from **1.8.4**, Incognito / InPrivate open in this browser) — no other-browser launching, native host, or license. **Browser Launcher Pro 3.1+** implements the same Sync / OutSync / backup protocol on its **Bookmark Sync** tab, so you do not need this extension if Pro is installed.
 
 Full in-app copy: **Help → Guides → Bookmark Sync Extension**. The extension popup also has a **Help** tab.
 
@@ -189,6 +189,7 @@ Reload the extension after editing the JSON. Chrome’s **extensions** page stil
 | OutSync times out / “reload Bookmark Sync 1.8+” | You still have an older pack. Reload the unpacked folder (or install 1.8.3+), turn **Read-write** On, then **refresh the app** |
 | Nested Favorites folder missing in Chrome after OutSync | Reload Bookmark Sync **1.8.3+**, refresh the app, OutSync again. 1.8.2 skipped any URL already in Chrome, so `zaf22` / space subfolders were never created |
 | Backup times out / empty | Reload Bookmark Sync **1.8.2+**, refresh the app, turn **Read-only or Read-write** On. Uncheck backup on the preview to Apply without a backup |
+| InPrivate / Incognito open fails | Reload Bookmark Sync **1.8.4+** (or Pro with updated `land/` scripts), refresh the app, allowlist the site, and turn **Allow in Incognito** On for the extension in chrome://extensions / edge://extensions |
 | “Read-only Sync is turned off…” | Popup → Sync tab → turn **Read-only** on |
 | “Read-write OutSync is turned off…” | Popup → Sync tab → turn **Read-write** on |
 | “not on the organisation allowlist” | IT must add this origin to `allowedOrigins` and reload the extension |
