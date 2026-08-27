@@ -90,6 +90,12 @@ function performMonitorCheck($monitor, $options = []) {
                 return checkPort($monitor['target'], $monitor['port'], $opts);
             case 'ping':
                 return checkPing($monitor['target'], $opts);
+            case 'ssl':
+                return checkSsl($monitor['target'], $monitor['keyword'] ?? null, $opts);
+            case 'dns':
+                return checkDns($monitor['target'], $monitor['keyword'] ?? null, $opts);
+            case 'json':
+                return checkJson($monitor['target'], $monitor['keyword'], $opts);
             default:
                 return ['status' => 'down', 'details' => 'Invalid monitor type'];
         }
@@ -489,6 +495,200 @@ function checkPing($target, $opts = []) {
     return ['status' => 'down', 'details' => 'Ping failed: ' . $err];
 }
 
+function checkSsl($target, $warnDaysRaw, $opts = []) {
+    $host = trim((string)$target);
+    $port = 443;
+
+    if (preg_match('#^https?://#i', $host)) {
+        $parsed = parse_url($host);
+        if (!empty($parsed['host'])) {
+            $host = $parsed['host'];
+        }
+        if (!empty($parsed['port'])) {
+            $port = (int)$parsed['port'];
+        }
+    } else {
+        $host = preg_replace('#^https?://#i', '', $host);
+        $host = explode('/', $host)[0];
+        if (strpos($host, ':') !== false) {
+            [$host, $p] = explode(':', $host, 2);
+            $port = (int)$p;
+        }
+    }
+
+    if ($host === '' || !preg_match('/^[a-zA-Z0-9\.\-:]+$/', $host)) {
+        return ['status' => 'down', 'details' => 'Invalid host for SSL check'];
+    }
+
+    $warnDays = 30;
+    if ($warnDaysRaw !== null && trim((string)$warnDaysRaw) !== '') {
+        $warnDays = max(1, min(365, (int)$warnDaysRaw));
+    }
+
+    $timeout = isset($opts['timeout']) ? (int)$opts['timeout'] : 8;
+    $ctx = stream_context_create([
+        'ssl' => [
+            'capture_peer_cert' => true,
+            'verify_peer' => false,
+            'verify_peer_name' => false,
+        ],
+    ]);
+
+    $fp = @stream_socket_client("ssl://{$host}:{$port}", $errno, $errstr, $timeout, STREAM_CLIENT_CONNECT, $ctx);
+    if (!$fp) {
+        return ['status' => 'down', 'details' => "SSL connection failed: $errstr"];
+    }
+
+    $params = stream_context_get_params($fp);
+    fclose($fp);
+
+    if (empty($params['options']['ssl']['peer_certificate'])) {
+        return ['status' => 'down', 'details' => 'Could not read SSL certificate'];
+    }
+
+    $cert = openssl_x509_parse($params['options']['ssl']['peer_certificate']);
+    if (!$cert || empty($cert['validTo_time_t'])) {
+        return ['status' => 'down', 'details' => 'Invalid certificate data'];
+    }
+
+    $daysRemaining = (int)floor(($cert['validTo_time_t'] - time()) / 86400);
+    if ($daysRemaining < 0) {
+        return ['status' => 'down', 'details' => 'Certificate expired ' . abs($daysRemaining) . ' days ago'];
+    }
+    if ($daysRemaining <= $warnDays) {
+        return ['status' => 'down', 'details' => "Certificate expires in $daysRemaining days (threshold: $warnDays)"];
+    }
+
+    return ['status' => 'up', 'details' => "Certificate valid ($daysRemaining days remaining)"];
+}
+
+function checkDns($target, $expectedRaw, $opts = []) {
+    $host = trim((string)$target);
+    $host = preg_replace('#^https?://#i', '', $host);
+    $host = explode('/', $host)[0];
+    $host = explode(':', $host)[0];
+
+    if ($host === '' || !preg_match('/^[a-zA-Z0-9]([a-zA-Z0-9\.\-]*[a-zA-Z0-9])?$/', $host)) {
+        return ['status' => 'down', 'details' => 'Invalid hostname for DNS check'];
+    }
+
+    if (filter_var($host, FILTER_VALIDATE_IP)) {
+        return ['status' => 'up', 'details' => 'Target is an IP address (DNS lookup skipped)'];
+    }
+
+    $recordsA = @dns_get_record($host, DNS_A);
+    $recordsAAAA = @dns_get_record($host, DNS_AAAA);
+    $ips = [];
+    if (is_array($recordsA)) {
+        foreach ($recordsA as $r) {
+            if (!empty($r['ip'])) {
+                $ips[] = $r['ip'];
+            }
+        }
+    }
+    if (is_array($recordsAAAA)) {
+        foreach ($recordsAAAA as $r) {
+            if (!empty($r['ipv6'])) {
+                $ips[] = $r['ipv6'];
+            }
+        }
+    }
+
+    if (empty($ips)) {
+        return ['status' => 'down', 'details' => 'No DNS records found'];
+    }
+
+    $expected = trim((string)($expectedRaw ?? ''));
+    if ($expected !== '') {
+        $found = false;
+        foreach ($ips as $ip) {
+            if ($ip === $expected || stripos($ip, $expected) !== false) {
+                $found = true;
+                break;
+            }
+        }
+        if (!$found) {
+            return ['status' => 'down', 'details' => "Expected '$expected' not in DNS (" . implode(', ', $ips) . ")"];
+        }
+        return ['status' => 'up', 'details' => "DNS matches expected ($expected)"];
+    }
+
+    return ['status' => 'up', 'details' => 'DNS resolved: ' . implode(', ', array_slice($ips, 0, 4))];
+}
+
+function checkJson($url, $keyword, $opts = []) {
+    if (!filter_var($url, FILTER_VALIDATE_URL)) {
+        return ['status' => 'down', 'details' => 'Invalid URL'];
+    }
+    if (empty(trim((string)$keyword))) {
+        return ['status' => 'down', 'details' => 'No JSON check expression specified'];
+    }
+
+    $timeout = isset($opts['timeout']) ? (int)$opts['timeout'] : 8;
+    $connectTimeout = isset($opts['connect_timeout']) ? (int)$opts['connect_timeout'] : 3;
+
+    $ch = curl_init();
+    curl_setopt_array($ch, [
+        CURLOPT_URL => $url,
+        CURLOPT_RETURNTRANSFER => true,
+        CURLOPT_FOLLOWLOCATION => true,
+        CURLOPT_TIMEOUT => $timeout,
+        CURLOPT_CONNECTTIMEOUT => $connectTimeout,
+        CURLOPT_SSL_VERIFYPEER => false,
+        CURLOPT_SSL_VERIFYHOST => 0,
+        CURLOPT_USERAGENT => (getAppName() ?: 'LinkNest') . ' Monitor/1.0',
+        CURLOPT_HTTPHEADER => ['Accept: application/json, */*', 'Connection: close'],
+    ]);
+
+    $body = curl_exec($ch);
+    $info = curl_getinfo($ch);
+    $errno = curl_errno($ch);
+    $error = curl_error($ch);
+    curl_close($ch);
+
+    if ($body === false || $errno !== 0) {
+        if ($errno === CURLE_OPERATION_TIMEDOUT || $errno === CURLE_OPERATION_TIMEOUTED) {
+            return ['status' => 'down', 'details' => 'Connection timeout'];
+        }
+        return ['status' => 'down', 'details' => 'Connection failed: ' . ($error ?: 'Unknown error')];
+    }
+
+    $code = (int)($info['http_code'] ?? 0);
+    if ($code < 200 || $code >= 400) {
+        return ['status' => 'down', 'details' => "HTTP $code"];
+    }
+
+    $data = json_decode($body, true);
+    if (!is_array($data) && !is_object($data)) {
+        return ['status' => 'down', 'details' => 'Response is not valid JSON'];
+    }
+    if (is_object($data)) {
+        $data = (array)$data;
+    }
+
+    $expr = trim((string)$keyword);
+    if (strpos($expr, ':') !== false) {
+        [$key, $expected] = explode(':', $expr, 2);
+        $key = trim($key);
+        $expected = trim($expected);
+        $actual = $data[$key] ?? null;
+        if ($actual === null) {
+            return ['status' => 'down', 'details' => "JSON key '$key' not found"];
+        }
+        $actualStr = is_bool($actual) ? ($actual ? 'true' : 'false') : (string)$actual;
+        if (strcasecmp($actualStr, $expected) === 0) {
+            return ['status' => 'up', 'details' => "JSON $key=$actualStr (HTTP $code)"];
+        }
+        return ['status' => 'down', 'details' => "JSON $key=$actualStr, expected $expected"];
+    }
+
+    $haystack = strtolower(json_encode($data));
+    if (stripos($haystack, strtolower($expr)) !== false) {
+        return ['status' => 'up', 'details' => "JSON contains '$expr' (HTTP $code)"];
+    }
+    return ['status' => 'down', 'details' => "JSON value '$expr' not found"];
+}
+
 /**
  * Send notifications using the advanced notification system
  */
@@ -560,9 +760,10 @@ function sendAdvancedNotifications($monitor, $newStatus, $prevStatus, $details, 
     }
     
     $now = time();
-    $currentHour = (int)date('H');
-    $currentMinute = (int)date('i');
-    $currentDayOfWeek = (int)date('w'); // 0 = Sunday, 6 = Saturday
+    $notifyNow = getMonitorNotificationLocalDateTime();
+    $currentHour = (int)$notifyNow->format('H');
+    $currentMinute = (int)$notifyNow->format('i');
+    $currentDayOfWeek = (int)$notifyNow->format('w'); // 0 = Sunday, 6 = Saturday
     
     foreach ($rules as $rule) {
         error_log("[EMAIL] Processing rule ID: {$rule['id']}, name: {$rule['name']}");

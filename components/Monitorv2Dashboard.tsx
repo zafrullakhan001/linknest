@@ -1,7 +1,8 @@
 import React, { useState, useEffect, useCallback, useRef, useMemo } from 'react';
 import { Monitorv2 as Monitor, Monitorv2Log as MonitorLog, monitorv2Service as monitoringService } from '../services/monitorv2Service';
 import { Monitorv2Form as MonitorForm } from './Monitorv2Form';
-import { FaServer, FaGlobe, FaSearch, FaCheck, FaTimes, FaQuestion, FaPlus, FaRedo, FaSyncAlt, FaTrash, FaEdit, FaClock, FaThLarge, FaList, FaCopy, FaBars, FaDownload, FaUpload, FaHistory, FaCalendarAlt, FaEnvelope, FaFileCsv, FaArrowsAlt, FaPalette, FaCircle, FaExpand, FaCompress, FaBell, FaBellSlash, FaFileExport } from 'react-icons/fa';
+import { MonitorTargetLabel } from './MonitorTargetLabel';
+import { FaServer, FaGlobe, FaSearch, FaCheck, FaTimes, FaQuestion, FaPlus, FaRedo, FaSyncAlt, FaTrash, FaEdit, FaClock, FaThLarge, FaList, FaCopy, FaBars, FaDownload, FaUpload, FaHistory, FaCalendarAlt, FaEnvelope, FaArrowsAlt, FaPalette, FaCircle, FaExpand, FaCompress, FaBell, FaBellSlash, FaFileExport } from 'react-icons/fa';
 import { useTileAnimation, getTileAnimationClass, getTileDecorationClass } from './TileAnimationSelector';
 import { SMTPSettingsModal } from './SMTPSettingsModal';
 import { MonitoringTileStyleModal, TileStyle } from './MonitoringTileStyleModal';
@@ -58,7 +59,6 @@ export const Monitorv2Dashboard: React.FC = () => {
         return saved === 'true';
     });
     const [notificationsPaused, setNotificationsPaused] = useState<boolean>(false);
-    const csvInputRef = useRef<HTMLInputElement>(null);
     const [checkStatus, setCheckStatus] = useState<{ count: number; total: number; up: number; down: number; error: number } | null>(null);
     const [dbError, setDbError] = useState<string | null>(null);
 
@@ -459,43 +459,6 @@ export const Monitorv2Dashboard: React.FC = () => {
         }
     };
 
-    const handleExportCSV = () => {
-        if (!isAdmin) return;
-        const headers = ['name', 'type', 'target', 'port', 'keyword', 'interval', 'tab_name', 'group_name'];
-        let rows = [];
-
-        if (monitors.length > 0) {
-            rows = monitors.map(m => [
-                m.name,
-                m.type,
-                m.target,
-                m.port || '',
-                m.keyword || '',
-                m.interval,
-                m.tab_name || 'General',
-                m.group_name || 'Other'
-            ]);
-        } else {
-            // Template
-            rows = [['Sample Monitor', 'url', 'https://google.com', '', '', '5', 'General', 'Other']];
-        }
-
-        const csvContent = [
-            headers.join(','),
-            ...rows.map(row => row.map(cell => `"${String(cell).replace(/"/g, '""')}"`).join(','))
-        ].join('\n');
-
-        const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
-        const url = URL.createObjectURL(blob);
-        const link = document.createElement("a");
-        link.setAttribute("href", url);
-        link.setAttribute("download", `linknest_monitors_${new Date().toISOString().split('T')[0]}.csv`);
-        link.style.visibility = 'hidden';
-        document.body.appendChild(link);
-        link.click();
-        document.body.removeChild(link);
-    };
-
     const fetchLogs = useCallback(async (id: number, filter: '1d' | '1w' | '1m' | 'custom') => {
         setIsLogsLoading(true);
         try {
@@ -515,30 +478,28 @@ export const Monitorv2Dashboard: React.FC = () => {
         }
     }, [customRange]);
 
-    const handleExportHistoryCSV = () => {
+    const handleExportHistoryJSON = () => {
         if (!logs.length || !viewingLogsMonitor) return;
-        const headers = ['Timestamp', 'Status', 'Latency (ms)', 'Details'];
-        const rows = logs.map(log => [
-            new Date(log.checked_at * 1000).toLocaleString(),
-            log.status.toUpperCase(),
-            log.response_time,
-            log.details || ''
-        ]);
-
-        const csvContent = [
-            headers.join(','),
-            ...rows.map(row => row.map(cell => `"${String(cell).replace(/"/g, '""')}"`).join(','))
-        ].join('\n');
-
-        const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
+        const payload = {
+            type: 'monitor_uptime_history',
+            exported_at: Math.floor(Date.now() / 1000),
+            monitor_id: viewingLogsMonitor.id,
+            monitor_name: viewingLogsMonitor.name,
+            logs,
+        };
+        const blob = new Blob([JSON.stringify(payload, null, 2)], { type: 'application/json;charset=utf-8;' });
         const url = URL.createObjectURL(blob);
-        const link = document.createElement("a");
-        link.setAttribute("href", url);
-        link.setAttribute("download", `uptime_history_${viewingLogsMonitor.name.replace(/[^a-z0-9]/gi, '_')}_${new Date().toISOString().split('T')[0]}.csv`);
+        const link = document.createElement('a');
+        link.setAttribute('href', url);
+        link.setAttribute(
+            'download',
+            `uptime_history_${viewingLogsMonitor.name.replace(/[^a-z0-9]/gi, '_')}_${new Date().toISOString().split('T')[0]}.json`
+        );
         link.style.visibility = 'hidden';
         document.body.appendChild(link);
         link.click();
         document.body.removeChild(link);
+        URL.revokeObjectURL(url);
     };
 
     const handleMoveMonitor = async (id: number, updates: { tab_name?: string, group_name?: string }) => {
@@ -702,30 +663,6 @@ export const Monitorv2Dashboard: React.FC = () => {
             } finally {
                 setIsLoading(false);
                 if (fileInputRef.current) fileInputRef.current.value = '';
-            }
-        };
-        reader.readAsText(file);
-    };
-
-    const handleImportCSV = async (event: React.ChangeEvent<HTMLInputElement>) => {
-        if (!isAdmin) return;
-        const file = event.target.files?.[0];
-        if (!file) return;
-
-        const reader = new FileReader();
-        reader.onload = async (e) => {
-            try {
-                const content = e.target?.result as string;
-                setIsLoading(true);
-                const count = await monitoringService.importMonitorsFromCSV(content);
-                await fetchMonitors();
-                alert(`Successfully imported ${count} monitors!`);
-            } catch (err) {
-                console.error('Failed to import monitors (CSV)', err);
-                alert('Failed to import monitors from CSV. Please check the file format.');
-            } finally {
-                setIsLoading(false);
-                if (csvInputRef.current) csvInputRef.current.value = '';
             }
         };
         reader.readAsText(file);
@@ -957,13 +894,6 @@ export const Monitorv2Dashboard: React.FC = () => {
                 className="hidden"
                 accept=".json"
             />
-            <input
-                type="file"
-                ref={csvInputRef}
-                onChange={handleImportCSV}
-                className="hidden"
-                accept=".csv"
-            />
             <div className="flex flex-col lg:flex-row lg:items-center justify-between gap-4 mb-8">
                 <div className="flex items-center gap-4">
                     <div className="w-12 h-12 rounded-2xl bg-blue-600/10 dark:bg-blue-500/20 flex items-center justify-center border border-blue-500/20">
@@ -997,23 +927,6 @@ export const Monitorv2Dashboard: React.FC = () => {
                                     title="Import Monitors (JSON)"
                                 >
                                     <FaDownload size={14} />
-                                </button>
-                                <button
-                                    onClick={handleExportCSV}
-                                    className="p-2 rounded-lg transition-all text-slate-400 hover:text-blue-600 hover:bg-white dark:hover:bg-[#333]"
-                                    title="Export Monitors (CSV)"
-                                >
-                                    <div className="relative">
-                                        <FaFileCsv size={14} />
-                                        <div className="absolute -top-1 -right-1 bg-blue-500 rounded-full w-2 h-2 border border-white dark:border-[#252525]"></div>
-                                    </div>
-                                </button>
-                                <button
-                                    onClick={() => csvInputRef.current?.click()}
-                                    className="p-2 rounded-lg transition-all text-slate-400 hover:text-green-600 hover:bg-white dark:hover:bg-[#333]"
-                                    title="Import Monitors (CSV)"
-                                >
-                                    <FaFileCsv size={14} />
                                 </button>
                                 <button
                                     onClick={() => setShowSMTPSettings(true)}
@@ -1436,7 +1349,7 @@ export const Monitorv2Dashboard: React.FC = () => {
                                                     : {}),
                                                 borderRadius: tileStyles.borderRadius,
                                             }}
-                                            className={`border rounded-2xl shadow-lg hover:shadow-xl transition-all group relative cursor-pointer ${fullAnimClass} 
+                                            className={`border rounded-2xl shadow-lg hover:shadow-xl transition-all group relative cursor-pointer min-w-0 ${fullAnimClass}
                                                 ${monitor.last_status === 'up' || monitor.last_status === 'down' || monitor.last_status === 'warning' ? '' : 'bg-white dark:bg-[#1e1e1e] border-slate-200 dark:border-[#333] hover:border-slate-300 dark:hover:border-[#444]'}
                                                 ${viewMode === 'tiles' ? 'p-5' : 'p-3 flex flex-col justify-between min-h-[120px]'}
                                                 ${moveMenuId === monitor.id ? 'z-[60]' : 'z-10 hover:z-20'}`}
@@ -1559,20 +1472,17 @@ export const Monitorv2Dashboard: React.FC = () => {
                                                 </div>
                                             </div>
 
-                                            <div className={`${viewMode === 'tiles' ? 'space-y-3 mb-5' : 'mb-3'}`}>
+                                            <div className={`${viewMode === 'tiles' ? 'mb-5' : 'mb-3'} min-w-0`}>
                                                 <div
-                                                    className={`${viewMode === 'tiles' ? 'text-[11px] p-3' : 'text-[9px] p-1.5'} break-all rounded-xl border font-mono ${monitor.last_status === 'up' || monitor.last_status === 'down' || monitor.last_status === 'warning' ? 'bg-black/20 border-white/10' : 'text-slate-600 dark:text-gray-400 bg-slate-50 dark:bg-[#252525] border-slate-100 dark:border-[#333]'}`}
+                                                    className={`${viewMode === 'tiles' ? 'text-[11px] px-3 h-9' : 'text-[9px] px-1.5 h-7'} flex items-center min-w-0 rounded-xl border ${monitor.last_status === 'up' || monitor.last_status === 'down' || monitor.last_status === 'warning' ? 'bg-black/20 border-white/10' : 'text-slate-600 dark:text-gray-400 bg-slate-50 dark:bg-[#252525] border-slate-100 dark:border-[#333]'}`}
                                                     style={monitor.last_status === 'up' || monitor.last_status === 'down' || monitor.last_status === 'warning' ? { ...getTileTextStyle(monitor.last_status), opacity: 0.9 } : {}}
                                                 >
-                                                    {monitor.target}
-                                                    {monitor.port && (
-                                                        <span
-                                                            className={monitor.last_status === 'up' || monitor.last_status === 'down' || monitor.last_status === 'warning' ? '' : 'text-slate-400 dark:text-gray-500'}
-                                                            style={monitor.last_status === 'up' || monitor.last_status === 'down' || monitor.last_status === 'warning' ? { ...getTileTextStyle(monitor.last_status), opacity: 0.7 } : {}}
-                                                        >
-                                                            :{monitor.port}
-                                                        </span>
-                                                    )}
+                                                    <MonitorTargetLabel
+                                                        target={monitor.target}
+                                                        port={monitor.port}
+                                                        variant="tile"
+                                                        style={monitor.last_status === 'up' || monitor.last_status === 'down' || monitor.last_status === 'warning' ? getTileTextStyle(monitor.last_status) : undefined}
+                                                    />
                                                 </div>
                                             </div>
 
@@ -1627,13 +1537,15 @@ export const Monitorv2Dashboard: React.FC = () => {
                                                     </span>
                                                     {renderEmailIndicators(monitor, 10)}
                                                 </div>
-                                                <div className="flex items-center gap-4 text-xs">
-                                                    <code
+                                                <div className="flex items-center gap-4 text-xs min-w-0">
+                                                    <MonitorTargetLabel
+                                                        target={monitor.target}
+                                                        port={monitor.port}
+                                                        variant="inline"
+                                                        as="code"
                                                         className={`px-2 py-0.5 rounded ${monitor.last_status === 'up' || monitor.last_status === 'down' ? 'bg-black/20' : 'bg-slate-100 dark:bg-[#252525] text-slate-600 dark:text-slate-400'}`}
                                                         style={monitor.last_status === 'up' || monitor.last_status === 'down' ? { ...getTileTextStyle(monitor.last_status), opacity: 0.8 } : {}}
-                                                    >
-                                                        {monitor.target}{monitor.port ? `:${monitor.port}` : ''}
-                                                    </code>
+                                                    />
                                                 </div>
                                             </div>
                                             <div className="flex items-center gap-6 flex-shrink-0">
@@ -1747,10 +1659,12 @@ export const Monitorv2Dashboard: React.FC = () => {
                                             </div>
 
                                             <div className="flex items-center gap-4 flex-shrink-0 justify-end w-[240px]">
-                                                <div className="flex items-center gap-1.5 text-xs text-slate-600 dark:text-slate-400 font-mono">
-                                                    <span className="truncate max-w-[120px]" title={`${monitor.target}${monitor.port ? `:${monitor.port}` : ''}`}>
-                                                        {monitor.target}{monitor.port ? `:${monitor.port}` : ''}
-                                                    </span>
+                                                <div className="flex items-center gap-1.5 text-xs text-slate-600 dark:text-slate-400 min-w-0">
+                                                    <MonitorTargetLabel
+                                                        target={monitor.target}
+                                                        port={monitor.port}
+                                                        variant="compact"
+                                                    />
                                                 </div>
                                                 <div className="flex items-center gap-1.5 text-xs text-slate-600 dark:text-slate-400">
                                                     <FaClock size={10} />
@@ -1819,13 +1733,15 @@ export const Monitorv2Dashboard: React.FC = () => {
                                                             {monitor.last_status || 'UNKNOWN'}
                                                         </div>
                                                     </td>
-                                                    <td className="px-6 py-4">
-                                                        <code
+                                                    <td className="px-6 py-4 max-w-xs">
+                                                        <MonitorTargetLabel
+                                                            target={monitor.target}
+                                                            port={monitor.port}
+                                                            variant="table"
+                                                            as="code"
                                                             className={`text-[11px] px-2 py-1 rounded-md ${monitor.last_status === 'up' || monitor.last_status === 'down' ? 'bg-black/20' : 'text-slate-500 dark:text-slate-400 bg-slate-100 dark:bg-[#252525]'}`}
                                                             style={monitor.last_status === 'up' || monitor.last_status === 'down' ? { ...getTileTextStyle(monitor.last_status), opacity: 0.9 } : {}}
-                                                        >
-                                                            {monitor.target}{monitor.port ? `:${monitor.port}` : ''}
-                                                        </code>
+                                                        />
                                                     </td>
                                                     <td className="px-6 py-4">
                                                         <div
@@ -2152,12 +2068,12 @@ export const Monitorv2Dashboard: React.FC = () => {
                                     <FaRedo size={12} {...({ className: isLogsLoading ? 'animate-spin' : '' } as any)} />
                                 </button>
                                 <button
-                                    onClick={handleExportHistoryCSV}
+                                    onClick={handleExportHistoryJSON}
                                     className="p-2 bg-slate-100 dark:bg-[#252525] hover:bg-slate-200 dark:hover:bg-[#333] rounded-xl transition-all text-slate-500 hover:text-green-600"
-                                    title="Export History (CSV)"
+                                    title="Export History (JSON)"
                                     disabled={logs.length === 0}
                                 >
-                                    <FaFileCsv size={14} />
+                                    <FaFileExport size={14} />
                                 </button>
                                 <div className="h-6 w-px bg-slate-200 dark:bg-slate-700 mx-1"></div>
                                 <div className="text-xs font-bold text-slate-400 uppercase tracking-widest bg-slate-50 dark:bg-[#252525] px-3 py-1.5 rounded-lg border border-slate-100 dark:border-[#333]">

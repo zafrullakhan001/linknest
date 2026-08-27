@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useCallback, useRef, useMemo, useId, lazy, Suspense } from 'react';
+﻿import React, { useState, useEffect, useCallback, useRef, useMemo, useId, lazy, Suspense } from 'react';
 import { createPortal } from 'react-dom';
 import {
     DndContext,
@@ -92,6 +92,8 @@ import { EditLinkForm } from './EditLinkForm';
 import { getDisplayUrl, isHttpOrHttpsUrl, normalizeStoredLinkUrl, rewriteHtmlAnchorHrefs, viewerLinkDisplay, viewerLinkUrl, effectiveShowShortUrls } from '../utils/urlDisplay';
 import { diagnoseLinkUrl, hasBlockingUrlIssues } from '../utils/urlDiagnostics';
 import { UrlFormDiagnostics, UrlNeedsFixBadge, InvalidUrlMark } from './UrlFormDiagnostics';
+import { LinkUrlField } from './LinkUrlField';
+import { UrlProbeBadges } from './UrlProbeBadges';
 import { tryHandleSshLinkClick, isSshLinkUrl } from '../utils/sshLink';
 import { tryHandleVncLinkClick, isVncLinkUrl } from '../utils/vncLink';
 import {
@@ -109,9 +111,6 @@ import {
     ViewModeSortable,
     VIEW_SECTION_DROP_PREFIX,
 } from './ViewModeSortable';
-
-const SslCheckerDialog = lazy(() => import('./ssl/SslCheckerDialog'));
-const WhoisDialog = lazy(() => import('./ssl/WhoisDialog'));
 
 type ViewLayoutMode = 'stacked' | 'side-by-side' | 'grid' | 'compact' | 'qr';
 
@@ -320,13 +319,13 @@ const loadSectionLinkLayouts = (tileId: string): Record<string, ViewLayoutMode> 
     }
 };
 
-/** Persist link animation: inherit/empty → omit; 'none' and others → store as-is. */
+/** Persist link animation: inherit/empty â†’ omit; 'none' and others â†’ store as-is. */
 const linkAnimationForSave = (animation?: string): string | undefined => {
     if (!animation || animation === 'inherit') return undefined;
     return animation;
 };
 
-/** UI value for link animation picker (missing → inherit space default). */
+/** UI value for link animation picker (missing â†’ inherit space default). */
 const linkAnimationForEdit = (animation?: string): TileAnimation =>
     (animation as TileAnimation) || 'inherit';
 
@@ -608,601 +607,6 @@ const LinkEditHeaderSwitch: React.FC<{
     </button>
 );
 
-const isProbableUrl = (value: string): boolean => {
-    // Only probe URLs that already include http(s):// — never invent a scheme.
-    const trimmed = (value || '').trim();
-    if (!trimmed || trimmed.length < 8) return false;
-    if (!isHttpOrHttpsUrl(trimmed)) return false;
-    try {
-        const parsed = new URL(trimmed);
-        return parsed.protocol === 'http:' || parsed.protocol === 'https:';
-    } catch {
-        return false;
-    }
-};
-
-const formatProbeLatency = (ms?: number | null): string => {
-    if (ms === undefined || ms === null) return '';
-    if (ms < 1000) return `${ms}ms`;
-    return `${(ms / 1000).toFixed(1)}s`;
-};
-
-const hopStatusColor = (code: number): string => {
-    if (code >= 200 && code < 300) {
-        return 'bg-emerald-100 text-emerald-800 dark:bg-emerald-900/50 dark:text-emerald-200 border-emerald-200 dark:border-emerald-700';
-    }
-    if (code >= 300 && code < 400) {
-        return 'bg-amber-100 text-amber-800 dark:bg-amber-900/50 dark:text-amber-200 border-amber-200 dark:border-amber-700';
-    }
-    if (code >= 400) {
-        return 'bg-rose-100 text-rose-800 dark:bg-rose-900/50 dark:text-rose-200 border-rose-200 dark:border-rose-700';
-    }
-    return 'bg-slate-100 text-slate-700 dark:bg-slate-800 dark:text-slate-300 border-slate-200 dark:border-slate-600';
-};
-
-const UrlProbeBadges: React.FC<{ url: string; excluded?: boolean }> = ({ url, excluded }) => {
-    const diagnosis = useMemo(() => diagnoseLinkUrl(url), [url]);
-    const blocking = hasBlockingUrlIssues(diagnosis);
-    const [phase, setPhase] = useState<'idle' | 'checking' | 'done' | 'error'>('idle');
-    const [scheme, setScheme] = useState<string>('');
-    const [httpCode, setHttpCode] = useState<number | null>(null);
-    const [latency, setLatency] = useState<number | null>(null);
-    const [browserLatency, setBrowserLatency] = useState<number | null>(null);
-    const [browserPhase, setBrowserPhase] = useState<'idle' | 'checking' | 'done' | 'error'>('idle');
-    const [redirectCount, setRedirectCount] = useState(0);
-    const [redirectChain, setRedirectChain] = useState<LinkRedirectHop[]>([]);
-    const [chainOpen, setChainOpen] = useState(false);
-    const [sslOpen, setSslOpen] = useState(false);
-    const [whoisOpen, setWhoisOpen] = useState(false);
-    const [healthStatus, setHealthStatus] = useState<string>('');
-    const [error, setError] = useState<string>('');
-    const abortRef = useRef<AbortController | null>(null);
-    const browserAbortRef = useRef<AbortController | null>(null);
-    const requestIdRef = useRef(0);
-
-    useEffect(() => {
-        const trimmed = (url || '').trim();
-        abortRef.current?.abort();
-        abortRef.current = null;
-        browserAbortRef.current?.abort();
-        browserAbortRef.current = null;
-
-        if (excluded || blocking || !isProbableUrl(trimmed)) {
-            setPhase('idle');
-            setBrowserPhase('idle');
-            setScheme('');
-            setHttpCode(null);
-            setLatency(null);
-            setBrowserLatency(null);
-            setRedirectCount(0);
-            setRedirectChain([]);
-            setChainOpen(false);
-            setHealthStatus('');
-            setError('');
-            return;
-        }
-
-        const detectedScheme = /^http:\/\//i.test(trimmed)
-            ? 'http'
-            : /^https:\/\//i.test(trimmed)
-                ? 'https'
-                : '';
-        if (!detectedScheme) {
-            setPhase('idle');
-            setBrowserPhase('idle');
-            return;
-        }
-        setScheme(detectedScheme);
-        setPhase('checking');
-        setBrowserPhase('checking');
-        setError('');
-        setRedirectCount(0);
-        setRedirectChain([]);
-        setChainOpen(false);
-        setBrowserLatency(null);
-
-        const requestId = ++requestIdRef.current;
-        const timer = window.setTimeout(async () => {
-            const controller = new AbortController();
-            abortRef.current = controller;
-            const started = performance.now();
-            try {
-                const result = await linkHealthService.checkUrl(trimmed, controller.signal);
-                if (requestId !== requestIdRef.current) return;
-                const roundTrip = Math.round(performance.now() - started);
-                setScheme(result.scheme || detectedScheme);
-                setHttpCode(result.health.httpCode ?? null);
-                setLatency(result.health.serverLatency ?? roundTrip);
-                setRedirectCount(typeof result.health.redirectCount === 'number' ? result.health.redirectCount : 0);
-                setRedirectChain(Array.isArray(result.health.redirectChain) ? result.health.redirectChain : []);
-                setHealthStatus(result.health.status || '');
-                setError(result.health.error || '');
-                setPhase('done');
-            } catch (err: any) {
-                if (controller.signal.aborted || requestId !== requestIdRef.current) return;
-                if (err?.name === 'AbortError') return;
-                setHttpCode(null);
-                setLatency(Math.round(performance.now() - started));
-                setRedirectCount(0);
-                setRedirectChain([]);
-                setHealthStatus('broken');
-                setError(err?.message || 'Check failed');
-                setPhase('error');
-            }
-        }, 650);
-
-        // Browser → URL RTT (direct from this device). Prefer HEAD so we don't download the page body.
-        // no-cors: we only need timing, not status. cors mode spams the console on SSO/login
-        // hosts (e.g. Workday 302) that omit Access-Control-Allow-Origin.
-        let browserCancelled = false;
-        const browserTimer = window.setTimeout(async () => {
-            const controller = new AbortController();
-            browserAbortRef.current = controller;
-            const softTimeout = window.setTimeout(() => controller.abort(), 15000);
-            const started = performance.now();
-            try {
-                await fetch(trimmed, {
-                    method: 'HEAD',
-                    mode: 'no-cors',
-                    cache: 'no-store',
-                    credentials: 'omit',
-                    redirect: 'follow',
-                    signal: controller.signal,
-                });
-                if (browserCancelled || requestId !== requestIdRef.current) return;
-                setBrowserLatency(Math.round(performance.now() - started));
-                setBrowserPhase('done');
-            } catch {
-                if (browserCancelled || requestId !== requestIdRef.current) return;
-                // Network / soft-timeout still reflect browser path timing in most cases
-                setBrowserLatency(Math.round(performance.now() - started));
-                setBrowserPhase('done');
-            } finally {
-                window.clearTimeout(softTimeout);
-            }
-        }, 650);
-
-        return () => {
-            browserCancelled = true;
-            window.clearTimeout(timer);
-            window.clearTimeout(browserTimer);
-            abortRef.current?.abort();
-            browserAbortRef.current?.abort();
-        };
-    }, [url, blocking, excluded]);
-
-    useEffect(() => {
-        if (!chainOpen) return;
-        const onKey = (e: KeyboardEvent) => {
-            if (e.key === 'Escape') setChainOpen(false);
-        };
-        document.addEventListener('keydown', onKey);
-        const prevOverflow = document.body.style.overflow;
-        document.body.style.overflow = 'hidden';
-        return () => {
-            document.removeEventListener('keydown', onKey);
-            document.body.style.overflow = prevOverflow;
-        };
-    }, [chainOpen]);
-
-    if (excluded) {
-        return (
-            <span
-                className="inline-flex items-center gap-1 text-[10px] font-semibold px-2 py-0.5 rounded-full border bg-slate-100 text-slate-700 dark:bg-slate-800 dark:text-slate-200 border-slate-300 dark:border-slate-600"
-                title="This URL is on Link Check Exceptions. Check Links will skip it and will not mark it Broken."
-                role="status"
-            >
-                <span aria-hidden>🚫</span>
-                Ignored
-            </span>
-        );
-    }
-
-    if (blocking) {
-        const errorCount = diagnosis.issues.filter((item) => item.severity === 'error').length;
-        return <UrlNeedsFixBadge count={errorCount} />;
-    }
-
-    if (phase === 'idle') return null;
-
-    const codeColor =
-        httpCode && httpCode >= 200 && httpCode < 300
-            ? 'bg-emerald-100 text-emerald-800 dark:bg-emerald-900/50 dark:text-emerald-200 border-emerald-200 dark:border-emerald-700'
-            : httpCode && httpCode >= 300 && httpCode < 400
-                ? 'bg-amber-100 text-amber-800 dark:bg-amber-900/50 dark:text-amber-200 border-amber-200 dark:border-amber-700'
-                : httpCode
-                    ? 'bg-rose-100 text-rose-800 dark:bg-rose-900/50 dark:text-rose-200 border-rose-200 dark:border-rose-700'
-                    : healthStatus === 'timeout'
-                        ? 'bg-amber-100 text-amber-800 dark:bg-amber-900/50 dark:text-amber-200 border-amber-200 dark:border-amber-700'
-                        : healthStatus === 'network'
-                            ? 'bg-slate-100 text-slate-700 dark:bg-slate-800 dark:text-slate-300 border-slate-200 dark:border-slate-600'
-                            : 'bg-slate-100 text-slate-700 dark:bg-slate-800 dark:text-slate-300 border-slate-200 dark:border-slate-600';
-
-    const latencyBadgeClass = (ms: number | null) =>
-        ms !== null && ms < 300
-            ? 'bg-emerald-100 text-emerald-800 dark:bg-emerald-900/50 dark:text-emerald-200 border-emerald-200 dark:border-emerald-700'
-            : ms !== null && ms < 1000
-                ? 'bg-amber-100 text-amber-800 dark:bg-amber-900/50 dark:text-amber-200 border-amber-200 dark:border-amber-700'
-                : 'bg-rose-100 text-rose-800 dark:bg-rose-900/50 dark:text-rose-200 border-rose-200 dark:border-rose-700';
-
-    const latencyColor = latencyBadgeClass(latency);
-    const browserLatencyColor = latencyBadgeClass(browserLatency);
-
-    const schemeUpper = (scheme || 'https').toUpperCase();
-    const statusLabel =
-        phase === 'checking'
-            ? 'Checking…'
-            : httpCode
-                ? String(httpCode)
-                : healthStatus === 'timeout'
-                    ? 'Timeout'
-                    : healthStatus === 'network'
-                        ? 'Unreachable'
-                        : error
-                            ? 'Error'
-                            : '—';
-
-    const showRedirectBadge = redirectCount > 0 || redirectChain.length > 1;
-    const hopCountLabel = redirectCount > 0 ? redirectCount : Math.max(0, redirectChain.length - 1);
-
-    const exportRedirectChainJson = () => {
-        if (redirectChain.length === 0) return;
-        const payload = {
-            url,
-            scheme: scheme || undefined,
-            status: healthStatus || undefined,
-            httpCode: httpCode ?? null,
-            redirectCount,
-            error: error || null,
-            serverLatencyMs: latency,
-            browserLatencyMs: browserLatency,
-            exportedAt: new Date().toISOString(),
-            hops: redirectChain.map((hop, idx) => ({
-                hop: idx + 1,
-                step: hop.step,
-                url: hop.url,
-                httpCode: hop.httpCode,
-                ...(hop.location ? { location: hop.location } : {}),
-                ...(hop.error ? { error: hop.error } : {}),
-                final: idx === redirectChain.length - 1
-            }))
-        };
-        const blob = new Blob([JSON.stringify(payload, null, 2)], { type: 'application/json' });
-        const objectUrl = URL.createObjectURL(blob);
-        const a = document.createElement('a');
-        const host = (() => {
-            try {
-                return new URL(url).hostname.replace(/[^\w.-]+/g, '_') || 'redirect-chain';
-            } catch {
-                return 'redirect-chain';
-            }
-        })();
-        a.href = objectUrl;
-        a.download = `redirect-chain-${host}-${Date.now()}.json`;
-        document.body.appendChild(a);
-        a.click();
-        a.remove();
-        URL.revokeObjectURL(objectUrl);
-    };
-
-    const chainDialog =
-        chainOpen &&
-        redirectChain.length > 0 &&
-        typeof document !== 'undefined' &&
-        createPortal(
-            <div
-                className="fixed inset-0 z-[100050] flex items-center justify-center p-4 bg-black/50 backdrop-blur-sm"
-                onClick={() => setChainOpen(false)}
-                role="presentation"
-            >
-                <div
-                    className="bg-white dark:bg-slate-800 rounded-2xl shadow-2xl border border-slate-200 dark:border-slate-700 w-full max-w-xl max-h-[85vh] flex flex-col"
-                    role="dialog"
-                    aria-modal="true"
-                    aria-labelledby="redirect-chain-dialog-title"
-                    onClick={(e) => e.stopPropagation()}
-                >
-                    <div className="px-5 py-4 border-b border-slate-200 dark:border-slate-700 flex items-start justify-between gap-3 shrink-0">
-                        <div className="min-w-0">
-                            <h3
-                                id="redirect-chain-dialog-title"
-                                className="text-base font-bold text-slate-900 dark:text-white"
-                            >
-                                Redirect chain
-                            </h3>
-                            <p className="text-xs text-slate-500 dark:text-slate-400 mt-0.5">
-                                {redirectChain.length} hop{redirectChain.length === 1 ? '' : 's'}
-                                {error ? ` · ${error}` : ''}
-                            </p>
-                        </div>
-                        <button
-                            type="button"
-                            onClick={() => setChainOpen(false)}
-                            className="p-1.5 rounded-lg hover:bg-slate-100 dark:hover:bg-slate-700 text-slate-400 hover:text-slate-600 dark:hover:text-slate-300 transition-colors shrink-0"
-                            aria-label="Close redirect chain"
-                        >
-                            <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" strokeWidth={2} stroke="currentColor" className="w-5 h-5">
-                                <path strokeLinecap="round" strokeLinejoin="round" d="M6 18L18 6M6 6l12 12" />
-                            </svg>
-                        </button>
-                    </div>
-                    <div className="px-5 py-4 overflow-y-auto flex-1 min-h-0">
-                        <ol className="space-y-2">
-                            {redirectChain.map((hop, idx) => {
-                                const isLast = idx === redirectChain.length - 1;
-                                return (
-                                    <li key={`${hop.step}-${hop.url}`} className="flex gap-3 items-start">
-                                        <div className="flex flex-col items-center pt-1 shrink-0 w-6">
-                                            <span className="text-[11px] font-bold text-slate-400 dark:text-slate-500 text-center leading-none">
-                                                {idx + 1}
-                                            </span>
-                                            {!isLast && (
-                                                <span className="mt-1 text-slate-300 dark:text-slate-600 text-sm leading-none" aria-hidden>
-                                                    ↓
-                                                </span>
-                                            )}
-                                        </div>
-                                        <div className="min-w-0 flex-1 rounded-lg border border-slate-200 dark:border-slate-600 bg-slate-50 dark:bg-slate-900/60 px-3 py-2.5">
-                                            <div className="flex flex-wrap items-center gap-2 mb-1">
-                                                <span
-                                                    className={`inline-flex items-center text-[11px] font-semibold px-2 py-0.5 rounded-full border ${hopStatusColor(hop.httpCode)}`}
-                                                >
-                                                    {hop.httpCode > 0 ? `HTTP ${hop.httpCode}` : 'No response'}
-                                                </span>
-                                                {isLast && (
-                                                    <span className="text-[10px] font-semibold uppercase tracking-wide text-slate-500 dark:text-slate-400">
-                                                        Final
-                                                    </span>
-                                                )}
-                                                {hop.error && (
-                                                    <span className="text-[11px] text-rose-600 dark:text-rose-400" title={hop.error}>
-                                                        {hop.error}
-                                                    </span>
-                                                )}
-                                            </div>
-                                            <p className="text-xs text-slate-800 dark:text-slate-100 break-all leading-relaxed" title={hop.url}>
-                                                {hop.url}
-                                            </p>
-                                            {hop.location && !isLast && (
-                                                <p className="mt-1 text-[11px] text-slate-500 dark:text-slate-400 break-all" title={hop.location}>
-                                                    → {hop.location}
-                                                </p>
-                                            )}
-                                        </div>
-                                    </li>
-                                );
-                            })}
-                        </ol>
-                    </div>
-                    <div className="px-5 py-3 border-t border-slate-200 dark:border-slate-700 flex flex-wrap items-center justify-end gap-2 shrink-0">
-                        <button
-                            type="button"
-                            onClick={exportRedirectChainJson}
-                            className="px-4 py-2 text-sm font-medium rounded-lg border border-slate-200 dark:border-slate-600 text-slate-700 dark:text-slate-200 hover:bg-slate-100 dark:hover:bg-slate-700 transition-colors"
-                        >
-                            Export as JSON
-                        </button>
-                        <button
-                            type="button"
-                            onClick={() => setChainOpen(false)}
-                            className="px-4 py-2 text-sm font-medium rounded-lg bg-slate-900 text-white hover:bg-slate-800 dark:bg-slate-100 dark:text-slate-900 dark:hover:bg-white transition-colors"
-                        >
-                            Close
-                        </button>
-                    </div>
-                </div>
-            </div>,
-            document.body
-        );
-
-    return (
-        <div className="flex flex-wrap items-center gap-1.5">
-            {phase === 'checking' && browserPhase === 'checking' ? (
-                <span className="inline-flex items-center gap-1 text-[10px] font-medium px-2 py-0.5 rounded-full border bg-sky-100 text-sky-800 dark:bg-sky-900/50 dark:text-sky-200 border-sky-200 dark:border-sky-700 animate-pulse">
-                    <span aria-hidden>⏳</span> Checking…
-                </span>
-            ) : (
-                <>
-                    {(phase === 'done' || phase === 'error' || latency !== null) && (
-                        <span
-                            className={`inline-flex items-center gap-1 text-[10px] font-semibold px-2 py-0.5 rounded-full border ${latencyColor}`}
-                            title="Server RTT — LinkNest server probe latency to this URL"
-                        >
-                            <span aria-hidden>⚡</span>
-                            RTT {formatProbeLatency(latency) || '—'}
-                        </span>
-                    )}
-                    {(browserPhase === 'done' || browserPhase === 'error' || browserLatency !== null) && (
-                        <span
-                            className={`inline-flex items-center gap-1 text-[10px] font-semibold px-2 py-0.5 rounded-full border ${browserLatencyColor}`}
-                            title="Browser RTT — latency from your browser to this URL"
-                        >
-                            <span aria-hidden>🌐</span>
-                            Browser {formatProbeLatency(browserLatency) || '—'}
-                        </span>
-                    )}
-                    {browserPhase === 'checking' && phase !== 'checking' && (
-                        <span className="inline-flex items-center gap-1 text-[10px] font-medium px-2 py-0.5 rounded-full border bg-sky-100 text-sky-800 dark:bg-sky-900/50 dark:text-sky-200 border-sky-200 dark:border-sky-700 animate-pulse">
-                            <span aria-hidden>🌐</span> Browser…
-                        </span>
-                    )}
-                    {phase === 'checking' && browserPhase !== 'checking' && (
-                        <span className="inline-flex items-center gap-1 text-[10px] font-medium px-2 py-0.5 rounded-full border bg-sky-100 text-sky-800 dark:bg-sky-900/50 dark:text-sky-200 border-sky-200 dark:border-sky-700 animate-pulse">
-                            <span aria-hidden>⚡</span> Server…
-                        </span>
-                    )}
-                    {(phase === 'done' || phase === 'error') && (
-                    <span
-                        className={`inline-flex items-center gap-1 text-[10px] font-semibold px-2 py-0.5 rounded-full border ${codeColor}`}
-                        title={`${schemeUpper} status code${error ? `: ${error}` : ''}`}
-                    >
-                        <span aria-hidden>{scheme === 'http' ? '🔓' : '🔒'}</span>
-                        {schemeUpper} {statusLabel}
-                    </span>
-                    )}
-                    {showRedirectBadge && (
-                        <button
-                            type="button"
-                            onClick={() => setChainOpen(true)}
-                            className="inline-flex items-center gap-1 text-[10px] font-semibold px-2 py-0.5 rounded-full border bg-sky-100 text-sky-800 dark:bg-sky-900/50 dark:text-sky-200 border-sky-200 dark:border-sky-700 hover:bg-sky-200/80 dark:hover:bg-sky-800/60 cursor-pointer"
-                            title={
-                                redirectChain.length > 0
-                                    ? 'Click to view the full redirect chain'
-                                    : `Followed ${hopCountLabel} redirect${hopCountLabel === 1 ? '' : 's'} before the final status`
-                            }
-                            aria-haspopup="dialog"
-                        >
-                            <span aria-hidden>↪️</span>
-                            {hopCountLabel} redirect{hopCountLabel === 1 ? '' : 's'}
-                        </button>
-                    )}
-                </>
-            )}
-            {(scheme === 'http' || scheme === 'https' || isHttpOrHttpsUrl((url || '').trim())) && (
-                <>
-                    <button
-                        type="button"
-                        onClick={() => setSslOpen(true)}
-                        className="inline-flex items-center gap-1 text-[10px] font-semibold px-2 py-0.5 rounded-full border bg-violet-100 text-violet-800 dark:bg-violet-900/50 dark:text-violet-200 border-violet-200 dark:border-violet-700 hover:bg-violet-200/80 dark:hover:bg-violet-800/60 cursor-pointer"
-                        title="Open SSL URL checker for this link (on demand)"
-                        aria-haspopup="dialog"
-                    >
-                        <span aria-hidden>🔐</span>
-                        SSL
-                    </button>
-                    <button
-                        type="button"
-                        onClick={() => setWhoisOpen(true)}
-                        className="inline-flex items-center gap-1 text-[10px] font-semibold px-2 py-0.5 rounded-full border bg-emerald-100 text-emerald-800 dark:bg-emerald-900/50 dark:text-emerald-200 border-emerald-200 dark:border-emerald-700 hover:bg-emerald-200/80 dark:hover:bg-emerald-800/60 cursor-pointer"
-                        title="Look up domain ownership (WHOIS / RDAP) on demand"
-                        aria-haspopup="dialog"
-                    >
-                        <span aria-hidden>🏢</span>
-                        WHOIS
-                    </button>
-                </>
-            )}
-            {chainDialog}
-            {sslOpen && (
-                <Suspense fallback={null}>
-                    <SslCheckerDialog
-                        isOpen={sslOpen}
-                        onClose={() => setSslOpen(false)}
-                        url={(url || '').trim()}
-                    />
-                </Suspense>
-            )}
-            {whoisOpen && (
-                <Suspense fallback={null}>
-                    <WhoisDialog
-                        isOpen={whoisOpen}
-                        onClose={() => setWhoisOpen(false)}
-                        url={(url || '').trim()}
-                    />
-                </Suspense>
-            )}
-        </div>
-    );
-};
-
-const LinkUrlField: React.FC<{
-    value: string;
-    onChange: (value: string) => void;
-}> = ({ value, onChange }) => {
-    const diagnosis = useMemo(() => diagnoseLinkUrl(value), [value]);
-    const blocking = hasBlockingUrlIssues(diagnosis);
-    const issuesId = useId();
-    const { settings, patchSettings } = useSettings();
-    const { user } = useAuth();
-    const isAdmin = !!user?.is_admin;
-    const [savingException, setSavingException] = useState(false);
-    const [exceptionError, setExceptionError] = useState('');
-
-    const exceptions = useMemo(
-        () => parseExceptionsSetting(settings.link_check_exceptions),
-        [settings.link_check_exceptions]
-    );
-    const trimmedUrl = (value || '').trim();
-    const isHttpUrl = /^https?:\/\//i.test(trimmedUrl);
-    const excluded = isHttpUrl && isUrlExcludedFromLinkCheck(trimmedUrl, exceptions);
-    const exactException = isHttpUrl && urlIsExactLinkCheckException(trimmedUrl, exceptions);
-    const coveringPattern = excluded ? coveringLinkCheckException(trimmedUrl, exceptions) : null;
-    const canToggle = isAdmin && isHttpUrl && !savingException && (exactException || !excluded || !coveringPattern);
-
-    const handleIgnoreChange = async (next: boolean) => {
-        if (!isAdmin || !isHttpUrl) return;
-        if (!next && !exactException) return;
-        setSavingException(true);
-        setExceptionError('');
-        try {
-            const stored = await persistUrlLinkCheckException(settings.link_check_exceptions, trimmedUrl, next);
-            patchSettings({ link_check_exceptions: stored });
-        } catch (err: unknown) {
-            setExceptionError(err instanceof Error ? err.message : 'Failed to update Link Check Exceptions');
-        } finally {
-            setSavingException(false);
-        }
-    };
-
-    return (
-        <div>
-            <div className="flex items-center justify-between gap-2 mb-1.5 flex-wrap">
-                <label className="block text-xs font-semibold uppercase tracking-wider text-slate-600 dark:text-slate-400">URL</label>
-                <UrlProbeBadges url={value} excluded={excluded} />
-            </div>
-            <input
-                type="text"
-                value={value}
-                onChange={(e) => onChange(e.target.value)}
-                placeholder="https://…  http://…  ssh://user@host:22  or vnc://host:5900"
-                aria-invalid={blocking}
-                aria-describedby={blocking ? issuesId : undefined}
-                className={`w-full bg-slate-50 dark:bg-slate-900 border-2 rounded-lg px-3 py-2 text-sm text-slate-900 dark:text-white focus:outline-none focus:ring-2 transition-all font-mono ${
-                    blocking
-                        ? 'border-amber-400 dark:border-amber-600 focus:border-amber-500 focus:ring-amber-500/40'
-                        : 'border-slate-200 dark:border-slate-700 focus:border-brand-500 focus:ring-brand-500/50'
-                }`}
-            />
-            {isHttpUrl && (isAdmin || excluded) && (
-                <label
-                    className={`mt-2 flex items-start gap-2 select-none ${canToggle ? 'cursor-pointer' : 'cursor-default'}`}
-                    title={
-                        !isAdmin
-                            ? 'This URL is on Link Check Exceptions. Ask an admin to change it.'
-                            : excluded && !exactException && coveringPattern
-                              ? `Covered by host exception "${coveringPattern}". Remove that pattern in Admin → Link Check Exceptions to check this URL.`
-                              : 'When checked, this URL is added to Link Check Exceptions and skipped by Check Links.'
-                    }
-                >
-                    <input
-                        type="checkbox"
-                        className="mt-0.5 w-4 h-4 rounded border-slate-300 text-sky-600 focus:ring-sky-500 dark:bg-slate-800 dark:border-slate-600"
-                        checked={excluded}
-                        disabled={!canToggle}
-                        onChange={(e) => void handleIgnoreChange(e.target.checked)}
-                    />
-                    <span className="text-xs text-slate-600 dark:text-slate-400 leading-snug">
-                        Ignore from Check Links
-                        <span className="block text-[11px] text-slate-500 dark:text-slate-500">
-                            {savingException
-                                ? 'Saving…'
-                                : excluded && !exactException && coveringPattern
-                                  ? `Covered by exception: ${coveringPattern}`
-                                  : 'Adds this URL to Link Check Exceptions so it is never marked Broken.'}
-                        </span>
-                    </span>
-                </label>
-            )}
-            {exceptionError && (
-                <p className="mt-1 text-[11px] text-red-600 dark:text-red-400">{exceptionError}</p>
-            )}
-            {blocking && (
-                <UrlFormDiagnostics diagnosis={diagnosis} listId={issuesId} onApplyFix={onChange} />
-            )}
-        </div>
-    );
-};
-
 const generateId = () => Math.random().toString(36).substring(2, 9);
 
 /** Deep-clone a link with a fresh id (all fields preserved). */
@@ -1331,8 +735,8 @@ const VisibilityProtectionBadge: React.FC<{
   const isAuth = visibility === 'authenticated';
   const label = isAuth ? 'Auth' : 'Restricted';
   const title = isAuth
-    ? 'Authenticated users only — not public'
-    : 'Restricted to specific users/groups — not public';
+    ? 'Authenticated users only â€” not public'
+    : 'Restricted to specific users/groups â€” not public';
   const colorClass = isAuth
     ? 'bg-yellow-100 text-yellow-800 ring-yellow-300/70 dark:bg-yellow-900/40 dark:text-yellow-200 dark:ring-yellow-700/50'
     : 'bg-orange-100 text-orange-800 ring-orange-300/70 dark:bg-orange-900/40 dark:text-orange-200 dark:ring-orange-700/50';
@@ -2115,7 +1519,7 @@ export const TileDetail: React.FC<TileDetailProps> = ({
             setEditSections(clonedSections);
         }
 
-        // Load health status from tile data (skip ssh:// / vnc:// — not HTTP-probed)
+        // Load health status from tile data (skip ssh:// / vnc:// â€” not HTTP-probed)
         const healthMap: LinkHealthMap = {};
         const sectionsToCheck = tile.tabs ? tile.tabs.flatMap(tab => tab.sections) : (tile.sections || []);
         sectionsToCheck.forEach(section => {
@@ -2360,7 +1764,7 @@ export const TileDetail: React.FC<TileDetailProps> = ({
         const floating = loadTabsMenuFloating(tile.id);
         try {
             const saved = localStorage.getItem(`tile_tab_nav_layout_${tile.id}`);
-            // Floating menu is the vertical panel — keep layout vertical while floated
+            // Floating menu is the vertical panel â€” keep layout vertical while floated
             setTabNavLayout(floating ? 'vertical' : (saved === 'vertical' ? 'vertical' : 'horizontal'));
         } catch {
             setTabNavLayout(floating ? 'vertical' : 'horizontal');
@@ -3766,7 +3170,7 @@ export const TileDetail: React.FC<TileDetailProps> = ({
 
         const updatedTiles = allTiles.map(t => t.id === updatedTile.id ? updatedTile : t);
 
-        // Push the updated tiles up; App will persist them and re‑pass
+        // Push the updated tiles up; App will persist them and reâ€‘pass
         // the updated `tile` prop back down.
         // Note: onUpdateTiles will reload from server, which should include richTextContent
         // The backend will handle change detection via temp version comparison
@@ -5131,7 +4535,7 @@ export const TileDetail: React.FC<TileDetailProps> = ({
         let tabs = [...(tile.tabs || [])];
         let tabId = resolveViewTabId();
 
-        // No tabs yet — create a default tab first, then add the section into it
+        // No tabs yet â€” create a default tab first, then add the section into it
         if (!tabId || tabs.length === 0) {
             if (tile.canAddTabs === false) {
                 alert('Cannot add a section: create a tab first.');
@@ -5915,7 +5319,7 @@ export const TileDetail: React.FC<TileDetailProps> = ({
             allowedUsers = [...allowedUsers, user.id];
         }
 
-        const emoji = (link.icon && link.icon.length <= 8) ? link.icon : (tile.emoji || '🔗');
+        const emoji = (link.icon && link.icon.length <= 8) ? link.icon : (tile.emoji || 'ðŸ”—');
         const newLink: Link = {
             id: generateId(),
             label: link.label || title,
@@ -5970,7 +5374,7 @@ export const TileDetail: React.FC<TileDetailProps> = ({
                 onUpdateTiles(updatedTiles, true);
             }
             setConvertLinkDialog(null);
-            alert(`Created independent ${asHyperlink ? 'hyperlink tile' : 'space'} “${title}”. You’ll find it on the dashboard. The original link is still in this space.`);
+            alert(`Created independent ${asHyperlink ? 'hyperlink tile' : 'space'} â€œ${title}â€. Youâ€™ll find it on the dashboard. The original link is still in this space.`);
         } catch (err) {
             console.error(err);
             alert(err instanceof Error ? err.message : 'Failed to create tile from this link.');
@@ -6097,8 +5501,8 @@ export const TileDetail: React.FC<TileDetailProps> = ({
                 return;
             }
             const title = stripHtmlTags(tab.title || '').trim() || 'Untitled';
-            const emoji = (tab.emoji && tab.emoji.trim()) ? tab.emoji : (tile.emoji || '📁');
-            const sourceLabel = `tab “${title}”`;
+            const emoji = (tab.emoji && tab.emoji.trim()) ? tab.emoji : (tile.emoji || 'ðŸ“');
+            const sourceLabel = `tab â€œ${title}â€`;
             const { visibility, allowedUsers, allowedGroups } = resolveConvertedSpaceVisibility(
                 tab.visibility,
                 tab.allowedUsers,
@@ -6139,7 +5543,7 @@ export const TileDetail: React.FC<TileDetailProps> = ({
                         onUpdateTiles(updatedTiles, true);
                     }
                     setConvertTabSectionDialog(null);
-                    alert(`Created a new space from ${sourceLabel}. You’ll find it on the dashboard. The original tab is still in this space.`);
+                    alert(`Created a new space from ${sourceLabel}. Youâ€™ll find it on the dashboard. The original tab is still in this space.`);
                 }
             } catch (err) {
                 console.error(err);
@@ -6150,7 +5554,7 @@ export const TileDetail: React.FC<TileDetailProps> = ({
             return;
         }
 
-        // Section → space
+        // Section â†’ space
         const parentTab = editTabs.find((t) => t.id === dialog.tabId);
         const section = parentTab?.sections.find((s) => s.id === dialog.sectionId);
         if (!parentTab || !section) {
@@ -6158,8 +5562,8 @@ export const TileDetail: React.FC<TileDetailProps> = ({
             return;
         }
         const title = stripHtmlTags(section.title || '').trim() || 'Untitled';
-        const emoji = (section.emoji && section.emoji.trim()) ? section.emoji : (tile.emoji || '📁');
-        const sourceLabel = `section “${title}”`;
+        const emoji = (section.emoji && section.emoji.trim()) ? section.emoji : (tile.emoji || 'ðŸ“');
+        const sourceLabel = `section â€œ${title}â€`;
         const { visibility, allowedUsers, allowedGroups } = resolveConvertedSpaceVisibility(
             section.visibility,
             section.allowedUsers,
@@ -6211,7 +5615,7 @@ export const TileDetail: React.FC<TileDetailProps> = ({
                     onUpdateTiles(updatedTiles, true);
                 }
                 setConvertTabSectionDialog(null);
-                alert(`Created a new space from ${sourceLabel}. You’ll find it on the dashboard. The original section is still in this space.`);
+                alert(`Created a new space from ${sourceLabel}. Youâ€™ll find it on the dashboard. The original section is still in this space.`);
             }
         } catch (err) {
             console.error(err);
@@ -7556,7 +6960,7 @@ export const TileDetail: React.FC<TileDetailProps> = ({
                                             <span>Short URLs</span>
                                         </label>
                                     )}
-                                    {/* Space page entrance animation — applies to whole link sections */}
+                                    {/* Space page entrance animation â€” applies to whole link sections */}
                                     {tile.canEdit && (
                                         <div className="relative flex items-center">
                                             <TileAnimationSelector
@@ -8129,7 +7533,7 @@ export const TileDetail: React.FC<TileDetailProps> = ({
                                                     ? 'bg-white dark:bg-slate-700 text-brand-600 dark:text-brand-400 shadow-sm'
                                                     : 'text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-slate-200'
                                                     }`}
-                                                title="Stacked list — links appear vertically (combine with side-by-side sections)"
+                                                title="Stacked list â€” links appear vertically (combine with side-by-side sections)"
                                                 aria-label="Stacked list view"
                                                 aria-pressed={viewLayout === 'stacked'}
                                             >
@@ -8147,7 +7551,7 @@ export const TileDetail: React.FC<TileDetailProps> = ({
                                                     ? 'bg-orange-500 text-white shadow-sm ring-1 ring-orange-600/40 dark:bg-orange-500 dark:text-white dark:ring-orange-400/50'
                                                     : 'text-slate-600 dark:text-slate-400 hover:text-orange-600 dark:hover:text-orange-400'
                                                     }`}
-                                                title="Side-by-side sections — sticky toggle (orange when on); works with any link view"
+                                                title="Side-by-side sections â€” sticky toggle (orange when on); works with any link view"
                                                 aria-label="Toggle side-by-side sections"
                                                 aria-pressed={sectionsSideBySide}
                                             >
@@ -8189,7 +7593,7 @@ export const TileDetail: React.FC<TileDetailProps> = ({
                                             <button
                                                 type="button"
                                                 onClick={() => {
-                                                    // QR needs full-width section cards — sync top view so section icons match content
+                                                    // QR needs full-width section cards â€” sync top view so section icons match content
                                                     setSyncSectionViews(true);
                                                     setViewLayout('qr');
                                                 }}
@@ -8384,7 +7788,7 @@ export const TileDetail: React.FC<TileDetailProps> = ({
                         </>
                     )}
 
-                    {/* Vertical menu outside section cards — aligned with section start */}
+                    {/* Vertical menu outside section cards â€” aligned with section start */}
                     <div
                         className={useVerticalTabsDocked ? 'flex flex-row gap-6 items-start w-full' : 'flex flex-col gap-8'}
                         data-tab-nav-layout={useVerticalTabsDocked ? 'vertical' : (useVerticalTabs && verticalTabsFloating ? 'vertical-floating' : (useMobileTabHamburger ? 'hamburger' : 'horizontal'))}
@@ -8442,7 +7846,7 @@ export const TileDetail: React.FC<TileDetailProps> = ({
                                         type="button"
                                         onClick={cycleVerticalTabsMenuView}
                                         className="p-1.5 rounded-lg text-slate-500 hover:text-slate-800 dark:hover:text-slate-200 hover:bg-white/70 dark:hover:bg-slate-700 transition-colors"
-                                        title={`${tabsMenuViewLabel} — ${tabsMenuNextViewLabel}`}
+                                        title={`${tabsMenuViewLabel} â€” ${tabsMenuNextViewLabel}`}
                                         aria-label={tabsMenuNextViewLabel}
                                     >
                                         {verticalTabsMenuView === 'tiles' ? (
@@ -9427,7 +8831,7 @@ export const TileDetail: React.FC<TileDetailProps> = ({
                                                         ? 'p-4'
                                                         : 'p-6'
                                             } ${
-                                                // Do not put animate-in on the sortable root when reorder is enabled —
+                                                // Do not put animate-in on the sortable root when reorder is enabled â€”
                                                 // animation fill-mode locks transform and hides the drag preview.
                                                 canReorderSections || isQrLayout
                                                     ? ''
@@ -9585,7 +8989,7 @@ export const TileDetail: React.FC<TileDetailProps> = ({
                                                             syncSectionViews ? 'opacity-60' : ''
                                                         }`}
                                                         title={syncSectionViews
-                                                            ? 'Following top View — click a layout to unlock per-section control'
+                                                            ? 'Following top View â€” click a layout to unlock per-section control'
                                                             : 'Link layout for this section'}
                                                         onClick={(e) => e.stopPropagation()}
                                                     >
@@ -9912,7 +9316,7 @@ export const TileDetail: React.FC<TileDetailProps> = ({
                                                                         )}
                                                                         {link.url ? (
                                                                             <>
-                                                                                <span className="text-slate-300 dark:text-slate-600" aria-hidden>·</span>
+                                                                                <span className="text-slate-300 dark:text-slate-600" aria-hidden>Â·</span>
                                                                                 <button
                                                                                     type="button"
                                                                                     className="text-xs font-medium text-slate-500 dark:text-slate-400 hover:text-brand-600 dark:hover:text-brand-400"
@@ -9928,7 +9332,7 @@ export const TileDetail: React.FC<TileDetailProps> = ({
                                                                         ) : null}
                                                                         {canQuickEditLinks && activeViewTab ? (
                                                                             <>
-                                                                                <span className="text-slate-300 dark:text-slate-600" aria-hidden>·</span>
+                                                                                <span className="text-slate-300 dark:text-slate-600" aria-hidden>Â·</span>
                                                                                 <button
                                                                                     type="button"
                                                                                     className="text-xs font-medium text-slate-500 dark:text-slate-400 hover:text-brand-600 dark:hover:text-brand-400"
@@ -9944,7 +9348,7 @@ export const TileDetail: React.FC<TileDetailProps> = ({
                                                                         ) : null}
                                                                         {canQuickCloneLinks && activeViewTab ? (
                                                                             <>
-                                                                                <span className="text-slate-300 dark:text-slate-600" aria-hidden>·</span>
+                                                                                <span className="text-slate-300 dark:text-slate-600" aria-hidden>Â·</span>
                                                                                 <button
                                                                                     type="button"
                                                                                     className="text-xs font-medium text-slate-500 dark:text-slate-400 hover:text-violet-600 dark:hover:text-violet-400"
@@ -9960,7 +9364,7 @@ export const TileDetail: React.FC<TileDetailProps> = ({
                                                                         ) : null}
                                                                         {canQuickDeleteLinks && activeViewTab ? (
                                                                             <>
-                                                                                <span className="text-slate-300 dark:text-slate-600" aria-hidden>·</span>
+                                                                                <span className="text-slate-300 dark:text-slate-600" aria-hidden>Â·</span>
                                                                                 <button
                                                                                     type="button"
                                                                                     className="text-xs font-medium text-slate-500 dark:text-slate-400 hover:text-red-600 dark:hover:text-red-400"
@@ -10050,7 +9454,7 @@ export const TileDetail: React.FC<TileDetailProps> = ({
                                                                                 ? 'w-7 h-7 text-sm rounded-lg'
                                                                                 : 'w-11 h-11 text-lg'
                                                                     }`}>
-                                                                        {link.icon || '🔗'}
+                                                                        {link.icon || 'ðŸ”—'}
                                                                     </div>
                                                                 </div>
 
@@ -10154,7 +9558,7 @@ export const TileDetail: React.FC<TileDetailProps> = ({
                                                                                         }`}
                                                                                     title={link.visibility === 'authenticated' ? 'Authenticated users only' : 'Private - specific users only'}
                                                                                 >
-                                                                                    {link.visibility === 'authenticated' ? '🔒' : '🔐'}
+                                                                                    {link.visibility === 'authenticated' ? 'ðŸ”’' : 'ðŸ”'}
                                                                                 </span>
                                                                             )}
                                                                             {isBroken && (
@@ -10166,7 +9570,7 @@ export const TileDetail: React.FC<TileDetailProps> = ({
                                                                             {isNetwork && (
                                                                                 <span
                                                                                     className="text-slate-500 dark:text-slate-400 text-xs font-medium flex items-center gap-1 shrink-0"
-                                                                                    title="Network not reachable — this is not a broken link"
+                                                                                    title="Network not reachable â€” this is not a broken link"
                                                                                 >
                                                                                     <span className="w-1.5 h-1.5 rounded-full bg-slate-400"></span>
                                                                                     Unreachable
@@ -10247,7 +9651,7 @@ export const TileDetail: React.FC<TileDetailProps> = ({
                                                                                             : 'text-slate-700 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-700'
                                                                                         }`}
                                                                                 >
-                                                                                    <span className="text-xs">🌐</span>
+                                                                                    <span className="text-xs">ðŸŒ</span>
                                                                                     <span>Default Browser</span>
                                                                                 </button>
                                                                                 {availableBrowsers.length > 0 ? (
@@ -10282,7 +9686,7 @@ export const TileDetail: React.FC<TileDetailProps> = ({
                                                                                                     : 'text-slate-700 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-700'
                                                                                                     }`}
                                                                                             >
-                                                                                                <span className="text-xs">{isCurrentlySelected ? '✓' : '○'}</span>
+                                                                                                <span className="text-xs">{isCurrentlySelected ? 'âœ“' : 'â—‹'}</span>
                                                                                                 <span className="truncate">{displayName || browserId}</span>
                                                                                             </button>
                                                                                         );
@@ -10366,7 +9770,7 @@ export const TileDetail: React.FC<TileDetailProps> = ({
                                                                             title="Clone link"
                                                                             aria-label="Clone link"
                                                                         >
-                                                                            {/* DocumentDuplicate — distinct from Copy URL (square-2-stack) */}
+                                                                            {/* DocumentDuplicate â€” distinct from Copy URL (square-2-stack) */}
                                                                             <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" strokeWidth={1.75} stroke="currentColor" className="w-4 h-4" aria-hidden>
                                                                                 <path strokeLinecap="round" strokeLinejoin="round" d="M15.75 17.25v3.375c0 .621-.504 1.125-1.125 1.125h-9.75a1.125 1.125 0 01-1.125-1.125V7.875c0-.621.504-1.125 1.125-1.125H6.75a9.06 9.06 0 011.5.124m7.5 10.376h3.375c.621 0 1.125-.504 1.125-1.125V11.25c0-4.46-3.243-8.161-7.5-8.876a9.06 9.06 0 00-1.5-.124H9.375c-.621 0-1.125.504-1.125 1.125v3.5m7.5 10.375H9.375a1.125 1.125 0 01-1.125-1.125v-9.25m12 6.625v-1.875a3.375 3.375 0 00-3.375-3.375h-1.5a1.125 1.125 0 01-1.125-1.125v-1.5a3.375 3.375 0 00-3.375-3.375H9.75" />
                                                                             </svg>
@@ -10424,7 +9828,7 @@ export const TileDetail: React.FC<TileDetailProps> = ({
                                                                                         tile: {
                                                                                             id: tile.id,
                                                                                             title: tile.title,
-                                                                                            emoji: tile.emoji || '✨',
+                                                                                            emoji: tile.emoji || 'âœ¨',
                                                                                             themeColor: tile.themeColor || 'blue'
                                                                                         }
                                                                                     });
@@ -10455,7 +9859,7 @@ export const TileDetail: React.FC<TileDetailProps> = ({
                                                                     </button>
                                                                     )}
 
-                                                                    {/* Re-check button (HTTP(S) only — SSH/VNC are not HTTP-probed) */}
+                                                                    {/* Re-check button (HTTP(S) only â€” SSH/VNC are not HTTP-probed) */}
                                                                     {showHealthAction && (
                                                                     <button
                                                                         onClick={(e) => {
@@ -10881,13 +10285,13 @@ export const TileDetail: React.FC<TileDetailProps> = ({
                 )}
                 {!isMobile && (
                 <div className="animate-in fade-in duration-300 w-full">
-                    {/* Enhanced Header — sticky under the site nav so Quick Nav stays on screen */}
+                    {/* Enhanced Header â€” sticky under the site nav so Quick Nav stays on screen */}
                     <div className="ln-edit-page-toolbar bg-gradient-to-r from-slate-50 to-white dark:from-slate-900 dark:to-slate-800 border-b border-slate-200 dark:border-slate-700 -mx-6 px-6 py-4 mb-8 rounded-b-xl shadow-sm">
                         <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4">
                             <div>
                                 <h1 className="text-2xl font-bold text-slate-800 dark:text-white mb-1">Edit Page</h1>
                                 <p className="text-sm text-slate-500 dark:text-slate-400 flex items-center gap-2">
-                                    <span className="text-lg">{editEmoji || '✨'}</span>
+                                    <span className="text-lg">{editEmoji || 'âœ¨'}</span>
                                     <span className="font-medium">{editTitle || 'Untitled Page'}</span>
                                 </p>
                             </div>
@@ -10921,7 +10325,7 @@ export const TileDetail: React.FC<TileDetailProps> = ({
                                     <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" strokeWidth={2} stroke="currentColor" className="w-5 h-5">
                                         <path strokeLinecap="round" strokeLinejoin="round" d="M9 12.75L11.25 15 15 9.75M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
                                     </svg>
-                                    Save Changes {editTabs.length !== (tile.tabs?.length || 0) ? '⚠️' : ''}
+                                    Save Changes {editTabs.length !== (tile.tabs?.length || 0) ? 'âš ï¸' : ''}
                                 </button>
                             </div>
                         </div>
@@ -11567,12 +10971,12 @@ export const TileDetail: React.FC<TileDetailProps> = ({
                                             value={editLinksAnimation}
                                             onAnimationChange={setEditLinksAnimation}
                                             scopeLabel="LINKS ANIMATION"
-                                            scopeHint="Default for all links — each link can inherit, disable, or override"
+                                            scopeHint="Default for all links â€” each link can inherit, disable, or override"
                                             buttonTitle="Choose default entrance animation for all links"
                                         />
                                         <span className="text-xs text-slate-500 dark:text-slate-400">
                                             {getAnimationOption(editLinksAnimation).name}
-                                            <span className="block text-[10px] mt-0.5">Applies to all links — each link can inherit, disable, or override</span>
+                                            <span className="block text-[10px] mt-0.5">Applies to all links â€” each link can inherit, disable, or override</span>
                                         </span>
                                     </div>
                                 </div>
@@ -12009,7 +11413,7 @@ export const TileDetail: React.FC<TileDetailProps> = ({
                                     hierarchyView !== 'cards' ? (
                                         <div className="space-y-3">
                                             <p className="text-xs text-slate-500 dark:text-slate-400">
-                                                {hierarchyView === 'tree' ? 'Tree' : 'Compact'} view — use the ⋯ menu for actions. Opening Edit / Add switches to Cards for the full form (your preferred view stays saved).
+                                                {hierarchyView === 'tree' ? 'Tree' : 'Compact'} view â€” use the â‹¯ menu for actions. Opening Edit / Add switches to Cards for the full form (your preferred view stays saved).
                                             </p>
                                             <TileHierarchyViews
                                                 mode={hierarchyView}
@@ -12248,7 +11652,7 @@ export const TileDetail: React.FC<TileDetailProps> = ({
                                                     </button>
                                                     {(tab.visibleFrom || tab.expiresAt) && (
                                                         <span className="text-xs px-2 py-1 rounded bg-green-100 dark:bg-green-900/30 text-green-600 dark:text-green-400">
-                                                            📅 Scheduled
+                                                            ðŸ“… Scheduled
                                                         </span>
                                                     )}
                                                     {tab.visibility && tab.visibility !== 'public' && (
@@ -12273,7 +11677,7 @@ export const TileDetail: React.FC<TileDetailProps> = ({
                                                         className="text-slate-400 hover:text-amber-600 dark:hover:text-amber-400 p-2"
                                                         title="Tab access restrictions"
                                                     >
-                                                        <span className="text-base leading-none">🛡️</span>
+                                                        <span className="text-base leading-none">ðŸ›¡ï¸</span>
                                                     </button>
                                                     <AccessRestrictionsBadge rules={tab.accessRestrictions} />
                                                     {(tile.canDeleteTabs !== false && (tile.canDeleteTabs !== undefined || tile.canEdit)) && (
@@ -12601,7 +12005,7 @@ export const TileDetail: React.FC<TileDetailProps> = ({
                                                                     </button>
                                                                     {(section.visibleFrom || section.expiresAt) && (
                                                                         <span className="text-xs px-2 py-1 rounded bg-green-100 dark:bg-green-900/30 text-green-600 dark:text-green-400">
-                                                                            📅 Scheduled
+                                                                            ðŸ“… Scheduled
                                                                         </span>
                                                                     )}
                                                                     {section.visibility && section.visibility !== 'public' && (
@@ -12819,7 +12223,7 @@ export const TileDetail: React.FC<TileDetailProps> = ({
                                                                                                 className="w-4 h-4 rounded border-slate-300 dark:border-slate-600 text-brand-600 focus:ring-brand-500 cursor-pointer"
                                                                                             />
                                                                                         </div>
-                                                                                        <div className="w-8 h-8 rounded bg-slate-100 dark:bg-slate-800 flex items-center justify-center text-sm">{link.icon || '🔗'}</div>
+                                                                                        <div className="w-8 h-8 rounded bg-slate-100 dark:bg-slate-800 flex items-center justify-center text-sm">{link.icon || 'ðŸ”—'}</div>
                                                                                         <div className="flex-1 min-w-0">
                                                                                             <div className="flex items-center gap-2">
                                                                                                 <div
@@ -12845,7 +12249,7 @@ export const TileDetail: React.FC<TileDetailProps> = ({
                                                                                                         ? 'bg-blue-100 dark:bg-blue-900/30 text-blue-600 dark:text-blue-400'
                                                                                                         : 'bg-purple-100 dark:bg-purple-900/30 text-purple-600 dark:text-purple-400'
                                                                                                         }`}>
-                                                                                                        {link.visibility === 'authenticated' ? '🔒' : '🔐'}
+                                                                                                        {link.visibility === 'authenticated' ? 'ðŸ”’' : 'ðŸ”'}
                                                                                                     </span>
                                                                                                 )}
                                                                                                 {user?.is_admin && link.published === false && (
@@ -12855,7 +12259,7 @@ export const TileDetail: React.FC<TileDetailProps> = ({
                                                                                                 )}
                                                                                                 {(link.visibleFrom || link.expiresAt) && (
                                                                                                     <span className="text-xs px-1.5 py-0.5 rounded shrink-0 bg-green-100 dark:bg-green-900/30 text-green-600 dark:text-green-400">
-                                                                                                        📅
+                                                                                                        ðŸ“…
                                                                                                     </span>
                                                                                                 )}
                                                                                             </div>
@@ -12993,7 +12397,7 @@ export const TileDetail: React.FC<TileDetailProps> = ({
                                                                                         title="Select emoji"
                                                                                     >
                                                                                         <span className="text-xl">
-                                                                                            {newLinkState[section.id]?.icon || '😀'}
+                                                                                            {newLinkState[section.id]?.icon || 'ðŸ˜€'}
                                                                                         </span>
                                                                                     </button>
                                                                                     <input
@@ -13077,7 +12481,7 @@ export const TileDetail: React.FC<TileDetailProps> = ({
                                                                                                         <span key={userId} className="inline-flex items-center gap-1 px-2 py-1 bg-brand-100 dark:bg-brand-900/40 text-brand-700 dark:text-brand-300 rounded text-xs font-medium">
                                                                                                             {user?.username || `User ${userId}`}
                                                                                                             <AuthSourceBadge source={user?.auth_source} />
-                                                                                                            <button type="button" onClick={() => toggleUserSelection(section.id, userId)} className="hover:text-red-600">×</button>
+                                                                                                            <button type="button" onClick={() => toggleUserSelection(section.id, userId)} className="hover:text-red-600">Ã—</button>
                                                                                                         </span>
                                                                                                     );
                                                                                                 })}
@@ -13102,7 +12506,7 @@ export const TileDetail: React.FC<TileDetailProps> = ({
                                                                                                             onClick={() => setLinkUserSearch(prev => ({ ...prev, [section.id]: '' }))}
                                                                                                             className="absolute right-2 top-1.5 text-slate-400 hover:text-slate-600 dark:hover:text-slate-300"
                                                                                                         >
-                                                                                                            ×
+                                                                                                            Ã—
                                                                                                         </button>
                                                                                                     )}
                                                                                                 </div>
@@ -13140,7 +12544,7 @@ export const TileDetail: React.FC<TileDetailProps> = ({
                                                                                                     return (
                                                                                                         <span key={groupId} className="inline-flex items-center gap-1 px-2 py-1 bg-purple-100 dark:bg-purple-900/40 text-purple-700 dark:text-purple-300 rounded text-xs font-medium">
                                                                                                             {group?.name || `Group ${groupId}`}
-                                                                                                            <button type="button" onClick={() => toggleGroupSelection(section.id, groupId)} className="hover:text-red-600">×</button>
+                                                                                                            <button type="button" onClick={() => toggleGroupSelection(section.id, groupId)} className="hover:text-red-600">Ã—</button>
                                                                                                         </span>
                                                                                                     );
                                                                                                 })}
@@ -13164,7 +12568,7 @@ export const TileDetail: React.FC<TileDetailProps> = ({
                                                                                                         onClick={() => setLinkGroupSearch(prev => ({ ...prev, [section.id]: '' }))}
                                                                                                         className="absolute right-2 top-1.5 text-slate-400 hover:text-slate-600 dark:hover:text-slate-300"
                                                                                                     >
-                                                                                                        ×
+                                                                                                        Ã—
                                                                                                     </button>
                                                                                                 )}
                                                                                             </div>
@@ -13222,7 +12626,7 @@ export const TileDetail: React.FC<TileDetailProps> = ({
                                                                                 <div>
                                                                                     <div className="text-xs font-semibold uppercase tracking-wider text-slate-600 dark:text-slate-400">Short URLs</div>
                                                                                     <div className="text-sm font-medium text-slate-800 dark:text-slate-200">
-                                                                                        {(newLinkState[section.id]?.inheritShortUrls !== false) ? 'Inherit from parent' : 'Override — original URL'}
+                                                                                        {(newLinkState[section.id]?.inheritShortUrls !== false) ? 'Inherit from parent' : 'Override â€” original URL'}
                                                                                     </div>
                                                                                 </div>
                                                                                 <button
@@ -13322,7 +12726,7 @@ export const TileDetail: React.FC<TileDetailProps> = ({
                                                                                 <div>
                                                                                     <div className="text-xs font-semibold uppercase tracking-wider text-slate-600 dark:text-slate-400">Maintenance window</div>
                                                                                     <div className="text-sm font-medium text-slate-800 dark:text-slate-200">
-                                                                                        {newLinkState[section.id]?.maintenanceEnabled ? 'Clicks show the maintenance message' : 'Off — link opens normally'}
+                                                                                        {newLinkState[section.id]?.maintenanceEnabled ? 'Clicks show the maintenance message' : 'Off â€” link opens normally'}
                                                                                     </div>
                                                                                 </div>
                                                                                 <button
@@ -13416,7 +12820,7 @@ export const TileDetail: React.FC<TileDetailProps> = ({
                                                                             </div>
 
                                                                             <LinkEditSection
-                                                                                emoji="🛡️"
+                                                                                emoji="ðŸ›¡ï¸"
                                                                                 title="Additional access restrictions"
                                                                                 subtitle="Optional extra gate when opening this link"
                                                                                 accent="slate"
@@ -13797,7 +13201,7 @@ export const TileDetail: React.FC<TileDetailProps> = ({
                                                         className="w-4 h-4"
                                                     />
                                                     <div>
-                                                        <div className="font-semibold text-slate-900 dark:text-white">🌐 Public</div>
+                                                        <div className="font-semibold text-slate-900 dark:text-white">ðŸŒ Public</div>
                                                         <div className="text-xs text-slate-500">Available for everyone</div>
                                                     </div>
                                                 </label>
@@ -13813,7 +13217,7 @@ export const TileDetail: React.FC<TileDetailProps> = ({
                                                         className="w-4 h-4"
                                                     />
                                                     <div>
-                                                        <div className="font-semibold text-slate-900 dark:text-white">🔒 Authenticated</div>
+                                                        <div className="font-semibold text-slate-900 dark:text-white">ðŸ”’ Authenticated</div>
                                                         <div className="text-xs text-slate-500">Logged in users only</div>
                                                     </div>
                                                 </label>
@@ -13828,7 +13232,7 @@ export const TileDetail: React.FC<TileDetailProps> = ({
                                                     className="w-4 h-4"
                                                 />
                                                 <div>
-                                                    <div className="font-semibold text-slate-900 dark:text-white">🔐 Private</div>
+                                                    <div className="font-semibold text-slate-900 dark:text-white">ðŸ” Private</div>
                                                     <div className="text-xs text-slate-500">Specific users and/or groups only</div>
                                                 </div>
                                             </label>
@@ -13912,7 +13316,7 @@ export const TileDetail: React.FC<TileDetailProps> = ({
                                                 onClick={() => setRestrictionsDialogTab(null)}
                                                 className="text-slate-400 hover:text-slate-600 dark:hover:text-slate-300 p-1 rounded-lg hover:bg-slate-100 dark:hover:bg-slate-700"
                                             >
-                                                ×
+                                                Ã—
                                             </button>
                                         </div>
                                         <AccessRestrictionsEditor
@@ -13985,7 +13389,7 @@ export const TileDetail: React.FC<TileDetailProps> = ({
                                                         className="w-4 h-4"
                                                     />
                                                     <div>
-                                                        <div className="font-semibold text-slate-900 dark:text-white">🌐 Public</div>
+                                                        <div className="font-semibold text-slate-900 dark:text-white">ðŸŒ Public</div>
                                                         <div className="text-xs text-slate-500">Available for everyone</div>
                                                     </div>
                                                 </label>
@@ -14001,7 +13405,7 @@ export const TileDetail: React.FC<TileDetailProps> = ({
                                                         className="w-4 h-4"
                                                     />
                                                     <div>
-                                                        <div className="font-semibold text-slate-900 dark:text-white">🔒 Authenticated</div>
+                                                        <div className="font-semibold text-slate-900 dark:text-white">ðŸ”’ Authenticated</div>
                                                         <div className="text-xs text-slate-500">Logged in users only</div>
                                                     </div>
                                                 </label>
@@ -14016,7 +13420,7 @@ export const TileDetail: React.FC<TileDetailProps> = ({
                                                     className="w-4 h-4"
                                                 />
                                                 <div>
-                                                    <div className="font-semibold text-slate-900 dark:text-white">🔐 Private</div>
+                                                    <div className="font-semibold text-slate-900 dark:text-white">ðŸ” Private</div>
                                                     <div className="text-xs text-slate-500">Specific users and/or groups only</div>
                                                 </div>
                                             </label>
@@ -14302,8 +13706,8 @@ export const TileDetail: React.FC<TileDetailProps> = ({
                                             onClick={() => void handleConvertLinkToIndependentTile(false)}
                                             className="w-full text-left rounded-xl border border-sky-200 dark:border-sky-800 bg-sky-50/80 dark:bg-sky-950/30 hover:border-sky-400 px-4 py-3 transition-colors disabled:opacity-50"
                                         >
-                                            <div className="text-sm font-semibold text-slate-900 dark:text-white">📁 Space</div>
-                                            <div className="text-xs text-slate-600 dark:text-slate-400 mt-0.5">New space with this URL in a General section — you can add more links later</div>
+                                            <div className="text-sm font-semibold text-slate-900 dark:text-white">ðŸ“ Space</div>
+                                            <div className="text-xs text-slate-600 dark:text-slate-400 mt-0.5">New space with this URL in a General section â€” you can add more links later</div>
                                         </button>
                                         <button
                                             type="button"
@@ -14311,7 +13715,7 @@ export const TileDetail: React.FC<TileDetailProps> = ({
                                             onClick={() => void handleConvertLinkToIndependentTile(true)}
                                             className="w-full text-left rounded-xl border border-indigo-200 dark:border-indigo-800 bg-indigo-50/80 dark:bg-indigo-950/30 hover:border-indigo-400 px-4 py-3 transition-colors disabled:opacity-50"
                                         >
-                                            <div className="text-sm font-semibold text-slate-900 dark:text-white">🔗 Hyperlink tile</div>
+                                            <div className="text-sm font-semibold text-slate-900 dark:text-white">ðŸ”— Hyperlink tile</div>
                                             <div className="text-xs text-slate-600 dark:text-slate-400 mt-0.5">Direct click-through to this URL from the dashboard</div>
                                         </button>
                                     </div>
@@ -14322,7 +13726,7 @@ export const TileDetail: React.FC<TileDetailProps> = ({
                                             onClick={() => setConvertLinkDialog(null)}
                                             className="px-4 py-2 text-sm font-medium text-slate-600 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-700 rounded-lg"
                                         >
-                                            {convertingLinkToTile ? 'Creating…' : 'Cancel'}
+                                            {convertingLinkToTile ? 'Creatingâ€¦' : 'Cancel'}
                                         </button>
                                     </div>
                                 </div>
@@ -14379,7 +13783,7 @@ export const TileDetail: React.FC<TileDetailProps> = ({
                                             >
                                                 <div className="text-sm font-semibold text-slate-900 dark:text-white">Copy into new space</div>
                                                 <div className="text-xs text-slate-600 dark:text-slate-400 mt-0.5">
-                                                    New space on the dashboard — original {isTab ? 'tab' : 'section'} stays here
+                                                    New space on the dashboard â€” original {isTab ? 'tab' : 'section'} stays here
                                                 </div>
                                             </button>
                                             <button
@@ -14387,13 +13791,13 @@ export const TileDetail: React.FC<TileDetailProps> = ({
                                                 disabled={convertingTabSectionToSpace || moveDisabled}
                                                 onClick={() => void handleConvertTabOrSectionToSpace('move')}
                                                 className="w-full text-left rounded-xl border border-amber-200 dark:border-amber-800 bg-amber-50/80 dark:bg-amber-950/30 hover:border-amber-400 px-4 py-3 transition-colors disabled:opacity-50"
-                                                title={moveDisabled ? 'Cannot move the last tab — a space must keep at least one tab' : undefined}
+                                                title={moveDisabled ? 'Cannot move the last tab â€” a space must keep at least one tab' : undefined}
                                             >
                                                 <div className="text-sm font-semibold text-slate-900 dark:text-white">Move into new space</div>
                                                 <div className="text-xs text-slate-600 dark:text-slate-400 mt-0.5">
                                                     {moveDisabled
-                                                        ? 'Unavailable — this is the only tab in this space'
-                                                        : `New space on the dashboard — remove original ${isTab ? 'tab' : 'section'} from here`}
+                                                        ? 'Unavailable â€” this is the only tab in this space'
+                                                        : `New space on the dashboard â€” remove original ${isTab ? 'tab' : 'section'} from here`}
                                                 </div>
                                             </button>
                                         </div>
@@ -14404,7 +13808,7 @@ export const TileDetail: React.FC<TileDetailProps> = ({
                                                 onClick={() => setConvertTabSectionDialog(null)}
                                                 className="px-4 py-2 text-sm font-medium text-slate-600 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-700 rounded-lg"
                                             >
-                                                {convertingTabSectionToSpace ? 'Creating…' : 'Cancel'}
+                                                {convertingTabSectionToSpace ? 'Creatingâ€¦' : 'Cancel'}
                                             </button>
                                         </div>
                                     </div>

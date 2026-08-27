@@ -60,33 +60,19 @@ export const EmailLogsTab: React.FC<EmailLogsTabProps> = ({ monitorId }) => {
         URL.revokeObjectURL(url);
     };
 
-    const toCsv = (rows: string[][]) => {
-        const esc = (v: string) => {
-            const s = (v ?? '').toString();
-            if (/[",\n\r]/.test(s)) return `"${s.replace(/"/g, '""')}"`;
-            return s;
+    const handleExportJson = () => {
+        const payload = {
+            type: 'monitor_email_logs',
+            exported_at: Math.floor(Date.now() / 1000),
+            monitor_id: monitorId,
+            days_filter: daysFilter,
+            logs: filteredLogs,
         };
-        return rows.map(r => r.map(esc).join(',')).join('\r\n') + '\r\n';
-    };
-
-    const handleExportCsv = () => {
-        const rows: string[][] = [];
-        rows.push(['id', 'rule_id', 'monitor_id', 'recipient_email', 'status_trigger', 'sent_at', 'subject', 'success', 'error_message']);
-        for (const log of filteredLogs) {
-            rows.push([
-                String(log.id),
-                log.rule_id === null || log.rule_id === undefined ? '' : String(log.rule_id),
-                String(log.monitor_id),
-                String(log.recipient_email || ''),
-                String(log.status_trigger || ''),
-                new Date((log.sent_at || 0) * 1000).toISOString(),
-                String(log.subject || ''),
-                String(log.success ?? ''),
-                String(log.error_message || ''),
-            ]);
-        }
-        const csv = toCsv(rows);
-        downloadFile(`email-logs-monitor-${monitorId}-last-${daysFilter}d.csv`, csv, 'text/csv;charset=utf-8');
+        downloadFile(
+            `email-logs-monitor-${monitorId}-last-${daysFilter}d.json`,
+            JSON.stringify(payload, null, 2),
+            'application/json;charset=utf-8'
+        );
     };
 
     const filteredLogs = logs.filter(log => {
@@ -115,9 +101,9 @@ export const EmailLogsTab: React.FC<EmailLogsTabProps> = ({ monitorId }) => {
                 </div>
                 <div className="flex items-center gap-2">
                     <button
-                        onClick={handleExportCsv}
+                        onClick={handleExportJson}
                         className="p-2 text-blue-600 hover:text-blue-700 hover:bg-blue-50 rounded transition-colors border border-blue-200"
-                        title="Export logs to CSV"
+                        title="Export logs to JSON"
                     >
                         <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                             <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 10v6m0 0l-3-3m3 3l3-3m2 8H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />

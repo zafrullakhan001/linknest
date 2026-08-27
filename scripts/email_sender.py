@@ -25,6 +25,7 @@ from linknest_worker_lib import (
     ensure_monitors_schema,
     get_smtp_config,
     is_in_maintenance_window,
+    monitor_notification_now,
     normalize_email_list,
     notifications_paused,
     now_ts,
@@ -263,7 +264,12 @@ def main() -> int:
                         (now_ts(), "suppressed: rule disabled/missing", outbox_id),
                     )
                     continue
-                if not time_window_active(rule["time_window_start"], rule["time_window_end"]) or not day_of_week_active(rule["days_of_week"]):
+                notify_now = monitor_notification_now(conn)
+                if not time_window_active(
+                    rule["time_window_start"],
+                    rule["time_window_end"],
+                    notify_now,
+                ) or not day_of_week_active(rule["days_of_week"], notify_now):
                     conn.execute(
                         "UPDATE email_outbox SET send_after = ?, last_error = ? WHERE id = ?",
                         (now_ts() + 60, "postponed: outside rule window", outbox_id),

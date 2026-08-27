@@ -410,21 +410,6 @@ export const monitorv2Service = {
         return { check: { status: result.status, response_time_ms: result.response_time, status_message: result.details, checked_at: new Date().toISOString() } as MonitorCheck };
     },
 
-    // CSV import
-    async importMonitorsFromCSV(csvContent: string): Promise<number> {
-        const response = await fetch(`${API_BASE}/import-csv`, {
-            method: 'POST',
-            headers: { 'Content-Type': 'text/plain' },
-            body: csvContent,
-            credentials: 'include'
-        });
-        if (!response.ok) {
-            throw new Error('Failed to import from CSV');
-        }
-        const data = await response.json();
-        return data.count || 0;
-    },
-
     // Fixed export/import bundle methods
     async exportMonitorsBundle(): Promise<any> {
         const response = await fetch(`${API_BASE}/export-bundle`, { credentials: 'include' });

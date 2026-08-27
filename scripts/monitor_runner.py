@@ -25,14 +25,18 @@ from typing import Any, Dict, List, Optional, Tuple
 from linknest_worker_lib import (
     DEFAULT_DB_PATH,
     CheckResult,
+    check_dns,
+    check_json,
     check_keyword,
     check_ping,
     check_port,
+    check_ssl,
     check_url_head,
     day_of_week_active,
     ensure_monitors_schema,
     ensure_outbox_schema,
     is_in_maintenance_window,
+    monitor_notification_now,
     normalize_email_list,
     notifications_paused,
     now_ts,
@@ -84,6 +88,14 @@ def perform_check(monitor: Dict[str, Any], verify_ssl: bool, app_name: str = "Li
             # Convert seconds to milliseconds for ping
             tms = 10000 if relaxed else int((base_timeout_s or 1) * 1000)
             return check_ping(target, timeout_ms=tms)
+        if mtype == "ssl":
+            timeout = 10 if relaxed else (base_timeout_s or 8)
+            return check_ssl(target, str(monitor.get("keyword") or ""), timeout=timeout)
+        if mtype == "dns":
+            return check_dns(target, str(monitor.get("keyword") or "") or None)
+        if mtype == "json":
+            timeout = 10 if relaxed else (base_timeout_s or 8)
+            return check_json(target, str(monitor.get("keyword") or ""), timeout=timeout, verify_ssl=verify_ssl, app_name=app_name)
         return "down", "Invalid monitor type"
 
     status, details = run_once(relaxed=False)
@@ -133,7 +145,7 @@ def queue_advanced_notifications(conn, monitor_row, new_status: str, prev_status
     ).fetchall()
 
     queued = 0
-    now_local = None
+    now_local = monitor_notification_now(conn)
     for r in rules:
         if not time_window_active(r["time_window_start"], r["time_window_end"], now_local):
             continue

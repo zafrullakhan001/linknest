@@ -326,6 +326,69 @@ def day_of_week_active(days_csv: Optional[str], now_local: Optional[_dt.datetime
     return php_dow in active
 
 
+def get_monitor_notification_dst_enabled(conn: Optional[sqlite3.Connection] = None) -> bool:
+    if conn is None:
+        return True
+    with contextlib.suppress(Exception):
+        row = conn.execute(
+            "SELECT value FROM settings WHERE key = 'monitor_notification_dst_correction' LIMIT 1"
+        ).fetchone()
+        if row and str(row[0]).strip() == "0":
+            return False
+    return True
+
+
+def _standard_offset_seconds(tz_name: str, year: int) -> int:
+    from zoneinfo import ZoneInfo
+
+    zi = ZoneInfo(tz_name)
+    offsets: List[int] = []
+    for month in (1, 4, 7, 10):
+        dt = _dt.datetime(year, month, 15, 12, 0, tzinfo=zi)
+        off = dt.utcoffset()
+        offsets.append(int(off.total_seconds()) if off is not None else 0)
+    return min(offsets)
+
+
+def get_monitor_notification_timezone(conn: Optional[sqlite3.Connection] = None) -> str:
+    tz = ""
+    if conn is not None:
+        with contextlib.suppress(Exception):
+            row = conn.execute(
+                "SELECT value FROM settings WHERE key = 'monitor_notification_timezone' LIMIT 1"
+            ).fetchone()
+            if row and row[0]:
+                tz = str(row[0]).strip()
+    if tz:
+        try:
+            from zoneinfo import ZoneInfo
+            ZoneInfo(tz)
+            return tz
+        except Exception:
+            pass
+    local = _dt.datetime.now().astimezone()
+    key = getattr(local.tzinfo, "key", None)
+    if key:
+        return str(key)
+    return "UTC"
+
+
+def monitor_notification_now(conn: Optional[sqlite3.Connection] = None) -> _dt.datetime:
+    tz_name = get_monitor_notification_timezone(conn)
+    try:
+        from zoneinfo import ZoneInfo
+
+        zi = ZoneInfo(tz_name)
+        utc = _dt.datetime.now(_dt.timezone.utc)
+        if conn is not None and not get_monitor_notification_dst_enabled(conn):
+            std = _standard_offset_seconds(tz_name, utc.year)
+            local_naive = utc + _dt.timedelta(seconds=std)
+            return local_naive.replace(tzinfo=None)
+        return utc.astimezone(zi)
+    except Exception:
+        return _dt.datetime.now()
+
+
 @dataclass
 class CheckResult:
     status: str
@@ -471,6 +534,147 @@ def check_ping(target: str, timeout_ms: int = 1000) -> Tuple[str, str]:
     if len(err) > 180:
         err = err[:180] + "..."
     return "down", f"Ping failed: {err}"
+
+
+def check_ssl(target: str, warn_days_raw: Optional[str], timeout: float = 8.0) -> Tuple[str, str]:
+    host = (target or "").strip()
+    port = 443
+
+    m = re.match(r"^https?://([^/]+)", host, re.I)
+    if m:
+        host_part = m.group(1)
+        host_part = host_part.split("@")[-1]
+        if ":" in host_part:
+            h, p = host_part.rsplit(":", 1)
+            if p.isdigit():
+                host, port = h, int(p)
+            else:
+                host = host_part
+        else:
+            host = host_part
+    else:
+        host = re.sub(r"^https?://", "", host, flags=re.I)
+        host = host.split("/")[0]
+        if ":" in host:
+            h, p = host.rsplit(":", 1)
+            if p.isdigit():
+                host, port = h, int(p)
+
+    if not host or not re.match(r"^[a-zA-Z0-9\.\-:]+$", host):
+        return "down", "Invalid host for SSL check"
+
+    warn_days = 30
+    if warn_days_raw is not None and str(warn_days_raw).strip() != "":
+        try:
+            warn_days = max(1, min(365, int(warn_days_raw)))
+        except Exception:
+            warn_days = 30
+
+    ctx = ssl.create_default_context()
+    ctx.check_hostname = False
+    ctx.verify_mode = ssl.CERT_NONE
+
+    try:
+        with socket.create_connection((host, port), timeout=timeout) as sock:
+            with ctx.wrap_socket(sock, server_hostname=host) as ssock:
+                cert_bin = ssock.getpeercert(binary_form=True)
+        if not cert_bin:
+            return "down", "Could not read SSL certificate"
+        # Parse expiry from DER via ssl module getpeercert after wrap - use dict form
+        with socket.create_connection((host, port), timeout=timeout) as sock2:
+            with ctx.wrap_socket(sock2, server_hostname=host) as ssock2:
+                cert = ssock2.getpeercert()
+        if not cert or "notAfter" not in cert:
+            return "down", "Invalid certificate data"
+        from datetime import datetime
+        expiry = datetime.strptime(cert["notAfter"], "%b %d %H:%M:%S %Y %Z")
+        days_remaining = (expiry - datetime.utcnow()).days
+        if days_remaining < 0:
+            return "down", f"Certificate expired {abs(days_remaining)} days ago"
+        if days_remaining <= warn_days:
+            return "down", f"Certificate expires in {days_remaining} days (threshold: {warn_days})"
+        return "up", f"Certificate valid ({days_remaining} days remaining)"
+    except Exception as e:
+        msg = str(e) or e.__class__.__name__
+        return "down", f"SSL connection failed: {msg}"
+
+
+def check_dns(target: str, expected: Optional[str] = None) -> Tuple[str, str]:
+    host = (target or "").strip()
+    host = re.sub(r"^https?://", "", host, flags=re.I)
+    host = host.split("/")[0].split(":")[0]
+
+    if not host or not re.match(r"^[a-zA-Z0-9]([a-zA-Z0-9\.\-]*[a-zA-Z0-9])?$", host):
+        return "down", "Invalid hostname for DNS check"
+
+    try:
+        import ipaddress
+        ipaddress.ip_address(host)
+        return "up", "Target is an IP address (DNS lookup skipped)"
+    except Exception:
+        pass
+
+    try:
+        infos = socket.getaddrinfo(host, None)
+    except socket.gaierror as e:
+        return "down", f"No DNS records found: {e}"
+
+    ips = list(dict.fromkeys([x[4][0] for x in infos if x and x[4]]))
+    if not ips:
+        return "down", "No DNS records found"
+
+    exp = (expected or "").strip()
+    if exp:
+        found = any(ip == exp or exp.lower() in ip.lower() for ip in ips)
+        if not found:
+            return "down", f"Expected '{exp}' not in DNS ({', '.join(ips[:4])})"
+        return "up", f"DNS matches expected ({exp})"
+
+    return "up", "DNS resolved: " + ", ".join(ips[:4])
+
+
+def check_json(url: str, keyword: str, timeout: float, verify_ssl: bool, app_name: str = "LinkNest") -> Tuple[str, str]:
+    if not re.match(r"^https?://", url, re.I):
+        return "down", "Invalid URL"
+    expr = (keyword or "").strip()
+    if not expr:
+        return "down", "No JSON check expression specified"
+
+    ua = f"{app_name} Monitor/1.0"
+    req = urllib.request.Request(url, method="GET", headers={"User-Agent": ua, "Accept": "application/json, */*", "Connection": "close"})
+    try:
+        with urllib.request.urlopen(req, timeout=timeout, context=_ssl_context(verify_ssl)) as resp:
+            code = getattr(resp, "status", None) or resp.getcode()
+            if not (200 <= int(code) < 400):
+                return "down", f"HTTP {code}"
+            body = resp.read(1024 * 1024)
+    except Exception as e:
+        msg = str(e) or e.__class__.__name__
+        if "timed out" in msg.lower():
+            return "down", "Connection timeout"
+        return "down", f"Connection failed: {msg}"
+
+    try:
+        text = body.decode("utf-8", errors="ignore")
+        data = json.loads(text)
+    except Exception:
+        return "down", "Response is not valid JSON"
+
+    if isinstance(data, dict) and ":" in expr:
+        key, expected = expr.split(":", 1)
+        key, expected = key.strip(), expected.strip()
+        actual = data.get(key)
+        if actual is None:
+            return "down", f"JSON key '{key}' not found"
+        actual_str = str(actual).lower() if not isinstance(actual, bool) else ("true" if actual else "false")
+        if actual_str == expected.lower() or str(actual) == expected:
+            return "up", f"JSON {key}={actual} (HTTP {code})"
+        return "down", f"JSON {key}={actual}, expected {expected}"
+
+    haystack = json.dumps(data).lower()
+    if expr.lower() in haystack:
+        return "up", f"JSON contains '{expr}' (HTTP {code})"
+    return "down", f"JSON value '{expr}' not found"
 
 
 def send_smtp_email(

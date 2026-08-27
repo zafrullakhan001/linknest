@@ -1297,7 +1297,7 @@ docker\\docker-sync-database.bat -Direction Out -HostBasePath "/ArchLinks"`}</pr
                       <li>Fullscreen monitoring dashboard</li>
                       <li>Custom tile styling for different statuses (up, down, warning)</li>
                       <li>Organize monitors into tabs and groups</li>
-                      <li>Export/import monitors via CSV</li>
+                      <li>Export/import monitors via JSON</li>
                       <li>Bulk operations and duplicate monitors</li>
                     </ul>
                   </div>

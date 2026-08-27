@@ -1,10 +1,240 @@
-import React, { useRef, useState, useEffect, useMemo } from 'react';
+import React, { useRef, useState, useEffect, useMemo, useCallback } from 'react';
 import { useSettings } from '../contexts/SettingsContext';
-import { NotificationRule, getNotificationRules, createNotificationRule, updateNotificationRule, deleteNotificationRule, importNotificationRules, moveNotificationRule, parseDaysOfWeek, formatDaysOfWeek, getDayName } from '../services/monitorNotificationService';
+import { useAuth } from '../contexts/AuthContext';
+import {
+    NotificationRule,
+    MonitorNotificationTimezoneInfo,
+    getNotificationRules,
+    createNotificationRule,
+    updateNotificationRule,
+    deleteNotificationRule,
+    importNotificationRules,
+    moveNotificationRule,
+    parseDaysOfWeek,
+    formatDaysOfWeek,
+    getDayName,
+    getMonitorNotificationTimezone,
+    updateMonitorNotificationTimezone,
+} from '../services/monitorNotificationService';
+import {
+    NOTIFICATION_SCHEDULE_PRESETS,
+    matchNotificationSchedulePreset,
+    formatPresetScheduleSummary,
+    NotificationSchedulePreset,
+} from '../utils/notificationRulePresets';
+import { MonitorTogglePill } from './MonitorTogglePill';
 
 interface EmailNotificationsTabProps {
     monitorId: number;
 }
+
+const NotificationTimezonePanel: React.FC<{ compact?: boolean }> = ({ compact = false }) => {
+    const { user } = useAuth();
+    const isAdmin = !!user?.is_admin;
+    const [info, setInfo] = useState<MonitorNotificationTimezoneInfo | null>(null);
+    const [loading, setLoading] = useState(true);
+    const [saving, setSaving] = useState(false);
+    const [error, setError] = useState<string | null>(null);
+    const [expanded, setExpanded] = useState(!compact);
+    const [selectedTz, setSelectedTz] = useState('');
+    const [dstCorrection, setDstCorrection] = useState(true);
+
+    const loadTimezone = useCallback(async () => {
+        try {
+            setLoading(true);
+            setError(null);
+            const tz = await getMonitorNotificationTimezone();
+            setInfo(tz);
+            setSelectedTz(tz.configured_timezone ?? '');
+            setDstCorrection(!!tz.dst_correction_enabled);
+        } catch (err: any) {
+            setError(err.message || 'Failed to load timezone');
+        } finally {
+            setLoading(false);
+        }
+    }, []);
+
+    useEffect(() => {
+        loadTimezone();
+    }, [loadTimezone]);
+
+    const handleSaveTimezone = async () => {
+        if (!isAdmin) return;
+        try {
+            setSaving(true);
+            setError(null);
+            const tz = await updateMonitorNotificationTimezone(selectedTz, dstCorrection);
+            setInfo(tz);
+            setSelectedTz(tz.configured_timezone ?? '');
+            setDstCorrection(!!tz.dst_correction_enabled);
+        } catch (err: any) {
+            setError(err.message || 'Failed to save timezone');
+        } finally {
+            setSaving(false);
+        }
+    };
+
+    const dayName = info ? getDayName(info.day_of_week) : '';
+
+    const settingsDirty = info
+        ? selectedTz !== (info.configured_timezone ?? '') || dstCorrection !== !!info.dst_correction_enabled
+        : false;
+
+    const dstStatusLabel = info
+        ? !info.dst_correction_enabled
+            ? `📌 Standard time only (${info.timezone_abbreviation})`
+            : info.dst_active
+              ? `☀️ Daylight Saving active (${info.timezone_abbreviation})`
+              : info.dst_aware
+                ? `🌙 Standard time (${info.timezone_abbreviation})`
+                : `🕐 No DST in this zone (${info.timezone_abbreviation})`
+        : '';
+
+    return (
+        <div className="rounded-lg border border-sky-200 overflow-hidden bg-sky-50/60">
+            <button
+                type="button"
+                onClick={() => setExpanded((v) => !v)}
+                className="w-full flex items-center justify-between gap-3 px-4 py-3 text-left bg-sky-100 hover:bg-sky-200 border-b border-sky-200"
+            >
+                <div className="flex items-center gap-2 min-w-0">
+                    <span className="text-lg shrink-0" aria-hidden="true">🕐</span>
+                    <div className="min-w-0">
+                        <div className="text-sm font-semibold text-sky-900">Notification Timezone</div>
+                        {!expanded && info && (
+                            <div className="text-xs text-sky-700 truncate">
+                                {info.effective_timezone} · {info.current_local_time} (UTC{info.utc_offset})
+                                {dstStatusLabel ? ` · ${dstStatusLabel}` : ''}
+                            </div>
+                        )}
+                        {!expanded && loading && (
+                            <div className="text-xs text-sky-600">Loading…</div>
+                        )}
+                    </div>
+                </div>
+                <svg
+                    className={`w-5 h-5 shrink-0 text-sky-700 transition-transform ${expanded ? 'rotate-180' : ''}`}
+                    fill="none"
+                    stroke="currentColor"
+                    viewBox="0 0 24 24"
+                    aria-hidden="true"
+                >
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" />
+                </svg>
+            </button>
+
+            {expanded && (
+                <div className="p-4 space-y-3">
+                    {loading && !info && (
+                        <p className="text-sm text-gray-500">Loading timezone…</p>
+                    )}
+                    {error && (
+                        <p className="text-xs text-red-700 bg-red-50 border border-red-200 rounded p-2">{error}</p>
+                    )}
+                    {info && (
+                        <>
+                            <p className="text-xs text-gray-600">
+                                Schedule presets and time windows use this timezone when deciding whether to send email alerts.
+                                IANA regions (e.g. America/New_York) automatically shift between standard and daylight time when DST correction is enabled.
+                            </p>
+                            {info && (
+                                <div className={`text-xs rounded-lg px-3 py-2 border ${
+                                    info.dst_correction_enabled && info.dst_active
+                                        ? 'bg-amber-50 border-amber-200 text-amber-900'
+                                        : info.dst_correction_enabled
+                                          ? 'bg-indigo-50 border-indigo-200 text-indigo-900'
+                                          : 'bg-gray-50 border-gray-200 text-gray-800'
+                                }`}>
+                                    <span className="font-medium">{dstStatusLabel}</span>
+                                    {info.dst_correction_enabled && info.next_dst_transition && (
+                                        <span className="block mt-1 text-[11px] opacity-90">
+                                            Next change: {info.next_dst_transition.label} on {info.next_dst_transition.at}
+                                        </span>
+                                    )}
+                                    {!info.dst_correction_enabled && info.dst_aware && (
+                                        <span className="block mt-1 text-[11px] opacity-90">
+                                            Schedules use fixed standard offset UTC{info.standard_utc_offset} (DST ignored).
+                                        </span>
+                                    )}
+                                </div>
+                            )}
+                            <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 text-sm">
+                                <div className="rounded-lg bg-white border border-sky-100 px-3 py-2">
+                                    <div className="text-xs text-gray-500 uppercase tracking-wide">Active timezone</div>
+                                    <div className="font-medium text-gray-900 mt-0.5">{info.effective_timezone}</div>
+                                    {info.uses_custom_timezone ? (
+                                        <div className="text-xs text-emerald-700 mt-1">Custom setting</div>
+                                    ) : (
+                                        <div className="text-xs text-gray-500 mt-1">Using server default (PHP)</div>
+                                    )}
+                                </div>
+                                <div className="rounded-lg bg-white border border-sky-100 px-3 py-2">
+                                    <div className="text-xs text-gray-500 uppercase tracking-wide">Current time there</div>
+                                    <div className="font-medium text-gray-900 mt-0.5">{info.current_local_time}</div>
+                                    <div className="text-xs text-gray-500 mt-1">
+                                        {dayName} · UTC{info.utc_offset}
+                                    </div>
+                                </div>
+                            </div>
+                            <p className="text-xs text-gray-500">
+                                Server PHP timezone: <code className="bg-white px-1 rounded">{info.server_php_timezone}</code>
+                                {!info.uses_custom_timezone && info.server_php_timezone !== info.effective_timezone && (
+                                    <> · effective: <code className="bg-white px-1 rounded">{info.effective_timezone}</code></>
+                                )}
+                            </p>
+
+                            {isAdmin ? (
+                                <div className="space-y-3 pt-1">
+                                    <div className="flex flex-col sm:flex-row gap-2">
+                                        <select
+                                            value={selectedTz}
+                                            onChange={(e) => setSelectedTz(e.target.value)}
+                                            className="flex-1 bg-white border border-gray-300 rounded-lg px-3 py-2 text-sm text-gray-900 outline-none focus:border-sky-500 focus:ring-2 focus:ring-sky-200"
+                                        >
+                                            <option value="">Use server default ({info.server_php_timezone})</option>
+                                            {info.options.map((opt) => (
+                                                <option key={opt.value} value={opt.value}>
+                                                    {opt.label} ({opt.value})
+                                                </option>
+                                            ))}
+                                        </select>
+                                        <button
+                                            type="button"
+                                            onClick={handleSaveTimezone}
+                                            disabled={saving || !settingsDirty}
+                                            className="px-4 py-2 bg-sky-600 hover:bg-sky-700 disabled:opacity-50 text-white rounded-lg text-sm font-medium whitespace-nowrap"
+                                        >
+                                            {saving ? 'Saving…' : 'Apply Settings'}
+                                        </button>
+                                    </div>
+                                    <label className="flex items-start gap-3 p-3 bg-white border border-sky-100 rounded-lg cursor-pointer">
+                                        <input
+                                            type="checkbox"
+                                            checked={dstCorrection}
+                                            onChange={(e) => setDstCorrection(e.target.checked)}
+                                            className="mt-0.5 w-4 h-4 rounded border-gray-300 text-sky-600 focus:ring-sky-500"
+                                        />
+                                        <span className="text-sm text-gray-800">
+                                            <span className="font-medium">Adjust for daylight saving time</span>
+                                            <span className="block text-xs text-gray-600 mt-0.5">
+                                                Recommended. Automatically moves schedules with spring/fall clock changes (e.g. 9:00 AM stays 9:00 AM local).
+                                                Turn off to keep a fixed standard-time offset year-round.
+                                            </span>
+                                        </span>
+                                    </label>
+                                </div>
+                            ) : (
+                                <p className="text-xs text-amber-700 bg-amber-50 border border-amber-200 rounded p-2">
+                                    Only administrators can change the notification timezone. Contact an admin if schedule times look wrong.
+                                </p>
+                            )}
+                        </>
+                    )}
+                </div>
+            )}
+        </div>
+    );
+};
 
 export const EmailNotificationsTab: React.FC<EmailNotificationsTabProps> = ({ monitorId }) => {
     const { settings } = useSettings();
@@ -216,17 +446,21 @@ export const EmailNotificationsTab: React.FC<EmailNotificationsTabProps> = ({ mo
 
     if (editingRule) {
         return (
-            <NotificationRuleForm
-                rule={editingRule}
-                onSave={handleSave}
-                onCancel={handleCancel}
-                isCreating={isCreating}
-            />
+            <div className="space-y-4">
+                <NotificationTimezonePanel compact />
+                <NotificationRuleForm
+                    rule={editingRule}
+                    onSave={handleSave}
+                    onCancel={handleCancel}
+                    isCreating={isCreating}
+                />
+            </div>
         );
     }
 
     return (
         <div className="space-y-4">
+            <NotificationTimezonePanel />
             <div className="flex items-center justify-between">
                 <div>
                     <h3 className="text-sm font-semibold text-gray-700 uppercase tracking-wide">
@@ -455,6 +689,27 @@ const NotificationRuleForm: React.FC<NotificationRuleFormProps> = ({ rule, onSav
     const [ccText, setCcText] = useState(rule.cc?.join(', ') || '');
     const [selectedDays, setSelectedDays] = useState<number[]>(parseDaysOfWeek(rule.days_of_week));
     const [error, setError] = useState<string | null>(null);
+    const [activePresetId, setActivePresetId] = useState<string | null>(null);
+    const [presetsExpanded, setPresetsExpanded] = useState(isCreating);
+
+    const matchedPreset = useMemo(
+        () => matchNotificationSchedulePreset(formData.time_window_start, formData.time_window_end, selectedDays),
+        [formData.time_window_start, formData.time_window_end, selectedDays]
+    );
+
+    const applySchedulePreset = (preset: NotificationSchedulePreset) => {
+        setFormData({
+            ...formData,
+            time_window_start: preset.time_window_start,
+            time_window_end: preset.time_window_end,
+            name: (!formData.name?.trim() && preset.suggestedRuleName)
+                ? preset.suggestedRuleName
+                : formData.name,
+        });
+        setSelectedDays([...preset.days]);
+        setActivePresetId(preset.id);
+        setError(null);
+    };
 
     const handleSubmit = (e: React.FormEvent) => {
         e.preventDefault();
@@ -514,11 +769,17 @@ const NotificationRuleForm: React.FC<NotificationRuleFormProps> = ({ rule, onSav
     };
 
     const toggleDay = (day: number) => {
+        setActivePresetId(null);
         setSelectedDays(prev =>
             prev.includes(day)
                 ? prev.filter(d => d !== day)
                 : [...prev, day].sort()
         );
+    };
+
+    const handleTimeWindowChange = (field: 'time_window_start' | 'time_window_end', value: string) => {
+        setActivePresetId(null);
+        setFormData({ ...formData, [field]: value || null });
     };
 
     const FieldHelp: React.FC<{ text: string }> = ({ text }) => (
@@ -545,6 +806,29 @@ const NotificationRuleForm: React.FC<NotificationRuleFormProps> = ({ rule, onSav
                     <strong>Error:</strong> {error}
                 </div>
             )}
+
+            <div className="flex items-center justify-between gap-3 p-3 rounded-xl border border-gray-200 bg-gray-50">
+                <div>
+                    <div className="text-sm font-semibold text-gray-800">Rule enabled</div>
+                    <p className="text-xs text-gray-600 mt-0.5">
+                        {formData.is_enabled === 1 ? 'This rule will send emails when triggered' : 'This rule is paused'}
+                    </p>
+                </div>
+                <div className="flex items-center gap-2 shrink-0">
+                    <span
+                        className={`text-[10px] font-bold uppercase tracking-wide px-2 py-0.5 rounded-full ${formData.is_enabled === 1 ? 'bg-emerald-100 text-emerald-700' : 'bg-slate-100 text-slate-500'}`}
+                    >
+                        {formData.is_enabled === 1 ? 'On' : 'Off'}
+                    </span>
+                    <MonitorTogglePill
+                        enabled={formData.is_enabled === 1}
+                        onToggle={() => setFormData({ ...formData, is_enabled: formData.is_enabled === 1 ? 0 : 1 })}
+                        onClassName="bg-emerald-500"
+                        labelOn="Enable notification rule"
+                        labelOff="Disable notification rule"
+                    />
+                </div>
+            </div>
 
             <div>
                 <label className="block text-sm font-medium text-gray-700 mb-1">
@@ -605,6 +889,94 @@ const NotificationRuleForm: React.FC<NotificationRuleFormProps> = ({ rule, onSav
                 <FieldHelp text="Comma-separated CC emails. CC recipients will receive a copy of the notification." />
             </div>
 
+            <div className="rounded-lg border border-gray-200 overflow-hidden">
+                <button
+                    type="button"
+                    onClick={() => setPresetsExpanded((v) => !v)}
+                    className={`w-full flex items-center justify-between gap-3 px-4 py-3 text-left transition-colors ${
+                        matchedPreset
+                            ? `${matchedPreset.theme.headerBg} ${matchedPreset.theme.headerBorder} border-b`
+                            : 'bg-violet-50 hover:bg-violet-100 border-b border-violet-200'
+                    }`}
+                >
+                    <div className="flex items-center gap-2 min-w-0">
+                        <span className="text-lg shrink-0" aria-hidden="true">
+                            {matchedPreset?.theme.emoji ?? '⚡'}
+                        </span>
+                        <div className="min-w-0">
+                            <div className={`text-sm font-semibold ${matchedPreset?.theme.headerText ?? 'text-violet-900'}`}>
+                                Schedule Presets
+                            </div>
+                            {!presetsExpanded && matchedPreset && (
+                                <div className={`text-xs truncate ${matchedPreset.theme.activeSummaryText}`}>
+                                    {matchedPreset.theme.emoji} {formatPresetScheduleSummary(matchedPreset)}
+                                </div>
+                            )}
+                            {!presetsExpanded && !matchedPreset && (
+                                <div className="text-xs text-violet-600 truncate">
+                                    Tap to pick business hours, weekends, off-hours…
+                                </div>
+                            )}
+                        </div>
+                    </div>
+                    <svg
+                        className={`w-5 h-5 shrink-0 transition-transform ${matchedPreset?.theme.headerText ?? 'text-violet-700'} ${presetsExpanded ? 'rotate-180' : ''}`}
+                        fill="none"
+                        stroke="currentColor"
+                        viewBox="0 0 24 24"
+                        aria-hidden="true"
+                    >
+                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" />
+                    </svg>
+                </button>
+
+                {presetsExpanded && (
+                    <div className="p-4 bg-gray-50 space-y-3">
+                        <p className="text-xs text-gray-600">
+                            Quick-fill time window and days (times use the <strong>Notification Timezone</strong> above). For full nights &amp; weekends coverage, add two rules:{' '}
+                            <strong>🌙 Off Business Hours</strong> + <strong>🏖️ Weekends</strong>.
+                        </p>
+                        <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
+                            {NOTIFICATION_SCHEDULE_PRESETS.map((preset) => {
+                                const isActive = matchedPreset?.id === preset.id || activePresetId === preset.id;
+                                const t = preset.theme;
+                                return (
+                                    <button
+                                        key={preset.id}
+                                        type="button"
+                                        onClick={() => applySchedulePreset(preset)}
+                                        className={`text-left p-3 rounded-lg border transition-all ${
+                                            isActive
+                                                ? `${t.cardActiveBorder} ${t.cardActiveBg} ring-2 ${t.cardActiveRing}`
+                                                : `${t.cardBorder} ${t.cardBg} ${t.cardHoverBorder} ${t.cardHoverBg}`
+                                        }`}
+                                    >
+                                        <div className="flex items-start gap-2">
+                                            <span className="text-xl leading-none shrink-0 mt-0.5" aria-hidden="true">
+                                                {t.emoji}
+                                            </span>
+                                            <div className="min-w-0">
+                                                <div className={`font-medium text-sm ${t.titleText}`}>
+                                                    {preset.name}
+                                                </div>
+                                                <div className={`text-xs mt-0.5 ${t.descriptionText}`}>
+                                                    {preset.description}
+                                                </div>
+                                            </div>
+                                        </div>
+                                    </button>
+                                );
+                            })}
+                        </div>
+                        {matchedPreset && (
+                            <p className={`text-xs font-medium ${matchedPreset.theme.activeSummaryText}`}>
+                                {matchedPreset.theme.emoji} Active schedule: {formatPresetScheduleSummary(matchedPreset)}
+                            </p>
+                        )}
+                    </div>
+                )}
+            </div>
+
             <div className="grid grid-cols-2 gap-4">
                 <div>
                     <label className="block text-sm font-medium text-gray-700 mb-1">
@@ -613,7 +985,7 @@ const NotificationRuleForm: React.FC<NotificationRuleFormProps> = ({ rule, onSav
                     <input
                         type="text"
                         value={formData.time_window_start || ''}
-                        onChange={(e) => setFormData({ ...formData, time_window_start: e.target.value || null })}
+                        onChange={(e) => handleTimeWindowChange('time_window_start', e.target.value)}
                         className="w-full bg-white border border-gray-300 rounded-lg px-3 py-2 text-gray-900 outline-none focus:border-blue-500 focus:ring-2 focus:ring-blue-200"
                         placeholder="09:00"
                         pattern="^([01]?[0-9]|2[0-3]):[0-5][0-9]$"
@@ -627,7 +999,7 @@ const NotificationRuleForm: React.FC<NotificationRuleFormProps> = ({ rule, onSav
                     <input
                         type="text"
                         value={formData.time_window_end || ''}
-                        onChange={(e) => setFormData({ ...formData, time_window_end: e.target.value || null })}
+                        onChange={(e) => handleTimeWindowChange('time_window_end', e.target.value)}
                         className="w-full bg-white border border-gray-300 rounded-lg px-3 py-2 text-gray-900 outline-none focus:border-blue-500 focus:ring-2 focus:ring-blue-200"
                         placeholder="17:00"
                         pattern="^([01]?[0-9]|2[0-3]):[0-5][0-9]$"
@@ -713,19 +1085,6 @@ const NotificationRuleForm: React.FC<NotificationRuleFormProps> = ({ rule, onSav
                     />
                     <FieldHelp text="Custom sender email. Uses SMTP settings if not specified." />
                 </div>
-            </div>
-
-            <div className="flex items-center space-x-3 p-3 bg-gray-50 rounded-lg border border-gray-200">
-                <input
-                    type="checkbox"
-                    checked={formData.is_enabled === 1}
-                    onChange={(e) => setFormData({ ...formData, is_enabled: e.target.checked ? 1 : 0 })}
-                    id="isEnabled"
-                    className="w-4 h-4 rounded border-gray-300 text-blue-600 focus:ring-blue-500"
-                />
-                <label htmlFor="isEnabled" className="text-sm font-medium text-gray-700 cursor-pointer">
-                    Enable this notification rule
-                </label>
             </div>
 
             <div className="flex justify-end gap-3 pt-4 border-t border-gray-200">

@@ -1,10 +1,14 @@
-import React, { useState, useEffect, useRef } from 'react';
-import { Monitor } from '../services/monitoringService';
+import React, { useState, useEffect, useRef, useMemo } from 'react';
+import { Monitor, MonitorSuggestion, monitoringService } from '../services/monitoringService';
 import { EmailNotificationsTab } from './EmailNotificationsTab';
 import { EmailLogsTab } from './EmailLogsTab';
 import { useAuth } from '../contexts/AuthContext';
 import { authService, UserListItem } from '../services/authService';
 import { useSettings } from '../contexts/SettingsContext';
+import { MONITOR_TYPE_LABELS, parseMonitorInputHint } from '../utils/monitorSuggestHeuristics';
+import { enrichMonitorConfigWithTiming } from '../utils/monitorSuggestTiming';
+import { MonitorQuickToggles, MonitorTogglePill } from './MonitorTogglePill';
+import { LinkUrlField } from './LinkUrlField';
 
 interface MonitorFormProps {
     monitor?: Monitor;
@@ -17,7 +21,7 @@ interface MonitorFormProps {
 interface MonitorPreset {
     name: string;
     description: string;
-    type: 'url' | 'keyword' | 'port' | 'ping';
+    type: Monitor['type'];
     target: string;
     port?: number;
     keyword?: string;
@@ -125,6 +129,54 @@ const MONITOR_PRESETS: MonitorPreset[] = [
     }
 ];
 
+const FieldHelp: React.FC<{ text: string }> = ({ text }) => (
+    <p className="text-xs text-gray-600 mt-1">{text}</p>
+);
+
+const SettingsSection: React.FC<{
+    emoji: string;
+    title: string;
+    subtitle?: string;
+    tone?: 'sky' | 'cyan' | 'amber' | 'violet' | 'indigo' | 'purple' | 'emerald';
+    children: React.ReactNode;
+}> = ({ emoji, title, subtitle, tone = 'sky', children }) => {
+    const shell: Record<string, string> = {
+        sky: 'bg-sky-50/90 border-sky-100',
+        cyan: 'bg-cyan-50/90 border-cyan-100',
+        amber: 'bg-amber-50/90 border-amber-100',
+        violet: 'bg-violet-50/90 border-violet-100',
+        indigo: 'bg-indigo-50/90 border-indigo-100',
+        purple: 'bg-purple-50/90 border-purple-100',
+        emerald: 'bg-emerald-50/90 border-emerald-100',
+    };
+    const titleColor: Record<string, string> = {
+        sky: 'text-sky-900',
+        cyan: 'text-cyan-900',
+        amber: 'text-amber-900',
+        violet: 'text-violet-900',
+        indigo: 'text-indigo-900',
+        purple: 'text-purple-900',
+        emerald: 'text-emerald-900',
+    };
+    return (
+        <section className={`rounded-xl border p-4 space-y-4 shadow-sm ${shell[tone]}`}>
+            <div className="flex items-start gap-2.5 pb-2 border-b border-black/[0.06]">
+                <span className="text-xl leading-none select-none" aria-hidden="true">
+                    {emoji}
+                </span>
+                <div>
+                    <h3 className={`text-sm font-semibold tracking-wide ${titleColor[tone]}`}>{title}</h3>
+                    {subtitle ? <p className="text-xs text-gray-600 mt-0.5">{subtitle}</p> : null}
+                </div>
+            </div>
+            {children}
+        </section>
+    );
+};
+
+const MONITOR_INPUT_CLASS =
+    'w-full bg-white/90 border border-gray-200 rounded-lg px-3 py-2 text-gray-900 outline-none focus:border-blue-400 focus:ring-2 focus:ring-blue-100 transition-colors';
+
 export const MonitorForm: React.FC<MonitorFormProps> = ({ monitor, onSave, onCancel, isAddingNew = false, createdMonitorId }) => {
     const { user } = useAuth();
     const isAdmin = !!user?.is_admin;
@@ -159,6 +211,11 @@ export const MonitorForm: React.FC<MonitorFormProps> = ({ monitor, onSave, onCan
     const [isSubmitting, setIsSubmitting] = useState(false);
     const [error, setError] = useState<string | null>(null);
     const [showPresets, setShowPresets] = useState(!monitor && name === '');
+    const [analyzeInput, setAnalyzeInput] = useState('');
+    const [suggestions, setSuggestions] = useState<MonitorSuggestion[]>([]);
+    const [isAnalyzing, setIsAnalyzing] = useState(false);
+    const [analyzeError, setAnalyzeError] = useState<string | null>(null);
+    const [showSmartSetup, setShowSmartSetup] = useState(!monitor?.id && isAddingNew);
     const [activeTab, setActiveTab] = useState<'settings' | 'notifications' | 'logs'>('settings');
     const [pendingSubmitAfterTabSwitch, setPendingSubmitAfterTabSwitch] = useState(false);
     const [waitingForMonitorId, setWaitingForMonitorId] = useState(false);
@@ -313,6 +370,73 @@ export const MonitorForm: React.FC<MonitorFormProps> = ({ monitor, onSave, onCan
         setShowPresets(false);
     };
 
+    const applySuggestion = (suggestion: MonitorSuggestion) => {
+        const cfg = suggestion.config;
+        const timing = enrichMonitorConfigWithTiming(suggestion.type, cfg);
+        if (suggestion.suggested_name) setName(suggestion.suggested_name);
+        if (suggestion.suggested_group) setGroupName(suggestion.suggested_group);
+        setType(suggestion.type);
+        if (cfg.target) setTarget(cfg.target);
+        if (cfg.port !== undefined) setPort(String(cfg.port));
+        else setPort('');
+        if (cfg.keyword !== undefined) setKeyword(String(cfg.keyword));
+        else if (suggestion.type !== 'ssl' && suggestion.type !== 'dns') setKeyword('');
+        setInterval(String(timing.interval));
+        if (timing.timeout != null) setTimeoutSec(String(timing.timeout));
+        else setTimeoutSec('');
+        setWarningThreshold(String(timing.warning_threshold));
+        setShowSmartSetup(false);
+        setShowPresets(false);
+        setAnalyzeError(null);
+    };
+
+    const handleAnalyzeTarget = async () => {
+        const trimmed = analyzeInput.trim();
+        if (!trimmed) {
+            setAnalyzeError('Enter a URL or server address to analyze');
+            return;
+        }
+        setIsAnalyzing(true);
+        setAnalyzeError(null);
+        setSuggestions([]);
+        try {
+            const result = await monitoringService.suggestMonitor(trimmed);
+            setSuggestions(result.suggestions || []);
+            if (!result.suggestions?.length) {
+                setAnalyzeError('No monitoring suggestions could be generated for this target.');
+            }
+        } catch (err: any) {
+            setAnalyzeError(err.message || 'Failed to analyze target');
+        } finally {
+            setIsAnalyzing(false);
+        }
+    };
+
+    const inputHint = useMemo(() => parseMonitorInputHint(analyzeInput), [analyzeInput]);
+
+    const getTypeHelpText = (monitorType: Monitor['type']): string => {
+        switch (monitorType) {
+            case 'url':
+                return 'Checks if a website or API endpoint is accessible via HTTP/HTTPS request';
+            case 'keyword':
+                return 'Checks if a specific text/keyword appears in the webpage content';
+            case 'port':
+                return 'Checks if a network port on a server is open and accepting connections';
+            case 'ping':
+                return 'Checks if the host/IP responds to ping';
+            case 'ssl':
+                return 'Monitors HTTPS certificate expiry and alerts before it expires';
+            case 'dns':
+                return 'Verifies that a hostname resolves via DNS (optionally matches an expected IP)';
+            case 'json':
+                return 'Validates a JSON API health response (e.g. status:ok)';
+            default:
+                return '';
+        }
+    };
+
+    const isHostTargetType = type === 'port' || type === 'ping' || type === 'dns' || type === 'ssl';
+
     const handleSubmit = async (e: React.FormEvent) => {
         e.preventDefault();
         if (isSubmitting) return; // Prevent double submission
@@ -339,6 +463,16 @@ export const MonitorForm: React.FC<MonitorFormProps> = ({ monitor, onSave, onCan
             }
             if (type === 'keyword' && !keyword.trim()) {
                 setError('Keyword is required for keyword checks');
+                setIsSubmitting(false);
+                return;
+            }
+            if (type === 'json' && !keyword.trim()) {
+                setError('JSON check expression is required (e.g. status:ok)');
+                setIsSubmitting(false);
+                return;
+            }
+            if (type === 'ssl' && keyword.trim() !== '' && (isNaN(parseInt(keyword)) || parseInt(keyword) < 1 || parseInt(keyword) > 365)) {
+                setError('SSL warning days must be between 1 and 365');
                 setIsSubmitting(false);
                 return;
             }
@@ -394,9 +528,7 @@ export const MonitorForm: React.FC<MonitorFormProps> = ({ monitor, onSave, onCan
         }
     };
 
-    const FieldHelp: React.FC<{ text: string }> = ({ text }) => (
-        <p className="text-xs text-gray-600 mt-1">{text}</p>
-    );
+    const inputClass = MONITOR_INPUT_CLASS;
 
     const filteredPresets = MONITOR_PRESETS.filter(p => !monitor);
 
@@ -419,7 +551,8 @@ export const MonitorForm: React.FC<MonitorFormProps> = ({ monitor, onSave, onCan
                     className={`px-6 py-4 border-b border-gray-200 flex items-center justify-between bg-gray-50 ${isDragging ? 'cursor-grabbing' : 'cursor-grab'}`}
                     onMouseDown={handleMouseDown}
                 >
-                    <h2 className="text-xl font-semibold text-gray-800">
+                    <h2 className="text-xl font-semibold text-gray-800 flex items-center gap-2">
+                        <span aria-hidden="true">{monitor?.id && !isAddingNew ? '✏️' : '➕'}</span>
                         {(monitor?.id && !isAddingNew) ? 'Edit Monitor' : 'Add New Monitor'}
                     </h2>
                     <div className="flex items-center gap-3">
@@ -448,17 +581,17 @@ export const MonitorForm: React.FC<MonitorFormProps> = ({ monitor, onSave, onCan
                 </div>
 
                 {/* Tabs */}
-                <div className="border-b border-gray-200 bg-gray-50 px-6">
+                <div className="border-b border-gray-200 bg-gradient-to-r from-slate-50 to-white px-6">
                     <div className="flex space-x-1">
                         <button
                             type="button"
                             onClick={() => setActiveTab('settings')}
                             className={`px-4 py-3 text-sm font-medium transition-colors border-b-2 ${activeTab === 'settings'
-                                ? 'border-blue-600 text-blue-600'
-                                : 'border-transparent text-gray-500 hover:text-gray-700'
+                                ? 'border-sky-600 text-sky-700 bg-sky-50/60'
+                                : 'border-transparent text-gray-500 hover:text-gray-700 hover:bg-white/60'
                                 }`}
                         >
-                            Settings
+                            <span aria-hidden="true">⚙️ </span>Settings
                         </button>
                         <button
                             type="button"
@@ -530,29 +663,37 @@ export const MonitorForm: React.FC<MonitorFormProps> = ({ monitor, onSave, onCan
                                 }
                             }}
                             className={`px-4 py-3 text-sm font-medium transition-colors border-b-2 ${activeTab === 'notifications'
-                                ? 'border-blue-600 text-blue-600'
-                                : 'border-transparent text-gray-500 hover:text-gray-700'
+                                ? 'border-violet-600 text-violet-700 bg-violet-50/60'
+                                : 'border-transparent text-gray-500 hover:text-gray-700 hover:bg-white/60'
                                 }`}
                         >
-                            Email Notifications
+                            <span aria-hidden="true">📧 </span>Email Notifications
                         </button>
                         {monitor && monitor.id && (
                             <button
                                 type="button"
                                 onClick={() => setActiveTab('logs')}
                                 className={`px-4 py-3 text-sm font-medium transition-colors border-b-2 ${activeTab === 'logs'
-                                    ? 'border-blue-600 text-blue-600'
-                                    : 'border-transparent text-gray-500 hover:text-gray-700'
+                                    ? 'border-indigo-600 text-indigo-700 bg-indigo-50/60'
+                                    : 'border-transparent text-gray-500 hover:text-gray-700 hover:bg-white/60'
                                     }`}
                             >
-                                Email Logs
+                                <span aria-hidden="true">📋 </span>Email Logs
                             </button>
                         )}
                     </div>
                 </div>
 
+                <MonitorQuickToggles
+                    isActive={isActive}
+                    onIsActiveChange={setIsActive}
+                    emailNotification={emailNotification}
+                    onEmailNotificationChange={setEmailNotification}
+                    ruleBasedOnly={legacyEmailDisabled}
+                />
+
                 {/* Scrollable Content */}
-                <div className="overflow-y-auto flex-1 p-6 bg-white">
+                <div className="overflow-y-auto flex-1 p-6 bg-gradient-to-b from-slate-50/40 to-white">
                     {(() => {
                         // Determine the monitor ID to use for tabs
                         const monitorIdForTabs = (isAddingNew && createdMonitorId) ? createdMonitorId : (monitor?.id);
@@ -581,10 +722,118 @@ export const MonitorForm: React.FC<MonitorFormProps> = ({ monitor, onSave, onCan
                         } else {
                             return (
                         <>
-                            {showPresets && filteredPresets.length > 0 && (
-                                <div className="mb-6 p-4 bg-blue-50 border border-blue-200 rounded-lg">
+                            {showSmartSetup && !monitor?.id && (
+                                <div className="mb-6 p-4 bg-emerald-50/90 border border-emerald-200 rounded-xl shadow-sm">
                                     <div className="flex items-center justify-between mb-3">
-                                        <h3 className="text-sm font-semibold text-gray-800">Quick Templates</h3>
+                                        <h3 className="text-sm font-semibold text-emerald-900 flex items-center gap-2">
+                                            <span aria-hidden="true">✨</span> Smart Setup
+                                        </h3>
+                                        <button
+                                            type="button"
+                                            onClick={() => setShowSmartSetup(false)}
+                                            className="text-gray-500 hover:text-gray-700 text-sm"
+                                        >
+                                            Hide
+                                        </button>
+                                    </div>
+                                    <p className="text-xs text-gray-600 mb-3">
+                                        Paste a URL or server address and we will probe it to recommend the best monitoring method.
+                                    </p>
+                                    <div className="flex gap-2 mb-2">
+                                        <input
+                                            type="text"
+                                            value={analyzeInput}
+                                            onChange={(e) => setAnalyzeInput(e.target.value)}
+                                            onKeyDown={(e) => {
+                                                if (e.key === 'Enter') {
+                                                    e.preventDefault();
+                                                    handleAnalyzeTarget();
+                                                }
+                                            }}
+                                            className="flex-1 bg-white border border-gray-300 rounded-lg px-3 py-2 text-gray-900 outline-none focus:border-emerald-500 focus:ring-2 focus:ring-emerald-200 text-sm"
+                                            placeholder="https://example.com, db.server.com:3306, or 192.168.1.1"
+                                        />
+                                        <button
+                                            type="button"
+                                            onClick={handleAnalyzeTarget}
+                                            disabled={isAnalyzing}
+                                            className="px-4 py-2 bg-emerald-600 text-white rounded-lg hover:bg-emerald-700 disabled:opacity-50 text-sm font-medium whitespace-nowrap"
+                                        >
+                                            {isAnalyzing ? 'Analyzing…' : 'Analyze Target'}
+                                        </button>
+                                    </div>
+                                    {analyzeInput.trim() && (
+                                        <p className="text-xs text-emerald-700 mb-2">{inputHint.hint}</p>
+                                    )}
+                                    {analyzeError && (
+                                        <p className="text-xs text-red-600 mb-2">{analyzeError}</p>
+                                    )}
+                                    {isAnalyzing && (
+                                        <div className="flex items-center gap-2 text-sm text-gray-600 py-2">
+                                            <div className="w-4 h-4 border-2 border-emerald-500/20 border-t-emerald-500 rounded-full animate-spin" />
+                                            Probing target…
+                                        </div>
+                                    )}
+                                    {suggestions.length > 0 && (
+                                        <div className="space-y-2 mt-3 max-h-56 overflow-y-auto">
+                                            {suggestions.map((suggestion, idx) => (
+                                                <div
+                                                    key={idx}
+                                                    className={`p-3 bg-white border rounded-lg flex items-start justify-between gap-3 ${
+                                                        suggestion.recommended ? 'border-emerald-400 ring-1 ring-emerald-200' : 'border-gray-200'
+                                                    }`}
+                                                >
+                                                    <div className="min-w-0">
+                                                        <div className="flex items-center gap-2 flex-wrap">
+                                                            <span className="font-medium text-sm text-gray-800">
+                                                                {MONITOR_TYPE_LABELS[suggestion.type] || suggestion.type}
+                                                            </span>
+                                                            <span className="text-xs px-1.5 py-0.5 bg-gray-100 text-gray-600 rounded">
+                                                                {suggestion.confidence}% match
+                                                            </span>
+                                                            {suggestion.recommended && (
+                                                                <span className="text-xs px-1.5 py-0.5 bg-emerald-100 text-emerald-700 rounded font-medium">
+                                                                    Recommended
+                                                                </span>
+                                                            )}
+                                                        </div>
+                                                        <p className="text-xs text-gray-600 mt-1">{suggestion.reason}</p>
+                                                        {suggestion.suggested_name && (
+                                                            <p className="text-xs text-gray-500 mt-0.5">Suggested name: {suggestion.suggested_name}</p>
+                                                        )}
+                                                    </div>
+                                                    <button
+                                                        type="button"
+                                                        onClick={() => applySuggestion(suggestion)}
+                                                        className="shrink-0 px-3 py-1.5 text-xs font-medium bg-emerald-600 text-white rounded hover:bg-emerald-700"
+                                                    >
+                                                        Use this
+                                                    </button>
+                                                </div>
+                                            ))}
+                                        </div>
+                                    )}
+                                </div>
+                            )}
+
+                            {!showSmartSetup && !monitor?.id && (
+                                <div className="mb-4">
+                                    <button
+                                        type="button"
+                                        onClick={() => setShowSmartSetup(true)}
+                                        className="text-sm text-emerald-700 hover:text-emerald-800 font-medium"
+                                    >
+                                        <span aria-hidden="true">✨ </span>Show Smart Setup
+                                    </button>
+                                </div>
+                            )}
+
+                            {showPresets && filteredPresets.length > 0 && (
+                                <div className="mb-6 p-4 bg-blue-50/90 border border-blue-200 rounded-xl shadow-sm">
+                                    <div className="flex items-center justify-between mb-3">
+                                        <h3 className="text-sm font-semibold text-blue-900 flex items-center gap-2">
+                                            <span aria-hidden="true">📋</span> Quick Templates
+                                        </h3>
                                         <button
                                             type="button"
                                             onClick={() => setShowPresets(false)}
@@ -614,29 +863,24 @@ export const MonitorForm: React.FC<MonitorFormProps> = ({ monitor, onSave, onCan
                                     <button
                                         type="button"
                                         onClick={() => setShowPresets(true)}
-                                        className="text-sm text-blue-600 hover:text-blue-700"
+                                        className="text-sm text-blue-700 hover:text-blue-800 font-medium"
                                     >
-                                        Show Templates
+                                        <span aria-hidden="true">📋 </span>Show Templates
                                     </button>
                                 </div>
                             )}
 
                             <form ref={monitorFormRef} id="monitor-form" onSubmit={handleSubmit} className="space-y-5">
-                                {/* Basic Information Section */}
-                                <div className="space-y-4">
-                                    <h3 className="text-sm font-semibold text-gray-700 uppercase tracking-wide border-b border-gray-200 pb-2">
-                                        Basic Information
-                                    </h3>
-
+                                <SettingsSection emoji="📝" title="Basic Information" subtitle="Name and check type" tone="sky">
                                     <div>
                                         <label className="block text-sm font-medium text-gray-700 mb-1">
-                                            Monitor Name <span className="text-red-500">*</span>
+                                            <span aria-hidden="true">🏷️ </span>Monitor Name <span className="text-red-500">*</span>
                                         </label>
                                         <input
                                             type="text"
                                             value={name}
                                             onChange={(e) => setName(e.target.value)}
-                                            className="w-full bg-white border border-gray-300 rounded-lg px-3 py-2 text-gray-900 outline-none focus:border-blue-500 focus:ring-2 focus:ring-blue-200 transition-colors"
+                                            className={inputClass}
                                             placeholder="My Server"
                                             required
                                         />
@@ -645,54 +889,60 @@ export const MonitorForm: React.FC<MonitorFormProps> = ({ monitor, onSave, onCan
 
                                     <div>
                                         <label className="block text-sm font-medium text-gray-700 mb-1">
-                                            Monitor Type <span className="text-red-500">*</span>
+                                            <span aria-hidden="true">🔍 </span>Monitor Type <span className="text-red-500">*</span>
                                         </label>
                                         <select
                                             value={type}
                                             onChange={(e) => setType(e.target.value as Monitor['type'])}
-                                            className="w-full bg-white border border-gray-300 rounded-lg px-3 py-2 text-gray-900 outline-none focus:border-blue-500 focus:ring-2 focus:ring-blue-200 transition-colors"
+                                            className={inputClass}
                                         >
-                                            <option value="url">URL Check</option>
-                                            <option value="keyword">Keyword Check</option>
-                                            <option value="port">Port Check</option>
-                                            <option value="ping">Ping Check</option>
+                                            <option value="url">🌐 URL Check</option>
+                                            <option value="keyword">🔤 Keyword Check</option>
+                                            <option value="port">🔌 Port Check</option>
+                                            <option value="ping">📡 Ping Check</option>
+                                            <option value="ssl">🔒 SSL Certificate Check</option>
+                                            <option value="dns">🌍 DNS Resolution Check</option>
+                                            <option value="json">📊 JSON / API Health Check</option>
                                         </select>
-                                        <FieldHelp text={
-                                            type === 'url'
-                                                ? "Checks if a website or API endpoint is accessible via HTTP/HTTPS request"
-                                                : type === 'keyword'
-                                                    ? "Checks if a specific text/keyword appears in the webpage content"
-                                                    : type === 'port'
-                                                        ? "Checks if a network port on a server is open and accepting connections"
-                                                        : "Checks if the host/IP responds to ping"
-                                        } />
+                                        <FieldHelp text={getTypeHelpText(type)} />
                                     </div>
-                                </div>
+                                </SettingsSection>
 
-                                {/* Target Configuration Section */}
-                                <div className="space-y-4">
-                                    <h3 className="text-sm font-semibold text-gray-700 uppercase tracking-wide border-b border-gray-200 pb-2">
-                                        Target Configuration
-                                    </h3>
-
-                                    <div>
-                                        <label className="block text-sm font-medium text-gray-700 mb-1">
-                                            {(type === 'port' || type === 'ping') ? 'Host / IP Address' : 'URL'} <span className="text-red-500">*</span>
-                                        </label>
-                                        <input
-                                            type={(type === 'port' || type === 'ping') ? 'text' : 'url'}
-                                            value={target}
-                                            onChange={(e) => setTarget(e.target.value)}
-                                            className="w-full bg-white border border-gray-300 rounded-lg px-3 py-2 text-gray-900 outline-none focus:border-blue-500 focus:ring-2 focus:ring-blue-200 transition-colors"
-                                            placeholder={(type === 'port' || type === 'ping') ? '192.168.1.1 or example.com' : 'https://example.com'}
-                                            required
-                                        />
-                                        <FieldHelp text={
-                                            (type === 'port' || type === 'ping')
-                                                ? "The IP address or hostname of the server to check (e.g., 192.168.1.1, server.example.com)"
-                                                : "The full URL to monitor, including protocol (http:// or https://). For APIs, include the full endpoint path."
-                                        } />
-                                    </div>
+                                <SettingsSection emoji="🎯" title="Target Configuration" subtitle="What to check" tone="cyan">
+                                    <LinkUrlField
+                                        value={target}
+                                        onChange={setTarget}
+                                        label={
+                                            <label className="block text-sm font-medium text-gray-700">
+                                                <span aria-hidden="true">{isHostTargetType ? '🖥️ ' : '🔗 '}</span>
+                                                {isHostTargetType ? 'Host / IP Address' : 'URL'}{' '}
+                                                <span className="text-red-500">*</span>
+                                            </label>
+                                        }
+                                        inputClassName={inputClass}
+                                        inputType={isHostTargetType ? 'text' : 'url'}
+                                        required
+                                        showIgnoreCheckbox={false}
+                                        showCopyButton
+                                        placeholder={
+                                            type === 'ssl'
+                                                ? 'https://example.com or example.com'
+                                                : type === 'dns'
+                                                    ? 'example.com'
+                                                    : isHostTargetType
+                                                        ? '192.168.1.1 or example.com'
+                                                        : 'https://example.com'
+                                        }
+                                        helpText={
+                                            type === 'ssl'
+                                                ? 'HTTPS URL or hostname whose SSL certificate should be monitored'
+                                                : type === 'dns'
+                                                    ? 'Hostname to resolve via DNS (without protocol)'
+                                                    : isHostTargetType
+                                                        ? 'The IP address or hostname of the server to check (e.g., 192.168.1.1, server.example.com)'
+                                                        : 'The full URL to monitor, including protocol (http:// or https://). For APIs, include the full endpoint path.'
+                                        }
+                                    />
 
                                     {type === 'port' && (
                                         <div>
@@ -703,7 +953,7 @@ export const MonitorForm: React.FC<MonitorFormProps> = ({ monitor, onSave, onCan
                                                 type="number"
                                                 value={port}
                                                 onChange={(e) => setPort(e.target.value)}
-                                                className="w-full bg-white border border-gray-300 rounded-lg px-3 py-2 text-gray-900 outline-none focus:border-blue-500 focus:ring-2 focus:ring-blue-200 transition-colors"
+                                                className={inputClass}
                                                 placeholder="80, 443, 3306, etc."
                                                 min="1"
                                                 max="65535"
@@ -722,7 +972,7 @@ export const MonitorForm: React.FC<MonitorFormProps> = ({ monitor, onSave, onCan
                                                 type="text"
                                                 value={keyword}
                                                 onChange={(e) => setKeyword(e.target.value)}
-                                                className="w-full bg-white border border-gray-300 rounded-lg px-3 py-2 text-gray-900 outline-none focus:border-blue-500 focus:ring-2 focus:ring-blue-200 transition-colors"
+                                                className={inputClass}
                                                 placeholder="Welcome, Success, Error"
                                                 required
                                             />
@@ -730,34 +980,80 @@ export const MonitorForm: React.FC<MonitorFormProps> = ({ monitor, onSave, onCan
                                         </div>
                                     )}
 
-                                    {(type === 'url' || type === 'keyword') && (
+                                    {type === 'json' && (
                                         <div>
                                             <label className="block text-sm font-medium text-gray-700 mb-1">
-                                                Timeout (seconds)
+                                                JSON Check Expression <span className="text-red-500">*</span>
+                                            </label>
+                                            <input
+                                                type="text"
+                                                value={keyword}
+                                                onChange={(e) => setKeyword(e.target.value)}
+                                                className={inputClass}
+                                                placeholder="status:ok or healthy"
+                                                required
+                                            />
+                                            <FieldHelp text="Use key:value (e.g. status:ok) to match a JSON field, or a plain value to search anywhere in the response." />
+                                        </div>
+                                    )}
+
+                                    {type === 'ssl' && (
+                                        <div>
+                                            <label className="block text-sm font-medium text-gray-700 mb-1">
+                                                Warn When Cert Expires Within (days)
+                                            </label>
+                                            <input
+                                                type="number"
+                                                value={keyword}
+                                                onChange={(e) => setKeyword(e.target.value)}
+                                                className={inputClass}
+                                                placeholder="30"
+                                                min="1"
+                                                max="365"
+                                            />
+                                            <FieldHelp text="Monitor is marked down when the certificate expires within this many days. Default is 30. Daily check interval is recommended." />
+                                        </div>
+                                    )}
+
+                                    {type === 'dns' && (
+                                        <div>
+                                            <label className="block text-sm font-medium text-gray-700 mb-1">
+                                                Expected IP (optional)
+                                            </label>
+                                            <input
+                                                type="text"
+                                                value={keyword}
+                                                onChange={(e) => setKeyword(e.target.value)}
+                                                className={inputClass}
+                                                placeholder="203.0.113.10"
+                                            />
+                                            <FieldHelp text="Leave blank to only verify the hostname resolves. Set an expected IP to detect DNS changes." />
+                                        </div>
+                                    )}
+
+                                    {(type === 'url' || type === 'keyword' || type === 'json') && (
+                                        <div>
+                                            <label className="block text-sm font-medium text-gray-700 mb-1">
+                                                <span aria-hidden="true">⏱️ </span>Timeout (seconds)
                                             </label>
                                             <input
                                                 type="number"
                                                 value={timeoutSec}
                                                 onChange={(e) => setTimeoutSec(e.target.value)}
-                                                className="w-full bg-white border border-gray-300 rounded-lg px-3 py-2 text-gray-900 outline-none focus:border-blue-500 focus:ring-2 focus:ring-blue-200 transition-colors"
-                                                placeholder={type === 'url' ? '5' : '8'}
+                                                className={inputClass}
+                                                placeholder={type === 'url' ? '5' : type === 'json' ? '8' : '8'}
                                                 min="1"
                                                 max="60"
                                             />
                                             <FieldHelp text="Maximum time to wait for the HTTP request before marking the check as failed. Leave blank to use the default." />
                                         </div>
                                     )}
-                                </div>
+                                </SettingsSection>
 
-                                {/* Monitoring Settings Section */}
-                                <div className="space-y-4">
-                                    <h3 className="text-sm font-semibold text-gray-700 uppercase tracking-wide border-b border-gray-200 pb-2">
-                                        Monitoring Settings
-                                    </h3>
-
+                                <SettingsSection emoji="⏱️" title="Monitoring Settings" subtitle="Schedule and failure sensitivity" tone="amber">
                                     <div>
                                         <label className="block text-sm font-medium text-gray-700 mb-1">
-                                            Check Interval (minutes) <span className="text-red-500">*</span>
+                                            <span aria-hidden="true">🔄 </span>Check Interval (minutes) <span className="text-red-500">*</span>
                                         </label>
                                         <input
                                             type="number"
@@ -765,7 +1061,7 @@ export const MonitorForm: React.FC<MonitorFormProps> = ({ monitor, onSave, onCan
                                             onChange={(e) => setInterval(e.target.value)}
                                             min="1"
                                             max="1440"
-                                            className="w-full bg-white border border-gray-300 rounded-lg px-3 py-2 text-gray-900 outline-none focus:border-blue-500 focus:ring-2 focus:ring-blue-200 transition-colors"
+                                            className={inputClass}
                                             required
                                         />
                                         <FieldHelp text="How often the monitor should check the target on its normal schedule (cron/worker). Lower values provide faster alerts but use more resources. Note: 'Check Now' / 'Force refresh' runs immediately and does not wait for this interval." />
@@ -773,7 +1069,7 @@ export const MonitorForm: React.FC<MonitorFormProps> = ({ monitor, onSave, onCan
 
                                     <div>
                                         <label className="block text-sm font-medium text-gray-700 mb-1">
-                                            Warning Threshold (failures) <span className="text-red-500">*</span>
+                                            <span aria-hidden="true">⚠️ </span>Warning Threshold (failures) <span className="text-red-500">*</span>
                                         </label>
                                         <input
                                             type="number"
@@ -781,72 +1077,53 @@ export const MonitorForm: React.FC<MonitorFormProps> = ({ monitor, onSave, onCan
                                             onChange={(e) => setWarningThreshold(e.target.value)}
                                             min="1"
                                             max="20"
-                                            className="w-full bg-white border border-gray-300 rounded-lg px-3 py-2 text-gray-900 outline-none focus:border-blue-500 focus:ring-2 focus:ring-blue-200 transition-colors"
+                                            className={inputClass}
                                             required
                                         />
                                         <FieldHelp text="Number of consecutive failed checks before the monitor is considered DOWN. Failures below this threshold show as WARNING." />
                                     </div>
+                                </SettingsSection>
 
-                                    <div className="flex items-center space-x-3 p-3 bg-gray-50 rounded-lg border border-gray-200">
-                                        <input
-                                            type="checkbox"
-                                            checked={isActive}
-                                            onChange={(e) => setIsActive(e.target.checked)}
-                                            id="isActive"
-                                            className="w-4 h-4 rounded border-gray-300 text-blue-600 focus:ring-blue-500 focus:ring-offset-0"
-                                        />
-                                        <div className="flex-1">
-                                            <label htmlFor="isActive" className="text-sm font-medium text-gray-700 cursor-pointer">
-                                                Enable this monitor
-                                            </label>
-                                            <FieldHelp text="When enabled, the monitor will run checks according to the interval. Disable to temporarily pause monitoring without deleting the monitor." />
-                                        </div>
-                                    </div>
-                                </div>
-
-                                {/* Organization Section */}
-                                <div className="space-y-4">
-                                    <h3 className="text-sm font-semibold text-gray-700 uppercase tracking-wide border-b border-gray-200 pb-2">
-                                        Organization (Optional)
-                                    </h3>
-
+                                <SettingsSection emoji="📁" title="Organization" subtitle="Optional tab and group labels" tone="violet">
                                     <div className="grid grid-cols-2 gap-4">
                                         <div>
-                                            <label className="block text-sm font-medium text-gray-700 mb-1">Tab Name</label>
+                                            <label className="block text-sm font-medium text-gray-700 mb-1">
+                                                <span aria-hidden="true">📂 </span>Tab Name
+                                            </label>
                                             <input
                                                 type="text"
                                                 value={tabName}
                                                 onChange={(e) => setTabName(e.target.value)}
-                                                className="w-full bg-white border border-gray-300 rounded-lg px-3 py-2 text-gray-900 outline-none focus:border-blue-500 focus:ring-2 focus:ring-blue-200 transition-colors"
+                                                className={inputClass}
                                                 placeholder="General"
                                             />
                                             <FieldHelp text="Organize monitors into tabs for easier navigation (e.g., 'Production', 'Development', 'External')" />
                                         </div>
                                         <div>
-                                            <label className="block text-sm font-medium text-gray-700 mb-1">Group Name</label>
+                                            <label className="block text-sm font-medium text-gray-700 mb-1">
+                                                <span aria-hidden="true">🗂️ </span>Group Name
+                                            </label>
                                             <input
                                                 type="text"
                                                 value={groupName}
                                                 onChange={(e) => setGroupName(e.target.value)}
-                                                className="w-full bg-white border border-gray-300 rounded-lg px-3 py-2 text-gray-900 outline-none focus:border-blue-500 focus:ring-2 focus:ring-blue-200 transition-colors"
+                                                className={inputClass}
                                                 placeholder="Servers"
                                             />
                                             <FieldHelp text="Group related monitors together within a tab (e.g., 'Web Servers', 'Database Servers', 'APIs')" />
                                         </div>
                                     </div>
-                                </div>
+                                </SettingsSection>
 
                                 {/* Permissions Section */}
                                 {isAdmin && (
-                                    <div className="space-y-4">
-                                        <h3 className="text-sm font-semibold text-gray-700 uppercase tracking-wide border-b border-gray-200 pb-2">
-                                            Permissions (Optional)
-                                        </h3>
-
-                                        <div className="p-4 bg-gray-50 rounded-lg border border-gray-200">
+                                    <SettingsSection emoji="🔒" title="Permissions" subtitle="Optional — limit who can view this monitor" tone="indigo">
+                                        <div className="p-4 bg-white/70 rounded-lg border border-indigo-100">
                                             <div className="flex items-center justify-between mb-3">
                                                 <div>
-                                                    <div className="text-sm font-semibold text-gray-800">Visible to selected users</div>
+                                                    <div className="text-sm font-semibold text-indigo-900">
+                                                        <span aria-hidden="true">👁️ </span>Visible to selected users
+                                                    </div>
                                                     <div className="text-xs text-gray-600 mt-1">If you select users, only they (and admins) will see this monitor. If none selected, only admins will see it.</div>
                                                 </div>
                                                 <button
@@ -920,49 +1197,41 @@ export const MonitorForm: React.FC<MonitorFormProps> = ({ monitor, onSave, onCan
 
                                             {allowedUsers.length === 0 && (
                                                 <p className="mt-3 text-xs text-gray-600">
-                                                    No users selected: this monitor will be visible to all authenticated users.
+                                                    👥 No users selected: this monitor will be visible to all authenticated users.
                                                 </p>
                                             )}
                                         </div>
-                                    </div>
+                                    </SettingsSection>
                                 )}
 
-                                {/* Notifications Section */}
-                                <div className="space-y-4">
-                                    <h3 className="text-sm font-semibold text-gray-700 uppercase tracking-wide border-b border-gray-200 pb-2">
-                                        Notifications
-                                    </h3>
-
-                                    <div className="flex items-start space-x-3 p-3 bg-gray-50 rounded-lg border border-gray-200">
-                                        <input
-                                            type="checkbox"
-                                            checked={emailNotification}
-                                            onChange={(e) => setEmailNotification(e.target.checked)}
-                                            id="emailNotif"
-                                            className="w-4 h-4 mt-0.5 rounded border-gray-300 text-blue-600 focus:ring-blue-500 focus:ring-offset-0"
-                                        />
-                                        <div className="flex-1">
-                                            <label htmlFor="emailNotif" className="text-sm font-medium text-gray-700 cursor-pointer block">
-                                                Send email notification on status change
-                                            </label>
-                                            <FieldHelp text="Receive email alerts when the monitor status changes from 'up' to 'down' or vice versa. Make sure SMTP settings are configured in the admin panel." />
-                                        </div>
-                                    </div>
+                                <SettingsSection emoji="🔔" title="Notifications" subtitle="Legacy email options — rules live on the Email tab" tone="purple">
+                                    <p className="text-xs text-purple-900/80 bg-white/60 rounded-lg px-3 py-2 border border-purple-100">
+                                        <span aria-hidden="true">💡 </span>
+                                        Use the <strong>Email alerts</strong> toggle at the top for legacy status-change emails. Configure rule-based notifications on the{' '}
+                                        <span aria-hidden="true">📧 </span>Email Notifications tab.
+                                    </p>
 
                                     {emailNotification && (
-                                        <div className="flex items-start space-x-3 p-3 bg-purple-50 rounded-lg border border-purple-200">
-                                            <input
-                                                type="checkbox"
-                                                checked={legacyEmailDisabled}
-                                                onChange={(e) => setLegacyEmailDisabled(e.target.checked)}
-                                                id="legacyEmailDisabled"
-                                                className="w-4 h-4 mt-0.5 rounded border-purple-300 text-purple-600 focus:ring-purple-500 focus:ring-offset-0"
-                                            />
-                                            <div className="flex-1">
-                                                <label htmlFor="legacyEmailDisabled" className="text-sm font-semibold text-purple-900 cursor-pointer block">
-                                                    Rule-based only (disable legacy emails)
-                                                </label>
+                                        <div className="flex items-center justify-between gap-3 p-3 bg-white/70 rounded-lg border border-purple-200">
+                                            <div className="flex-1 min-w-0">
+                                                <div className="text-sm font-semibold text-purple-900">
+                                                    <span aria-hidden="true">📜 </span>Rule-based only (disable legacy emails)
+                                                </div>
                                                 <FieldHelp text="When enabled, the old built-in (legacy) email alerts will not send for this monitor. Only rule-based notifications (Email Notifications tab) will be sent." />
+                                            </div>
+                                            <div className="flex items-center gap-2 shrink-0">
+                                                <span
+                                                    className={`text-[10px] font-bold uppercase tracking-wide px-2 py-0.5 rounded-full ${legacyEmailDisabled ? 'bg-purple-200 text-purple-800' : 'bg-white/80 text-purple-600'}`}
+                                                >
+                                                    {legacyEmailDisabled ? 'On' : 'Off'}
+                                                </span>
+                                                <MonitorTogglePill
+                                                    enabled={legacyEmailDisabled}
+                                                    onToggle={() => setLegacyEmailDisabled(!legacyEmailDisabled)}
+                                                    onClassName="bg-purple-600"
+                                                    labelOn="Rule-based only"
+                                                    labelOff="Allow legacy emails"
+                                                />
                                             </div>
                                         </div>
                                     )}
@@ -972,7 +1241,9 @@ export const MonitorForm: React.FC<MonitorFormProps> = ({ monitor, onSave, onCan
                                         <div className="p-4 bg-white rounded-lg border border-gray-200 space-y-4">
                                             <div className="flex items-center justify-between">
                                                 <div>
-                                                    <div className="text-sm font-semibold text-gray-800">Legacy Email Customization</div>
+                                                    <div className="text-sm font-semibold text-gray-800">
+                                                        <span aria-hidden="true">✉️ </span>Legacy Email Customization
+                                                    </div>
                                                     <div className="text-xs text-gray-600 mt-1">
                                                         Customize To/From/Subject/Message for the built-in (legacy) email alerts.
                                                     </div>
@@ -994,7 +1265,7 @@ export const MonitorForm: React.FC<MonitorFormProps> = ({ monitor, onSave, onCan
                                                     type="text"
                                                     value={legacyEmailTo}
                                                     onChange={(e) => setLegacyEmailTo(e.target.value)}
-                                                    className="w-full bg-white border border-gray-300 rounded-lg px-3 py-2 text-gray-900 outline-none focus:border-blue-500 focus:ring-2 focus:ring-blue-200 transition-colors"
+                                                    className={inputClass}
                                                     placeholder="admin@example.com, ops@example.com"
                                                 />
                                                 <FieldHelp text="Comma-separated recipient emails. Leave blank to send to the admin user's email." />
@@ -1010,7 +1281,7 @@ export const MonitorForm: React.FC<MonitorFormProps> = ({ monitor, onSave, onCan
                                                             type="text"
                                                             value={legacyEmailCc}
                                                             onChange={(e) => setLegacyEmailCc(e.target.value)}
-                                                            className="w-full bg-white border border-gray-300 rounded-lg px-3 py-2 text-gray-900 outline-none focus:border-blue-500 focus:ring-2 focus:ring-blue-200 transition-colors"
+                                                            className={inputClass}
                                                             placeholder="cc1@example.com, cc2@example.com"
                                                         />
                                                         <FieldHelp text="Comma-separated CC emails. CC recipients will receive a copy of the alert email." />
@@ -1025,7 +1296,7 @@ export const MonitorForm: React.FC<MonitorFormProps> = ({ monitor, onSave, onCan
                                                                 type="text"
                                                                 value={legacyEmailFromName}
                                                                 onChange={(e) => setLegacyEmailFromName(e.target.value)}
-                                                                className="w-full bg-white border border-gray-300 rounded-lg px-3 py-2 text-gray-900 outline-none focus:border-blue-500 focus:ring-2 focus:ring-blue-200 transition-colors"
+                                                                className={inputClass}
                                                                 placeholder={`${appName} Monitor`}
                                                             />
                                                         </div>
@@ -1037,7 +1308,7 @@ export const MonitorForm: React.FC<MonitorFormProps> = ({ monitor, onSave, onCan
                                                                 type="email"
                                                                 value={legacyEmailFromEmail}
                                                                 onChange={(e) => setLegacyEmailFromEmail(e.target.value)}
-                                                                className="w-full bg-white border border-gray-300 rounded-lg px-3 py-2 text-gray-900 outline-none focus:border-blue-500 focus:ring-2 focus:ring-blue-200 transition-colors"
+                                                                className={inputClass}
                                                                 placeholder="noreply@example.com"
                                                             />
                                                         </div>
@@ -1051,7 +1322,7 @@ export const MonitorForm: React.FC<MonitorFormProps> = ({ monitor, onSave, onCan
                                                             type="text"
                                                             value={legacyEmailSubjectTemplate}
                                                             onChange={(e) => setLegacyEmailSubjectTemplate(e.target.value)}
-                                                            className="w-full bg-white border border-gray-300 rounded-lg px-3 py-2 text-gray-900 outline-none focus:border-blue-500 focus:ring-2 focus:ring-blue-200 transition-colors"
+                                                            className={inputClass}
                                                         />
                                                         <FieldHelp text="Supports variables like {monitor_name}, {status}, {details}, {time}." />
                                                     </div>
@@ -1072,7 +1343,7 @@ export const MonitorForm: React.FC<MonitorFormProps> = ({ monitor, onSave, onCan
                                             )}
                                         </div>
                                     )}
-                                </div>
+                                </SettingsSection>
 
                                 {error && (
                                     <div className="text-red-700 text-sm bg-red-50 border border-red-200 p-3 rounded-lg">
@@ -1087,7 +1358,7 @@ export const MonitorForm: React.FC<MonitorFormProps> = ({ monitor, onSave, onCan
 
                 {/* Footer with Actions - Only show on Settings tab */}
                 {activeTab === 'settings' && (
-                    <div className="px-6 py-4 border-t border-gray-200 bg-gray-50 flex justify-end space-x-3">
+                    <div className="px-6 py-4 border-t border-gray-200 bg-gradient-to-r from-slate-50 to-sky-50/40 flex justify-end space-x-3">
                         {isAddingNew && createdMonitorId ? (
                             // After creating monitor, show "Done" button
                             <>

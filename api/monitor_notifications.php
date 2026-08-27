@@ -43,6 +43,8 @@ try {
             }
             if (preg_match('/^\/monitor\/(\d+)\/logs$/', $path, $matches)) {
                 handleGetEmailLogs($matches[1]);
+            } elseif ($path === '/timezone') {
+                handleGetMonitorNotificationTimezone();
             } elseif (preg_match('/^\/monitor\/(\d+)$/', $path, $matches)) {
                 handleGetNotificationRules($matches[1]);
             } elseif (preg_match('/^\/rule\/(\d+)$/', $path, $matches)) {
@@ -73,7 +75,9 @@ try {
             break;
             
         case 'PUT':
-            if (preg_match('/^\/(\d+)$/', $path, $matches)) {
+            if ($path === '/timezone') {
+                handleUpdateMonitorNotificationTimezone();
+            } elseif (preg_match('/^\/(\d+)$/', $path, $matches)) {
                 handleUpdateNotificationRule($matches[1]);
             } else {
                 sendJSON(['error' => 'Invalid endpoint. Use /{id}'], 404);
@@ -922,6 +926,36 @@ function handleMoveNotificationRule($ruleId) {
     } catch (PDOException $e) {
         if ($db->inTransaction()) $db->rollBack();
         sendJSON(['error' => 'Database error: ' . $e->getMessage()], 500);
+    }
+}
+
+function handleGetMonitorNotificationTimezone(): void {
+    sendJSON([
+        'success' => true,
+        'timezone' => getMonitorNotificationTimezoneInfo(),
+    ]);
+}
+
+function handleUpdateMonitorNotificationTimezone(): void {
+    requireAdmin();
+    $data = getJSONInput();
+    $tz = isset($data['timezone']) ? trim((string)$data['timezone']) : null;
+    if ($tz === null) {
+        sendJSON(['error' => 'timezone is required (use empty string for server default)'], 400);
+        return;
+    }
+    try {
+        $dstCorrection = null;
+        if (array_key_exists('dst_correction', $data)) {
+            $dstCorrection = !empty($data['dst_correction']);
+        }
+        setMonitorNotificationTimezone($tz === '' ? null : $tz, $dstCorrection);
+        sendJSON([
+            'success' => true,
+            'timezone' => getMonitorNotificationTimezoneInfo(),
+        ]);
+    } catch (InvalidArgumentException $e) {
+        sendJSON(['error' => $e->getMessage()], 400);
     }
 }
 

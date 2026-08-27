@@ -198,6 +198,60 @@ export function getDayName(day: number): string {
     return days[day] || '';
 }
 
+export interface MonitorNotificationTimezoneOption {
+    value: string;
+    label: string;
+}
+
+export interface MonitorNotificationTimezoneInfo {
+    configured_timezone: string | null;
+    effective_timezone: string;
+    server_php_timezone: string;
+    uses_custom_timezone: boolean;
+    current_local_time: string;
+    utc_offset: string;
+    day_of_week: number;
+    options: MonitorNotificationTimezoneOption[];
+    dst_correction_enabled: boolean;
+    dst_active: boolean;
+    dst_aware: boolean;
+    timezone_abbreviation: string;
+    standard_utc_offset: string;
+    next_dst_transition: {
+        at: string;
+        is_dst: boolean;
+        label: string;
+    } | null;
+}
+
+export async function getMonitorNotificationTimezone(): Promise<MonitorNotificationTimezoneInfo> {
+    const response = await fetch(`${API_BASE}/timezone?t=${Date.now()}`, { cache: 'no-store' });
+    const data = await response.json().catch(() => ({}));
+    if (!response.ok) {
+        throw new Error(data.error || 'Failed to load notification timezone');
+    }
+    return data.timezone as MonitorNotificationTimezoneInfo;
+}
+
+export async function updateMonitorNotificationTimezone(
+    timezone: string,
+    dstCorrection?: boolean
+): Promise<MonitorNotificationTimezoneInfo> {
+    const response = await fetch(`${API_BASE}/timezone`, {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+            timezone,
+            ...(dstCorrection !== undefined ? { dst_correction: dstCorrection } : {}),
+        }),
+    });
+    const data = await response.json().catch(() => ({}));
+    if (!response.ok) {
+        throw new Error(data.error || 'Failed to update notification timezone');
+    }
+    return data.timezone as MonitorNotificationTimezoneInfo;
+}
+
 export interface EmailLog {
     id: number;
     rule_id: number | null; // NULL for legacy notifications

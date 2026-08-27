@@ -1,6 +1,7 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { Monitorv2, Monitorv2NotificationRule, monitorv2Service } from '../services/monitorv2Service';
-import { FaPlus, FaTrash, FaClock, FaEnvelope, FaTimes, FaSave, FaToggleOn, FaToggleOff } from 'react-icons/fa';
+import { FaPlus, FaTrash, FaClock, FaEnvelope, FaTimes, FaSave } from 'react-icons/fa';
+import { MonitorQuickToggles } from './MonitorTogglePill';
 
 interface Monitorv2FormProps {
     monitor?: Monitorv2 | null;
@@ -283,6 +284,13 @@ export const Monitorv2Form: React.FC<Monitorv2FormProps> = ({ monitor, onSave, o
                     </div>
                 </div>
 
+                <MonitorQuickToggles
+                    isActive={!!formData.is_active}
+                    onIsActiveChange={(value) => setFormData({ ...formData, is_active: value ? 1 : 0 })}
+                    emailNotification={!!formData.email_notification}
+                    onEmailNotificationChange={(value) => setFormData({ ...formData, email_notification: value ? 1 : 0 })}
+                />
+
                 {/* Scrollable Content - match Monitoring tab */}
                 <div className="overflow-y-auto flex-1 p-6 bg-white">
                     {activeTab === 'settings' && (
@@ -450,21 +458,6 @@ export const Monitorv2Form: React.FC<Monitorv2FormProps> = ({ monitor, onSave, o
                                         />
                                         <FieldHelp text="Number of consecutive failed checks before the monitor is considered DOWN. Failures below this threshold show as WARNING." />
                                     </div>
-                                    <div className="flex items-center space-x-3 p-3 bg-gray-50 rounded-lg border border-gray-200">
-                                        <input
-                                            type="checkbox"
-                                            checked={!!formData.is_active}
-                                            onChange={e => setFormData({...formData, is_active: e.target.checked ? 1 : 0})}
-                                            id="isActive"
-                                            className="w-4 h-4 rounded border-gray-300 text-blue-600 focus:ring-blue-500 focus:ring-offset-0"
-                                        />
-                                        <div className="flex-1">
-                                            <label htmlFor="isActive" className="text-sm font-medium text-gray-700 cursor-pointer">
-                                                Enable this monitor
-                                            </label>
-                                            <FieldHelp text="When enabled, the monitor will run checks according to the interval. Disable to temporarily pause monitoring without deleting the monitor." />
-                                        </div>
-                                    </div>
                                 </div>
 
                                 {/* Organization Section */}
@@ -501,22 +494,9 @@ export const Monitorv2Form: React.FC<Monitorv2FormProps> = ({ monitor, onSave, o
 
                     {activeTab === 'notifications' && (
                         <div className="space-y-6">
-                            {/* Legacy Email Toggle */}
-                            <div className="flex items-center justify-between p-4 bg-slate-50 dark:bg-[#252525] rounded-lg">
-                                <div>
-                                    <h3 className="font-medium text-slate-900 dark:text-white">Legacy Email Notifications</h3>
-                                    <p className="text-sm text-slate-500">Enable basic email notifications for this monitor</p>
-                                </div>
-                                <button
-                                    type="button"
-                                    onClick={() => setFormData({...formData, email_notification: formData.email_notification ? 0 : 1})}
-                                    className={`text-2xl transition-colors ${
-                                        formData.email_notification ? 'text-blue-600' : 'text-slate-400'
-                                    }`}
-                                >
-                                    {formData.email_notification ? <FaToggleOn /> : <FaToggleOff />}
-                                </button>
-                            </div>
+                            <p className="text-sm text-slate-600 dark:text-slate-400">
+                                Use the <strong>Email alerts</strong> toggle at the top for legacy status-change emails. Add rule-based rules below.
+                            </p>
 
                             {formData.email_notification === 1 && (
                                 <div className="space-y-4">

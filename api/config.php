@@ -5682,6 +5682,184 @@ function setSetting(string $key, string $value): void {
     $stmt->execute([$key, $value, $now]);
 }
 
+/** IANA timezones offered in monitor notification schedule UI */
+function getMonitorNotificationTimezoneOptions(): array {
+    return [
+        ['value' => 'America/New_York', 'label' => 'Eastern Time (US & Canada)'],
+        ['value' => 'America/Chicago', 'label' => 'Central Time (US & Canada)'],
+        ['value' => 'America/Denver', 'label' => 'Mountain Time (US & Canada)'],
+        ['value' => 'America/Los_Angeles', 'label' => 'Pacific Time (US & Canada)'],
+        ['value' => 'America/Phoenix', 'label' => 'Arizona (no DST)'],
+        ['value' => 'America/Toronto', 'label' => 'Toronto'],
+        ['value' => 'America/Sao_Paulo', 'label' => 'São Paulo'],
+        ['value' => 'Europe/London', 'label' => 'London'],
+        ['value' => 'Europe/Paris', 'label' => 'Paris / Central Europe'],
+        ['value' => 'Europe/Berlin', 'label' => 'Berlin'],
+        ['value' => 'Asia/Dubai', 'label' => 'Dubai'],
+        ['value' => 'Asia/Kolkata', 'label' => 'India'],
+        ['value' => 'Asia/Singapore', 'label' => 'Singapore'],
+        ['value' => 'Asia/Tokyo', 'label' => 'Tokyo'],
+        ['value' => 'Asia/Shanghai', 'label' => 'China'],
+        ['value' => 'Australia/Sydney', 'label' => 'Sydney'],
+        ['value' => 'UTC', 'label' => 'UTC'],
+    ];
+}
+
+function validateMonitorNotificationTimezone(string $tz): bool {
+    if ($tz === '') {
+        return true;
+    }
+    try {
+        new DateTimeZone($tz);
+        return true;
+    } catch (Exception $e) {
+        return false;
+    }
+}
+
+function getMonitorNotificationTimezone(): string {
+    $configured = trim((string)getSetting('monitor_notification_timezone', ''));
+    if ($configured !== '' && validateMonitorNotificationTimezone($configured)) {
+        return $configured;
+    }
+    $serverTz = @date_default_timezone_get() ?: 'UTC';
+    return $serverTz !== '' ? $serverTz : 'UTC';
+}
+
+function monitorNotificationDstEnabled(): bool {
+    return (string)getSetting('monitor_notification_dst_correction', '1') !== '0';
+}
+
+function getStandardOffsetForTimezone(DateTimeZone $tz, int $year): int {
+    $offsets = [];
+    foreach ([1, 4, 7, 10] as $month) {
+        $dt = new DateTime(sprintf('%d-%02d-15 12:00:00', $year, $month), $tz);
+        $offsets[] = $tz->getOffset($dt);
+    }
+    return min($offsets);
+}
+
+function timezoneSupportsDst(DateTimeZone $tz, int $year): bool {
+    $jan = new DateTime(sprintf('%d-01-15 12:00:00', $year), $tz);
+    $jul = new DateTime(sprintf('%d-07-15 12:00:00', $year), $tz);
+    return $tz->getOffset($jan) !== $tz->getOffset($jul);
+}
+
+function getMonitorNotificationLocalDateTime(): DateTime {
+    $tzName = getMonitorNotificationTimezone();
+    $tz = new DateTimeZone($tzName);
+    $utc = new DateTime('now', new DateTimeZone('UTC'));
+
+    if (monitorNotificationDstEnabled()) {
+        $local = clone $utc;
+        $local->setTimezone($tz);
+        return $local;
+    }
+
+    $stdOffset = getStandardOffsetForTimezone($tz, (int)$utc->format('Y'));
+    $localTs = $utc->getTimestamp() + $stdOffset;
+    $localStr = gmdate('Y-m-d H:i:s', $localTs);
+    $local = DateTime::createFromFormat('Y-m-d H:i:s', $localStr, new DateTimeZone('UTC'));
+    if ($local === false) {
+        return $utc;
+    }
+    return $local;
+}
+
+function getMonitorNotificationNow(): DateTime {
+    return getMonitorNotificationLocalDateTime();
+}
+
+function formatUtcOffsetSeconds(int $offset): string {
+    $sign = $offset >= 0 ? '+' : '-';
+    $h = intdiv(abs($offset), 3600);
+    $m = intdiv(abs($offset) % 3600, 60);
+    return sprintf('%s%02d:%02d', $sign, $h, $m);
+}
+
+function getMonitorNotificationDstDetails(DateTimeZone $tz, DateTime $scheduleLocal): array {
+    $year = (int)date('Y');
+    $wall = new DateTime('now', $tz);
+    $dstAware = timezoneSupportsDst($tz, $year);
+    $dstEnabled = monitorNotificationDstEnabled();
+    $isDst = $dstEnabled && (bool)(int)$wall->format('I');
+    $stdOffset = getStandardOffsetForTimezone($tz, $year);
+    $standardUtcOffset = formatUtcOffsetSeconds($stdOffset);
+
+    $abbr = $dstEnabled ? $wall->format('T') : (new DateTime(sprintf('%d-01-15 12:00:00', $year), $tz))->format('T');
+
+    $nextTransition = null;
+    if ($dstAware && $dstEnabled) {
+        try {
+            $transitions = $tz->getTransitions(time(), time() + 366 * 86400);
+            foreach ($transitions as $tr) {
+                if (!isset($tr['ts']) || $tr['ts'] <= time()) {
+                    continue;
+                }
+                $nextTransition = [
+                    'at' => date('Y-m-d H:i:s', (int)$tr['ts']),
+                    'is_dst' => !empty($tr['isdst']),
+                    'label' => !empty($tr['isdst']) ? 'DST begins' : 'DST ends',
+                ];
+                break;
+            }
+        } catch (Exception $e) {
+            $nextTransition = null;
+        }
+    }
+
+    return [
+        'dst_correction_enabled' => $dstEnabled,
+        'dst_active' => $isDst,
+        'dst_aware' => $dstAware,
+        'timezone_abbreviation' => $abbr,
+        'standard_utc_offset' => $standardUtcOffset,
+        'next_dst_transition' => $nextTransition,
+    ];
+}
+
+function getMonitorNotificationTimezoneInfo(): array {
+    $configured = trim((string)getSetting('monitor_notification_timezone', ''));
+    $serverTz = @date_default_timezone_get() ?: 'UTC';
+    if ($serverTz === '') {
+        $serverTz = 'UTC';
+    }
+    $effective = getMonitorNotificationTimezone();
+    $tz = new DateTimeZone($effective);
+    $dt = getMonitorNotificationLocalDateTime();
+    $dst = getMonitorNotificationDstDetails($tz, $dt);
+    $utcOffset = monitorNotificationDstEnabled()
+        ? (new DateTime('now', $tz))->format('P')
+        : $dst['standard_utc_offset'];
+
+    return array_merge([
+        'configured_timezone' => ($configured !== '' && validateMonitorNotificationTimezone($configured)) ? $configured : null,
+        'effective_timezone' => $effective,
+        'server_php_timezone' => $serverTz,
+        'uses_custom_timezone' => ($configured !== '' && validateMonitorNotificationTimezone($configured)),
+        'current_local_time' => $dt->format('Y-m-d H:i:s'),
+        'utc_offset' => $utcOffset,
+        'day_of_week' => (int)$dt->format('w'),
+        'options' => getMonitorNotificationTimezoneOptions(),
+    ], $dst);
+}
+
+function setMonitorNotificationTimezone(?string $tz, ?bool $dstCorrection = null): void {
+    $tz = trim((string)($tz ?? ''));
+    if ($tz === '') {
+        $db = getDB();
+        $db->prepare("DELETE FROM settings WHERE key = 'monitor_notification_timezone'")->execute();
+    } else {
+        if (!validateMonitorNotificationTimezone($tz)) {
+            throw new InvalidArgumentException('Invalid timezone identifier');
+        }
+        setSetting('monitor_notification_timezone', $tz);
+    }
+    if ($dstCorrection !== null) {
+        setSetting('monitor_notification_dst_correction', $dstCorrection ? '1' : '0');
+    }
+}
+
 /**
  * Domain part of an email or UPN (e.g. Zafrulla.Khan@AdventHealth.com -> adventhealth.com).
  */

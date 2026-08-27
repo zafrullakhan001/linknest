@@ -1,7 +1,9 @@
+export type MonitorType = 'url' | 'keyword' | 'port' | 'ping' | 'ssl' | 'dns' | 'json';
+
 export interface Monitor {
     id: number;
     name: string;
-    type: 'url' | 'keyword' | 'port' | 'ping';
+    type: MonitorType;
     target: string;
     port?: number;
     keyword?: string;
@@ -41,6 +43,66 @@ export interface MonitorLog {
     response_time: number;
     details: string;
     checked_at: number;
+}
+
+export interface MonitorSuggestion {
+    type: MonitorType;
+    confidence: number;
+    reason: string;
+    recommended?: boolean;
+    suggested_name?: string;
+    suggested_group?: string;
+    config: Partial<Monitor>;
+}
+
+export interface MonitorSuggestResult {
+    input: string;
+    parsed: {
+        host?: string | null;
+        scheme?: string | null;
+        port?: number | null;
+        pattern?: string | null;
+    };
+    probe_summary: {
+        http_code?: number | null;
+        content_type?: string | null;
+        open_ports?: number[];
+        ping?: string | null;
+        ssl_days_remaining?: number | null;
+        dns_a?: string[];
+        dns_aaaa?: string[];
+    };
+    suggestions: MonitorSuggestion[];
+}
+
+export interface MonitorBulkDraft {
+    input: string;
+    selected: boolean;
+    error: string | null;
+    confidence: number | null;
+    reason: string | null;
+    monitor: Partial<Monitor> | null;
+    alternatives: MonitorSuggestion[];
+    probe_summary?: MonitorSuggestResult['probe_summary'];
+}
+
+export interface MonitorBulkSuggestResult {
+    success: boolean;
+    drafts: MonitorBulkDraft[];
+    summary: {
+        total: number;
+        ready: number;
+        failed: number;
+        fast_mode: boolean;
+        default_tab: string;
+    };
+}
+
+export interface MonitorBulkCreateResult {
+    success: boolean;
+    count: number;
+    created: Monitor[];
+    errors: Array<{ index: number; name?: string | null; target?: string | null; error: string }>;
 }
 
 export const monitoringService = {
@@ -177,17 +239,6 @@ export const monitoringService = {
         if (!response.ok) throw new Error('Failed to delete all monitors');
     },
 
-    async importMonitors(monitors: Partial<Monitor>[]): Promise<number> {
-        const response = await fetch('api/monitors.php/import', {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ monitors })
-        });
-        if (!response.ok) throw new Error('Failed to import monitors');
-        const data = await response.json();
-        return data.count;
-    },
-
     async exportMonitorsBundle(): Promise<any> {
         const response = await fetch('api/monitors.php/export-bundle');
         if (!response.ok) throw new Error('Failed to export monitors bundle');
@@ -208,17 +259,6 @@ export const monitoringService = {
         return data.count || 0;
     },
 
-    async importMonitorsFromCSV(csvData: string): Promise<number> {
-        const response = await fetch('api/monitors.php/import-csv', {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ csv: csvData })
-        });
-        if (!response.ok) throw new Error('Failed to import monitors from CSV');
-        const data = await response.json();
-        return data.count;
-    },
-
     async updateTabName(oldName: string, newName: string): Promise<void> {
         const response = await fetch('api/monitors.php/update-tab', {
             method: 'PUT',
@@ -235,5 +275,49 @@ export const monitoringService = {
             body: JSON.stringify({ tab_name: tabName, old_name: oldName, new_name: newName })
         });
         if (!response.ok) throw new Error('Failed to update group name');
-    }
+    },
+
+    async suggestMonitor(target: string): Promise<MonitorSuggestResult> {
+        const response = await fetch('api/monitors.php/suggest', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ target: target.trim() })
+        });
+        const data = await response.json().catch(() => ({}));
+        if (!response.ok) {
+            throw new Error(data.error || 'Failed to analyze target');
+        }
+        return data as MonitorSuggestResult;
+    },
+
+    async suggestMonitorsBulk(options: {
+        text?: string;
+        targets?: string[];
+        tab_name?: string;
+        fast?: boolean;
+    }): Promise<MonitorBulkSuggestResult> {
+        const response = await fetch('api/monitors.php/suggest-bulk', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify(options),
+        });
+        const data = await response.json().catch(() => ({}));
+        if (!response.ok) {
+            throw new Error(data.error || 'Failed to analyze targets');
+        }
+        return data as MonitorBulkSuggestResult;
+    },
+
+    async bulkCreateMonitors(monitors: Partial<Monitor>[]): Promise<MonitorBulkCreateResult> {
+        const response = await fetch('api/monitors.php/bulk-create', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ monitors }),
+        });
+        const data = await response.json().catch(() => ({}));
+        if (!response.ok) {
+            throw new Error(data.error || 'Failed to create monitors');
+        }
+        return data as MonitorBulkCreateResult;
+    },
 };
