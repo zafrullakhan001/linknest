@@ -1082,6 +1082,23 @@ export type TileVisitStats = {
   uniqueVisitors: number;
 };
 
+export type TileUniqueVisitor = {
+  type: 'user' | 'guest';
+  userId: number | null;
+  username: string | null;
+  email: string | null;
+  guestNumber?: number | null;
+  hitCount: number;
+  firstVisit: number;
+  lastVisit: number;
+};
+
+export type TileUniqueVisitorsResult = {
+  visitors: TileUniqueVisitor[];
+  total: number;
+  truncated: boolean;
+};
+
 function parseTileVisitStats(data: unknown): TileVisitStats | null {
   const stats = (data as { stats?: { hitCount?: unknown; uniqueVisitors?: unknown } })?.stats;
   if (!stats) return null;
@@ -1134,6 +1151,45 @@ export const recordTileVisit = async (tileId: string): Promise<TileVisitStats | 
     console.debug('Tile visit recording skipped:', e);
     return null;
   }
+};
+
+/** Admin-only unique visitor identities for a tile. Throws on auth/permission errors. */
+export const getTileUniqueVisitors = async (tileId: string): Promise<TileUniqueVisitorsResult> => {
+  if (!tileId) {
+    throw new Error('Tile id is required');
+  }
+  const response = await fetch(`${API_BASE}/tiles/${encodeURIComponent(tileId)}/visitors`, {
+    method: 'GET',
+    credentials: 'include',
+  });
+  const data = await response.json().catch(() => ({}));
+  if (!response.ok) {
+    throw new Error(
+      (data && typeof data.error === 'string' && data.error) || 'Failed to load unique visitors'
+    );
+  }
+  const rawList = Array.isArray((data as { visitors?: unknown }).visitors)
+    ? (data as { visitors: unknown[] }).visitors
+    : [];
+  const visitors: TileUniqueVisitor[] = rawList.map((item) => {
+    const row = item as Partial<TileUniqueVisitor>;
+    return {
+      type: row.type === 'user' ? 'user' : 'guest',
+      userId: typeof row.userId === 'number' ? row.userId : null,
+      username: typeof row.username === 'string' ? row.username : null,
+      email: typeof row.email === 'string' ? row.email : null,
+      guestNumber: typeof row.guestNumber === 'number' ? row.guestNumber : null,
+      hitCount: Number.isFinite(Number(row.hitCount)) ? Number(row.hitCount) : 0,
+      firstVisit: Number.isFinite(Number(row.firstVisit)) ? Number(row.firstVisit) : 0,
+      lastVisit: Number.isFinite(Number(row.lastVisit)) ? Number(row.lastVisit) : 0,
+    };
+  });
+  const total = Number((data as { total?: unknown }).total);
+  return {
+    visitors,
+    total: Number.isFinite(total) ? total : visitors.length,
+    truncated: (data as { truncated?: unknown }).truncated === true,
+  };
 };
 
 export const purgeArchive = async (): Promise<{ success: boolean; purgedCount: number }> => {

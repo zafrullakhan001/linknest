@@ -1,8 +1,11 @@
 import React, { useState, useEffect, useRef, useCallback } from 'react';
 import { createPortal } from 'react-dom';
 import { Tile } from '../types';
-import { FaTimes, FaCheck, FaCopy } from 'react-icons/fa';
+import { FaTimes, FaCheck, FaCopy, FaChevronDown, FaChevronUp } from 'react-icons/fa';
 import { ShortUrlActions } from './ShortUrlActions';
+import { useAuth } from '../contexts/AuthContext';
+import { useSettings } from '../contexts/SettingsContext';
+import { getTileUniqueVisitors, TileUniqueVisitor } from '../services/storageService';
 
 interface TileAdmin {
   userId: number;
@@ -65,7 +68,7 @@ interface TileInfo {
   };
   stats?: {
     hitCount: number;
-    uniqueVisitors: number;
+    uniqueVisitors?: number;
   };
 }
 
@@ -346,6 +349,151 @@ const CopyableId: React.FC<{ value: string }> = ({ value }) => {
   );
 };
 
+const UniqueVisitorsRow: React.FC<{
+  tileId: string;
+  count: number;
+  isAdmin: boolean;
+  formatDate: (ts: number) => string;
+  formatRelativeTime: (ts: number) => string;
+}> = ({ tileId, count, isAdmin, formatDate, formatRelativeTime }) => {
+  const [open, setOpen] = useState(false);
+  const [loading, setLoading] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  const [visitors, setVisitors] = useState<TileUniqueVisitor[] | null>(null);
+  const [truncated, setTruncated] = useState(false);
+  const canOpen = isAdmin && count > 0;
+
+  useEffect(() => {
+    setOpen(false);
+    setVisitors(null);
+    setError(null);
+    setLoading(false);
+    setTruncated(false);
+  }, [tileId]);
+
+  const loadVisitors = useCallback(async () => {
+    setLoading(true);
+    setError(null);
+    try {
+      const result = await getTileUniqueVisitors(tileId);
+      setVisitors(result.visitors);
+      setTruncated(result.truncated);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Failed to load unique visitors');
+    } finally {
+      setLoading(false);
+    }
+  }, [tileId]);
+
+  const handleToggle = () => {
+    if (!canOpen) return;
+    const next = !open;
+    setOpen(next);
+    if (next && visitors === null && !loading) {
+      void loadVisitors();
+    }
+  };
+
+  const countBadge = (
+    <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-xs font-semibold bg-rose-100 text-rose-800 dark:bg-rose-900/40 dark:text-rose-300">
+      {count.toLocaleString()}
+      {canOpen ? (open ? <FaChevronUp className="w-2.5 h-2.5 opacity-80" aria-hidden /> : <FaChevronDown className="w-2.5 h-2.5 opacity-80" aria-hidden />) : null}
+    </span>
+  );
+
+  return (
+    <div>
+      <InfoRow
+        label="Unique Visitors"
+        labelEmoji="👥"
+        hint={
+          canOpen
+            ? 'how many different people opened it — click the count to see who'
+            : 'how many different people opened it — logged-in users and guests, each counted once'
+        }
+      >
+        {canOpen ? (
+          <button
+            type="button"
+            onClick={handleToggle}
+            className="rounded-full focus:outline-none focus-visible:ring-2 focus-visible:ring-rose-400 dark:focus-visible:ring-rose-500 hover:brightness-95 transition"
+            aria-expanded={open}
+            aria-controls={`unique-visitors-list-${tileId}`}
+            title={open ? 'Hide unique visitors' : 'View unique visitors'}
+          >
+            {countBadge}
+          </button>
+        ) : (
+          countBadge
+        )}
+      </InfoRow>
+
+      {open && (
+        <div
+          id={`unique-visitors-list-${tileId}`}
+          className="mt-3 rounded-lg border border-rose-200/80 dark:border-rose-900/50 bg-white/70 dark:bg-slate-950/40 overflow-hidden"
+        >
+          {loading ? (
+            <div className="flex items-center gap-2 px-3 py-3 text-xs text-slate-500 dark:text-slate-400">
+              <span className="inline-block h-3.5 w-3.5 rounded-full border-2 border-rose-200 border-t-rose-600 animate-spin" />
+              Loading visitors…
+            </div>
+          ) : error ? (
+            <div className="px-3 py-3 text-xs text-rose-700 dark:text-rose-300">{error}</div>
+          ) : !visitors || visitors.length === 0 ? (
+            <div className="px-3 py-3 text-xs text-slate-500 dark:text-slate-400">No unique visitors recorded yet.</div>
+          ) : (
+            <ul className="max-h-64 overflow-y-auto divide-y divide-rose-100 dark:divide-rose-900/40">
+              {visitors.map((visitor, index) => {
+                const isUser = visitor.type === 'user';
+                const name = isUser
+                  ? (visitor.username || 'Former user')
+                  : `Guest${visitor.guestNumber ? ` ${visitor.guestNumber}` : ''}`;
+                const key = isUser
+                  ? `user-${visitor.userId ?? visitor.username ?? index}`
+                  : `guest-${visitor.guestNumber ?? index}`;
+                return (
+                  <li key={key} className="flex items-start justify-between gap-3 px-3 py-2.5">
+                    <div className="min-w-0 text-left">
+                      <div className="flex items-center gap-1.5 text-sm font-medium text-slate-800 dark:text-slate-100">
+                        <span aria-hidden="true">{isUser ? '👤' : '👻'}</span>
+                        <span className="truncate">{name}</span>
+                      </div>
+                      {visitor.email ? (
+                        <div className="text-[11px] text-slate-500 dark:text-slate-400 truncate mt-0.5">{visitor.email}</div>
+                      ) : (
+                        <div className="text-[11px] text-slate-500 dark:text-slate-400 mt-0.5">
+                          {isUser ? 'Logged-in user' : 'Anonymous guest (browser)'}
+                        </div>
+                      )}
+                      {visitor.lastVisit > 0 && (
+                        <div className="text-[11px] text-rose-700/80 dark:text-rose-300/80 mt-0.5" title={formatDate(visitor.lastVisit)}>
+                          Last visit {formatRelativeTime(visitor.lastVisit)}
+                          {visitor.firstVisit > 0 && visitor.firstVisit !== visitor.lastVisit
+                            ? ` · first ${formatRelativeTime(visitor.firstVisit)}`
+                            : ''}
+                        </div>
+                      )}
+                    </div>
+                    <span className="shrink-0 inline-flex items-center px-2 py-0.5 rounded-full text-[11px] font-semibold bg-rose-100 text-rose-800 dark:bg-rose-900/40 dark:text-rose-300">
+                      {visitor.hitCount.toLocaleString()} {visitor.hitCount === 1 ? 'hit' : 'hits'}
+                    </span>
+                  </li>
+                );
+              })}
+            </ul>
+          )}
+          {truncated && !loading && !error && (
+            <div className="px-3 py-2 text-[11px] text-slate-500 dark:text-slate-400 border-t border-rose-100 dark:border-rose-900/40">
+              Showing the 500 most recent unique visitors.
+            </div>
+          )}
+        </div>
+      )}
+    </div>
+  );
+};
+
 const PermCheck: React.FC<{ ok: boolean; label: string }> = ({ ok, label }) => (
   <div className="flex justify-between items-center gap-2 rounded-lg bg-white/60 dark:bg-slate-950/30 px-2.5 py-1.5">
     <span className="text-slate-600 dark:text-slate-400 text-xs">{label}</span>
@@ -361,6 +509,10 @@ export const TileInfoDialog: React.FC<TileInfoDialogProps> = ({
   tile,
   categoryInfo
 }) => {
+  const { user } = useAuth();
+  const { settings } = useSettings();
+  const isAdmin = !!user?.is_admin;
+  const showUniqueVisitors = !!user || settings.hide_unique_visitors_public !== '1';
   const [tileInfo, setTileInfo] = useState<TileInfo | null>(null);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -678,6 +830,8 @@ export const TileInfoDialog: React.FC<TileInfoDialogProps> = ({
               spaceShortUrl={spaceShortUrl}
               setSpaceShortUrl={setSpaceShortUrl}
               canRecycleShortUrl={tile?.canEdit === true}
+              isAdmin={isAdmin}
+              showUniqueVisitors={showUniqueVisitors}
             />
           ) : null}
         </div>
@@ -726,7 +880,9 @@ const TileInfoView: React.FC<{
   spaceShortUrl?: string;
   setSpaceShortUrl?: (url: string) => void;
   canRecycleShortUrl?: boolean;
-}> = ({ tileInfo, formatDate, formatRelativeTime, spaceShortUrl, setSpaceShortUrl, canRecycleShortUrl }) => {
+  isAdmin?: boolean;
+  showUniqueVisitors?: boolean;
+}> = ({ tileInfo, formatDate, formatRelativeTime, spaceShortUrl, setSpaceShortUrl, canRecycleShortUrl, isAdmin, showUniqueVisitors }) => {
   return (
     <div className="space-y-5">
       <SectionCard emoji="📋" title="Basic Information" accent="sky">
@@ -822,11 +978,15 @@ const TileInfoView: React.FC<{
             {(tileInfo.stats?.hitCount ?? 0).toLocaleString()}
           </span>
         </InfoRow>
-        <InfoRow label="Unique Visitors" labelEmoji="👥" hint="how many different people opened it — logged-in users and guests, each counted once">
-          <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-xs font-semibold bg-rose-100 text-rose-800 dark:bg-rose-900/40 dark:text-rose-300">
-            {(tileInfo.stats?.uniqueVisitors ?? 0).toLocaleString()}
-          </span>
-        </InfoRow>
+        {showUniqueVisitors !== false && typeof tileInfo.stats?.uniqueVisitors === 'number' && (
+          <UniqueVisitorsRow
+            tileId={tileInfo.tileId}
+            count={tileInfo.stats.uniqueVisitors}
+            isAdmin={!!isAdmin}
+            formatDate={formatDate}
+            formatRelativeTime={formatRelativeTime}
+          />
+        )}
       </SectionCard>
 
       <SectionCard emoji="🛡️" title="Your Permissions" accent="emerald">

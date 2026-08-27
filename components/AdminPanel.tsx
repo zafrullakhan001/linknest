@@ -413,6 +413,7 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({ onUserApproved }) => {
     guest_access_enabled: '1',
     local_registration_enabled: '1',
     signin_button_enabled: '1',
+    hide_unique_visitors_public: '0',
     local_auth_enabled: '1',
     ldap_enabled: '0',
     saml_enabled: '0',
@@ -12466,7 +12467,7 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({ onUserApproved }) => {
                         <div className={ADMIN_SECTION_CARD}>
                           <div className={ADMIN_SECTION_HEADER}>
                             <h3 className={ADMIN_SECTION_TITLE}><span aria-hidden>🔓</span> Guest Access</h3>
-                            <p className={ADMIN_SECTION_SUBTITLE}>Control guest visibility, Sign In button visibility, and local account creation.</p>
+                            <p className={ADMIN_SECTION_SUBTITLE}>Control guest visibility, Sign In button visibility, Unique Visitors on public Space Info, and local account creation.</p>
                           </div>
                           <div className="p-6">
                           <div className="space-y-4">
@@ -12562,6 +12563,39 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({ onUserApproved }) => {
                                   >
                                     <span
                                       className={`inline-block h-4 w-4 transform rounded-full bg-white transition-transform ${(settings.signin_button_enabled === '1' || settings.signin_button_enabled === undefined) ? 'translate-x-6' : 'translate-x-1'
+                                        }`}
+                                    />
+                                  </button>
+                                </div>
+                              </label>
+                            </div>
+
+                            <div className="pt-4 border-t border-slate-200 dark:border-slate-700">
+                              <label className="flex items-center justify-between cursor-pointer">
+                                <div className="flex-1">
+                                  <span className="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-1">
+                                    Hide Unique Visitors from guests
+                                  </span>
+                                  <span className="block text-xs text-slate-500 dark:text-slate-400">
+                                    Space Info will not show Unique Visitors to people who are not signed in. Signed-in users still see the count; admins can still click it to see who visited.
+                                  </span>
+                                </div>
+                                <div className="ml-4">
+                                  <button
+                                    type="button"
+                                    onClick={() => {
+                                      setSettings({
+                                        ...settings,
+                                        hide_unique_visitors_public: settings.hide_unique_visitors_public === '1' ? '0' : '1'
+                                      });
+                                    }}
+                                    className={`relative inline-flex h-6 w-11 items-center rounded-full transition-colors ${settings.hide_unique_visitors_public === '1'
+                                      ? 'bg-sky-600'
+                                      : 'bg-slate-300 dark:bg-slate-600'
+                                      }`}
+                                  >
+                                    <span
+                                      className={`inline-block h-4 w-4 transform rounded-full bg-white transition-transform ${settings.hide_unique_visitors_public === '1' ? 'translate-x-6' : 'translate-x-1'
                                         }`}
                                     />
                                   </button>

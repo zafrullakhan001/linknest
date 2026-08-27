@@ -31,6 +31,8 @@ switch ($method) {
             handleGetVersionDetails($matches[1], $matches[2]);
         } elseif (preg_match('#^/([^/]+)/info$#', $path, $matches)) {
             handleGetTileInfo($matches[1]);
+        } elseif (preg_match('#^/([^/]+)/visitors$#', $path, $matches)) {
+            handleGetTileUniqueVisitors($matches[1]);
         } elseif (preg_match('#^/([^/]+)/visit$#', $path, $matches)) {
             handleGetTileVisitStats($matches[1]);
         } elseif ($path === '/staging-template') {
@@ -7658,7 +7660,7 @@ function handleGetTileInfo($tileId) {
             'canDelete' => $canDelete
         ],
         'tileAdmins' => $tileAdmins,
-        'stats' => getTileVisitStats($tileId, $db)
+        'stats' => filterVisitStatsForViewer(getTileVisitStats($tileId, $db), $user, $db)
     ];
     
     // Add granular permissions for current user if they are a tile admin
@@ -7701,6 +7703,33 @@ function getTileVisitStats($tileId, $db = null) {
             'uniqueVisitors' => 0
         ];
     }
+}
+
+/**
+ * Whether Unique Visitors should be hidden from unauthenticated (public) viewers.
+ */
+function isHideUniqueVisitorsPublicEnabled($db = null) {
+    if ($db === null) {
+        $db = getDB();
+    }
+    try {
+        $stmt = $db->prepare("SELECT value FROM settings WHERE key = 'hide_unique_visitors_public'");
+        $stmt->execute();
+        $value = $stmt->fetchColumn();
+        return ($value === '1' || $value === 1);
+    } catch (PDOException $e) {
+        return false;
+    }
+}
+
+/**
+ * Strip uniqueVisitors from stats when guests should not see them.
+ */
+function filterVisitStatsForViewer(array $stats, $user, $db = null) {
+    if (!$user && isHideUniqueVisitorsPublicEnabled($db)) {
+        unset($stats['uniqueVisitors']);
+    }
+    return $stats;
 }
 
 /**
@@ -7775,11 +7804,105 @@ function assertTileAccessibleForVisit($tileId) {
  * GET visit stats for a tile (no increment).
  */
 function handleGetTileVisitStats($tileId) {
-    [, $db] = assertTileAccessibleForVisit($tileId);
+    [$user, $db] = assertTileAccessibleForVisit($tileId);
     sendJSON([
         'success' => true,
-        'stats' => getTileVisitStats($tileId, $db)
+        'stats' => filterVisitStatsForViewer(getTileVisitStats($tileId, $db), $user, $db)
     ]);
+}
+
+/**
+ * GET unique visitors for a tile (admin only).
+ * Lists logged-in users by username/email and guests as numbered anonymous visitors.
+ */
+function handleGetTileUniqueVisitors($tileId) {
+    $user = getAuthenticatedUser();
+    if (!$user) {
+        sendJSON(['error' => 'Authentication required'], 401);
+    }
+    if (empty($user['is_admin'])) {
+        sendJSON(['error' => 'Admin access required'], 403);
+    }
+
+    [, $db] = assertTileAccessibleForVisit($tileId);
+
+    try {
+        $stmt = $db->prepare('
+            SELECT
+                v.visitor_key,
+                MAX(v.user_id) as user_id,
+                COUNT(*) as hit_count,
+                MIN(v.visited_at) as first_visit,
+                MAX(v.visited_at) as last_visit,
+                MAX(u.username) as username,
+                MAX(u.email) as email
+            FROM tile_visits v
+            LEFT JOIN users u ON v.user_id = u.id
+            WHERE v.tile_id = ?
+            GROUP BY v.visitor_key
+            ORDER BY last_visit DESC
+            LIMIT 500
+        ');
+        $stmt->execute([$tileId]);
+        $rows = $stmt->fetchAll(PDO::FETCH_ASSOC);
+
+        $visitors = [];
+        foreach ($rows as $row) {
+            $key = (string)($row['visitor_key'] ?? '');
+            $isUser = str_starts_with($key, 'u:');
+            $username = isset($row['username']) && $row['username'] !== '' ? (string)$row['username'] : null;
+            $email = isset($row['email']) && $row['email'] !== '' ? (string)$row['email'] : null;
+            $userId = isset($row['user_id']) && $row['user_id'] !== null && $row['user_id'] !== ''
+                ? (int)$row['user_id']
+                : null;
+
+            $visitors[] = [
+                '_key' => $key,
+                'type' => $isUser ? 'user' : 'guest',
+                'userId' => $isUser ? $userId : null,
+                'username' => $isUser ? $username : null,
+                'email' => $isUser ? $email : null,
+                'hitCount' => (int)($row['hit_count'] ?? 0),
+                'firstVisit' => (int)($row['first_visit'] ?? 0),
+                'lastVisit' => (int)($row['last_visit'] ?? 0),
+            ];
+        }
+
+        $guestOrder = $visitors;
+        usort($guestOrder, static function ($a, $b) {
+            $cmp = $a['firstVisit'] <=> $b['firstVisit'];
+            return $cmp !== 0 ? $cmp : strcmp((string)$a['_key'], (string)$b['_key']);
+        });
+        $guestNumberByKey = [];
+        $guestNumber = 0;
+        foreach ($guestOrder as $visitor) {
+            if ($visitor['type'] === 'guest') {
+                $guestNumber++;
+                $guestNumberByKey[$visitor['_key']] = $guestNumber;
+            }
+        }
+        foreach ($visitors as &$visitor) {
+            if ($visitor['type'] === 'guest') {
+                $visitor['guestNumber'] = $guestNumberByKey[$visitor['_key']] ?? null;
+            }
+            unset($visitor['_key']);
+        }
+        unset($visitor);
+
+        $totalStmt = $db->prepare('SELECT COUNT(DISTINCT visitor_key) FROM tile_visits WHERE tile_id = ?');
+        $totalStmt->execute([$tileId]);
+        $total = (int)$totalStmt->fetchColumn();
+
+        sendJSON([
+            'success' => true,
+            'visitors' => $visitors,
+            'total' => $total,
+            'truncated' => $total > count($visitors),
+        ]);
+    } catch (PDOException $e) {
+        error_log('Failed to list tile unique visitors: ' . $e->getMessage());
+        sendJSON(['error' => 'Failed to load unique visitors'], 500);
+    }
 }
 
 /**
@@ -7832,7 +7955,7 @@ function handleRecordTileVisit($tileId) {
             $insert->execute([$tileId, $userId, $visitorKey, $now]);
         }
 
-        $stats = getTileVisitStats($tileId, $db);
+        $stats = filterVisitStatsForViewer(getTileVisitStats($tileId, $db), $user, $db);
         sendJSON([
             'success' => true,
             'recorded' => !$recent,

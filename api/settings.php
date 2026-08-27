@@ -836,6 +836,7 @@ function handleUpdateSettings() {
                 'guest_access_enabled',
                 'local_registration_enabled',
                 'signin_button_enabled',
+                'hide_unique_visitors_public',
                 'public_tile_animation',
                 'show_database_path_in_footer',
                 'disabled_tabs',

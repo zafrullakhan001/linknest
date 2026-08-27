@@ -16,6 +16,7 @@ import {
 import { MonitorQuickToggles, MonitorTogglePill } from './MonitorTogglePill';
 import { LinkUrlField } from './LinkUrlField';
 import { SSL_CERTS_TAB, isSslCertsTab } from '../utils/monitorSsl';
+import { MonitorBulkSpaceSearch } from './MonitorBulkSpaceSearch';
 
 interface MonitorFormProps {
     monitor?: Monitor;
@@ -415,11 +416,14 @@ export const MonitorForm: React.FC<MonitorFormProps> = ({ monitor, onSave, onCan
         setAnalyzeError(null);
     };
 
-    const handleAnalyzeTarget = async () => {
-        const trimmed = analyzeInput.trim();
+    const handleAnalyzeTarget = async (raw?: string) => {
+        const trimmed = (typeof raw === 'string' ? raw : analyzeInput).trim();
         if (!trimmed) {
             setAnalyzeError('Enter a URL or server address to analyze');
             return;
+        }
+        if (typeof raw === 'string') {
+            setAnalyzeInput(raw);
         }
         setIsAnalyzing(true);
         setAnalyzeError(null);
@@ -769,8 +773,21 @@ export const MonitorForm: React.FC<MonitorFormProps> = ({ monitor, onSave, onCan
                                         </button>
                                     </div>
                                     <p className="text-xs text-gray-600 mb-3">
-                                        Paste a URL or server address and we will probe it to recommend the best monitoring method.
+                                        Search a space or paste a URL — we will probe it and recommend the best monitoring method.
                                     </p>
+                                    <div className="mb-3">
+                                        <MonitorBulkSpaceSearch
+                                            mode="monitor"
+                                            accent="emerald"
+                                            compact
+                                            busy={isAnalyzing}
+                                            selectedUrl={analyzeInput}
+                                            pickActionLabel="Analyze"
+                                            onPickUrl={(url) => {
+                                                void handleAnalyzeTarget(url);
+                                            }}
+                                        />
+                                    </div>
                                     <div className="flex gap-2 mb-2">
                                         <input
                                             type="text"

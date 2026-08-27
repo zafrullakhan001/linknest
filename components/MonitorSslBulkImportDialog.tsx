@@ -7,6 +7,7 @@ import {
     buildSslBulkDrafts,
 } from '../utils/monitorSsl';
 import { sslDaysToMinutes } from '../utils/monitorSuggestTiming';
+import { MonitorBulkSpaceSearch } from './MonitorBulkSpaceSearch';
 
 interface MonitorSslBulkImportDialogProps {
     onClose: () => void;
@@ -280,7 +281,7 @@ export const MonitorSslBulkImportDialog: React.FC<MonitorSslBulkImportDialogProp
                             Bulk Add SSL Certificate Checks
                         </h2>
                         <p className="text-sm text-amber-900/75 dark:text-amber-200/70 mt-0.5">
-                            All checks go on the <strong>{SSL_CERTS_TAB}</strong> tab — separate from uptime monitors.
+                            Search spaces or paste hosts. Checks go on the <strong>{SSL_CERTS_TAB}</strong> tab.
                         </p>
                     </div>
                     <div className="flex items-center gap-3 shrink-0">
@@ -334,6 +335,13 @@ export const MonitorSslBulkImportDialog: React.FC<MonitorSslBulkImportDialogProp
                 <div className="flex-1 overflow-y-auto p-6 space-y-4 bg-gradient-to-b from-slate-50/50 to-white dark:from-[#1a1a1a] dark:to-[#1e1e1e]">
                     {step === 'paste' ? (
                         <>
+                            <div className="grid grid-cols-1 lg:grid-cols-2 gap-4 items-start">
+                            <MonitorBulkSpaceSearch
+                                mode="ssl"
+                                existingText={text}
+                                onAddUrls={setText}
+                                accent="amber"
+                            />
                             <section className="rounded-xl border border-amber-100 bg-amber-50/60 dark:border-amber-900/40 dark:bg-amber-950/20 p-4 space-y-3 shadow-sm">
                                 <div className="flex items-start gap-2.5 pb-2 border-b border-amber-100/80 dark:border-amber-900/30">
                                     <span className="text-xl" aria-hidden="true">🔒</span>
@@ -351,13 +359,14 @@ export const MonitorSslBulkImportDialog: React.FC<MonitorSslBulkImportDialogProp
                                     onChange={(e) => setText(e.target.value)}
                                     rows={10}
                                     placeholder={`example.com\nhttps://app.example.com\nmail.example.com:8443`}
-                                    className={`${inputClass} font-mono min-h-[180px] resize-y border-amber-200 focus:border-amber-400 focus:ring-amber-100`}
+                                    className={`${inputClass} font-mono min-h-[280px] resize-y border-amber-200 focus:border-amber-400 focus:ring-amber-100`}
                                 />
                                 <p className="text-xs text-amber-700/80 dark:text-amber-300/70">
                                     <span aria-hidden="true">📊 </span>
                                     {lineCount} unique host{lineCount === 1 ? '' : 's'} detected (max 100)
                                 </p>
                             </section>
+                            </div>
 
                             <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
                                 <section className="rounded-xl border border-amber-100 bg-amber-50/40 dark:border-amber-900/40 dark:bg-amber-950/20 p-4 shadow-sm">

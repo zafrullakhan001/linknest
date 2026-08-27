@@ -175,6 +175,7 @@ function ensureLocalRegistrationSetting(PDO $db): void {
         $now = time();
         $stmt->execute(['local_registration_enabled', '1', $now]);
         $stmt->execute(['signin_button_enabled', '1', $now]);
+        $stmt->execute(['hide_unique_visitors_public', '0', $now]);
     } catch (PDOException $e) {
         // Table may not exist yet during first bootstrap
     }
@@ -3713,6 +3714,7 @@ function initDatabase() {
             ['public_tile_animation', 'fade-in', time()],
             ['local_registration_enabled', '1', time()], // Allow self-signup from login dialog
             ['signin_button_enabled', '1', time()], // Show Sign In button in the UI
+            ['hide_unique_visitors_public', '0', time()], // Hide Unique Visitors from guests
         ];
         
         foreach ($defaultSettings as $setting) {

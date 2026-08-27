@@ -120,6 +120,8 @@ export interface AppSettings {
   local_registration_enabled?: string;
   /** '0' or '1' - when '0', hide the Sign In button in the UI. Login still opens via #/signin or ?signin in the URL. */
   signin_button_enabled?: string;
+  /** '0' or '1' - when '1', hide Unique Visitors in Space Info for guests (not signed in). */
+  hide_unique_visitors_public?: string;
   /** '0' or '1' - SSH Gateway / Easy-mode add-on (default enabled when unset). */
   ssh_gateway_enabled?: string;
   /** '0' or '1' - VNC Gateway / Easy-mode add-on (default enabled when unset). */
@@ -370,6 +372,7 @@ export const settingsService = {
       guest_access_enabled: data.settings?.guest_access_enabled || '1', // Default to enabled
       local_registration_enabled: data.settings?.local_registration_enabled || '1', // Default to enabled
       signin_button_enabled: data.settings?.signin_button_enabled || '1', // Default to show Sign In
+      hide_unique_visitors_public: data.settings?.hide_unique_visitors_public === '1' ? '1' : '0',
       public_tile_animation: data.settings?.public_tile_animation || 'fade-in',
       show_database_path_in_footer: data.settings?.show_database_path_in_footer || '1', // Default to enabled
       disabled_tabs: data.settings?.disabled_tabs || '[]',

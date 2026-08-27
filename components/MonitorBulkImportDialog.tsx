@@ -10,6 +10,7 @@ import { MONITOR_TYPE_LABELS } from '../utils/monitorSuggestHeuristics';
 import { enrichMonitorConfigWithTiming, getMonitorSuggestTimingDefaults } from '../utils/monitorSuggestTiming';
 import { countBulkMonitorLines } from '../utils/monitorBulkImport';
 import { MonitorTogglePill } from './MonitorTogglePill';
+import { MonitorBulkSpaceSearch } from './MonitorBulkSpaceSearch';
 
 interface MonitorBulkImportDialogProps {
     defaultTab?: string;
@@ -337,7 +338,7 @@ export const MonitorBulkImportDialog: React.FC<MonitorBulkImportDialogProps> = (
                             Bulk Add Monitors
                         </h2>
                         <p className="text-sm text-emerald-900/75 dark:text-emerald-200/70 mt-0.5">
-                            Paste URLs and IPs — we pick the best uptime check for each. SSL expiry has its own bulk loader.
+                            Search spaces or paste URLs and IPs — we pick the best uptime check. SSL expiry has its own bulk loader.
                         </p>
                     </div>
                     <div className="flex items-center gap-3 shrink-0">
@@ -392,6 +393,13 @@ export const MonitorBulkImportDialog: React.FC<MonitorBulkImportDialogProps> = (
                 <div className="flex-1 overflow-y-auto p-6 space-y-4 bg-gradient-to-b from-slate-50/50 to-white dark:from-[#1a1a1a] dark:to-[#1e1e1e]">
                     {step === 'paste' ? (
                         <>
+                            <div className="grid grid-cols-1 lg:grid-cols-2 gap-4 items-start">
+                            <MonitorBulkSpaceSearch
+                                mode="monitor"
+                                existingText={text}
+                                onAddUrls={setText}
+                                accent="emerald"
+                            />
                             <section className="rounded-xl border border-emerald-100 bg-emerald-50/60 dark:border-emerald-900/40 dark:bg-emerald-950/20 p-4 space-y-3 shadow-sm">
                                 <div className="flex items-start gap-2.5 pb-2 border-b border-emerald-100/80 dark:border-emerald-900/30">
                                     <span className="text-xl" aria-hidden="true">🎯</span>
@@ -409,13 +417,14 @@ export const MonitorBulkImportDialog: React.FC<MonitorBulkImportDialogProps> = (
                                     onChange={(e) => setText(e.target.value)}
                                     rows={10}
                                     placeholder={`https://app.example.com\nhttps://api.example.com/health\n192.168.1.10\nserver.example.com:443\nmysql://db.internal`}
-                                    className={`${inputClass} font-mono min-h-[180px] resize-y border-emerald-200 focus:border-emerald-400 focus:ring-emerald-100`}
+                                    className={`${inputClass} font-mono min-h-[280px] resize-y border-emerald-200 focus:border-emerald-400 focus:ring-emerald-100`}
                                 />
                                 <p className="text-xs text-emerald-700/80 dark:text-emerald-300/70">
                                     <span aria-hidden="true">📊 </span>
                                     {lineCount} unique target{lineCount === 1 ? '' : 's'} detected (max 100)
                                 </p>
                             </section>
+                            </div>
 
                             <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                                 <section className="rounded-xl border border-violet-100 bg-violet-50/60 dark:border-violet-900/40 dark:bg-violet-950/20 p-4 shadow-sm">

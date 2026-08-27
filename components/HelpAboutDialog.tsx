@@ -607,7 +607,7 @@ export const HelpAboutDialog: React.FC<HelpAboutDialogProps> = ({
                   <div className="bg-slate-50 dark:bg-slate-900/50 rounded-lg p-4">
                     <h4 className="font-semibold text-slate-900 dark:text-white mb-2">Visitor Insights</h4>
                     <p className="text-sm text-slate-700 dark:text-slate-300">
-                      Track space visits from Space Info → Visitors. Total Hits counts every open, including repeats by the same person. Unique Visitors counts different people — logged-in users and guests — each only once.
+                      Track space visits from Space Info → Visitors. Total Hits counts every open, including repeats by the same person. Unique Visitors counts different people — logged-in users and guests — each only once. Admins can click the Unique Visitors count to see who opened the space. Admins can hide Unique Visitors from guests under Admin → Settings → Access → Guest & UI.
                     </p>
                   </div>
                   <div className="bg-slate-50 dark:bg-slate-900/50 rounded-lg p-4">
@@ -1261,6 +1261,8 @@ docker\\docker-sync-database.bat -Direction Out -HostBasePath "/ArchLinks"`}</pr
                       <li>Opening a space records a visit</li>
                       <li><strong>Total Hits:</strong> every time the space is opened (repeats by the same person count again)</li>
                       <li><strong>Unique Visitors:</strong> how many different people opened it (logged-in users and guests, each counted once)</li>
+                      <li>Admins can click the Unique Visitors count to see usernames, emails, and guest browsers</li>
+                      <li>Admins can hide Unique Visitors from guests in Admin → Settings → Access → Guest &amp; UI</li>
                       <li>View totals under Space Info → Visitors</li>
                     </ul>
                   </div>
@@ -1304,6 +1306,7 @@ docker\\docker-sync-database.bat -Direction Out -HostBasePath "/ArchLinks"`}</pr
                       <li>Organize monitors into tabs and groups</li>
                       <li>Export/import monitors via JSON</li>
                       <li>Bulk operations and duplicate monitors</li>
+                      <li>Bulk add uptime monitors or SSL checks from a pasted list, or search spaces and add their URLs</li>
                     </ul>
                   </div>
                   <div className="bg-violet-50 dark:bg-violet-900/20 rounded-lg p-4 space-y-2">
@@ -1894,7 +1897,7 @@ docker\\docker-sync-database.bat -Direction Out -HostBasePath "/ArchLinks"`}</pr
                     <li>Share the app or a space via branded QR codes</li>
                     <li>Share a private/authenticated space with another user and manage shares from the Share dialog</li>
                     <li>Block unwanted sharers; review Blocked Users when needed</li>
-                    <li>Check Space Info → Visitors: Total Hits are all opens; Unique Visitors are different people (logged-in users and guests)</li>
+                    <li>Check Space Info → Visitors: Total Hits are all opens; Unique Visitors are different people (logged-in users and guests). Admins can click Unique Visitors to see who, and can hide Unique Visitors from guests in Settings</li>
                     <li>Export and import spaces to share with others</li>
                     <li>Use the recycle bin to recover accidentally deleted tiles</li>
                     <li>Archive old tiles to keep your workspace clean</li>
@@ -2115,7 +2118,7 @@ php scripts/reset_admin_password.php admin 'NewStrongPass1!'`}</pre>
                     <li><strong>SSH / VNC manual deploy:</strong> Online, air-gapped runtime pack, HTTPS WSS proxy, Easy mode, <code className="text-xs bg-slate-200 dark:bg-slate-800 px-1 rounded">ssh://</code> / <code className="text-xs bg-slate-200 dark:bg-slate-800 px-1 rounded">vnc://</code> space links — Help and Guides</li>
                     <li><strong>QR sharing:</strong> Branded QR codes for the app URL and spaces (desktop + mobile)</li>
                     <li><strong>Share spaces:</strong> Share with users, accept/reject notifications, and revoke access</li>
-                    <li><strong>Visitor stats:</strong> Space Info → Visitors shows Total Hits (every open) and Unique Visitors (different logged-in users and guests)</li>
+                    <li><strong>Visitor stats:</strong> Space Info → Visitors shows Total Hits (every open) and Unique Visitors (different logged-in users and guests). Admins can click Unique Visitors to see who opened the space, and can hide Unique Visitors from guests under Settings → Access → Guest &amp; UI</li>
                     <li><strong>Tile visuals:</strong> Header &amp; emoji images, title/description visibility, and compact mobile layouts</li>
                     <li><strong>Boxed rich text:</strong> Optional titled/footer cards inside sections</li>
                     <li><strong>Add-ons:</strong> Performance Analytics and Monitorv2 (PostgreSQL) management under Admin → Add-ons</li>
