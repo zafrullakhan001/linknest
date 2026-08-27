@@ -99,7 +99,8 @@ def perform_check(monitor: Dict[str, Any], verify_ssl: bool, app_name: str = "Li
         return "down", "Invalid monitor type"
 
     status, details = run_once(relaxed=False)
-    if status == "down":
+    # Retry transient downs. Do not retry an already-expired cert (status is final).
+    if status == "down" and not str(details).startswith("Certificate expired"):
         time.sleep(0.5)
         r2s, r2d = run_once(relaxed=True)
         if r2s == "up":
@@ -123,6 +124,13 @@ def queue_advanced_notifications(conn, monitor_row, new_status: str, prev_status
     triggers: List[str] = []
     norm_prev = None if prev_status in (None, "", False) else str(prev_status)
     if new_status == "down":
+        triggers = ["down", "both"]
+    elif (
+        new_status == "warning"
+        and str(monitor_row["type"] or "") == "ssl"
+        and (norm_prev != "warning")
+    ):
+        # Approaching expiry: alert once when entering the warn window (amber tile).
         triggers = ["down", "both"]
     # Treat WARNING as a down-like transitional state (below threshold),
     # so WARNING->UP should trigger "up" notifications too.
@@ -221,6 +229,14 @@ def queue_legacy_notification(conn, monitor_row, new_status: str, prev_status: O
         trigger = "down"
         subject_status = "down"
         message_details = f"DOWN: {monitor_row['name']} is unreachable. Error: {details}"
+    elif (
+        str(monitor_row["type"] or "") == "ssl"
+        and norm_new == "warning"
+        and norm_prev != "warning"
+    ):
+        trigger = "down"
+        subject_status = "warning"
+        message_details = f"WARNING: {monitor_row['name']} certificate is approaching expiry. {details}"
     # Treat WARNING as a down-like transitional state (below threshold),
     # so WARNING->UP should trigger legacy "up" notification too.
     elif norm_prev in ("down", "warning") and norm_new == "up":
@@ -383,13 +399,20 @@ def main() -> int:
             prev_fail = max(0, prev_fail)
 
             raw_status = (r.status or "").strip().lower()
-            if raw_status not in ("up", "down"):
+            if raw_status not in ("up", "down", "warning"):
                 raw_status = "down"
 
             new_fail = (prev_fail + 1) if raw_status == "down" else 0
             eff_status = raw_status
             eff_details = r.details
-            if raw_status == "down" and threshold > 1 and new_fail < threshold:
+            # SSL uses warning for approaching expiry (amber). Do not recast
+            # TLS/connect failures as consecutive-failure warnings.
+            if (
+                raw_status == "down"
+                and threshold > 1
+                and new_fail < threshold
+                and str(m["type"] or "") != "ssl"
+            ):
                 eff_status = "warning"
                 eff_details = f"Warning ({new_fail}/{threshold}): {r.details}"
 

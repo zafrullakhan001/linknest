@@ -5,8 +5,7 @@ import { MonitorBulkImportDialog } from './MonitorBulkImportDialog';
 import { MonitorSslBulkImportDialog } from './MonitorSslBulkImportDialog';
 import { MonitorTargetLabel } from './MonitorTargetLabel';
 import { FaServer, FaGlobe, FaSearch, FaCheck, FaTimes, FaQuestion, FaPlus, FaRedo, FaSyncAlt, FaTrash, FaEdit, FaClock, FaThLarge, FaList, FaCopy, FaBars, FaDownload, FaUpload, FaHistory, FaCalendarAlt, FaEnvelope, FaArrowsAlt, FaPalette, FaCircle, FaExpand, FaCompress, FaBell, FaBellSlash, FaFileExport, FaLock, FaCode, FaMagic } from 'react-icons/fa';
-import { formatMonitorInterval } from '../utils/monitorSuggestTiming';
-import { SSL_CERTS_TAB, isSslCertsTab, isSslMonitor } from '../utils/monitorSsl';
+import { SSL_CERTS_TAB, formatMonitorCornerMetric, isSslCertsTab, isSslMonitor } from '../utils/monitorSsl';
 import { useTileAnimation, getTileAnimationClass, getTileDecorationClass } from './TileAnimationSelector';
 import { SMTPSettingsModal } from './SMTPSettingsModal';
 import { MonitoringTileStyleModal, TileStyle } from './MonitoringTileStyleModal';
@@ -1377,6 +1376,15 @@ export const MonitoringDashboard: React.FC = () => {
                                                         {monitor.last_response_time !== null && monitor.last_response_time !== undefined ? `${monitor.last_response_time}ms` : '-'}
                                                     </span>
                                                 </div>
+                                                {isSslMonitor(monitor) && (
+                                                    <span
+                                                        className="text-xs font-bold opacity-80"
+                                                        title={formatMonitorCornerMetric(monitor).title}
+                                                        style={monitor.last_status === 'up' || monitor.last_status === 'down' || monitor.last_status === 'warning' ? getTileTextStyle(monitor.last_status) : { color: 'inherit' }}
+                                                    >
+                                                        {formatMonitorCornerMetric(monitor).label}
+                                                    </span>
+                                                )}
                                                 <span
                                                     className="text-xs opacity-70"
                                                     style={monitor.last_status === 'up' || monitor.last_status === 'down' || monitor.last_status === 'warning' ? getTileTextStyle(monitor.last_status) : { color: 'inherit' }}
@@ -1547,8 +1555,8 @@ export const MonitoringDashboard: React.FC = () => {
                                                         <FaClock size={10} style={monitor.last_status === 'up' || monitor.last_status === 'down' || monitor.last_status === 'warning' ? { ...getTileTextStyle(monitor.last_status), opacity: 0.6 } : {}} {...({ className: monitor.last_status === 'up' || monitor.last_status === 'down' || monitor.last_status === 'warning' ? '' : 'text-blue-500' } as any)} />
                                                         {monitor.last_response_time !== null && monitor.last_response_time !== undefined ? `${monitor.last_response_time}ms` : '-'}
                                                     </div>
-                                                    <div className="opacity-70">
-                                                        {formatMonitorInterval(monitor.type, monitor.interval)}
+                                                    <div className="opacity-70" title={formatMonitorCornerMetric(monitor).title}>
+                                                        {formatMonitorCornerMetric(monitor).label}
                                                     </div>
                                                 </div>
                                                 <div
@@ -1740,7 +1748,7 @@ export const MonitoringDashboard: React.FC = () => {
                                                 <th className="px-6 py-4">Target</th>
                                                 <th className="px-6 py-4">Response Time</th>
                                                 <th className="px-6 py-4">Last Checked</th>
-                                                <th className="px-6 py-4">Interval</th>
+                                                <th className="px-6 py-4">{isSslCertsTab(activeTab) ? 'Expiry' : 'Interval'}</th>
                                                 <th className="px-6 py-4 text-right">Actions</th>
                                             </tr>
                                         </thead>
@@ -1816,8 +1824,9 @@ export const MonitoringDashboard: React.FC = () => {
                                                         <span
                                                             className={`text-xs font-bold ${monitor.last_status === 'up' || monitor.last_status === 'down' ? '' : 'text-slate-500 dark:text-slate-400'}`}
                                                             style={monitor.last_status === 'up' || monitor.last_status === 'down' ? { ...getTileTextStyle(monitor.last_status), opacity: 0.8 } : {}}
+                                                            title={formatMonitorCornerMetric(monitor).title}
                                                         >
-                                                            {formatMonitorInterval(monitor.type, monitor.interval)}
+                                                            {formatMonitorCornerMetric(monitor).label}
                                                         </span>
                                                     </td>
                                                     <td className="px-6 py-4 text-right">

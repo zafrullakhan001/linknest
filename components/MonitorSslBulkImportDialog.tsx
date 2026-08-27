@@ -373,7 +373,7 @@ export const MonitorSslBulkImportDialog: React.FC<MonitorSslBulkImportDialogProp
                                         className={inputClass}
                                     />
                                     <p className="text-[11px] text-amber-800/70 dark:text-amber-200/60 mt-1.5">
-                                        Marked down when the cert expires within this many days.
+                                        Tile turns amber at this remaining-days mark; red after the cert expires.
                                     </p>
                                 </section>
                                 <section className="rounded-xl border border-amber-100 bg-amber-50/40 dark:border-amber-900/40 dark:bg-amber-950/20 p-4 shadow-sm">

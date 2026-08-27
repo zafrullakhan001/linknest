@@ -635,7 +635,8 @@ function handleGetMonitors() {
                     FROM monitor_notification_rules r 
                     WHERE r.monitor_id = m.id AND r.is_enabled = 1
                 ), 0) AS email_rules_count,
-                (SELECT GROUP_CONCAT(user_id) FROM user_monitor_permissions ump WHERE ump.monitor_id = m.id AND COALESCE(ump.can_view, 0) = 1) AS allowed_user_ids_csv
+                (SELECT GROUP_CONCAT(user_id) FROM user_monitor_permissions ump WHERE ump.monitor_id = m.id AND COALESCE(ump.can_view, 0) = 1) AS allowed_user_ids_csv,
+                (SELECT details FROM monitor_logs ml WHERE ml.monitor_id = m.id ORDER BY ml.checked_at DESC LIMIT 1) AS last_details
             FROM monitors m
             ORDER BY m.created_at DESC
         ');
@@ -648,7 +649,8 @@ function handleGetMonitors() {
                     SELECT COUNT(*) 
                     FROM monitor_notification_rules r 
                     WHERE r.monitor_id = m.id AND r.is_enabled = 1
-                ), 0) AS email_rules_count
+                ), 0) AS email_rules_count,
+                (SELECT details FROM monitor_logs ml WHERE ml.monitor_id = m.id ORDER BY ml.checked_at DESC LIMIT 1) AS last_details
             FROM monitors m
             LEFT JOIN user_monitor_permissions ump
               ON ump.monitor_id = m.id AND ump.user_id = ?
@@ -729,6 +731,10 @@ function handleGetMonitor($id) {
     $stmt = $db->prepare('SELECT COUNT(*) FROM monitor_notification_rules r WHERE r.monitor_id = ? AND r.is_enabled = 1');
     $stmt->execute([(int)$monitor['id']]);
     $monitor['email_rules_count'] = (int)$stmt->fetchColumn();
+
+    $stmt = $db->prepare('SELECT details FROM monitor_logs WHERE monitor_id = ? ORDER BY checked_at DESC LIMIT 1');
+    $stmt->execute([(int)$monitor['id']]);
+    $monitor['last_details'] = $stmt->fetchColumn() ?: null;
 
     // For admins, include allowed user ids
     if (!empty($user['is_admin'])) {

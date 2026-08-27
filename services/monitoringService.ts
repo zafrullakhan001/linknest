@@ -27,6 +27,7 @@ export interface Monitor {
     last_checked_at: number;
     last_status: 'up' | 'down' | 'warning' | 'unknown' | null;
     last_response_time: number;
+    last_details?: string | null;
     created_at: number;
     updated_at: number;
     tab_name?: string;

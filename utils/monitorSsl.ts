@@ -1,6 +1,6 @@
 import { Monitor } from '../services/monitoringService';
 import { parseBulkMonitorLines } from './monitorBulkImport';
-import { sslDaysToMinutes } from './monitorSuggestTiming';
+import { formatMonitorInterval, sslDaysToMinutes } from './monitorSuggestTiming';
 
 /** Dedicated dashboard tab for SSL certificate expiry monitors. */
 export const SSL_CERTS_TAB = 'SSL Certificates';
@@ -11,6 +11,63 @@ export function isSslCertsTab(name: string | undefined | null): boolean {
 
 export function isSslMonitor(monitor: { type?: string } | null | undefined): boolean {
     return monitor?.type === 'ssl';
+}
+
+export interface SslDaysRemaining {
+    days: number;
+    expired: boolean;
+}
+
+export function parseSslDaysRemaining(details: string | null | undefined): SslDaysRemaining | null {
+    if (!details) return null;
+    const expired = details.match(/expired\s+(\d+)\s+days?\s+ago/i);
+    if (expired) {
+        return { days: parseInt(expired[1], 10), expired: true };
+    }
+    const remaining = details.match(/(\d+)\s+days?\s+remaining/i);
+    if (remaining) {
+        return { days: parseInt(remaining[1], 10), expired: false };
+    }
+    const expiresIn = details.match(/expires in\s+(\d+)\s+days?/i);
+    if (expiresIn) {
+        return { days: parseInt(expiresIn[1], 10), expired: false };
+    }
+    return null;
+}
+
+export function formatSslExpiryLabel(details: string | null | undefined): string {
+    const parsed = parseSslDaysRemaining(details);
+    if (!parsed) return '—';
+    if (parsed.expired) {
+        return parsed.days === 0 ? 'expired' : `expired ${parsed.days}d`;
+    }
+    return `${parsed.days}d left`;
+}
+
+export function sslExpiryTitle(details: string | null | undefined): string {
+    const parsed = parseSslDaysRemaining(details);
+    if (!parsed) return 'Certificate expiry not checked yet';
+    if (parsed.expired) {
+        return parsed.days === 0
+            ? 'Certificate expired'
+            : `Certificate expired ${parsed.days} day${parsed.days === 1 ? '' : 's'} ago`;
+    }
+    return `Certificate expires in ${parsed.days} day${parsed.days === 1 ? '' : 's'}`;
+}
+
+export function formatMonitorCornerMetric(monitor: {
+    type?: string;
+    interval?: number;
+    last_details?: string | null;
+}): { label: string; title: string } {
+    if (isSslMonitor(monitor)) {
+        return {
+            label: formatSslExpiryLabel(monitor.last_details),
+            title: sslExpiryTitle(monitor.last_details),
+        };
+    }
+    const label = formatMonitorInterval(monitor.type, monitor.interval);
+    return { label, title: `Check interval: ${label}` };
 }
 
 export interface SslBulkDraft {

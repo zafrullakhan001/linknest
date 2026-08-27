@@ -1051,7 +1051,7 @@ export const MonitorForm: React.FC<MonitorFormProps> = ({ monitor, onSave, onCan
                                                 min="1"
                                                 max="365"
                                             />
-                                            <FieldHelp text="Monitor is marked down when the certificate expires within this many days. Default is 30." />
+                                            <FieldHelp text="When remaining days drop to this number, the tile turns amber (WARNING). After the cert actually expires, it turns red (DOWN). Default is 30." />
                                         </div>
                                     )}
 

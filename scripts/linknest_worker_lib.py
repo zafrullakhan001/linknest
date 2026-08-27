@@ -13,6 +13,7 @@ import datetime as _dt
 import email.utils
 import html as _html
 import json
+import math
 import os
 import sys
 import re
@@ -20,6 +21,7 @@ import socket
 import sqlite3
 import ssl
 import subprocess
+import tempfile
 import time
 import urllib.request
 from dataclasses import dataclass
@@ -536,6 +538,113 @@ def check_ping(target: str, timeout_ms: int = 1000) -> Tuple[str, str]:
     return "down", f"Ping failed: {err}"
 
 
+def _asn1_read_len(data: bytes, i: int) -> Tuple[int, int]:
+    if i >= len(data):
+        raise ValueError("truncated ASN.1 length")
+    first = data[i]
+    i += 1
+    if first < 0x80:
+        return first, i
+    n = first & 0x7F
+    if n == 0 or n > 4 or i + n > len(data):
+        raise ValueError("bad ASN.1 length")
+    ln = int.from_bytes(data[i : i + n], "big")
+    return ln, i + n
+
+
+def _parse_x509_time(data: bytes, i: int) -> Tuple[_dt.datetime, int]:
+    tag = data[i]
+    ln, j = _asn1_read_len(data, i + 1)
+    raw = data[j : j + ln].decode("ascii")
+    j += ln
+    if tag == 0x17 and raw.endswith("Z") and len(raw) >= 13:
+        yy = int(raw[0:2])
+        year = 2000 + yy if yy < 50 else 1900 + yy
+        return _dt.datetime.strptime(f"{year:04d}{raw[2:12]}", "%Y%m%d%H%M%S"), j
+    if tag == 0x18 and raw.endswith("Z") and len(raw) >= 15:
+        return _dt.datetime.strptime(raw[:14], "%Y%m%d%H%M%S"), j
+    raise ValueError("unsupported certificate time")
+
+
+def _ssl_not_after_from_der(der: bytes) -> Optional[_dt.datetime]:
+    """Parse notAfter from a DER X.509 cert (stdlib only; works with CERT_NONE)."""
+    try:
+        if not der or der[0] != 0x30:
+            return None
+        _, i = _asn1_read_len(der, 1)
+        if i >= len(der) or der[i] != 0x30:
+            return None
+        tbs_len, i = _asn1_read_len(der, i + 1)
+        tbs_end = min(len(der), i + tbs_len)
+        if i < tbs_end and der[i] == 0xA0:
+            vlen, i = _asn1_read_len(der, i + 1)
+            i += vlen
+        if i < tbs_end and der[i] == 0x02:
+            slen, i = _asn1_read_len(der, i + 1)
+            i += slen
+        if i < tbs_end and der[i] == 0x30:
+            slen, i = _asn1_read_len(der, i + 1)
+            i += slen
+        if i < tbs_end and der[i] == 0x30:
+            slen, i = _asn1_read_len(der, i + 1)
+            i += slen
+        if i >= tbs_end or der[i] != 0x30:
+            return None
+        _vlen, i = _asn1_read_len(der, i + 1)
+        _not_before, i = _parse_x509_time(der, i)
+        not_after, _ = _parse_x509_time(der, i)
+        return not_after
+    except Exception:
+        return None
+
+
+def _ssl_not_after_from_dict(not_after: Any) -> Optional[_dt.datetime]:
+    if not not_after:
+        return None
+    try:
+        return _dt.datetime.strptime(str(not_after), "%b %d %H:%M:%S %Y %Z")
+    except Exception:
+        return None
+
+
+def _ssl_cert_not_after(ssock: ssl.SSLSocket, cert_bin: Optional[bytes]) -> Optional[_dt.datetime]:
+    """Read certificate notAfter. CERT_NONE often yields an empty getpeercert() dict, so parse DER."""
+    cert = ssock.getpeercert() or {}
+    expiry = _ssl_not_after_from_dict(cert.get("notAfter") if isinstance(cert, dict) else None)
+    if expiry is not None:
+        return expiry
+    if cert_bin:
+        expiry = _ssl_not_after_from_der(cert_bin)
+        if expiry is not None:
+            return expiry
+        pem = ssl.DER_cert_to_PEM_cert(cert_bin)
+        decode = getattr(getattr(ssl, "_ssl", None), "_test_decode_cert", None)
+        if callable(decode) and pem:
+            fd, path = tempfile.mkstemp(suffix=".pem")
+            try:
+                os.write(fd, pem.encode("ascii"))
+                os.close(fd)
+                fd = None
+                info = decode(path) or {}
+                expiry = _ssl_not_after_from_dict(info.get("notAfter") if isinstance(info, dict) else None)
+            finally:
+                if fd is not None:
+                    with contextlib.suppress(Exception):
+                        os.close(fd)
+                with contextlib.suppress(Exception):
+                    os.unlink(path)
+    return expiry
+
+
+def _ssl_days_remaining(expiry: _dt.datetime) -> int:
+    """Whole days remaining, matching PHP floor((validTo_time_t - time()) / 86400)."""
+    if expiry.tzinfo is None:
+        expiry_ts = expiry.replace(tzinfo=_dt.timezone.utc).timestamp()
+    else:
+        expiry_ts = expiry.timestamp()
+    return int(math.floor((expiry_ts - time.time()) / 86400.0))
+
+
 def check_ssl(target: str, warn_days_raw: Optional[str], timeout: float = 8.0) -> Tuple[str, str]:
     host = (target or "").strip()
     port = 443
@@ -578,21 +687,17 @@ def check_ssl(target: str, warn_days_raw: Optional[str], timeout: float = 8.0) -
         with socket.create_connection((host, port), timeout=timeout) as sock:
             with ctx.wrap_socket(sock, server_hostname=host) as ssock:
                 cert_bin = ssock.getpeercert(binary_form=True)
+                expiry = _ssl_cert_not_after(ssock, cert_bin)
         if not cert_bin:
             return "down", "Could not read SSL certificate"
-        # Parse expiry from DER via ssl module getpeercert after wrap - use dict form
-        with socket.create_connection((host, port), timeout=timeout) as sock2:
-            with ctx.wrap_socket(sock2, server_hostname=host) as ssock2:
-                cert = ssock2.getpeercert()
-        if not cert or "notAfter" not in cert:
+        if expiry is None:
             return "down", "Invalid certificate data"
-        from datetime import datetime
-        expiry = datetime.strptime(cert["notAfter"], "%b %d %H:%M:%S %Y %Z")
-        days_remaining = (expiry - datetime.utcnow()).days
+        days_remaining = _ssl_days_remaining(expiry)
+        # Amber WARNING when inside the warn window; red DOWN only after expiry / TLS failure.
         if days_remaining < 0:
             return "down", f"Certificate expired {abs(days_remaining)} days ago"
         if days_remaining <= warn_days:
-            return "down", f"Certificate expires in {days_remaining} days (threshold: {warn_days})"
+            return "warning", f"Certificate expires in {days_remaining} days (threshold: {warn_days})"
         return "up", f"Certificate valid ({days_remaining} days remaining)"
     except Exception as e:
         msg = str(e) or e.__class__.__name__

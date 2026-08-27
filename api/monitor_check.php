@@ -134,7 +134,7 @@ function performMonitorCheck($monitor, $options = []) {
 
     // Apply warning threshold logic (consecutive failure gating)
     $rawStatus = strtolower(trim((string)($checkRes['status'] ?? 'down')));
-    if ($rawStatus !== 'up' && $rawStatus !== 'down') {
+    if ($rawStatus !== 'up' && $rawStatus !== 'down' && $rawStatus !== 'warning') {
         $rawStatus = 'down';
     }
     $rawDetails = (string)($checkRes['details'] ?? '');
@@ -234,7 +234,11 @@ function performMonitorCheck($monitor, $options = []) {
             if ($normalizedStatus === 'down') {
                 error_log("[EMAIL] Triggering DOWN notification for monitor {$monitor['id']} - Previous status: " . ($prevStatus ?? 'null/unknown') . ", Current: $status");
                 sendNotification($monitor, "DOWN: {$monitor['name']} is unreachable. Error: $details", 'down', $responseTime, $now);
-            } 
+            }
+            elseif (($monitor['type'] ?? '') === 'ssl' && $normalizedStatus === 'warning' && $normalizedPrevStatus !== 'warning') {
+                error_log("[EMAIL] Triggering SSL WARNING notification for monitor {$monitor['id']}");
+                sendNotification($monitor, "WARNING: {$monitor['name']} certificate is approaching expiry. $details", 'down', $responseTime, $now);
+            }
             // Send UP notification when status changes from a "not up" state back to UP
             // WARNING is a down-like transitional state (below threshold), so treat WARNING->UP as recovery too.
             elseif (($normalizedPrevStatus === 'down' || $normalizedPrevStatus === 'warning') && $normalizedStatus === 'up') {
@@ -556,7 +560,7 @@ function checkSsl($target, $warnDaysRaw, $opts = []) {
         return ['status' => 'down', 'details' => 'Certificate expired ' . abs($daysRemaining) . ' days ago'];
     }
     if ($daysRemaining <= $warnDays) {
-        return ['status' => 'down', 'details' => "Certificate expires in $daysRemaining days (threshold: $warnDays)"];
+        return ['status' => 'warning', 'details' => "Certificate expires in $daysRemaining days (threshold: $warnDays)"];
     }
 
     return ['status' => 'up', 'details' => "Certificate valid ($daysRemaining days remaining)"];
@@ -727,7 +731,12 @@ function sendAdvancedNotifications($monitor, $newStatus, $prevStatus, $details, 
         $triggersToCheck[] = 'down';
         $triggersToCheck[] = 'both';
         error_log("[EMAIL] Status changed to DOWN - checking 'down' and 'both' triggers");
-    } 
+    }
+    elseif (($monitor['type'] ?? '') === 'ssl' && $newStatus === 'warning' && $normalizedPrevStatus !== 'warning') {
+        $triggersToCheck[] = 'down';
+        $triggersToCheck[] = 'both';
+        error_log("[EMAIL] SSL status changed to WARNING (approaching expiry) - checking 'down' and 'both' triggers");
+    }
     // Send notification when status changes from a "not up" state to 'up'
     // WARNING is a down-like transitional state (below threshold), so treat WARNING->UP as recovery too.
     elseif ($newStatus === 'up' && ($normalizedPrevStatus === 'down' || $normalizedPrevStatus === 'warning')) {
