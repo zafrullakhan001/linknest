@@ -7681,28 +7681,8 @@ function getTileVisitStats($tileId, $db = null) {
     if ($db === null) {
         $db = getDB();
     }
-
-    try {
-        $stmt = $db->prepare('
-            SELECT
-                COUNT(*) as hit_count,
-                COUNT(DISTINCT visitor_key) as unique_visitors
-            FROM tile_visits
-            WHERE tile_id = ?
-        ');
-        $stmt->execute([$tileId]);
-        $row = $stmt->fetch(PDO::FETCH_ASSOC);
-        return [
-            'hitCount' => (int)($row['hit_count'] ?? 0),
-            'uniqueVisitors' => (int)($row['unique_visitors'] ?? 0)
-        ];
-    } catch (PDOException $e) {
-        // Table may not exist yet on older DBs mid-migration
-        return [
-            'hitCount' => 0,
-            'uniqueVisitors' => 0
-        ];
-    }
+    require_once __DIR__ . '/visit_analytics_lib.php';
+    return getDurableTileVisitStats($tileId, $db);
 }
 
 /**
@@ -7825,22 +7805,24 @@ function handleGetTileUniqueVisitors($tileId) {
     }
 
     [, $db] = assertTileAccessibleForVisit($tileId);
+    require_once __DIR__ . '/visit_analytics_lib.php';
+    ensureVisitAnalyticsTables($db);
+    backfillVisitAnalyticsIfNeeded($db);
 
     try {
         $stmt = $db->prepare('
             SELECT
                 v.visitor_key,
-                MAX(v.user_id) as user_id,
-                COUNT(*) as hit_count,
-                MIN(v.visited_at) as first_visit,
-                MAX(v.visited_at) as last_visit,
-                MAX(u.username) as username,
-                MAX(u.email) as email
-            FROM tile_visits v
+                v.user_id,
+                v.hit_count,
+                v.first_visit,
+                v.last_visit,
+                u.username,
+                u.email
+            FROM tile_visit_visitors v
             LEFT JOIN users u ON v.user_id = u.id
             WHERE v.tile_id = ?
-            GROUP BY v.visitor_key
-            ORDER BY last_visit DESC
+            ORDER BY v.last_visit DESC
             LIMIT 500
         ');
         $stmt->execute([$tileId]);
@@ -7889,9 +7871,14 @@ function handleGetTileUniqueVisitors($tileId) {
         }
         unset($visitor);
 
-        $totalStmt = $db->prepare('SELECT COUNT(DISTINCT visitor_key) FROM tile_visits WHERE tile_id = ?');
+        $totalStmt = $db->prepare('SELECT unique_visitors FROM tile_visit_counters WHERE tile_id = ?');
         $totalStmt->execute([$tileId]);
-        $total = (int)$totalStmt->fetchColumn();
+        $total = (int)($totalStmt->fetchColumn() ?: 0);
+        if ($total === 0) {
+            $totalStmt = $db->prepare('SELECT COUNT(*) FROM tile_visit_visitors WHERE tile_id = ?');
+            $totalStmt->execute([$tileId]);
+            $total = (int)$totalStmt->fetchColumn();
+        }
 
         sendJSON([
             'success' => true,
@@ -7908,9 +7895,11 @@ function handleGetTileUniqueVisitors($tileId) {
 /**
  * Record a tile visit (hit). Unique visitors are derived from visitor_key.
  * Accepts optional visitorKey in JSON body for guests; authenticated users use u:{id}.
+ * Persists to durable counters / visitor rows / daily rollups (million-hit safe).
  */
 function handleRecordTileVisit($tileId) {
     [$user, $db] = assertTileAccessibleForVisit($tileId);
+    require_once __DIR__ . '/visit_analytics_lib.php';
 
     $input = json_decode(file_get_contents('php://input'), true);
     if (!is_array($input)) {
@@ -7935,33 +7924,15 @@ function handleRecordTileVisit($tileId) {
         }
     }
 
-    $now = time();
-
-    // Coalesce rapid duplicate hits (e.g. React Strict Mode double-mount) within 10 seconds
     try {
-        $recentStmt = $db->prepare('
-            SELECT id FROM tile_visits
-            WHERE tile_id = ? AND visitor_key = ? AND visited_at >= ?
-            LIMIT 1
-        ');
-        $recentStmt->execute([$tileId, $visitorKey, $now - 10]);
-        $recent = $recentStmt->fetch();
-
-        if (!$recent) {
-            $insert = $db->prepare('
-                INSERT INTO tile_visits (tile_id, user_id, visitor_key, visited_at)
-                VALUES (?, ?, ?, ?)
-            ');
-            $insert->execute([$tileId, $userId, $visitorKey, $now]);
-        }
-
-        $stats = filterVisitStatsForViewer(getTileVisitStats($tileId, $db), $user, $db);
+        [$recorded, $stats] = recordDurableTileVisit($db, $tileId, $visitorKey, $userId);
+        $stats = filterVisitStatsForViewer($stats, $user, $db);
         sendJSON([
             'success' => true,
-            'recorded' => !$recent,
+            'recorded' => $recorded,
             'stats' => $stats
         ]);
-    } catch (PDOException $e) {
+    } catch (Throwable $e) {
         error_log('Failed to record tile visit: ' . $e->getMessage());
         sendJSON(['error' => 'Failed to record visit'], 500);
     }

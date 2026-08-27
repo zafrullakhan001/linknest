@@ -39,6 +39,7 @@ import { UrlScanFixAdmin } from './UrlScanFixAdmin';
 import { TooltipSyncAdmin } from './TooltipSyncAdmin';
 import { IframeBlockDomainsAdmin } from './IframeBlockDomainsAdmin';
 import { UserAuditLog } from './UserAuditLog';
+import { VisitsDashboard } from './VisitsDashboard';
 import { McpAdminPanel } from './McpAdminPanel';
 import { ShortUrlRotationAdmin } from './ShortUrlRotationAdmin';
 import {
@@ -164,7 +165,8 @@ type AdminNavTabId =
   | 'widgets'
   | 'addons'
   | 'appUpdates'
-  | 'loadTest';
+  | 'loadTest'
+  | 'visitCounter';
 
 const ADMIN_NAV_SECTIONS: Array<{
   label: string;
@@ -186,6 +188,7 @@ const ADMIN_NAV_SECTIONS: Array<{
       { id: 'categoryPresets', label: 'Category Presets', emoji: '📌' },
       { id: 'database', label: 'Database', emoji: '🗄️' },
       { id: 'spaces', label: 'Spaces', emoji: '📦' },
+      { id: 'visitCounter', label: 'Visit Counter', emoji: '📊' },
       { id: 'tabVisibility', label: 'Enable/Disable Tabs', emoji: '📑' },
       { id: 'linkCheckExceptions', label: 'Link Check Exceptions', emoji: '🚫' },
       { id: 'urlScanFix', label: 'Scan & Fix URLs', emoji: '🔧' },
@@ -281,7 +284,7 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({ onUserApproved }) => {
     const savedTab = localStorage.getItem('adminPanelActiveTab');
     if (savedTab === 'footer') return 'settings';
     const validTabs: Array<AdminNavTabId | 'footer'> = [
-      'pending', 'all', 'userAudit', 'settings', 'database', 'spaces', 'ldap', 'saml', 'footer',
+      'pending', 'all', 'userAudit', 'settings', 'database', 'spaces', 'visitCounter', 'ldap', 'saml', 'footer',
       'tabVisibility', 'devicePresets', 'categoryPresets', 'linkCheckExceptions', 'urlScanFix', 'tooltipSync', 'iframeBlockDomains', 'access', 'clone', 'browser', 'mcp', 'broadcast',
       'maintenanceScripts', 'maintenance', 'widgets', 'addons', 'appUpdates', 'loadTest',
     ];
@@ -5601,6 +5604,8 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({ onUserApproved }) => {
 
               {/* User Audit Log Tab */}
               {activeTab === 'userAudit' && <UserAuditLog />}
+
+              {activeTab === 'visitCounter' && <VisitsDashboard />}
 
               {activeTab === 'mcp' && <McpAdminPanel />}
 

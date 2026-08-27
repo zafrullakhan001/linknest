@@ -138,7 +138,7 @@ if (!defined('SYSTEM_TOKEN')) {
 
 // Bump when schema/migrations in initDatabase() change. Enables fast-path getDB().
 if (!defined('LINKNEST_SCHEMA_VERSION')) {
-    define('LINKNEST_SCHEMA_VERSION', 96);
+    define('LINKNEST_SCHEMA_VERSION', 97);
 }
 
 function getSchemaPatchFlagPath(): string {
@@ -1450,6 +1450,9 @@ function initDatabase() {
             ensureCategoryVisibilityPresetsTable($db);
             ensureTilesVideoColumns($db);
             ensurePasswordResetColumns($db);
+            require_once __DIR__ . '/visit_analytics_lib.php';
+            ensureVisitAnalyticsTables($db);
+            backfillVisitAnalyticsIfNeeded($db);
             if (!schemaPatchesAlreadyApplied()) {
                 ensureTilesHeaderImageColumns($db);
                 ensureTilesSearchTagsColumn($db);
@@ -1484,6 +1487,9 @@ function initDatabase() {
             ensureCategoryVisibilityPresetsTable($db);
             ensureTilesVideoColumns($db);
             ensurePasswordResetColumns($db);
+            require_once __DIR__ . '/visit_analytics_lib.php';
+            ensureVisitAnalyticsTables($db);
+            backfillVisitAnalyticsIfNeeded($db);
             if (!schemaPatchesAlreadyApplied()) {
                 ensureTilesHeaderImageColumns($db);
                 ensureTilesSearchTagsColumn($db);
@@ -3735,7 +3741,7 @@ function initDatabase() {
         ensureUserAuditLogTable($db);
         ensureMcpTokensTable($db);
 
-        // Tile visit / hit tracking (visitor hits + unique visitors per tile)
+        // Tile visit / hit tracking (legacy raw event log; durable aggregates in visit_analytics_lib)
         $db->exec('CREATE TABLE IF NOT EXISTS tile_visits (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
             tile_id TEXT NOT NULL,
@@ -3745,6 +3751,10 @@ function initDatabase() {
             FOREIGN KEY (tile_id) REFERENCES tiles(id) ON DELETE CASCADE,
             FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE SET NULL
         )');
+
+        require_once __DIR__ . '/visit_analytics_lib.php';
+        ensureVisitAnalyticsTables($db);
+        backfillVisitAnalyticsIfNeeded($db);
         
         // Create indexes for optimal performance
         createDatabaseIndexes($db);

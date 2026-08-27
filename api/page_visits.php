@@ -3,8 +3,12 @@
  * Public page visit counter.
  * GET  — return current count (no increment)
  * POST — increment once (session/visitor debounce handled client-side) and return count
+ *
+ * Lifetime total is stored in settings.page_visit_count (64-bit safe for millions+).
+ * Daily series is stored in page_visit_daily for admin charts (retained ~3 years).
  */
 require_once __DIR__ . '/config.php';
+require_once __DIR__ . '/visit_analytics_lib.php';
 
 $method = $_SERVER['REQUEST_METHOD'] ?? 'GET';
 $path = $_SERVER['PATH_INFO'] ?? $_SERVER['REDIRECT_PATH_INFO'] ?? '';
@@ -26,43 +30,6 @@ try {
     exit;
 }
 
-function readPageVisitCount(PDO $db): int
-{
-    $stmt = $db->prepare('SELECT value FROM settings WHERE key = ?');
-    $stmt->execute(['page_visit_count']);
-    $value = $stmt->fetchColumn();
-    if ($value === false || $value === null || $value === '') {
-        return 0;
-    }
-    return max(0, (int)$value);
-}
-
-function incrementPageVisitCount(PDO $db): int
-{
-    $now = time();
-    $db->beginTransaction();
-    try {
-        $stmt = $db->prepare('SELECT value FROM settings WHERE key = ?');
-        $stmt->execute(['page_visit_count']);
-        $value = $stmt->fetchColumn();
-        $count = ($value === false || $value === null || $value === '') ? 0 : max(0, (int)$value);
-        $count++;
-
-        $upsert = $db->prepare(
-            'INSERT INTO settings (key, value, updated_at) VALUES (?, ?, ?)
-             ON CONFLICT(key) DO UPDATE SET value = excluded.value, updated_at = excluded.updated_at'
-        );
-        $upsert->execute(['page_visit_count', (string)$count, $now]);
-        $db->commit();
-        return $count;
-    } catch (Throwable $e) {
-        if ($db->inTransaction()) {
-            $db->rollBack();
-        }
-        throw $e;
-    }
-}
-
 switch ($method) {
     case 'GET':
         sendJSON(['count' => readPageVisitCount($db)]);
@@ -70,7 +37,7 @@ switch ($method) {
 
     case 'POST':
         try {
-            $count = incrementPageVisitCount($db);
+            $count = incrementDurablePageVisit($db);
             sendJSON(['count' => $count, 'recorded' => true]);
         } catch (Throwable $e) {
             error_log('Failed to record page visit: ' . $e->getMessage());
