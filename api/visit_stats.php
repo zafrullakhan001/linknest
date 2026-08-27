@@ -1,11 +1,11 @@
 <?php
 /**
  * Admin visit counter dashboard.
- * GET /api/visit-stats — app page visits + per-space aggregates from durable stores
+ * GET  /api/visit-stats — app + per-space aggregates
+ * POST /api/visit-stats/purge — purge visit data (admin)
+ * POST /api/visit-stats/reindex — rebuild indexes + ANALYZE (admin)
  *
- * Query: days (optional, 1–1095 / ~3 years, default 30) for chart series
- *
- * Reads O(1) counters and compact daily rollups — safe for millions of hits.
+ * Query (GET): days (1–1095, default 30)
  */
 require_once __DIR__ . '/config.php';
 require_once __DIR__ . '/visit_analytics_lib.php';
@@ -15,16 +15,6 @@ $path = $_SERVER['PATH_INFO'] ?? $_SERVER['REDIRECT_PATH_INFO'] ?? '';
 $path = rtrim((string)$path, '/');
 if ($path === '') {
     $path = '/';
-}
-
-if ($path !== '/' && $path !== '') {
-    sendJSON(['error' => 'Invalid endpoint'], 404);
-    exit;
-}
-
-if ($method !== 'GET') {
-    sendJSON(['error' => 'Method not allowed'], 405);
-    exit;
 }
 
 requireAdmin();
@@ -39,6 +29,69 @@ try {
 
 ensureVisitAnalyticsTables($db);
 backfillVisitAnalyticsIfNeeded($db);
+
+if ($method === 'POST' && $path === '/purge') {
+    $input = json_decode(file_get_contents('php://input'), true);
+    if (!is_array($input)) {
+        $input = [];
+    }
+    $scope = isset($input['scope']) ? (string)$input['scope'] : '';
+    $confirm = isset($input['confirm']) ? (string)$input['confirm'] : '';
+    $tileId = isset($input['tileId']) ? trim((string)$input['tileId']) : null;
+
+    $expected = [
+        'all' => 'PURGE ALL VISITS',
+        'spaces' => 'PURGE SPACE VISITS',
+        'website' => 'PURGE WEBSITE VISITS',
+        'daily' => 'PURGE DAILY HISTORY',
+        'space' => 'PURGE SPACE',
+    ];
+    $scopeKey = strtolower(trim($scope));
+    if (!isset($expected[$scopeKey])) {
+        sendJSON(['error' => 'Invalid purge scope'], 400);
+        exit;
+    }
+    if ($confirm !== $expected[$scopeKey]) {
+        sendJSON([
+            'error' => 'Confirmation phrase required',
+            'requiredConfirm' => $expected[$scopeKey],
+        ], 400);
+        exit;
+    }
+
+    try {
+        $result = purgeVisitAnalytics($db, $scopeKey, $tileId);
+        // Refresh indexes after large deletes so SQLite stays snappy
+        $indexResult = reindexVisitAnalytics($db);
+        sendJSON([
+            'success' => true,
+            'purge' => $result,
+            'reindex' => $indexResult,
+        ]);
+    } catch (InvalidArgumentException $e) {
+        sendJSON(['error' => $e->getMessage()], 400);
+    } catch (Throwable $e) {
+        error_log('visit_stats purge failed: ' . $e->getMessage());
+        sendJSON(['error' => 'Failed to purge visit data'], 500);
+    }
+    exit;
+}
+
+if ($method === 'POST' && $path === '/reindex') {
+    try {
+        $result = reindexVisitAnalytics($db);
+        sendJSON(['success' => true, 'reindex' => $result]);
+    } catch (Throwable $e) {
+        error_log('visit_stats reindex failed: ' . $e->getMessage());
+        sendJSON(['error' => 'Failed to refresh visit indexes'], 500);
+    }
+    exit;
+}
+
+if ($method !== 'GET' || ($path !== '/' && $path !== '')) {
+    sendJSON(['error' => $method === 'GET' ? 'Invalid endpoint' : 'Method not allowed'], $method === 'GET' ? 404 : 405);
+    exit;
+}
 
 // Occasional prune (about 1% of dashboard loads) keeps daily tables bounded
 if (random_int(1, 100) === 1) {
@@ -74,8 +127,6 @@ try {
         ')->fetch(PDO::FETCH_ASSOC);
         if ($agg) {
             $totals['hitCount'] = (int)($agg['hit_count'] ?? 0);
-            // Note: sum of per-space uniques can over-count visitors who open multiple spaces.
-            // Lifetime cross-space distinct would require a global visitor table; this matches prior UX.
             $totals['uniqueVisitors'] = (int)($agg['unique_visitors'] ?? 0);
             $totals['guestHits'] = (int)($agg['guest_hits'] ?? 0);
             $totals['userHits'] = (int)($agg['user_hits'] ?? 0);
@@ -191,7 +242,6 @@ try {
         ];
     }
 
-    // For long ranges, downsample to weekly buckets so charts stay readable
     $granularity = 'day';
     if ($days > 120) {
         $granularity = 'week';
@@ -217,8 +267,6 @@ try {
 }
 
 /**
- * Bucket daily points into ISO weeks for long-range charts.
- *
  * @param array<int, array<string, mixed>> $points
  * @return array<int, array<string, mixed>>
  */
@@ -234,8 +282,7 @@ function visitStatsBucketSeries(array $points, string $mode): array
         if ($ts <= 0) {
             continue;
         }
-        // Monday of week (UTC)
-        $dow = (int)gmdate('N', $ts); // 1=Mon .. 7=Sun
+        $dow = (int)gmdate('N', $ts);
         $weekStart = $ts - (($dow - 1) * 86400);
         $key = gmdate('Y-m-d', $weekStart);
         if (!isset($buckets[$key])) {

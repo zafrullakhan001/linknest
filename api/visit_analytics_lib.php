@@ -407,3 +407,133 @@ function readPageVisitCount(PDO $db): int
     }
     return max(0, (int)$value);
 }
+
+/**
+ * Purge visit analytics data.
+ * $scope: all | spaces | website | daily | space
+ * $tileId required when scope=space
+ *
+ * @return array{scope: string, deleted: array<string, int>}
+ */
+function purgeVisitAnalytics(PDO $db, string $scope, ?string $tileId = null): array
+{
+    ensureVisitAnalyticsTables($db);
+    $scope = strtolower(trim($scope));
+    $deleted = [
+        'tile_visit_counters' => 0,
+        'tile_visit_visitors' => 0,
+        'tile_visit_daily' => 0,
+        'page_visit_daily' => 0,
+        'tile_visits' => 0,
+        'page_visit_count_reset' => 0,
+    ];
+
+    $db->beginTransaction();
+    try {
+        if ($scope === 'space') {
+            if ($tileId === null || $tileId === '') {
+                throw new InvalidArgumentException('tileId is required for space purge');
+            }
+            foreach (['tile_visit_counters', 'tile_visit_visitors', 'tile_visit_daily', 'tile_visits'] as $table) {
+                $stmt = $db->prepare("DELETE FROM {$table} WHERE tile_id = ?");
+                $stmt->execute([$tileId]);
+                $deleted[$table] = $stmt->rowCount();
+            }
+        } elseif ($scope === 'spaces') {
+            foreach (['tile_visit_counters', 'tile_visit_visitors', 'tile_visit_daily', 'tile_visits'] as $table) {
+                $deleted[$table] = (int)$db->exec("DELETE FROM {$table}");
+            }
+        } elseif ($scope === 'website') {
+            $deleted['page_visit_daily'] = (int)$db->exec('DELETE FROM page_visit_daily');
+            $now = time();
+            $upsert = $db->prepare(
+                'INSERT INTO settings (key, value, updated_at) VALUES (?, ?, ?)
+                 ON CONFLICT(key) DO UPDATE SET value = excluded.value, updated_at = excluded.updated_at'
+            );
+            $upsert->execute(['page_visit_count', '0', $now]);
+            $deleted['page_visit_count_reset'] = 1;
+        } elseif ($scope === 'daily') {
+            $deleted['tile_visit_daily'] = (int)$db->exec('DELETE FROM tile_visit_daily');
+            $deleted['page_visit_daily'] = (int)$db->exec('DELETE FROM page_visit_daily');
+        } elseif ($scope === 'all') {
+            foreach (['tile_visit_counters', 'tile_visit_visitors', 'tile_visit_daily', 'page_visit_daily', 'tile_visits'] as $table) {
+                $deleted[$table] = (int)$db->exec("DELETE FROM {$table}");
+            }
+            $now = time();
+            $upsert = $db->prepare(
+                'INSERT INTO settings (key, value, updated_at) VALUES (?, ?, ?)
+                 ON CONFLICT(key) DO UPDATE SET value = excluded.value, updated_at = excluded.updated_at'
+            );
+            $upsert->execute(['page_visit_count', '0', $now]);
+            $deleted['page_visit_count_reset'] = 1;
+        } else {
+            throw new InvalidArgumentException('Invalid purge scope');
+        }
+
+        $db->commit();
+        return ['scope' => $scope, 'deleted' => $deleted, 'tileId' => $tileId];
+    } catch (Throwable $e) {
+        if ($db->inTransaction()) {
+            $db->rollBack();
+        }
+        throw $e;
+    }
+}
+
+/**
+ * Rebuild visit-analytics indexes and run ANALYZE for query planner stats.
+ *
+ * @return array{indexes: string[], analyzed: string[], elapsedMs: float}
+ */
+function reindexVisitAnalytics(PDO $db): array
+{
+    ensureVisitAnalyticsTables($db);
+    $started = microtime(true);
+
+    $indexDefs = [
+        'idx_tile_visit_visitors_last' => 'CREATE INDEX IF NOT EXISTS idx_tile_visit_visitors_last ON tile_visit_visitors(tile_id, last_visit DESC)',
+        'idx_tile_visit_daily_day' => 'CREATE INDEX IF NOT EXISTS idx_tile_visit_daily_day ON tile_visit_daily(day)',
+        'idx_tile_visit_counters_hits' => 'CREATE INDEX IF NOT EXISTS idx_tile_visit_counters_hits ON tile_visit_counters(hit_count DESC)',
+        'idx_tile_visit_visitors_key' => 'CREATE INDEX IF NOT EXISTS idx_tile_visit_visitors_key ON tile_visit_visitors(visitor_key)',
+        'idx_tile_visit_daily_tile' => 'CREATE INDEX IF NOT EXISTS idx_tile_visit_daily_tile ON tile_visit_daily(tile_id, day)',
+        'idx_tile_visits_tile_id' => 'CREATE INDEX IF NOT EXISTS idx_tile_visits_tile_id ON tile_visits(tile_id)',
+        'idx_tile_visits_tile_visitor' => 'CREATE INDEX IF NOT EXISTS idx_tile_visits_tile_visitor ON tile_visits(tile_id, visitor_key)',
+        'idx_tile_visits_visited_at' => 'CREATE INDEX IF NOT EXISTS idx_tile_visits_visited_at ON tile_visits(tile_id, visited_at)',
+    ];
+
+    $rebuilt = [];
+    foreach ($indexDefs as $name => $createSql) {
+        try {
+            // Drop + recreate refreshes a fragmented index; IF EXISTS keeps older DBs safe
+            $db->exec("DROP INDEX IF EXISTS {$name}");
+            $db->exec($createSql);
+            $rebuilt[] = $name;
+        } catch (PDOException $e) {
+            error_log("reindexVisitAnalytics {$name}: " . $e->getMessage());
+        }
+    }
+
+    $analyzed = [];
+    foreach (['tile_visit_counters', 'tile_visit_visitors', 'tile_visit_daily', 'page_visit_daily', 'tile_visits'] as $table) {
+        try {
+            $db->exec("ANALYZE {$table}");
+            $analyzed[] = $table;
+        } catch (PDOException $e) {
+            error_log("reindexVisitAnalytics ANALYZE {$table}: " . $e->getMessage());
+        }
+    }
+
+    // Compact freelist after large purges when possible
+    try {
+        $db->exec('PRAGMA optimize');
+    } catch (PDOException $e) {
+        // ignore
+    }
+
+    $elapsedMs = round((microtime(true) - $started) * 1000, 1);
+    return [
+        'indexes' => $rebuilt,
+        'analyzed' => $analyzed,
+        'elapsedMs' => $elapsedMs,
+    ];
+}
