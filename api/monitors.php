@@ -129,7 +129,7 @@ function normalizeAllowedUserIds($raw): array {
 }
 
 function validateMonitorType($type): bool {
-    return in_array($type, ['url', 'keyword', 'port', 'ping', 'ssl', 'dns', 'json'], true);
+    return in_array($type, ['url', 'headers', 'keyword', 'port', 'ping', 'ssl', 'dns', 'json'], true);
 }
 
 /**

@@ -17,10 +17,11 @@ interface MonitorBulkImportDialogProps {
     onCreated: () => void;
 }
 
-const MONITOR_TYPES: MonitorType[] = ['url', 'keyword', 'port', 'ping', 'dns', 'json'];
+const MONITOR_TYPES: MonitorType[] = ['url', 'headers', 'keyword', 'port', 'ping', 'dns', 'json'];
 
 const MONITOR_TYPE_EMOJI: Record<MonitorType, string> = {
     url: '🌐',
+    headers: '📑',
     keyword: '🔍',
     port: '🔌',
     ping: '📡',

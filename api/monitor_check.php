@@ -84,6 +84,8 @@ function performMonitorCheck($monitor, $options = []) {
         switch ($monitor['type']) {
             case 'url':
                 return checkUrl($monitor['target'], $opts);
+            case 'headers':
+                return checkHttpHeaders($monitor['target'], $monitor['keyword'] ?? null, $opts);
             case 'keyword':
                 return checkKeyword($monitor['target'], $monitor['keyword'], $opts);
             case 'port':
@@ -326,6 +328,138 @@ function checkUrl($url, $opts = []) {
     } else {
         return ['status' => 'down', 'details' => "HTTP $code"];
     }
+}
+
+/**
+ * curl -I style check: read HTTP headers only, do not follow redirects.
+ * Optional keyword is matched against the raw header block (name or value).
+ */
+function checkHttpHeaders($url, $keyword = null, $opts = []) {
+    if (!filter_var($url, FILTER_VALIDATE_URL)) {
+        return ['status' => 'down', 'details' => 'Invalid URL'];
+    }
+
+    $timeout = isset($opts['timeout']) ? (int)$opts['timeout'] : 5;
+    $connectTimeout = isset($opts['connect_timeout']) ? (int)$opts['connect_timeout'] : 3;
+    $needle = trim((string)$keyword);
+    $ua = (getAppName() ?: 'LinkNest') . ' Monitor/1.0';
+
+    $probe = function (string $method) use ($url, $timeout, $connectTimeout, $ua) {
+        $rawHeaders = '';
+        $ch = curl_init();
+        $curlOpts = [
+            CURLOPT_URL => $url,
+            CURLOPT_RETURNTRANSFER => true,
+            CURLOPT_FOLLOWLOCATION => false,
+            CURLOPT_TIMEOUT => $timeout,
+            CURLOPT_CONNECTTIMEOUT => $connectTimeout,
+            CURLOPT_SSL_VERIFYPEER => false,
+            CURLOPT_SSL_VERIFYHOST => 0,
+            CURLOPT_HEADER => false,
+            CURLOPT_NOBODY => ($method === 'HEAD'),
+            CURLOPT_USERAGENT => $ua,
+            CURLOPT_HTTPHEADER => [
+                'Accept: */*',
+                'Cache-Control: no-cache',
+                'Connection: close',
+            ],
+            CURLOPT_FRESH_CONNECT => true,
+            CURLOPT_FORBID_REUSE => true,
+            CURLOPT_HEADERFUNCTION => function ($ch, $header) use (&$rawHeaders) {
+                $rawHeaders .= $header;
+                return strlen($header);
+            },
+        ];
+        if ($method === 'GET') {
+            $curlOpts[CURLOPT_HTTPGET] = true;
+            $curlOpts[CURLOPT_NOBODY] = false;
+            $curlOpts[CURLOPT_WRITEFUNCTION] = function ($ch, $data) {
+                return 0;
+            };
+        }
+        curl_setopt_array($ch, $curlOpts);
+        curl_exec($ch);
+        $info = curl_getinfo($ch);
+        $error = curl_error($ch);
+        $errno = curl_errno($ch);
+        curl_close($ch);
+
+        $code = (int)($info['http_code'] ?? 0);
+        $timedOut = ($errno === CURLE_OPERATION_TIMEDOUT || $errno === CURLE_OPERATION_TIMEOUTED);
+        $abortedAfterHeaders = ($method === 'GET' && $errno === CURLE_WRITE_ERROR && $code > 0);
+        $ok = $abortedAfterHeaders || ($errno === 0 && $code > 0);
+
+        return [
+            'ok' => $ok,
+            'code' => $code,
+            'errno' => $errno,
+            'error' => $error,
+            'timed_out' => $timedOut,
+            'headers' => $rawHeaders,
+            'method' => $method,
+        ];
+    };
+
+    $result = $probe('HEAD');
+    $headFailed = !$result['ok'] || in_array($result['code'], [405, 501], true);
+    if ($headFailed && !$result['timed_out']) {
+        $getResult = $probe('GET');
+        if ($getResult['ok'] || ($getResult['code'] > 0 && !$getResult['timed_out'])) {
+            $result = $getResult;
+        }
+    }
+
+    if ($result['timed_out'] && $result['code'] === 0) {
+        return ['status' => 'down', 'details' => 'Connection timeout'];
+    }
+    if (!$result['ok'] && $result['code'] === 0) {
+        return ['status' => 'down', 'details' => 'Connection failed: ' . ($result['error'] ?: 'Unknown error')];
+    }
+
+    $code = (int)$result['code'];
+    $details = formatHttpHeaderMonitorDetails($code, $result['headers'], $result['method']);
+
+    if ($needle !== '') {
+        if (stripos($result['headers'], $needle) === false) {
+            return ['status' => 'down', 'details' => "Header '$needle' not found ($details)"];
+        }
+        if ($code >= 200 && $code < 400) {
+            return ['status' => 'up', 'details' => "Header match ($details)"];
+        }
+        return ['status' => 'down', 'details' => $details];
+    }
+
+    if ($code >= 200 && $code < 400) {
+        return ['status' => 'up', 'details' => $details];
+    }
+    return ['status' => 'down', 'details' => $details];
+}
+
+function formatHttpHeaderMonitorDetails(int $code, string $rawHeaders, string $method): string {
+    $interesting = ['location', 'server', 'content-type', 'www-authenticate', 'cache-control'];
+    $parts = ['HTTP ' . $code];
+    $seen = [];
+    $lines = preg_split("/\r\n|\n|\r/", $rawHeaders) ?: [];
+    foreach ($lines as $line) {
+        if (strpos($line, ':') === false) {
+            continue;
+        }
+        [$name, $value] = explode(':', $line, 2);
+        $lk = strtolower(trim($name));
+        if (!in_array($lk, $interesting, true) || isset($seen[$lk])) {
+            continue;
+        }
+        $seen[$lk] = true;
+        $val = trim($value);
+        if (strlen($val) > 180) {
+            $val = substr($val, 0, 177) . '...';
+        }
+        $parts[] = trim($name) . ': ' . $val;
+    }
+    if (strtoupper($method) === 'GET') {
+        $parts[] = 'GET fallback';
+    }
+    return implode(' | ', $parts);
 }
 
 function checkKeyword($url, $keyword, $opts = []) {

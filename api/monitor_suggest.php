@@ -272,8 +272,15 @@ function analyzeHttpMonitorTarget(string $input, array $parsed, array &$probeSum
     $suggestions = [];
 
     $head = probeHttpHead($url);
+    $firstHop = probeHttpHeadersFirstHop($url);
     $probeSummary['http_code'] = $head['http_code'];
     $probeSummary['content_type'] = $head['content_type'];
+    if (!empty($firstHop['http_code'])) {
+        $probeSummary['first_hop_code'] = $firstHop['http_code'];
+    }
+    if (!empty($firstHop['location'])) {
+        $probeSummary['location'] = $firstHop['location'];
+    }
 
     $getBody = null;
     $needGet = ($head['http_code'] === 405)
@@ -308,9 +315,35 @@ function analyzeHttpMonitorTarget(string $input, array $parsed, array &$probeSum
     }
 
     $httpOk = ($probeSummary['http_code'] >= 200 && $probeSummary['http_code'] < 400);
+    $firstHopCode = (int)($firstHop['http_code'] ?? 0);
+    $isRedirectHop = ($firstHopCode >= 300 && $firstHopCode < 400);
+    if ($isRedirectHop) {
+        $loc = trim((string)($firstHop['location'] ?? ''));
+        $reason = "First hop HTTP {$firstHopCode} (redirect). HTTP Headers check verifies this URL without following or downloading the page";
+        if ($loc !== '') {
+            $reason .= " (Location: {$loc})";
+        }
+        $suggestions[] = buildMonitorSuggestion('headers', 94, true,
+            $reason,
+            $host, [
+                'target' => $url,
+                'timeout' => 5,
+                'interval' => 5,
+            ], urlGroupForPath($parsed['path'] ?? '')
+        );
+    }
     if ($httpOk) {
-        $suggestions[] = buildMonitorSuggestion('url', 90, false,
+        $suggestions[] = buildMonitorSuggestion('url', $isRedirectHop ? 80 : 90, false,
             "Endpoint responded HTTP {$probeSummary['http_code']} to probe",
+            $host, [
+                'target' => $url,
+                'timeout' => 5,
+                'interval' => 5,
+            ], urlGroupForPath($parsed['path'] ?? '')
+        );
+    } elseif ($firstHopCode >= 200 && $firstHopCode < 400) {
+        $suggestions[] = buildMonitorSuggestion('headers', 88, true,
+            "Server returned HTTP {$firstHopCode} headers without a page body",
             $host, [
                 'target' => $url,
                 'timeout' => 5,
@@ -347,7 +380,15 @@ function analyzeHttpMonitorTarget(string $input, array $parsed, array &$probeSum
     }
 
     if (empty($suggestions)) {
-        $suggestions[] = buildMonitorSuggestion('url', 70, true,
+        $suggestions[] = buildMonitorSuggestion('headers', 72, true,
+            'HTTP URL — HTTP Headers check verifies up/down from response headers (curl -I)',
+            $host, [
+                'target' => $url,
+                'timeout' => 5,
+                'interval' => 5,
+            ], 'Web Servers'
+        );
+        $suggestions[] = buildMonitorSuggestion('url', 70, false,
             'HTTP URL — use URL check to verify availability',
             $host, [
                 'target' => $url,
@@ -488,6 +529,7 @@ function buildMonitorSuggestion(
 function monitorSuggestTimingDefaults(string $type): array {
     return match ($type) {
         'url' => ['timeout' => 5, 'warning_threshold' => 2, 'interval' => 5],
+        'headers' => ['timeout' => 5, 'warning_threshold' => 2, 'interval' => 5],
         'keyword' => ['timeout' => 8, 'warning_threshold' => 2, 'interval' => 5],
         'json' => ['timeout' => 8, 'warning_threshold' => 2, 'interval' => 5],
         'port' => ['timeout' => 5, 'warning_threshold' => 2, 'interval' => 10],
@@ -515,6 +557,7 @@ function monitorSuggestEnrichConfig(string $type, array $config): array {
 function monitorSuggestFriendlyName(string $host, string $type, array $config): string {
     $labels = [
         'url' => 'URL',
+        'headers' => 'HTTP Headers',
         'keyword' => 'Keyword',
         'port' => 'Port ' . ($config['port'] ?? ''),
         'ping' => 'Ping',
@@ -551,6 +594,46 @@ function probeTcpPort(string $host, int $port, int $timeoutSec = 1): bool {
         return true;
     }
     return false;
+}
+
+function probeHttpHeadersFirstHop(string $url): array {
+    $rawHeaders = '';
+    $ch = curl_init();
+    curl_setopt_array($ch, [
+        CURLOPT_URL => $url,
+        CURLOPT_RETURNTRANSFER => true,
+        CURLOPT_FOLLOWLOCATION => false,
+        CURLOPT_TIMEOUT => 5,
+        CURLOPT_CONNECTTIMEOUT => 3,
+        CURLOPT_SSL_VERIFYPEER => false,
+        CURLOPT_SSL_VERIFYHOST => 0,
+        CURLOPT_NOBODY => true,
+        CURLOPT_HEADER => false,
+        CURLOPT_USERAGENT => (getAppName() ?: 'LinkNest') . ' MonitorSuggest/1.0',
+        CURLOPT_HTTPHEADER => ['Accept: */*', 'Connection: close'],
+        CURLOPT_HEADERFUNCTION => function ($ch, $header) use (&$rawHeaders) {
+            $rawHeaders .= $header;
+            return strlen($header);
+        },
+    ]);
+    curl_exec($ch);
+    $info = curl_getinfo($ch);
+    $code = (int)($info['http_code'] ?? 0);
+    curl_close($ch);
+
+    $location = null;
+    foreach (preg_split("/\r\n|\n|\r/", $rawHeaders) ?: [] as $line) {
+        if (stripos($line, 'Location:') === 0) {
+            $location = trim(substr($line, 9));
+            break;
+        }
+    }
+
+    return [
+        'http_code' => $code,
+        'location' => $location,
+        'headers' => $rawHeaders,
+    ];
 }
 
 function probeHttpHead(string $url): array {
@@ -775,6 +858,12 @@ function buildHeuristicMonitorDraft(string $input, string $defaultTab): array {
         case 'url':
             $suggestions[] = buildMonitorSuggestion('url', 75, true,
                 'HTTP(S) URL — URL check recommended',
+                $parsed['host'],
+                ['target' => $input, 'interval' => 5],
+                urlGroupForPath($parsed['path'] ?? '/')
+            );
+            $suggestions[] = buildMonitorSuggestion('headers', 70, false,
+                'Optional HTTP Headers check (curl -I, no page download)',
                 $parsed['host'],
                 ['target' => $input, 'interval' => 5],
                 urlGroupForPath($parsed['path'] ?? '/')

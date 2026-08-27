@@ -4,7 +4,7 @@ import { MonitorForm } from './MonitorForm';
 import { MonitorBulkImportDialog } from './MonitorBulkImportDialog';
 import { MonitorSslBulkImportDialog } from './MonitorSslBulkImportDialog';
 import { MonitorTargetLabel } from './MonitorTargetLabel';
-import { FaServer, FaGlobe, FaSearch, FaCheck, FaTimes, FaQuestion, FaPlus, FaRedo, FaSyncAlt, FaTrash, FaEdit, FaClock, FaThLarge, FaList, FaCopy, FaBars, FaDownload, FaUpload, FaHistory, FaCalendarAlt, FaEnvelope, FaArrowsAlt, FaPalette, FaCircle, FaExpand, FaCompress, FaBell, FaBellSlash, FaFileExport, FaLock, FaCode, FaMagic } from 'react-icons/fa';
+import { FaServer, FaGlobe, FaSearch, FaCheck, FaTimes, FaQuestion, FaPlus, FaRedo, FaSyncAlt, FaTrash, FaEdit, FaClock, FaThLarge, FaList, FaCopy, FaBars, FaDownload, FaUpload, FaHistory, FaCalendarAlt, FaEnvelope, FaArrowsAlt, FaPalette, FaCircle, FaExpand, FaCompress, FaBell, FaBellSlash, FaFileExport, FaLock, FaCode, FaMagic, FaStream } from 'react-icons/fa';
 import { SSL_CERTS_TAB, formatMonitorCornerMetric, isSslCertsTab, isSslMonitor } from '../utils/monitorSsl';
 import { useTileAnimation, getTileAnimationClass, getTileDecorationClass } from './TileAnimationSelector';
 import { SMTPSettingsModal } from './SMTPSettingsModal';
@@ -739,6 +739,7 @@ export const MonitoringDashboard: React.FC = () => {
     const getTypeIcon = (type: string) => {
         switch (type) {
             case 'url': return <FaGlobe {...({ className: "text-blue-400" } as any)} />;
+            case 'headers': return <FaStream {...({ className: "text-sky-500" } as any)} />;
             case 'keyword': return <FaSearch {...({ className: "text-purple-400" } as any)} />;
             case 'port': return <FaServer {...({ className: "text-orange-400" } as any)} />;
             case 'ping': return <FaCircle {...({ className: "text-emerald-400" } as any)} />;

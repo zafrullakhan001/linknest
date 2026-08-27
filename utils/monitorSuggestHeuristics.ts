@@ -1,4 +1,4 @@
-export type MonitorTypeHint = 'url' | 'keyword' | 'port' | 'ping' | 'ssl' | 'dns' | 'json' | 'unknown';
+export type MonitorTypeHint = 'url' | 'headers' | 'keyword' | 'port' | 'ping' | 'ssl' | 'dns' | 'json' | 'unknown';
 
 export interface MonitorInputHint {
     pattern: 'url' | 'host_port' | 'host' | 'scheme_service' | 'unknown';
@@ -34,8 +34,8 @@ export function parseMonitorInputHint(input: string): MonitorInputHint {
             hint: isHealthPath
                 ? 'Looks like an API/health URL — click Analyze to detect JSON or URL monitoring.'
                 : isHttps
-                    ? 'Looks like an HTTPS URL — click Analyze for URL, SSL, or keyword suggestions.'
-                    : 'Looks like an HTTP URL — click Analyze for monitoring recommendations.',
+                    ? 'Looks like an HTTPS URL — click Analyze for URL, HTTP Headers, SSL, or keyword suggestions.'
+                    : 'Looks like an HTTP URL — click Analyze for URL or HTTP Headers monitoring.',
             likelyType: isHealthPath ? 'json' : 'url',
         };
     }
@@ -76,6 +76,7 @@ export function parseMonitorInputHint(input: string): MonitorInputHint {
 
 export const MONITOR_TYPE_LABELS: Record<MonitorTypeHint, string> = {
     url: 'URL Check',
+    headers: 'HTTP Headers',
     keyword: 'Keyword Check',
     port: 'Port Check',
     ping: 'Ping Check',

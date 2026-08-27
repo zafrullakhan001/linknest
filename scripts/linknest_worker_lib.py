@@ -23,6 +23,7 @@ import ssl
 import subprocess
 import tempfile
 import time
+import urllib.error
 import urllib.request
 from dataclasses import dataclass
 from email.message import EmailMessage
@@ -418,6 +419,112 @@ def check_url_head(url: str, timeout: float, verify_ssl: bool, app_name: str = "
             if 200 <= int(code) < 400:
                 return "up", f"HTTP {code}"
             return "down", f"HTTP {code}"
+    except Exception as e:
+        msg = str(e) or e.__class__.__name__
+        if "timed out" in msg.lower():
+            return "down", "Connection timeout"
+        return "down", f"Connection failed: {msg}"
+
+
+class _HeaderResponse:
+    def __init__(self, fp, headers, code: int):
+        self.fp = fp
+        self.headers = headers
+        self.status = int(code)
+        self.code = int(code)
+
+    def close(self):
+        if self.fp is not None:
+            with contextlib.suppress(Exception):
+                self.fp.close()
+
+
+class _NoRedirect(urllib.request.HTTPRedirectHandler):
+    def http_error_302(self, req, fp, code, msg, headers):
+        return _HeaderResponse(fp, headers, code)
+
+    http_error_301 = http_error_302
+    http_error_303 = http_error_302
+    http_error_307 = http_error_302
+    http_error_308 = http_error_302
+
+
+def _http_headers_open(url: str, method: str, timeout: float, verify_ssl: bool, app_name: str):
+    ua = f"{app_name} Monitor/1.0"
+    req = urllib.request.Request(url, method=method, headers={"User-Agent": ua, "Accept": "*/*", "Connection": "close"})
+    opener = urllib.request.build_opener(
+        urllib.request.HTTPSHandler(context=_ssl_context(verify_ssl)),
+        _NoRedirect(),
+    )
+    try:
+        return opener.open(req, timeout=timeout)
+    except urllib.error.HTTPError as e:
+        return e
+
+
+def _http_headers_details(code: int, headers, method: str) -> Tuple[str, str]:
+    interesting = ("location", "server", "content-type", "www-authenticate", "cache-control")
+    parts = [f"HTTP {code}"]
+    raw_lines = []
+    seen = set()
+    if headers is not None:
+        for key, value in headers.items():
+            raw_lines.append(f"{key}: {value}")
+            lk = str(key).lower()
+            if lk in interesting and lk not in seen:
+                seen.add(lk)
+                val = str(value)
+                if len(val) > 180:
+                    val = val[:177] + "..."
+                parts.append(f"{key}: {val}")
+    if str(method).upper() == "GET":
+        parts.append("GET fallback")
+    return " | ".join(parts), "\n".join(raw_lines)
+
+
+def check_http_headers(
+    url: str,
+    keyword: str,
+    timeout: float,
+    verify_ssl: bool,
+    app_name: str = "LinkNest",
+) -> Tuple[str, str]:
+    if not re.match(r"^https?://", url, re.I):
+        return "down", "Invalid URL"
+    needle = (keyword or "").strip()
+
+    def probe(method: str):
+        resp = _http_headers_open(url, method, timeout, verify_ssl, app_name)
+        try:
+            code = int(getattr(resp, "status", None) or getattr(resp, "code", None) or 0)
+            headers = getattr(resp, "headers", None)
+            return code, headers, None
+        finally:
+            fp = getattr(resp, "fp", None) or getattr(resp, "raw", None)
+            if fp is not None:
+                with contextlib.suppress(Exception):
+                    fp.close()
+            with contextlib.suppress(Exception):
+                resp.close()
+
+    try:
+        code, headers, _err = probe("HEAD")
+        used_method = "HEAD"
+        if code in (0, 405, 501):
+            code, headers, _err = probe("GET")
+            used_method = "GET"
+        details, raw = _http_headers_details(code, headers, used_method)
+        if needle:
+            if needle.lower() not in raw.lower() and needle.lower() not in details.lower():
+                return "down", f"Header '{needle}' not found ({details})"
+            if 200 <= code < 400:
+                return "up", f"Header match ({details})"
+            return "down", details
+        if 200 <= code < 400:
+            return "up", details
+        if code == 0:
+            return "down", "Connection failed: no HTTP response"
+        return "down", details
     except Exception as e:
         msg = str(e) or e.__class__.__name__
         if "timed out" in msg.lower():

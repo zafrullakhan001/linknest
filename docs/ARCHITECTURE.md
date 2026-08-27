@@ -409,7 +409,7 @@ flowchart TB
   end
 
   DB[("SQLite data/linknest.db")]
-  Targets["URL / keyword / port / ping<br/>SSL / DNS / JSON"]
+  Targets["URL / headers / keyword / port / ping<br/>SSL / DNS / JSON"]
   SMTP["SMTP"]
 
   Dash --> API

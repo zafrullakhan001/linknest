@@ -27,6 +27,7 @@ from linknest_worker_lib import (
     CheckResult,
     check_dns,
     check_json,
+    check_http_headers,
     check_keyword,
     check_ping,
     check_port,
@@ -78,6 +79,15 @@ def perform_check(monitor: Dict[str, Any], verify_ssl: bool, app_name: str = "Li
         if mtype == "url":
             timeout = 10 if relaxed else (base_timeout_s or 5)
             return check_url_head(target, timeout=timeout, verify_ssl=verify_ssl, app_name=app_name)
+        if mtype == "headers":
+            timeout = 10 if relaxed else (base_timeout_s or 5)
+            return check_http_headers(
+                target,
+                str(monitor.get("keyword") or ""),
+                timeout=timeout,
+                verify_ssl=verify_ssl,
+                app_name=app_name,
+            )
         if mtype == "keyword":
             timeout = 10 if relaxed else (base_timeout_s or 8)
             return check_keyword(target, str(monitor.get("keyword") or ""), timeout=timeout, verify_ssl=verify_ssl, app_name=app_name)

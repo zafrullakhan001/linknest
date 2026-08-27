@@ -1,4 +1,4 @@
-export type MonitorType = 'url' | 'keyword' | 'port' | 'ping' | 'ssl' | 'dns' | 'json';
+export type MonitorType = 'url' | 'headers' | 'keyword' | 'port' | 'ping' | 'ssl' | 'dns' | 'json';
 
 export interface Monitor {
     id: number;

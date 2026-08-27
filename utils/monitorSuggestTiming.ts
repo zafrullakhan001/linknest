@@ -50,6 +50,7 @@ export function clampMonitorIntervalMinutes(
 
 const TIMING_BY_TYPE: Record<MonitorType, MonitorSuggestTimingDefaults> = {
     url: { timeout: 5, warning_threshold: 2, interval: 5 },
+    headers: { timeout: 5, warning_threshold: 2, interval: 5 },
     keyword: { timeout: 8, warning_threshold: 2, interval: 5 },
     json: { timeout: 8, warning_threshold: 2, interval: 5 },
     port: { timeout: 5, warning_threshold: 2, interval: 10 },

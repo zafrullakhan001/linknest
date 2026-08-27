@@ -128,6 +128,14 @@ const MONITOR_PRESETS: MonitorPreset[] = [
         group_name: 'Email Servers'
     },
     {
+        name: 'HTTP Headers (curl -I)',
+        description: 'Up/down from HTTP headers without downloading the page',
+        type: 'headers',
+        target: 'https://example.com',
+        interval: 5,
+        group_name: 'Web Servers'
+    },
+    {
         name: 'Keyword Check',
         description: 'Verify specific text appears on page',
         type: 'keyword',
@@ -434,7 +442,9 @@ export const MonitorForm: React.FC<MonitorFormProps> = ({ monitor, onSave, onCan
     const getTypeHelpText = (monitorType: Monitor['type']): string => {
         switch (monitorType) {
             case 'url':
-                return 'Checks if a website or API endpoint is accessible via HTTP/HTTPS request';
+                return 'Checks if a website or API endpoint is accessible via HTTP/HTTPS request (follows redirects)';
+            case 'headers':
+                return 'curl -I style check: reads HTTP response headers only, does not download the page or follow redirects. Optional header text match.';
             case 'keyword':
                 return 'Checks if a specific text/keyword appears in the webpage content';
             case 'port':
@@ -929,14 +939,18 @@ export const MonitorForm: React.FC<MonitorFormProps> = ({ monitor, onSave, onCan
                                                     const timing = getMonitorSuggestTimingDefaults(next);
                                                     setInterval(String(timing.interval));
                                                     setWarningThreshold(String(timing.warning_threshold));
+                                                    setKeyword('');
                                                     if (isSslCertsTab(tabName)) {
                                                         setTabName(initialTab && !isSslCertsTab(initialTab) ? initialTab : 'General');
                                                     }
+                                                } else if (next === 'headers' && (prev === 'keyword' || prev === 'json')) {
+                                                    setKeyword('');
                                                 }
                                             }}
                                             className={inputClass}
                                         >
                                             <option value="url">🌐 URL Check</option>
+                                            <option value="headers">📑 HTTP Headers (curl -I)</option>
                                             <option value="keyword">🔤 Keyword Check</option>
                                             <option value="port">🔌 Port Check</option>
                                             <option value="ping">📡 Ping Check</option>
@@ -980,7 +994,9 @@ export const MonitorForm: React.FC<MonitorFormProps> = ({ monitor, onSave, onCan
                                                     ? 'Hostname to resolve via DNS (without protocol)'
                                                     : isHostTargetType
                                                         ? 'The IP address or hostname of the server to check (e.g., 192.168.1.1, server.example.com)'
-                                                        : 'The full URL to monitor, including protocol (http:// or https://). For APIs, include the full endpoint path.'
+                                                        : type === 'headers'
+                                                            ? 'The full URL to probe with a headers-only request (like curl -I). Redirects are not followed, so SSO front doors can be checked on the first hop.'
+                                                            : 'The full URL to monitor, including protocol (http:// or https://). For APIs, include the full endpoint path.'
                                         }
                                     />
 
@@ -1000,6 +1016,22 @@ export const MonitorForm: React.FC<MonitorFormProps> = ({ monitor, onSave, onCan
                                                 required
                                             />
                                             <FieldHelp text="The network port number to check (common ports: 80 for HTTP, 443 for HTTPS, 22 for SSH, 3306 for MySQL)" />
+                                        </div>
+                                    )}
+
+                                    {type === 'headers' && (
+                                        <div>
+                                            <label className="block text-sm font-medium text-gray-700 mb-1">
+                                                Expected header text (optional)
+                                            </label>
+                                            <input
+                                                type="text"
+                                                value={keyword}
+                                                onChange={(e) => setKeyword(e.target.value)}
+                                                className={inputClass}
+                                                placeholder="Location: or Server: nginx"
+                                            />
+                                            <FieldHelp text="Leave blank to treat any HTTP 2xx/3xx header response as up. Set text to require that string in the headers (for example Location: or a known Server value)." />
                                         </div>
                                     )}
 
@@ -1071,7 +1103,7 @@ export const MonitorForm: React.FC<MonitorFormProps> = ({ monitor, onSave, onCan
                                         </div>
                                     )}
 
-                                    {(type === 'url' || type === 'keyword' || type === 'json') && (
+                                    {(type === 'url' || type === 'headers' || type === 'keyword' || type === 'json') && (
                                         <div>
                                             <label className="block text-sm font-medium text-gray-700 mb-1">
                                                 <span aria-hidden="true">⏱️ </span>Timeout (seconds)
@@ -1081,7 +1113,7 @@ export const MonitorForm: React.FC<MonitorFormProps> = ({ monitor, onSave, onCan
                                                 value={timeoutSec}
                                                 onChange={(e) => setTimeoutSec(e.target.value)}
                                                 className={inputClass}
-                                                placeholder={type === 'url' ? '5' : type === 'json' ? '8' : '8'}
+                                                placeholder={type === 'url' || type === 'headers' ? '5' : type === 'json' ? '8' : '8'}
                                                 min="1"
                                                 max="60"
                                             />

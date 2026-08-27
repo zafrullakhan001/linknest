@@ -29,7 +29,7 @@ flowchart TB
   end
 
   DB[("SQLite<br/>data/linknest.db")]
-  Targets["URL / keyword / port / ping<br/>SSL / DNS / JSON"]
+  Targets["URL / headers / keyword / port / ping<br/>SSL / DNS / JSON"]
   SMTP["SMTP"]
 
   Dash -->|"configure + read status"| API
@@ -75,7 +75,7 @@ sequenceDiagram
   MR->>DB: Load active monitors
   Note over MR: Network work is off Apache
   loop Due monitors concurrently
-    MR->>T: URL / keyword / port / ping / SSL / DNS / JSON
+    MR->>T: URL / headers / keyword / port / ping / SSL / DNS / JSON
     T-->>MR: Status + latency or timeout
   end
   MR->>DB: UPDATE monitors + INSERT monitor_logs
