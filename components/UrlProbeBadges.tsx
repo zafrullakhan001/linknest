@@ -433,7 +433,7 @@ const UrlProbeBadgesInner: React.FC<{ url: string; excluded?: boolean }> = ({ ur
         typeof document !== 'undefined' &&
         createPortal(
             <div
-                className="fixed inset-0 z-[100050] flex items-center justify-center p-4 bg-black/50 backdrop-blur-sm"
+                className="fixed inset-0 z-[100080] flex items-center justify-center p-4 bg-black/50 backdrop-blur-sm"
                 onClick={() => setChainOpen(false)}
                 role="presentation"
             >
