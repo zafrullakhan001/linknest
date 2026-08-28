@@ -155,26 +155,26 @@ function handleGetTiles() {
         $sourceTab = 'public';
     }
 
-    // Ultra-fast path: guest public summary can be served from file cache without opening SQLite
-    if ($summaryMode && $sourceTab === 'public') {
-        if (session_status() === PHP_SESSION_NONE) {
-            @session_start();
-        }
-        if (empty($_SESSION['user_id'])) {
-            $cached = responseCacheGet('tiles_summary_guest_public');
-            if (is_array($cached)) {
-                responseCacheHitHeader(true);
-                sendJSON($cached);
-                return;
-            }
-        }
+    if (session_status() === PHP_SESSION_NONE) {
+        @session_start();
     }
-
-        $user = getAuthenticatedUser();
-        $db = getDB();
+    $user = getAuthenticatedUser();
 
     require_once __DIR__ . '/fingerprint_lock_lib.php';
     require_fingerprint_lock_access($user);
+
+    // Ultra-fast path: guest public summary can be served from file cache without opening SQLite
+    // (fingerprint lock is already enforced above so allowlisted guests still receive public spaces)
+    if ($summaryMode && $sourceTab === 'public' && empty($_SESSION['user_id'])) {
+        $cached = responseCacheGet('tiles_summary_guest_public');
+        if (is_array($cached)) {
+            responseCacheHitHeader(true);
+            sendJSON($cached);
+            return;
+        }
+    }
+
+        $db = getDB();
     
     // Check if guest access is enabled
     $guestAccessEnabled = true;

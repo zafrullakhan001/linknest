@@ -6,7 +6,9 @@ const API_BASE = resolveApiBase();
 export const FINGERPRINT_COOKIE = 'ln_fp';
 export const FINGERPRINT_GPS_STORAGE = 'ln_fp_gps';
 export const FINGERPRINT_EXCLUDED_STORAGE = 'ln_fp_excluded';
+export const FINGERPRINT_KNOWN_STORAGE = 'ln_fp_known';
 export const FINGERPRINT_HASH_PREFIX = 'lnfp_';
+const FINGERPRINT_KNOWN_MAX = 12;
 
 export interface FingerprintAttribute {
   group: 'http' | 'javascript' | 'geo' | 'extensions';
@@ -45,6 +47,32 @@ export const FINGERPRINT_STABLE_EXCLUDED_IDS: string[] = [
   'gps',
 ];
 
+/**
+ * Lock-access preset: also drop signals that still change on the same PC
+ * (timezone/DST, permission prompts, plugging in a headset, canvas noise,
+ * taskbar/fullscreen chrome). Use this hash for Fingerprint-only access.
+ */
+export const FINGERPRINT_LOCK_EXCLUDED_IDS: string[] = [
+  ...FINGERPRINT_STABLE_EXCLUDED_IDS,
+  'timezone',
+  'permissions',
+  'mediaDevices',
+  'adblock',
+  'doNotTrack',
+  'canvas',
+  'analyser',
+  'audioContext',
+  'screenAvailTop',
+  'screenAvailLeft',
+  'screenAvailHeight',
+  'screenAvailWidth',
+  'locationBar',
+  'menuBar',
+  'personalBar',
+  'statusBar',
+  'toolBar',
+];
+
 export const FINGERPRINT_SIGNAL_CATALOG: FingerprintSignalDef[] = [
   { id: 'httpUserAgent', label: 'User agent (HTTP)', group: 'http', hashKeys: ['httpUserAgent'] },
   { id: 'httpAccept', label: 'Accept', group: 'http', hashKeys: ['httpAccept'] },
@@ -56,7 +84,7 @@ export const FINGERPRINT_SIGNAL_CATALOG: FingerprintSignalDef[] = [
   { id: 'cookieEnabled', label: 'Cookies enabled', group: 'javascript', hashKeys: ['cookieEnabled'] },
   { id: 'timezone', label: 'Timezone', group: 'javascript', hashKeys: ['timezone'], volatile: true },
   { id: 'languages', label: 'Content language (JS)', group: 'javascript', hashKeys: ['languages'] },
-  { id: 'canvas', label: 'Canvas', group: 'javascript', hashKeys: ['canvas'] },
+  { id: 'canvas', label: 'Canvas', group: 'javascript', hashKeys: ['canvas'], volatile: true },
   { id: 'fonts', label: 'List of fonts (JS)', group: 'javascript', hashKeys: ['fonts'] },
   { id: 'adblock', label: 'Use of Adblock', group: 'javascript', hashKeys: ['adblock'], volatile: true },
   { id: 'doNotTrack', label: 'Do Not Track', group: 'javascript', hashKeys: ['doNotTrack'], volatile: true },
@@ -75,8 +103,8 @@ export const FINGERPRINT_SIGNAL_CATALOG: FingerprintSignalDef[] = [
   { id: 'screenDepth', label: 'Screen depth', group: 'javascript', hashKeys: ['screenDepth'] },
   { id: 'screenAvailTop', label: 'Screen available top', group: 'javascript', hashKeys: ['screenAvailTop'], volatile: true },
   { id: 'screenAvailLeft', label: 'Screen available Left', group: 'javascript', hashKeys: ['screenAvailLeft'], volatile: true },
-  { id: 'screenAvailHeight', label: 'Screen available Height', group: 'javascript', hashKeys: ['screenAvailHeight'] },
-  { id: 'screenAvailWidth', label: 'Screen available width', group: 'javascript', hashKeys: ['screenAvailWidth'] },
+  { id: 'screenAvailHeight', label: 'Screen available Height', group: 'javascript', hashKeys: ['screenAvailHeight'], volatile: true },
+  { id: 'screenAvailWidth', label: 'Screen available width', group: 'javascript', hashKeys: ['screenAvailWidth'], volatile: true },
   { id: 'permissions', label: 'Permissions', group: 'javascript', hashKeys: ['permissions'], volatile: true },
   { id: 'webglVendor', label: 'WebGL Vendor', group: 'javascript', hashKeys: ['webglVendor'] },
   { id: 'webglRenderer', label: 'WebGL Renderer', group: 'javascript', hashKeys: ['webglRenderer'] },
@@ -159,10 +187,12 @@ export function setFingerprintSignalIncluded(id: string, included: boolean): str
   return setExcludedFingerprintSignals(Array.from(excluded));
 }
 
-export type FingerprintHashPreset = 'full' | 'stable';
+export type FingerprintHashPreset = 'full' | 'stable' | 'lock';
 
 export function applyFingerprintHashPreset(preset: FingerprintHashPreset): string[] {
-  return setExcludedFingerprintSignals(preset === 'stable' ? FINGERPRINT_STABLE_EXCLUDED_IDS : []);
+  if (preset === 'lock') return setExcludedFingerprintSignals(FINGERPRINT_LOCK_EXCLUDED_IDS);
+  if (preset === 'stable') return setExcludedFingerprintSignals(FINGERPRINT_STABLE_EXCLUDED_IDS);
+  return setExcludedFingerprintSignals([]);
 }
 
 export function fingerprintSignalLabel(id: string): string {
@@ -424,11 +454,15 @@ function fallbackFnvHex(text: string): string {
 
 export function normalizeFingerprintHash(raw: string): string | null {
   let v = String(raw || '').trim().toLowerCase();
-  if (v.startsWith(FINGERPRINT_HASH_PREFIX)) {
-    v = v.slice(FINGERPRINT_HASH_PREFIX.length);
-  }
-  v = v.replace(/[^a-f0-9]/g, '');
-  return v.length === 64 ? v : null;
+  if (!v) return null;
+  const prefixed = v.match(/^(?:lnfp_|lmfp_|lfp_)([a-f0-9]{64})$/);
+  if (prefixed) return prefixed[1];
+  const anyPrefix = v.match(/^[a-z]{1,8}_([a-f0-9]{64})$/);
+  if (anyPrefix) return anyPrefix[1];
+  const hex = v.replace(/[^a-f0-9]/g, '');
+  if (hex.length === 64) return hex;
+  if (hex.length > 64 && hex.length <= 72) return hex.slice(-64);
+  return null;
 }
 
 export function formatFingerprintHashDisplay(hash: string): string {
@@ -453,39 +487,113 @@ export function setGpsConsent(accepted: boolean): void {
   }
 }
 
-export function persistFingerprintCookie(hash: string): void {
-  const n = normalizeFingerprintHash(hash);
-  if (!n || typeof document === 'undefined') return;
+function writeFingerprintCookie(hashes: string[]): void {
+  if (typeof document === 'undefined') return;
+  const unique = hashes.map((h) => normalizeFingerprintHash(h)).filter((h): h is string => !!h);
+  if (!unique.length) return;
   const base = getAppBasePath();
   const path = base ? `${base}/` : '/';
-  document.cookie = `${FINGERPRINT_COOKIE}=${encodeURIComponent(n)}; Path=${path}; SameSite=Lax; Max-Age=31536000`;
+  document.cookie = `${FINGERPRINT_COOKIE}=${encodeURIComponent(unique.join(','))}; Path=${path}; SameSite=Lax; Max-Age=31536000`;
+}
+
+export function persistFingerprintCookie(hash: string): void {
+  rememberFingerprintHash(hash);
 }
 
 export function readFingerprintCookie(): string | null {
-  if (typeof document === 'undefined') return null;
+  return readFingerprintCookieHashes()[0] || null;
+}
+
+export function readFingerprintCookieHashes(): string[] {
+  if (typeof document === 'undefined') return [];
   const parts = document.cookie.split(';');
   for (const part of parts) {
     const [k, ...rest] = part.trim().split('=');
-    if (k === FINGERPRINT_COOKIE) {
-      return normalizeFingerprintHash(decodeURIComponent(rest.join('=')));
+    if (k !== FINGERPRINT_COOKIE) continue;
+    const raw = decodeURIComponent(rest.join('='));
+    const out: string[] = [];
+    for (const piece of raw.split(/[\s,;]+/)) {
+      const n = normalizeFingerprintHash(piece);
+      if (n && !out.includes(n)) out.push(n);
     }
+    return out;
   }
-  return null;
+  return [];
 }
 
-export function readPersistedFingerprintHash(): string | null {
-  if (memoryCache?.hash) {
-    const fromMem = normalizeFingerprintHash(memoryCache.hash);
-    if (fromMem) return fromMem;
-  }
+export function readKnownFingerprintHashes(): string[] {
+  const out: string[] = [];
+  const add = (hash: string | null | undefined) => {
+    const n = hash ? normalizeFingerprintHash(hash) : null;
+    if (n && !out.includes(n)) out.push(n);
+  };
+  if (memoryCache?.hash) add(memoryCache.hash);
   try {
-    const stored = sessionStorage.getItem('ln_fp_hash');
-    const fromSession = stored ? normalizeFingerprintHash(stored) : null;
-    if (fromSession) return fromSession;
+    const raw = localStorage.getItem(FINGERPRINT_KNOWN_STORAGE);
+    if (raw) {
+      const parsed = JSON.parse(raw) as unknown;
+      if (Array.isArray(parsed)) {
+        for (const item of parsed) {
+          if (typeof item === 'string') add(item);
+        }
+      }
+    }
   } catch {
     /* ignore */
   }
-  return readFingerprintCookie();
+  try {
+    add(sessionStorage.getItem('ln_fp_hash'));
+  } catch {
+    /* ignore */
+  }
+  for (const h of readFingerprintCookieHashes()) add(h);
+  return out;
+}
+
+/** Remember this browser's hashes so a later collect (IP/canvas drift) does not drop the allowlisted one. */
+export function rememberFingerprintHash(hash: string): string[] {
+  const n = normalizeFingerprintHash(hash);
+  const list = readKnownFingerprintHashes();
+  if (n && !list.includes(n)) {
+    list.unshift(n);
+  } else if (n) {
+    const idx = list.indexOf(n);
+    if (idx > 0) {
+      list.splice(idx, 1);
+      list.unshift(n);
+    }
+  }
+  const capped = list.slice(0, FINGERPRINT_KNOWN_MAX);
+  try {
+    localStorage.setItem(FINGERPRINT_KNOWN_STORAGE, JSON.stringify(capped));
+  } catch {
+    /* ignore */
+  }
+  try {
+    if (capped[0]) sessionStorage.setItem('ln_fp_hash', capped[0]);
+  } catch {
+    /* ignore */
+  }
+  writeFingerprintCookie(capped);
+  return capped;
+}
+
+export function readPersistedFingerprintHash(): string | null {
+  return readKnownFingerprintHashes()[0] || null;
+}
+
+/** Headers for tile/gate requests: all hashes this browser has produced. */
+export function fingerprintAccessHeaders(extra?: HeadersInit): HeadersInit {
+  const headers: Record<string, string> = {
+    ...(extra && !(extra instanceof Headers) && !Array.isArray(extra)
+      ? (extra as Record<string, string>)
+      : {}),
+  };
+  const hashes = readKnownFingerprintHashes();
+  if (hashes.length) {
+    headers['X-LinkNest-Fingerprint'] = hashes.join(',');
+  }
+  return headers;
 }
 
 async function fetchProbe(): Promise<ProbePayload> {
@@ -996,12 +1104,7 @@ async function finalizeCollectedFingerprint(
     excludedSignals: excluded,
   };
   memoryCache = result;
-  persistFingerprintCookie(hash);
-  try {
-    sessionStorage.setItem('ln_fp_hash', hash);
-  } catch {
-    /* ignore */
-  }
+  rememberFingerprintHash(hash);
   return result;
 }
 
@@ -1272,16 +1375,17 @@ function queueFingerprintRefresh(): void {
 
 export async function getFingerprintHash(opts?: { skipCache?: boolean; accessCheck?: boolean }): Promise<string> {
   if (!opts?.skipCache && opts?.accessCheck) {
-    const persisted = readPersistedFingerprintHash();
-    if (persisted) {
+    const known = readKnownFingerprintHashes();
+    if (known.length) {
       if (!memoryCache) queueFingerprintRefresh();
-      return persisted;
+      return known[0];
     }
   }
   const result = await collectFingerprint({
     skipCache: opts?.skipCache,
     accessCheck: !!opts?.accessCheck,
   });
+  rememberFingerprintHash(result.hash);
   return result.hash;
 }
 
@@ -1329,11 +1433,17 @@ export async function checkFingerprintLockGate(
   fingerprintHash?: string | null
 ): Promise<FingerprintLockGateResult> {
   try {
+    const hashes = readKnownFingerprintHashes();
+    const extra = fingerprintHash ? normalizeFingerprintHash(fingerprintHash) : null;
+    if (extra && !hashes.includes(extra)) hashes.unshift(extra);
     const res = await fetch(`${API_BASE}/fingerprint/gate`, {
       method: 'POST',
       credentials: 'include',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ fingerprintHash: fingerprintHash || undefined }),
+      headers: fingerprintAccessHeaders({ 'Content-Type': 'application/json' }),
+      body: JSON.stringify({
+        fingerprintHash: hashes[0] || extra || undefined,
+        fingerprintHashes: hashes.length ? hashes : undefined,
+      }),
     });
     const data = (await res.json().catch(() => ({}))) as FingerprintLockGateResult & { error?: string };
     if (!res.ok) {

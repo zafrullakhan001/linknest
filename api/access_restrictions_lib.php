@@ -202,21 +202,84 @@ function normalize_restriction_date($value): ?string {
 }
 
 /**
- * Normalize a copied fingerprint hash (lnfp_ prefix or raw SHA-256 hex).
+ * Normalize a copied fingerprint hash (lnfp_ prefix, common typos, or raw SHA-256 hex).
  */
 function normalize_fingerprint_hash($value): ?string {
     if (!is_string($value) && !is_numeric($value)) {
         return null;
     }
     $v = strtolower(trim((string) $value));
-    if (str_starts_with($v, 'lnfp_')) {
-        $v = substr($v, 5);
-    }
-    $v = preg_replace('/[^a-f0-9]/', '', $v) ?? '';
-    if (strlen($v) !== 64) {
+    if ($v === '') {
         return null;
     }
-    return $v;
+    if (preg_match('/^(?:lnfp_|lmfp_|lfp_)([a-f0-9]{64})$/', $v, $m)) {
+        return $m[1];
+    }
+    if (preg_match('/^[a-z]{1,8}_([a-f0-9]{64})$/', $v, $m)) {
+        return $m[1];
+    }
+    $hex = preg_replace('/[^a-f0-9]/', '', $v) ?? '';
+    if (strlen($hex) === 64) {
+        return $hex;
+    }
+    // Prefix letters that are also hex (e.g. lmfp_ → lf + 64) leave extra digits; use the hash suffix.
+    if (strlen($hex) > 64 && strlen($hex) <= 72) {
+        return substr($hex, -64);
+    }
+    return null;
+}
+
+/**
+ * Collect candidate fingerprint hashes from header, cookie, query, and optional JSON body.
+ *
+ * @return string[] hex hashes (64 chars, no prefix)
+ */
+function fingerprint_hashes_from_request(?array $jsonBody = null): array {
+    $rawParts = [];
+    $header = (string) ($_SERVER['HTTP_X_LINKNEST_FINGERPRINT'] ?? '');
+    if ($header !== '') {
+        $rawParts[] = $header;
+    }
+    if (isset($_GET['fingerprintHash'])) {
+        $rawParts[] = (string) $_GET['fingerprintHash'];
+    }
+    if (isset($_GET['fingerprint_hash'])) {
+        $rawParts[] = (string) $_GET['fingerprint_hash'];
+    }
+    if (isset($_GET['fp'])) {
+        $rawParts[] = (string) $_GET['fp'];
+    }
+    if (!empty($_COOKIE['ln_fp'])) {
+        $rawParts[] = (string) $_COOKIE['ln_fp'];
+    }
+    if (is_array($jsonBody)) {
+        foreach (['fingerprintHash', 'fingerprint_hash', 'fingerprintHashes', 'fingerprint_hashes'] as $key) {
+            if (!array_key_exists($key, $jsonBody)) {
+                continue;
+            }
+            $val = $jsonBody[$key];
+            if (is_array($val)) {
+                foreach ($val as $item) {
+                    if (is_scalar($item)) {
+                        $rawParts[] = (string) $item;
+                    }
+                }
+            } elseif (is_scalar($val)) {
+                $rawParts[] = (string) $val;
+            }
+        }
+    }
+    $out = [];
+    foreach ($rawParts as $raw) {
+        $pieces = preg_split('/[\s,;]+/', (string) $raw) ?: [];
+        foreach ($pieces as $piece) {
+            $hex = normalize_fingerprint_hash($piece);
+            if ($hex !== null && !in_array($hex, $out, true)) {
+                $out[] = $hex;
+            }
+        }
+    }
+    return $out;
 }
 
 /**
@@ -881,15 +944,34 @@ function evaluate_access_restrictions(array $rules, array $ctx): array {
         }
     }
     if ($allowedFingerprints !== []) {
-        $incoming = normalize_fingerprint_hash((string) ($ctx['fingerprint_hash'] ?? ''));
-        if ($incoming === null || $incoming === '') {
+        $incomingList = [];
+        if (!empty($ctx['fingerprint_hashes']) && is_array($ctx['fingerprint_hashes'])) {
+            foreach ($ctx['fingerprint_hashes'] as $item) {
+                $hex = normalize_fingerprint_hash(is_scalar($item) ? (string) $item : '');
+                if ($hex !== null && !in_array($hex, $incomingList, true)) {
+                    $incomingList[] = $hex;
+                }
+            }
+        }
+        $single = normalize_fingerprint_hash((string) ($ctx['fingerprint_hash'] ?? ''));
+        if ($single !== null && !in_array($single, $incomingList, true)) {
+            $incomingList[] = $single;
+        }
+        if ($incomingList === []) {
             return [
                 'allowed' => false,
                 'message' => 'This item is limited to a registered browser fingerprint. Open Help & About → Fingerprint on this device, then try again.',
                 'reason' => 'fingerprint_missing',
             ];
         }
-        if (!in_array($incoming, $allowedFingerprints, true)) {
+        $matched = false;
+        foreach ($incomingList as $incoming) {
+            if (in_array($incoming, $allowedFingerprints, true)) {
+                $matched = true;
+                break;
+            }
+        }
+        if (!$matched) {
             return [
                 'allowed' => false,
                 'message' => 'This item is limited to a specific browser fingerprint. Copy your hash from Help & About → Fingerprint if this device should be allowed.',
@@ -1092,13 +1174,20 @@ function evaluate_entity_access_chain(string $entityType, string $id, array $ext
             $needHost = true;
         }
     }
-    $fingerprintHash = '';
+    $fingerprintHashes = fingerprint_hashes_from_request(is_array($extraCtx) ? $extraCtx : null);
     if (!empty($extraCtx['fingerprint_hash'])) {
-        $fingerprintHash = (string) $extraCtx['fingerprint_hash'];
-    } elseif (!empty($_COOKIE['ln_fp'])) {
-        $fingerprintHash = (string) $_COOKIE['ln_fp'];
-    } elseif (!empty($_GET['fp'])) {
-        $fingerprintHash = (string) $_GET['fp'];
+        $extraHex = normalize_fingerprint_hash((string) $extraCtx['fingerprint_hash']);
+        if ($extraHex !== null && !in_array($extraHex, $fingerprintHashes, true)) {
+            array_unshift($fingerprintHashes, $extraHex);
+        }
+    }
+    if (!empty($extraCtx['fingerprint_hashes']) && is_array($extraCtx['fingerprint_hashes'])) {
+        foreach ($extraCtx['fingerprint_hashes'] as $item) {
+            $hex = normalize_fingerprint_hash(is_scalar($item) ? (string) $item : '');
+            if ($hex !== null && !in_array($hex, $fingerprintHashes, true)) {
+                $fingerprintHashes[] = $hex;
+            }
+        }
     }
 
     $ctx = [
@@ -1109,7 +1198,8 @@ function evaluate_entity_access_chain(string $entityType, string $id, array $ext
         'country_code' => $needCountry ? restriction_country_code_for_ip($clientIp) : null,
         'request_headers' => null,
         'now' => new DateTimeImmutable('now'),
-        'fingerprint_hash' => $fingerprintHash,
+        'fingerprint_hash' => $fingerprintHashes[0] ?? '',
+        'fingerprint_hashes' => $fingerprintHashes,
     ];
 
     foreach ($loaded['chain'] as $step) {

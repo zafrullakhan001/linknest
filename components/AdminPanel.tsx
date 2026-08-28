@@ -12712,7 +12712,7 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({ onUserApproved }) => {
                                     Fingerprint-only access
                                   </span>
                                   <span className="block text-xs text-slate-500 dark:text-slate-400">
-                                    When enabled, only browsers whose fingerprint hash is listed below can use the site — including guests and signed-in non-admins. Administrators can always sign in with their credentials even if the browser hash is wrong or changed. Copy hashes from Help &amp; About → Fingerprint. If you get locked out of the Admin UI, run <code className="bg-slate-100 dark:bg-slate-900 px-1 rounded">php scripts/unlock_fingerprint_lock.php --yes</code> on the server.
+                                    When enabled, only browsers whose fingerprint hash is listed below can use the site — including guests and signed-in non-admins. Allowlisted browsers can view public spaces without signing in (guest access still applies). Copy the hash from Help &amp; About → Fingerprint after choosing <span className="font-medium">Lock access</span> so the key does not rotate with IP, timezone, or permission changes. Administrators can always sign in with their credentials even if the browser hash is wrong or changed. If you get locked out of the Admin UI, run <code className="bg-slate-100 dark:bg-slate-900 px-1 rounded">php scripts/unlock_fingerprint_lock.php --yes</code> on the server.
                                   </span>
                                 </div>
                                 <div className="ml-4">

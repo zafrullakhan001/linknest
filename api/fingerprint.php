@@ -43,7 +43,7 @@ function handleFingerprintGate(): void {
             $body = null;
         }
     }
-    $incoming = fingerprint_hash_from_request($body);
+    $incoming = fingerprint_hashes_from_request($body);
     $result = fingerprint_lock_evaluate($user, $incoming, $db);
     sendJSON([
         'allowed' => !empty($result['allowed']),
@@ -54,15 +54,24 @@ function handleFingerprintGate(): void {
 }
 
 function fingerprint_normalize_stored_hash($value): ?string {
+    if (function_exists('normalize_fingerprint_hash')) {
+        return normalize_fingerprint_hash($value);
+    }
     if (!is_string($value) && !is_numeric($value)) {
         return null;
     }
     $v = strtolower(trim((string) $value));
-    if (str_starts_with($v, 'lnfp_')) {
+    if (str_starts_with($v, 'lnfp_') || str_starts_with($v, 'lmfp_')) {
         $v = substr($v, 5);
     }
     $v = preg_replace('/[^a-f0-9]/', '', $v) ?? '';
-    return strlen($v) === 64 ? $v : null;
+    if (strlen($v) === 64) {
+        return $v;
+    }
+    if (strlen($v) > 64 && strlen($v) <= 72) {
+        return substr($v, -64);
+    }
+    return null;
 }
 
 function fingerprint_registry_lookup(PDO $db, string $hash): array {

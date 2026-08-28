@@ -900,13 +900,24 @@ const AppContent: React.FC = () => {
           }
         }
         if (error?.response?.status === 403 && String(error?.message || '').toLowerCase().includes('fingerprint')) {
-          setTiles([]);
-          setFingerprintLockDenied({
-            message: error.message || 'Fingerprint lock denied',
-            reason: 'fingerprint',
-          });
-          setLoading(false);
-          return;
+          try {
+            await getFingerprintHash({ accessCheck: true });
+            const retried = await getTiles();
+            if (cancelled) return;
+            setTiles(retried);
+            setAuthRequired(false);
+            setFingerprintLockDenied(null);
+            return;
+          } catch (retryErr: any) {
+            if (cancelled) return;
+            setTiles([]);
+            setFingerprintLockDenied({
+              message: retryErr?.message || error.message || 'Fingerprint lock denied',
+              reason: retryErr?.reason || 'fingerprint',
+            });
+            setLoading(false);
+            return;
+          }
         }
         console.error('Failed to load tiles:', error);
         setTiles([]);

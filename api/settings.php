@@ -1247,6 +1247,12 @@ function handleUpdateSettings() {
         responseCacheInvalidate('settings_public');
         responseCacheInvalidate('setting_guest_access_enabled');
         $changedKeys = array_values(array_unique($changedKeys));
+        if (in_array('fingerprint_lock_enabled', $changedKeys, true)
+            || in_array('fingerprint_lock_hashes', $changedKeys, true)
+            || in_array('guest_access_enabled', $changedKeys, true)
+        ) {
+            invalidateGuestTilesListCache();
+        }
         if ($changedKeys !== []) {
             logUserAudit('settings.updated', [
                 'details' => ['keys' => $changedKeys],

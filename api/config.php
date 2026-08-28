@@ -218,7 +218,7 @@ if (!file_exists(DB_DIR)) {
 if (!defined('ANALYTICS_API_MODE') || !ANALYTICS_API_MODE) {
     header('Access-Control-Allow-Origin: *');
     header('Access-Control-Allow-Methods: GET, POST, PUT, DELETE, OPTIONS');
-    header('Access-Control-Allow-Headers: Content-Type, Authorization, Mcp-Session-Id, MCP-Protocol-Version, Last-Event-ID');
+    header('Access-Control-Allow-Headers: Content-Type, Authorization, Mcp-Session-Id, MCP-Protocol-Version, Last-Event-ID, X-LinkNest-Fingerprint');
     header('Access-Control-Expose-Headers: Mcp-Session-Id, MCP-Protocol-Version');
     
     // Handle preflight requests

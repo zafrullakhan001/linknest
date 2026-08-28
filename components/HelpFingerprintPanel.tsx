@@ -9,9 +9,11 @@ import {
   setFingerprintSignalIncluded,
   fingerprintSignalLabel,
   downloadFingerprintSnapshot,
+  rememberFingerprintHash,
   FINGERPRINT_SIGNAL_CATALOG,
   FINGERPRINT_NETWORK_SIGNAL_IDS,
   FINGERPRINT_STABLE_EXCLUDED_IDS,
+  FINGERPRINT_LOCK_EXCLUDED_IDS,
   type FingerprintAttribute,
   type FingerprintResult,
   type FingerprintRegistryLookup,
@@ -23,6 +25,13 @@ const CHANGEABLE_PANEL_IDS: string[] = [
   'permissions',
   'mediaDevices',
   'timezone',
+  'canvas',
+  'adblock',
+  'doNotTrack',
+  'screenAvailTop',
+  'screenAvailLeft',
+  'screenAvailHeight',
+  'screenAvailWidth',
 ];
 
 const GROUP_META: Record<
@@ -206,6 +215,8 @@ export const HelpFingerprintPanel: React.FC = () => {
   const [hashUpdating, setHashUpdating] = useState(false);
   const [panelTab, setPanelTab] = useState<'collect' | 'compare'>('collect');
   const [exported, setExported] = useState(false);
+  const [signalsExpanded, setSignalsExpanded] = useState(false);
+  const [attributeGroupsOpen, setAttributeGroupsOpen] = useState<Record<string, boolean>>({});
 
   const refreshRegistry = useCallback(async (hash: string) => {
     setRegistryLoading(true);
@@ -243,6 +254,7 @@ export const HelpFingerprintPanel: React.FC = () => {
   const copyHash = async () => {
     if (!result?.hashDisplay) return;
     try {
+      rememberFingerprintHash(result.hash);
       await navigator.clipboard.writeText(result.hashDisplay);
       setCopied(true);
       window.setTimeout(() => setCopied(false), 1800);
@@ -291,7 +303,7 @@ export const HelpFingerprintPanel: React.FC = () => {
     await rehashFromChoices();
   };
 
-  const applyPreset = async (preset: 'full' | 'stable') => {
+  const applyPreset = async (preset: 'full' | 'stable' | 'lock') => {
     applyFingerprintHashPreset(preset);
     await rehashFromChoices();
   };
@@ -345,14 +357,13 @@ export const HelpFingerprintPanel: React.FC = () => {
       ),
     []
   );
-  const fullCaptureActive = (result?.excludedSignals || []).length === 0;
-  const stableDeviceActive = useMemo(() => {
+  const sameExcludedSet = (ids: string[]): boolean => {
     const current = new Set(result?.excludedSignals || []);
-    return (
-      FINGERPRINT_STABLE_EXCLUDED_IDS.every((id) => current.has(id)) &&
-      current.size === FINGERPRINT_STABLE_EXCLUDED_IDS.length
-    );
-  }, [result]);
+    return ids.length === current.size && ids.every((id) => current.has(id));
+  };
+  const fullCaptureActive = (result?.excludedSignals || []).length === 0;
+  const stableDeviceActive = sameExcludedSet(FINGERPRINT_STABLE_EXCLUDED_IDS);
+  const lockAccessActive = sameExcludedSet(FINGERPRINT_LOCK_EXCLUDED_IDS);
 
   return (
     <div className="space-y-5">
@@ -390,12 +401,11 @@ export const HelpFingerprintPanel: React.FC = () => {
           <span aria-hidden="true">🪪</span> Browser fingerprint
         </h3>
         <p className="text-sm text-slate-600 dark:text-slate-400 leading-relaxed">
-          Signals collected from this browser (similar to AmIUnique). Copy the hash and paste it into
-          a space, tab, or link under <span className="font-medium text-violet-700 dark:text-violet-300">Access restrictions → Fingerprint</span>.
-          Use the include/exclude choices below so changing values such as IP address, VPN, or hostname
-          do not rotate the hash. Battery level, referer, and extensions are shown but never hashed.
-          GPS is added to the hash only after you accept location (about a 1 mile radius), and you can
-          exclude it like any other signal. Your choices are remembered on this browser.
+          Signals collected from this browser (similar to AmIUnique). For Fingerprint-only access, click{' '}
+          <span className="font-medium text-sky-800 dark:text-sky-200">Lock access</span>, then copy the hash
+          into Admin → Access. That preset leaves out IP, timezone, permissions, canvas, and other values that
+          still change on the same PC. You can also paste a hash into a space, tab, or link under{' '}
+          <span className="font-medium text-violet-700 dark:text-violet-300">Access restrictions → Fingerprint</span>.
         </p>
       </section>
 
@@ -443,18 +453,25 @@ export const HelpFingerprintPanel: React.FC = () => {
         <p className="text-[11px] text-indigo-800/80 dark:text-indigo-200/80">
           Export this snapshot, then export again from InPrivate / Incognito, and open the Compare tab to see which signals differ.
         </p>
-        <div className="rounded-lg border border-indigo-100 dark:border-indigo-900/50 bg-white/70 dark:bg-slate-900/40 p-3 space-y-3">
-          <div className="flex flex-wrap items-start justify-between gap-2">
-            <div>
-              <div className="text-xs font-semibold uppercase tracking-wide text-indigo-700 dark:text-indigo-300 flex items-center gap-1.5">
-                <span aria-hidden="true">🎛️</span> Signals in this hash
-              </div>
-              <p className="mt-1 text-xs text-slate-600 dark:text-slate-400">
-                Uncheck values that can change (IP, VPN, hostname) so the hash stays the same on this device.
-                Copy the hash after you set these. The same choices are used when this browser unlocks a restricted item.
-              </p>
+        <div className="rounded-lg border border-indigo-100 dark:border-indigo-900/50 bg-white/70 dark:bg-slate-900/40 p-3 space-y-2">
+          <div className="flex flex-wrap items-center justify-between gap-2">
+            <div className="text-xs font-semibold uppercase tracking-wide text-indigo-700 dark:text-indigo-300 flex items-center gap-1.5">
+              <span aria-hidden="true">🎛️</span> Hash options
             </div>
             <div className="flex flex-wrap gap-2">
+              <button
+                type="button"
+                title="Best for Fingerprint-only access. Drops IP, timezone, permissions, canvas, and other signals that still change on the same PC."
+                onClick={() => void applyPreset('lock')}
+                disabled={loading || hashUpdating}
+                className={`px-2.5 py-1 text-[11px] font-medium rounded-lg border disabled:opacity-50 ${
+                  lockAccessActive
+                    ? 'border-sky-400 bg-sky-100 dark:bg-sky-900/50 text-sky-900 dark:text-sky-100'
+                    : 'border-sky-200 dark:border-sky-800 bg-sky-50/80 dark:bg-sky-950/40 text-sky-800 dark:text-sky-200'
+                }`}
+              >
+                <span aria-hidden="true">🔐</span> Lock access
+              </button>
               <button
                 type="button"
                 onClick={() => void applyPreset('stable')}
@@ -481,51 +498,77 @@ export const HelpFingerprintPanel: React.FC = () => {
               </button>
             </div>
           </div>
-          <div className="grid grid-cols-1 sm:grid-cols-2 gap-1.5">
-            {changeableSignals.map((signal) => {
-              const included = !excludedSet.has(signal.id);
-              const gpsOff = signal.id === 'gps' && !result?.gps;
-              return (
-                <label
-                  key={signal.id}
-                  className="flex items-start gap-2 rounded-md px-2 py-1.5 text-xs text-slate-700 dark:text-slate-200 hover:bg-indigo-50/80 dark:hover:bg-slate-800/60 cursor-pointer"
-                >
-                  <input
-                    type="checkbox"
-                    className="mt-0.5 rounded border-slate-300 dark:border-slate-600"
-                    checked={signal.id === 'gps' ? !!result?.gpsHashed : included}
-                    disabled={loading || hashUpdating}
-                    onChange={(e) => void toggleSignal(signal.id, e.target.checked)}
-                  />
-                  <span>
-                    <span className="font-medium">{signal.label}</span>
-                    {signal.volatile ? (
-                      <span className="ml-1.5 inline-flex items-center rounded-full bg-amber-100/90 dark:bg-amber-900/40 px-1.5 py-0.5 text-[10px] font-normal text-amber-800 dark:text-amber-200">
-                        may change
-                      </span>
-                    ) : null}
-                    {gpsOff ? (
-                      <span className="block text-[10px] text-slate-500">Check to request location</span>
-                    ) : null}
-                  </span>
-                </label>
-              );
-            })}
-          </div>
+          <button
+            type="button"
+            onClick={() => setSignalsExpanded((open) => !open)}
+            className="w-full flex items-center justify-between gap-2 rounded-md px-2 py-1.5 text-[11px] text-slate-600 dark:text-slate-300 hover:bg-indigo-50/80 dark:hover:bg-slate-800/60"
+            aria-expanded={signalsExpanded}
+          >
+            <span>
+              <span aria-hidden="true">{signalsExpanded ? '▾' : '▸'}</span>{' '}
+              {signalsExpanded ? 'Hide signal checkboxes' : 'Show signal checkboxes'}
+              <span className="text-slate-400 dark:text-slate-500">
+                {' '}
+                · {changeableSignals.length} signals
+                {result?.excludedSignals?.length
+                  ? ` · ${result.excludedSignals.length} excluded`
+                  : ' · all included'}
+              </span>
+            </span>
+            <span className="text-[10px] uppercase tracking-wide text-indigo-500 dark:text-indigo-400">
+              {signalsExpanded ? 'Collapse' : 'Expand'}
+            </span>
+          </button>
+          {signalsExpanded ? (
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-1.5 pt-1">
+              {changeableSignals.map((signal) => {
+                const included = !excludedSet.has(signal.id);
+                const gpsOff = signal.id === 'gps' && !result?.gps;
+                return (
+                  <label
+                    key={signal.id}
+                    className="flex items-start gap-2 rounded-md px-2 py-1.5 text-xs text-slate-700 dark:text-slate-200 hover:bg-indigo-50/80 dark:hover:bg-slate-800/60 cursor-pointer"
+                  >
+                    <input
+                      type="checkbox"
+                      className="mt-0.5 rounded border-slate-300 dark:border-slate-600"
+                      checked={signal.id === 'gps' ? !!result?.gpsHashed : included}
+                      disabled={loading || hashUpdating}
+                      onChange={(e) => void toggleSignal(signal.id, e.target.checked)}
+                    />
+                    <span>
+                      <span className="font-medium">{signal.label}</span>
+                      {signal.volatile ? (
+                        <span className="ml-1.5 inline-flex items-center rounded-full bg-amber-100/90 dark:bg-amber-900/40 px-1.5 py-0.5 text-[10px] font-normal text-amber-800 dark:text-amber-200">
+                          may change
+                        </span>
+                      ) : null}
+                      {gpsOff ? (
+                        <span className="block text-[10px] text-slate-500">Check to request location</span>
+                      ) : null}
+                    </span>
+                  </label>
+                );
+              })}
+            </div>
+          ) : null}
           {result?.excludedSignals?.length ? (
-            <p className="text-[11px] text-amber-800 dark:text-amber-300">
-              <span aria-hidden="true">🚫</span> Excluded from hash:{' '}
+            <p className="text-[11px] text-amber-800 dark:text-amber-300 line-clamp-2">
+              <span aria-hidden="true">🚫</span> Excluded:{' '}
               {result.excludedSignals.map((id) => fingerprintSignalLabel(id)).join(', ')}
             </p>
           ) : (
             <p className="text-[11px] text-slate-500 dark:text-slate-400">
-              All hashable signals are included. Individual rows below can also be toggled.
+              All hashable signals are included.
             </p>
           )}
         </div>
         <code className="block break-all text-sm font-mono text-violet-900 dark:text-violet-100 bg-white/85 dark:bg-slate-900/70 rounded-lg px-3 py-2 border border-violet-200/80 dark:border-violet-800/50">
           {loading && !result ? '✨ Collecting…' : hashUpdating ? `${result?.hashDisplay || ''} · updating…` : result?.hashDisplay || 'Unavailable'}
         </code>
+        <p className="text-[11px] text-indigo-800/80 dark:text-indigo-200/80">
+          Copy this hash into Admin → Access → Fingerprint-only access. This browser keeps previous hashes, so public spaces stay available even if the live hash drifts slightly.
+        </p>
         {result?.publicIp ? (
           <p className="text-xs text-indigo-800/80 dark:text-indigo-200/80">
             <span aria-hidden="true">🌐</span> Public IP:{' '}
@@ -684,11 +727,29 @@ export const HelpFingerprintPanel: React.FC = () => {
         const rows = grouped[group];
         if (!rows.length && filter) return null;
         const meta = GROUP_META[group];
+        const groupOpen = !!filter.trim() || !!attributeGroupsOpen[group];
         return (
           <section key={group}>
-            <h4 className={`text-sm font-semibold mb-2 flex items-center gap-1.5 ${meta.heading}`}>
-              <span aria-hidden="true">{meta.emoji}</span> {meta.label}
-            </h4>
+            <button
+              type="button"
+              onClick={() =>
+                setAttributeGroupsOpen((prev) => ({ ...prev, [group]: !prev[group] }))
+              }
+              className={`w-full text-sm font-semibold mb-2 flex items-center justify-between gap-2 ${meta.heading}`}
+              aria-expanded={groupOpen}
+            >
+              <span className="flex items-center gap-1.5">
+                <span aria-hidden="true">{groupOpen ? '▾' : '▸'}</span>
+                <span aria-hidden="true">{meta.emoji}</span> {meta.label}
+                <span className="font-normal text-xs text-slate-500 dark:text-slate-400">
+                  ({rows.length})
+                </span>
+              </span>
+              <span className="text-[10px] uppercase tracking-wide font-medium opacity-70">
+                {groupOpen ? 'Collapse' : 'Expand'}
+              </span>
+            </button>
+            {groupOpen ? (
             <div className={`overflow-x-auto rounded-xl border ${meta.wrap}`}>
               <table className="w-full text-sm">
                 <tbody>
@@ -757,6 +818,7 @@ export const HelpFingerprintPanel: React.FC = () => {
                 </tbody>
               </table>
             </div>
+            ) : null}
           </section>
         );
       })}

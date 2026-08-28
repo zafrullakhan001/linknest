@@ -1,21 +1,12 @@
 import { Tile } from '../types';
 import { resolveApiBase } from './apiHelpers';
 import { hasAccessRestrictions } from './accessRestrictionService';
-import { readPersistedFingerprintHash } from './fingerprintService';
+import { fingerprintAccessHeaders } from './fingerprintService';
 
 const API_BASE = resolveApiBase();
 
 function fingerprintRequestHeaders(extra?: HeadersInit): HeadersInit {
-  const headers: Record<string, string> = {
-    ...(extra && !(extra instanceof Headers) && !Array.isArray(extra)
-      ? (extra as Record<string, string>)
-      : {}),
-  };
-  const hash = readPersistedFingerprintHash();
-  if (hash) {
-    headers['X-LinkNest-Fingerprint'] = hash;
-  }
-  return headers;
+  return fingerprintAccessHeaders(extra);
 }
 
 // Transform API response to Tile format

@@ -8,47 +8,17 @@
 require_once __DIR__ . '/access_restrictions_lib.php';
 
 /**
- * Read fingerprint hash from header, query, or JSON body.
+ * Read fingerprint hash from header, cookie, query, or JSON body.
  */
 function fingerprint_hash_from_request(?array $jsonBody = null): ?string {
-    $candidates = [];
-    $header = (string) ($_SERVER['HTTP_X_LINKNEST_FINGERPRINT'] ?? '');
-    if ($header !== '') {
-        $candidates[] = $header;
-    }
-    if (isset($_GET['fingerprintHash'])) {
-        $candidates[] = (string) $_GET['fingerprintHash'];
-    }
-    if (isset($_GET['fingerprint_hash'])) {
-        $candidates[] = (string) $_GET['fingerprint_hash'];
-    }
-    if (is_array($jsonBody)) {
-        if (isset($jsonBody['fingerprintHash'])) {
-            $candidates[] = (string) $jsonBody['fingerprintHash'];
-        }
-        if (isset($jsonBody['fingerprint_hash'])) {
-            $candidates[] = (string) $jsonBody['fingerprint_hash'];
-        }
-    }
-    foreach ($candidates as $raw) {
-        $hex = normalize_fingerprint_hash($raw);
-        if ($hex !== null) {
-            return $hex;
-        }
-    }
-    return null;
+    $list = fingerprint_hashes_from_request($jsonBody);
+    return $list[0] ?? null;
 }
 
 /**
  * @return string[] hex hashes (64 chars, no lnfp_ prefix)
  */
 function fingerprint_lock_allowlist(PDO $db): array {
-    static $cached = null;
-    static $cachedAt = 0;
-    $now = time();
-    if (is_array($cached) && ($now - $cachedAt) < 30) {
-        return $cached;
-    }
     $stmt = $db->prepare("SELECT value FROM settings WHERE key = 'fingerprint_lock_hashes'");
     $stmt->execute();
     $raw = $stmt->fetchColumn();
@@ -68,24 +38,14 @@ function fingerprint_lock_allowlist(PDO $db): array {
             $hex[] = $h;
         }
     }
-    $cached = $hex;
-    $cachedAt = $now;
     return $hex;
 }
 
 function fingerprint_lock_enabled(PDO $db): bool {
-    static $cached = null;
-    static $cachedAt = 0;
-    $now = time();
-    if ($cached !== null && ($now - $cachedAt) < 30) {
-        return $cached;
-    }
     $stmt = $db->prepare("SELECT value FROM settings WHERE key = 'fingerprint_lock_enabled'");
     $stmt->execute();
     $val = $stmt->fetchColumn();
-    $cached = ($val === '1' || $val === 1 || $val === true);
-    $cachedAt = $now;
-    return $cached;
+    return ($val === '1' || $val === 1 || $val === true);
 }
 
 /**
@@ -99,9 +59,10 @@ function fingerprint_lock_is_active(PDO $db): bool {
 }
 
 /**
+ * @param string|string[]|null $incomingHashHex one hash or a list of candidate hashes
  * @return array{allowed: bool, message?: string, reason?: string, active?: bool}
  */
-function fingerprint_lock_evaluate(?array $user, ?string $incomingHashHex, PDO $db): array {
+function fingerprint_lock_evaluate(?array $user, $incomingHashHex, PDO $db): array {
     if (!fingerprint_lock_enabled($db)) {
         return ['allowed' => true, 'active' => false];
     }
@@ -121,8 +82,18 @@ function fingerprint_lock_evaluate(?array $user, ?string $incomingHashHex, PDO $
     if ($user && !empty($user['is_admin'])) {
         return ['allowed' => true, 'active' => true, 'reason' => 'admin_bypass'];
     }
-    $incoming = normalize_fingerprint_hash((string) ($incomingHashHex ?? ''));
-    if ($incoming === null || $incoming === '') {
+    $incomingList = [];
+    $rawList = is_array($incomingHashHex) ? $incomingHashHex : [$incomingHashHex];
+    foreach ($rawList as $raw) {
+        if ($raw === null || $raw === '') {
+            continue;
+        }
+        $hex = normalize_fingerprint_hash(is_scalar($raw) ? (string) $raw : '');
+        if ($hex !== null && !in_array($hex, $incomingList, true)) {
+            $incomingList[] = $hex;
+        }
+    }
+    if ($incomingList === []) {
         return [
             'allowed' => false,
             'active' => true,
@@ -130,15 +101,17 @@ function fingerprint_lock_evaluate(?array $user, ?string $incomingHashHex, PDO $
             'reason' => 'fingerprint_missing',
         ];
     }
-    if (!in_array($incoming, $allowlist, true)) {
-        return [
-            'allowed' => false,
-            'active' => true,
-            'message' => 'This site is locked to specific browser fingerprints (hash may have changed). Guests and non-admin users without an allowed hash cannot access spaces. Administrators can always sign in with their credentials.',
-            'reason' => 'fingerprint',
-        ];
+    foreach ($incomingList as $incoming) {
+        if (in_array($incoming, $allowlist, true)) {
+            return ['allowed' => true, 'active' => true];
+        }
     }
-    return ['allowed' => true, 'active' => true];
+    return [
+        'allowed' => false,
+        'active' => true,
+        'message' => 'This site is locked to specific browser fingerprints (hash may have changed). Guests and non-admin users without an allowed hash cannot access spaces. Administrators can always sign in with their credentials.',
+        'reason' => 'fingerprint',
+    ];
 }
 
 /**
@@ -152,7 +125,7 @@ function require_fingerprint_lock_access(?array $user = null, ?array $jsonBody =
     if ($user === null && function_exists('getAuthenticatedUser')) {
         $user = getAuthenticatedUser();
     }
-    $incoming = fingerprint_hash_from_request($jsonBody);
+    $incoming = fingerprint_hashes_from_request($jsonBody);
     $result = fingerprint_lock_evaluate($user, $incoming, $db);
     if (!empty($result['allowed'])) {
         return;

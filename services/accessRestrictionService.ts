@@ -1,5 +1,6 @@
 import type { AccessRestrictions } from '../types';
 import { resolveApiBase } from './apiHelpers';
+import { fingerprintAccessHeaders, readKnownFingerprintHashes, normalizeFingerprintHash } from './fingerprintService';
 
 const API_BASE = resolveApiBase();
 
@@ -49,11 +50,19 @@ export async function checkAccessRestriction(
   id: string,
   fingerprintHash?: string | null
 ): Promise<AccessRestrictionCheckResult> {
+  const hashes = readKnownFingerprintHashes();
+  const extra = fingerprintHash ? normalizeFingerprintHash(fingerprintHash) : null;
+  if (extra && !hashes.includes(extra)) hashes.unshift(extra);
   const response = await fetch(`${API_BASE}/access-restrictions/check`, {
     method: 'POST',
     credentials: 'include',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ entityType, id, fingerprintHash: fingerprintHash || undefined }),
+    headers: fingerprintAccessHeaders({ 'Content-Type': 'application/json' }),
+    body: JSON.stringify({
+      entityType,
+      id,
+      fingerprintHash: hashes[0] || extra || undefined,
+      fingerprintHashes: hashes.length ? hashes : undefined,
+    }),
   });
   const data = await response.json().catch(() => ({}));
   if (response.status === 404) {
