@@ -121,15 +121,25 @@ sequenceDiagram
 | `scripts/linknest_worker_lib.py` | Shared probe logic, schema helpers |
 | `scripts/schedule-monitor-workers.ps1` | Install / verify / uninstall Task Scheduler jobs |
 | `scripts/schedule-monitor-workers.bat` | Wrapper for the PowerShell installer |
+| `scripts/ensure-python-runtime.ps1` | Download embeddable CPython into `bin/python` (Windows) |
 | `api/monitor_check_jobs_lib.php` | Queue force-all jobs, kick runner from PHP |
 
 ---
 
 ## Requirements
 
-- Python **3.9+**
-- Stdlib only (no `pip install`)
+- Python **3.9+** (stdlib only — no `pip install`)
 - Same SQLite DB as PHP: `data/linknest.db`
+
+### Windows — if Python is not installed
+
+The Monitoring **Scheduler** panel health-checks Python on the host and **Install tasks** stays disabled until 3.9+ is found.
+
+1. **Recommended (no admin):** use **Install Python runtime** in the scheduler panel (or run `scripts\ensure-python-runtime.ps1`). This downloads embeddable CPython into `bin\python\python.exe`.
+2. **System Python:** [python.org/downloads/windows](https://www.python.org/downloads/windows/) — check **Add python.exe to PATH**.
+3. **winget:** `winget install Python.Python.3.12 --accept-package-agreements --accept-source-agreements`
+
+Then **Recheck**, then **Install tasks**. The installer also prefers `bin\python\python.exe` over the Windows Store `python.exe` stub.
 
 ---
 

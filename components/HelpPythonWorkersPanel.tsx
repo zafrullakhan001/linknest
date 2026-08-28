@@ -143,10 +143,12 @@ python scripts\\email_sender.py --db data\\linknest.db --limit 50 --smtp-timeout
           <strong>Scheduler Setup</strong> (clock icon). No need to open Task Scheduler for day-to-day enable/disable.
         </p>
         <ul className="list-disc list-inside ml-2 space-y-1 text-xs">
+          <li><strong>Python health check</strong> — the panel probes Python 3.9+ on the Windows host (bundled <code className={code}>bin\python</code>, system PATH, or <code className={code}>py -3</code>). Recheck refreshes this.</li>
+          <li><strong>Install Python</strong> — Windows: downloads embeddable CPython into <code className={code}>bin\python</code> (no admin). Or install from python.org / <code className={code}>winget install Python.Python.3.12</code>, then Recheck. Install tasks stays disabled until Python is ready.</li>
           <li><strong>Install tasks</strong> — Windows: registers both Task Scheduler jobs (default every 1 min, 20 workers). Docker: enables entrypoint workers.</li>
           <li><strong>Enable / Disable</strong> — per Monitor Runner and Email Sender</li>
           <li><strong>Uninstall / Remove</strong> — Windows: deletes jobs from Task Scheduler. Docker: disables workers in SQLite settings</li>
-          <li><strong>Refresh status</strong> — re-checks Task Scheduler or Docker settings</li>
+          <li><strong>Refresh status</strong> — re-checks Python, Task Scheduler, or Docker settings</li>
           <li>Install/uninstall errors show in a <strong>copyable dialog</strong> (textarea + Copy text)</li>
         </ul>
         <p className="font-medium text-emerald-900 dark:text-emerald-100">Windows Task Scheduler — quick install (CLI)</p>

@@ -53,11 +53,41 @@ export interface MonitorWorkerSchedulerTask {
 
 export type MonitorWorkerSchedulerTaskKey = 'monitor_runner' | 'email_sender';
 
+export type MonitorWorkerPythonSource = 'bundled' | 'system' | 'configured' | 'missing';
+
+export interface MonitorWorkerPythonCheck {
+    id: string;
+    ok: boolean;
+    label: string;
+    detail: string;
+}
+
+export interface MonitorWorkerPythonHealth {
+    available: boolean;
+    meets_min: boolean;
+    min_version: string;
+    version: string | null;
+    path: string | null;
+    source: MonitorWorkerPythonSource;
+    scripts_ready: boolean;
+    scripts: {
+        monitor_runner?: boolean;
+        email_sender?: boolean;
+        lib?: boolean;
+    };
+    can_install: boolean;
+    install_url?: string;
+    winget_command?: string;
+    message: string;
+    checks: MonitorWorkerPythonCheck[];
+}
+
 export interface MonitorWorkerSchedulerStatus {
     platform: 'windows' | 'linux' | 'docker' | 'unknown';
     scheduler_applicable: boolean;
     python_ready: boolean | null;
-    status: 'ok' | 'not_installed' | 'disabled' | 'partial' | 'unavailable';
+    python?: MonitorWorkerPythonHealth;
+    status: 'ok' | 'not_installed' | 'disabled' | 'partial' | 'unavailable' | 'python_missing';
     message: string;
     tasks: {
         monitor_runner: MonitorWorkerSchedulerTask;
@@ -401,6 +431,30 @@ export const monitoringService = {
         return {
             scheduler: data.scheduler as MonitorWorkerSchedulerStatus,
             message: data.message || 'Scheduler tasks removed.',
+            already: data.already,
+        };
+    },
+
+    async installWorkerPythonRuntime(): Promise<{
+        scheduler: MonitorWorkerSchedulerStatus;
+        message: string;
+        already?: boolean;
+    }> {
+        const response = await fetch('api/monitors.php/worker-python-install', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({}),
+        });
+        const data = await response.json().catch(() => ({}));
+        if (!response.ok) {
+            throw new Error(data.error || 'Failed to install Python runtime');
+        }
+        if (!data.scheduler) {
+            throw new Error('Scheduler status missing from response');
+        }
+        return {
+            scheduler: data.scheduler as MonitorWorkerSchedulerStatus,
+            message: data.message || 'Python runtime installed.',
             already: data.already,
         };
     },

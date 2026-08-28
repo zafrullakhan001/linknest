@@ -1,6 +1,7 @@
 import React, { useState, useEffect, useCallback, useRef, useMemo } from 'react';
 import { createPortal } from 'react-dom';
 import { Monitor, MonitorLog, MonitorForceEngine, MonitorCheckJob, MonitorWorkerSchedulerStatus, MonitorWorkerSchedulerTaskKey, monitoringService } from '../services/monitoringService';
+import { MonitorSchedulerPythonHealthCard } from './MonitorSchedulerPythonHealth';
 import { MonitorForm } from './MonitorForm';
 import { MonitorBulkImportDialog } from './MonitorBulkImportDialog';
 import { MonitorSslBulkImportDialog } from './MonitorSslBulkImportDialog';
@@ -125,6 +126,7 @@ export const MonitoringDashboard: React.FC = () => {
     const [schedulerTaskToggling, setSchedulerTaskToggling] = useState<MonitorWorkerSchedulerTaskKey | null>(null);
     const [schedulerInstalling, setSchedulerInstalling] = useState(false);
     const [schedulerUninstalling, setSchedulerUninstalling] = useState(false);
+    const [schedulerPythonInstalling, setSchedulerPythonInstalling] = useState(false);
     const [schedulerMessageDialog, setSchedulerMessageDialog] = useState<{
         title: string;
         message: string;
@@ -181,6 +183,9 @@ export const MonitoringDashboard: React.FC = () => {
         return false;
     }, [isAdmin, workerSchedulerStatus]);
 
+    const pythonRuntimeReady = !workerSchedulerStatus?.python || workerSchedulerStatus.python.available === true;
+    const pythonRuntimeMissing = !!workerSchedulerStatus?.python && workerSchedulerStatus.python.available !== true;
+
     const schedulerUninstallAvailable = useMemo(() => {
         if (!isAdmin || !workerSchedulerStatus) {
             return false;
@@ -225,6 +230,15 @@ export const MonitoringDashboard: React.FC = () => {
     const installSchedulerTasks = useCallback(async () => {
         if (!isAdmin || !workerSchedulerStatus) return;
         const isDocker = workerSchedulerStatus.platform === 'docker';
+        if (!isDocker && workerSchedulerStatus.python && workerSchedulerStatus.python.available !== true) {
+            showSchedulerActionMessage(
+                'Python required',
+                workerSchedulerStatus.python.message +
+                    '\n\nInstall Python first (Install Python runtime in this panel, or python.org), then Recheck, then Install tasks.',
+                'error'
+            );
+            return;
+        }
         const missing = [];
         if (!workerSchedulerStatus.tasks.monitor_runner?.exists) missing.push('Monitor Runner');
         if (!workerSchedulerStatus.tasks.email_sender?.exists) missing.push('Email Sender');
@@ -262,6 +276,33 @@ export const MonitoringDashboard: React.FC = () => {
             setSchedulerInstalling(false);
         }
     }, [isAdmin, workerSchedulerStatus, showSchedulerActionMessage]);
+
+    const installPythonRuntime = useCallback(async () => {
+        if (!isAdmin) return;
+        if (!window.confirm(
+            'Download embeddable Python 3.12 into this LinkNest folder (bin\\python)?\n\n' +
+            'No administrator rights needed. Task Scheduler will use this runtime. ' +
+            'The Windows host needs internet access (~11 MB).'
+        )) {
+            return;
+        }
+        setSchedulerPythonInstalling(true);
+        try {
+            const result = await monitoringService.installWorkerPythonRuntime();
+            setWorkerSchedulerStatus(result.scheduler);
+            setSchedulerPanelVisible(true);
+            showSchedulerActionMessage(
+                result.already ? 'Python already installed' : 'Python installed',
+                result.message,
+                'success'
+            );
+        } catch (error: unknown) {
+            const message = error instanceof Error ? error.message : 'Failed to install Python runtime';
+            showSchedulerActionMessage('Python install failed', message, 'error');
+        } finally {
+            setSchedulerPythonInstalling(false);
+        }
+    }, [isAdmin, showSchedulerActionMessage]);
 
     const renderSchedulerTaskRow = useCallback((
         taskKey: MonitorWorkerSchedulerTaskKey,
@@ -331,6 +372,14 @@ export const MonitoringDashboard: React.FC = () => {
         if (!workerSchedulerStatus?.scheduler_applicable) {
             return true;
         }
+        if (workerSchedulerStatus.python && workerSchedulerStatus.python.available !== true) {
+            const hint = workerSchedulerStatus.install_hint ?? 'Install Python 3.9+ first, then enable Task Scheduler jobs.';
+            return window.confirm(
+                `${workerSchedulerStatus.python.message}\n\n` +
+                `${hint}\n\n` +
+                'Proceed anyway? A one-time kick may still fail if Python is missing.'
+            );
+        }
         if (workerSchedulerStatus.python_ready !== false) {
             return true;
         }
@@ -345,6 +394,9 @@ export const MonitoringDashboard: React.FC = () => {
     const showWorkerSchedulerBanner = useMemo(() => {
         if (!workerSchedulerStatus?.scheduler_applicable) {
             return false;
+        }
+        if (workerSchedulerStatus.python && workerSchedulerStatus.python.available !== true) {
+            return true;
         }
         if (workerSchedulerStatus.python_ready === false) {
             return true;
@@ -1932,7 +1984,9 @@ export const MonitoringDashboard: React.FC = () => {
                                 }`}
                                 title={
                                     showWorkerSchedulerBanner
-                                        ? 'Task Scheduler — Python workers need attention'
+                                        ? (pythonRuntimeMissing
+                                            ? 'Task Scheduler — Python is not installed'
+                                            : 'Task Scheduler — Python workers need attention')
                                         : 'Task Scheduler — enable or disable Python worker tasks'
                                 }
                             >
@@ -1995,7 +2049,12 @@ export const MonitoringDashboard: React.FC = () => {
                                 type="button"
                                 onClick={() => {
                                     if (forceEngine !== 'python') {
-                                        if (workerSchedulerStatus?.python_ready === false) {
+                                        if (workerSchedulerStatus?.python && workerSchedulerStatus.python.available !== true) {
+                                            const proceed = window.confirm(
+                                                `${workerSchedulerStatus.python.message}\n\nInstall Python first from the Scheduler panel. Switch to Py anyway?`
+                                            );
+                                            if (!proceed) return;
+                                        } else if (workerSchedulerStatus?.python_ready === false) {
                                             const proceed = window.confirm(
                                                 `${workerSchedulerStatus.message}\n\nSwitch to Py anyway? Fix Task Scheduler first for reliable background checks.`
                                             );
@@ -3413,13 +3472,14 @@ export const MonitoringDashboard: React.FC = () => {
                                 <p className="text-xs font-bold text-slate-700 dark:text-slate-200">In-app controls (admin)</p>
                                 <ul className="text-xs text-slate-600 dark:text-slate-400 list-disc list-inside space-y-1">
                                     <li><strong>Scheduler</strong> chip (toolbar) — opens the floating status panel (amber = needs attention, green = healthy)</li>
-                                    <li><strong>Install tasks</strong> — Windows: registers <em>LinkNest - Monitor Runner</em> + <em>Email Sender</em> (default every 1 min, 20 workers). Docker: enables both entrypoint workers.</li>
+                                    <li><strong>Install Python</strong> — Windows: downloads a bundled Python 3.12 into <code className="bg-slate-100 dark:bg-[#333] px-1 rounded">bin\python</code> when the host has no Python 3.9+</li>
+                            <li><strong>Install tasks</strong> — Windows: registers <em>LinkNest - Monitor Runner</em> + <em>Email Sender</em> (default every 1 min, 20 workers). Disabled until Python is ready. Docker: enables both entrypoint workers.</li>
                                     <li><strong>Enable / Disable</strong> — per worker without opening Task Scheduler (Windows) or restarting the container (Docker)</li>
                                     <li><strong>Uninstall / Remove</strong> — Windows: deletes both Task Scheduler jobs. Docker: disables both workers in settings</li>
                                     <li><strong>Refresh status</strong> — re-probes Task Scheduler or Docker worker settings</li>
                                 </ul>
                                 <p className="text-[10px] text-slate-500 leading-relaxed">
-                                    Requires <strong>Python 3.9+</strong> on the host. On Windows/XAMPP, Apache/PHP must run as a user allowed to
+                                    Requires <strong>Python 3.9+</strong> on the host (the scheduler panel health-checks this and can install a bundled runtime on Windows). On Windows/XAMPP, Apache/PHP must run as a user allowed to
                                     create or change scheduled tasks (or set <code className="bg-slate-100 dark:bg-[#333] px-1 rounded">monitor_worker_task_user</code> below).
                                 </p>
                             </div>
@@ -3440,6 +3500,16 @@ export const MonitoringDashboard: React.FC = () => {
                                                 {workerSchedulerLoading ? 'Checking…' : 'Refresh status'}
                                             </button>
                                         </div>
+                                        {workerSchedulerStatus.python && (
+                                            <MonitorSchedulerPythonHealthCard
+                                                python={workerSchedulerStatus.python}
+                                                variant="modal"
+                                                isAdmin={isAdmin}
+                                                installing={false}
+                                                checking={workerSchedulerLoading}
+                                                onInstall={installPythonRuntime}
+                                            />
+                                        )}
                                         <div className="space-y-2">
                                             {renderSchedulerTaskRow('monitor_runner', 'Monitor Runner', 'modal')}
                                             {renderSchedulerTaskRow('email_sender', 'Email Sender', 'modal')}
@@ -3513,17 +3583,27 @@ export const MonitoringDashboard: React.FC = () => {
                                 {workerSchedulerStatus?.platform === 'windows' && (
                                     <div className="space-y-2 rounded-2xl border border-slate-200 dark:border-[#333] bg-slate-50 dark:bg-[#252525] p-4">
                                         <div className="flex flex-wrap items-center justify-between gap-2">
-                                            <p className="text-xs font-bold text-slate-700 dark:text-slate-200">Installed tasks</p>
+                                            <p className="text-xs font-bold text-slate-700 dark:text-slate-200">Prerequisites &amp; installed tasks</p>
                                             <button
                                                 type="button"
                                                 onClick={() => loadWorkerSchedulerStatus()}
-                                                disabled={workerSchedulerLoading}
+                                                disabled={workerSchedulerLoading || schedulerPythonInstalling}
                                                 className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-lg text-[10px] font-bold uppercase tracking-wide bg-white dark:bg-[#333] border border-slate-200 dark:border-[#444] text-slate-600 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-[#3a3a3a] transition-colors disabled:opacity-50"
                                             >
                                                 <FaSyncAlt size={9} {...({ className: workerSchedulerLoading ? 'animate-spin' : '' } as any)} />
                                                 {workerSchedulerLoading ? 'Checking…' : 'Refresh status'}
                                             </button>
                                         </div>
+                                        {workerSchedulerStatus.python && (
+                                            <MonitorSchedulerPythonHealthCard
+                                                python={workerSchedulerStatus.python}
+                                                variant="modal"
+                                                isAdmin={isAdmin}
+                                                installing={schedulerPythonInstalling}
+                                                checking={workerSchedulerLoading}
+                                                onInstall={installPythonRuntime}
+                                            />
+                                        )}
                                         <div className="space-y-2">
                                             {renderSchedulerTaskRow('monitor_runner', 'Monitor Runner', 'modal')}
                                             {renderSchedulerTaskRow('email_sender', 'Email Sender', 'modal')}
@@ -3532,8 +3612,9 @@ export const MonitoringDashboard: React.FC = () => {
                                             <button
                                                 type="button"
                                                 onClick={installSchedulerTasks}
-                                                disabled={schedulerInstalling || schedulerUninstalling || workerSchedulerLoading}
+                                                disabled={schedulerInstalling || schedulerUninstalling || schedulerPythonInstalling || workerSchedulerLoading || !pythonRuntimeReady}
                                                 className="mt-3 inline-flex items-center gap-1.5 px-3 py-2 rounded-lg text-[10px] font-bold uppercase tracking-wide bg-purple-600 hover:bg-purple-700 text-white transition-colors disabled:opacity-50"
+                                                title={!pythonRuntimeReady ? 'Install Python first' : undefined}
                                             >
                                                 <FaPlus size={9} />
                                                 {schedulerInstalling ? 'Installing…' : 'Install tasks'}
@@ -3543,7 +3624,7 @@ export const MonitoringDashboard: React.FC = () => {
                                             <button
                                                 type="button"
                                                 onClick={uninstallSchedulerTasks}
-                                                disabled={schedulerInstalling || schedulerUninstalling || workerSchedulerLoading}
+                                                disabled={schedulerInstalling || schedulerUninstalling || schedulerPythonInstalling || workerSchedulerLoading}
                                                 className={`${schedulerInstallNeeded ? '' : 'mt-3 '}inline-flex items-center gap-1.5 px-3 py-2 rounded-lg text-[10px] font-bold uppercase tracking-wide border border-red-300 dark:border-red-700 text-red-700 dark:text-red-300 bg-white dark:bg-red-950/30 hover:bg-red-50 dark:hover:bg-red-950/50 transition-colors disabled:opacity-50`}
                                             >
                                                 <FaTrash size={9} />
@@ -3552,9 +3633,11 @@ export const MonitoringDashboard: React.FC = () => {
                                         )}
                                         {isAdmin && (
                                             <p className="text-[10px] text-slate-500 leading-relaxed">
-                                                {schedulerInstallNeeded
-                                                    ? 'Install registers both Monitor Runner and Email Sender jobs. Enable / Disable controls tasks after install. Requires Apache/PHP to run as a Windows user with Task Scheduler permissions.'
-                                                    : 'Enable or disable tasks here without opening Task Scheduler. Requires Apache/PHP to run as a Windows user with permission to change scheduled tasks.'}
+                                                {!pythonRuntimeReady
+                                                    ? 'Install Python 3.9+ first. Then Install registers both Monitor Runner and Email Sender jobs.'
+                                                    : (schedulerInstallNeeded
+                                                        ? 'Install registers both Monitor Runner and Email Sender jobs. Enable / Disable controls tasks after install. Requires Apache/PHP to run as a Windows user with Task Scheduler permissions.'
+                                                        : 'Enable or disable tasks here without opening Task Scheduler. Requires Apache/PHP to run as a Windows user with permission to change scheduled tasks.')}
                                             </p>
                                         )}
                                     </div>
@@ -3590,7 +3673,7 @@ export const MonitoringDashboard: React.FC = () => {
                                     <code className="bg-slate-100 dark:bg-[#333] px-1 rounded">uninstall</code>
                                 </p>
                                 <ul className="text-xs text-slate-600 dark:text-slate-400 list-disc list-inside space-y-1">
-                                    <li>Requires Python 3.9+ on the Windows host</li>
+                                    <li>Requires Python 3.9+ on the Windows host — use <strong>Install Python runtime</strong> in this dialog if Python is missing, or install from python.org</li>
                                     <li>Default install: every <strong>1 minute</strong>, <strong>20</strong> parallel workers (pass <code className="bg-slate-100 dark:bg-[#333] px-1 rounded">2</code> as the second bat argument for every 2 minutes)</li>
                                     <li>Tasks: <strong>LinkNest - Monitor Runner</strong> and <strong>LinkNest - Email Sender</strong></li>
                                     <li>Install from the panel above, or CLI: <code className="bg-slate-100 dark:bg-[#333] px-1 rounded">scripts\schedule-monitor-workers.bat</code></li>
@@ -3820,11 +3903,15 @@ ON CONFLICT(key) DO UPDATE SET value = excluded.value, updated_at = excluded.upd
                             )}
                             <span className="font-bold truncate">
                                 {showWorkerSchedulerBanner
-                                    ? (workerSchedulerStatus.python_ready === false
+                                    ? (pythonRuntimeMissing
                                         ? (workerSchedulerStatus.platform === 'docker'
-                                            ? 'Docker workers — off'
-                                            : 'Task Scheduler — workers off')
-                                        : 'Email sender task issue')
+                                            ? 'Docker workers — Python missing'
+                                            : 'Task Scheduler — Python not found')
+                                        : (workerSchedulerStatus.python_ready === false
+                                            ? (workerSchedulerStatus.platform === 'docker'
+                                                ? 'Docker workers — off'
+                                                : 'Task Scheduler — workers off')
+                                            : 'Email sender task issue'))
                                     : (workerSchedulerStatus.platform === 'docker'
                                         ? 'Docker workers — running'
                                         : 'Task Scheduler — workers running')}
@@ -3844,6 +3931,18 @@ ON CONFLICT(key) DO UPDATE SET value = excluded.value, updated_at = excluded.upd
                         <p className="text-[11px] leading-relaxed opacity-90">
                             {workerSchedulerStatus.message}
                         </p>
+                        {workerSchedulerStatus.python && (
+                            <div className="mt-2.5">
+                                <MonitorSchedulerPythonHealthCard
+                                    python={workerSchedulerStatus.python}
+                                    variant="float"
+                                    isAdmin={isAdmin}
+                                    installing={schedulerPythonInstalling}
+                                    checking={workerSchedulerLoading}
+                                    onInstall={installPythonRuntime}
+                                />
+                            </div>
+                        )}
                         <div className="mt-2.5 space-y-2">
                             {renderSchedulerTaskRow('monitor_runner', 'Monitor Runner', 'float')}
                             {renderSchedulerTaskRow('email_sender', 'Email Sender', 'float')}
@@ -3852,8 +3951,9 @@ ON CONFLICT(key) DO UPDATE SET value = excluded.value, updated_at = excluded.upd
                             <button
                                 type="button"
                                 onClick={installSchedulerTasks}
-                                disabled={schedulerInstalling || schedulerUninstalling || workerSchedulerLoading}
+                                disabled={schedulerInstalling || schedulerUninstalling || schedulerPythonInstalling || workerSchedulerLoading || (workerSchedulerStatus.platform === 'windows' && !pythonRuntimeReady)}
                                 className="mt-2.5 w-full inline-flex items-center justify-center gap-1.5 px-3 py-2 rounded-lg text-[10px] font-bold uppercase tracking-wide bg-purple-600 hover:bg-purple-700 text-white transition-colors disabled:opacity-50"
+                                title={workerSchedulerStatus.platform === 'windows' && !pythonRuntimeReady ? 'Install Python first' : undefined}
                             >
                                 <FaPlus size={9} />
                                 {schedulerInstalling ? 'Installing tasks…' : (workerSchedulerStatus.platform === 'docker' ? 'Install / enable workers' : 'Install tasks')}
@@ -3877,7 +3977,7 @@ ON CONFLICT(key) DO UPDATE SET value = excluded.value, updated_at = excluded.upd
                                 Use Enable / Disable to control scheduled Python workers without opening Task Scheduler.
                             </p>
                         )}
-                        {workerSchedulerStatus.install_hint && (
+                        {workerSchedulerStatus.install_hint && !pythonRuntimeMissing && (
                             <p className="mt-2.5 text-[10px] leading-relaxed opacity-85">
                                 {workerSchedulerStatus.install_hint}
                             </p>
@@ -3918,11 +4018,11 @@ ON CONFLICT(key) DO UPDATE SET value = excluded.value, updated_at = excluded.upd
                             <button
                                 type="button"
                                 onClick={() => loadWorkerSchedulerStatus()}
-                                disabled={workerSchedulerLoading}
+                                disabled={workerSchedulerLoading || schedulerPythonInstalling}
                                 className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-[10px] font-bold uppercase tracking-wide bg-white/80 dark:bg-amber-950/50 border border-amber-300 dark:border-amber-700 text-amber-900 dark:text-amber-100 hover:bg-white dark:hover:bg-amber-900/60 transition-colors disabled:opacity-50"
                             >
-                                <FaSyncAlt size={9} {...({ className: workerSchedulerLoading ? 'animate-spin' : '' } as any)} />
-                                {workerSchedulerLoading ? 'Checking…' : 'Recheck'}
+                                <FaSyncAlt size={9} {...({ className: workerSchedulerLoading || schedulerPythonInstalling ? 'animate-spin' : '' } as any)} />
+                                {workerSchedulerLoading || schedulerPythonInstalling ? 'Checking…' : 'Recheck'}
                             </button>
                         </div>
                     </div>

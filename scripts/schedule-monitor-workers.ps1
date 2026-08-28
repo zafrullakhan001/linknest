@@ -93,26 +93,62 @@ function Resolve-LinkNestRoot {
     return (Resolve-Path -LiteralPath (Join-Path $here '..')).Path
 }
 
+function Test-UsablePythonExe {
+    param([string]$Path)
+    if (-not $Path) { return $false }
+    if (-not (Test-Path -LiteralPath $Path)) { return $false }
+    if ($Path -match 'WindowsApps\\') { return $false }
+    try {
+        $item = Get-Item -LiteralPath $Path -ErrorAction Stop
+        if ($item.Length -gt 0 -and $item.Length -lt 50000) { return $false }
+    } catch {
+        return $false
+    }
+    return $true
+}
+
 function Resolve-PythonExe {
     param([string]$Preferred)
-    if ($Preferred -and (Test-Path -LiteralPath $Preferred)) {
+    if ($Preferred -and (Test-UsablePythonExe $Preferred)) {
         return (Resolve-Path -LiteralPath $Preferred).Path
     }
-    $cmd = Get-Command $Preferred -ErrorAction SilentlyContinue
-    if ($cmd -and $cmd.Source) {
-        # Prefer real python.exe over Windows Store stub
-        $src = [string]$cmd.Source
-        if ($src -match 'WindowsApps\\python\.exe$') {
-            $cmd3 = Get-Command python3 -ErrorAction SilentlyContinue
-            if ($cmd3 -and $cmd3.Source -and ($cmd3.Source -notmatch 'WindowsApps\\')) {
-                return $cmd3.Source
-            }
-        }
-        return $src
+
+    $bundled = Join-Path $root 'bin\python\python.exe'
+    if (Test-UsablePythonExe $bundled) {
+        return (Resolve-Path -LiteralPath $bundled).Path
     }
-    $cmd = Get-Command python3 -ErrorAction SilentlyContinue
-    if ($cmd -and $cmd.Source) { return $cmd.Source }
-    throw "Python not found. Install Python 3.9+ (and enable PATH), or pass -Python with the full path to python.exe."
+
+    foreach ($name in @($Preferred, 'python', 'python3')) {
+        if (-not $name) { continue }
+        $cmd = Get-Command $name -ErrorAction SilentlyContinue
+        if ($cmd -and $cmd.Source -and (Test-UsablePythonExe ([string]$cmd.Source))) {
+            return [string]$cmd.Source
+        }
+    }
+
+    $candidates = @(
+        'C:\Program Files\Python314\python.exe',
+        'C:\Program Files\Python313\python.exe',
+        'C:\Program Files\Python312\python.exe',
+        'C:\Program Files\Python311\python.exe',
+        'C:\Program Files\Python310\python.exe'
+    )
+    if ($env:LOCALAPPDATA) {
+        $candidates += @(
+            (Join-Path $env:LOCALAPPDATA 'Programs\Python\Python314\python.exe'),
+            (Join-Path $env:LOCALAPPDATA 'Programs\Python\Python313\python.exe'),
+            (Join-Path $env:LOCALAPPDATA 'Programs\Python\Python312\python.exe'),
+            (Join-Path $env:LOCALAPPDATA 'Programs\Python\Python311\python.exe'),
+            (Join-Path $env:LOCALAPPDATA 'Programs\Python\Python310\python.exe')
+        )
+    }
+    foreach ($cand in $candidates) {
+        if (Test-UsablePythonExe $cand) {
+            return (Resolve-Path -LiteralPath $cand).Path
+        }
+    }
+
+    throw "Python not found. Use Install Python in the Monitoring scheduler panel, run scripts\ensure-python-runtime.ps1, install Python 3.9+ (and enable PATH), or pass -Python with the full path to python.exe."
 }
 
 function Get-PythonVersionInfo {

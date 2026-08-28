@@ -4,6 +4,7 @@
  */
 
 require_once __DIR__ . '/config.php';
+require_once __DIR__ . '/monitor_check_jobs_lib.php';
 
 const MONITOR_WORKER_TASK_MONITOR = 'LinkNest - Monitor Runner';
 const MONITOR_WORKER_TASK_EMAIL = 'LinkNest - Email Sender';
@@ -112,7 +113,7 @@ function monitorWorkerSchedulerBuildDockerStatus(): array {
         $pythonReady = true;
     }
 
-    return [
+    return monitorWorkerSchedulerAttachPythonHealth([
         'platform' => 'docker',
         'scheduler_applicable' => true,
         'python_ready' => (bool)$pythonReady,
@@ -129,7 +130,7 @@ function monitorWorkerSchedulerBuildDockerStatus(): array {
             'interval_seconds' => $interval,
             'runtime_control' => true,
         ],
-    ];
+    ]);
 }
 
 /**
@@ -310,7 +311,7 @@ function monitorWorkerSchedulerBuildStatus(): array {
     }
 
     if (stripos(PHP_OS, 'WIN') !== 0) {
-        return [
+        return monitorWorkerSchedulerAttachPythonHealth([
             'platform' => 'linux',
             'scheduler_applicable' => true,
             'python_ready' => null,
@@ -321,7 +322,7 @@ function monitorWorkerSchedulerBuildStatus(): array {
                 'email_sender' => monitorWorkerSchedulerQueryWindowsTask(MONITOR_WORKER_TASK_EMAIL),
             ],
             'install_hint' => 'See docs/PYTHON_WORKERS.md (Linux cron examples).',
-        ];
+        ]);
     }
 
     $monitor = monitorWorkerSchedulerQueryWindowsTask(MONITOR_WORKER_TASK_MONITOR);
@@ -356,7 +357,7 @@ function monitorWorkerSchedulerBuildStatus(): array {
         $pythonReady = true;
     }
 
-    return [
+    return monitorWorkerSchedulerAttachPythonHealth([
         'platform' => 'windows',
         'scheduler_applicable' => true,
         'python_ready' => (bool)$pythonReady,
@@ -367,7 +368,38 @@ function monitorWorkerSchedulerBuildStatus(): array {
             'email_sender' => $email,
         ],
         'install_hint' => 'Use Install tasks in the scheduler panel, run scripts\\schedule-monitor-workers.bat from the project root, or enable tasks in Task Scheduler → Task Scheduler Library.',
-    ];
+    ]);
+}
+
+/**
+ * Attach Python interpreter health and, on Windows, block scheduling until Python 3.9+ is present.
+ *
+ * @param array<string,mixed> $status
+ * @return array<string,mixed>
+ */
+function monitorWorkerSchedulerAttachPythonHealth(array $status): array {
+    $health = monitorWorkerPythonHealth();
+    $status['python'] = $health;
+
+    $platform = $status['platform'] ?? '';
+    if (!empty($health['available'])) {
+        return $status;
+    }
+
+    $status['python_ready'] = false;
+    if ($platform === 'windows') {
+        $status['status'] = 'python_missing';
+        $status['message'] = $health['message'];
+        $status['install_hint'] = !empty($health['can_install'])
+            ? 'Use Install Python in the scheduler panel to download a bundled Python 3.12 runtime into bin\\python (no admin required), then Install tasks. Or install system Python from python.org and Recheck.'
+            : 'Install Python 3.9+ from https://www.python.org/downloads/windows/ (enable Add python.exe to PATH), then Recheck and Install tasks.';
+    } elseif ($platform === 'linux') {
+        $status['status'] = 'python_missing';
+        $status['message'] = $health['message'];
+        $status['install_hint'] = 'Install Python 3.9+ (python3) on the host, then add cron jobs for monitor_runner.py and email_sender.py — see docs/PYTHON_WORKERS.md.';
+    }
+
+    return $status;
 }
 
 function monitorWorkerSchedulerResolveTaskKey(string $key): ?string {
@@ -527,6 +559,19 @@ function monitorWorkerSchedulerInstallTasks(?int $intervalMinutes = null, ?int $
 
     if (stripos(PHP_OS, 'WIN') !== 0) {
         return ['ok' => false, 'error' => 'Task Scheduler install is Windows-only.', 'http' => 400];
+    }
+
+    $pythonHealth = monitorWorkerPythonHealth();
+    if (empty($pythonHealth['available'])) {
+        $hint = !empty($pythonHealth['can_install'])
+            ? 'Use Install Python in the scheduler panel first (downloads a bundled runtime into bin\\python), or install Python 3.9+ from python.org and Recheck.'
+            : 'Install Python 3.9+ from https://www.python.org/downloads/windows/ (enable Add python.exe to PATH), then Recheck.';
+        return [
+            'ok' => false,
+            'error' => ($pythonHealth['message'] ?? 'Python 3.9+ was not found.') . "\n\n" . $hint,
+            'http' => 400,
+            'scheduler' => monitorWorkerSchedulerBuildStatus(),
+        ];
     }
 
     $root = monitorWorkerSchedulerProjectRoot();
@@ -952,5 +997,146 @@ function monitorWorkerSchedulerHandleUninstall(): void {
         'already' => !empty($result['already']),
         'message' => $result['message'] ?? 'Scheduler tasks removed.',
         'scheduler' => $result['scheduler'] ?? monitorWorkerSchedulerBuildStatus(),
+    ]);
+}
+
+/**
+ * Download embeddable CPython into bin/python via scripts/ensure-python-runtime.ps1 (Windows).
+ *
+ * @return array{ok:bool,error?:string,http?:int,message?:string,already?:bool,scheduler?:array,output_tail?:string[],python?:array}
+ */
+function monitorWorkerSchedulerInstallPythonRuntime(): array {
+    if (monitorWorkerSchedulerIsDocker()) {
+        return [
+            'ok' => false,
+            'error' => 'Python is provided by the LinkNest Docker image. Rebuild the image if python3 is missing.',
+            'http' => 400,
+        ];
+    }
+    if (stripos(PHP_OS, 'WIN') !== 0) {
+        return [
+            'ok' => false,
+            'error' => 'In-app Python install is Windows-only. Install python3 with your package manager, then Recheck.',
+            'http' => 400,
+        ];
+    }
+
+    $existing = monitorWorkerPythonHealth();
+    if (!empty($existing['available'])) {
+        return [
+            'ok' => true,
+            'already' => true,
+            'message' => $existing['message'] ?? 'Python is already available.',
+            'scheduler' => monitorWorkerSchedulerBuildStatus(),
+            'python' => $existing,
+        ];
+    }
+
+    $root = monitorWorkerSchedulerProjectRoot();
+    $ps1 = $root . DIRECTORY_SEPARATOR . 'scripts' . DIRECTORY_SEPARATOR . 'ensure-python-runtime.ps1';
+    if (!is_file($ps1)) {
+        return [
+            'ok' => false,
+            'error' => 'Installer script not found: scripts\\ensure-python-runtime.ps1. Install Python 3.9+ from https://www.python.org/downloads/windows/ instead.',
+            'http' => 500,
+        ];
+    }
+
+    $powershell = monitorWorkerSchedulerResolvePowerShell();
+    if (!$powershell) {
+        return ['ok' => false, 'error' => 'PowerShell was not found on this host.', 'http' => 500];
+    }
+
+    $dataDir = defined('DB_DIR') ? DB_DIR : ($root . DIRECTORY_SEPARATOR . 'data');
+    if (!is_dir($dataDir)) {
+        @mkdir($dataDir, 0755, true);
+    }
+    $logFile = $dataDir . DIRECTORY_SEPARATOR . 'monitor_scheduler_install.log';
+
+    $argList = [
+        '-NoProfile',
+        '-ExecutionPolicy', 'Bypass',
+        '-File', $ps1,
+        '-ProjectRoot', $root,
+        '-FailIfMissing',
+    ];
+
+    $cmd = escapeshellarg($powershell);
+    foreach ($argList as $arg) {
+        $cmd .= ' ' . escapeshellarg((string)$arg);
+    }
+    $cmd .= ' 2>&1';
+
+    if (function_exists('set_time_limit')) {
+        @set_time_limit(180);
+    }
+
+    $out = [];
+    $code = 1;
+    @exec($cmd, $out, $code);
+
+    $logBody = date('c') . " python-runtime install exit={$code}\n" . implode("\n", array_map('strval', $out)) . "\n\n";
+    @file_put_contents($logFile, $logBody, FILE_APPEND);
+
+    $bundled = $root . DIRECTORY_SEPARATOR . 'bin' . DIRECTORY_SEPARATOR . 'python' . DIRECTORY_SEPARATOR . 'python.exe';
+    if ($code === 0 && monitorWorkerIsUsablePythonExe($bundled)) {
+        setSetting('monitor_worker_python_path', $bundled);
+    }
+
+    $health = monitorWorkerPythonHealth();
+    if ($code !== 0 || empty($health['available'])) {
+        $tail = array_slice(array_map('strval', $out), -24);
+        $detail = trim(implode("\n", $tail));
+        $hint = 'Connect this Windows host to the internet and try again, or install Python 3.9+ from https://www.python.org/downloads/windows/ (check "Add python.exe to PATH"), then Recheck.';
+        return [
+            'ok' => false,
+            'error' => ($detail !== '' ? $detail : ($health['message'] ?? 'Python runtime install failed.')) . "\n\n" . $hint,
+            'http' => 500,
+            'scheduler' => monitorWorkerSchedulerBuildStatus(),
+            'python' => $health,
+            'output_tail' => $tail,
+        ];
+    }
+
+    return [
+        'ok' => true,
+        'message' => 'Installed bundled Python ' . ($health['version'] ?? '') . ' at bin\\python\\python.exe. You can now Install tasks.',
+        'scheduler' => monitorWorkerSchedulerBuildStatus(),
+        'python' => $health,
+        'output_tail' => array_slice(array_map('strval', $out), -12),
+    ];
+}
+
+function monitorWorkerSchedulerHandleInstallPython(): void {
+    requireAdmin();
+
+    $result = monitorWorkerSchedulerInstallPythonRuntime();
+    if (empty($result['ok'])) {
+        $payload = ['error' => $result['error'] ?? 'Failed to install Python runtime'];
+        if (!empty($result['scheduler'])) {
+            $payload['scheduler'] = $result['scheduler'];
+        }
+        if (!empty($result['python'])) {
+            $payload['python'] = $result['python'];
+        }
+        sendJSON($payload, (int)($result['http'] ?? 500));
+        return;
+    }
+
+    require_once __DIR__ . '/user_audit_helper.php';
+    logUserAudit('monitor.worker_python_install', [
+        'details' => [
+            'already' => !empty($result['already']),
+            'path' => $result['python']['path'] ?? null,
+            'version' => $result['python']['version'] ?? null,
+        ],
+    ]);
+
+    sendJSON([
+        'success' => true,
+        'already' => !empty($result['already']),
+        'message' => $result['message'] ?? 'Python runtime installed.',
+        'scheduler' => $result['scheduler'] ?? monitorWorkerSchedulerBuildStatus(),
+        'python' => $result['python'] ?? null,
     ]);
 }

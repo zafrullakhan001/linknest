@@ -7,6 +7,9 @@
     Downloads the official Windows embeddable CPython zip when missing and
     points python*._pth at bin/python-packages so vendored websockify imports.
 
+    Also used by Monitoring scheduler workers (monitor_runner / email_sender)
+    so Task Scheduler can run without a system-wide Python install.
+
 .PARAMETER ProjectRoot
     LinkNest root (parent of bin/). Default: parent of scripts/
 

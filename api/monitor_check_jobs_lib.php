@@ -160,14 +160,17 @@ function monitorWorkerDefaultPythonCandidates(): array {
     $candidates = [];
     if (stripos(PHP_OS, 'WIN') === 0) {
         $candidates[] = $root . DIRECTORY_SEPARATOR . 'bin' . DIRECTORY_SEPARATOR . 'python' . DIRECTORY_SEPARATOR . 'python.exe';
-        $candidates[] = 'C:\\Program Files\\Python312\\python.exe';
-        $candidates[] = 'C:\\Program Files\\Python311\\python.exe';
-        $candidates[] = 'C:\\Program Files\\Python310\\python.exe';
+        foreach (['314', '313', '312', '311', '310'] as $ver) {
+            $candidates[] = 'C:\\Program Files\\Python' . $ver . '\\python.exe';
+        }
         $local = getenv('LOCALAPPDATA') ?: '';
         if ($local !== '') {
-            $candidates[] = $local . '\\Programs\\Python\\Python312\\python.exe';
-            $candidates[] = $local . '\\Programs\\Python\\Python311\\python.exe';
+            foreach (['Python314', 'Python313', 'Python312', 'Python311', 'Python310'] as $dir) {
+                $candidates[] = $local . '\\Programs\\Python\\' . $dir . '\\python.exe';
+            }
         }
+        $pf86 = getenv('ProgramFiles(x86)') ?: 'C:\\Program Files (x86)';
+        $candidates[] = $pf86 . '\\Python312\\python.exe';
     } else {
         $candidates[] = '/usr/bin/python3';
         $candidates[] = '/usr/local/bin/python3';
@@ -176,12 +179,24 @@ function monitorWorkerDefaultPythonCandidates(): array {
     return $candidates;
 }
 
-function monitorWorkerFindBinary(string $name, array $candidates): ?string {
-    if (function_exists('vncGatewayFindBinary')) {
-        return vncGatewayFindBinary($name, $candidates);
+function monitorWorkerIsUsablePythonExe(?string $path): bool {
+    if (!is_string($path) || $path === '' || !is_file($path)) {
+        return false;
     }
+    $norm = str_replace('/', '\\', $path);
+    if (stripos($norm, '\\WindowsApps\\') !== false) {
+        return false;
+    }
+    $size = @filesize($path);
+    if (is_int($size) && $size > 0 && $size < 50000) {
+        return false;
+    }
+    return true;
+}
+
+function monitorWorkerFindBinary(string $name, array $candidates): ?string {
     foreach ($candidates as $path) {
-        if (is_string($path) && $path !== '' && is_file($path)) {
+        if (is_string($path) && monitorWorkerIsUsablePythonExe($path)) {
             return $path;
         }
     }
@@ -189,19 +204,224 @@ function monitorWorkerFindBinary(string $name, array $candidates): ?string {
     $out = [];
     $code = 1;
     @exec($which . ' ' . escapeshellarg($name) . ' 2>&1', $out, $code);
-    if ($code === 0 && !empty($out[0]) && is_file(trim($out[0]))) {
-        return trim($out[0]);
+    if ($code === 0) {
+        foreach ($out as $line) {
+            $candidate = trim((string)$line);
+            if (monitorWorkerIsUsablePythonExe($candidate)) {
+                return $candidate;
+            }
+        }
+    }
+    return null;
+}
+
+function monitorWorkerResolveViaPyLauncher(): ?string {
+    if (stripos(PHP_OS, 'WIN') !== 0) {
+        return null;
+    }
+    $out = [];
+    $code = 1;
+    @exec('py -3 -c "import sys; print(sys.executable)" 2>&1', $out, $code);
+    if ($code === 0 && !empty($out[0])) {
+        $exe = trim((string)$out[0]);
+        if (monitorWorkerIsUsablePythonExe($exe)) {
+            return $exe;
+        }
     }
     return null;
 }
 
 function monitorWorkerResolvePython(): ?string {
     $configured = trim((string)getSetting('monitor_worker_python_path', ''));
-    if ($configured !== '' && is_file($configured)) {
+    if ($configured !== '' && monitorWorkerIsUsablePythonExe($configured)) {
         return $configured;
     }
     return monitorWorkerFindBinary('python3', monitorWorkerDefaultPythonCandidates())
-        ?: monitorWorkerFindBinary('python', monitorWorkerDefaultPythonCandidates());
+        ?: monitorWorkerFindBinary('python', monitorWorkerDefaultPythonCandidates())
+        ?: monitorWorkerResolveViaPyLauncher();
+}
+
+/**
+ * Run python.exe -c to read version. Returns null if the binary cannot start.
+ *
+ * @return array{version:string,major:int,minor:int,meets_min:bool,executable:string}|null
+ */
+function monitorWorkerPythonProbeVersion(string $exe, int $minMajor = 3, int $minMinor = 9): ?array {
+    if (!monitorWorkerIsUsablePythonExe($exe)) {
+        return null;
+    }
+    // Avoid % and double quotes: Windows PHP escapeshellarg strips both.
+    $codeSnippet = 'import sys; v=sys.version_info; print(str(v.major)+chr(46)+str(v.minor)+chr(46)+str(v.micro)); print(sys.executable)';
+    $cmd = escapeshellarg($exe) . ' -c ' . escapeshellarg($codeSnippet) . ' 2>&1';
+    $out = [];
+    $code = 1;
+    @exec($cmd, $out, $code);
+    if ($code !== 0 || empty($out)) {
+        return null;
+    }
+    $lines = [];
+    foreach ($out as $line) {
+        $trim = trim((string)$line);
+        if ($trim !== '') {
+            $lines[] = $trim;
+        }
+    }
+    if ($lines === [] || !preg_match('/^(\d+)\.(\d+)(?:\.(\d+))?$/', $lines[0], $m)) {
+        return null;
+    }
+    $major = (int)$m[1];
+    $minor = (int)$m[2];
+    $executable = $exe;
+    if (isset($lines[1]) && monitorWorkerIsUsablePythonExe($lines[1])) {
+        $executable = $lines[1];
+    }
+    return [
+        'version' => $lines[0],
+        'major' => $major,
+        'minor' => $minor,
+        'meets_min' => ($major > $minMajor) || ($major === $minMajor && $minor >= $minMinor),
+        'executable' => $executable,
+    ];
+}
+
+/**
+ * Health check used by the scheduler panel: interpreter, version, worker scripts.
+ *
+ * @return array{
+ *   available:bool,
+ *   meets_min:bool,
+ *   min_version:string,
+ *   version:?string,
+ *   path:?string,
+ *   source:string,
+ *   scripts_ready:bool,
+ *   scripts:array<string,bool>,
+ *   can_install:bool,
+ *   install_url:string,
+ *   winget_command:string,
+ *   message:string,
+ *   checks:list<array{id:string,ok:bool,label:string,detail:string}>
+ * }
+ */
+function monitorWorkerPythonHealth(): array {
+    $root = realpath(__DIR__ . '/..') ?: (__DIR__ . '/..');
+    $minVersion = '3.9';
+    $scriptFiles = [
+        'monitor_runner' => $root . DIRECTORY_SEPARATOR . 'scripts' . DIRECTORY_SEPARATOR . 'monitor_runner.py',
+        'email_sender' => $root . DIRECTORY_SEPARATOR . 'scripts' . DIRECTORY_SEPARATOR . 'email_sender.py',
+        'lib' => $root . DIRECTORY_SEPARATOR . 'scripts' . DIRECTORY_SEPARATOR . 'linknest_worker_lib.py',
+    ];
+    $scripts = [];
+    $scriptsOk = true;
+    foreach ($scriptFiles as $key => $path) {
+        $ok = is_file($path);
+        $scripts[$key] = $ok;
+        if (!$ok) {
+            $scriptsOk = false;
+        }
+    }
+
+    $isWin = stripos(PHP_OS, 'WIN') === 0;
+    $isDocker = function_exists('monitorWorkerSchedulerIsDocker') && monitorWorkerSchedulerIsDocker();
+    $ensurePs1 = $root . DIRECTORY_SEPARATOR . 'scripts' . DIRECTORY_SEPARATOR . 'ensure-python-runtime.ps1';
+    $canInstall = $isWin && !$isDocker && is_file($ensurePs1);
+    $installUrl = 'https://www.python.org/downloads/windows/';
+    $winget = 'winget install Python.Python.3.12 --accept-package-agreements --accept-source-agreements';
+
+    $configured = trim((string)getSetting('monitor_worker_python_path', ''));
+    $path = monitorWorkerResolvePython();
+    $source = 'missing';
+    $bundled = $root . DIRECTORY_SEPARATOR . 'bin' . DIRECTORY_SEPARATOR . 'python' . DIRECTORY_SEPARATOR . 'python.exe';
+    if ($path) {
+        if ($configured !== '' && strcasecmp($configured, $path) === 0) {
+            $source = 'configured';
+        } elseif (strcasecmp($path, $bundled) === 0) {
+            $source = 'bundled';
+        } else {
+            $source = 'system';
+        }
+    }
+
+    $version = null;
+    $meetsMin = false;
+    $runOk = false;
+    if ($path) {
+        $probed = monitorWorkerPythonProbeVersion($path);
+        if ($probed !== null) {
+            $runOk = true;
+            $version = $probed['version'];
+            $meetsMin = !empty($probed['meets_min']);
+            if (!empty($probed['executable'])) {
+                $path = $probed['executable'];
+            }
+        }
+    }
+
+    $available = $runOk && $meetsMin;
+    $checks = [];
+    $checks[] = [
+        'id' => 'python',
+        'ok' => $runOk,
+        'label' => 'Python interpreter',
+        'detail' => $runOk
+            ? (($source === 'bundled' ? 'Bundled runtime' : ($source === 'configured' ? 'Configured path' : 'System Python')) . ($path ? ': ' . $path : ''))
+            : ($isWin
+                ? 'Not found. Install Python 3.9+ (bundled runtime, python.org, or winget) before scheduling workers.'
+                : 'python3 was not found on this host.'),
+    ];
+    $checks[] = [
+        'id' => 'version',
+        'ok' => $meetsMin,
+        'label' => 'Python ' . $minVersion . '+',
+        'detail' => $runOk
+            ? ($meetsMin ? ('Python ' . $version) : ('Python ' . $version . ' is too old (need ' . $minVersion . '+)'))
+            : 'Cannot check version until Python is installed.',
+    ];
+    $missingScripts = [];
+    foreach ($scripts as $key => $ok) {
+        if (!$ok) {
+            $missingScripts[] = $key . '.py';
+        }
+    }
+    $checks[] = [
+        'id' => 'scripts',
+        'ok' => $scriptsOk,
+        'label' => 'Worker scripts',
+        'detail' => $scriptsOk
+            ? 'monitor_runner.py, email_sender.py, and linknest_worker_lib.py are present.'
+            : ('Missing: ' . implode(', ', $missingScripts)),
+    ];
+
+    if ($available && $scriptsOk) {
+        $message = 'Python ' . $version . ' is ready for scheduled workers'
+            . ($source === 'bundled' ? ' (bundled in bin\\python).' : '.');
+    } elseif ($runOk && !$meetsMin) {
+        $message = 'Python ' . $version . ' is too old. LinkNest workers need Python ' . $minVersion . '+.';
+    } elseif ($runOk && !$scriptsOk) {
+        $message = 'Python is installed, but one or more worker scripts are missing from scripts/.';
+    } elseif ($isWin) {
+        $message = 'Python 3.9+ was not found on this Windows host. Install Python first — then install Task Scheduler jobs.';
+    } elseif ($isDocker) {
+        $message = 'Python 3 is not available in this container. Rebuild the LinkNest Docker image.';
+    } else {
+        $message = 'Python 3.9+ was not found. Install python3, then schedule monitor_runner.py and email_sender.py with cron.';
+    }
+
+    return [
+        'available' => $available,
+        'meets_min' => $meetsMin,
+        'min_version' => $minVersion,
+        'version' => $version,
+        'path' => $path,
+        'source' => $source,
+        'scripts_ready' => $scriptsOk,
+        'scripts' => $scripts,
+        'can_install' => $canInstall,
+        'install_url' => $installUrl,
+        'winget_command' => $winget,
+        'message' => $message,
+        'checks' => $checks,
+    ];
 }
 
 function monitorWorkerDbPath(): string {
