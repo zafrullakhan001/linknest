@@ -100,128 +100,160 @@ function readFloatPanelPos(storageKey: string): FloatPanelPos | null {
     return null;
 }
 
+function getCssZoom(): number {
+    const raw = getComputedStyle(document.documentElement).zoom;
+    const z = raw && raw !== 'normal' ? Number.parseFloat(raw) : 1;
+    return Number.isFinite(z) && z > 0 ? z : 1;
+}
+
+function getVisualViewportSize() {
+    const vv = window.visualViewport;
+    return {
+        width: vv?.width ?? window.innerWidth,
+        height: vv?.height ?? window.innerHeight,
+    };
+}
+
 function clampFloatPanelPos(left: number, top: number, width: number, height: number): FloatPanelPos {
     const handle = 48;
-    const vw = window.innerWidth;
-    const vh = window.innerHeight;
+    const zoom = getCssZoom();
+    const { width: vvW, height: vvH } = getVisualViewportSize();
+    const vw = vvW / zoom;
+    const vh = vvH / zoom;
     return {
         left: Math.min(vw - handle, Math.max(handle - width, left)),
         top: Math.min(vh - handle, Math.max(8, top)),
     };
 }
 
-function pinFloatPanelEl(el: HTMLElement, left: number, top: number): void {
-    el.style.position = 'fixed';
-    el.style.inset = 'auto';
-    el.style.left = `${Math.round(left)}px`;
-    el.style.top = `${Math.round(top)}px`;
-    el.style.right = 'auto';
-    el.style.bottom = 'auto';
-    el.style.margin = '0';
-    el.style.transform = 'none';
-}
-
-function useDraggableFloatPanel(storageKey: string) {
+function useDraggableFloatPanel(storageKey: string, getBottomInset?: () => number) {
     const panelRef = useRef<HTMLDivElement>(null);
-    const offsetRef = useRef({ x: 0, y: 0 });
-    const mouseRef = useRef({ x: 0, y: 0 });
-    const posRef = useRef<FloatPanelPos | null>(null);
+    const dragStartRef = useRef<{ x: number; y: number; posX: number; posY: number } | null>(null);
+    const dragCleanupRef = useRef<(() => void) | null>(null);
+    const latestPosRef = useRef<FloatPanelPos | null>(null);
+    const rafRef = useRef<number | null>(null);
+    const pendingPosRef = useRef<FloatPanelPos | null>(null);
     const [pos, setPos] = useState<FloatPanelPos | null>(() => readFloatPanelPos(storageKey));
     const [dragging, setDragging] = useState(false);
-    if (!dragging) {
-        posRef.current = pos;
-    }
+    latestPosRef.current = pos;
 
-    const onDragStart = useCallback((e: React.MouseEvent) => {
+    const setPosBatched = useCallback((next: FloatPanelPos) => {
+        pendingPosRef.current = next;
+        if (rafRef.current != null) {
+            return;
+        }
+        rafRef.current = window.requestAnimationFrame(() => {
+            rafRef.current = null;
+            const nextPos = pendingPosRef.current;
+            if (!nextPos) {
+                return;
+            }
+            pendingPosRef.current = null;
+            latestPosRef.current = nextPos;
+            setPos(nextPos);
+        });
+    }, []);
+
+    useLayoutEffect(() => {
+        if (pos || !panelRef.current) {
+            return;
+        }
+        const el = panelRef.current;
+        const zoom = getCssZoom();
+        const { width: vvW, height: vvH } = getVisualViewportSize();
+        const bottomInset = Math.max(24, getBottomInset?.() ?? 24);
+        const next = clampFloatPanelPos(
+            vvW / zoom - el.offsetWidth - 24,
+            vvH / zoom - el.offsetHeight - bottomInset,
+            el.offsetWidth,
+            el.offsetHeight,
+        );
+        latestPosRef.current = next;
+        setPos(next);
+    }, [pos]);
+
+    const onDragStart = useCallback((e: React.PointerEvent) => {
         if (e.button !== 0) {
             return;
         }
         if ((e.target as HTMLElement).closest('button, a, input, select, textarea, label')) {
             return;
         }
-        const el = panelRef.current;
-        if (!el) {
-            return;
-        }
         e.preventDefault();
         e.stopPropagation();
 
-        mouseRef.current = { x: e.clientX, y: e.clientY };
-        const before = el.getBoundingClientRect();
-        pinFloatPanelEl(el, before.left, before.top);
-        const pinned = el.getBoundingClientRect();
-        offsetRef.current = {
-            x: e.clientX - pinned.left,
-            y: e.clientY - pinned.top,
-        };
-        const next = { left: pinned.left, top: pinned.top };
-        posRef.current = next;
-        setPos(next);
-        setDragging(true);
-    }, []);
+        dragCleanupRef.current?.();
+        dragCleanupRef.current = null;
 
-    useLayoutEffect(() => {
-        if (!dragging) {
-            return;
-        }
+        const zoom = getCssZoom();
+        const current = latestPosRef.current ?? pos;
         const el = panelRef.current;
-        if (!el) {
-            return;
+        let posX: number;
+        let posY: number;
+        if (current) {
+            posX = current.left;
+            posY = current.top;
+        } else if (el) {
+            const rect = el.getBoundingClientRect();
+            posX = rect.left / zoom;
+            posY = rect.top / zoom;
+        } else {
+            posX = 24;
+            posY = 24;
         }
-        const rect = el.getBoundingClientRect();
-        offsetRef.current = {
-            x: mouseRef.current.x - rect.left,
-            y: mouseRef.current.y - rect.top,
-        };
-        const next = { left: rect.left, top: rect.top };
-        posRef.current = next;
-        pinFloatPanelEl(el, next.left, next.top);
-    }, [dragging]);
 
-    useEffect(() => {
-        if (!dragging) {
-            return;
+        dragStartRef.current = { x: e.clientX, y: e.clientY, posX, posY };
+        setDragging(true);
+        try {
+            e.currentTarget.setPointerCapture(e.pointerId);
+        } catch {
+            // some browsers reject capture on non-element targets
         }
-        const prevCursor = document.body.style.cursor;
-        const prevSelect = document.body.style.userSelect;
-        document.body.style.cursor = 'grabbing';
-        document.body.style.userSelect = 'none';
 
-        const onMove = (e: MouseEvent) => {
-            mouseRef.current = { x: e.clientX, y: e.clientY };
-            const el = panelRef.current;
-            if (!el) {
+        const onMove = (ev: PointerEvent) => {
+            const start = dragStartRef.current;
+            if (!start) {
                 return;
             }
-            const w = el.offsetWidth || 320;
-            const h = Math.min(el.offsetHeight || 200, window.innerHeight - 16);
-            const next = clampFloatPanelPos(
-                e.clientX - offsetRef.current.x,
-                e.clientY - offsetRef.current.y,
+            const z = getCssZoom();
+            const panel = panelRef.current;
+            const w = panel?.offsetWidth || 320;
+            const h = panel?.offsetHeight || 200;
+            if (ev.cancelable) {
+                ev.preventDefault();
+            }
+            setPosBatched(clampFloatPanelPos(
+                start.posX + (ev.clientX - start.x) / z,
+                start.posY + (ev.clientY - start.y) / z,
                 w,
                 h,
-            );
-            posRef.current = next;
-            pinFloatPanelEl(el, next.left, next.top);
+            ));
         };
         const onUp = () => {
-            const finalPos = posRef.current;
-            if (finalPos) {
-                setPos({ left: Math.round(finalPos.left), top: Math.round(finalPos.top) });
-            }
+            dragCleanupRef.current?.();
+            dragCleanupRef.current = null;
+            dragStartRef.current = null;
             setDragging(false);
         };
-        window.addEventListener('mousemove', onMove);
-        window.addEventListener('mouseup', onUp);
-        window.addEventListener('blur', onUp);
-        return () => {
-            document.body.style.cursor = prevCursor;
-            document.body.style.userSelect = prevSelect;
-            window.removeEventListener('mousemove', onMove);
-            window.removeEventListener('mouseup', onUp);
-            window.removeEventListener('blur', onUp);
+
+        window.addEventListener('pointermove', onMove, { capture: true, passive: false });
+        window.addEventListener('pointerup', onUp, { capture: true });
+        window.addEventListener('pointercancel', onUp, { capture: true });
+        dragCleanupRef.current = () => {
+            window.removeEventListener('pointermove', onMove, { capture: true });
+            window.removeEventListener('pointerup', onUp, { capture: true });
+            window.removeEventListener('pointercancel', onUp, { capture: true });
         };
-    }, [dragging]);
+    }, [pos, setPosBatched]);
+
+    useEffect(() => {
+        return () => {
+            dragCleanupRef.current?.();
+            if (rafRef.current != null) {
+                window.cancelAnimationFrame(rafRef.current);
+            }
+        };
+    }, []);
 
     useEffect(() => {
         if (!pos) {
@@ -242,23 +274,26 @@ function useDraggableFloatPanel(storageKey: string) {
                 }
                 const el = panelRef.current;
                 const w = el?.offsetWidth || 320;
-                const h = Math.min(el?.offsetHeight || 200, window.innerHeight - 16);
+                const h = el?.offsetHeight || 200;
                 const next = clampFloatPanelPos(prev.left, prev.top, w, h);
-                posRef.current = next;
+                latestPosRef.current = next;
                 return next;
             });
         };
         window.addEventListener('resize', onResize);
-        return () => window.removeEventListener('resize', onResize);
+        window.visualViewport?.addEventListener('resize', onResize);
+        return () => {
+            window.removeEventListener('resize', onResize);
+            window.visualViewport?.removeEventListener('resize', onResize);
+        };
     }, []);
 
-    const livePos = (dragging ? posRef.current : pos) ?? pos;
-    const positioned = livePos !== null;
-    const style: React.CSSProperties | undefined = livePos
+    const positioned = pos !== null;
+    const style: React.CSSProperties | undefined = pos
         ? {
-            inset: 'auto',
-            left: livePos.left,
-            top: livePos.top,
+            position: 'fixed',
+            left: pos.left,
+            top: pos.top,
             right: 'auto',
             bottom: 'auto',
             margin: 0,
@@ -273,11 +308,11 @@ function useDraggableFloatPanel(storageKey: string) {
 
 const FloatPanelDragBar: React.FC<{
     dragging: boolean;
-    onMouseDown: (e: React.MouseEvent) => void;
-}> = ({ dragging, onMouseDown }) => (
+    onPointerDown: (e: React.PointerEvent) => void;
+}> = ({ dragging, onPointerDown }) => (
     <div
-        onMouseDown={onMouseDown}
-        className={`shrink-0 h-6 cursor-grab active:cursor-grabbing select-none flex items-center justify-center gap-1.5 border-t border-current/15 ${
+        onPointerDown={onPointerDown}
+        className={`shrink-0 h-6 cursor-grab active:cursor-grabbing select-none touch-none flex items-center justify-center gap-1.5 border-t border-current/15 ${
             dragging ? 'bg-black/10 dark:bg-white/10' : 'hover:bg-black/5 dark:hover:bg-white/5'
         }`}
         title="Drag to move"
@@ -358,8 +393,11 @@ export const MonitoringDashboard: React.FC = () => {
         items?: MonitorCheckJobItem[];
     } | null>(null);
     const [pythonJobPanelVisible, setPythonJobPanelVisible] = useState(false);
-    const pythonJobDrag = useDraggableFloatPanel('linknest_monitor_py_job_panel_v2');
-    const schedulerDrag = useDraggableFloatPanel('linknest_monitor_scheduler_panel_v2');
+    const pythonJobDrag = useDraggableFloatPanel('linknest_monitor_py_job_panel_v3');
+    const schedulerDrag = useDraggableFloatPanel('linknest_monitor_scheduler_panel_v3', () => {
+        const jobH = pythonJobDrag.panelRef.current?.offsetHeight ?? 0;
+        return jobH > 0 ? jobH + 36 : 24;
+    });
     const [isAbortingPythonJob, setIsAbortingPythonJob] = useState(false);
     const [pickupCountdown, setPickupCountdown] = useState<{
         seconds: number;
@@ -4184,11 +4222,7 @@ ON CONFLICT(key) DO UPDATE SET value = excluded.value, updated_at = excluded.upd
                 ref={pythonJobDrag.panelRef}
                 className={`fixed w-[min(calc(100vw-2rem),26rem)] max-h-[min(72vh,34rem)] flex flex-col ${
                     pythonJobDrag.dragging ? 'z-[10001]' : 'z-[9999]'
-                } ${
-                    pythonJobDrag.positioned || pythonJobDrag.dragging
-                        ? ''
-                        : 'bottom-6 right-6 animate-in fade-in slide-in-from-bottom-2 duration-300'
-                }`}
+                } ${pythonJobDrag.positioned || pythonJobDrag.dragging ? '' : 'bottom-6 right-6'}`}
                 style={pythonJobDrag.style}
                 role="status"
                 aria-live="polite"
@@ -4203,8 +4237,8 @@ ON CONFLICT(key) DO UPDATE SET value = excluded.value, updated_at = excluded.upd
                             : 'bg-emerald-50/95 dark:bg-emerald-950/95 border-emerald-300 dark:border-emerald-700 text-emerald-900 dark:text-emerald-100'
                 }`}>
                     <div
-                        onMouseDown={pythonJobDrag.onDragStart}
-                        className={`flex items-center justify-between gap-2 px-4 py-3 border-b cursor-grab active:cursor-grabbing select-none ${
+                        onPointerDown={pythonJobDrag.onDragStart}
+                        className={`flex items-center justify-between gap-2 px-4 py-3 border-b cursor-grab active:cursor-grabbing select-none touch-none ${
                             pythonJobDrag.dragging ? 'cursor-grabbing' : ''
                         } ${
                     pythonJobActivity.phase === 'cancelled' || pythonJobActivity.phase === 'cancelling'
@@ -4392,7 +4426,7 @@ ON CONFLICT(key) DO UPDATE SET value = excluded.value, updated_at = excluded.upd
                             </div>
                         )}
                     </div>
-                    <FloatPanelDragBar dragging={pythonJobDrag.dragging} onMouseDown={pythonJobDrag.onDragStart} />
+                    <FloatPanelDragBar dragging={pythonJobDrag.dragging} onPointerDown={pythonJobDrag.onDragStart} />
                 </div>
             </div>,
             document.body
@@ -4408,9 +4442,7 @@ ON CONFLICT(key) DO UPDATE SET value = excluded.value, updated_at = excluded.upd
                 } ${
                     schedulerDrag.positioned || schedulerDrag.dragging
                         ? ''
-                        : (pythonJobActivity && pythonJobPanelVisible
-                            ? 'right-6 bottom-[36rem] animate-in fade-in slide-in-from-bottom-2 duration-300'
-                            : 'right-6 bottom-6 animate-in fade-in slide-in-from-bottom-2 duration-300')
+                        : (pythonJobActivity && pythonJobPanelVisible ? 'right-6 bottom-[36rem]' : 'right-6 bottom-6')
                 }`}
                 style={schedulerDrag.style}
                 role="status"
@@ -4424,8 +4456,8 @@ ON CONFLICT(key) DO UPDATE SET value = excluded.value, updated_at = excluded.upd
                         : 'bg-emerald-50/95 dark:bg-emerald-950/95 border-emerald-300 dark:border-emerald-700 text-emerald-900 dark:text-emerald-100'
                 }`}>
                     <div
-                        onMouseDown={schedulerDrag.onDragStart}
-                        className={`flex items-center justify-between gap-2 px-4 py-3 border-b cursor-grab active:cursor-grabbing select-none ${
+                        onPointerDown={schedulerDrag.onDragStart}
+                        className={`flex items-center justify-between gap-2 px-4 py-3 border-b cursor-grab active:cursor-grabbing select-none touch-none ${
                             schedulerDrag.dragging ? 'cursor-grabbing' : ''
                         } ${
                         showWorkerSchedulerBanner
@@ -4589,7 +4621,7 @@ ON CONFLICT(key) DO UPDATE SET value = excluded.value, updated_at = excluded.upd
                             </button>
                         </div>
                     </div>
-                    <FloatPanelDragBar dragging={schedulerDrag.dragging} onMouseDown={schedulerDrag.onDragStart} />
+                    <FloatPanelDragBar dragging={schedulerDrag.dragging} onPointerDown={schedulerDrag.onDragStart} />
                 </div>
             </div>,
             document.body
