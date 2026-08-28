@@ -269,8 +269,27 @@ function monitorWorkerSchedulerQueryWindowsTask(string $taskName): array {
         'last_result_label' => null,
         'run_as' => null,
         'logon_mode' => null,
+        'logon_type' => null,
+        'run_level' => null,
         'start_in' => null,
         'task_to_run' => null,
+        'schedule_type' => null,
+        'repeat_every' => null,
+        'repeat_duration' => null,
+        'power_management' => null,
+        'stop_if_runs_x' => null,
+        'comment' => null,
+        'interval_minutes' => null,
+        'interval_iso' => null,
+        'start_when_available' => null,
+        'allow_start_on_batteries' => null,
+        'dont_stop_on_batteries' => null,
+        'multiple_instances' => null,
+        'wake_to_run' => null,
+        'execution_time_limit' => null,
+        'runs_without_logon' => false,
+        'unattended_summary' => null,
+        'properties' => [],
         'never_run' => false,
         'needs_logged_on_user' => false,
     ];
@@ -336,6 +355,36 @@ function monitorWorkerSchedulerQueryWindowsTask(string $taskName): array {
             if ($val !== null && $val !== '') {
                 $task['task_to_run'] = $val;
             }
+        } elseif (stripos($line, 'Schedule Type:') === 0) {
+            $val = monitorWorkerSchedulerParseListValue($line);
+            if ($val !== null && $val !== '') {
+                $task['schedule_type'] = $val;
+            }
+        } elseif (stripos($line, 'Repeat: Every:') === 0) {
+            $val = monitorWorkerSchedulerParseListValue($line);
+            if ($val !== null && $val !== '') {
+                $task['repeat_every'] = $val;
+            }
+        } elseif (stripos($line, 'Repeat: Until: Duration:') === 0) {
+            $val = monitorWorkerSchedulerParseListValue($line);
+            if ($val !== null && $val !== '') {
+                $task['repeat_duration'] = $val;
+            }
+        } elseif (stripos($line, 'Power Management:') === 0) {
+            $val = monitorWorkerSchedulerParseListValue($line);
+            if ($val !== null && $val !== '') {
+                $task['power_management'] = $val;
+            }
+        } elseif (stripos($line, 'Stop Task If Runs X Hours And X Mins:') === 0) {
+            $val = monitorWorkerSchedulerParseListValue($line);
+            if ($val !== null && $val !== '') {
+                $task['stop_if_runs_x'] = $val;
+            }
+        } elseif (stripos($line, 'Comment:') === 0) {
+            $val = monitorWorkerSchedulerParseListValue($line);
+            if ($val !== null && $val !== '') {
+                $task['comment'] = $val;
+            }
         }
     }
 
@@ -363,7 +412,8 @@ function monitorWorkerSchedulerQueryWindowsTask(string $taskName): array {
         !empty($task['needs_logged_on_user'])
     );
 
-    return $task;
+    $task = monitorWorkerSchedulerMergeScheduledTaskCom($task);
+    return monitorWorkerSchedulerFinalizeWindowsTask($task);
 }
 
 function monitorWorkerSchedulerTaskNeverRan(?string $lastRun, $lastResult): bool {
@@ -410,6 +460,279 @@ function monitorWorkerSchedulerDecodeLastResult($code, bool $neverRun, bool $nee
         return 'Logon failure. Reinstall so the task runs as SYSTEM.';
     }
     return 'Last result ' . $n . ($needsLogon ? ' — task requires a logged-on user; reinstall as SYSTEM.' : '');
+}
+
+function monitorWorkerSchedulerParseIsoDurationMinutes(?string $iso): ?int {
+    $iso = trim((string)$iso);
+    if ($iso === '') {
+        return null;
+    }
+    if (preg_match('/^PT(?:(\d+)H)?(?:(\d+)M)?(?:(\d+(?:\.\d+)?)S)?$/i', $iso, $m)) {
+        $hours = isset($m[1]) && $m[1] !== '' ? (int)$m[1] : 0;
+        $mins = isset($m[2]) && $m[2] !== '' ? (int)$m[2] : 0;
+        $secs = isset($m[3]) && $m[3] !== '' ? (float)$m[3] : 0.0;
+        $total = $hours * 60 + $mins + (int)round($secs / 60);
+        return $total > 0 ? $total : ($secs > 0 ? 1 : null);
+    }
+    if (preg_match('/^(\d+):(\d+):(\d+)$/', $iso, $m)) {
+        $total = ((int)$m[1] * 60) + (int)$m[2];
+        return $total > 0 ? $total : null;
+    }
+    return null;
+}
+
+/**
+ * Extra Task Scheduler CIM fields via Get-ScheduledTask (interval, logon type, batteries).
+ *
+ * @param array<string,mixed> $task
+ * @return array<string,mixed>
+ */
+function monitorWorkerSchedulerMergeScheduledTaskCom(array $task): array {
+    if (empty($task['exists']) || empty($task['name']) || stripos(PHP_OS, 'WIN') !== 0) {
+        return $task;
+    }
+    $ps = function_exists('monitorWorkerSchedulerResolvePowerShell')
+        ? monitorWorkerSchedulerResolvePowerShell()
+        : null;
+    if (!is_string($ps) || $ps === '' || !is_file($ps)) {
+        return $task;
+    }
+
+    $safeName = str_replace("'", "''", (string)$task['name']);
+    $script = <<<PS
+\$ErrorActionPreference = 'Stop'
+try {
+  \$t = Get-ScheduledTask -TaskName '$safeName' -ErrorAction Stop
+  \$p = \$t.Principal
+  \$s = \$t.Settings
+  \$tr = @(\$t.Triggers)[0]
+  \$rep = \$null
+  \$dur = \$null
+  if (\$tr -ne \$null -and \$tr.Repetition -ne \$null) {
+    \$rep = [string]\$tr.Repetition.Interval
+    \$dur = [string]\$tr.Repetition.Duration
+  }
+  \$o = @{
+    logon_type = [string]\$p.LogonType
+    run_as = [string]\$p.UserId
+    run_level = [string]\$p.RunLevel
+    enabled = [bool]\$s.Enabled
+    repetition_interval = \$rep
+    repetition_duration = \$dur
+    start_when_available = [bool]\$s.StartWhenAvailable
+    disallow_start_on_batteries = [bool]\$s.DisallowStartIfOnBatteries
+    stop_if_going_on_batteries = [bool]\$s.StopIfGoingOnBatteries
+    multiple_instances = [string]\$s.MultipleInstances
+    wake_to_run = [bool]\$s.WakeToRun
+    execution_time_limit = [string]\$s.ExecutionTimeLimit
+    hidden = [bool]\$s.Hidden
+  }
+  \$o | ConvertTo-Json -Compress
+} catch {
+  '{}'
+}
+PS;
+    $utf16 = function_exists('mb_convert_encoding')
+        ? mb_convert_encoding($script, 'UTF-16LE', 'UTF-8')
+        : iconv('UTF-8', 'UTF-16LE', $script);
+    if (!is_string($utf16) || $utf16 === '') {
+        return $task;
+    }
+    $encoded = base64_encode($utf16);
+    $cmd = escapeshellarg($ps) . ' -NoProfile -NonInteractive -NoLogo -EncodedCommand ' . $encoded;
+    $out = [];
+    $code = 1;
+    @exec($cmd, $out, $code);
+    if ($code !== 0 || empty($out)) {
+        return $task;
+    }
+    $json = trim(implode('', $out));
+    $start = strpos($json, '{');
+    if ($start === false) {
+        return $task;
+    }
+    $decoded = json_decode(substr($json, $start), true);
+    if (!is_array($decoded) || $decoded === []) {
+        return $task;
+    }
+
+    if (!empty($decoded['logon_type'])) {
+        $task['logon_type'] = (string)$decoded['logon_type'];
+    }
+    if (!empty($decoded['run_as'])) {
+        $task['run_as'] = (string)$decoded['run_as'];
+    }
+    if (!empty($decoded['run_level'])) {
+        $task['run_level'] = (string)$decoded['run_level'];
+    }
+    if (isset($decoded['repetition_interval']) && $decoded['repetition_interval'] !== null && $decoded['repetition_interval'] !== '') {
+        $task['interval_iso'] = (string)$decoded['repetition_interval'];
+        $mins = monitorWorkerSchedulerParseIsoDurationMinutes((string)$decoded['repetition_interval']);
+        if ($mins !== null) {
+            $task['interval_minutes'] = $mins;
+        }
+    }
+    if (isset($decoded['repetition_duration']) && $decoded['repetition_duration'] !== null && $decoded['repetition_duration'] !== '') {
+        $task['repeat_duration'] = (string)$decoded['repetition_duration'];
+    }
+    if (array_key_exists('start_when_available', $decoded)) {
+        $task['start_when_available'] = (bool)$decoded['start_when_available'];
+    }
+    if (array_key_exists('disallow_start_on_batteries', $decoded)) {
+        $task['allow_start_on_batteries'] = empty($decoded['disallow_start_on_batteries']);
+    }
+    if (array_key_exists('stop_if_going_on_batteries', $decoded)) {
+        $task['dont_stop_on_batteries'] = empty($decoded['stop_if_going_on_batteries']);
+    }
+    if (!empty($decoded['multiple_instances'])) {
+        $task['multiple_instances'] = (string)$decoded['multiple_instances'];
+    }
+    if (array_key_exists('wake_to_run', $decoded)) {
+        $task['wake_to_run'] = (bool)$decoded['wake_to_run'];
+    }
+    if (isset($decoded['execution_time_limit']) && $decoded['execution_time_limit'] !== '') {
+        $task['execution_time_limit'] = (string)$decoded['execution_time_limit'];
+    }
+
+    return $task;
+}
+
+/**
+ * @param array<string,mixed> $task
+ * @return array<string,mixed>
+ */
+function monitorWorkerSchedulerFinalizeWindowsTask(array $task): array {
+    $logonType = strtolower(trim((string)($task['logon_type'] ?? '')));
+    $logonMode = strtolower(trim((string)($task['logon_mode'] ?? '')));
+    $runAs = trim((string)($task['run_as'] ?? ''));
+    $isSystem = $runAs !== '' && (strcasecmp($runAs, 'SYSTEM') === 0
+        || stripos($runAs, '\\SYSTEM') !== false
+        || stripos($runAs, 'NT AUTHORITY\\SYSTEM') !== false);
+    $isServiceAccount = $logonType === 'serviceaccount' || $logonType === 'password' || $logonType === 's4u'
+        || stripos($logonMode, 's4u') !== false
+        || stripos($logonMode, 'background') !== false;
+    $isInteractive = !empty($task['needs_logged_on_user'])
+        || $logonType === 'interactive'
+        || stripos($logonMode, 'interactive only') !== false;
+
+    $runsWithoutLogon = ($isSystem || $isServiceAccount) && !$isInteractive;
+    if ($isSystem && ($logonType === 'serviceaccount' || $logonType === 'password' || $logonType === '')) {
+        $runsWithoutLogon = true;
+        $task['needs_logged_on_user'] = false;
+        $isInteractive = false;
+    }
+    if ($isInteractive && !$isSystem) {
+        $runsWithoutLogon = false;
+    }
+    $task['runs_without_logon'] = $runsWithoutLogon;
+
+    if ($task['interval_minutes'] === null && !empty($task['repeat_every'])) {
+        $rep = strtolower((string)$task['repeat_every']);
+        if (preg_match('/(\d+)\s*minute/', $rep, $m)) {
+            $task['interval_minutes'] = (int)$m[1];
+        } elseif (preg_match('/(\d+)\s*hour/', $rep, $m)) {
+            $task['interval_minutes'] = (int)$m[1] * 60;
+        }
+    }
+
+    $interval = $task['interval_minutes'];
+    $intervalLabel = $interval ? ('Every ' . $interval . ' minute' . ($interval === 1 ? '' : 's')) : 'Interval not detected';
+    if (!empty($task['interval_iso'])) {
+        $intervalLabel .= ' (' . $task['interval_iso'] . ')';
+    } elseif (!empty($task['repeat_every'])) {
+        $intervalLabel .= ' (schtasks: ' . $task['repeat_every'] . ')';
+    }
+
+    $intervalOk = is_int($interval) && $interval >= 1 && $interval <= 5;
+    $unattendedOk = $runsWithoutLogon && !empty($task['enabled']) && $intervalOk;
+
+    if (empty($task['exists'])) {
+        $task['unattended_summary'] = 'Not installed';
+    } elseif ($unattendedOk) {
+        $task['unattended_summary'] = $intervalLabel . ' as ' . ($runAs !== '' ? $runAs : 'SYSTEM') . ' — runs even if nobody is logged onto this Windows server.';
+    } elseif ($isInteractive) {
+        $task['unattended_summary'] = 'Run only when a user is logged on — will not fire on a disconnected RDP/console session. Uninstall then Install tasks to register as SYSTEM.';
+    } elseif (!$runsWithoutLogon) {
+        $task['unattended_summary'] = 'Logon type is not SYSTEM/S4U. Reinstall tasks so they run without an interactive login.';
+    } else {
+        $task['unattended_summary'] = $intervalLabel . ($runAs !== '' ? (' as ' . $runAs) : '');
+    }
+
+    $task['last_result_label'] = monitorWorkerSchedulerDecodeLastResult(
+        $task['last_result'] ?? null,
+        !empty($task['never_run']),
+        !empty($task['needs_logged_on_user'])
+    );
+
+    $props = [];
+    $add = static function (string $name, $value, bool $ok) use (&$props): void {
+        $text = $value === null || $value === '' ? '(not set)' : (is_bool($value) ? ($value ? 'Yes' : 'No') : (string)$value);
+        $props[] = ['name' => $name, 'value' => $text, 'ok' => $ok];
+    };
+
+    $add(
+        'Runs without a logged-on user',
+        $runsWithoutLogon
+            ? 'Yes — no console or RDP session is required'
+            : 'No — Windows will not start this job unless that user is logged on',
+        $runsWithoutLogon
+    );
+    $add('Logon type', $task['logon_type'] ?: ($task['logon_mode'] ?: '(unknown)'), $runsWithoutLogon);
+    $add('Run as', $runAs !== '' ? $runAs : '(unknown)', $isSystem || $runsWithoutLogon);
+    if (!empty($task['run_level'])) {
+        $add('Run level', $task['run_level'], true);
+    }
+    $add('Enabled', !empty($task['enabled']) ? 'Yes' : 'No', !empty($task['enabled']));
+    $add('Repeat interval', $intervalLabel, $intervalOk);
+    if (!empty($task['repeat_duration'])) {
+        $add('Repeat duration', $task['repeat_duration'], true);
+    }
+    if (!empty($task['schedule_type'])) {
+        $add('Schedule type', $task['schedule_type'], true);
+    }
+    if ($task['start_when_available'] !== null) {
+        $add('Start when available (catch up missed runs)', $task['start_when_available'] ? 'Yes' : 'No', (bool)$task['start_when_available']);
+    }
+    if ($task['allow_start_on_batteries'] !== null) {
+        $add('Allow start on batteries', $task['allow_start_on_batteries'] ? 'Yes' : 'No', (bool)$task['allow_start_on_batteries']);
+    }
+    if ($task['dont_stop_on_batteries'] !== null) {
+        $add('Stop if going on batteries', $task['dont_stop_on_batteries'] ? 'No' : 'Yes', (bool)$task['dont_stop_on_batteries']);
+    }
+    if (!empty($task['multiple_instances'])) {
+        $ignoreNew = stripos((string)$task['multiple_instances'], 'IgnoreNew') !== false
+            || stripos((string)$task['multiple_instances'], 'Ignore New') !== false;
+        $add('If already running', $task['multiple_instances'], $ignoreNew);
+    }
+    if ($task['wake_to_run'] !== null) {
+        $add('Wake the computer to run', $task['wake_to_run'] ? 'Yes' : 'No', true);
+    }
+    if (!empty($task['execution_time_limit'])) {
+        $add('Stop task if it runs longer than', $task['execution_time_limit'], true);
+    } elseif (!empty($task['stop_if_runs_x'])) {
+        $add('Stop task if it runs longer than', $task['stop_if_runs_x'], true);
+    }
+    if (!empty($task['next_run'])) {
+        $add('Next run', $task['next_run'], true);
+    }
+    if (!empty($task['last_run'])) {
+        $add('Last run', $task['last_run'], empty($task['never_run']));
+    }
+    if (!empty($task['start_in'])) {
+        $add('Start in (working directory)', $task['start_in'], true);
+    }
+    if (!empty($task['task_to_run'])) {
+        $add('Program / arguments', $task['task_to_run'], true);
+    }
+    if (!empty($task['power_management'])) {
+        $add('Power management (schtasks)', $task['power_management'], true);
+    }
+    if (!empty($task['comment'])) {
+        $add('Description', $task['comment'], true);
+    }
+
+    $task['properties'] = $props;
+    return $task;
 }
 
 function monitorWorkerSchedulerTaskBelongsToThisInstall(array $task): bool {
@@ -484,6 +807,14 @@ function monitorWorkerSchedulerBuildStatus(): array {
     $status = 'ok';
     $message = 'Both LinkNest Task Scheduler jobs are installed and enabled.';
     $pythonReady = $monitorOk;
+    if ($monitorOk && $emailOk && !empty($monitor['runs_without_logon']) && !empty($email['runs_without_logon'])) {
+        $interval = (int)($monitor['interval_minutes'] ?? 1);
+        $message = 'Both jobs are installed and enabled. They run as '
+            . trim((string)($monitor['run_as'] ?: 'SYSTEM'))
+            . ' every ' . ($interval > 0 ? $interval : 1) . ' minute'
+            . ($interval === 1 ? '' : 's')
+            . ' whether or not anyone is logged onto this Windows server.';
+    }
 
     if (!$monitor['exists'] && !$email['exists']) {
         $status = 'not_installed';

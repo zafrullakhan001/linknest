@@ -40,6 +40,12 @@ export interface Monitor {
 
 export type MonitorForceEngine = 'php' | 'python';
 
+export interface MonitorWorkerSchedulerTaskProperty {
+    name: string;
+    value: string;
+    ok: boolean;
+}
+
 export interface MonitorWorkerSchedulerTask {
     name: string;
     exists: boolean;
@@ -52,6 +58,21 @@ export interface MonitorWorkerSchedulerTask {
     last_result_label?: string | null;
     run_as?: string | null;
     logon_mode?: string | null;
+    logon_type?: string | null;
+    run_level?: string | null;
+    start_in?: string | null;
+    task_to_run?: string | null;
+    interval_minutes?: number | null;
+    interval_iso?: string | null;
+    start_when_available?: boolean | null;
+    allow_start_on_batteries?: boolean | null;
+    dont_stop_on_batteries?: boolean | null;
+    multiple_instances?: string | null;
+    wake_to_run?: boolean | null;
+    execution_time_limit?: string | null;
+    runs_without_logon?: boolean;
+    unattended_summary?: string | null;
+    properties?: MonitorWorkerSchedulerTaskProperty[];
     never_run?: boolean;
     needs_logged_on_user?: boolean;
 }

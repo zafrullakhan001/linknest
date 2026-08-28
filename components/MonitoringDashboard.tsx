@@ -350,9 +350,13 @@ export const MonitoringDashboard: React.FC = () => {
             : 'border-amber-200/60 dark:border-amber-800/60 bg-white/50 dark:bg-amber-950/30';
         const hasDetails = !!(
             task.last_run
-            || (task.exists && workerSchedulerStatus.platform === 'windows' && (task.last_result_label || task.never_run || task.needs_logged_on_user))
+            || (task.exists && workerSchedulerStatus.platform === 'windows' && (
+                task.last_result_label || task.never_run || task.needs_logged_on_user || (task.properties && task.properties.length > 0)
+            ))
             || (!task.exists && schedulerHostManaged)
         );
+
+        const unattendedOk = task.exists && task.runs_without_logon === true && !task.needs_logged_on_user;
 
         const actionButtons = canToggle ? (
             <div className="flex items-center gap-1.5 shrink-0">
@@ -388,8 +392,17 @@ export const MonitoringDashboard: React.FC = () => {
 
         const details = (
             <>
+                {task.unattended_summary && workerSchedulerStatus.platform === 'windows' && (
+                    <p className={`text-[10px] leading-snug font-medium ${unattendedOk ? 'text-emerald-800 dark:text-emerald-200' : 'text-amber-800 dark:text-amber-200'}`}>
+                        {unattendedOk ? 'Unattended: ' : 'Needs attention: '}
+                        {task.unattended_summary}
+                    </p>
+                )}
                 {task.last_run && (
-                    <p className="text-[10px] opacity-75 break-all">Last run: {task.last_run}</p>
+                    <p className="mt-0.5 text-[10px] opacity-75 break-all">Last run: {task.last_run}</p>
+                )}
+                {task.next_run && (
+                    <p className="mt-0.5 text-[10px] opacity-75 break-all">Next run: {task.next_run}</p>
                 )}
                 {task.exists && workerSchedulerStatus.platform === 'windows' && (task.last_result_label || task.never_run || task.needs_logged_on_user) && (
                     <p className={`mt-0.5 text-[10px] leading-snug ${task.never_run || task.needs_logged_on_user ? 'text-amber-800 dark:text-amber-200 font-medium' : 'opacity-75'}`}>
@@ -404,6 +417,28 @@ export const MonitoringDashboard: React.FC = () => {
                             : (schedulerInstallNeeded ? 'Not installed — use Install tasks below' : 'Install with schedule-monitor-workers.bat')}
                     </p>
                 )}
+                {task.properties && task.properties.length > 0 && (
+                    <div className="mt-2 overflow-x-auto">
+                        <p className="font-semibold uppercase tracking-wide opacity-70 mb-1 text-[10px]">Task Scheduler properties</p>
+                        <table className="w-full text-[10px] text-left">
+                            <tbody>
+                                {task.properties.map((row) => (
+                                    <tr key={row.name} className="border-t border-black/5 dark:border-white/10">
+                                        <td className="py-1 pr-2 align-top whitespace-nowrap">
+                                            {row.ok ? (
+                                                <FaCheck className="inline text-emerald-600 dark:text-emerald-400 mr-1" size={8} />
+                                            ) : (
+                                                <FaExclamationTriangle className="inline text-amber-600 dark:text-amber-400 mr-1" size={8} />
+                                            )}
+                                            {row.name}
+                                        </td>
+                                        <td className="py-1 font-mono break-all">{row.value}</td>
+                                    </tr>
+                                ))}
+                            </tbody>
+                        </table>
+                    </div>
+                )}
             </>
         );
 
@@ -412,12 +447,26 @@ export const MonitoringDashboard: React.FC = () => {
                 key={taskKey}
                 boxClass={boxClass}
                 defaultOpen={variant === 'modal' || !task.exists || !!task.needs_logged_on_user}
-                summary={!hasDetails ? undefined : (task.last_run ? `Last run: ${task.last_run}` : statusLabel)}
+                summary={
+                    task.unattended_summary
+                        ? task.unattended_summary
+                        : (!hasDetails ? undefined : (task.last_run ? `Last run: ${task.last_run}` : statusLabel))
+                }
                 headerExtra={actionButtons}
                 title={
                     <div className="flex flex-wrap items-center gap-x-2 gap-y-0.5">
                         <span className="font-semibold text-[10px]">{label}</span>
                         <span className={`text-[10px] font-bold uppercase tracking-wide ${statusClass}`}>{statusLabel}</span>
+                        {unattendedOk && (
+                            <span className="text-[9px] font-bold uppercase tracking-wide text-emerald-700 dark:text-emerald-300">
+                                no logon required
+                            </span>
+                        )}
+                        {task.exists && task.needs_logged_on_user && (
+                            <span className="text-[9px] font-bold uppercase tracking-wide text-amber-700 dark:text-amber-300">
+                                needs login
+                            </span>
+                        )}
                     </div>
                 }
             >
