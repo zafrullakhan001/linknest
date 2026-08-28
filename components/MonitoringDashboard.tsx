@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useCallback, useRef, useMemo } from 'react';
+import React, { useState, useEffect, useLayoutEffect, useCallback, useRef, useMemo } from 'react';
 import { createPortal } from 'react-dom';
 import { Monitor, MonitorLog, MonitorForceEngine, MonitorCheckJob, MonitorCheckJobItem, MonitorWorkerSchedulerStatus, MonitorWorkerSchedulerTaskKey, monitoringService } from '../services/monitoringService';
 import { MonitorSchedulerPythonHealthCard, MonitorSchedulerDatabaseCard, MonitorSchedulerWorkerEnvCard, SchedulerCollapsibleBlock } from './MonitorSchedulerPythonHealth';
@@ -110,13 +110,27 @@ function clampFloatPanelPos(left: number, top: number, width: number, height: nu
     };
 }
 
+function pinFloatPanelEl(el: HTMLElement, left: number, top: number): void {
+    el.style.position = 'fixed';
+    el.style.inset = 'auto';
+    el.style.left = `${Math.round(left)}px`;
+    el.style.top = `${Math.round(top)}px`;
+    el.style.right = 'auto';
+    el.style.bottom = 'auto';
+    el.style.margin = '0';
+    el.style.transform = 'none';
+}
+
 function useDraggableFloatPanel(storageKey: string) {
     const panelRef = useRef<HTMLDivElement>(null);
     const offsetRef = useRef({ x: 0, y: 0 });
+    const mouseRef = useRef({ x: 0, y: 0 });
     const posRef = useRef<FloatPanelPos | null>(null);
     const [pos, setPos] = useState<FloatPanelPos | null>(() => readFloatPanelPos(storageKey));
     const [dragging, setDragging] = useState(false);
-    posRef.current = pos;
+    if (!dragging) {
+        posRef.current = pos;
+    }
 
     const onDragStart = useCallback((e: React.MouseEvent) => {
         if (e.button !== 0) {
@@ -131,13 +145,38 @@ function useDraggableFloatPanel(storageKey: string) {
         }
         e.preventDefault();
         e.stopPropagation();
-        const rect = el.getBoundingClientRect();
-        offsetRef.current = { x: e.clientX - rect.left, y: e.clientY - rect.top };
-        const next = { left: rect.left, top: rect.top };
+
+        mouseRef.current = { x: e.clientX, y: e.clientY };
+        const before = el.getBoundingClientRect();
+        pinFloatPanelEl(el, before.left, before.top);
+        const pinned = el.getBoundingClientRect();
+        offsetRef.current = {
+            x: e.clientX - pinned.left,
+            y: e.clientY - pinned.top,
+        };
+        const next = { left: pinned.left, top: pinned.top };
         posRef.current = next;
         setPos(next);
         setDragging(true);
     }, []);
+
+    useLayoutEffect(() => {
+        if (!dragging) {
+            return;
+        }
+        const el = panelRef.current;
+        if (!el) {
+            return;
+        }
+        const rect = el.getBoundingClientRect();
+        offsetRef.current = {
+            x: mouseRef.current.x - rect.left,
+            y: mouseRef.current.y - rect.top,
+        };
+        const next = { left: rect.left, top: rect.top };
+        posRef.current = next;
+        pinFloatPanelEl(el, next.left, next.top);
+    }, [dragging]);
 
     useEffect(() => {
         if (!dragging) {
@@ -149,10 +188,13 @@ function useDraggableFloatPanel(storageKey: string) {
         document.body.style.userSelect = 'none';
 
         const onMove = (e: MouseEvent) => {
-            e.preventDefault();
+            mouseRef.current = { x: e.clientX, y: e.clientY };
             const el = panelRef.current;
-            const w = el?.offsetWidth || 320;
-            const h = Math.min(el?.offsetHeight || 200, window.innerHeight - 16);
+            if (!el) {
+                return;
+            }
+            const w = el.offsetWidth || 320;
+            const h = Math.min(el.offsetHeight || 200, window.innerHeight - 16);
             const next = clampFloatPanelPos(
                 e.clientX - offsetRef.current.x,
                 e.clientY - offsetRef.current.y,
@@ -160,10 +202,16 @@ function useDraggableFloatPanel(storageKey: string) {
                 h,
             );
             posRef.current = next;
-            setPos(next);
+            pinFloatPanelEl(el, next.left, next.top);
         };
-        const onUp = () => setDragging(false);
-        window.addEventListener('mousemove', onMove, { passive: false });
+        const onUp = () => {
+            const finalPos = posRef.current;
+            if (finalPos) {
+                setPos({ left: Math.round(finalPos.left), top: Math.round(finalPos.top) });
+            }
+            setDragging(false);
+        };
+        window.addEventListener('mousemove', onMove);
         window.addEventListener('mouseup', onUp);
         window.addEventListener('blur', onUp);
         return () => {
@@ -195,19 +243,22 @@ function useDraggableFloatPanel(storageKey: string) {
                 const el = panelRef.current;
                 const w = el?.offsetWidth || 320;
                 const h = Math.min(el?.offsetHeight || 200, window.innerHeight - 16);
-                return clampFloatPanelPos(prev.left, prev.top, w, h);
+                const next = clampFloatPanelPos(prev.left, prev.top, w, h);
+                posRef.current = next;
+                return next;
             });
         };
         window.addEventListener('resize', onResize);
         return () => window.removeEventListener('resize', onResize);
     }, []);
 
-    const positioned = pos !== null;
-    const style: React.CSSProperties | undefined = positioned
+    const livePos = (dragging ? posRef.current : pos) ?? pos;
+    const positioned = livePos !== null;
+    const style: React.CSSProperties | undefined = livePos
         ? {
             inset: 'auto',
-            left: pos.left,
-            top: pos.top,
+            left: livePos.left,
+            top: livePos.top,
             right: 'auto',
             bottom: 'auto',
             margin: 0,
