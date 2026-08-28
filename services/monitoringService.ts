@@ -170,6 +170,14 @@ export interface MonitorWorkerSchedulerStatus {
     };
 }
 
+export interface MonitorCheckJobItem {
+    id: number;
+    name: string;
+    status: 'pending' | 'checking' | 'up' | 'down' | 'error' | 'skipped' | string;
+    response_ms?: number | null;
+    seq?: number;
+}
+
 export interface MonitorCheckJob {
     id: number;
     status: 'queued' | 'running' | 'done' | 'error' | 'cancelled';
@@ -186,6 +194,7 @@ export interface MonitorCheckJob {
     down_count: number;
     error_count: number;
     last_error?: string | null;
+    items?: MonitorCheckJobItem[];
 }
 
 export interface MonitorCheckAllPhpResult {

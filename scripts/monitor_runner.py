@@ -23,7 +23,7 @@ import json
 import os
 import sys
 import time
-from typing import Any, Dict, List, Optional, Set, Tuple
+from typing import Any, Dict, List, Optional, Sequence, Set, Tuple
 
 # Embeddable CPython (bin/python + python*._pth) does not put this script's
 # folder on sys.path, so linknest_worker_lib would otherwise fail to import.
@@ -233,6 +233,113 @@ def update_job_progress(conn, job_id: Optional[int], counts: Dict[str, int]) -> 
         ),
     )
     conn.commit()
+
+
+def _load_job_progress_items(conn, job_id: int) -> List[Dict[str, Any]]:
+    row = conn.execute(
+        "SELECT progress_json FROM monitor_check_jobs WHERE id = ?",
+        (int(job_id),),
+    ).fetchone()
+    raw = row["progress_json"] if row else None
+    if not raw:
+        return []
+    try:
+        decoded = json.loads(raw)
+    except Exception:
+        return []
+    return decoded if isinstance(decoded, list) else []
+
+
+def _save_job_progress_items(conn, job_id: int, items: List[Dict[str, Any]]) -> None:
+    conn.execute(
+        "UPDATE monitor_check_jobs SET progress_json = ? WHERE id = ?",
+        (json.dumps(items, ensure_ascii=False, separators=(",", ":")), int(job_id)),
+    )
+
+
+def seed_job_progress(conn, job_id: Optional[int], monitors: Sequence[Any]) -> None:
+    if not job_id:
+        return
+    items: List[Dict[str, Any]] = []
+    seen: Set[int] = set()
+    for m in monitors:
+        try:
+            mid = int(m["id"])
+        except Exception:
+            continue
+        if mid <= 0 or mid in seen:
+            continue
+        seen.add(mid)
+        try:
+            raw_name = m["name"]
+        except Exception:
+            raw_name = ""
+        name = str(raw_name or "").strip()
+        items.append({
+            "id": mid,
+            "name": name if name else f"Monitor #{mid}",
+            "status": "pending",
+            "response_ms": None,
+            "seq": len(items) + 1,
+        })
+    _save_job_progress_items(conn, int(job_id), items)
+    conn.commit()
+
+
+def patch_job_progress_item(
+    conn,
+    job_id: Optional[int],
+    monitor_id: int,
+    *,
+    name: str,
+    status: str,
+    response_ms: Optional[int],
+) -> None:
+    if not job_id:
+        return
+    items = _load_job_progress_items(conn, int(job_id))
+    found = False
+    for it in items:
+        if not isinstance(it, dict):
+            continue
+        try:
+            iid = int(it.get("id") or 0)
+        except Exception:
+            continue
+        if iid != int(monitor_id):
+            continue
+        it["status"] = status
+        it["response_ms"] = None if response_ms is None else int(response_ms)
+        if name:
+            it["name"] = name
+        found = True
+        break
+    if not found:
+        items.append({
+            "id": int(monitor_id),
+            "name": name or f"Monitor #{int(monitor_id)}",
+            "status": status,
+            "response_ms": None if response_ms is None else int(response_ms),
+            "seq": len(items) + 1,
+        })
+    _save_job_progress_items(conn, int(job_id), items)
+
+
+def mark_remaining_job_progress(conn, job_id: Optional[int], status: str) -> None:
+    if not job_id:
+        return
+    items = _load_job_progress_items(conn, int(job_id))
+    changed = False
+    for it in items:
+        if not isinstance(it, dict):
+            continue
+        cur = str(it.get("status") or "pending").strip().lower()
+        if cur in ("pending", "checking"):
+            it["status"] = status
+            changed = True
+    if changed:
+        _save_job_progress_items(conn, int(job_id), items)
+        conn.commit()
 
 
 def perform_check(monitor: Dict[str, Any], verify_ssl: bool, app_name: str = "LinkNest") -> CheckResult:
@@ -733,6 +840,10 @@ def main() -> int:
         counts = {"checked": 0, "total": job_total if job_id else len(due), "up": 0, "down": 0, "error": 0}
         job_counts = {"checked": 0, "total": job_total, "up": 0, "down": 0, "error": 0} if job_id else None
         queued_emails = 0
+        if job_id is not None:
+            seed_src = [m for m in due if not forced_ids or int(m["id"]) in forced_ids]
+            seed_job_progress(conn, job_id, seed_src or due)
+            mark_remaining_job_progress(conn, job_id, "checking")
 
         if args.dry_run:
             with concurrent.futures.ThreadPoolExecutor(max_workers=max_workers) as ex:
@@ -793,13 +904,28 @@ def main() -> int:
                     raise
 
                 bucket = count_status(eff_status)
-                if job_id is not None and mid in forced_ids and job_counts is not None:
+                job_item = job_id is not None and job_counts is not None and (not forced_ids or mid in forced_ids)
+                if job_item:
                     job_counts["checked"] += 1
                     job_counts[bucket] = int(job_counts.get(bucket, 0)) + 1
+                    item_status = (eff_status or bucket or "error").strip().lower()
+                    if item_status == "warning":
+                        item_status = "down"
+                    if item_status not in ("up", "down", "error"):
+                        item_status = bucket if bucket in ("up", "down", "error") else "error"
+                    patch_job_progress_item(
+                        conn,
+                        job_id,
+                        mid,
+                        name=str(mrow.get("name") or "").strip(),
+                        status=item_status,
+                        response_ms=int(r.response_ms or 0),
+                    )
                     update_job_progress(conn, job_id, job_counts)
 
         if job_id is not None and job_counts is not None:
             if job_cancelled or is_job_cancelled(conn, job_id):
+                mark_remaining_job_progress(conn, job_id, "skipped")
                 finish_job(
                     conn,
                     job_id,

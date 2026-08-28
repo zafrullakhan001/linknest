@@ -3481,6 +3481,9 @@ function initDatabase() {
             $db->exec('ALTER TABLE monitor_check_jobs ADD COLUMN worker_kicked INTEGER DEFAULT 0');
         } catch (PDOException $e) { /* column exists */ }
         try {
+            $db->exec('ALTER TABLE monitor_check_jobs ADD COLUMN progress_json TEXT');
+        } catch (PDOException $e) { /* column exists */ }
+        try {
             $db->exec('CREATE INDEX IF NOT EXISTS idx_monitor_check_jobs_status ON monitor_check_jobs(status)');
             $db->exec('CREATE INDEX IF NOT EXISTS idx_monitor_check_jobs_created_at ON monitor_check_jobs(created_at)');
         } catch (PDOException $e) { /* ignore */ }

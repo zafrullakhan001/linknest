@@ -207,6 +207,8 @@ def ensure_monitor_check_jobs_schema(conn: sqlite3.Connection) -> None:
     with contextlib.suppress(Exception):
         conn.execute("ALTER TABLE monitor_check_jobs ADD COLUMN worker_kicked INTEGER DEFAULT 0")
     with contextlib.suppress(Exception):
+        conn.execute("ALTER TABLE monitor_check_jobs ADD COLUMN progress_json TEXT")
+    with contextlib.suppress(Exception):
         conn.execute("CREATE INDEX IF NOT EXISTS idx_monitor_check_jobs_status ON monitor_check_jobs(status)")
         conn.execute("CREATE INDEX IF NOT EXISTS idx_monitor_check_jobs_created_at ON monitor_check_jobs(created_at)")
 

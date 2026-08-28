@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useCallback, useRef, useMemo } from 'react';
 import { createPortal } from 'react-dom';
-import { Monitor, MonitorLog, MonitorForceEngine, MonitorCheckJob, MonitorWorkerSchedulerStatus, MonitorWorkerSchedulerTaskKey, monitoringService } from '../services/monitoringService';
+import { Monitor, MonitorLog, MonitorForceEngine, MonitorCheckJob, MonitorCheckJobItem, MonitorWorkerSchedulerStatus, MonitorWorkerSchedulerTaskKey, monitoringService } from '../services/monitoringService';
 import { MonitorSchedulerPythonHealthCard, MonitorSchedulerDatabaseCard, MonitorSchedulerWorkerEnvCard, SchedulerCollapsibleBlock } from './MonitorSchedulerPythonHealth';
 import { MonitorForm } from './MonitorForm';
 import { MonitorBulkImportDialog } from './MonitorBulkImportDialog';
@@ -27,6 +27,216 @@ import { useEscapeToClose } from '../hooks/useEscapeToClose';
 
 /** Estimated max wait shown while a queued job awaits monitor_runner pickup. */
 const PYTHON_WORKER_PICKUP_COUNTDOWN_SEC = 65;
+/** Highlight checks that took this long (ms) so slow monitors are easy to spot. */
+const SLOW_CHECK_MS = 5000;
+
+function formatCheckDuration(ms: number | null | undefined): string {
+    if (ms == null || Number.isNaN(ms)) {
+        return '…';
+    }
+    if (ms >= 10000) {
+        return `${Math.round(ms / 1000)}s`;
+    }
+    if (ms >= 1000) {
+        return `${(ms / 1000).toFixed(1)}s`;
+    }
+    return `${Math.max(0, Math.round(ms))}ms`;
+}
+
+function sortJobProgressItems(items: MonitorCheckJobItem[]): MonitorCheckJobItem[] {
+    return items.map((item, i) => ({
+        ...item,
+        seq: item.seq && item.seq > 0 ? item.seq : i + 1,
+    })).sort((a, b) => (a.seq ?? 0) - (b.seq ?? 0) || a.id - b.id);
+}
+
+function csvEscapeCell(value: string): string {
+    if (/[",\n\r]/.test(value)) {
+        return `"${value.replace(/"/g, '""')}"`;
+    }
+    return value;
+}
+
+function downloadJobProgressCsv(jobId: number, items: MonitorCheckJobItem[]): void {
+    const ordered = sortJobProgressItems(items);
+    const header = ['Scan #', 'Monitor ID', 'Name', 'Status', 'Response ms', 'Duration', 'Slow (>=5s)'];
+    const body = ordered.map((item) => [
+        String(item.seq ?? ''),
+        String(item.id),
+        item.name,
+        item.status,
+        item.response_ms == null ? '' : String(item.response_ms),
+        item.response_ms == null ? '' : formatCheckDuration(item.response_ms),
+        (item.response_ms ?? 0) >= SLOW_CHECK_MS ? 'yes' : '',
+    ]);
+    const csv = [header, ...body].map((cols) => cols.map((c) => csvEscapeCell(c)).join(',')).join('\n');
+    const blob = new Blob(['\uFEFF' + csv], { type: 'text/csv;charset=utf-8;' });
+    const url = URL.createObjectURL(blob);
+    const link = document.createElement('a');
+    link.href = url;
+    link.download = `monitor-job-${jobId}-${new Date().toISOString().slice(0, 19).replace(/[:T]/g, '-')}.csv`;
+    link.style.visibility = 'hidden';
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
+    URL.revokeObjectURL(url);
+}
+
+type FloatPanelPos = { left: number; top: number };
+
+function readFloatPanelPos(storageKey: string): FloatPanelPos | null {
+    try {
+        const raw = sessionStorage.getItem(storageKey);
+        if (!raw) {
+            return null;
+        }
+        const parsed = JSON.parse(raw) as Partial<FloatPanelPos>;
+        if (typeof parsed.left === 'number' && typeof parsed.top === 'number') {
+            return { left: parsed.left, top: parsed.top };
+        }
+    } catch {
+        // ignore
+    }
+    return null;
+}
+
+function clampFloatPanelPos(left: number, top: number, width: number, height: number): FloatPanelPos {
+    const handle = 48;
+    const vw = window.innerWidth;
+    const vh = window.innerHeight;
+    return {
+        left: Math.min(vw - handle, Math.max(handle - width, left)),
+        top: Math.min(vh - handle, Math.max(8, top)),
+    };
+}
+
+function useDraggableFloatPanel(storageKey: string) {
+    const panelRef = useRef<HTMLDivElement>(null);
+    const offsetRef = useRef({ x: 0, y: 0 });
+    const posRef = useRef<FloatPanelPos | null>(null);
+    const [pos, setPos] = useState<FloatPanelPos | null>(() => readFloatPanelPos(storageKey));
+    const [dragging, setDragging] = useState(false);
+    posRef.current = pos;
+
+    const onDragStart = useCallback((e: React.MouseEvent) => {
+        if (e.button !== 0) {
+            return;
+        }
+        if ((e.target as HTMLElement).closest('button, a, input, select, textarea, label')) {
+            return;
+        }
+        const el = panelRef.current;
+        if (!el) {
+            return;
+        }
+        e.preventDefault();
+        e.stopPropagation();
+        const rect = el.getBoundingClientRect();
+        offsetRef.current = { x: e.clientX - rect.left, y: e.clientY - rect.top };
+        const next = { left: rect.left, top: rect.top };
+        posRef.current = next;
+        setPos(next);
+        setDragging(true);
+    }, []);
+
+    useEffect(() => {
+        if (!dragging) {
+            return;
+        }
+        const prevCursor = document.body.style.cursor;
+        const prevSelect = document.body.style.userSelect;
+        document.body.style.cursor = 'grabbing';
+        document.body.style.userSelect = 'none';
+
+        const onMove = (e: MouseEvent) => {
+            e.preventDefault();
+            const el = panelRef.current;
+            const w = el?.offsetWidth || 320;
+            const h = Math.min(el?.offsetHeight || 200, window.innerHeight - 16);
+            const next = clampFloatPanelPos(
+                e.clientX - offsetRef.current.x,
+                e.clientY - offsetRef.current.y,
+                w,
+                h,
+            );
+            posRef.current = next;
+            setPos(next);
+        };
+        const onUp = () => setDragging(false);
+        window.addEventListener('mousemove', onMove, { passive: false });
+        window.addEventListener('mouseup', onUp);
+        window.addEventListener('blur', onUp);
+        return () => {
+            document.body.style.cursor = prevCursor;
+            document.body.style.userSelect = prevSelect;
+            window.removeEventListener('mousemove', onMove);
+            window.removeEventListener('mouseup', onUp);
+            window.removeEventListener('blur', onUp);
+        };
+    }, [dragging]);
+
+    useEffect(() => {
+        if (!pos) {
+            return;
+        }
+        try {
+            sessionStorage.setItem(storageKey, JSON.stringify(pos));
+        } catch {
+            // ignore quota / private mode
+        }
+    }, [pos, storageKey]);
+
+    useEffect(() => {
+        const onResize = () => {
+            setPos((prev) => {
+                if (!prev) {
+                    return prev;
+                }
+                const el = panelRef.current;
+                const w = el?.offsetWidth || 320;
+                const h = Math.min(el?.offsetHeight || 200, window.innerHeight - 16);
+                return clampFloatPanelPos(prev.left, prev.top, w, h);
+            });
+        };
+        window.addEventListener('resize', onResize);
+        return () => window.removeEventListener('resize', onResize);
+    }, []);
+
+    const positioned = pos !== null;
+    const style: React.CSSProperties | undefined = positioned
+        ? {
+            inset: 'auto',
+            left: pos.left,
+            top: pos.top,
+            right: 'auto',
+            bottom: 'auto',
+            margin: 0,
+            transform: 'none',
+            maxHeight: 'min(72vh, 34rem)',
+            width: 'min(calc(100vw - 2rem), 26rem)',
+        }
+        : undefined;
+
+    return { panelRef, dragging, onDragStart, style, positioned };
+}
+
+const FloatPanelDragBar: React.FC<{
+    dragging: boolean;
+    onMouseDown: (e: React.MouseEvent) => void;
+}> = ({ dragging, onMouseDown }) => (
+    <div
+        onMouseDown={onMouseDown}
+        className={`shrink-0 h-6 cursor-grab active:cursor-grabbing select-none flex items-center justify-center gap-1.5 border-t border-current/15 ${
+            dragging ? 'bg-black/10 dark:bg-white/10' : 'hover:bg-black/5 dark:hover:bg-white/5'
+        }`}
+        title="Drag to move"
+        role="presentation"
+    >
+        <span className="w-7 h-1 rounded-full bg-current opacity-30" aria-hidden />
+        <span className="text-[9px] font-bold uppercase tracking-wide opacity-50">Drag</span>
+        <span className="w-7 h-1 rounded-full bg-current opacity-30" aria-hidden />
+    </div>
+);
 /** Minimum auto-refresh interval when mode is force (avoids hammering PHP/Python). */
 const FORCE_AUTO_MIN_INTERVAL_SEC = 60;
 /** Quiet period after a PHP force-all completes before auto force may run again. */
@@ -94,8 +304,11 @@ export const MonitoringDashboard: React.FC = () => {
         total: number;
         jobCreatedAt?: number;
         pickupWaitStartedAt?: number;
+        items?: MonitorCheckJobItem[];
     } | null>(null);
     const [pythonJobPanelVisible, setPythonJobPanelVisible] = useState(false);
+    const pythonJobDrag = useDraggableFloatPanel('linknest_monitor_py_job_panel_v2');
+    const schedulerDrag = useDraggableFloatPanel('linknest_monitor_scheduler_panel_v2');
     const [isAbortingPythonJob, setIsAbortingPythonJob] = useState(false);
     const [pickupCountdown, setPickupCountdown] = useState<{
         seconds: number;
@@ -782,6 +995,7 @@ export const MonitoringDashboard: React.FC = () => {
             checked: job.checked_count,
             total: job.total_count,
             jobCreatedAt: createdAt && createdAt > 0 ? createdAt : undefined,
+            items: Array.isArray(job.items) ? job.items : [],
         };
     }, []);
 
@@ -899,11 +1113,14 @@ export const MonitoringDashboard: React.FC = () => {
                     error: finalJob.error_count,
                 });
             }
+            const items = Array.isArray(finalJob.items) ? finalJob.items : [];
+            const hasItems = items.length > 0;
+            const hasSlow = items.some((item) => (item.response_ms ?? 0) >= SLOW_CHECK_MS);
             setTimeout(() => {
                 setCheckStatus(null);
                 setPythonJobActivity(null);
                 hidePythonJobPanel();
-            }, 5000);
+            }, hasSlow ? 30000 : (hasItems ? 15000 : 5000));
         } else if (!pollAbortRef.current) {
             setPythonJobActivity({
                 jobId,
@@ -3913,11 +4130,19 @@ ON CONFLICT(key) DO UPDATE SET value = excluded.value, updated_at = excluded.upd
     const pythonJobFloatPanel = pythonJobActivity && pythonJobPanelVisible && typeof document !== 'undefined'
         ? createPortal(
             <div
-                className="fixed bottom-6 right-6 z-[9999] w-[min(calc(100vw-2rem),22rem)] animate-in fade-in slide-in-from-bottom-2 duration-300"
+                ref={pythonJobDrag.panelRef}
+                className={`fixed w-[min(calc(100vw-2rem),26rem)] max-h-[min(72vh,34rem)] flex flex-col ${
+                    pythonJobDrag.dragging ? 'z-[10001]' : 'z-[9999]'
+                } ${
+                    pythonJobDrag.positioned || pythonJobDrag.dragging
+                        ? ''
+                        : 'bottom-6 right-6 animate-in fade-in slide-in-from-bottom-2 duration-300'
+                }`}
+                style={pythonJobDrag.style}
                 role="status"
                 aria-live="polite"
             >
-                <div className={`rounded-2xl border text-xs shadow-2xl backdrop-blur-md ${
+                <div className={`rounded-2xl border text-xs shadow-2xl backdrop-blur-md min-h-0 overflow-hidden flex flex-col ${
                     pythonJobActivity.phase === 'cancelled' || pythonJobActivity.phase === 'cancelling'
                         ? 'bg-slate-100/95 dark:bg-slate-900/95 border-slate-300 dark:border-slate-600 text-slate-800 dark:text-slate-100'
                         : pythonJobActivity.phase === 'error' || pythonJobActivity.phase === 'timeout'
@@ -3926,11 +4151,17 @@ ON CONFLICT(key) DO UPDATE SET value = excluded.value, updated_at = excluded.upd
                             ? 'bg-emerald-50/95 dark:bg-emerald-950/95 border-emerald-300 dark:border-emerald-700 text-emerald-900 dark:text-emerald-100'
                             : 'bg-emerald-50/95 dark:bg-emerald-950/95 border-emerald-300 dark:border-emerald-700 text-emerald-900 dark:text-emerald-100'
                 }`}>
-                    <div className={`flex items-center justify-between gap-2 px-4 py-3 border-b ${
-                        pythonJobActivity.phase === 'cancelled' || pythonJobActivity.phase === 'cancelling'
-                            ? 'border-slate-200/70 dark:border-slate-700/70'
-                            : 'border-emerald-200/70 dark:border-emerald-800/70'
-                    }`}>
+                    <div
+                        onMouseDown={pythonJobDrag.onDragStart}
+                        className={`flex items-center justify-between gap-2 px-4 py-3 border-b cursor-grab active:cursor-grabbing select-none ${
+                            pythonJobDrag.dragging ? 'cursor-grabbing' : ''
+                        } ${
+                    pythonJobActivity.phase === 'cancelled' || pythonJobActivity.phase === 'cancelling'
+                        ? 'border-slate-200/70 dark:border-slate-700/70'
+                        : 'border-emerald-200/70 dark:border-emerald-800/70'
+                    }`}
+                        title="Drag to move"
+                    >
                         <div className="flex items-center gap-2 min-w-0">
                             {isPythonJobActive(pythonJobActivity.phase) && (
                                 <FaRedo className="shrink-0 animate-spin" size={12} />
@@ -3957,7 +4188,7 @@ ON CONFLICT(key) DO UPDATE SET value = excluded.value, updated_at = excluded.upd
                             <FaTimes size={12} />
                         </button>
                     </div>
-                    <div className="px-4 py-3">
+                    <div className="px-4 py-3 min-h-0 overflow-y-auto">
                         <p className="text-[11px] leading-relaxed opacity-90">
                             {pythonJobActivity.message}
                         </p>
@@ -4007,6 +4238,94 @@ ON CONFLICT(key) DO UPDATE SET value = excluded.value, updated_at = excluded.upd
                                 Final: {pythonJobActivity.checked}/{pythonJobActivity.total} monitors
                             </p>
                         )}
+                        {(pythonJobActivity.items?.length ?? 0) > 0 && (
+                            <div className="mt-3">
+                                {(() => {
+                                    const running = isPythonJobActive(pythonJobActivity.phase);
+                                    const items = sortJobProgressItems(pythonJobActivity.items || []);
+                                    const slowest = [...items]
+                                        .filter((item) => item.response_ms != null)
+                                        .sort((a, b) => (b.response_ms ?? 0) - (a.response_ms ?? 0))[0];
+                                    const slowCount = items.filter((item) => (item.response_ms ?? 0) >= SLOW_CHECK_MS).length;
+                                    return (
+                                        <>
+                                            {slowest && (slowest.response_ms ?? 0) >= SLOW_CHECK_MS && (
+                                                <p className="mb-2 text-[10px] font-bold text-amber-800 dark:text-amber-200 flex items-start gap-1.5">
+                                                    <FaExclamationTriangle size={9} className="mt-0.5 shrink-0" />
+                                                    <span>
+                                                        Slowest: #{slowest.seq} {slowest.name} — {formatCheckDuration(slowest.response_ms)}
+                                                        {slowCount > 1 ? ` (${slowCount} over 5s)` : ''}
+                                                    </span>
+                                                </p>
+                                            )}
+                                            <div className="mb-1.5 flex items-center justify-between gap-2">
+                                                <span className="text-[10px] font-semibold opacity-70">
+                                                    Scan order
+                                                </span>
+                                                <button
+                                                    type="button"
+                                                    onClick={() => downloadJobProgressCsv(pythonJobActivity.jobId, items)}
+                                                    className="inline-flex items-center gap-1 px-2 py-0.5 rounded-md text-[10px] font-bold uppercase tracking-wide bg-white/80 dark:bg-black/30 border border-emerald-200 dark:border-emerald-800 hover:bg-white dark:hover:bg-black/50 transition-colors"
+                                                    title="Export this job's results to CSV"
+                                                >
+                                                    <FaFileCsv size={10} />
+                                                    Export CSV
+                                                </button>
+                                            </div>
+                                            <ul className="max-h-48 overflow-y-auto rounded-lg border border-emerald-200/70 dark:border-emerald-800/70 bg-white/60 dark:bg-black/20 divide-y divide-emerald-100/80 dark:divide-emerald-900/50">
+                                                {items.map((item) => {
+                                                    const slow = (item.response_ms ?? 0) >= SLOW_CHECK_MS;
+                                                    const pending = item.status === 'pending' || item.status === 'checking' || item.response_ms == null;
+                                                    return (
+                                                        <li
+                                                            key={item.id}
+                                                            className={`flex items-center gap-2 px-2 py-1.5 ${
+                                                                slow ? 'bg-amber-100/90 dark:bg-amber-900/40' : ''
+                                                            }`}
+                                                        >
+                                                            <span className="shrink-0 w-6 text-right tabular-nums text-[10px] font-black opacity-60">
+                                                                {item.seq}
+                                                            </span>
+                                                            <span
+                                                                className={`shrink-0 w-1.5 h-1.5 rounded-full ${
+                                                                    item.status === 'up'
+                                                                        ? 'bg-emerald-500'
+                                                                        : item.status === 'down' || item.status === 'error'
+                                                                            ? 'bg-red-500'
+                                                                            : pending
+                                                                                ? 'bg-sky-400 animate-pulse'
+                                                                                : 'bg-slate-400'
+                                                                }`}
+                                                                title={item.status}
+                                                            />
+                                                            <span className="min-w-0 flex-1 truncate font-medium" title={`#${item.seq} ${item.name}`}>
+                                                                {item.name}
+                                                            </span>
+                                                            <span className={`shrink-0 tabular-nums font-bold ${
+                                                                slow
+                                                                    ? 'text-amber-800 dark:text-amber-200'
+                                                                    : pending
+                                                                        ? 'opacity-70'
+                                                                        : 'opacity-80'
+                                                            }`}>
+                                                                {pending
+                                                                    ? (running ? 'checking…' : 'queued')
+                                                                    : formatCheckDuration(item.response_ms)}
+                                                            </span>
+                                                            {slow && (
+                                                                <span className="shrink-0 text-[9px] font-black uppercase tracking-wide text-amber-800 dark:text-amber-200">
+                                                                    slow
+                                                                </span>
+                                                            )}
+                                                        </li>
+                                                    );
+                                                })}
+                                            </ul>
+                                        </>
+                                    );
+                                })()}
+                            </div>
+                        )}
                         {isPythonJobActive(pythonJobActivity.phase) && pythonJobActivity.jobId > 0 && (
                             <div className="mt-3 pt-3 border-t border-emerald-200/60 dark:border-emerald-800/60 flex justify-end">
                                 <button
@@ -4022,6 +4341,7 @@ ON CONFLICT(key) DO UPDATE SET value = excluded.value, updated_at = excluded.upd
                             </div>
                         )}
                     </div>
+                    <FloatPanelDragBar dragging={pythonJobDrag.dragging} onMouseDown={pythonJobDrag.onDragStart} />
                 </div>
             </div>,
             document.body
@@ -4031,26 +4351,40 @@ ON CONFLICT(key) DO UPDATE SET value = excluded.value, updated_at = excluded.upd
     const schedulerFloatPanel = showSchedulerToolbarChip && workerSchedulerStatus && schedulerPanelVisible && !showCronModal && typeof document !== 'undefined'
         ? createPortal(
             <div
-                className={`fixed right-6 z-[9998] w-[min(calc(100vw-2rem),26rem)] animate-in fade-in slide-in-from-bottom-2 duration-300 ${
-                    pythonJobActivity && pythonJobPanelVisible ? 'bottom-[21rem]' : 'bottom-6'
+                ref={schedulerDrag.panelRef}
+                className={`fixed w-[min(calc(100vw-2rem),26rem)] ${
+                    schedulerDrag.dragging ? 'z-[10001]' : 'z-[9998]'
+                } ${
+                    schedulerDrag.positioned || schedulerDrag.dragging
+                        ? ''
+                        : (pythonJobActivity && pythonJobPanelVisible
+                            ? 'right-6 bottom-[36rem] animate-in fade-in slide-in-from-bottom-2 duration-300'
+                            : 'right-6 bottom-6 animate-in fade-in slide-in-from-bottom-2 duration-300')
                 }`}
+                style={schedulerDrag.style}
                 role="status"
                 aria-live="polite"
             >
-                <div className={`rounded-2xl border text-xs shadow-2xl backdrop-blur-md ${
+                <div className={`rounded-2xl border text-xs shadow-2xl backdrop-blur-md overflow-hidden flex flex-col ${
                     showWorkerSchedulerBanner
                         ? workerSchedulerStatus.python_ready === false
                             ? 'bg-amber-50/95 dark:bg-amber-950/95 border-amber-300 dark:border-amber-700 text-amber-900 dark:text-amber-100'
                             : 'bg-orange-50/95 dark:bg-orange-950/95 border-orange-300 dark:border-orange-700 text-orange-900 dark:text-orange-100'
                         : 'bg-emerald-50/95 dark:bg-emerald-950/95 border-emerald-300 dark:border-emerald-700 text-emerald-900 dark:text-emerald-100'
                 }`}>
-                    <div className={`flex items-center justify-between gap-2 px-4 py-3 border-b ${
+                    <div
+                        onMouseDown={schedulerDrag.onDragStart}
+                        className={`flex items-center justify-between gap-2 px-4 py-3 border-b cursor-grab active:cursor-grabbing select-none ${
+                            schedulerDrag.dragging ? 'cursor-grabbing' : ''
+                        } ${
                         showWorkerSchedulerBanner
                             ? workerSchedulerStatus.python_ready === false
                                 ? 'border-amber-200/70 dark:border-amber-800/70'
                                 : 'border-orange-200/70 dark:border-orange-800/70'
                             : 'border-emerald-200/70 dark:border-emerald-800/70'
-                    }`}>
+                    }`}
+                        title="Drag to move"
+                    >
                         <div className="flex items-center gap-2 min-w-0">
                             {showWorkerSchedulerBanner ? (
                                 <FaExclamationTriangle className="shrink-0" size={12} />
@@ -4204,6 +4538,7 @@ ON CONFLICT(key) DO UPDATE SET value = excluded.value, updated_at = excluded.upd
                             </button>
                         </div>
                     </div>
+                    <FloatPanelDragBar dragging={schedulerDrag.dragging} onMouseDown={schedulerDrag.onDragStart} />
                 </div>
             </div>,
             document.body

@@ -23,10 +23,15 @@ function monitorCheckJobsEnsureSchema(PDO $db): void {
         up_count INTEGER DEFAULT 0,
         down_count INTEGER DEFAULT 0,
         error_count INTEGER DEFAULT 0,
-        last_error TEXT
+            last_error TEXT
     )');
     try {
         $db->exec('ALTER TABLE monitor_check_jobs ADD COLUMN worker_kicked INTEGER DEFAULT 0');
+    } catch (PDOException $e) {
+        // column already exists
+    }
+    try {
+        $db->exec('ALTER TABLE monitor_check_jobs ADD COLUMN progress_json TEXT');
     } catch (PDOException $e) {
         // column already exists
     }
@@ -89,9 +94,93 @@ function monitorCheckJobsFindActiveAllJob(PDO $db): ?array {
     return $row ?: null;
 }
 
+/**
+ * @param list<int> $ids
+ * @return list<array{id:int,name:string,status:string,response_ms:?int,seq:int}>
+ */
+function monitorCheckJobsSeedProgressItems(PDO $db, array $ids): array {
+    $ids = array_values(array_unique(array_filter(array_map('intval', $ids), static function ($v) {
+        return $v > 0;
+    })));
+    if ($ids === []) {
+        return [];
+    }
+    $placeholders = implode(',', array_fill(0, count($ids), '?'));
+    $stmt = $db->prepare('SELECT id, name FROM monitors WHERE id IN (' . $placeholders . ')');
+    $stmt->execute($ids);
+    $names = [];
+    foreach ($stmt->fetchAll(PDO::FETCH_ASSOC) as $r) {
+        $names[(int)$r['id']] = trim((string)($r['name'] ?? ''));
+    }
+    $items = [];
+    foreach ($ids as $id) {
+        $name = $names[$id] ?? '';
+        $items[] = [
+            'id' => $id,
+            'name' => $name !== '' ? $name : ('Monitor #' . $id),
+            'status' => 'pending',
+            'response_ms' => null,
+            'seq' => count($items) + 1,
+        ];
+    }
+    return $items;
+}
+
+/**
+ * @return list<array{id:int,name:string,status:string,response_ms:?int,seq:int}>
+ */
+function monitorCheckJobsParseProgressJson(?string $json): array {
+    if ($json === null || trim($json) === '') {
+        return [];
+    }
+    $decoded = json_decode($json, true);
+    if (!is_array($decoded)) {
+        return [];
+    }
+    $items = [];
+    foreach ($decoded as $row) {
+        if (!is_array($row)) {
+            continue;
+        }
+        $id = (int)($row['id'] ?? 0);
+        if ($id <= 0) {
+            continue;
+        }
+        $ms = $row['response_ms'] ?? null;
+        $status = strtolower(trim((string)($row['status'] ?? 'pending')));
+        if (!in_array($status, ['pending', 'checking', 'up', 'down', 'error', 'skipped'], true)) {
+            $status = 'pending';
+        }
+        $name = trim((string)($row['name'] ?? ''));
+        $seq = (int)($row['seq'] ?? 0);
+        $items[] = [
+            'id' => $id,
+            'name' => $name !== '' ? $name : ('Monitor #' . $id),
+            'status' => $status,
+            'response_ms' => ($ms === null || $ms === '') ? null : (int)$ms,
+            'seq' => $seq > 0 ? $seq : 0,
+        ];
+    }
+    return $items;
+}
+
 function monitorCheckJobsFormatRow(array $row): array {
     $status = (string)($row['status'] ?? '');
     $startedAt = isset($row['started_at']) ? (int)$row['started_at'] : null;
+    $ids = monitorCheckJobsParseIds(isset($row['monitor_ids']) ? (string)$row['monitor_ids'] : null);
+    $items = monitorCheckJobsParseProgressJson(isset($row['progress_json']) ? (string)$row['progress_json'] : null);
+    if ($items === [] && $ids !== [] && function_exists('getDB')) {
+        try {
+            $items = monitorCheckJobsSeedProgressItems(getDB(), $ids);
+        } catch (Throwable $e) {
+            $items = [];
+        }
+    }
+    foreach ($items as $i => $item) {
+        if ((int)($item['seq'] ?? 0) <= 0) {
+            $items[$i]['seq'] = $i + 1;
+        }
+    }
     return [
         'id' => (int)$row['id'],
         'status' => $status,
@@ -108,6 +197,7 @@ function monitorCheckJobsFormatRow(array $row): array {
         'down_count' => (int)($row['down_count'] ?? 0),
         'error_count' => (int)($row['error_count'] ?? 0),
         'last_error' => isset($row['last_error']) ? (string)$row['last_error'] : null,
+        'items' => $items,
     ];
 }
 
@@ -134,18 +224,21 @@ function monitorCheckJobsEnqueueAll(PDO $db, array $user, array $monitorIds, boo
     }
 
     $now = time();
+    $idList = array_values(array_map('intval', $monitorIds));
+    $progressJson = json_encode(monitorCheckJobsSeedProgressItems($db, $idList), JSON_UNESCAPED_UNICODE);
     $stmt = $db->prepare('
         INSERT INTO monitor_check_jobs (
             created_at, requested_by, scope, monitor_ids, force_notify_rules,
-            status, checked_count, total_count
-        ) VALUES (?, ?, "all", ?, ?, "queued", 0, ?)
+            status, checked_count, total_count, progress_json
+        ) VALUES (?, ?, "all", ?, ?, "queued", 0, ?, ?)
     ');
     $stmt->execute([
         $now,
         isset($user['id']) ? (int)$user['id'] : null,
-        json_encode(array_values(array_map('intval', $monitorIds))),
+        json_encode($idList),
         $forceNotifyRules ? 1 : 0,
-        count($monitorIds),
+        count($idList),
+        is_string($progressJson) ? $progressJson : '[]',
     ]);
 
     return [
