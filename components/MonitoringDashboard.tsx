@@ -34,6 +34,8 @@ const FORCE_AUTO_RELAX_PHP_SEC = 180;
 const FORCE_AUTO_RELAX_PYTHON_SEC = 120;
 /** When auto force is deferred because a check is in flight, retry after this many seconds. */
 const FORCE_AUTO_BUSY_RETRY_SEC = 15;
+/** Minimum spin time so the blue list-refresh button shows visible feedback. */
+const LIST_REFRESH_MIN_SPIN_MS = 500;
 
 export const MonitoringDashboard: React.FC = () => {
     const { user } = useAuth();
@@ -856,77 +858,86 @@ export const MonitoringDashboard: React.FC = () => {
 
         if (!isFullCheck) {
             setIsRefreshingList(true);
+            const spinStarted = Date.now();
+            try {
+                await fetchMonitors();
+            } catch (error) {
+                console.error('Failed to refresh monitors', error);
+            } finally {
+                const remaining = LIST_REFRESH_MIN_SPIN_MS - (Date.now() - spinStarted);
+                if (remaining > 0) {
+                    await new Promise((resolve) => setTimeout(resolve, remaining));
+                }
+                setIsRefreshingList(false);
+            }
+            return;
         }
+
         setCheckStatus(null);
         pollAbortRef.current = false;
 
         try {
-            if (isFullCheck) {
-                if (forceEngine === 'python' && !confirmPythonRunDespiteScheduler()) {
-                    return;
-                }
-                beginForceCheckBusy();
-                const forceNotifyRules = autoRefreshMode === 'force';
+            if (forceEngine === 'python' && !confirmPythonRunDespiteScheduler()) {
+                return;
+            }
+            beginForceCheckBusy();
+            const forceNotifyRules = autoRefreshMode === 'force';
 
-                if (forceEngine === 'python') {
-                    let jobId = activePythonJobRef.current;
+            if (forceEngine === 'python') {
+                let jobId = activePythonJobRef.current;
 
-                    if (!jobId) {
-                        const activeJob = await monitoringService.getActiveCheckJob();
-                        if (activeJob) {
-                            await followPythonJob(activeJob.id, {
-                                coalesced: true,
-                                initialJob: activeJob,
-                                kicked: activeJob.worker_kicked,
-                            });
-                            await fetchMonitors();
-                            return;
-                        }
-
-                        showPythonJobPanel();
-                        setPythonJobActivity({
-                            jobId: 0,
-                            phase: 'submitting',
-                            message: 'Submitting force check to Python worker…',
-                            checked: 0,
-                            total: 0,
+                if (!jobId) {
+                    const activeJob = await monitoringService.getActiveCheckJob();
+                    if (activeJob) {
+                        await followPythonJob(activeJob.id, {
+                            coalesced: true,
+                            initialJob: activeJob,
+                            kicked: activeJob.worker_kicked,
                         });
+                        await fetchMonitors();
+                        return;
+                    }
 
-                        const queued = await monitoringService.checkAllMonitors({
-                            engine: 'python',
-                            forceNotifyRules,
+                    showPythonJobPanel();
+                    setPythonJobActivity({
+                        jobId: 0,
+                        phase: 'submitting',
+                        message: 'Submitting force check to Python worker…',
+                        checked: 0,
+                        total: 0,
+                    });
+
+                    const queued = await monitoringService.checkAllMonitors({
+                        engine: 'python',
+                        forceNotifyRules,
+                    });
+
+                    if (queued.engine === 'python') {
+                        jobId = queued.job_id;
+                        const initialJob = queued.job ?? await monitoringService.getCheckJob(jobId);
+                        await followPythonJob(jobId, {
+                            kicked: queued.kicked,
+                            coalesced: queued.coalesced,
+                            initialJob,
                         });
-
-                        if (queued.engine === 'python') {
-                            jobId = queued.job_id;
-                            const initialJob = queued.job ?? await monitoringService.getCheckJob(jobId);
-                            await followPythonJob(jobId, {
-                                kicked: queued.kicked,
-                                coalesced: queued.coalesced,
-                                initialJob,
-                            });
-                        }
-                    } else {
-                        await followPythonJob(jobId, { coalesced: true });
                     }
                 } else {
-                    setPythonJobActivity(null);
-                    const checkResult = await monitoringService.checkAllMonitors({ engine: 'php' });
-                    if (checkResult.engine === 'php') {
-                        setCheckStatus({
-                            count: checkResult.count,
-                            total: checkResult.total,
-                            up: checkResult.up_count,
-                            down: checkResult.down_count,
-                            error: checkResult.error_count,
-                        });
-                        setTimeout(() => setCheckStatus(null), 5000);
-                        markForceAutoRelaxPeriod('php');
-                    }
+                    await followPythonJob(jobId, { coalesced: true });
                 }
             } else {
-                await fetchMonitors();
-                return;
+                setPythonJobActivity(null);
+                const checkResult = await monitoringService.checkAllMonitors({ engine: 'php' });
+                if (checkResult.engine === 'php') {
+                    setCheckStatus({
+                        count: checkResult.count,
+                        total: checkResult.total,
+                        up: checkResult.up_count,
+                        down: checkResult.down_count,
+                        error: checkResult.error_count,
+                    });
+                    setTimeout(() => setCheckStatus(null), 5000);
+                    markForceAutoRelaxPeriod('php');
+                }
             }
             await fetchMonitors();
         } catch (error) {
@@ -950,7 +961,6 @@ export const MonitoringDashboard: React.FC = () => {
             if (forceEngine !== 'python' || !pythonJobFollowRef.current) {
                 endForceCheckBusy();
             }
-            setIsRefreshingList(false);
         }
     }, [
         fetchMonitors,
@@ -1895,11 +1905,20 @@ export const MonitoringDashboard: React.FC = () => {
                     {/* Refresh Controls */}
                     <div className="flex items-center gap-2">
                         <button
+                            type="button"
                             onClick={() => refreshAll(false)}
-                            className="flex items-center justify-center w-9 h-9 text-blue-600 dark:text-blue-400 hover:text-blue-700 dark:hover:text-blue-300 bg-slate-100 dark:bg-[#252525] rounded-xl transition-all"
+                            disabled={isRefreshingList}
+                            className={`flex items-center justify-center w-9 h-9 text-blue-600 dark:text-blue-400 hover:text-blue-700 dark:hover:text-blue-300 bg-slate-100 dark:bg-[#252525] rounded-xl transition-all disabled:cursor-wait ${
+                                isRefreshingList ? 'ring-2 ring-blue-400/50 opacity-90' : ''
+                            }`}
                             title="Refresh list (no checks)"
+                            aria-busy={isRefreshingList}
+                            aria-label="Refresh monitor list"
                         >
-                            <FaSyncAlt size={14} {...({ className: isRefreshingList ? 'animate-spin' : '' } as any)} />
+                            <FaSyncAlt
+                                size={14}
+                                className={isRefreshingList ? 'animate-spin' : undefined}
+                            />
                         </button>
 
                         {showSchedulerToolbarChip && !schedulerPanelVisible && (
