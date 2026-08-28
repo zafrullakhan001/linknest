@@ -1526,6 +1526,25 @@ function handleCheckAllMonitors() {
             $monitors = $stmt->fetchAll();
         }
 
+        $requestedIds = [];
+        if (isset($input['monitor_ids']) && is_array($input['monitor_ids'])) {
+            foreach ($input['monitor_ids'] as $rawId) {
+                $v = (int)$rawId;
+                if ($v > 0) {
+                    $requestedIds[$v] = true;
+                }
+            }
+        }
+        if ($requestedIds !== []) {
+            $monitors = array_values(array_filter($monitors, static function ($m) use ($requestedIds) {
+                return isset($requestedIds[(int)($m['id'] ?? 0)]);
+            }));
+            if ($monitors === []) {
+                sendJSON(['error' => 'No matching monitors to check'], 400);
+                return;
+            }
+        }
+
         if ($engine === 'python') {
             monitorCheckJobsHandleEnqueueAll($user, $monitors, $forceNotifyRules);
             return;

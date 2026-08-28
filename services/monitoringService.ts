@@ -175,6 +175,8 @@ export interface MonitorCheckJobItem {
     name: string;
     status: 'pending' | 'checking' | 'up' | 'down' | 'error' | 'skipped' | string;
     response_ms?: number | null;
+    http_code?: number | null;
+    details?: string | null;
     seq?: number;
 }
 
@@ -374,16 +376,21 @@ export const monitoringService = {
     async checkAllMonitors(options?: {
         engine?: MonitorForceEngine;
         forceNotifyRules?: boolean;
+        monitorIds?: number[];
     }): Promise<MonitorCheckAllPhpResult | MonitorCheckAllPythonResult> {
         try {
             const engine = options?.engine ?? 'php';
+            const payload: Record<string, unknown> = {
+                engine,
+                force_notify_rules: options?.forceNotifyRules ? 1 : 0,
+            };
+            if (options?.monitorIds && options.monitorIds.length > 0) {
+                payload.monitor_ids = options.monitorIds;
+            }
             const response = await fetch('api/monitors.php/check-all', {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({
-                    engine,
-                    force_notify_rules: options?.forceNotifyRules ? 1 : 0,
-                }),
+                body: JSON.stringify(payload),
             });
 
             if (!response.ok) {

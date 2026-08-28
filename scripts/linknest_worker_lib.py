@@ -475,11 +475,44 @@ def monitor_notification_now(conn: Optional[sqlite3.Connection] = None) -> _dt.d
         return _dt.datetime.now()
 
 
+def normalize_http_code(value: Any) -> Optional[int]:
+    try:
+        code = int(value)
+    except Exception:
+        return None
+    if 100 <= code <= 599:
+        return code
+    return None
+
+
+def parse_http_code(details: Optional[str]) -> Optional[int]:
+    if not details:
+        return None
+    matches = re.findall(r"(?:HTTP(?:\s+Error)?)\s+(\d{3})\b", str(details), flags=re.I)
+    if not matches:
+        return None
+    return normalize_http_code(matches[-1])
+
+
+def _http_error_result(exc: BaseException) -> Optional[Tuple[str, str]]:
+    if not isinstance(exc, urllib.error.HTTPError):
+        return None
+    code = normalize_http_code(getattr(exc, "code", None) or getattr(exc, "status", None))
+    with contextlib.suppress(Exception):
+        exc.close()
+    if code is None:
+        return None
+    if 200 <= code < 400:
+        return "up", f"HTTP {code}"
+    return "down", f"HTTP {code}"
+
+
 @dataclass
 class CheckResult:
     status: str
     details: str
     response_ms: int
+    http_code: Optional[int] = None
 
 
 def _ssl_context(verify_ssl: bool) -> ssl.SSLContext:
@@ -503,6 +536,9 @@ def check_url_head(url: str, timeout: float, verify_ssl: bool, app_name: str = "
                 return "up", f"HTTP {code}"
             return "down", f"HTTP {code}"
     except Exception as e:
+        http_res = _http_error_result(e)
+        if http_res:
+            return http_res
         msg = str(e) or e.__class__.__name__
         if "timed out" in msg.lower():
             return "down", "Connection timeout"
@@ -609,6 +645,9 @@ def check_http_headers(
             return "down", "Connection failed: no HTTP response"
         return "down", details
     except Exception as e:
+        http_res = _http_error_result(e)
+        if http_res:
+            return http_res
         msg = str(e) or e.__class__.__name__
         if "timed out" in msg.lower():
             return "down", "Connection timeout"
@@ -634,8 +673,11 @@ def check_keyword(url: str, keyword: str, timeout: float, verify_ssl: bool, max_
                 text = str(data)
             if keyword.lower() in text.lower():
                 return "up", f"Keyword found (HTTP {code})"
-            return "down", f"Keyword '{keyword}' not found"
+            return "down", f"Keyword '{keyword}' not found (HTTP {code})"
     except Exception as e:
+        http_res = _http_error_result(e)
+        if http_res:
+            return http_res
         msg = str(e) or e.__class__.__name__
         if "timed out" in msg.lower():
             return "down", "Connection timeout"
@@ -944,6 +986,9 @@ def check_json(url: str, keyword: str, timeout: float, verify_ssl: bool, app_nam
                 return "down", f"HTTP {code}"
             body = resp.read(1024 * 1024)
     except Exception as e:
+        http_res = _http_error_result(e)
+        if http_res:
+            return http_res
         msg = str(e) or e.__class__.__name__
         if "timed out" in msg.lower():
             return "down", "Connection timeout"
@@ -953,23 +998,23 @@ def check_json(url: str, keyword: str, timeout: float, verify_ssl: bool, app_nam
         text = body.decode("utf-8", errors="ignore")
         data = json.loads(text)
     except Exception:
-        return "down", "Response is not valid JSON"
+        return "down", f"Response is not valid JSON (HTTP {code})"
 
     if isinstance(data, dict) and ":" in expr:
         key, expected = expr.split(":", 1)
         key, expected = key.strip(), expected.strip()
         actual = data.get(key)
         if actual is None:
-            return "down", f"JSON key '{key}' not found"
+            return "down", f"JSON key '{key}' not found (HTTP {code})"
         actual_str = str(actual).lower() if not isinstance(actual, bool) else ("true" if actual else "false")
         if actual_str == expected.lower() or str(actual) == expected:
             return "up", f"JSON {key}={actual} (HTTP {code})"
-        return "down", f"JSON {key}={actual}, expected {expected}"
+        return "down", f"JSON {key}={actual}, expected {expected} (HTTP {code})"
 
     haystack = json.dumps(data).lower()
     if expr.lower() in haystack:
         return "up", f"JSON contains '{expr}' (HTTP {code})"
-    return "down", f"JSON value '{expr}' not found"
+    return "down", f"JSON value '{expr}' not found (HTTP {code})"
 
 
 def send_smtp_email(

@@ -96,7 +96,7 @@ function monitorCheckJobsFindActiveAllJob(PDO $db): ?array {
 
 /**
  * @param list<int> $ids
- * @return list<array{id:int,name:string,status:string,response_ms:?int,seq:int}>
+ * @return list<array{id:int,name:string,status:string,response_ms:?int,http_code:?int,seq:int}>
  */
 function monitorCheckJobsSeedProgressItems(PDO $db, array $ids): array {
     $ids = array_values(array_unique(array_filter(array_map('intval', $ids), static function ($v) {
@@ -120,6 +120,8 @@ function monitorCheckJobsSeedProgressItems(PDO $db, array $ids): array {
             'name' => $name !== '' ? $name : ('Monitor #' . $id),
             'status' => 'pending',
             'response_ms' => null,
+            'http_code' => null,
+            'details' => null,
             'seq' => count($items) + 1,
         ];
     }
@@ -127,7 +129,111 @@ function monitorCheckJobsSeedProgressItems(PDO $db, array $ids): array {
 }
 
 /**
- * @return list<array{id:int,name:string,status:string,response_ms:?int,seq:int}>
+ * @return ?int
+ */
+function monitorCheckJobsNormalizeHttpCode($value): ?int {
+    if ($value === null || $value === '') {
+        return null;
+    }
+    $code = (int)$value;
+    return ($code >= 100 && $code <= 599) ? $code : null;
+}
+
+/**
+ * @return ?int
+ */
+function monitorCheckJobsParseHttpCodeFromDetails(?string $details): ?int {
+    if ($details === null || $details === '') {
+        return null;
+    }
+    if (!preg_match_all('/(?:HTTP(?:\s+Error)?)\s+(\d{3})\b/i', $details, $m) || empty($m[1])) {
+        return null;
+    }
+    return monitorCheckJobsNormalizeHttpCode(end($m[1]));
+}
+
+/**
+ * @return string|null
+ */
+function monitorCheckJobsClipDetails(?string $details, int $limit = 240): ?string {
+    if ($details === null) {
+        return null;
+    }
+    $text = trim($details);
+    if ($text === '') {
+        return null;
+    }
+    if (function_exists('mb_strlen') && function_exists('mb_substr')) {
+        if (mb_strlen($text) > $limit) {
+            return mb_substr($text, 0, $limit - 1) . '…';
+        }
+        return $text;
+    }
+    if (strlen($text) > $limit) {
+        return substr($text, 0, $limit - 1) . '...';
+    }
+    return $text;
+}
+
+/**
+ * Fill missing HTTP codes and details from the latest monitor log.
+ *
+ * @param list<array{id:int,name:string,status:string,response_ms:?int,http_code:?int,details:?string,seq:int}> $items
+ * @return list<array{id:int,name:string,status:string,response_ms:?int,http_code:?int,details:?string,seq:int}>
+ */
+function monitorCheckJobsFillHttpCodesFromLogs(PDO $db, array $items): array {
+    $missingIds = [];
+    foreach ($items as $item) {
+        $status = strtolower((string)($item['status'] ?? ''));
+        if (!in_array($status, ['up', 'down', 'error'], true)) {
+            continue;
+        }
+        $details = trim((string)($item['details'] ?? ''));
+        if (($item['http_code'] ?? null) !== null && $details !== '') {
+            continue;
+        }
+        $id = (int)($item['id'] ?? 0);
+        if ($id > 0) {
+            $missingIds[$id] = true;
+        }
+    }
+    if ($missingIds === []) {
+        return $items;
+    }
+    $ids = array_keys($missingIds);
+    $placeholders = implode(',', array_fill(0, count($ids), '?'));
+    $stmt = $db->prepare(
+        'SELECT monitor_id, details FROM monitor_logs
+         WHERE id IN (
+            SELECT MAX(id) FROM monitor_logs WHERE monitor_id IN (' . $placeholders . ') GROUP BY monitor_id
+         )'
+    );
+    $stmt->execute($ids);
+    $byId = [];
+    foreach ($stmt->fetchAll(PDO::FETCH_ASSOC) as $row) {
+        $raw = isset($row['details']) ? (string)$row['details'] : '';
+        $byId[(int)$row['monitor_id']] = [
+            'http_code' => monitorCheckJobsParseHttpCodeFromDetails($raw),
+            'details' => monitorCheckJobsClipDetails($raw),
+        ];
+    }
+    foreach ($items as $i => $item) {
+        $id = (int)($item['id'] ?? 0);
+        if (!isset($byId[$id])) {
+            continue;
+        }
+        if (($item['http_code'] ?? null) === null && $byId[$id]['http_code'] !== null) {
+            $items[$i]['http_code'] = $byId[$id]['http_code'];
+        }
+        if (trim((string)($item['details'] ?? '')) === '' && $byId[$id]['details'] !== null) {
+            $items[$i]['details'] = $byId[$id]['details'];
+        }
+    }
+    return $items;
+}
+
+/**
+ * @return list<array{id:int,name:string,status:string,response_ms:?int,http_code:?int,seq:int}>
  */
 function monitorCheckJobsParseProgressJson(?string $json): array {
     if ($json === null || trim($json) === '') {
@@ -153,11 +259,18 @@ function monitorCheckJobsParseProgressJson(?string $json): array {
         }
         $name = trim((string)($row['name'] ?? ''));
         $seq = (int)($row['seq'] ?? 0);
+        $httpCode = monitorCheckJobsNormalizeHttpCode($row['http_code'] ?? null);
+        $details = monitorCheckJobsClipDetails(isset($row['details']) ? (string)$row['details'] : null);
+        if ($httpCode === null) {
+            $httpCode = monitorCheckJobsParseHttpCodeFromDetails($details);
+        }
         $items[] = [
             'id' => $id,
             'name' => $name !== '' ? $name : ('Monitor #' . $id),
             'status' => $status,
             'response_ms' => ($ms === null || $ms === '') ? null : (int)$ms,
+            'http_code' => $httpCode,
+            'details' => $details,
             'seq' => $seq > 0 ? $seq : 0,
         ];
     }
@@ -179,6 +292,13 @@ function monitorCheckJobsFormatRow(array $row): array {
     foreach ($items as $i => $item) {
         if ((int)($item['seq'] ?? 0) <= 0) {
             $items[$i]['seq'] = $i + 1;
+        }
+    }
+    if ($items !== [] && function_exists('getDB')) {
+        try {
+            $items = monitorCheckJobsFillHttpCodesFromLogs(getDB(), $items);
+        } catch (Throwable $e) {
+            // keep items without fallback codes
         }
     }
     return [

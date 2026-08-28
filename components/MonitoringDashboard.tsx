@@ -8,7 +8,7 @@ import { MonitorSslBulkImportDialog } from './MonitorSslBulkImportDialog';
 import { MonitorAuditLogDialog } from './MonitorAuditLogDialog';
 import { MonitorTargetLabel } from './MonitorTargetLabel';
 import { MonitorUptimeCalendar, MonitorUptimeDayBanner } from './MonitorUptimeCalendar';
-import { FaServer, FaGlobe, FaSearch, FaCheck, FaTimes, FaQuestion, FaPlus, FaRedo, FaSyncAlt, FaTrash, FaEdit, FaClock, FaThLarge, FaList, FaCopy, FaBars, FaDownload, FaUpload, FaHistory, FaCalendarAlt, FaEnvelope, FaArrowsAlt, FaPalette, FaCircle, FaExpand, FaCompress, FaBell, FaBellSlash, FaFileExport, FaFileCsv, FaLock, FaCode, FaMagic, FaStream, FaClipboardList, FaStop, FaExclamationTriangle } from 'react-icons/fa';
+import { FaServer, FaGlobe, FaSearch, FaCheck, FaTimes, FaQuestion, FaPlus, FaRedo, FaSyncAlt, FaTrash, FaEdit, FaClock, FaThLarge, FaList, FaCopy, FaBars, FaDownload, FaUpload, FaHistory, FaCalendarAlt, FaEnvelope, FaArrowsAlt, FaPalette, FaCircle, FaExpand, FaCompress, FaBell, FaBellSlash, FaFileExport, FaFileCsv, FaLock, FaCode, FaMagic, FaStream, FaClipboardList, FaStop, FaExclamationTriangle, FaThumbtack, FaVolumeUp, FaVolumeMute } from 'react-icons/fa';
 import { SSL_CERTS_TAB, formatMonitorCornerMetric, isSslCertsTab, isSslMonitor } from '../utils/monitorSsl';
 import { dayKeyFromUnix } from '../utils/monitorUptimeCalendar';
 import { useTileAnimation, getTileAnimationClass, getTileDecorationClass } from './TileAnimationSelector';
@@ -43,6 +43,140 @@ function formatCheckDuration(ms: number | null | undefined): string {
     return `${Math.max(0, Math.round(ms))}ms`;
 }
 
+function parseHttpStatusCode(details?: string | null): number | null {
+    if (!details) {
+        return null;
+    }
+    const matches = [...details.matchAll(/(?:HTTP(?:\s+Error)?)\s+(\d{3})\b/gi)];
+    if (!matches.length) {
+        return null;
+    }
+    const code = Number(matches[matches.length - 1][1]);
+    return code >= 100 && code <= 599 ? code : null;
+}
+
+function httpStatusClassName(code: number | null | undefined): string {
+    if (code == null || code <= 0) {
+        return 'opacity-40';
+    }
+    if (code >= 200 && code < 300) {
+        return 'text-emerald-700 dark:text-emerald-300';
+    }
+    if (code >= 300 && code < 400) {
+        return 'text-sky-700 dark:text-sky-300';
+    }
+    if (code >= 400 && code < 500) {
+        return 'text-amber-800 dark:text-amber-200';
+    }
+    return 'text-red-700 dark:text-red-300';
+}
+
+function resolveJobItemHttpCode(item: MonitorCheckJobItem, lastDetails?: string | null): number | null {
+    if (item.http_code != null && item.http_code >= 100 && item.http_code <= 599) {
+        return item.http_code;
+    }
+    return parseHttpStatusCode(item.details || lastDetails);
+}
+
+function clipText(value: string, limit: number): string {
+    const text = value.trim();
+    if (text.length <= limit) {
+        return text;
+    }
+    return `${text.slice(0, Math.max(1, limit - 1))}…`;
+}
+
+function summarizeCheckFailure(details?: string | null, httpCode?: number | null): string {
+    const raw = (details || '').replace(/\s+/g, ' ').trim();
+    const lower = raw.toLowerCase();
+    if (lower.includes('getaddrinfo') || lower.includes('could not find host') || lower.includes('name or service not known') || lower.includes('nodename nor servname')) {
+        return 'DNS failed';
+    }
+    if (lower.includes('timed out') || lower.includes('timeout')) {
+        return 'Timeout';
+    }
+    if (lower.includes('connection refused')) {
+        return 'Connection refused';
+    }
+    if (lower.includes('ssl') && (lower.includes('failed') || lower.includes('expired') || lower.includes('certificate'))) {
+        return clipText(raw || 'SSL error', 72);
+    }
+    if (httpCode != null) {
+        return raw && !/^HTTP\s+\d{3}\b/i.test(raw) ? `HTTP ${httpCode} — ${clipText(raw, 56)}` : `HTTP ${httpCode}`;
+    }
+    return raw ? clipText(raw, 80) : '';
+}
+
+function isJobItemPending(item: MonitorCheckJobItem): boolean {
+    return item.status === 'pending' || item.status === 'checking';
+}
+
+function isJobItemFailed(item: MonitorCheckJobItem): boolean {
+    return item.status === 'down' || item.status === 'error';
+}
+
+function formatElapsedSeconds(totalSec: number): string {
+    const sec = Math.max(0, Math.round(totalSec));
+    if (sec < 60) {
+        return `${sec}s`;
+    }
+    const m = Math.floor(sec / 60);
+    const s = sec % 60;
+    return `${m}m ${s.toString().padStart(2, '0')}s`;
+}
+
+function playJobCompleteSound(kind: 'ok' | 'fail'): void {
+    try {
+        const AudioCtx = window.AudioContext || (window as Window & { webkitAudioContext?: typeof AudioContext }).webkitAudioContext;
+        if (!AudioCtx) {
+            return;
+        }
+        const ctx = new AudioCtx();
+        const now = ctx.currentTime;
+        const beep = (freq: number, start: number, dur: number) => {
+            const osc = ctx.createOscillator();
+            const gain = ctx.createGain();
+            osc.type = 'sine';
+            osc.frequency.value = freq;
+            gain.gain.setValueAtTime(0.0001, now + start);
+            gain.gain.exponentialRampToValueAtTime(0.07, now + start + 0.02);
+            gain.gain.exponentialRampToValueAtTime(0.0001, now + start + dur);
+            osc.connect(gain);
+            gain.connect(ctx.destination);
+            osc.start(now + start);
+            osc.stop(now + start + dur + 0.02);
+        };
+        if (kind === 'ok') {
+            beep(880, 0, 0.12);
+            beep(1174, 0.12, 0.16);
+        } else {
+            beep(330, 0, 0.16);
+            beep(220, 0.16, 0.22);
+        }
+        window.setTimeout(() => {
+            void ctx.close();
+        }, 700);
+    } catch {
+        // ignore autoplay / unsupported
+    }
+}
+
+function monitorHighlightClass(id: number, highlightedId: number | null): string {
+    return highlightedId === id ? 'ring-2 ring-sky-400 ring-offset-2 z-30' : '';
+}
+
+function sparklinePoints(values: number[], width = 128, height = 28): string {
+    if (values.length === 0) {
+        return '';
+    }
+    const max = Math.max(...values, 1);
+    return values.map((value, i) => {
+        const x = values.length === 1 ? width / 2 : (i / (values.length - 1)) * width;
+        const y = height - 1 - (Math.max(0, value) / max) * (height - 2);
+        return `${x.toFixed(1)},${y.toFixed(1)}`;
+    }).join(' ');
+}
+
 function sortJobProgressItems(items: MonitorCheckJobItem[]): MonitorCheckJobItem[] {
     return items.map((item, i) => ({
         ...item,
@@ -57,18 +191,28 @@ function csvEscapeCell(value: string): string {
     return value;
 }
 
-function downloadJobProgressCsv(jobId: number, items: MonitorCheckJobItem[]): void {
+function downloadJobProgressCsv(
+    jobId: number,
+    items: MonitorCheckJobItem[],
+    lastDetailsById?: Map<number, string | null | undefined>,
+): void {
     const ordered = sortJobProgressItems(items);
-    const header = ['Scan #', 'Monitor ID', 'Name', 'Status', 'Response ms', 'Duration', 'Slow (>=5s)'];
-    const body = ordered.map((item) => [
-        String(item.seq ?? ''),
-        String(item.id),
-        item.name,
-        item.status,
-        item.response_ms == null ? '' : String(item.response_ms),
-        item.response_ms == null ? '' : formatCheckDuration(item.response_ms),
-        (item.response_ms ?? 0) >= SLOW_CHECK_MS ? 'yes' : '',
-    ]);
+    const header = ['Scan #', 'Monitor ID', 'Name', 'Status', 'HTTP code', 'Response ms', 'Duration', 'Slow (>=5s)', 'Details'];
+    const body = ordered.map((item) => {
+        const httpCode = resolveJobItemHttpCode(item, lastDetailsById?.get(item.id));
+        const details = item.details || lastDetailsById?.get(item.id) || '';
+        return [
+            String(item.seq ?? ''),
+            String(item.id),
+            item.name,
+            item.status,
+            httpCode == null ? '' : String(httpCode),
+            item.response_ms == null ? '' : String(item.response_ms),
+            item.response_ms == null ? '' : formatCheckDuration(item.response_ms),
+            (item.response_ms ?? 0) >= SLOW_CHECK_MS ? 'yes' : '',
+            details,
+        ];
+    });
     const csv = [header, ...body].map((cols) => cols.map((c) => csvEscapeCell(c)).join(',')).join('\n');
     const blob = new Blob(['\uFEFF' + csv], { type: 'text/csv;charset=utf-8;' });
     const url = URL.createObjectURL(blob);
@@ -388,11 +532,38 @@ export const MonitoringDashboard: React.FC = () => {
         coalesced?: boolean;
         checked: number;
         total: number;
+        up?: number;
+        down?: number;
+        error?: number;
         jobCreatedAt?: number;
+        jobStartedAt?: number;
+        jobFinishedAt?: number;
         pickupWaitStartedAt?: number;
         items?: MonitorCheckJobItem[];
     } | null>(null);
     const [pythonJobPanelVisible, setPythonJobPanelVisible] = useState(false);
+    const [pythonJobPinned, setPythonJobPinned] = useState(() => {
+        try {
+            return localStorage.getItem('linknest_monitor_job_pin') === '1';
+        } catch {
+            return false;
+        }
+    });
+    const pythonJobPinnedRef = useRef(pythonJobPinned);
+    const pythonJobDismissTimerRef = useRef<number | null>(null);
+    const [pythonJobSoundOn, setPythonJobSoundOn] = useState(() => {
+        try {
+            return localStorage.getItem('linknest_monitor_job_sound') !== '0';
+        } catch {
+            return true;
+        }
+    });
+    const pythonJobSoundOnRef = useRef(pythonJobSoundOn);
+    const [pythonJobListFilter, setPythonJobListFilter] = useState<'all' | 'down'>('all');
+    const [pythonJobCopied, setPythonJobCopied] = useState(false);
+    const [highlightedMonitorId, setHighlightedMonitorId] = useState<number | null>(null);
+    const highlightTimerRef = useRef<number | null>(null);
+    const [jobClock, setJobClock] = useState(() => Date.now());
     const pythonJobDrag = useDraggableFloatPanel('linknest_monitor_py_job_panel_v3');
     const schedulerDrag = useDraggableFloatPanel('linknest_monitor_scheduler_panel_v3', () => {
         const jobH = pythonJobDrag.panelRef.current?.offsetHeight ?? 0;
@@ -1013,6 +1184,79 @@ export const MonitoringDashboard: React.FC = () => {
         setPythonJobPanelVisible(false);
     }, []);
 
+    const clearPythonJobDismissTimer = useCallback(() => {
+        if (pythonJobDismissTimerRef.current != null) {
+            window.clearTimeout(pythonJobDismissTimerRef.current);
+            pythonJobDismissTimerRef.current = null;
+        }
+    }, []);
+
+    const schedulePythonJobDismiss = useCallback((ms: number) => {
+        clearPythonJobDismissTimer();
+        if (pythonJobPinnedRef.current) {
+            return;
+        }
+        pythonJobDismissTimerRef.current = window.setTimeout(() => {
+            if (pythonJobPinnedRef.current) {
+                return;
+            }
+            setCheckStatus(null);
+            setPythonJobActivity(null);
+            hidePythonJobPanel();
+        }, ms);
+    }, [clearPythonJobDismissTimer, hidePythonJobPanel]);
+
+    const togglePythonJobPinned = useCallback(() => {
+        setPythonJobPinned((prev) => {
+            const next = !prev;
+            pythonJobPinnedRef.current = next;
+            try {
+                localStorage.setItem('linknest_monitor_job_pin', next ? '1' : '0');
+            } catch {
+                // ignore
+            }
+            if (next) {
+                clearPythonJobDismissTimer();
+            }
+            return next;
+        });
+    }, [clearPythonJobDismissTimer]);
+
+    const togglePythonJobSound = useCallback(() => {
+        setPythonJobSoundOn((prev) => {
+            const next = !prev;
+            pythonJobSoundOnRef.current = next;
+            try {
+                localStorage.setItem('linknest_monitor_job_sound', next ? '1' : '0');
+            } catch {
+                // ignore
+            }
+            return next;
+        });
+    }, []);
+
+    const jumpToMonitor = useCallback((monitorId: number) => {
+        const monitor = monitors.find((m) => m.id === monitorId);
+        if (!monitor) {
+            return;
+        }
+        const tab = isSslMonitor(monitor) ? SSL_CERTS_TAB : (monitor.tab_name || 'General');
+        setActiveTab(tab);
+        setHighlightedMonitorId(monitorId);
+        if (highlightTimerRef.current != null) {
+            window.clearTimeout(highlightTimerRef.current);
+        }
+        highlightTimerRef.current = window.setTimeout(() => {
+            setHighlightedMonitorId(null);
+        }, 4500);
+        window.setTimeout(() => {
+            const el = document.querySelector(`[data-monitor-id="${monitorId}"]`);
+            if (el instanceof HTMLElement) {
+                el.scrollIntoView({ behavior: 'smooth', block: 'center' });
+            }
+        }, 80);
+    }, [monitors]);
+
     const showSchedulerPanel = useCallback(() => {
         setSchedulerPanelVisible(true);
     }, []);
@@ -1084,6 +1328,11 @@ export const MonitoringDashboard: React.FC = () => {
             checked: job.checked_count,
             total: job.total_count,
             jobCreatedAt: createdAt && createdAt > 0 ? createdAt : undefined,
+            jobStartedAt: job.started_at && job.started_at > 0 ? Number(job.started_at) : undefined,
+            jobFinishedAt: job.finished_at && job.finished_at > 0 ? Number(job.finished_at) : undefined,
+            up: job.up_count,
+            down: job.down_count,
+            error: job.error_count,
             items: Array.isArray(job.items) ? job.items : [],
         };
     }, []);
@@ -1146,6 +1395,32 @@ export const MonitoringDashboard: React.FC = () => {
         return () => window.clearInterval(timer);
     }, [pythonJobActivity, isPickupWaitPhase]);
 
+    useEffect(() => {
+        pythonJobPinnedRef.current = pythonJobPinned;
+    }, [pythonJobPinned]);
+
+    useEffect(() => {
+        pythonJobSoundOnRef.current = pythonJobSoundOn;
+    }, [pythonJobSoundOn]);
+
+    useEffect(() => {
+        if (!pythonJobActivity || !isPythonJobActive(pythonJobActivity.phase)) {
+            return;
+        }
+        setJobClock(Date.now());
+        const timer = window.setInterval(() => setJobClock(Date.now()), 1000);
+        return () => window.clearInterval(timer);
+    }, [pythonJobActivity, isPythonJobActive]);
+
+    useEffect(() => {
+        return () => {
+            clearPythonJobDismissTimer();
+            if (highlightTimerRef.current != null) {
+                window.clearTimeout(highlightTimerRef.current);
+            }
+        };
+    }, [clearPythonJobDismissTimer]);
+
     const pollPythonJobUntilDone = useCallback(async (jobId: number) => {
         const deadline = Date.now() + 120000;
         let finalJob: MonitorCheckJob | null = null;
@@ -1202,14 +1477,15 @@ export const MonitoringDashboard: React.FC = () => {
                     error: finalJob.error_count,
                 });
             }
+            if (pythonJobSoundOnRef.current) {
+                const failed = finalJob.status !== 'done'
+                    || (finalJob.down_count + finalJob.error_count) > 0;
+                playJobCompleteSound(failed ? 'fail' : 'ok');
+            }
             const items = Array.isArray(finalJob.items) ? finalJob.items : [];
             const hasItems = items.length > 0;
             const hasSlow = items.some((item) => (item.response_ms ?? 0) >= SLOW_CHECK_MS);
-            setTimeout(() => {
-                setCheckStatus(null);
-                setPythonJobActivity(null);
-                hidePythonJobPanel();
-            }, hasSlow ? 30000 : (hasItems ? 15000 : 5000));
+            schedulePythonJobDismiss(hasSlow ? 30000 : (hasItems ? 15000 : 5000));
         } else if (!pollAbortRef.current) {
             setPythonJobActivity({
                 jobId,
@@ -1219,14 +1495,14 @@ export const MonitoringDashboard: React.FC = () => {
                 total: 0,
             });
             showPythonJobPanel();
-            setTimeout(() => {
-                setPythonJobActivity(null);
-                hidePythonJobPanel();
-            }, 10000);
+            if (pythonJobSoundOnRef.current) {
+                playJobCompleteSound('fail');
+            }
+            schedulePythonJobDismiss(10000);
         }
         endForceCheckBusy();
         markForceAutoRelaxPeriod('python');
-    }, [mergePythonJobActivity, showPythonJobPanel, hidePythonJobPanel, endForceCheckBusy, markForceAutoRelaxPeriod]);
+    }, [mergePythonJobActivity, showPythonJobPanel, schedulePythonJobDismiss, endForceCheckBusy, markForceAutoRelaxPeriod]);
 
     const followPythonJob = useCallback(async (
         jobId: number,
@@ -1246,6 +1522,8 @@ export const MonitoringDashboard: React.FC = () => {
         pythonJobFollowRef.current = jobId;
         activePythonJobRef.current = jobId;
         pollAbortRef.current = false;
+        clearPythonJobDismissTimer();
+        setPythonJobListFilter('all');
         beginForceCheckBusy();
         showPythonJobPanel();
 
@@ -1268,6 +1546,7 @@ export const MonitoringDashboard: React.FC = () => {
         mergePythonJobActivity,
         pollPythonJobUntilDone,
         finishPythonJobSession,
+        clearPythonJobDismissTimer,
     ]);
 
     const handleAbortPythonJob = useCallback(async () => {
@@ -1293,10 +1572,7 @@ export const MonitoringDashboard: React.FC = () => {
             pythonJobFollowRef.current = null;
             setPythonJobActivity(buildPythonActivity(job));
             await fetchMonitors();
-            setTimeout(() => {
-                setPythonJobActivity(null);
-                hidePythonJobPanel();
-            }, 5000);
+            schedulePythonJobDismiss(5000);
         } catch (error) {
             console.error('Failed to cancel Python job', error);
             setPythonJobActivity((prev) => prev ? {
@@ -1313,11 +1589,73 @@ export const MonitoringDashboard: React.FC = () => {
         pythonJobActivity?.jobId,
         isAbortingPythonJob,
         showPythonJobPanel,
-        hidePythonJobPanel,
+        schedulePythonJobDismiss,
         buildPythonActivity,
         fetchMonitors,
         endForceCheckBusy,
         markForceAutoRelaxPeriod,
+    ]);
+
+    const handleRetryDownMonitors = useCallback(async (monitorIds: number[]) => {
+        const ids = [...new Set(monitorIds.filter((id) => id > 0))];
+        if (ids.length === 0 || forceCheckBusyRef.current) {
+            return;
+        }
+        if (!confirmPythonRunDespiteScheduler()) {
+            return;
+        }
+        pollAbortRef.current = false;
+        activePythonJobRef.current = null;
+        pythonJobFollowRef.current = null;
+        clearPythonJobDismissTimer();
+        beginForceCheckBusy();
+        showPythonJobPanel();
+        setPythonJobListFilter('all');
+        setPythonJobActivity({
+            jobId: 0,
+            phase: 'submitting',
+            message: `Retrying ${ids.length} down monitor${ids.length === 1 ? '' : 's'}…`,
+            checked: 0,
+            total: ids.length,
+        });
+        try {
+            const queued = await monitoringService.checkAllMonitors({
+                engine: 'python',
+                forceNotifyRules: autoRefreshMode === 'force',
+                monitorIds: ids,
+            });
+            if (queued.engine !== 'python') {
+                throw new Error('Retry did not queue a Python job');
+            }
+            const initialJob = queued.job ?? await monitoringService.getCheckJob(queued.job_id);
+            await followPythonJob(queued.job_id, {
+                kicked: queued.kicked,
+                coalesced: queued.coalesced,
+                initialJob,
+            });
+            await fetchMonitors();
+        } catch (error) {
+            console.error('Failed to retry down monitors', error);
+            setPythonJobActivity({
+                jobId: 0,
+                phase: 'error',
+                message: error instanceof Error ? error.message : 'Failed to retry down monitors',
+                checked: 0,
+                total: ids.length,
+            });
+            endForceCheckBusy();
+            schedulePythonJobDismiss(8000);
+        }
+    }, [
+        confirmPythonRunDespiteScheduler,
+        clearPythonJobDismissTimer,
+        beginForceCheckBusy,
+        showPythonJobPanel,
+        autoRefreshMode,
+        followPythonJob,
+        fetchMonitors,
+        endForceCheckBusy,
+        schedulePythonJobDismiss,
     ]);
 
     const refreshAll = useCallback(async (isFullCheck = false) => {
@@ -2770,6 +3108,7 @@ export const MonitoringDashboard: React.FC = () => {
                                     {groupedByGroups[groupName].map((monitor, index) => (
                                         <div
                                             key={monitor.id}
+                                            data-monitor-id={monitor.id}
                                             onClick={(e) => handleTileClick(e, monitor)}
                                             style={{
                                                 ...(monitor.last_status === 'up' || monitor.last_status === 'down' || monitor.last_status === 'warning' ? getTileStyle(monitor.last_status) : {}),
@@ -2777,7 +3116,7 @@ export const MonitoringDashboard: React.FC = () => {
                                                     ? { borderColor: getTileBorderColor(monitor.last_status), fontFamily: getTileFontFamily(monitor.last_status) }
                                                     : {})
                                             }}
-                                            className={`inline-flex items-center gap-3 px-4 py-2 rounded-full border cursor-pointer transition-all hover:shadow-lg group relative ${fullAnimClass} ${monitor.last_status === 'up' || monitor.last_status === 'down' || monitor.last_status === 'warning' ? '' : 'bg-white dark:bg-[#1e1e1e] border-slate-200 dark:border-[#333]'}`}
+                                            className={`inline-flex items-center gap-3 px-4 py-2 rounded-full border cursor-pointer transition-all hover:shadow-lg group relative ${fullAnimClass} ${monitor.last_status === 'up' || monitor.last_status === 'down' || monitor.last_status === 'warning' ? '' : 'bg-white dark:bg-[#1e1e1e] border-slate-200 dark:border-[#333]'} ${monitorHighlightClass(monitor.id, highlightedMonitorId)}`}
                                         >
                                             <div className="flex items-center gap-3 min-w-0">
                                                 <span
@@ -2817,6 +3156,7 @@ export const MonitoringDashboard: React.FC = () => {
                                     {groupedByGroups[groupName].map((monitor, index) => (
                                         <div
                                             key={monitor.id}
+                                            data-monitor-id={monitor.id}
                                             onClick={(e) => handleTileClick(e, monitor)}
                                             style={{
                                                 ...(monitor.last_status === 'up' || monitor.last_status === 'down' || monitor.last_status === 'warning' ? getTileStyle(monitor.last_status) : {}),
@@ -2828,7 +3168,7 @@ export const MonitoringDashboard: React.FC = () => {
                                             className={`border rounded-2xl shadow-lg hover:shadow-xl transition-all group relative cursor-pointer min-w-0 ${fullAnimClass}
                                                 ${monitor.last_status === 'up' || monitor.last_status === 'down' || monitor.last_status === 'warning' ? '' : 'bg-white dark:bg-[#1e1e1e] border-slate-200 dark:border-[#333] hover:border-slate-300 dark:hover:border-[#444]'}
                                                 ${viewMode === 'tiles' ? 'p-5' : 'p-3 flex flex-col justify-between min-h-[120px]'}
-                                                ${moveMenuId === monitor.id ? 'z-[60]' : 'z-10 hover:z-20'}`}
+                                                ${moveMenuId === monitor.id ? 'z-[60]' : 'z-10 hover:z-20'} ${monitorHighlightClass(monitor.id, highlightedMonitorId)}`}
                                         >
                                             {/* Top Right Controls - Frequently Used */}
                                             <div className="absolute top-2 right-2 flex gap-1 opacity-0 group-hover:opacity-100 transition-all transform translate-y-1 group-hover:translate-y-0 z-10">
@@ -2990,11 +3330,12 @@ export const MonitoringDashboard: React.FC = () => {
                                     {groupedByGroups[groupName].map((monitor, index) => (
                                         <div
                                             key={monitor.id}
+                                            data-monitor-id={monitor.id}
                                             onClick={(e) => handleTileClick(e, monitor)}
                                             style={{
                                                 ...(monitor.last_status === 'up' || monitor.last_status === 'down' || monitor.last_status === 'warning' ? getTileStyle(monitor.last_status) : {})
                                             }}
-                                            className={`flex items-center gap-4 p-4 rounded-xl cursor-pointer transition-all hover:shadow-lg group ${fullAnimClass} ${monitor.last_status === 'up' || monitor.last_status === 'down' || monitor.last_status === 'warning' ? '' : 'bg-white dark:bg-[#1e1e1e] border border-slate-200 dark:border-[#333]'}`}
+                                            className={`flex items-center gap-4 p-4 rounded-xl cursor-pointer transition-all hover:shadow-lg group ${fullAnimClass} ${monitor.last_status === 'up' || monitor.last_status === 'down' || monitor.last_status === 'warning' ? '' : 'bg-white dark:bg-[#1e1e1e] border border-slate-200 dark:border-[#333]'} ${monitorHighlightClass(monitor.id, highlightedMonitorId)}`}
                                         >
                                             <div className={`w-10 h-10 rounded-xl flex items-center justify-center flex-shrink-0 ${monitor.last_status === 'up' || monitor.last_status === 'down' ? 'bg-white/20' : 'bg-slate-100 dark:bg-[#252525]'}`}>
                                                 {React.cloneElement(getTypeIcon(monitor.type), {
@@ -3053,11 +3394,12 @@ export const MonitoringDashboard: React.FC = () => {
                                                     {statusMonitors.map((monitor, index) => (
                                                         <div
                                                             key={monitor.id}
+                                                            data-monitor-id={monitor.id}
                                                             onClick={(e) => handleTileClick(e, monitor)}
                                                             style={{
                                                                 ...(monitor.last_status === 'up' || monitor.last_status === 'down' || monitor.last_status === 'warning' ? getTileStyle(monitor.last_status) : {})
                                                             }}
-                                                            className={`p-3 rounded-xl cursor-pointer transition-all hover:shadow-lg ${fullAnimClass} ${monitor.last_status === 'up' || monitor.last_status === 'down' || monitor.last_status === 'warning' ? '' : 'bg-white dark:bg-[#1e1e1e] border border-slate-200 dark:border-[#333]'}`}
+                                                            className={`p-3 rounded-xl cursor-pointer transition-all hover:shadow-lg ${fullAnimClass} ${monitor.last_status === 'up' || monitor.last_status === 'down' || monitor.last_status === 'warning' ? '' : 'bg-white dark:bg-[#1e1e1e] border border-slate-200 dark:border-[#333]'} ${monitorHighlightClass(monitor.id, highlightedMonitorId)}`}
                                                         >
                                                             <div className="flex items-center gap-2 mb-2">
                                                                 <span
@@ -3084,8 +3426,9 @@ export const MonitoringDashboard: React.FC = () => {
                                     {groupedByGroups[groupName].map((monitor) => (
                                         <div
                                             key={monitor.id}
+                                            data-monitor-id={monitor.id}
                                             onClick={(e) => handleTileClick(e, monitor)}
-                                            className={`flex items-center gap-3 p-2 rounded-lg cursor-pointer transition-all hover:bg-slate-50 dark:hover:bg-[#252525] group ${fullAnimClass}`}
+                                            className={`flex items-center gap-3 p-2 rounded-lg cursor-pointer transition-all hover:bg-slate-50 dark:hover:bg-[#252525] group ${fullAnimClass} ${monitorHighlightClass(monitor.id, highlightedMonitorId)}`}
                                         >
                                             <div className="flex items-center gap-2 w-[280px] flex-shrink-0">
                                                 <div className={`w-6 h-6 rounded-lg flex items-center justify-center flex-shrink-0 ${monitor.last_status === 'up' ? 'bg-emerald-100 dark:bg-emerald-900/20 text-emerald-600 dark:text-emerald-400' : monitor.last_status === 'down' ? 'bg-red-100 dark:bg-red-900/20 text-red-600 dark:text-red-400' : 'bg-slate-100 dark:bg-slate-800 text-slate-500'}`}>
@@ -3167,8 +3510,9 @@ export const MonitoringDashboard: React.FC = () => {
                                             {groupedByGroups[groupName].map((monitor, index) => (
                                                 <tr
                                                     key={monitor.id}
+                                                    data-monitor-id={monitor.id}
                                                     onClick={(e) => handleTileClick(e, monitor)}
-                                                    className={`group cursor-pointer hover:bg-slate-50 dark:hover:bg-[#252525] transition-colors ${monitor.last_status === 'up' || monitor.last_status === 'down' ? '' : ''} ${fullAnimClass}`}
+                                                    className={`group cursor-pointer hover:bg-slate-50 dark:hover:bg-[#252525] transition-colors ${monitor.last_status === 'up' || monitor.last_status === 'down' ? '' : ''} ${fullAnimClass} ${monitorHighlightClass(monitor.id, highlightedMonitorId)}`}
                                                     style={{
                                                         ...(monitor.last_status === 'up' || monitor.last_status === 'down' || monitor.last_status === 'warning' ? getTileStyle(monitor.last_status) : {})
                                                     }}
@@ -4220,7 +4564,7 @@ ON CONFLICT(key) DO UPDATE SET value = excluded.value, updated_at = excluded.upd
         ? createPortal(
             <div
                 ref={pythonJobDrag.panelRef}
-                className={`fixed w-[min(calc(100vw-2rem),26rem)] max-h-[min(72vh,34rem)] flex flex-col ${
+                className={`fixed w-[min(calc(100vw-2rem),32rem)] max-h-[min(80vh,42rem)] flex flex-col ${
                     pythonJobDrag.dragging ? 'z-[10001]' : 'z-[9999]'
                 } ${pythonJobDrag.positioned || pythonJobDrag.dragging ? '' : 'bottom-6 right-6'}`}
                 style={pythonJobDrag.style}
@@ -4263,15 +4607,38 @@ ON CONFLICT(key) DO UPDATE SET value = excluded.value, updated_at = excluded.upd
                                 {pythonJobActivity.phase === 'timeout' && `Job #${pythonJobActivity.jobId} timed out`}
                             </span>
                         </div>
-                        <button
-                            type="button"
-                            onClick={hidePythonJobPanel}
-                            className="shrink-0 p-1.5 rounded-lg hover:bg-black/5 dark:hover:bg-white/10 transition-colors"
-                            title="Hide status panel (click Py job chip in toolbar to reopen)"
-                            aria-label="Hide Python job status"
-                        >
-                            <FaTimes size={12} />
-                        </button>
+                        <div className="flex items-center shrink-0">
+                            <button
+                                type="button"
+                                onPointerDown={(e) => e.stopPropagation()}
+                                onClick={togglePythonJobSound}
+                                className="p-1.5 rounded-lg hover:bg-black/5 dark:hover:bg-white/10 transition-colors"
+                                title={pythonJobSoundOn ? 'Mute completion sound' : 'Unmute completion sound'}
+                                aria-label={pythonJobSoundOn ? 'Mute completion sound' : 'Unmute completion sound'}
+                            >
+                                {pythonJobSoundOn ? <FaVolumeUp size={12} /> : <FaVolumeMute size={12} />}
+                            </button>
+                            <button
+                                type="button"
+                                onPointerDown={(e) => e.stopPropagation()}
+                                onClick={togglePythonJobPinned}
+                                className={`p-1.5 rounded-lg hover:bg-black/5 dark:hover:bg-white/10 transition-colors ${pythonJobPinned ? 'text-emerald-700 dark:text-emerald-300' : ''}`}
+                                title={pythonJobPinned ? 'Unpin (auto-hide when done)' : 'Keep panel open'}
+                                aria-label={pythonJobPinned ? 'Unpin job panel' : 'Pin job panel'}
+                            >
+                                <FaThumbtack size={12} className={pythonJobPinned ? '' : 'opacity-50'} />
+                            </button>
+                            <button
+                                type="button"
+                                onPointerDown={(e) => e.stopPropagation()}
+                                onClick={hidePythonJobPanel}
+                                className="p-1.5 rounded-lg hover:bg-black/5 dark:hover:bg-white/10 transition-colors"
+                                title="Hide status panel (click Py job chip in toolbar to reopen)"
+                                aria-label="Hide Python job status"
+                            >
+                                <FaTimes size={12} />
+                            </button>
+                        </div>
                     </div>
                     <div className="px-4 py-3 min-h-0 overflow-y-auto">
                         <p className="text-[11px] leading-relaxed opacity-90">
@@ -4305,35 +4672,164 @@ ON CONFLICT(key) DO UPDATE SET value = excluded.value, updated_at = excluded.upd
                                 </p>
                             </div>
                         )}
-                        {pythonJobActivity.total > 0 && isPythonJobActive(pythonJobActivity.phase) && (
-                            <div className="mt-3">
-                                <div className="h-2 w-full rounded-full bg-emerald-200/80 dark:bg-emerald-900/60 overflow-hidden">
-                                    <div
-                                        className="h-full bg-emerald-500 dark:bg-emerald-400 transition-all duration-500"
-                                        style={{ width: `${Math.min(100, Math.round((pythonJobActivity.checked / Math.max(pythonJobActivity.total, 1)) * 100))}%` }}
-                                    />
-                                </div>
-                                <p className="mt-1.5 text-[10px] font-semibold tabular-nums">
-                                    {pythonJobActivity.checked}/{pythonJobActivity.total} monitors checked
-                                </p>
-                            </div>
-                        )}
-                        {!isPythonJobActive(pythonJobActivity.phase) && pythonJobActivity.total > 0 && (
-                            <p className="mt-2 text-[10px] font-semibold tabular-nums opacity-80">
-                                Final: {pythonJobActivity.checked}/{pythonJobActivity.total} monitors
-                            </p>
-                        )}
-                        {(pythonJobActivity.items?.length ?? 0) > 0 && (
-                            <div className="mt-3">
-                                {(() => {
-                                    const running = isPythonJobActive(pythonJobActivity.phase);
-                                    const items = sortJobProgressItems(pythonJobActivity.items || []);
-                                    const slowest = [...items]
-                                        .filter((item) => item.response_ms != null)
-                                        .sort((a, b) => (b.response_ms ?? 0) - (a.response_ms ?? 0))[0];
-                                    const slowCount = items.filter((item) => (item.response_ms ?? 0) >= SLOW_CHECK_MS).length;
-                                    return (
-                                        <>
+                        {(() => {
+                            const running = isPythonJobActive(pythonJobActivity.phase);
+                            const items = sortJobProgressItems(pythonJobActivity.items || []);
+                            const lastDetailsById = new Map(monitors.map((m) => [m.id, m.last_details]));
+                            const upCount = items.filter((item) => item.status === 'up').length;
+                            const downCount = items.filter((item) => item.status === 'down').length;
+                            const errorCount = items.filter((item) => item.status === 'error').length;
+                            const total = Math.max(pythonJobActivity.total, items.length, 1);
+                            const checked = Math.max(pythonJobActivity.checked, items.filter((item) => !isJobItemPending(item)).length);
+                            const remaining = items.length > 0
+                                ? Math.max(0, items.length - upCount - downCount - errorCount)
+                                : Math.max(0, total - checked);
+                            const pct = Math.min(100, Math.round((checked / total) * 100));
+                            const startedAt = pythonJobActivity.jobStartedAt || pythonJobActivity.jobCreatedAt;
+                            const endedAt = pythonJobActivity.jobFinishedAt;
+                            const nowSec = running ? jobClock / 1000 : (endedAt || jobClock / 1000);
+                            const elapsedSec = startedAt ? Math.max(0, nowSec - startedAt) : 0;
+                            const etaSec = running && checked > 0 && remaining > 0
+                                ? (elapsedSec / checked) * remaining
+                                : null;
+                            const slowest = [...items]
+                                .filter((item) => item.response_ms != null)
+                                .sort((a, b) => (b.response_ms ?? 0) - (a.response_ms ?? 0))[0];
+                            const slowCount = items.filter((item) => (item.response_ms ?? 0) >= SLOW_CHECK_MS).length;
+                            const latencies = items
+                                .filter((item) => item.response_ms != null)
+                                .map((item) => Math.max(0, item.response_ms || 0));
+                            const httpBuckets = { ok: 0, redirect: 0, client: 0, server: 0, none: 0 };
+                            items.forEach((item) => {
+                                if (isJobItemPending(item)) {
+                                    return;
+                                }
+                                const code = resolveJobItemHttpCode(item, lastDetailsById.get(item.id));
+                                if (code == null) {
+                                    httpBuckets.none += 1;
+                                } else if (code < 300) {
+                                    httpBuckets.ok += 1;
+                                } else if (code < 400) {
+                                    httpBuckets.redirect += 1;
+                                } else if (code < 500) {
+                                    httpBuckets.client += 1;
+                                } else {
+                                    httpBuckets.server += 1;
+                                }
+                            });
+                            const retryIds = items.filter((item) => isJobItemFailed(item)).map((item) => item.id);
+                            const displayed = items
+                                .filter((item) => pythonJobListFilter === 'all' || isJobItemFailed(item))
+                                .slice()
+                                .sort((a, b) => {
+                                    const aFail = isJobItemFailed(a) ? 0 : 1;
+                                    const bFail = isJobItemFailed(b) ? 0 : 1;
+                                    if (aFail !== bFail) {
+                                        return aFail - bFail;
+                                    }
+                                    return (a.seq ?? 0) - (b.seq ?? 0);
+                                });
+                            const copySummary = () => {
+                                const parts = [
+                                    `Job #${pythonJobActivity.jobId}: ${checked}/${total} checked`,
+                                    `${upCount} up`,
+                                    `${downCount} down`,
+                                    `${errorCount} error`,
+                                ];
+                                if (slowest) {
+                                    parts.push(`slowest ${slowest.name} ${formatCheckDuration(slowest.response_ms)}`);
+                                }
+                                if (elapsedSec > 0) {
+                                    parts.push(formatElapsedSeconds(elapsedSec));
+                                }
+                                const text = parts.join(', ');
+                                const done = () => {
+                                    setPythonJobCopied(true);
+                                    window.setTimeout(() => setPythonJobCopied(false), 1600);
+                                };
+                                if (navigator.clipboard?.writeText) {
+                                    void navigator.clipboard.writeText(text).then(done).catch(() => {
+                                        window.prompt('Copy summary', text);
+                                    });
+                                } else {
+                                    window.prompt('Copy summary', text);
+                                }
+                            };
+                            const showMeter = total > 0 && (running || checked > 0 || items.length > 0);
+                            return (
+                                <>
+                                    {showMeter && (
+                                        <div className="mt-3">
+                                            <div className="h-2.5 w-full rounded-full bg-slate-200/80 dark:bg-black/30 overflow-hidden flex">
+                                                {upCount > 0 && (
+                                                    <div className="h-full bg-emerald-500 transition-all duration-500" style={{ width: `${(upCount / total) * 100}%` }} title={`${upCount} up`} />
+                                                )}
+                                                {downCount > 0 && (
+                                                    <div className="h-full bg-red-500 transition-all duration-500" style={{ width: `${(downCount / total) * 100}%` }} title={`${downCount} down`} />
+                                                )}
+                                                {errorCount > 0 && (
+                                                    <div className="h-full bg-amber-500 transition-all duration-500" style={{ width: `${(errorCount / total) * 100}%` }} title={`${errorCount} error`} />
+                                                )}
+                                                {remaining > 0 && (
+                                                    <div className="h-full bg-sky-300/80 dark:bg-sky-700/70 transition-all duration-500" style={{ width: `${(remaining / total) * 100}%` }} title={`${remaining} queued`} />
+                                                )}
+                                            </div>
+                                            <div className="mt-1.5 flex flex-wrap items-center gap-x-2 gap-y-1 text-[10px] font-semibold tabular-nums">
+                                                <span>{checked}/{total} · {pct}%</span>
+                                                <span className="text-emerald-700 dark:text-emerald-300">↑ {upCount}</span>
+                                                <span className="text-red-700 dark:text-red-300">↓ {downCount}</span>
+                                                {errorCount > 0 && (
+                                                    <span className="text-amber-800 dark:text-amber-200">! {errorCount}</span>
+                                                )}
+                                                {elapsedSec > 0 && (
+                                                    <span className="opacity-80">{formatElapsedSeconds(elapsedSec)} elapsed</span>
+                                                )}
+                                                {etaSec != null && Number.isFinite(etaSec) && (
+                                                    <span className="opacity-80">~{formatElapsedSeconds(etaSec)} left</span>
+                                                )}
+                                            </div>
+                                        </div>
+                                    )}
+                                    {(latencies.length > 1 || Object.values(httpBuckets).some((n) => n > 0)) && (
+                                        <div className="mt-3 flex items-end gap-3">
+                                            {latencies.length > 1 && (
+                                                <div className="min-w-0">
+                                                    <p className="text-[9px] font-bold uppercase tracking-wide opacity-50 mb-1">Latency</p>
+                                                    <svg width="128" height="28" viewBox="0 0 128 28" className="block" aria-hidden="true">
+                                                        <polyline
+                                                            fill="none"
+                                                            stroke="currentColor"
+                                                            strokeWidth="1.5"
+                                                            strokeLinejoin="round"
+                                                            strokeLinecap="round"
+                                                            points={sparklinePoints(latencies)}
+                                                            className="opacity-80"
+                                                        />
+                                                    </svg>
+                                                </div>
+                                            )}
+                                            <div className="flex-1 min-w-0">
+                                                <p className="text-[9px] font-bold uppercase tracking-wide opacity-50 mb-1">HTTP</p>
+                                                <div className="flex flex-wrap gap-1">
+                                                    {([
+                                                        ['2xx', httpBuckets.ok, 'bg-emerald-500/20 text-emerald-800 dark:text-emerald-200'],
+                                                        ['3xx', httpBuckets.redirect, 'bg-sky-500/20 text-sky-800 dark:text-sky-200'],
+                                                        ['4xx', httpBuckets.client, 'bg-amber-500/20 text-amber-900 dark:text-amber-200'],
+                                                        ['5xx', httpBuckets.server, 'bg-red-500/20 text-red-800 dark:text-red-200'],
+                                                        ['none', httpBuckets.none, 'opacity-60 bg-slate-500/10'],
+                                                    ] as const).map(([label, count, cls]) => (
+                                                        count > 0 ? (
+                                                            <span key={label} className={`px-1.5 py-0.5 rounded-md text-[9px] font-black tabular-nums ${cls}`}>
+                                                                {label} {count}
+                                                            </span>
+                                                        ) : null
+                                                    ))}
+                                                </div>
+                                            </div>
+                                        </div>
+                                    )}
+                                    {items.length > 0 && (
+                                        <div className="mt-3">
                                             {slowest && (slowest.response_ms ?? 0) >= SLOW_CHECK_MS && (
                                                 <p className="mb-2 text-[10px] font-bold text-amber-800 dark:text-amber-200 flex items-start gap-1.5">
                                                     <FaExclamationTriangle size={9} className="mt-0.5 shrink-0" />
@@ -4344,29 +4840,75 @@ ON CONFLICT(key) DO UPDATE SET value = excluded.value, updated_at = excluded.upd
                                                 </p>
                                             )}
                                             <div className="mb-1.5 flex items-center justify-between gap-2">
-                                                <span className="text-[10px] font-semibold opacity-70">
-                                                    Scan order
-                                                </span>
-                                                <button
-                                                    type="button"
-                                                    onClick={() => downloadJobProgressCsv(pythonJobActivity.jobId, items)}
-                                                    className="inline-flex items-center gap-1 px-2 py-0.5 rounded-md text-[10px] font-bold uppercase tracking-wide bg-white/80 dark:bg-black/30 border border-emerald-200 dark:border-emerald-800 hover:bg-white dark:hover:bg-black/50 transition-colors"
-                                                    title="Export this job's results to CSV"
-                                                >
-                                                    <FaFileCsv size={10} />
-                                                    Export CSV
-                                                </button>
+                                                <div className="flex items-center gap-1.5 min-w-0">
+                                                    <span className="text-[10px] font-semibold opacity-70">
+                                                        {pythonJobListFilter === 'down' ? 'Down first' : 'Failures first'}
+                                                    </span>
+                                                    <div className="flex rounded-md overflow-hidden border border-emerald-200 dark:border-emerald-800">
+                                                        <button
+                                                            type="button"
+                                                            onClick={() => setPythonJobListFilter('all')}
+                                                            className={`px-1.5 py-0.5 text-[9px] font-bold uppercase ${pythonJobListFilter === 'all' ? 'bg-emerald-600 text-white' : 'opacity-70'}`}
+                                                        >
+                                                            All
+                                                        </button>
+                                                        <button
+                                                            type="button"
+                                                            onClick={() => setPythonJobListFilter('down')}
+                                                            className={`px-1.5 py-0.5 text-[9px] font-bold uppercase ${pythonJobListFilter === 'down' ? 'bg-red-600 text-white' : 'opacity-70'}`}
+                                                        >
+                                                            Down
+                                                        </button>
+                                                    </div>
+                                                </div>
+                                                <div className="flex items-center gap-1.5">
+                                                    <span className="text-[9px] font-bold uppercase tracking-wide opacity-50" title="HTTP status code">
+                                                        HTTP
+                                                    </span>
+                                                    <button
+                                                        type="button"
+                                                        onClick={copySummary}
+                                                        className="inline-flex items-center gap-1 px-2 py-0.5 rounded-md text-[10px] font-bold uppercase tracking-wide bg-white/80 dark:bg-black/30 border border-emerald-200 dark:border-emerald-800 hover:bg-white dark:hover:bg-black/50 transition-colors"
+                                                        title="Copy a one-line summary"
+                                                    >
+                                                        <FaCopy size={10} />
+                                                        {pythonJobCopied ? 'Copied' : 'Copy'}
+                                                    </button>
+                                                    <button
+                                                        type="button"
+                                                        onClick={() => downloadJobProgressCsv(pythonJobActivity.jobId, items, lastDetailsById)}
+                                                        className="inline-flex items-center gap-1 px-2 py-0.5 rounded-md text-[10px] font-bold uppercase tracking-wide bg-white/80 dark:bg-black/30 border border-emerald-200 dark:border-emerald-800 hover:bg-white dark:hover:bg-black/50 transition-colors"
+                                                        title="Export this job's results to CSV"
+                                                    >
+                                                        <FaFileCsv size={10} />
+                                                        CSV
+                                                    </button>
+                                                </div>
                                             </div>
-                                            <ul className="max-h-48 overflow-y-auto rounded-lg border border-emerald-200/70 dark:border-emerald-800/70 bg-white/60 dark:bg-black/20 divide-y divide-emerald-100/80 dark:divide-emerald-900/50">
-                                                {items.map((item) => {
+                                            <ul className="max-h-52 overflow-y-auto rounded-lg border border-emerald-200/70 dark:border-emerald-800/70 bg-white/60 dark:bg-black/20 divide-y divide-emerald-100/80 dark:divide-emerald-900/50">
+                                                {displayed.map((item) => {
                                                     const slow = (item.response_ms ?? 0) >= SLOW_CHECK_MS;
-                                                    const pending = item.status === 'pending' || item.status === 'checking' || item.response_ms == null;
+                                                    const pending = isJobItemPending(item);
+                                                    const httpCode = pending
+                                                        ? null
+                                                        : resolveJobItemHttpCode(item, lastDetailsById.get(item.id));
+                                                    const reason = summarizeCheckFailure(
+                                                        item.details || lastDetailsById.get(item.id),
+                                                        httpCode
+                                                    );
+                                                    const title = [
+                                                        `#${item.seq} ${item.name}`,
+                                                        pending ? item.status : reason || item.status,
+                                                    ].filter(Boolean).join(' — ');
                                                     return (
                                                         <li
                                                             key={item.id}
-                                                            className={`flex items-center gap-2 px-2 py-1.5 ${
+                                                            data-job-item-checking={item.status === 'checking' ? '1' : undefined}
+                                                            onClick={() => jumpToMonitor(item.id)}
+                                                            className={`flex items-center gap-2 px-2 py-1.5 cursor-pointer hover:bg-black/5 dark:hover:bg-white/5 ${
                                                                 slow ? 'bg-amber-100/90 dark:bg-amber-900/40' : ''
                                                             }`}
+                                                            title={`${title} (click to jump)`}
                                                         >
                                                             <span className="shrink-0 w-6 text-right tabular-nums text-[10px] font-black opacity-60">
                                                                 {item.seq}
@@ -4381,10 +4923,14 @@ ON CONFLICT(key) DO UPDATE SET value = excluded.value, updated_at = excluded.upd
                                                                                 ? 'bg-sky-400 animate-pulse'
                                                                                 : 'bg-slate-400'
                                                                 }`}
-                                                                title={item.status}
                                                             />
-                                                            <span className="min-w-0 flex-1 truncate font-medium" title={`#${item.seq} ${item.name}`}>
+                                                            <span className="min-w-0 flex-1 truncate font-medium">
                                                                 {item.name}
+                                                            </span>
+                                                            <span
+                                                                className={`shrink-0 w-8 text-right tabular-nums font-black ${httpStatusClassName(httpCode)}`}
+                                                            >
+                                                                {pending ? '' : (httpCode != null ? String(httpCode) : '—')}
                                                             </span>
                                                             <span className={`shrink-0 tabular-nums font-bold ${
                                                                 slow
@@ -4406,25 +4952,40 @@ ON CONFLICT(key) DO UPDATE SET value = excluded.value, updated_at = excluded.upd
                                                     );
                                                 })}
                                             </ul>
-                                        </>
-                                    );
-                                })()}
-                            </div>
-                        )}
-                        {isPythonJobActive(pythonJobActivity.phase) && pythonJobActivity.jobId > 0 && (
-                            <div className="mt-3 pt-3 border-t border-emerald-200/60 dark:border-emerald-800/60 flex justify-end">
-                                <button
-                                    type="button"
-                                    onClick={handleAbortPythonJob}
-                                    disabled={isAbortingPythonJob || pythonJobActivity.phase === 'cancelling'}
-                                    className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-[10px] font-bold uppercase tracking-wide bg-red-600 hover:bg-red-700 disabled:opacity-50 disabled:cursor-not-allowed text-white transition-colors"
-                                    title="Cancel this Python check job"
-                                >
-                                    <FaStop size={9} />
-                                    {isAbortingPythonJob || pythonJobActivity.phase === 'cancelling' ? 'Cancelling…' : 'Abort job'}
-                                </button>
-                            </div>
-                        )}
+                                            {pythonJobListFilter === 'down' && displayed.length === 0 && (
+                                                <p className="mt-2 text-[10px] opacity-70">No down monitors in this job.</p>
+                                            )}
+                                        </div>
+                                    )}
+                                    <div className="mt-3 pt-3 border-t border-emerald-200/60 dark:border-emerald-800/60 flex flex-wrap justify-end gap-2">
+                                        {!running && retryIds.length > 0 && (
+                                            <button
+                                                type="button"
+                                                onClick={() => handleRetryDownMonitors(retryIds)}
+                                                disabled={forceCheckBusy}
+                                                className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-[10px] font-bold uppercase tracking-wide bg-amber-600 hover:bg-amber-700 disabled:opacity-50 disabled:cursor-not-allowed text-white transition-colors"
+                                                title="Queue a new Python job for down/error monitors only"
+                                            >
+                                                <FaRedo size={9} />
+                                                Retry {retryIds.length} down
+                                            </button>
+                                        )}
+                                        {running && pythonJobActivity.jobId > 0 && (
+                                            <button
+                                                type="button"
+                                                onClick={handleAbortPythonJob}
+                                                disabled={isAbortingPythonJob || pythonJobActivity.phase === 'cancelling'}
+                                                className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-[10px] font-bold uppercase tracking-wide bg-red-600 hover:bg-red-700 disabled:opacity-50 disabled:cursor-not-allowed text-white transition-colors"
+                                                title="Cancel this Python check job"
+                                            >
+                                                <FaStop size={9} />
+                                                {isAbortingPythonJob || pythonJobActivity.phase === 'cancelling' ? 'Cancelling…' : 'Abort job'}
+                                            </button>
+                                        )}
+                                    </div>
+                                </>
+                            );
+                        })()}
                     </div>
                     <FloatPanelDragBar dragging={pythonJobDrag.dragging} onPointerDown={pythonJobDrag.onDragStart} />
                 </div>

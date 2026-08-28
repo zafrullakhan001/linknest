@@ -51,6 +51,7 @@ from linknest_worker_lib import (
     normalize_email_list,
     notifications_paused,
     now_ts,
+    parse_http_code,
     open_db,
     replace_template_vars,
     resolve_app_name,
@@ -280,10 +281,23 @@ def seed_job_progress(conn, job_id: Optional[int], monitors: Sequence[Any]) -> N
             "name": name if name else f"Monitor #{mid}",
             "status": "pending",
             "response_ms": None,
+            "http_code": None,
+            "details": None,
             "seq": len(items) + 1,
         })
     _save_job_progress_items(conn, int(job_id), items)
     conn.commit()
+
+
+def _clip_job_details(details: Optional[str], limit: int = 240) -> Optional[str]:
+    if details is None:
+        return None
+    text = str(details).strip()
+    if not text:
+        return None
+    if len(text) > limit:
+        return text[: limit - 1] + "…"
+    return text
 
 
 def patch_job_progress_item(
@@ -294,9 +308,12 @@ def patch_job_progress_item(
     name: str,
     status: str,
     response_ms: Optional[int],
+    http_code: Optional[int] = None,
+    details: Optional[str] = None,
 ) -> None:
     if not job_id:
         return
+    clipped = _clip_job_details(details)
     items = _load_job_progress_items(conn, int(job_id))
     found = False
     for it in items:
@@ -310,6 +327,8 @@ def patch_job_progress_item(
             continue
         it["status"] = status
         it["response_ms"] = None if response_ms is None else int(response_ms)
+        it["http_code"] = None if http_code is None else int(http_code)
+        it["details"] = clipped
         if name:
             it["name"] = name
         found = True
@@ -320,6 +339,8 @@ def patch_job_progress_item(
             "name": name or f"Monitor #{int(monitor_id)}",
             "status": status,
             "response_ms": None if response_ms is None else int(response_ms),
+            "http_code": None if http_code is None else int(http_code),
+            "details": clipped,
             "seq": len(items) + 1,
         })
     _save_job_progress_items(conn, int(job_id), items)
@@ -398,7 +419,7 @@ def perform_check(monitor: Dict[str, Any], verify_ssl: bool, app_name: str = "Li
             details = f"{details} | Retry: {r2d}"
 
     ms = int(round((time.time() - t0) * 1000))
-    return CheckResult(status=status, details=details, response_ms=ms)
+    return CheckResult(status=status, details=details, response_ms=ms, http_code=parse_http_code(details))
 
 
 def status_changed(prev_status: Optional[str], new_status: str) -> bool:
@@ -920,6 +941,8 @@ def main() -> int:
                         name=str(mrow.get("name") or "").strip(),
                         status=item_status,
                         response_ms=int(r.response_ms or 0),
+                        http_code=r.http_code if r.http_code is not None else parse_http_code(r.details),
+                        details=r.details,
                     )
                     update_job_progress(conn, job_id, job_counts)
 
