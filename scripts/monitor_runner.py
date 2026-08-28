@@ -25,6 +25,12 @@ import sys
 import time
 from typing import Any, Dict, List, Optional, Set, Tuple
 
+# Embeddable CPython (bin/python + python*._pth) does not put this script's
+# folder on sys.path, so linknest_worker_lib would otherwise fail to import.
+_scripts_dir = os.path.dirname(os.path.abspath(__file__))
+if _scripts_dir not in sys.path:
+    sys.path.insert(0, _scripts_dir)
+
 from linknest_worker_lib import (
     DEFAULT_DB_PATH,
     CheckResult,

@@ -87,11 +87,22 @@ export interface MonitorWorkerPythonHealth {
     checks: MonitorWorkerPythonCheck[];
 }
 
+export interface MonitorWorkerSchedulerDatabase {
+    engine: 'sqlite' | string;
+    path: string;
+    php_path?: string | null;
+    exists: boolean;
+    source: 'scheduled_task' | 'php' | string;
+    mismatch?: boolean;
+    message: string;
+}
+
 export interface MonitorWorkerSchedulerStatus {
     platform: 'windows' | 'linux' | 'docker' | 'unknown';
     scheduler_applicable: boolean;
     python_ready: boolean | null;
     python?: MonitorWorkerPythonHealth;
+    database?: MonitorWorkerSchedulerDatabase;
     status: 'ok' | 'not_installed' | 'disabled' | 'partial' | 'unavailable' | 'python_missing' | 'not_running';
     message: string;
     tasks: {

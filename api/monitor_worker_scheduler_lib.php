@@ -534,7 +534,76 @@ function monitorWorkerSchedulerBuildStatus(): array {
 }
 
 /**
- * Attach Python interpreter health and, on Windows, block scheduling until Python 3.9+ is present.
+ * Parse --db from a Task Scheduler "Task To Run" command line.
+ */
+function monitorWorkerSchedulerParseDbFromTaskToRun(?string $taskToRun): ?string {
+    if ($taskToRun === null || trim($taskToRun) === '') {
+        return null;
+    }
+    if (!preg_match('/--db(?:\s+|=)(?:"([^"]+)"|\'([^\']+)\'|(\S+))/i', $taskToRun, $m)) {
+        return null;
+    }
+    $path = ($m[1] ?? '') !== '' ? $m[1] : (($m[2] ?? '') !== '' ? $m[2] : ($m[3] ?? ''));
+    $path = trim((string)$path);
+    return $path !== '' ? $path : null;
+}
+
+function monitorWorkerSchedulerNormalizeDbPath(string $path): string {
+    $real = realpath($path);
+    if ($real !== false) {
+        return strtolower(str_replace('\\', '/', $real));
+    }
+    return strtolower(rtrim(str_replace('\\', '/', $path), '/'));
+}
+
+/**
+ * SQLite file workers (and PHP) use for monitor checks / email outbox.
+ *
+ * @param array<string,mixed> $status
+ * @return array<string,mixed>
+ */
+function monitorWorkerSchedulerDatabaseInfo(array $status): array {
+    $phpPath = monitorWorkerDbPath();
+    $phpReal = realpath($phpPath);
+    if ($phpReal !== false) {
+        $phpPath = $phpReal;
+    }
+    $taskPath = null;
+    $taskToRun = (string)($status['tasks']['monitor_runner']['task_to_run'] ?? '');
+    if ($taskToRun !== '') {
+        $taskPath = monitorWorkerSchedulerParseDbFromTaskToRun($taskToRun);
+    }
+    $path = $taskPath ?: $phpPath;
+    $exists = is_file($path);
+    $source = $taskPath ? 'scheduled_task' : 'php';
+    $mismatch = false;
+    if ($taskPath && $phpPath !== '') {
+        $mismatch = monitorWorkerSchedulerNormalizeDbPath($taskPath) !== monitorWorkerSchedulerNormalizeDbPath($phpPath);
+    }
+
+    if ($mismatch) {
+        $message = 'Scheduled workers point at a different database than this PHP app. Reinstall tasks to use the current SQLite file.';
+    } elseif ($exists) {
+        $message = $source === 'scheduled_task'
+            ? 'Scheduled workers read and write this SQLite file (--db).'
+            : 'Workers use this SQLite file (same path as PHP).';
+    } else {
+        $message = 'Database file not found yet. Open the app once so PHP can create it, then Recheck.';
+    }
+
+    return [
+        'engine' => 'sqlite',
+        'path' => $path,
+        'php_path' => $phpPath,
+        'exists' => $exists,
+        'source' => $source,
+        'mismatch' => $mismatch,
+        'message' => $message,
+    ];
+}
+
+/**
+ * Attach Python interpreter health and SQLite path, and on Windows block scheduling until Python 3.9+ is present.
  *
  * @param array<string,mixed> $status
  * @return array<string,mixed>
@@ -542,6 +611,7 @@ function monitorWorkerSchedulerBuildStatus(): array {
 function monitorWorkerSchedulerAttachPythonHealth(array $status): array {
     $health = monitorWorkerPythonHealth();
     $status['python'] = $health;
+    $status['database'] = monitorWorkerSchedulerDatabaseInfo($status);
 
     $platform = $status['platform'] ?? '';
     if (!empty($health['available'])) {

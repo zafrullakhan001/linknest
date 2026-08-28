@@ -33,9 +33,9 @@
   With install: skip the post-install run-once smoke test.
 
 .PARAMETER TaskUser
-  Optional DOMAIN\User to run tasks as (S4U — no stored password, runs whether
+  Optional DOMAIN\User to run tasks as (S4U - no stored password, runs whether
   logged on). Default: SYSTEM first, then the logged-on user via S4U. Do not use
-  Interactive ("run only when user is logged on") — missed first triggers never repeat.
+  Interactive ("run only when user is logged on") - missed first triggers never repeat.
 
 .EXAMPLE
   .\scripts\schedule-monitor-workers.ps1
@@ -69,6 +69,7 @@ param(
 $ErrorActionPreference = 'Stop'
 $script:FailCount = 0
 $script:WarnCount = 0
+$script:UsedInteractivePrincipal = $false
 
 function Write-Ok([string]$Message) { Write-Host "  [OK]   $Message" -ForegroundColor Green }
 function Write-WarnLine([string]$Message) {
@@ -193,6 +194,11 @@ $legacyTaskMonitor = 'LinkNest - Monitor Runner'
 $legacyTaskEmail = 'LinkNest - Email Sender'
 $expectedMonitorArgsFragment = 'scripts\monitor_runner.py'
 $expectedEmailArgsFragment = 'scripts\email_sender.py'
+
+function Get-TaskSafe {
+    param([string]$Name)
+    try { return Get-ScheduledTask -TaskName $Name -ErrorAction Stop } catch { return $null }
+}
 
 function Test-TaskBelongsToThisRoot {
     param($Task)
@@ -432,9 +438,11 @@ function Test-WorkerTaskConfiguration {
             Write-Ok "schtasks.exe arguments mention $ExpectedArgsFragment"
         }
         if ($sch -match '(?im)Logon Mode:\s*Interactive only') {
-            Write-Fail "Logon Mode is Interactive only — the task will not run unless that user is at the console, and a missed first trigger never repeats. Re-run install (default SYSTEM/S4U)."
+            Write-WarnLine "Logon Mode is Interactive only. The repeating schedule runs while that user is logged on. For unattended checks (no console login), run Apache as a Windows service so install can use SYSTEM."
         } elseif ($sch -match '(?im)Run As User:\s*SYSTEM') {
             Write-Ok "Runs as SYSTEM (no logged-on user required)"
+        } elseif ($sch -match '(?im)Logon Mode:\s*S4U') {
+            Write-Ok "Runs as S4U (no interactive login required)"
         }
     }
 
@@ -563,8 +571,12 @@ function Get-WorkerPrincipalAttempts {
 
     if ($TaskUser) {
         $attempts.Add(@{
-            Label = "user $TaskUser (S4U — runs whether logged on)"
+            Label = "user $TaskUser (S4U, runs whether logged on)"
             Principal = (New-ScheduledTaskPrincipal -UserId $TaskUser -LogonType S4U -RunLevel Limited)
+        })
+        $attempts.Add(@{
+            Label = "user $TaskUser (Interactive, only while logged on)"
+            Principal = (New-ScheduledTaskPrincipal -UserId $TaskUser -LogonType Interactive -RunLevel Limited)
         })
     }
 
@@ -576,7 +588,11 @@ function Get-WorkerPrincipalAttempts {
     $runAs = Resolve-TaskRunAsUser
     if ($runAs -and (-not $TaskUser -or ($runAs.ToLowerInvariant() -ne $TaskUser.Trim().ToLowerInvariant()))) {
         $attempts.Add(@{
-            Label = "user $runAs (S4U — runs whether logged on)"
+            Label = "user $runAs (Interactive, only while logged on)"
+            Principal = (New-ScheduledTaskPrincipal -UserId $runAs -LogonType Interactive -RunLevel Limited)
+        })
+        $attempts.Add(@{
+            Label = "user $runAs (S4U, runs whether logged on)"
             Principal = (New-ScheduledTaskPrincipal -UserId $runAs -LogonType S4U -RunLevel Limited)
         })
     }
@@ -603,8 +619,6 @@ function Register-WorkerTask {
     $repeatTrigger = New-ScheduledTaskTrigger -Once -At $start `
         -RepetitionInterval (New-TimeSpan -Minutes $IntervalMinutes) `
         -RepetitionDuration (New-TimeSpan -Days 3650)
-    $bootTrigger = New-ScheduledTaskTrigger -AtStartup
-    try { $bootTrigger.Delay = 'PT30S' } catch {}
 
     $settings = New-ScheduledTaskSettingsSet `
         -AllowStartIfOnBatteries `
@@ -622,10 +636,14 @@ function Register-WorkerTask {
                 -TaskName $Name `
                 -Description $Description `
                 -Action $action `
-                -Trigger @($repeatTrigger, $bootTrigger) `
+                -Trigger $repeatTrigger `
                 -Settings $settings `
                 -Principal $attempt.Principal | Out-Null
             Write-Ok "Registered: $Name as $($attempt.Label) (every $IntervalMinutes min)"
+            if ($attempt.Label -like '*Interactive*') {
+                $script:UsedInteractivePrincipal = $true
+                Write-WarnLine "This task runs only while that user is logged on. Start now will kick off the repeating schedule. Prefer running Apache as a service (SYSTEM) for unattended checks."
+            }
             $registered = $true
             break
         } catch {
@@ -697,7 +715,11 @@ function Install-WorkerTasks {
 
     Write-Section "Summary"
     Write-Ok "Install finished."
-    Write-Info "Tasks run whether or not a user is logged on (SYSTEM, or S4U if SYSTEM is not allowed)."
+    if ($script:UsedInteractivePrincipal) {
+        Write-WarnLine "Tasks are Interactive (run while this Windows user is logged on). SYSTEM/S4U need Administrator. Stay logged on, or run Apache as a service and reinstall."
+    } else {
+        Write-Info "Tasks run whether or not a user is logged on (SYSTEM, or S4U if SYSTEM is not allowed)."
+    }
     Write-Info "If Py jobs stay queued, click Run now in the scheduler panel or: schtasks /Run /TN `"$taskMonitor`""
     Write-Info "Useful commands:"
     Write-Host "    scripts\schedule-monitor-workers.bat status"

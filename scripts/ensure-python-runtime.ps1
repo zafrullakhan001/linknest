@@ -59,6 +59,7 @@ function Set-PythonPth {
         $(if ($zipName) { $zipName.Name } else { $zipFallback }),
         ".",
         "..\python-packages",
+        "..\..\scripts",
         "import site"
     )
     Set-Content -Path $pth.FullName -Value ($lines -join "`r`n") -Encoding ASCII

@@ -1,7 +1,7 @@
 import React, { useState, useEffect, useCallback, useRef, useMemo } from 'react';
 import { createPortal } from 'react-dom';
 import { Monitor, MonitorLog, MonitorForceEngine, MonitorCheckJob, MonitorWorkerSchedulerStatus, MonitorWorkerSchedulerTaskKey, monitoringService } from '../services/monitoringService';
-import { MonitorSchedulerPythonHealthCard } from './MonitorSchedulerPythonHealth';
+import { MonitorSchedulerPythonHealthCard, MonitorSchedulerDatabaseCard } from './MonitorSchedulerPythonHealth';
 import { MonitorForm } from './MonitorForm';
 import { MonitorBulkImportDialog } from './MonitorBulkImportDialog';
 import { MonitorSslBulkImportDialog } from './MonitorSslBulkImportDialog';
@@ -3544,6 +3544,12 @@ export const MonitoringDashboard: React.FC = () => {
                                                 onInstall={installPythonRuntime}
                                             />
                                         )}
+                                        {workerSchedulerStatus.database && (
+                                            <MonitorSchedulerDatabaseCard
+                                                database={workerSchedulerStatus.database}
+                                                variant="modal"
+                                            />
+                                        )}
                                         <div className="space-y-2">
                                             {renderSchedulerTaskRow('monitor_runner', 'Monitor Runner', 'modal')}
                                             {renderSchedulerTaskRow('email_sender', 'Email Sender', 'modal')}
@@ -3636,6 +3642,12 @@ export const MonitoringDashboard: React.FC = () => {
                                                 installing={schedulerPythonInstalling}
                                                 checking={workerSchedulerLoading}
                                                 onInstall={installPythonRuntime}
+                                            />
+                                        )}
+                                        {workerSchedulerStatus.database && (
+                                            <MonitorSchedulerDatabaseCard
+                                                database={workerSchedulerStatus.database}
+                                                variant="modal"
                                             />
                                         )}
                                         <div className="space-y-2">
@@ -3976,6 +3988,14 @@ ON CONFLICT(key) DO UPDATE SET value = excluded.value, updated_at = excluded.upd
                                     installing={schedulerPythonInstalling}
                                     checking={workerSchedulerLoading}
                                     onInstall={installPythonRuntime}
+                                />
+                            </div>
+                        )}
+                        {workerSchedulerStatus.database && (
+                            <div className="mt-2.5">
+                                <MonitorSchedulerDatabaseCard
+                                    database={workerSchedulerStatus.database}
+                                    variant="float"
                                 />
                             </div>
                         )}

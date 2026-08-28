@@ -1,6 +1,6 @@
 import React from 'react';
 import { FaCheck, FaCopy, FaDownload, FaExclamationTriangle, FaTimes } from 'react-icons/fa';
-import { MonitorWorkerPythonHealth } from '../services/monitoringService';
+import { MonitorWorkerPythonHealth, MonitorWorkerSchedulerDatabase } from '../services/monitoringService';
 
 interface MonitorSchedulerPythonHealthProps {
     python: MonitorWorkerPythonHealth;
@@ -127,6 +127,70 @@ export const MonitorSchedulerPythonHealthCard: React.FC<MonitorSchedulerPythonHe
                     )}
                 </div>
             )}
+        </div>
+    );
+};
+
+interface MonitorSchedulerDatabaseCardProps {
+    database: MonitorWorkerSchedulerDatabase;
+    variant?: 'float' | 'modal';
+}
+
+export const MonitorSchedulerDatabaseCard: React.FC<MonitorSchedulerDatabaseCardProps> = ({
+    database,
+    variant = 'float',
+}) => {
+    const compact = variant === 'float';
+    const mismatch = database.mismatch === true;
+    const missing = database.exists !== true;
+    const boxClass = mismatch || missing
+        ? 'border-amber-300/80 dark:border-amber-700/70 bg-amber-50/90 dark:bg-amber-950/40'
+        : 'border-slate-200/90 dark:border-slate-700/70 bg-white/60 dark:bg-black/20';
+
+    const copyPath = () => {
+        if (!database.path) return;
+        void navigator.clipboard.writeText(database.path);
+    };
+
+    return (
+        <div className={`rounded-xl border px-3 py-2.5 ${boxClass}`}>
+            <div className="flex items-start justify-between gap-2">
+                <div className="min-w-0 flex-1">
+                    <div className="flex flex-wrap items-center gap-x-2 gap-y-0.5">
+                        {mismatch || missing ? (
+                            <FaExclamationTriangle className="text-amber-600 dark:text-amber-400 shrink-0" size={11} />
+                        ) : (
+                            <FaCheck className="text-emerald-600 dark:text-emerald-400 shrink-0" size={11} />
+                        )}
+                        <span className="font-bold text-[10px] uppercase tracking-wide">
+                            {mismatch ? 'Database path mismatch' : 'SQLite database'}
+                        </span>
+                    </div>
+                    <p className={`mt-1 leading-relaxed opacity-90 ${compact ? 'text-[10px]' : 'text-[11px]'}`}>
+                        {database.message}
+                    </p>
+                    {database.path && (
+                        <p className="mt-1 text-[10px] font-mono opacity-80 break-all" title={database.path}>
+                            {database.path}
+                        </p>
+                    )}
+                    {mismatch && database.php_path && database.php_path !== database.path && (
+                        <p className="mt-1 text-[10px] font-mono opacity-60 break-all" title={database.php_path}>
+                            PHP: {database.php_path}
+                        </p>
+                    )}
+                </div>
+                {database.path && (
+                    <button
+                        type="button"
+                        onClick={copyPath}
+                        className="shrink-0 p-1.5 rounded-lg bg-white/70 dark:bg-black/30 hover:bg-white dark:hover:bg-black/50"
+                        title="Copy database path"
+                    >
+                        <FaCopy size={10} />
+                    </button>
+                )}
+            </div>
         </div>
     );
 };
