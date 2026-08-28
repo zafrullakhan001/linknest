@@ -591,6 +591,7 @@ export const MonitoringDashboard: React.FC = () => {
         const saved = localStorage.getItem('linknest_monitor_fullscreen');
         return saved === 'true';
     });
+    const ownsBrowserFullscreenRef = useRef(false);
     const [notificationsPaused, setNotificationsPaused] = useState<boolean>(false);
     const [checkStatus, setCheckStatus] = useState<{ count: number; total: number; up: number; down: number; error: number } | null>(null);
     const [workerSchedulerStatus, setWorkerSchedulerStatus] = useState<MonitorWorkerSchedulerStatus | null>(null);
@@ -1006,16 +1007,59 @@ export const MonitoringDashboard: React.FC = () => {
 
     const showSchedulerToolbarChip = showWorkerSchedulerBanner || schedulerManageAvailable;
 
-    // Handle Escape key for fullscreen
+    const exitBrowserFullscreen = useCallback(() => {
+        if (!ownsBrowserFullscreenRef.current) return;
+        ownsBrowserFullscreenRef.current = false;
+        if (document.fullscreenElement && document.exitFullscreen) {
+            document.exitFullscreen().catch(() => { /* ignore */ });
+        }
+    }, []);
+
+    const enterBrowserFullscreen = useCallback(() => {
+        const el = document.documentElement;
+        if (!el.requestFullscreen || document.fullscreenElement) return;
+        el.requestFullscreen()
+            .then(() => { ownsBrowserFullscreenRef.current = true; })
+            .catch(() => { ownsBrowserFullscreenRef.current = false; });
+    }, []);
+
+    const setFullscreenMode = useCallback((next: boolean) => {
+        setIsFullscreen(next);
+        if (next) {
+            enterBrowserFullscreen();
+        } else {
+            exitBrowserFullscreen();
+        }
+    }, [enterBrowserFullscreen, exitBrowserFullscreen]);
+
+    // Sync kiosk mode with browser fullscreen + Escape
     useEffect(() => {
         const handleKeyDown = (e: KeyboardEvent) => {
             if (e.key === 'Escape' && isFullscreen) {
+                setFullscreenMode(false);
+            }
+        };
+        const handleFsChange = () => {
+            if (!document.fullscreenElement && ownsBrowserFullscreenRef.current) {
+                ownsBrowserFullscreenRef.current = false;
                 setIsFullscreen(false);
             }
         };
         window.addEventListener('keydown', handleKeyDown);
-        return () => window.removeEventListener('keydown', handleKeyDown);
-    }, [isFullscreen]);
+        document.addEventListener('fullscreenchange', handleFsChange);
+        return () => {
+            window.removeEventListener('keydown', handleKeyDown);
+            document.removeEventListener('fullscreenchange', handleFsChange);
+        };
+    }, [isFullscreen, setFullscreenMode]);
+
+    // If restored from localStorage as fullscreen, try browser fullscreen once
+    useEffect(() => {
+        if (isFullscreen) {
+            enterBrowserFullscreen();
+        }
+        // eslint-disable-next-line react-hooks/exhaustive-deps
+    }, []);
 
     // Handle Escape key for Logs Modal
     useEffect(() => {
@@ -2560,6 +2604,202 @@ export const MonitoringDashboard: React.FC = () => {
                 className="hidden"
                 accept=".json"
             />
+            {isFullscreen ? (
+                <div className="sticky top-0 z-20 flex flex-wrap items-center gap-2 px-2 py-1.5 mb-2 bg-white/95 dark:bg-[#1e1e1e]/95 backdrop-blur-md border border-slate-200 dark:border-[#333] rounded-xl shadow-sm">
+                    <button
+                        type="button"
+                        onClick={() => setFullscreenMode(false)}
+                        className="p-2 rounded-lg transition-all text-slate-500 hover:text-slate-700 hover:bg-slate-100 dark:text-slate-400 dark:hover:text-white dark:hover:bg-[#333] border border-slate-200 dark:border-[#333]"
+                        title="Exit Fullscreen (Esc)"
+                        aria-label="Exit fullscreen"
+                    >
+                        <FaCompress size={14} />
+                    </button>
+
+                    <div className="flex items-center gap-0.5 bg-slate-100 dark:bg-[#252525] p-0.5 rounded-lg">
+                        <button
+                            onClick={() => setViewMode('tiles')}
+                            className={`p-1.5 rounded-md transition-all ${viewMode === 'tiles' ? 'bg-white dark:bg-[#333] text-blue-500 shadow-sm' : 'text-slate-400 hover:text-slate-600'}`}
+                            title="Grid Mode"
+                        >
+                            <FaThLarge size={13} />
+                        </button>
+                        <button
+                            onClick={() => setViewMode('compact')}
+                            className={`p-1.5 rounded-md transition-all ${viewMode === 'compact' ? 'bg-white dark:bg-[#333] text-blue-500 shadow-sm' : 'text-slate-400 hover:text-slate-600'}`}
+                            title="Compact Bar Mode"
+                        >
+                            <FaBars size={13} />
+                        </button>
+                        <button
+                            onClick={() => setViewMode('capsule')}
+                            className={`p-1.5 rounded-md transition-all ${viewMode === 'capsule' ? 'bg-white dark:bg-[#333] text-blue-500 shadow-sm' : 'text-slate-400 hover:text-slate-600'}`}
+                            title="Capsule Mode"
+                        >
+                            <FaCircle size={13} />
+                        </button>
+                        <button
+                            onClick={() => setViewMode('status-bar')}
+                            className={`p-1.5 rounded-md transition-all ${viewMode === 'status-bar' ? 'bg-white dark:bg-[#333] text-blue-500 shadow-sm' : 'text-slate-400 hover:text-slate-600'}`}
+                            title="Status Bar Mode"
+                        >
+                            <svg width="13" height="13" viewBox="0 0 24 24" fill="currentColor">
+                                <rect x="2" y="4" width="20" height="4" rx="2" />
+                                <rect x="2" y="10" width="20" height="4" rx="2" />
+                                <rect x="2" y="16" width="20" height="4" rx="2" />
+                            </svg>
+                        </button>
+                        <button
+                            onClick={() => setViewMode('kanban')}
+                            className={`p-1.5 rounded-md transition-all ${viewMode === 'kanban' ? 'bg-white dark:bg-[#333] text-blue-500 shadow-sm' : 'text-slate-400 hover:text-slate-600'}`}
+                            title="Kanban Mode"
+                        >
+                            <svg width="13" height="13" viewBox="0 0 24 24" fill="currentColor">
+                                <rect x="2" y="2" width="6" height="20" rx="1" />
+                                <rect x="10" y="2" width="6" height="14" rx="1" />
+                                <rect x="18" y="2" width="4" height="18" rx="1" />
+                            </svg>
+                        </button>
+                        <button
+                            onClick={() => setViewMode('timeline')}
+                            className={`p-1.5 rounded-md transition-all ${viewMode === 'timeline' ? 'bg-white dark:bg-[#333] text-blue-500 shadow-sm' : 'text-slate-400 hover:text-slate-600'}`}
+                            title="Timeline Mode"
+                        >
+                            <FaHistory size={13} />
+                        </button>
+                        <button
+                            onClick={() => setViewMode('grid')}
+                            className={`p-1.5 rounded-md transition-all ${viewMode === 'grid' ? 'bg-white dark:bg-[#333] text-blue-500 shadow-sm' : 'text-slate-400 hover:text-slate-600'}`}
+                            title="Table Mode"
+                        >
+                            <FaList size={13} />
+                        </button>
+                    </div>
+
+                    {tabNames.length > 0 && (
+                        <div className="flex flex-wrap items-center gap-1 max-w-full">
+                            {tabNames.map(tab => {
+                                const sslTab = isSslCertsTab(tab);
+                                const isActive = activeTab === tab;
+                                return (
+                                    <button
+                                        key={tab}
+                                        type="button"
+                                        onClick={() => setActiveTab(tab)}
+                                        className={`inline-flex items-center gap-1 px-2.5 py-1 rounded-lg text-xs font-bold transition-all ${
+                                            isActive
+                                                ? sslTab
+                                                    ? 'bg-amber-600 text-white'
+                                                    : 'bg-blue-600 text-white'
+                                                : sslTab
+                                                    ? 'bg-amber-50 text-amber-700 dark:bg-amber-950/40 dark:text-amber-300'
+                                                    : 'bg-slate-100 text-slate-600 dark:bg-[#252525] dark:text-slate-400'
+                                        }`}
+                                    >
+                                        {sslTab && <FaLock size={9} />}
+                                        {tab}
+                                        <span className={`px-1 rounded text-[9px] ${isActive ? 'bg-white/20' : 'bg-black/5 dark:bg-white/10'}`}>
+                                            {(groupedByTabs[tab] || []).length}
+                                        </span>
+                                    </button>
+                                );
+                            })}
+                        </div>
+                    )}
+
+                    <div className="flex items-center gap-1.5 ml-auto">
+                        <button
+                            type="button"
+                            onClick={() => refreshAll(false)}
+                            disabled={isRefreshingList}
+                            className={`flex items-center justify-center w-8 h-8 text-blue-600 dark:text-blue-400 bg-slate-100 dark:bg-[#252525] rounded-lg transition-all disabled:cursor-wait ${
+                                isRefreshingList ? 'ring-2 ring-blue-400/50 opacity-90' : ''
+                            }`}
+                            title="Refresh list (no checks)"
+                            aria-busy={isRefreshingList}
+                            aria-label="Refresh monitor list"
+                        >
+                            <FaSyncAlt size={13} className={isRefreshingList ? 'animate-spin' : undefined} />
+                        </button>
+                        <button
+                            type="button"
+                            onClick={() => refreshAll(true)}
+                            disabled={forceCheckBusy}
+                            className={`flex items-center justify-center w-8 h-8 text-red-600 dark:text-red-400 bg-slate-100 dark:bg-[#252525] rounded-lg transition-all disabled:opacity-50 disabled:cursor-not-allowed ${forceCheckBusy ? 'ring-2 ring-red-400/40' : ''}`}
+                            title={forceCheckBusy
+                                ? (pythonJobActivity ? pythonJobActivity.message : 'Force check already in progress')
+                                : (forceEngine === 'python'
+                                    ? 'Force refresh all monitors (Python background worker)'
+                                    : 'Force refresh all monitors (PHP in-request)')}
+                        >
+                            <FaRedo size={13} {...({ className: forceCheckBusy ? 'animate-spin' : '' } as any)} />
+                        </button>
+                        <div
+                            className="flex items-center gap-1.5 bg-slate-100 dark:bg-[#252525] rounded-lg px-1.5 py-0.5"
+                            title={
+                                autoRefreshMode === 'force' && isAutoRefreshEnabled
+                                    ? autoForceHold === 'busy'
+                                        ? 'Auto force paused — a check is already running'
+                                        : autoForceHold === 'cooldown'
+                                            ? `Auto force resting — next run in ~${refreshCountdown}s`
+                                            : `Auto force refresh every ${Math.max(autoRefreshInterval, FORCE_AUTO_MIN_INTERVAL_SEC)}s`
+                                    : isAutoRefreshEnabled
+                                        ? `Auto refresh every ${autoRefreshInterval}s`
+                                        : 'Auto refresh disabled'
+                            }
+                        >
+                            <div className="relative w-6 h-6 flex items-center justify-center">
+                                <svg className="w-5 h-5 rotate-[-90deg]">
+                                    <circle cx="10" cy="10" r="8" stroke="currentColor" strokeWidth="2" fill="transparent" className="text-slate-200 dark:text-slate-800" />
+                                    <circle cx="10" cy="10" r="8" stroke="currentColor" strokeWidth="2" fill="transparent" strokeDasharray={2 * Math.PI * 8} strokeDashoffset={isAutoRefreshEnabled ? (2 * Math.PI * 8) * (1 - refreshCountdown / (autoRefreshMode === 'force' ? Math.max(autoRefreshInterval, FORCE_AUTO_MIN_INTERVAL_SEC) : autoRefreshInterval)) : (2 * Math.PI * 8)} className={`${isAutoRefreshEnabled ? (autoForceHold ? 'text-amber-500' : autoRefreshMode === 'force' ? 'text-red-500' : 'text-blue-500') : 'text-slate-400'} transition-all duration-1000 ease-linear`} strokeLinecap="round" />
+                                </svg>
+                                <button onClick={() => setIsAutoRefreshEnabled(!isAutoRefreshEnabled)} className="absolute inset-0 flex items-center justify-center" title={isAutoRefreshEnabled ? "Disable auto-refresh" : "Enable auto-refresh"}>
+                                    <div className={`w-1.5 h-1.5 rounded-full ${isAutoRefreshEnabled ? (autoForceHold ? 'bg-amber-500 animate-pulse' : autoRefreshMode === 'force' ? 'bg-red-500 animate-pulse' : 'bg-blue-500 animate-pulse') : 'bg-slate-400'}`}></div>
+                                </button>
+                            </div>
+                            <button
+                                onClick={() => setAutoRefreshMode(m => (m === 'normal' ? 'force' : 'normal'))}
+                                disabled={!isAutoRefreshEnabled}
+                                className={`flex items-center justify-center w-6 h-6 rounded-md transition-all disabled:opacity-50 ${autoRefreshMode === 'force' ? 'text-red-600 dark:text-red-400' : 'text-blue-600 dark:text-blue-400'}`}
+                                title={autoRefreshMode === 'force'
+                                    ? "Auto force check (click for list-only refresh)"
+                                    : "Auto list refresh only (click for force check mode)"}
+                            >
+                                {autoRefreshMode === 'force' ? <FaRedo size={11} /> : <FaSyncAlt size={11} />}
+                            </button>
+                            <select
+                                value={autoRefreshMode === 'force' ? Math.max(autoRefreshInterval, FORCE_AUTO_MIN_INTERVAL_SEC) : autoRefreshInterval}
+                                onChange={(e) => setAutoRefreshInterval(Number(e.target.value))}
+                                disabled={!isAutoRefreshEnabled}
+                                className="bg-transparent text-[10px] font-bold text-slate-600 dark:text-slate-400 border-none focus:ring-0 cursor-pointer disabled:opacity-50 pr-1 pl-0 min-w-[2.25rem]"
+                            >
+                                {autoRefreshMode !== 'force' && <option value={5}>5s</option>}
+                                {autoRefreshMode !== 'force' && <option value={10}>10s</option>}
+                                <option value={30}>30s</option>
+                                <option value={60}>1m</option>
+                                <option value={180}>3m</option>
+                                <option value={300}>5m</option>
+                            </select>
+                        </div>
+                        {checkStatus && (
+                            <div className="hidden sm:flex items-center gap-1.5 px-2 py-1 bg-blue-50 dark:bg-blue-900/20 border border-blue-200 dark:border-blue-800 rounded-lg text-[10px] font-medium">
+                                <span className="text-blue-700 dark:text-blue-300 tabular-nums">
+                                    {checkStatus.count}/{checkStatus.total}
+                                </span>
+                                {checkStatus.up > 0 && (
+                                    <span className="text-emerald-600 dark:text-emerald-400">✓{checkStatus.up}</span>
+                                )}
+                                {checkStatus.down > 0 && (
+                                    <span className="text-red-600 dark:text-red-400">✗{checkStatus.down}</span>
+                                )}
+                                {checkStatus.error > 0 && (
+                                    <span className="text-orange-600 dark:text-orange-400">⚠{checkStatus.error}</span>
+                                )}
+                            </div>
+                        )}
+                    </div>
+                </div>
+            ) : (
             <div className="flex flex-col gap-4 mb-8">
                 <div className="flex items-center gap-4">
                     <div className="w-12 h-12 rounded-2xl bg-blue-600/10 dark:bg-blue-500/20 flex items-center justify-center border border-blue-500/20">
@@ -2619,11 +2859,11 @@ export const MonitoringDashboard: React.FC = () => {
                             <FaPalette size={14} />
                         </button>
                         <button
-                            onClick={() => setIsFullscreen(!isFullscreen)}
+                            onClick={() => setFullscreenMode(true)}
                             className="p-2 rounded-lg transition-all text-slate-400 hover:text-indigo-500 hover:bg-white dark:hover:bg-[#333]"
-                            title={isFullscreen ? "Exit Fullscreen" : "Enter Fullscreen"}
+                            title="Enter Fullscreen"
                         >
-                            {isFullscreen ? <FaCompress size={14} /> : <FaExpand size={14} />}
+                            <FaExpand size={14} />
                         </button>
 
                         {isAdmin && (
@@ -2918,9 +3158,10 @@ export const MonitoringDashboard: React.FC = () => {
                     )}
                 </div>
             </div>
+            )}
 
-            {/* Check Status Display - Below toolbar, right corner */}
-            {checkStatus && (
+            {/* Check Status Display - Below toolbar, right corner (normal mode only; kiosk shows it in the slim bar) */}
+            {!isFullscreen && checkStatus && (
                 <div className="flex justify-end mb-2 transition-opacity duration-300">
                     <div className="flex items-center gap-2 px-3 py-1.5 bg-blue-50 dark:bg-blue-900/20 border border-blue-200 dark:border-blue-800 rounded-lg text-xs font-medium shadow-sm">
                         <span className="text-blue-700 dark:text-blue-300">
@@ -2960,8 +3201,9 @@ export const MonitoringDashboard: React.FC = () => {
                     <div className="text-slate-900 dark:text-white font-medium">Loading monitors...</div>
                 </div>
             ) : (
-                <div className="space-y-8">
-                    {/* Tabs Navigation — SSL Certificates is always pinned and type-isolated */}
+                <div className={isFullscreen ? 'space-y-4' : 'space-y-8'}>
+                    {/* Tabs Navigation — SSL Certificates is always pinned and type-isolated (hidden in kiosk; tabs live in slim bar) */}
+                    {!isFullscreen && (
                     <div className="flex flex-wrap gap-2 p-1.5 bg-white dark:bg-[#1e1e1e] rounded-2xl border border-slate-200 dark:border-[#333] mb-6 w-fit">
                         {tabNames.map(tab => {
                             const sslTab = isSslCertsTab(tab);
@@ -3023,6 +3265,7 @@ export const MonitoringDashboard: React.FC = () => {
                             );
                         })}
                     </div>
+                    )}
 
                     {monitorsInActiveTab.length === 0 ? (
                         <div className={`text-center py-20 bg-white dark:bg-[#1e1e1e] rounded-3xl border border-dashed shadow-sm ${isSslCertsTab(activeTab) ? 'border-amber-200 dark:border-amber-900/40' : 'border-slate-200 dark:border-[#333]'}`}>
@@ -3064,9 +3307,9 @@ export const MonitoringDashboard: React.FC = () => {
                     <>
 
                     {sortedGroups.map((groupName) => (
-                        <div key={groupName} className="space-y-4">
-                            <div className="flex items-center gap-4 group/header">
-                                {editingGroupName === groupName ? (
+                        <div key={groupName} className={isFullscreen ? 'space-y-2' : 'space-y-4'}>
+                            <div className={`flex items-center gap-4 ${isFullscreen ? '' : 'group/header'}`}>
+                                {editingGroupName === groupName && !isFullscreen ? (
                                     <input
                                         autoFocus
                                         type="text"
@@ -3079,14 +3322,16 @@ export const MonitoringDashboard: React.FC = () => {
                                 ) : (
                                     <div className="flex items-center gap-2">
                                         <h3
-                                            className="text-sm font-black uppercase tracking-[0.2em] text-slate-400 dark:text-slate-500 whitespace-nowrap cursor-pointer hover:text-blue-500 transition-colors"
+                                            className={`text-sm font-black uppercase tracking-[0.2em] text-slate-400 dark:text-slate-500 whitespace-nowrap ${isFullscreen ? '' : 'cursor-pointer hover:text-blue-500 transition-colors'}`}
                                             onDoubleClick={() => {
+                                                if (isFullscreen) return;
                                                 setEditingGroupName(groupName);
                                                 setTempGroupName(groupName);
                                             }}
                                         >
                                             {groupName}
                                         </h3>
+                                        {!isFullscreen && (
                                         <button
                                             onClick={() => {
                                                 setEditingGroupName(groupName);
@@ -3097,6 +3342,7 @@ export const MonitoringDashboard: React.FC = () => {
                                         >
                                             <FaEdit size={12} />
                                         </button>
+                                        )}
                                     </div>
                                 )}
                                 <div className="h-px w-full bg-slate-200 dark:bg-[#252525]"></div>
@@ -5261,21 +5507,14 @@ ON CONFLICT(key) DO UPDATE SET value = excluded.value, updated_at = excluded.upd
     if (isFullscreen) {
         return (
             <>
-            <div className="fixed top-16 left-0 right-0 bottom-0 overflow-y-auto bg-slate-50 dark:bg-[#121212] transition-colors z-50">
-                <div className="sticky top-0 z-10 flex items-center gap-3 px-4 py-3 bg-white/95 dark:bg-[#1e1e1e]/95 backdrop-blur-md border-b border-slate-200 dark:border-[#333]">
-                    <button
-                        onClick={() => setIsFullscreen(false)}
-                        className="p-2.5 rounded-xl transition-all text-slate-500 hover:text-slate-700 hover:bg-slate-100 dark:text-slate-400 dark:hover:text-white dark:hover:bg-[#333] border border-slate-200 dark:border-[#333]"
-                        title="Exit Fullscreen (Esc)"
-                    >
-                        <FaTimes size={18} />
-                    </button>
-                    <span className="text-sm font-medium text-slate-600 dark:text-slate-400">Exit fullscreen</span>
-                </div>
-                <div className="min-h-full p-4">
-                    {content}
-                </div>
-            </div>
+            {typeof document !== 'undefined' && createPortal(
+                <div className="fixed inset-0 overflow-y-auto bg-slate-50 dark:bg-[#121212] transition-colors z-[200]">
+                    <div className="min-h-full p-2 sm:p-3">
+                        {content}
+                    </div>
+                </div>,
+                document.body
+            )}
             {pythonJobFloatPanel}
             {schedulerFloatPanel}
             {schedulerMessageDialogPortal}
