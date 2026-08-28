@@ -498,52 +498,22 @@ function monitorWorkerSchedulerMergeScheduledTaskCom(array $task): array {
         return $task;
     }
 
-    $safeName = str_replace("'", "''", (string)$task['name']);
-    $script = <<<PS
-\$ErrorActionPreference = 'Stop'
-try {
-  \$t = Get-ScheduledTask -TaskName '$safeName' -ErrorAction Stop
-  \$p = \$t.Principal
-  \$s = \$t.Settings
-  \$tr = @(\$t.Triggers)[0]
-  \$rep = \$null
-  \$dur = \$null
-  if (\$tr -ne \$null -and \$tr.Repetition -ne \$null) {
-    \$rep = [string]\$tr.Repetition.Interval
-    \$dur = [string]\$tr.Repetition.Duration
-  }
-  \$o = @{
-    logon_type = [string]\$p.LogonType
-    run_as = [string]\$p.UserId
-    run_level = [string]\$p.RunLevel
-    enabled = [bool]\$s.Enabled
-    repetition_interval = \$rep
-    repetition_duration = \$dur
-    start_when_available = [bool]\$s.StartWhenAvailable
-    disallow_start_on_batteries = [bool]\$s.DisallowStartIfOnBatteries
-    stop_if_going_on_batteries = [bool]\$s.StopIfGoingOnBatteries
-    multiple_instances = [string]\$s.MultipleInstances
-    wake_to_run = [bool]\$s.WakeToRun
-    execution_time_limit = [string]\$s.ExecutionTimeLimit
-    hidden = [bool]\$s.Hidden
-  }
-  \$o | ConvertTo-Json -Compress
-} catch {
-  '{}'
-}
-PS;
-    $utf16 = function_exists('mb_convert_encoding')
-        ? mb_convert_encoding($script, 'UTF-16LE', 'UTF-8')
-        : iconv('UTF-8', 'UTF-16LE', $script);
-    if (!is_string($utf16) || $utf16 === '') {
+    $scriptPath = monitorWorkerSchedulerProjectRoot() . DIRECTORY_SEPARATOR . 'scripts'
+        . DIRECTORY_SEPARATOR . 'query-scheduled-task.ps1';
+    if (!is_file($scriptPath)) {
         return $task;
     }
-    $encoded = base64_encode($utf16);
-    $cmd = escapeshellarg($ps) . ' -NoProfile -NonInteractive -NoLogo -EncodedCommand ' . $encoded;
+
+    $cmd = escapeshellarg($ps)
+        . ' -NoProfile -NonInteractive -NoLogo -ExecutionPolicy Bypass -File '
+        . escapeshellarg($scriptPath)
+        . ' -TaskName '
+        . escapeshellarg((string)$task['name'])
+        . ' 2>nul';
     $out = [];
     $code = 1;
     @exec($cmd, $out, $code);
-    if ($code !== 0 || empty($out)) {
+    if (empty($out)) {
         return $task;
     }
     $json = trim(implode('', $out));
