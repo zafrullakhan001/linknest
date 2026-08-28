@@ -145,10 +145,10 @@ python scripts\\email_sender.py --db data\\linknest.db --limit 50 --smtp-timeout
         <ul className="list-disc list-inside ml-2 space-y-1 text-xs">
           <li><strong>Python health check</strong> — the panel probes Python 3.9+ on the Windows host (bundled <code className={code}>bin\python</code>, system PATH, or <code className={code}>py -3</code>). Recheck refreshes this.</li>
           <li><strong>Install Python</strong> — Windows: downloads embeddable CPython into <code className={code}>bin\python</code> (no admin). Or install from python.org / <code className={code}>winget install Python.Python.3.12</code>, then Recheck. Install tasks stays disabled until Python is ready.</li>
-          <li><strong>Install tasks</strong> — Windows: registers both Task Scheduler jobs (default every 1 min, 20 workers) as SYSTEM or S4U so they run whether or not anyone is logged on. Docker: enables entrypoint workers.</li>
+          <li><strong>Install tasks</strong> — Windows: registers both Task Scheduler jobs (default every 1 min, 20 workers) as SYSTEM or S4U so they run whether or not anyone is logged on. Each install folder gets its own job names; a second copy named <code className={code}>linknest</code> uses <code className={code}>linknest-xxxxxx</code> so it does not overwrite the first. Docker: enables entrypoint workers.</li>
           <li><strong>Run now</strong> — starts Monitor Runner or Email Sender immediately (does not wait for the next interval). Use this if a Py job stays queued.</li>
           <li><strong>Enable / Disable</strong> — per Monitor Runner and Email Sender</li>
-          <li><strong>Uninstall / Remove</strong> — Windows: deletes jobs from Task Scheduler. Docker: disables workers in SQLite settings</li>
+          <li><strong>Uninstall / Remove</strong> — Windows: deletes only this folder’s jobs (other copies on the same PC keep theirs). Docker: disables workers in SQLite settings</li>
           <li><strong>Refresh status</strong> — re-checks Python, Task Scheduler, or Docker settings</li>
           <li>Install/uninstall errors show in a <strong>copyable dialog</strong> (textarea + Copy text)</li>
         </ul>
@@ -227,7 +227,7 @@ scripts\\schedule-monitor-workers.bat install 2   REM every 2 minutes`}</pre>
 .\scripts\schedule-monitor-workers.ps1 -Action uninstall`}</pre>
         <p className="text-xs">Creates:</p>
         <ul className="list-disc list-inside ml-2 space-y-1 text-xs">
-          <li><strong>LinkNest / ERP3 / ArchLinks - Monitor Runner</strong> — named after the install folder so multiple copies on one PC do not overwrite each other. Runs <code className={code}>monitor_runner.py --db … --max-workers N</code></li>
+          <li><strong>LinkNest / ERP3 / ArchLinks - Monitor Runner</strong> — named after the install folder. A second copy with the same folder name uses <code className={code}>folder-xxxxxx</code> so it does not overwrite the first. Runs <code className={code}>monitor_runner.py --db … --max-workers N</code></li>
           <li><strong>… - Email Sender</strong> — <code className={code}>email_sender.py --db … --limit 25 --smtp-timeout 20</code></li>
         </ul>
         <p className="text-xs">

@@ -454,19 +454,26 @@ export const MonitoringDashboard: React.FC = () => {
                 }
                 headerExtra={actionButtons}
                 title={
-                    <div className="flex flex-wrap items-center gap-x-2 gap-y-0.5">
-                        <span className="font-semibold text-[10px]">{label}</span>
-                        <span className={`text-[10px] font-bold uppercase tracking-wide ${statusClass}`}>{statusLabel}</span>
-                        {unattendedOk && (
-                            <span className="text-[9px] font-bold uppercase tracking-wide text-emerald-700 dark:text-emerald-300">
-                                no logon required
-                            </span>
-                        )}
-                        {task.exists && task.needs_logged_on_user && (
-                            <span className="text-[9px] font-bold uppercase tracking-wide text-amber-700 dark:text-amber-300">
-                                needs login
-                            </span>
-                        )}
+                    <div>
+                        <div className="flex flex-wrap items-center gap-x-2 gap-y-0.5">
+                            <span className="font-semibold text-[10px]">{label}</span>
+                            <span className={`text-[10px] font-bold uppercase tracking-wide ${statusClass}`}>{statusLabel}</span>
+                            {unattendedOk && (
+                                <span className="text-[9px] font-bold uppercase tracking-wide text-emerald-700 dark:text-emerald-300">
+                                    no logon required
+                                </span>
+                            )}
+                            {task.exists && task.needs_logged_on_user && (
+                                <span className="text-[9px] font-bold uppercase tracking-wide text-amber-700 dark:text-amber-300">
+                                    needs login
+                                </span>
+                            )}
+                        </div>
+                        {task.name ? (
+                            <p className="mt-0.5 text-[10px] font-mono opacity-70 break-all" title={task.name}>
+                                {task.name}
+                            </p>
+                        ) : null}
                     </div>
                 }
             >
@@ -3597,9 +3604,9 @@ export const MonitoringDashboard: React.FC = () => {
                                 <ul className="text-xs text-slate-600 dark:text-slate-400 list-disc list-inside space-y-1">
                                     <li><strong>Scheduler</strong> chip (toolbar) — opens the floating status panel (amber = needs attention, green = healthy)</li>
                                     <li><strong>Install Python</strong> — Windows: downloads a bundled Python 3.12 into <code className="bg-slate-100 dark:bg-[#333] px-1 rounded">bin\python</code> when the host has no Python 3.9+</li>
-                                    <li><strong>Install tasks</strong> — Windows: registers <em>{schedulerFolderName} - Monitor Runner</em> + <em>Email Sender</em> (folder name so ERP3 / ArchLinks / linknest can coexist; default every 1 min, 20 workers). Disabled until Python is ready. Docker: enables both entrypoint workers.</li>
+                                    <li><strong>Install tasks</strong> — Windows: registers <em>{schedulerFolderName} - Monitor Runner</em> + <em>Email Sender</em> (default every 1 min, 20 workers). If another copy already uses that folder name on this PC, this install gets <em>{schedulerFolderName}-xxxxxx</em> instead of overwriting the first. Disabled until Python is ready. Docker: enables both entrypoint workers.</li>
                                     <li><strong>Enable / Disable</strong> — per worker without opening Task Scheduler (Windows) or restarting the container (Docker)</li>
-                                    <li><strong>Uninstall / Remove</strong> — Windows: deletes both Task Scheduler jobs. Docker: disables both workers in settings</li>
+                                    <li><strong>Uninstall / Remove</strong> — Windows: deletes only this folder’s Task Scheduler jobs (other copies on this PC keep theirs). Docker: disables both workers in settings</li>
                                     <li><strong>Refresh status</strong> — re-probes Task Scheduler or Docker worker settings</li>
                                 </ul>
                                 <p className="text-[10px] text-slate-500 leading-relaxed">
@@ -3823,7 +3830,7 @@ export const MonitoringDashboard: React.FC = () => {
                                 <ul className="text-xs text-slate-600 dark:text-slate-400 list-disc list-inside space-y-1">
                                     <li>Requires Python 3.9+ on the Windows host — use <strong>Install Python runtime</strong> in this dialog if Python is missing, or install from python.org</li>
                                     <li>Default install: every <strong>1 minute</strong>, <strong>20</strong> parallel workers (pass <code className="bg-slate-100 dark:bg-[#333] px-1 rounded">2</code> as the second bat argument for every 2 minutes)</li>
-                                    <li>Tasks: <strong>{schedulerFolderName} - Monitor Runner</strong> and <strong>{schedulerFolderName} - Email Sender</strong> (folder name, e.g. ERP3 / ArchLinks / linknest). Each clone on the same PC gets its own jobs.</li>
+                                    <li>Tasks: <strong>{schedulerFolderName} - Monitor Runner</strong> and <strong>{schedulerFolderName} - Email Sender</strong>. Two copies with the same folder name on one PC get a unique suffix (e.g. <strong>{schedulerFolderName}-a3f2c1 - Monitor Runner</strong>). Names are shown on each job card after install.</li>
                                     <li>Install from the panel above, or CLI: <code className="bg-slate-100 dark:bg-[#333] px-1 rounded">scripts\schedule-monitor-workers.bat</code></li>
                                     <li>Full walkthrough: <code className="bg-slate-100 dark:bg-[#333] px-1 rounded">docs/PYTHON_WORKERS.md</code></li>
                                 </ul>

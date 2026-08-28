@@ -274,7 +274,9 @@ scripts\schedule-monitor-workers.bat uninstall
 | **`{folder} - Monitor Runner`** | `python scripts\monitor_runner.py --db "<path>" --max-workers 20` |
 | **`{folder} - Email Sender`** | `python scripts\email_sender.py --db "<path>" --limit 25 --smtp-timeout 20` |
 
-Task names use the install folder (`ERP3`, `ArchLinks`, `linknest`) so several copies can run on the same Windows PC. Legacy names `LinkNest - Monitor Runner` / `Email Sender` are still recognized when they point at this folder.
+Task names use the install folder (`ERP3`, `ArchLinks`, `linknest`) so several copies can run on the same Windows PC. If two copies share the same folder name (for example both are `linknest` under different paths), the second install registers `linknest-xxxxxx - Monitor Runner` instead of replacing the first copy's SYSTEM job. Names are saved in `data/monitor_worker_tasks.json`. Legacy names `LinkNest - Monitor Runner` / `Email Sender` are still recognized when they point at this folder.
+
+**Uninstall** deletes only jobs whose **Start in** path is this folder, so copy A and copy B can uninstall independently.
 
 Both use **Start in** = project root, **MultipleInstances = IgnoreNew** (do not stack overlapping runs).
 

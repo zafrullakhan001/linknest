@@ -35,6 +35,19 @@ There are **two supported approaches**:
 
 ## Windows — Task Scheduler (recommended on Windows)
 
+### Same folder name on one PC
+
+Task Scheduler job names are global on the machine. If two copies live in folders both named `linknest` (for example `C:\xampp\htdocs\linknest` and `D:\sites\linknest`), **Install tasks** on the second copy used to fail because it tried to replace the first copy's SYSTEM job.
+
+The installer now:
+
+1. Registers `{folder} - Monitor Runner` / `{folder} - Email Sender` when that name is free or already belongs to this folder.
+2. If the name belongs to **another** path, registers `{folder}-{sha1-6} - Monitor Runner` (first 6 hex of SHA1 of the lowercase full path).
+3. Never unregisters a job whose **Start in** directory is a different LinkNest copy.
+4. Saves the names in `data/monitor_worker_tasks.json` so status / uninstall stay pointed at this copy.
+
+Open **Scheduler Setup** on each instance and click **Install tasks**. The job card shows the actual Task Scheduler name.
+
 ### Quick install (this repo)
 
 From the clone (or main) root:

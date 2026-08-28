@@ -19,11 +19,106 @@ function monitorWorkerSchedulerFolderLabel(): string {
     return $safe !== '' ? $safe : 'LinkNest';
 }
 
-function monitorWorkerSchedulerPreferredTaskName(string $kind): string {
+function monitorWorkerSchedulerNormalizedRoot(): string {
+    $root = function_exists('monitorWorkerSchedulerProjectRoot')
+        ? monitorWorkerSchedulerProjectRoot()
+        : (realpath(__DIR__ . '/..') ?: (__DIR__ . '/..'));
+    $real = realpath($root);
+    if ($real !== false) {
+        $root = $real;
+    }
+    // Keep in sync with Get-PathFingerprint in scripts/schedule-monitor-workers.ps1
+    return rtrim(strtolower(str_replace('/', '\\', (string)$root)), '\\');
+}
+
+function monitorWorkerSchedulerInstallFingerprint(): string {
+    return substr(sha1(monitorWorkerSchedulerNormalizedRoot()), 0, 6);
+}
+
+function monitorWorkerSchedulerFolderTaskName(string $kind): string {
     $label = monitorWorkerSchedulerFolderLabel();
     return $kind === 'email'
         ? $label . ' - Email Sender'
         : $label . ' - Monitor Runner';
+}
+
+function monitorWorkerSchedulerUniqueTaskName(string $kind): string {
+    $label = monitorWorkerSchedulerFolderLabel() . '-' . monitorWorkerSchedulerInstallFingerprint();
+    return $kind === 'email'
+        ? $label . ' - Email Sender'
+        : $label . ' - Monitor Runner';
+}
+
+function monitorWorkerSchedulerTaskNamesFile(): string {
+    $dir = defined('DB_DIR') ? DB_DIR : (monitorWorkerSchedulerProjectRoot() . DIRECTORY_SEPARATOR . 'data');
+    return rtrim((string)$dir, '\\/') . DIRECTORY_SEPARATOR . 'monitor_worker_tasks.json';
+}
+
+/**
+ * @return array{monitor?:string,email?:string}
+ */
+function monitorWorkerSchedulerSavedTaskNames(): array {
+    $file = monitorWorkerSchedulerTaskNamesFile();
+    if (!is_file($file)) {
+        return [];
+    }
+    $raw = @file_get_contents($file);
+    if (!is_string($raw) || $raw === '') {
+        return [];
+    }
+    $json = json_decode($raw, true);
+    if (!is_array($json)) {
+        return [];
+    }
+    $out = [];
+    if (!empty($json['monitor']) && is_string($json['monitor'])) {
+        $out['monitor'] = $json['monitor'];
+    }
+    if (!empty($json['email']) && is_string($json['email'])) {
+        $out['email'] = $json['email'];
+    }
+    return $out;
+}
+
+function monitorWorkerSchedulerSaveTaskNames(string $monitorName, string $emailName): void {
+    $file = monitorWorkerSchedulerTaskNamesFile();
+    $dir = dirname($file);
+    if (!is_dir($dir)) {
+        @mkdir($dir, 0755, true);
+    }
+    $payload = json_encode([
+        'monitor' => $monitorName,
+        'email' => $emailName,
+        'root' => monitorWorkerSchedulerProjectRoot(),
+        'updated_at' => time(),
+    ], JSON_PRETTY_PRINT | JSON_UNESCAPED_SLASHES);
+    if (is_string($payload)) {
+        @file_put_contents($file, $payload);
+    }
+}
+
+function monitorWorkerSchedulerPreferredTaskName(string $kind): string {
+    return monitorWorkerSchedulerIntendedTaskName($kind);
+}
+
+/**
+ * Name this install will register. Uses folder name unless that job already belongs to another copy.
+ */
+function monitorWorkerSchedulerIntendedTaskName(string $kind): string {
+    $saved = monitorWorkerSchedulerSavedTaskNames();
+    $key = $kind === 'email' ? 'email' : 'monitor';
+    if (!empty($saved[$key])) {
+        $existing = monitorWorkerSchedulerQueryWindowsTask($saved[$key]);
+        if (empty($existing['exists']) || monitorWorkerSchedulerTaskBelongsToThisInstall($existing)) {
+            return $saved[$key];
+        }
+    }
+    $folderName = monitorWorkerSchedulerFolderTaskName($kind);
+    $existing = monitorWorkerSchedulerQueryWindowsTask($folderName);
+    if (!empty($existing['exists']) && !monitorWorkerSchedulerTaskBelongsToThisInstall($existing)) {
+        return monitorWorkerSchedulerUniqueTaskName($kind);
+    }
+    return $folderName;
 }
 
 function monitorWorkerSchedulerLegacyTaskName(string $kind): string {
@@ -727,25 +822,33 @@ function monitorWorkerSchedulerTaskBelongsToThisInstall(array $task): bool {
  * @param 'monitor'|'email' $kind
  */
 function monitorWorkerSchedulerResolveInstalledTask(string $kind): array {
-    $preferred = monitorWorkerSchedulerPreferredTaskName($kind);
-    $task = monitorWorkerSchedulerQueryWindowsTask($preferred);
-    $task['name'] = $preferred;
-    if (!empty($task['exists'])) {
-        return $task;
+    $candidates = [];
+    $saved = monitorWorkerSchedulerSavedTaskNames();
+    $key = $kind === 'email' ? 'email' : 'monitor';
+    if (!empty($saved[$key])) {
+        $candidates[] = $saved[$key];
     }
-
+    $candidates[] = monitorWorkerSchedulerUniqueTaskName($kind);
+    $candidates[] = monitorWorkerSchedulerFolderTaskName($kind);
     $legacyName = monitorWorkerSchedulerLegacyTaskName($kind);
-    if (strcasecmp($preferred, $legacyName) === 0) {
-        return $task;
+    $candidates[] = $legacyName;
+    $candidates = array_values(array_unique(array_filter($candidates)));
+
+    foreach ($candidates as $name) {
+        $task = monitorWorkerSchedulerQueryWindowsTask($name);
+        if (!empty($task['exists']) && monitorWorkerSchedulerTaskBelongsToThisInstall($task)) {
+            return $task;
+        }
     }
 
-    $legacy = monitorWorkerSchedulerQueryWindowsTask($legacyName);
-    if (!empty($legacy['exists']) && monitorWorkerSchedulerTaskBelongsToThisInstall($legacy)) {
-        return $legacy;
-    }
-
-    $task['name'] = $preferred;
-    return $task;
+    $intended = monitorWorkerSchedulerIntendedTaskName($kind);
+    $missing = monitorWorkerSchedulerQueryWindowsTask($intended);
+    $missing['exists'] = false;
+    $missing['enabled'] = false;
+    $missing['name'] = $intended;
+    $missing['state'] = 'missing';
+    $missing['status'] = 'missing';
+    return $missing;
 }
 
 function monitorWorkerSchedulerBuildStatus(): array {
@@ -1285,10 +1388,19 @@ function monitorWorkerSchedulerInstallTasks(?int $intervalMinutes = null, ?int $
         ];
     }
 
+    $monitorName = (string)($scheduler['tasks']['monitor_runner']['name'] ?? '');
+    $emailName = (string)($scheduler['tasks']['email_sender']['name'] ?? '');
+    if ($monitorName !== '' && $emailName !== '') {
+        monitorWorkerSchedulerSaveTaskNames($monitorName, $emailName);
+    }
+
     return [
         'ok' => true,
-        'message' => 'Installed LinkNest Monitor Runner and Email Sender Task Scheduler jobs (every '
-            . $interval . ' min, max workers ' . $workers . ').',
+        'message' => 'Installed Task Scheduler jobs'
+            . ($monitorName !== '' ? ' "' . $monitorName . '"' : '')
+            . ($emailName !== '' ? ' and "' . $emailName . '"' : '')
+            . ' (every ' . $interval . ' min, max workers ' . $workers
+            . '). Other LinkNest folders on this PC keep their own job names.',
         'scheduler' => $scheduler,
         'output_tail' => array_slice(array_map('strval', $out), -12),
     ];
@@ -1382,23 +1494,21 @@ function monitorWorkerSchedulerUninstallWindowsTasks(): array {
     $ps1 = $root . DIRECTORY_SEPARATOR . 'scripts' . DIRECTORY_SEPARATOR . 'schedule-monitor-workers.ps1';
     if (!is_file($ps1)) {
         // Fallback: schtasks delete per task
+        $saved = monitorWorkerSchedulerSavedTaskNames();
+        $nameList = array_values(array_unique(array_filter([
+            $saved['monitor'] ?? null,
+            $saved['email'] ?? null,
+            monitorWorkerSchedulerUniqueTaskName('monitor'),
+            monitorWorkerSchedulerUniqueTaskName('email'),
+            monitorWorkerSchedulerFolderTaskName('monitor'),
+            monitorWorkerSchedulerFolderTaskName('email'),
+            MONITOR_WORKER_TASK_MONITOR,
+            MONITOR_WORKER_TASK_EMAIL,
+        ])));
         $removed = 0;
-            foreach ([
-                monitorWorkerSchedulerPreferredTaskName('monitor'),
-                monitorWorkerSchedulerPreferredTaskName('email'),
-                MONITOR_WORKER_TASK_MONITOR,
-                MONITOR_WORKER_TASK_EMAIL,
-            ] as $taskName) {
-                $current = monitorWorkerSchedulerQueryWindowsTask($taskName);
-                if (empty($current['exists'])) {
-                    continue;
-                }
-                if (in_array($taskName, [MONITOR_WORKER_TASK_MONITOR, MONITOR_WORKER_TASK_EMAIL], true)
-                    && !monitorWorkerSchedulerTaskBelongsToThisInstall($current)) {
-                    continue;
-                }
+        foreach ($nameList as $taskName) {
             $current = monitorWorkerSchedulerQueryWindowsTask($taskName);
-            if (empty($current['exists'])) {
+            if (empty($current['exists']) || !monitorWorkerSchedulerTaskBelongsToThisInstall($current)) {
                 continue;
             }
             $cmd = 'schtasks /Delete /TN ' . escapeshellarg($taskName) . ' /F 2>&1';
@@ -1409,6 +1519,7 @@ function monitorWorkerSchedulerUninstallWindowsTasks(): array {
                 $removed++;
             }
         }
+        @unlink(monitorWorkerSchedulerTaskNamesFile());
         $scheduler = monitorWorkerSchedulerBuildStatus();
         if ($removed === 0 && monitorWorkerSchedulerTasksCanUninstall($scheduler)) {
             return [

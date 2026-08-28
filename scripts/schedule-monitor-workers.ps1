@@ -186,14 +186,15 @@ if (-not $DbPath) {
 }
 
 $folderLeaf = Split-Path -Leaf $root
-$folderSafe = (($folderLeaf -replace '[\\/:*?"<>|]', '').Trim(' .'))
+# Keep in sync with monitorWorkerSchedulerFolderLabel() in api/monitor_worker_scheduler_lib.php
+$folderSafe = (($folderLeaf -replace '[^A-Za-z0-9._ -]', '').Trim(' .-'))
 if (-not $folderSafe) { $folderSafe = 'LinkNest' }
-$taskMonitor = "$folderSafe - Monitor Runner"
-$taskEmail = "$folderSafe - Email Sender"
 $legacyTaskMonitor = 'LinkNest - Monitor Runner'
 $legacyTaskEmail = 'LinkNest - Email Sender'
 $expectedMonitorArgsFragment = 'scripts\monitor_runner.py'
 $expectedEmailArgsFragment = 'scripts\email_sender.py'
+$script:taskMonitor = $null
+$script:taskEmail = $null
 
 function Get-TaskSafe {
     param([string]$Name)
@@ -217,6 +218,80 @@ function Test-TaskBelongsToThisRoot {
     if ($args -and $args.ToLowerInvariant().Contains($rootNorm.ToLowerInvariant())) { return $true }
     return $false
 }
+
+function Get-PathFingerprint {
+    param([string]$Path)
+    # Keep in sync with monitorWorkerSchedulerNormalizedRoot() + InstallFingerprint() in PHP (SHA1 UTF-8, first 6 hex).
+    $bs = [char]92
+    $norm = [System.IO.Path]::GetFullPath($Path).Replace('/', $bs).TrimEnd($bs).ToLowerInvariant()
+    $sha1 = [System.Security.Cryptography.SHA1]::Create()
+    try {
+        $bytes = [Text.Encoding]::UTF8.GetBytes($norm)
+        $hash = [BitConverter]::ToString($sha1.ComputeHash($bytes)).Replace('-', '').ToLowerInvariant()
+        return $hash.Substring(0, 6)
+    } finally {
+        $sha1.Dispose()
+    }
+}
+
+function Save-WorkerTaskNames {
+    $dataDir = Join-Path $root 'data'
+    if (-not (Test-Path -LiteralPath $dataDir)) {
+        New-Item -ItemType Directory -Path $dataDir | Out-Null
+    }
+    $payload = @{
+        monitor = $script:taskMonitor
+        email = $script:taskEmail
+        root = $root
+        updated_at = (Get-Date).ToUniversalTime().ToString('o')
+    }
+    $jsonPath = Join-Path $dataDir 'monitor_worker_tasks.json'
+    ($payload | ConvertTo-Json) | Set-Content -LiteralPath $jsonPath -Encoding UTF8
+    Write-Info "Saved task names to data\monitor_worker_tasks.json"
+}
+
+function Resolve-WorkerTaskNames {
+    $fp = Get-PathFingerprint $root
+    $folderMonitor = "$folderSafe - Monitor Runner"
+    $folderEmail = "$folderSafe - Email Sender"
+    $uniqueMonitor = "$folderSafe-$fp - Monitor Runner"
+    $uniqueEmail = "$folderSafe-$fp - Email Sender"
+
+    $namesFile = Join-Path $root 'data\monitor_worker_tasks.json'
+    if (Test-Path -LiteralPath $namesFile) {
+        try {
+            $saved = Get-Content -LiteralPath $namesFile -Raw -Encoding UTF8 | ConvertFrom-Json
+            if ($saved.monitor -and $saved.email) {
+                $t = Get-TaskSafe -Name ([string]$saved.monitor)
+                if ($t -and (Test-TaskBelongsToThisRoot $t)) {
+                    $script:taskMonitor = [string]$saved.monitor
+                    $script:taskEmail = [string]$saved.email
+                    Write-Info "Using saved task names: $($script:taskMonitor)"
+                    return
+                }
+            }
+        } catch {}
+    }
+
+    $existingMonitor = Get-TaskSafe -Name $folderMonitor
+    $existingEmail = Get-TaskSafe -Name $folderEmail
+    $monitorTaken = $existingMonitor -and -not (Test-TaskBelongsToThisRoot $existingMonitor)
+    $emailTaken = $existingEmail -and -not (Test-TaskBelongsToThisRoot $existingEmail)
+    if ($monitorTaken -or $emailTaken) {
+        $script:taskMonitor = $uniqueMonitor
+        $script:taskEmail = $uniqueEmail
+        Write-Info "Folder name '$folderSafe' is already used by another LinkNest copy."
+        Write-Info "This install will register: $($script:taskMonitor)"
+        return
+    }
+
+    $script:taskMonitor = $folderMonitor
+    $script:taskEmail = $folderEmail
+}
+
+Resolve-WorkerTaskNames
+$taskMonitor = $script:taskMonitor
+$taskEmail = $script:taskEmail
 
 function Remove-LegacyTasksForThisRoot {
     foreach ($name in @($legacyTaskMonitor, $legacyTaskEmail)) {
@@ -488,12 +563,21 @@ function Remove-WorkerTasks {
     Remove-LegacyTasksForThisRoot
     foreach ($name in @($taskMonitor, $taskEmail)) {
         $t = Get-TaskSafe -Name $name
-        if ($t) {
-            Unregister-ScheduledTask -TaskName $name -Confirm:$false
-            Write-Ok "Removed task: $name"
-        } else {
+        if (-not $t) {
             Write-Info "Task not found (skip): $name"
+            continue
         }
+        if (-not (Test-TaskBelongsToThisRoot $t)) {
+            Write-WarnLine "Skipping '$name' - it belongs to another LinkNest folder ($($t.Actions[0].WorkingDirectory))"
+            continue
+        }
+        Unregister-ScheduledTask -TaskName $name -Confirm:$false
+        Write-Ok "Removed task: $name"
+    }
+    $namesFile = Join-Path $root 'data\monitor_worker_tasks.json'
+    if (Test-Path -LiteralPath $namesFile) {
+        Remove-Item -LiteralPath $namesFile -Force
+        Write-Info "Removed data\monitor_worker_tasks.json"
     }
     Start-Sleep -Milliseconds 400
     $stillThere = @()
@@ -609,8 +693,11 @@ function Register-WorkerTask {
 
     $existing = Get-TaskSafe -Name $Name
     if ($existing) {
+        if (-not (Test-TaskBelongsToThisRoot $existing)) {
+            throw "Task '$Name' already belongs to another LinkNest folder ($($existing.Actions[0].WorkingDirectory)). Another copy is using this job name; this install should use a unique name (folder-xxxxxx)."
+        }
         Unregister-ScheduledTask -TaskName $Name -Confirm:$false
-        Write-Info "Replacing existing task: $Name"
+        Write-Info "Replacing existing task for this folder: $Name"
     }
 
     $action = New-ScheduledTaskAction -Execute $script:pythonExe -Argument $Arguments -WorkingDirectory $root
@@ -689,6 +776,7 @@ function Install-WorkerTasks {
         -Description "LinkNest: send queued monitor notification emails via SMTP"
 
     Remove-LegacyTasksForThisRoot
+    Save-WorkerTaskNames
 
     # Reset counters for verify phase reporting
     $script:FailCount = 0
@@ -720,6 +808,9 @@ function Install-WorkerTasks {
     } else {
         Write-Info "Tasks run whether or not a user is logged on (SYSTEM, or S4U if SYSTEM is not allowed)."
     }
+    Write-Info "This copy's Task Scheduler names:"
+    Write-Host "    $($script:taskMonitor)"
+    Write-Host "    $($script:taskEmail)"
     Write-Info "If Py jobs stay queued, click Run now in the scheduler panel or: schtasks /Run /TN `"$taskMonitor`""
     Write-Info "Useful commands:"
     Write-Host "    scripts\schedule-monitor-workers.bat status"
