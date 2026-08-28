@@ -64,6 +64,25 @@ def read_setting(conn: sqlite3.Connection, key: str, default: str = "") -> str:
         return default
 
 
+def resolve_app_name(conn: Optional[sqlite3.Connection] = None, default: str = "LinkNest") -> str:
+    """App display name for {app_name} tokens. SQLite settings first; optional OS override."""
+    env = (os.environ.get("LINKNEST_APP_NAME") or os.environ.get("APP_NAME") or "").strip()
+    if env:
+        return env
+    if conn is not None:
+        name = read_setting(conn, "app_name", "").strip()
+        if name:
+            return name
+    return default
+
+
+def expand_app_placeholders(text: Optional[str], app_name: str) -> str:
+    """Replace {app_name} the same way PHP mailer does (not a Windows env var)."""
+    if text is None:
+        return ""
+    return str(text).replace("{app_name}", app_name)
+
+
 def clamp_monitor_max_workers(value: Any, default: int = DEFAULT_MONITOR_MAX_WORKERS) -> int:
     try:
         n = int(value)
@@ -963,6 +982,7 @@ def send_smtp_email(
     from_email: Optional[str],
     timeout_seconds: int = 20,
     db_conn: Optional[sqlite3.Connection] = None,
+    app_name: Optional[str] = None,
 ) -> Tuple[bool, Optional[str]]:
     enabled = str(smtp_cfg.get("enabled", "")).strip().lower()
     if enabled not in ("1", "true"):
@@ -976,10 +996,14 @@ def send_smtp_email(
     username = str(smtp_cfg.get("username", "") or "")
     password = str(smtp_cfg.get("password", "") or "")
 
-    fe = (from_email or smtp_cfg.get("from_email") or "").strip()
-    fn = (from_name or smtp_cfg.get("from_name") or "Monitor").strip()
+    resolved_app = (app_name or "").strip() or resolve_app_name(db_conn)
+    fe = expand_app_placeholders(from_email or smtp_cfg.get("from_email") or "", resolved_app).strip()
+    fn_raw = from_name if from_name is not None else smtp_cfg.get("from_name")
+    fn = expand_app_placeholders(fn_raw or f"{resolved_app} Monitor", resolved_app).strip()
     if not fe:
         return False, "Missing from_email"
+
+    subject = expand_app_placeholders(subject, resolved_app)
 
     all_rcpt = list(dict.fromkeys([*(to_list or []), *(cc_list or [])]))
     if not all_rcpt:

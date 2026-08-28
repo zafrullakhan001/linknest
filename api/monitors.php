@@ -1191,9 +1191,20 @@ function handleUpdateMonitor($id) {
             'legacy_email_cc',
             'legacy_email_subject_template', 'legacy_email_body_template'
         ];
+        $nullableTextFields = [
+            'legacy_email_to', 'legacy_email_cc', 'legacy_email_from_name', 'legacy_email_from_email',
+            'legacy_email_subject_template', 'legacy_email_body_template', 'group_name', 'keyword',
+        ];
         foreach ($allowedFields as $field) {
-            if (isset($data[$field])) {
-                if ($field === 'type') {
+            $isNullableText = in_array($field, $nullableTextFields, true);
+            if ($isNullableText) {
+                if (!array_key_exists($field, $data)) {
+                    continue;
+                }
+            } elseif (!isset($data[$field])) {
+                continue;
+            }
+            if ($field === 'type') {
                     if (!validateMonitorType($data[$field])) {
                         sendJSON(['error' => 'Invalid type. Must be url, keyword, port, ping, ssl, dns, or json'], 400);
                         return;
@@ -1236,9 +1247,15 @@ function handleUpdateMonitor($id) {
                     continue;
                 }
 
+                if ($isNullableText) {
+                    $v = $data[$field];
+                    $fields[] = "$field = ?";
+                    $values[] = ($v === null || $v === '') ? null : $v;
+                    continue;
+                }
+
                 $fields[] = "$field = ?";
                 $values[] = $data[$field];
-            }
         }
 
         $typeAfter = isset($data['type']) ? (string)$data['type'] : (string)($existing['type'] ?? '');

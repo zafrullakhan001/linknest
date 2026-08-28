@@ -20,7 +20,7 @@ import { MonitorBulkSpaceSearch } from './MonitorBulkSpaceSearch';
 
 interface MonitorFormProps {
     monitor?: Monitor;
-    onSave: (monitor: Partial<Monitor>) => Promise<void>;
+    onSave: (monitor: Partial<Monitor>, opts?: { close?: boolean }) => Promise<void>;
     onCancel: () => void;
     isAddingNew?: boolean; // Track if we're adding a new monitor (even after creation)
     createdMonitorId?: number; // ID of newly created monitor for tabs
@@ -468,44 +468,41 @@ export const MonitorForm: React.FC<MonitorFormProps> = ({ monitor, onSave, onCan
 
     const isHostTargetType = type === 'port' || type === 'ping' || type === 'dns' || type === 'ssl';
 
-    const handleSubmit = async (e: React.FormEvent) => {
-        e.preventDefault();
-        if (isSubmitting) return; // Prevent double submission
-        
+    const emptyToNull = (value: string): string | null => {
+        const trimmed = value.trim();
+        return trimmed === '' ? null : trimmed;
+    };
+
+    const saveMonitor = async (opts?: { close?: boolean }): Promise<boolean> => {
+        if (isSubmitting) return false;
+
         setIsSubmitting(true);
         setError(null);
 
         try {
-            // Validate required fields
             if (!name.trim()) {
                 setError('Monitor name is required');
-                setIsSubmitting(false);
-                return;
+                return false;
             }
             if (!target.trim()) {
                 setError('Target is required');
-                setIsSubmitting(false);
-                return;
+                return false;
             }
             if (type === 'port' && (!port || isNaN(parseInt(port)))) {
                 setError('Port number is required for port checks');
-                setIsSubmitting(false);
-                return;
+                return false;
             }
             if (type === 'keyword' && !keyword.trim()) {
                 setError('Keyword is required for keyword checks');
-                setIsSubmitting(false);
-                return;
+                return false;
             }
             if (type === 'json' && !keyword.trim()) {
                 setError('JSON check expression is required (e.g. status:ok)');
-                setIsSubmitting(false);
-                return;
+                return false;
             }
             if (type === 'ssl' && keyword.trim() !== '' && (isNaN(parseInt(keyword)) || parseInt(keyword) < 1 || parseInt(keyword) > 365)) {
                 setError('SSL warning days must be between 1 and 365');
-                setIsSubmitting(false);
-                return;
+                return false;
             }
 
             const wt = type === 'ssl' ? 1 : Math.max(1, Math.min(20, parseInt(warningThreshold || '1')));
@@ -513,10 +510,10 @@ export const MonitorForm: React.FC<MonitorFormProps> = ({ monitor, onSave, onCan
             const intervalParsed = clampMonitorIntervalMinutes(type, parseInt(interval, 10) || 0);
             if (intervalParsed.error) {
                 setError(intervalParsed.error);
-                setIsSubmitting(false);
-                return;
+                return false;
             }
 
+            const keepOpen = opts?.close === false || !!(isAddingNew && createdMonitorId && opts?.close !== true);
             await onSave({
                 name: name.trim(),
                 type,
@@ -528,35 +525,39 @@ export const MonitorForm: React.FC<MonitorFormProps> = ({ monitor, onSave, onCan
                 timeout: timeoutVal,
                 allowed_user_ids: isAdmin ? allowedUsers : undefined,
                 tab_name: type === 'ssl' ? SSL_CERTS_TAB : (tabName.trim() || undefined),
-                group_name: groupName.trim() || undefined,
+                group_name: groupName.trim() || null,
                 email_notification: emailNotification ? 1 : 0,
                 is_active: isActive ? 1 : 0,
                 legacy_email_disabled: legacyEmailDisabled ? 1 : 0,
-                legacy_email_to: legacyEmailTo.trim() || undefined,
-                legacy_email_cc: legacyEmailCc.trim() || undefined,
-                legacy_email_from_name: legacyEmailFromName.trim() || undefined,
-                legacy_email_from_email: legacyEmailFromEmail.trim() || undefined,
-                legacy_email_subject_template: legacyEmailSubjectTemplate.trim() || undefined,
-                legacy_email_body_template: legacyEmailBodyTemplate || undefined
-            });
+                legacy_email_to: emptyToNull(legacyEmailTo),
+                legacy_email_cc: emptyToNull(legacyEmailCc),
+                legacy_email_from_name: emptyToNull(legacyEmailFromName),
+                legacy_email_from_email: emptyToNull(legacyEmailFromEmail),
+                legacy_email_subject_template: emptyToNull(legacyEmailSubjectTemplate),
+                legacy_email_body_template: legacyEmailBodyTemplate.trim() === '' ? null : legacyEmailBodyTemplate,
+            }, { close: keepOpen ? false : true });
+            return true;
         } catch (err: any) {
             setError(err.message || 'Failed to save monitor');
+            return false;
         } finally {
             setIsSubmitting(false);
         }
     };
 
+    const handleSubmit = async (e: React.FormEvent) => {
+        e.preventDefault();
+        await saveMonitor();
+    };
+
     const handleFooterSaveClick = () => {
-        if (isSubmitting) return; // Prevent double submission
+        if (isSubmitting) return;
         if (activeTab !== 'settings') {
             setPendingSubmitAfterTabSwitch(true);
             setActiveTab('settings');
             return;
         }
-        const form = monitorFormRef.current || (document.getElementById('monitor-form') as HTMLFormElement | null);
-        if (form) {
-            form.requestSubmit();
-        }
+        void saveMonitor();
     };
 
     const inputClass = MONITOR_INPUT_CLASS;
@@ -627,74 +628,22 @@ export const MonitorForm: React.FC<MonitorFormProps> = ({ monitor, onSave, onCan
                         <button
                             type="button"
                             onClick={async () => {
-                                // If creating new monitor and switching to notifications tab, save monitor first
                                 const monitorIdForTabs = (isAddingNew && createdMonitorId) ? createdMonitorId : (monitor?.id);
                                 if (!monitorIdForTabs && activeTab === 'settings') {
-                                    // Validate required fields first
-                                    if (!name.trim()) {
-                                        setError('Monitor name is required');
-                                        return;
-                                    }
-                                    if (!target.trim()) {
-                                        setError('Target is required');
-                                        return;
-                                    }
-                                    if (type === 'port' && !port) {
-                                        setError('Port number is required for port checks');
-                                        return;
-                                    }
-                                    if (type === 'keyword' && !keyword.trim()) {
-                                        setError('Keyword is required for keyword checks');
-                                        return;
-                                    }
-
-                                    try {
-                                        setIsSubmitting(true);
-                                        setError(null);
-                                        setWaitingForMonitorId(true);
-                                        const wt = type === 'ssl' ? 1 : Math.max(1, Math.min(20, parseInt(warningThreshold || '1')));
-                                        const timeoutVal = timeoutSec.trim() === '' ? undefined : Math.max(1, Math.min(60, parseInt(timeoutSec)));
-                                        const intervalParsed = clampMonitorIntervalMinutes(type, parseInt(interval, 10) || 0);
-                                        if (intervalParsed.error) {
-                                            setError(intervalParsed.error);
-                                            return;
-                                        }
-                                        await onSave({
-                                            name: name.trim(),
-                                            type,
-                                            target: target.trim(),
-                                            port: port ? parseInt(port) : undefined,
-                                            keyword: keyword.trim() || undefined,
-                                            interval: intervalParsed.value,
-                                            warning_threshold: wt,
-                                            timeout: timeoutVal,
-                                            allowed_user_ids: isAdmin ? allowedUsers : undefined,
-                                            tab_name: type === 'ssl' ? SSL_CERTS_TAB : (tabName.trim() || undefined),
-                                            group_name: groupName.trim() || undefined,
-                                            email_notification: emailNotification ? 1 : 0,
-                                            is_active: isActive ? 1 : 0,
-                                            legacy_email_disabled: legacyEmailDisabled ? 1 : 0,
-                                            legacy_email_to: legacyEmailTo.trim() || undefined,
-                                            legacy_email_cc: legacyEmailCc.trim() || undefined,
-                                            legacy_email_from_name: legacyEmailFromName.trim() || undefined,
-                                            legacy_email_from_email: legacyEmailFromEmail.trim() || undefined,
-                                            legacy_email_subject_template: legacyEmailSubjectTemplate.trim() || undefined,
-                                            legacy_email_body_template: legacyEmailBodyTemplate || undefined
-                                        });
-                                        // Switch to notifications tab - the parent will update createdMonitorId
-                                        setActiveTab('notifications');
-                                    } catch (err: any) {
-                                        setError(err.message || 'Failed to save monitor');
+                                    setWaitingForMonitorId(true);
+                                    const saved = await saveMonitor({ close: false });
+                                    if (!saved) {
                                         setWaitingForMonitorId(false);
-                                        return; // Don't switch tabs if save failed
-                                    } finally {
-                                        setIsSubmitting(false);
+                                        return;
                                     }
+                                    setActiveTab('notifications');
                                 } else if (monitorIdForTabs) {
-                                    // We have a monitor ID, just switch tabs
+                                    if (activeTab === 'settings') {
+                                        const saved = await saveMonitor({ close: false });
+                                        if (!saved) return;
+                                    }
                                     setActiveTab('notifications');
                                 } else {
-                                    // No monitor ID and not saving, show error
                                     setError('Please save the monitor first before configuring notifications');
                                 }
                             }}
@@ -705,7 +654,7 @@ export const MonitorForm: React.FC<MonitorFormProps> = ({ monitor, onSave, onCan
                         >
                             <span aria-hidden="true">📧 </span>Email Notifications
                         </button>
-                        {monitor && monitor.id && (
+                        {(monitor && monitor.id || createdMonitorId) && (
                             <button
                                 type="button"
                                 onClick={() => setActiveTab('logs')}
@@ -1418,7 +1367,9 @@ export const MonitorForm: React.FC<MonitorFormProps> = ({ monitor, onSave, onCan
                                                                 From Email (optional)
                                                             </label>
                                                             <input
-                                                                type="email"
+                                                                type="text"
+                                                                inputMode="email"
+                                                                autoComplete="email"
                                                                 value={legacyEmailFromEmail}
                                                                 onChange={(e) => setLegacyEmailFromEmail(e.target.value)}
                                                                 className={inputClass}
@@ -1472,38 +1423,32 @@ export const MonitorForm: React.FC<MonitorFormProps> = ({ monitor, onSave, onCan
                 {/* Footer with Actions - Only show on Settings tab */}
                 {activeTab === 'settings' && (
                     <div className="px-6 py-4 border-t border-gray-200 bg-gradient-to-r from-slate-50 to-sky-50/40 flex justify-end space-x-3">
-                        {isAddingNew && createdMonitorId ? (
-                            // After creating monitor, show "Done" button
-                            <>
-                                <button
-                                    type="button"
-                                    onClick={onCancel}
-                                    className="px-5 py-2 text-gray-700 hover:text-gray-900 transition-colors rounded-lg hover:bg-gray-100 border border-gray-300"
-                                >
-                                    Done
-                                </button>
-                            </>
-                        ) : (
-                            // Before creating or when editing, show normal buttons
-                            <>
-                                <button
-                                    type="button"
-                                    onClick={onCancel}
-                                    className="px-5 py-2 text-gray-700 hover:text-gray-900 transition-colors rounded-lg hover:bg-gray-100 border border-gray-300"
-                                    disabled={isSubmitting}
-                                >
-                                    Cancel
-                                </button>
-                                <button
-                                    type="button"
-                                    onClick={handleFooterSaveClick}
-                                    disabled={isSubmitting}
-                                    className="px-5 py-2 bg-blue-600 hover:bg-blue-700 text-white rounded-lg transition-colors shadow-lg shadow-blue-900/20 disabled:opacity-50 disabled:cursor-not-allowed font-medium"
-                                >
-                                    {isSubmitting ? 'Saving...' : (monitor?.id && !isAddingNew) ? 'Update Monitor' : 'Create Monitor'}
-                                </button>
-                            </>
-                        )}
+                        <button
+                            type="button"
+                            onClick={async () => {
+                                if (isAddingNew && createdMonitorId) {
+                                    const saved = await saveMonitor({ close: true });
+                                    if (!saved) return;
+                                }
+                                onCancel();
+                            }}
+                            className="px-5 py-2 text-gray-700 hover:text-gray-900 transition-colors rounded-lg hover:bg-gray-100 border border-gray-300"
+                            disabled={isSubmitting}
+                        >
+                            {isAddingNew && createdMonitorId ? 'Done' : 'Cancel'}
+                        </button>
+                        <button
+                            type="button"
+                            onClick={handleFooterSaveClick}
+                            disabled={isSubmitting}
+                            className="px-5 py-2 bg-blue-600 hover:bg-blue-700 text-white rounded-lg transition-colors shadow-lg shadow-blue-900/20 disabled:opacity-50 disabled:cursor-not-allowed font-medium"
+                        >
+                            {isSubmitting
+                                ? 'Saving...'
+                                : ((monitor?.id && !isAddingNew) || createdMonitorId)
+                                    ? 'Update Monitor'
+                                    : 'Create Monitor'}
+                        </button>
                     </div>
                 )}
             </div>

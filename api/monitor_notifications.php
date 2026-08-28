@@ -451,15 +451,29 @@ function handleUpdateNotificationRule($ruleId) {
         
         $allowedFields = ['status_trigger', 'time_window_start', 'time_window_end', 'days_of_week', 
                          'subject_template', 'body_template', 'from_name', 'from_email', 'is_enabled', 'name'];
+        $nullableRuleFields = ['time_window_start', 'time_window_end', 'days_of_week', 'from_name', 'from_email'];
         foreach ($allowedFields as $field) {
-            if (isset($data[$field])) {
-                if ($field === 'days_of_week' && is_array($data[$field])) {
-                    $fields[] = "$field = ?";
-                    $values[] = implode(',', $data[$field]);
-                } else {
-                    $fields[] = "$field = ?";
-                    $values[] = $data[$field];
+            if (!array_key_exists($field, $data)) {
+                continue;
+            }
+            if (in_array($field, $nullableRuleFields, true)) {
+                $value = $data[$field];
+                if ($field === 'days_of_week' && is_array($value)) {
+                    $value = implode(',', $value);
                 }
+                $fields[] = "$field = ?";
+                $values[] = ($value === '' || $value === null) ? null : $value;
+                continue;
+            }
+            if (!isset($data[$field])) {
+                continue;
+            }
+            if ($field === 'days_of_week' && is_array($data[$field])) {
+                $fields[] = "$field = ?";
+                $values[] = implode(',', $data[$field]);
+            } else {
+                $fields[] = "$field = ?";
+                $values[] = $data[$field];
             }
         }
 

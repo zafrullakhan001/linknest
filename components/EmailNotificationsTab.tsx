@@ -1077,7 +1077,9 @@ const NotificationRuleForm: React.FC<NotificationRuleFormProps> = ({ rule, onSav
                         From Email (Optional)
                     </label>
                     <input
-                        type="email"
+                        type="text"
+                        inputMode="email"
+                        autoComplete="email"
                         value={formData.from_email || ''}
                         onChange={(e) => setFormData({ ...formData, from_email: e.target.value || null })}
                         className="w-full bg-white border border-gray-300 rounded-lg px-3 py-2 text-gray-900 outline-none focus:border-blue-500 focus:ring-2 focus:ring-blue-200"

@@ -53,6 +53,8 @@ from linknest_worker_lib import (
     now_ts,
     open_db,
     replace_template_vars,
+    resolve_app_name,
+    expand_app_placeholders,
     resolve_monitor_max_workers,
     time_window_active,
     _ln_ensure_monitor_email_subject_has_status,
@@ -366,7 +368,10 @@ def queue_advanced_notifications(
         subject = replace_template_vars(r["subject_template"], monitor_row, new_status, details, response_ms, app_name=app_name)
         body = replace_template_vars(r["body_template"], monitor_row, new_status, details, response_ms, app_name=app_name)
         from_name = (r["from_name"] or f"{app_name} Monitor").strip() if r["from_name"] is not None else f"{app_name} Monitor"
+        from_name = expand_app_placeholders(from_name, app_name)
         from_email = (r["from_email"] or "").strip() if r["from_email"] is not None else None
+        if from_email:
+            from_email = expand_app_placeholders(from_email, app_name)
 
         conn.execute(
             """
@@ -464,7 +469,11 @@ def queue_legacy_notification(conn, monitor_row, new_status: str, prev_status: O
     body = replace_template_vars(body_tpl, monitor_row, subject_status, message_details or "", int(response_ms), app_name=app_name)
 
     from_name = (monitor_row["legacy_email_from_name"] or "").strip() or None
+    if from_name:
+        from_name = expand_app_placeholders(from_name, app_name)
     from_email = (monitor_row["legacy_email_from_email"] or "").strip() or None
+    if from_email:
+        from_email = expand_app_placeholders(from_email, app_name)
 
     legacy_clear_pending = 1 if legacy_pending == 1 else 0
     legacy_update_last_notified_status = trigger
@@ -706,16 +715,13 @@ def main() -> int:
             return 0
 
         paused = True
-        app_name = "LinkNest"
+        app_name = resolve_app_name(conn)
         try:
             paused = bool(notifications_paused(conn, default_on_error=True))
-            row = conn.execute("SELECT value FROM settings WHERE key = 'app_name' LIMIT 1").fetchone()
-            if row and row["value"]:
-                app_name = str(row["value"]).strip()
         except Exception as e:
             paused = True
             if args.verbose:
-                print(f"[WARN] settings fetch failed; treating as paused with default app_name. err={e}")
+                print(f"[WARN] notifications_paused fetch failed; treating as paused. err={e}")
 
         monitor_by_id = {int(m["id"]): dict(m) for m in due}
         job_total = int(claimed_job.get("total_count") or 0) if claimed_job else len(due)

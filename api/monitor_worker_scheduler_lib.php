@@ -603,6 +603,93 @@ function monitorWorkerSchedulerDatabaseInfo(array $status): array {
 }
 
 /**
+ * Values Python workers resolve for email templates (not Windows env vars).
+ *
+ * @param array<string,mixed> $status
+ * @return array<string,mixed>
+ */
+function monitorWorkerSchedulerWorkerEnv(array $status): array {
+    $envOverride = trim((string)(getenv('LINKNEST_APP_NAME') ?: getenv('APP_NAME') ?: ''));
+    $raw = '';
+    try {
+        $db = getDB();
+        $stmt = $db->prepare("SELECT value FROM settings WHERE key = 'app_name' LIMIT 1");
+        $stmt->execute();
+        $raw = trim((string)$stmt->fetchColumn());
+    } catch (Throwable $e) {
+        $raw = '';
+    }
+    $appName = $envOverride !== '' ? $envOverride : ($raw !== '' ? $raw : 'LinkNest');
+
+    $pausedRaw = (string)getSetting('notifications_paused', '0');
+    $paused = ($pausedRaw === '1' || strcasecmp($pausedRaw, 'true') === 0);
+
+    $smtp = [
+        'enabled' => false,
+        'host' => null,
+        'from_email' => null,
+        'from_name_raw' => null,
+        'from_name_resolved' => $appName . ' Monitor',
+        'source' => 'none',
+    ];
+    try {
+        $db = getDB();
+        $row = $db->query('SELECT host, from_email, from_name, is_enabled FROM smtp_servers WHERE is_active = 1 LIMIT 1')->fetch(PDO::FETCH_ASSOC);
+        if (is_array($row) && $row) {
+            $rawFrom = trim((string)($row['from_name'] ?? ''));
+            $smtp['source'] = 'smtp_servers';
+            $smtp['enabled'] = !empty($row['is_enabled']);
+            $smtp['host'] = $row['host'] ?? null;
+            $smtp['from_email'] = $row['from_email'] ?? null;
+            $smtp['from_name_raw'] = $rawFrom !== '' ? $rawFrom : null;
+            $smtp['from_name_resolved'] = str_replace('{app_name}', $appName, $rawFrom !== '' ? $rawFrom : ($appName . ' Monitor'));
+        }
+    } catch (Throwable $e) {
+        // ignore
+    }
+
+    $placeholders = [
+        ['token' => '{app_name}', 'source' => $envOverride !== '' ? 'LINKNEST_APP_NAME / APP_NAME' : 'settings.app_name', 'value' => $appName, 'ok' => ($envOverride !== '' || $raw !== '')],
+        ['token' => '{monitor_name}', 'source' => 'monitor.name', 'value' => '(per check)', 'ok' => true],
+        ['token' => '{monitor_type}', 'source' => 'monitor.type', 'value' => '(per check)', 'ok' => true],
+        ['token' => '{monitor_target}', 'source' => 'monitor.target', 'value' => '(per check)', 'ok' => true],
+        ['token' => '{status}', 'source' => 'check result', 'value' => 'UP / DOWN / WARNING', 'ok' => true],
+        ['token' => '{details}', 'source' => 'check result', 'value' => '(per check)', 'ok' => true],
+        ['token' => '{response_time}', 'source' => 'check result', 'value' => '(ms)', 'ok' => true],
+        ['token' => '{time}', 'source' => 'worker clock', 'value' => date('Y-m-d H:i:s'), 'ok' => true],
+        ['token' => '{date}', 'source' => 'worker clock', 'value' => date('Y-m-d'), 'ok' => true],
+        ['token' => '{timestamp}', 'source' => 'worker clock', 'value' => (string)time(), 'ok' => true],
+    ];
+
+    $osEnv = [];
+    foreach (['USERNAME', 'USER', 'COMPUTERNAME', 'USERPROFILE', 'LINKNEST_APP_NAME', 'APP_NAME', 'LINKNEST_WORKERS_ENABLED', 'LINKNEST_WORKER_INTERVAL_SECONDS', 'LINKNEST_IN_DOCKER'] as $key) {
+        $val = getenv($key);
+        if ($val !== false && $val !== '') {
+            $osEnv[] = ['name' => $key, 'value' => $val];
+        }
+    }
+
+    return [
+        'app_name' => $appName,
+        'app_name_configured' => ($envOverride !== '' || $raw !== ''),
+        'notifications_paused' => $paused,
+        'working_directory' => function_exists('monitorWorkerSchedulerProjectRoot')
+            ? monitorWorkerSchedulerProjectRoot()
+            : null,
+        'python_path' => $status['python']['path'] ?? null,
+        'db_path' => $status['database']['path'] ?? null,
+        'smtp' => $smtp,
+        'placeholders' => $placeholders,
+        'os_env' => $osEnv,
+        'message' => $envOverride !== ''
+            ? 'Python workers use LINKNEST_APP_NAME (or APP_NAME) from the process environment, then fall back to settings.app_name in SQLite. {app_name} is a template token, not a Windows env var named {app_name}.'
+            : ($raw !== ''
+                ? 'Python workers substitute {app_name} from the settings table (same SQLite file as --db), not from a Windows environment variable named {app_name}. Optional override: LINKNEST_APP_NAME.'
+                : 'settings.app_name is empty. Python falls back to LinkNest until you set the app name under Admin branding (or set LINKNEST_APP_NAME).'),
+    ];
+}
+
+/**
  * Attach Python interpreter health and SQLite path, and on Windows block scheduling until Python 3.9+ is present.
  *
  * @param array<string,mixed> $status
@@ -612,6 +699,7 @@ function monitorWorkerSchedulerAttachPythonHealth(array $status): array {
     $health = monitorWorkerPythonHealth();
     $status['python'] = $health;
     $status['database'] = monitorWorkerSchedulerDatabaseInfo($status);
+    $status['worker_env'] = monitorWorkerSchedulerWorkerEnv($status);
 
     $platform = $status['platform'] ?? '';
     if (!empty($health['available'])) {

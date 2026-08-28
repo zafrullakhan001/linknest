@@ -37,6 +37,8 @@ from linknest_worker_lib import (
     now_ts,
     open_db,
     time_window_active,
+    resolve_app_name,
+    expand_app_placeholders,
     send_smtp_email,
     ln_render_monitor_notification_html,
     _ln_ensure_monitor_email_subject_has_status,
@@ -151,13 +153,7 @@ def main() -> int:
     ensure_monitors_schema(conn)
     smtp_cfg = get_smtp_config(conn)
     dedupe_window_seconds = _get_dedupe_window_seconds(conn)
-    app_name = "LinkNest"
-    try:
-        row = conn.execute("SELECT value FROM settings WHERE key = 'app_name' LIMIT 1").fetchone()
-        if row and row["value"]:
-            app_name = str(row["value"]).strip()
-    except Exception:
-        pass
+    app_name = resolve_app_name(conn)
 
     if notifications_paused(conn):
         if args.verbose:
@@ -341,17 +337,19 @@ def main() -> int:
                 # Never fail sending because of HTML rendering issues; plain-text fallback will still send.
                 html_body = None
 
+            subject = expand_app_placeholders(subject, app_name)
             ok, err = send_smtp_email(
                 smtp_cfg=smtp_cfg,
                 to_list=to_list,
                 cc_list=cc_list,
                 subject=subject,
-                body=str(r["body"]),
+                body=expand_app_placeholders(str(r["body"] or ""), app_name),
                 html_body=html_body,
                 from_name=(str(r["from_name"]) if r["from_name"] is not None else None),
                 from_email=(str(r["from_email"]) if r["from_email"] is not None else None),
                 timeout_seconds=int(args.smtp_timeout),
                 db_conn=conn,
+                app_name=app_name,
             )
 
             attempt_n = int(r["attempts"] or 0) + 1

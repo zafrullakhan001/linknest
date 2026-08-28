@@ -1,7 +1,7 @@
 import React, { useState, useEffect, useCallback, useRef, useMemo } from 'react';
 import { createPortal } from 'react-dom';
 import { Monitor, MonitorLog, MonitorForceEngine, MonitorCheckJob, MonitorWorkerSchedulerStatus, MonitorWorkerSchedulerTaskKey, monitoringService } from '../services/monitoringService';
-import { MonitorSchedulerPythonHealthCard, MonitorSchedulerDatabaseCard } from './MonitorSchedulerPythonHealth';
+import { MonitorSchedulerPythonHealthCard, MonitorSchedulerDatabaseCard, MonitorSchedulerWorkerEnvCard, SchedulerCollapsibleBlock } from './MonitorSchedulerPythonHealth';
 import { MonitorForm } from './MonitorForm';
 import { MonitorBulkImportDialog } from './MonitorBulkImportDialog';
 import { MonitorSslBulkImportDialog } from './MonitorSslBulkImportDialog';
@@ -186,6 +186,12 @@ export const MonitoringDashboard: React.FC = () => {
 
     const pythonRuntimeReady = !workerSchedulerStatus?.python || workerSchedulerStatus.python.available === true;
     const pythonRuntimeMissing = !!workerSchedulerStatus?.python && workerSchedulerStatus.python.available !== true;
+    const schedulerFolderName = useMemo(() => {
+        const wd = workerSchedulerStatus?.worker_env?.working_directory;
+        if (!wd) return 'linknest';
+        const parts = wd.replace(/[\\/]+$/, '').split(/[\\/]/);
+        return parts[parts.length - 1] || 'linknest';
+    }, [workerSchedulerStatus?.worker_env?.working_directory]);
 
     const schedulerUninstallAvailable = useMemo(() => {
         if (!isAdmin || !workerSchedulerStatus) {
@@ -339,66 +345,86 @@ export const MonitoringDashboard: React.FC = () => {
                 ? 'text-emerald-700 dark:text-emerald-300'
                 : 'text-amber-700 dark:text-amber-300';
 
-        const rowClass = variant === 'modal'
-            ? 'flex flex-wrap items-center justify-between gap-2 rounded-xl border border-slate-200 dark:border-[#333] bg-white/70 dark:bg-[#252525]/70 px-3 py-2.5'
-            : 'rounded-lg border border-amber-200/60 dark:border-amber-800/60 bg-white/50 dark:bg-amber-950/30 px-2.5 py-2';
+        const boxClass = variant === 'modal'
+            ? 'border-slate-200 dark:border-[#333] bg-white/70 dark:bg-[#252525]/70'
+            : 'border-amber-200/60 dark:border-amber-800/60 bg-white/50 dark:bg-amber-950/30';
+        const hasDetails = !!(
+            task.last_run
+            || (task.exists && workerSchedulerStatus.platform === 'windows' && (task.last_result_label || task.never_run || task.needs_logged_on_user))
+            || (!task.exists && schedulerHostManaged)
+        );
+
+        const actionButtons = canToggle ? (
+            <div className="flex items-center gap-1.5 shrink-0">
+                {workerSchedulerStatus.platform === 'windows' && task.enabled && (
+                    <button
+                        type="button"
+                        onClick={() => runSchedulerTask(taskKey)}
+                        disabled={schedulerRunningTask !== null || toggling || workerSchedulerLoading}
+                        className="inline-flex items-center gap-1 px-2.5 py-1 rounded-lg text-[10px] font-bold uppercase tracking-wide bg-sky-600 hover:bg-sky-700 text-white transition-colors disabled:opacity-40 disabled:cursor-not-allowed"
+                        title="Start this job immediately (does not wait for the next interval)"
+                    >
+                        {schedulerRunningTask === taskKey ? '…' : 'Run now'}
+                    </button>
+                )}
+                <button
+                    type="button"
+                    onClick={() => toggleSchedulerTask(taskKey, true)}
+                    disabled={task.enabled || toggling || workerSchedulerLoading}
+                    className="inline-flex items-center gap-1 px-2.5 py-1 rounded-lg text-[10px] font-bold uppercase tracking-wide bg-emerald-600 hover:bg-emerald-700 text-white transition-colors disabled:opacity-40 disabled:cursor-not-allowed disabled:hover:bg-emerald-600"
+                >
+                    {toggling && !task.enabled ? '…' : 'Enable'}
+                </button>
+                <button
+                    type="button"
+                    onClick={() => toggleSchedulerTask(taskKey, false)}
+                    disabled={!task.enabled || toggling || workerSchedulerLoading}
+                    className="inline-flex items-center gap-1 px-2.5 py-1 rounded-lg text-[10px] font-bold uppercase tracking-wide bg-amber-600 hover:bg-amber-700 text-white transition-colors disabled:opacity-40 disabled:cursor-not-allowed disabled:hover:bg-amber-600"
+                >
+                    {toggling && task.enabled ? '…' : 'Disable'}
+                </button>
+            </div>
+        ) : undefined;
+
+        const details = (
+            <>
+                {task.last_run && (
+                    <p className="text-[10px] opacity-75 break-all">Last run: {task.last_run}</p>
+                )}
+                {task.exists && workerSchedulerStatus.platform === 'windows' && (task.last_result_label || task.never_run || task.needs_logged_on_user) && (
+                    <p className={`mt-0.5 text-[10px] leading-snug ${task.never_run || task.needs_logged_on_user ? 'text-amber-800 dark:text-amber-200 font-medium' : 'opacity-75'}`}>
+                        {task.last_result_label}
+                        {task.run_as ? ` · ${task.run_as}` : ''}
+                    </p>
+                )}
+                {!task.exists && schedulerHostManaged && (
+                    <p className="mt-0.5 text-[10px] opacity-75">
+                        {workerSchedulerStatus.platform === 'docker'
+                            ? 'Missing in container — rebuild the Docker image'
+                            : (schedulerInstallNeeded ? 'Not installed — use Install tasks below' : 'Install with schedule-monitor-workers.bat')}
+                    </p>
+                )}
+            </>
+        );
 
         return (
-            <div key={taskKey} className={rowClass}>
-                <div className="min-w-0 flex-1">
+            <SchedulerCollapsibleBlock
+                key={taskKey}
+                boxClass={boxClass}
+                defaultOpen={variant === 'modal' || !task.exists || !!task.needs_logged_on_user}
+                summary={!hasDetails ? undefined : (task.last_run ? `Last run: ${task.last_run}` : statusLabel)}
+                headerExtra={actionButtons}
+                title={
                     <div className="flex flex-wrap items-center gap-x-2 gap-y-0.5">
                         <span className="font-semibold text-[10px]">{label}</span>
                         <span className={`text-[10px] font-bold uppercase tracking-wide ${statusClass}`}>{statusLabel}</span>
                     </div>
-                    {task.last_run && (
-                        <p className="mt-0.5 text-[10px] opacity-75 truncate">Last run: {task.last_run}</p>
-                    )}
-                    {task.exists && workerSchedulerStatus.platform === 'windows' && (task.last_result_label || task.never_run || task.needs_logged_on_user) && (
-                        <p className={`mt-0.5 text-[10px] leading-snug ${task.never_run || task.needs_logged_on_user ? 'text-amber-800 dark:text-amber-200 font-medium' : 'opacity-75'}`}>
-                            {task.last_result_label}
-                            {task.run_as ? ` · ${task.run_as}` : ''}
-                        </p>
-                    )}
-                    {!task.exists && schedulerHostManaged && (
-                        <p className="mt-0.5 text-[10px] opacity-75">
-                            {workerSchedulerStatus.platform === 'docker'
-                                ? 'Missing in container — rebuild the Docker image'
-                                : (schedulerInstallNeeded ? 'Not installed — use Install tasks below' : 'Install with schedule-monitor-workers.bat')}
-                        </p>
-                    )}
-                </div>
-                {canToggle && (
-                    <div className="flex items-center gap-1.5 shrink-0">
-                        {workerSchedulerStatus.platform === 'windows' && task.enabled && (
-                            <button
-                                type="button"
-                                onClick={() => runSchedulerTask(taskKey)}
-                                disabled={schedulerRunningTask !== null || toggling || workerSchedulerLoading}
-                                className="inline-flex items-center gap-1 px-2.5 py-1 rounded-lg text-[10px] font-bold uppercase tracking-wide bg-sky-600 hover:bg-sky-700 text-white transition-colors disabled:opacity-40 disabled:cursor-not-allowed"
-                                title="Start this job immediately (does not wait for the next interval)"
-                            >
-                                {schedulerRunningTask === taskKey ? '…' : 'Run now'}
-                            </button>
-                        )}
-                        <button
-                            type="button"
-                            onClick={() => toggleSchedulerTask(taskKey, true)}
-                            disabled={task.enabled || toggling || workerSchedulerLoading}
-                            className="inline-flex items-center gap-1 px-2.5 py-1 rounded-lg text-[10px] font-bold uppercase tracking-wide bg-emerald-600 hover:bg-emerald-700 text-white transition-colors disabled:opacity-40 disabled:cursor-not-allowed disabled:hover:bg-emerald-600"
-                        >
-                            {toggling && !task.enabled ? '…' : 'Enable'}
-                        </button>
-                        <button
-                            type="button"
-                            onClick={() => toggleSchedulerTask(taskKey, false)}
-                            disabled={!task.enabled || toggling || workerSchedulerLoading}
-                            className="inline-flex items-center gap-1 px-2.5 py-1 rounded-lg text-[10px] font-bold uppercase tracking-wide bg-amber-600 hover:bg-amber-700 text-white transition-colors disabled:opacity-40 disabled:cursor-not-allowed disabled:hover:bg-amber-600"
-                        >
-                            {toggling && task.enabled ? '…' : 'Disable'}
-                        </button>
-                    </div>
+                }
+            >
+                {hasDetails ? details : (
+                    <p className="text-[10px] opacity-75">No extra status for this job.</p>
                 )}
-            </div>
+            </SchedulerCollapsibleBlock>
         );
     }, [workerSchedulerStatus, isAdmin, schedulerTaskToggling, schedulerRunningTask, workerSchedulerLoading, toggleSchedulerTask, runSchedulerTask, schedulerInstallNeeded, schedulerHostManaged]);
 
@@ -1233,30 +1259,35 @@ export const MonitoringDashboard: React.FC = () => {
         setIsEditing(true);
     };
 
-    const handleSave = async (data: Partial<Monitor>) => {
+    const handleSave = async (data: Partial<Monitor>, opts?: { close?: boolean }) => {
         if (!isAdmin) {
             throw new Error('Admin access required');
         }
         try {
-            if (selectedMonitor && !isDuplicate && !isAddingNew) {
-                // Update existing monitor - close dialog after save
-                await monitoringService.updateMonitor(selectedMonitor.id, data);
-                setIsEditing(false);
-                setIsDuplicate(false);
-                setSelectedMonitor(undefined);
-                setCreatedMonitorId(undefined);
+            const updateId = (!isDuplicate && !isAddingNew && selectedMonitor?.id)
+                ? selectedMonitor.id
+                : (createdMonitorId || null);
+
+            if (updateId) {
+                await monitoringService.updateMonitor(updateId, data);
+                const shouldClose = opts?.close === true || (opts?.close !== false && !isAddingNew);
+                if (shouldClose) {
+                    setIsEditing(false);
+                    setIsDuplicate(false);
+                    setIsAddingNew(false);
+                    setSelectedMonitor(undefined);
+                    setCreatedMonitorId(undefined);
+                    setAddMonitorType(undefined);
+                }
             } else {
-                // Create new monitor - keep dialog open so user can configure notifications
                 const createdMonitor = await monitoringService.createMonitor(data);
-                // Store the created monitor ID for the form to use in tabs
                 setCreatedMonitorId(createdMonitor.id);
-                // Keep isAddingNew true so we know we're still in "add mode"
                 setIsAddingNew(true);
             }
             if (data.type === 'ssl') {
                 setActiveTab(SSL_CERTS_TAB);
             }
-            fetchMonitors();
+            await fetchMonitors();
         } catch (error) {
             throw error;
         }
@@ -1898,7 +1929,12 @@ export const MonitoringDashboard: React.FC = () => {
                         {isAdmin && (
                             <>
                                 <button
-                                    onClick={() => setShowCronModal(true)}
+                                    type="button"
+                                    onClick={(e) => {
+                                        e.preventDefault();
+                                        e.stopPropagation();
+                                        setShowCronModal(true);
+                                    }}
                                     className="p-2 rounded-lg transition-all text-slate-400 hover:text-purple-500 hover:bg-white dark:hover:bg-[#333]"
                                     title="Scheduler Setup"
                                 >
@@ -3468,8 +3504,13 @@ export const MonitoringDashboard: React.FC = () => {
                 />
             )}
 
-            {showCronModal && (
-                <div className="fixed inset-0 z-[100] flex items-center justify-center p-4 bg-black/60 backdrop-blur-sm">
+            {showCronModal && typeof document !== 'undefined' && createPortal(
+                <div
+                    className="fixed inset-0 z-[10050] flex items-center justify-center p-4 bg-black/60 backdrop-blur-sm"
+                    role="dialog"
+                    aria-modal="true"
+                    aria-labelledby="scheduler-setup-title"
+                >
                     <div className="bg-white dark:bg-[#1e1e1e] rounded-3xl w-full max-w-3xl max-h-[90vh] border border-slate-200 dark:border-[#333] shadow-2xl overflow-hidden animate-in fade-in zoom-in duration-200 flex flex-col">
                         <div className="p-6 border-b border-slate-100 dark:border-[#333] flex items-center justify-between shrink-0">
                             <div className="flex items-center gap-3">
@@ -3477,7 +3518,7 @@ export const MonitoringDashboard: React.FC = () => {
                                     <FaClock size={20} {...({ className: "text-purple-500" } as any)} />
                                 </div>
                                 <div>
-                                    <h2 className="text-xl font-bold text-slate-900 dark:text-white">Scheduler Setup</h2>
+                                    <h2 id="scheduler-setup-title" className="text-xl font-bold text-slate-900 dark:text-white">Scheduler Setup</h2>
                                     <p className="text-sm text-slate-500">Keep monitors checking automatically every few minutes</p>
                                 </div>
                             </div>
@@ -3507,7 +3548,7 @@ export const MonitoringDashboard: React.FC = () => {
                                 <ul className="text-xs text-slate-600 dark:text-slate-400 list-disc list-inside space-y-1">
                                     <li><strong>Scheduler</strong> chip (toolbar) — opens the floating status panel (amber = needs attention, green = healthy)</li>
                                     <li><strong>Install Python</strong> — Windows: downloads a bundled Python 3.12 into <code className="bg-slate-100 dark:bg-[#333] px-1 rounded">bin\python</code> when the host has no Python 3.9+</li>
-                            <li><strong>Install tasks</strong> — Windows: registers <em>{folder} - Monitor Runner</em> + <em>Email Sender</em> (folder name so ERP3 / ArchLinks / linknest can coexist; default every 1 min, 20 workers). Disabled until Python is ready. Docker: enables both entrypoint workers.</li>
+                                    <li><strong>Install tasks</strong> — Windows: registers <em>{schedulerFolderName} - Monitor Runner</em> + <em>Email Sender</em> (folder name so ERP3 / ArchLinks / linknest can coexist; default every 1 min, 20 workers). Disabled until Python is ready. Docker: enables both entrypoint workers.</li>
                                     <li><strong>Enable / Disable</strong> — per worker without opening Task Scheduler (Windows) or restarting the container (Docker)</li>
                                     <li><strong>Uninstall / Remove</strong> — Windows: deletes both Task Scheduler jobs. Docker: disables both workers in settings</li>
                                     <li><strong>Refresh status</strong> — re-probes Task Scheduler or Docker worker settings</li>
@@ -3547,6 +3588,12 @@ export const MonitoringDashboard: React.FC = () => {
                                         {workerSchedulerStatus.database && (
                                             <MonitorSchedulerDatabaseCard
                                                 database={workerSchedulerStatus.database}
+                                                variant="modal"
+                                            />
+                                        )}
+                                        {workerSchedulerStatus.worker_env && (
+                                            <MonitorSchedulerWorkerEnvCard
+                                                env={workerSchedulerStatus.worker_env}
                                                 variant="modal"
                                             />
                                         )}
@@ -3650,6 +3697,12 @@ export const MonitoringDashboard: React.FC = () => {
                                                 variant="modal"
                                             />
                                         )}
+                                        {workerSchedulerStatus.worker_env && (
+                                            <MonitorSchedulerWorkerEnvCard
+                                                env={workerSchedulerStatus.worker_env}
+                                                variant="modal"
+                                            />
+                                        )}
                                         <div className="space-y-2">
                                             {renderSchedulerTaskRow('monitor_runner', 'Monitor Runner', 'modal')}
                                             {renderSchedulerTaskRow('email_sender', 'Email Sender', 'modal')}
@@ -3721,7 +3774,7 @@ export const MonitoringDashboard: React.FC = () => {
                                 <ul className="text-xs text-slate-600 dark:text-slate-400 list-disc list-inside space-y-1">
                                     <li>Requires Python 3.9+ on the Windows host — use <strong>Install Python runtime</strong> in this dialog if Python is missing, or install from python.org</li>
                                     <li>Default install: every <strong>1 minute</strong>, <strong>20</strong> parallel workers (pass <code className="bg-slate-100 dark:bg-[#333] px-1 rounded">2</code> as the second bat argument for every 2 minutes)</li>
-                                    <li>Tasks: <strong>{folder} - Monitor Runner</strong> and <strong>{folder} - Email Sender</strong> (folder name, e.g. ERP3 / ArchLinks / linknest). Each clone on the same PC gets its own jobs.</li>
+                                    <li>Tasks: <strong>{schedulerFolderName} - Monitor Runner</strong> and <strong>{schedulerFolderName} - Email Sender</strong> (folder name, e.g. ERP3 / ArchLinks / linknest). Each clone on the same PC gets its own jobs.</li>
                                     <li>Install from the panel above, or CLI: <code className="bg-slate-100 dark:bg-[#333] px-1 rounded">scripts\schedule-monitor-workers.bat</code></li>
                                     <li>Full walkthrough: <code className="bg-slate-100 dark:bg-[#333] px-1 rounded">docs/PYTHON_WORKERS.md</code></li>
                                 </ul>
@@ -3795,7 +3848,8 @@ ON CONFLICT(key) DO UPDATE SET value = excluded.value, updated_at = excluded.upd
                             </button>
                         </div>
                     </div>
-                </div>
+                </div>,
+                document.body
             )}
         </>
     );
@@ -3918,10 +3972,10 @@ ON CONFLICT(key) DO UPDATE SET value = excluded.value, updated_at = excluded.upd
         )
         : null;
 
-    const schedulerFloatPanel = showSchedulerToolbarChip && workerSchedulerStatus && schedulerPanelVisible && typeof document !== 'undefined'
+    const schedulerFloatPanel = showSchedulerToolbarChip && workerSchedulerStatus && schedulerPanelVisible && !showCronModal && typeof document !== 'undefined'
         ? createPortal(
             <div
-                className={`fixed right-6 z-[9998] w-[min(calc(100vw-2rem),22rem)] animate-in fade-in slide-in-from-bottom-2 duration-300 ${
+                className={`fixed right-6 z-[9998] w-[min(calc(100vw-2rem),26rem)] animate-in fade-in slide-in-from-bottom-2 duration-300 ${
                     pythonJobActivity && pythonJobPanelVisible ? 'bottom-[21rem]' : 'bottom-6'
                 }`}
                 role="status"
@@ -3975,7 +4029,7 @@ ON CONFLICT(key) DO UPDATE SET value = excluded.value, updated_at = excluded.upd
                             <FaTimes size={12} />
                         </button>
                     </div>
-                    <div className="px-4 py-3">
+                    <div className="px-4 py-3 max-h-[min(70vh,36rem)] overflow-y-auto">
                         <p className="text-[11px] leading-relaxed opacity-90">
                             {workerSchedulerStatus.message}
                         </p>
@@ -3995,6 +4049,14 @@ ON CONFLICT(key) DO UPDATE SET value = excluded.value, updated_at = excluded.upd
                             <div className="mt-2.5">
                                 <MonitorSchedulerDatabaseCard
                                     database={workerSchedulerStatus.database}
+                                    variant="float"
+                                />
+                            </div>
+                        )}
+                        {workerSchedulerStatus.worker_env && (
+                            <div className="mt-2.5">
+                                <MonitorSchedulerWorkerEnvCard
+                                    env={workerSchedulerStatus.worker_env}
                                     variant="float"
                                 />
                             </div>
@@ -4064,7 +4126,11 @@ ON CONFLICT(key) DO UPDATE SET value = excluded.value, updated_at = excluded.upd
                             {isAdmin && (
                                 <button
                                     type="button"
-                                    onClick={() => setShowCronModal(true)}
+                                    onClick={(e) => {
+                                        e.preventDefault();
+                                        e.stopPropagation();
+                                        setShowCronModal(true);
+                                    }}
                                     className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-[10px] font-bold uppercase tracking-wide bg-amber-600 hover:bg-amber-700 text-white transition-colors"
                                 >
                                     <FaClock size={9} />
@@ -4091,7 +4157,7 @@ ON CONFLICT(key) DO UPDATE SET value = excluded.value, updated_at = excluded.upd
     const schedulerMessageDialogPortal = schedulerMessageDialog && typeof document !== 'undefined'
         ? createPortal(
             <div
-                className="fixed inset-0 z-[110] flex items-center justify-center p-4 bg-black/60 backdrop-blur-sm"
+                className="fixed inset-0 z-[10060] flex items-center justify-center p-4 bg-black/60 backdrop-blur-sm"
                 role="dialog"
                 aria-modal="true"
                 aria-labelledby="scheduler-message-dialog-title"

@@ -97,12 +97,45 @@ export interface MonitorWorkerSchedulerDatabase {
     message: string;
 }
 
+export interface MonitorWorkerSchedulerPlaceholder {
+    token: string;
+    source: string;
+    value: string;
+    ok: boolean;
+}
+
+export interface MonitorWorkerSchedulerOsEnv {
+    name: string;
+    value: string;
+}
+
+export interface MonitorWorkerSchedulerWorkerEnv {
+    app_name: string;
+    app_name_configured: boolean;
+    notifications_paused: boolean;
+    working_directory?: string | null;
+    python_path?: string | null;
+    db_path?: string | null;
+    smtp?: {
+        enabled: boolean;
+        host?: string | null;
+        from_email?: string | null;
+        from_name_raw?: string | null;
+        from_name_resolved?: string | null;
+        source?: string;
+    };
+    placeholders: MonitorWorkerSchedulerPlaceholder[];
+    os_env: MonitorWorkerSchedulerOsEnv[];
+    message: string;
+}
+
 export interface MonitorWorkerSchedulerStatus {
     platform: 'windows' | 'linux' | 'docker' | 'unknown';
     scheduler_applicable: boolean;
     python_ready: boolean | null;
     python?: MonitorWorkerPythonHealth;
     database?: MonitorWorkerSchedulerDatabase;
+    worker_env?: MonitorWorkerSchedulerWorkerEnv;
     status: 'ok' | 'not_installed' | 'disabled' | 'partial' | 'unavailable' | 'python_missing' | 'not_running';
     message: string;
     tasks: {
