@@ -3,9 +3,10 @@
   Install, verify, remove, or check Windows Task Scheduler jobs for LinkNest monitoring workers.
 
 .DESCRIPTION
-  Registers two repeating tasks:
-    - LinkNest - Monitor Runner  (monitor_runner.py - checks + queue emails)
-    - LinkNest - Email Sender    (email_sender.py - SMTP send from outbox)
+  Registers two repeating tasks (names follow the install folder so ERP3 / ArchLinks
+  / linknest can all run on the same PC):
+    - <Folder> - Monitor Runner  (monitor_runner.py - checks + queue emails)
+    - <Folder> - Email Sender    (email_sender.py - SMTP send from outbox)
 
   Includes preflight checks and post-install verification (Task Scheduler API + schtasks.exe).
 
@@ -32,8 +33,9 @@
   With install: skip the post-install run-once smoke test.
 
 .PARAMETER TaskUser
-  Optional DOMAIN\User to run tasks as. When install runs from Apache/PHP (SYSTEM), the script
-  auto-detects the logged-on desktop user; pass this to override.
+  Optional DOMAIN\User to run tasks as (S4U — no stored password, runs whether
+  logged on). Default: SYSTEM first, then the logged-on user via S4U. Do not use
+  Interactive ("run only when user is logged on") — missed first triggers never repeat.
 
 .EXAMPLE
   .\scripts\schedule-monitor-workers.ps1
@@ -182,14 +184,43 @@ if (-not $DbPath) {
     $DbPath = Join-Path $root 'data\linknest.db'
 }
 
-$taskMonitor = 'LinkNest - Monitor Runner'
-$taskEmail = 'LinkNest - Email Sender'
+$folderLeaf = Split-Path -Leaf $root
+$folderSafe = (($folderLeaf -replace '[\\/:*?"<>|]', '').Trim(' .'))
+if (-not $folderSafe) { $folderSafe = 'LinkNest' }
+$taskMonitor = "$folderSafe - Monitor Runner"
+$taskEmail = "$folderSafe - Email Sender"
+$legacyTaskMonitor = 'LinkNest - Monitor Runner'
+$legacyTaskEmail = 'LinkNest - Email Sender'
 $expectedMonitorArgsFragment = 'scripts\monitor_runner.py'
 $expectedEmailArgsFragment = 'scripts\email_sender.py'
 
-function Get-TaskSafe {
-    param([string]$Name)
-    try { return Get-ScheduledTask -TaskName $Name -ErrorAction Stop } catch { return $null }
+function Test-TaskBelongsToThisRoot {
+    param($Task)
+    if (-not $Task) { return $false }
+    $action = @($Task.Actions)[0]
+    if (-not $action) { return $false }
+    $rootNorm = [System.IO.Path]::GetFullPath($root).TrimEnd('\').ToLowerInvariant()
+    $wd = [string]$action.WorkingDirectory
+    if ($wd) {
+        try {
+            $wdNorm = [System.IO.Path]::GetFullPath($wd).TrimEnd('\').ToLowerInvariant()
+            if ($wdNorm -eq $rootNorm) { return $true }
+        } catch {}
+    }
+    $args = [string]$action.Arguments
+    if ($args -and $args.ToLowerInvariant().Contains($rootNorm.ToLowerInvariant())) { return $true }
+    return $false
+}
+
+function Remove-LegacyTasksForThisRoot {
+    foreach ($name in @($legacyTaskMonitor, $legacyTaskEmail)) {
+        if ($name -eq $taskMonitor -or $name -eq $taskEmail) { continue }
+        $t = Get-TaskSafe -Name $name
+        if ($t -and (Test-TaskBelongsToThisRoot $t)) {
+            Unregister-ScheduledTask -TaskName $name -Confirm:$false
+            Write-Info "Removed leftover task '$name' (it pointed at this folder)"
+        }
+    }
 }
 
 function Get-SchtasksQueryText {
@@ -400,6 +431,11 @@ function Test-WorkerTaskConfiguration {
         if ($sch -match [regex]::Escape($ExpectedArgsFragment)) {
             Write-Ok "schtasks.exe arguments mention $ExpectedArgsFragment"
         }
+        if ($sch -match '(?im)Logon Mode:\s*Interactive only') {
+            Write-Fail "Logon Mode is Interactive only — the task will not run unless that user is at the console, and a missed first trigger never repeats. Re-run install (default SYSTEM/S4U)."
+        } elseif ($sch -match '(?im)Run As User:\s*SYSTEM') {
+            Write-Ok "Runs as SYSTEM (no logged-on user required)"
+        }
     }
 
     try {
@@ -441,6 +477,7 @@ function Invoke-Verify {
 
 function Remove-WorkerTasks {
     Write-Section "Uninstall"
+    Remove-LegacyTasksForThisRoot
     foreach ($name in @($taskMonitor, $taskEmail)) {
         $t = Get-TaskSafe -Name $name
         if ($t) {
@@ -521,15 +558,30 @@ function Resolve-TaskRunAsUser {
     return $null
 }
 
-function New-WorkerTaskPrincipal {
-    $runAs = Resolve-TaskRunAsUser
-    if ($runAs) {
-        Write-Info "Task run-as user: $runAs (Interactive)"
-        return New-ScheduledTaskPrincipal -UserId $runAs -LogonType Interactive -RunLevel Limited
+function Get-WorkerPrincipalAttempts {
+    $attempts = [System.Collections.Generic.List[object]]::new()
+
+    if ($TaskUser) {
+        $attempts.Add(@{
+            Label = "user $TaskUser (S4U — runs whether logged on)"
+            Principal = (New-ScheduledTaskPrincipal -UserId $TaskUser -LogonType S4U -RunLevel Limited)
+        })
     }
 
-    Write-WarnLine "Could not resolve a desktop user account; registering tasks to run as SYSTEM."
-    return New-ScheduledTaskPrincipal -UserId 'SYSTEM' -LogonType ServiceAccount -RunLevel Highest
+    $attempts.Add(@{
+        Label = 'SYSTEM (runs whether anyone is logged on)'
+        Principal = (New-ScheduledTaskPrincipal -UserId 'SYSTEM' -LogonType ServiceAccount -RunLevel Highest)
+    })
+
+    $runAs = Resolve-TaskRunAsUser
+    if ($runAs -and (-not $TaskUser -or ($runAs.ToLowerInvariant() -ne $TaskUser.Trim().ToLowerInvariant()))) {
+        $attempts.Add(@{
+            Label = "user $runAs (S4U — runs whether logged on)"
+            Principal = (New-ScheduledTaskPrincipal -UserId $runAs -LogonType S4U -RunLevel Limited)
+        })
+    }
+
+    return $attempts
 }
 
 function Register-WorkerTask {
@@ -546,11 +598,13 @@ function Register-WorkerTask {
     }
 
     $action = New-ScheduledTaskAction -Execute $script:pythonExe -Argument $Arguments -WorkingDirectory $root
-    $start = (Get-Date).AddMinutes(1)
+    $start = Get-Date
     # 10-year repetition window ~= "indefinitely" (MaxValue can fail on some Windows builds)
-    $trigger = New-ScheduledTaskTrigger -Once -At $start `
+    $repeatTrigger = New-ScheduledTaskTrigger -Once -At $start `
         -RepetitionInterval (New-TimeSpan -Minutes $IntervalMinutes) `
         -RepetitionDuration (New-TimeSpan -Days 3650)
+    $bootTrigger = New-ScheduledTaskTrigger -AtStartup
+    try { $bootTrigger.Delay = 'PT30S' } catch {}
 
     $settings = New-ScheduledTaskSettingsSet `
         -AllowStartIfOnBatteries `
@@ -559,20 +613,49 @@ function Register-WorkerTask {
         -MultipleInstances IgnoreNew `
         -ExecutionTimeLimit (New-TimeSpan -Minutes 10)
 
-    $principal = New-WorkerTaskPrincipal
+    $attempts = @(Get-WorkerPrincipalAttempts)
+    $registered = $false
+    $lastError = $null
+    foreach ($attempt in $attempts) {
+        try {
+            Register-ScheduledTask `
+                -TaskName $Name `
+                -Description $Description `
+                -Action $action `
+                -Trigger @($repeatTrigger, $bootTrigger) `
+                -Settings $settings `
+                -Principal $attempt.Principal | Out-Null
+            Write-Ok "Registered: $Name as $($attempt.Label) (every $IntervalMinutes min)"
+            $registered = $true
+            break
+        } catch {
+            $lastError = $_
+            Write-Info "Could not register as $($attempt.Label): $($_.Exception.Message)"
+            $existingAfter = Get-TaskSafe -Name $Name
+            if ($existingAfter) {
+                Unregister-ScheduledTask -TaskName $Name -Confirm:$false -ErrorAction SilentlyContinue
+            }
+        }
+    }
+    if (-not $registered) {
+        throw "Failed to register $Name. $($lastError.Exception.Message)"
+    }
 
-    Register-ScheduledTask `
-        -TaskName $Name `
-        -Description $Description `
-        -Action $action `
-        -Trigger $trigger `
-        -Settings $settings `
-        -Principal $principal | Out-Null
-
-    Write-Ok "Registered: $Name (every $IntervalMinutes min)"
     Write-Info "Program: $script:pythonExe"
     Write-Info "Args:    $Arguments"
     Write-Info "Start in: $root"
+
+    try {
+        Start-ScheduledTask -TaskName $Name -ErrorAction Stop
+        Write-Ok "Started $Name now (does not wait for the next interval)"
+    } catch {
+        $runOut = & schtasks.exe /Run /TN $Name 2>&1
+        if ($LASTEXITCODE -eq 0) {
+            Write-Ok "Started $Name now via schtasks"
+        } else {
+            Write-WarnLine "Could not start $Name immediately: $runOut"
+        }
+    }
 }
 
 function Install-WorkerTasks {
@@ -586,6 +669,8 @@ function Install-WorkerTasks {
         -Description "LinkNest: run due monitor checks and queue notification emails"
     Register-WorkerTask -Name $taskEmail -Arguments $emailArgs `
         -Description "LinkNest: send queued monitor notification emails via SMTP"
+
+    Remove-LegacyTasksForThisRoot
 
     # Reset counters for verify phase reporting
     $script:FailCount = 0
@@ -612,12 +697,8 @@ function Install-WorkerTasks {
 
     Write-Section "Summary"
     Write-Ok "Install finished."
-    $resolvedUser = Resolve-TaskRunAsUser
-    if ($resolvedUser) {
-        Write-Info "Tasks run as user '$resolvedUser' while logged on."
-    } else {
-        Write-Info "Tasks run as SYSTEM (ServiceAccount) - suitable when installed from Apache/PHP."
-    }
+    Write-Info "Tasks run whether or not a user is logged on (SYSTEM, or S4U if SYSTEM is not allowed)."
+    Write-Info "If Py jobs stay queued, click Run now in the scheduler panel or: schtasks /Run /TN `"$taskMonitor`""
     Write-Info "Useful commands:"
     Write-Host "    scripts\schedule-monitor-workers.bat status"
     Write-Host "    scripts\schedule-monitor-workers.bat verify"

@@ -49,6 +49,11 @@ export interface MonitorWorkerSchedulerTask {
     next_run?: string | null;
     last_run?: string | null;
     last_result?: number | null;
+    last_result_label?: string | null;
+    run_as?: string | null;
+    logon_mode?: string | null;
+    never_run?: boolean;
+    needs_logged_on_user?: boolean;
 }
 
 export type MonitorWorkerSchedulerTaskKey = 'monitor_runner' | 'email_sender';
@@ -87,7 +92,7 @@ export interface MonitorWorkerSchedulerStatus {
     scheduler_applicable: boolean;
     python_ready: boolean | null;
     python?: MonitorWorkerPythonHealth;
-    status: 'ok' | 'not_installed' | 'disabled' | 'partial' | 'unavailable' | 'python_missing';
+    status: 'ok' | 'not_installed' | 'disabled' | 'partial' | 'unavailable' | 'python_missing' | 'not_running';
     message: string;
     tasks: {
         monitor_runner: MonitorWorkerSchedulerTask;
@@ -456,6 +461,28 @@ export const monitoringService = {
             scheduler: data.scheduler as MonitorWorkerSchedulerStatus,
             message: data.message || 'Python runtime installed.',
             already: data.already,
+        };
+    },
+
+    async runWorkerSchedulerTask(task: MonitorWorkerSchedulerTaskKey = 'monitor_runner'): Promise<{
+        scheduler: MonitorWorkerSchedulerStatus;
+        message: string;
+    }> {
+        const response = await fetch('api/monitors.php/worker-scheduler-run', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ task }),
+        });
+        const data = await response.json().catch(() => ({}));
+        if (!response.ok) {
+            throw new Error(data.error || 'Failed to start Task Scheduler job');
+        }
+        if (!data.scheduler) {
+            throw new Error('Scheduler status missing from response');
+        }
+        return {
+            scheduler: data.scheduler as MonitorWorkerSchedulerStatus,
+            message: data.message || 'Task started.',
         };
     },
 

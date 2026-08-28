@@ -225,7 +225,11 @@ From the LinkNest project root (normal Windows user — **admin not required**):
 scripts\schedule-monitor-workers.bat
 ```
 
-Flow: **preflight → register two tasks → verify → smoke test** (one foreground monitor + email run).
+Flow: **preflight → register two tasks (SYSTEM, or S4U if SYSTEM is not allowed) → start immediately → verify → smoke test**.
+
+Tasks **do not** use “Run only when user is logged on”. That setting causes queued Py jobs to stay queued forever if the first trigger is missed. Reinstall from the scheduler panel if you still see that prompt.
+
+If jobs stay queued: **Run now** on Monitor Runner, or `schtasks /Run /TN "ERP3 - Monitor Runner"` (use your folder name). Confirm `data\monitor_runner_last.log` updates.
 
 ### schedule-monitor-workers.ps1 — all parameters
 
@@ -267,8 +271,10 @@ scripts\schedule-monitor-workers.bat uninstall
 
 | Task name | Command |
 |-----------|---------|
-| **LinkNest - Monitor Runner** | `python scripts\monitor_runner.py --db "<path>" --max-workers 20` |
-| **LinkNest - Email Sender** | `python scripts\email_sender.py --db "<path>" --limit 25 --smtp-timeout 20` |
+| **`{folder} - Monitor Runner`** | `python scripts\monitor_runner.py --db "<path>" --max-workers 20` |
+| **`{folder} - Email Sender`** | `python scripts\email_sender.py --db "<path>" --limit 25 --smtp-timeout 20` |
+
+Task names use the install folder (`ERP3`, `ArchLinks`, `linknest`) so several copies can run on the same Windows PC. Legacy names `LinkNest - Monitor Runner` / `Email Sender` are still recognized when they point at this folder.
 
 Both use **Start in** = project root, **MultipleInstances = IgnoreNew** (do not stack overlapping runs).
 
@@ -374,7 +380,7 @@ When auto-refresh mode is **force** (red icon):
 | Symptom | Check |
 |---------|--------|
 | Monitors never update | `scripts\schedule-monitor-workers.bat status` — LastResult, NextRun |
-| Force-all Py stuck queued | Task Scheduler running? `data/monitor_runner_kick.log` |
+| Force-all Py stuck queued | Task set to “run only when user is logged on”? Reinstall tasks. Click **Run now**. Check `data/monitor_runner_last.log` and Last Result 267011 (never run). |
 | `due=0` every run | Monitors inactive or interval not elapsed (use force-all / dashboard Py) |
 | Python not found | Install 3.9+, PATH, or `-Python` / `monitor_worker_python_path` |
 | DB locked | Normal brief waits; ensure only one writer storm (avoid overlapping PHP force-all) |

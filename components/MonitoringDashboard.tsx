@@ -127,6 +127,7 @@ export const MonitoringDashboard: React.FC = () => {
     const [schedulerInstalling, setSchedulerInstalling] = useState(false);
     const [schedulerUninstalling, setSchedulerUninstalling] = useState(false);
     const [schedulerPythonInstalling, setSchedulerPythonInstalling] = useState(false);
+    const [schedulerRunningTask, setSchedulerRunningTask] = useState<MonitorWorkerSchedulerTaskKey | null>(null);
     const [schedulerMessageDialog, setSchedulerMessageDialog] = useState<{
         title: string;
         message: string;
@@ -250,7 +251,8 @@ export const MonitoringDashboard: React.FC = () => {
                 : 'Enable Docker Monitor Runner and Email Sender workers?\n\nThis turns on the entrypoint Python loop for scheduled checks and alert emails. Changes apply within one worker interval.')
             : (`Install ${missingLabel} in Windows Task Scheduler?\n\n` +
                 'This registers repeating jobs for Python monitor checks and alert email delivery. ' +
-                'Apache/PHP must run as a Windows user allowed to create scheduled tasks.');
+                'Tasks run as SYSTEM (or your user via S4U) so they do not require you to stay logged on. ' +
+                'If jobs currently stay queued, reinstalling replaces the old "run only when user is logged on" setting.');
 
         if (!window.confirm(confirmMessage)) {
             return;
@@ -304,6 +306,21 @@ export const MonitoringDashboard: React.FC = () => {
         }
     }, [isAdmin, showSchedulerActionMessage]);
 
+    const runSchedulerTask = useCallback(async (task: MonitorWorkerSchedulerTaskKey) => {
+        if (!isAdmin) return;
+        setSchedulerRunningTask(task);
+        try {
+            const result = await monitoringService.runWorkerSchedulerTask(task);
+            setWorkerSchedulerStatus(result.scheduler);
+            showSchedulerActionMessage('Worker started', result.message, 'success');
+        } catch (error: unknown) {
+            const message = error instanceof Error ? error.message : 'Failed to start Task Scheduler job';
+            showSchedulerActionMessage('Run now failed', message, 'error');
+        } finally {
+            setSchedulerRunningTask(null);
+        }
+    }, [isAdmin, showSchedulerActionMessage]);
+
     const renderSchedulerTaskRow = useCallback((
         taskKey: MonitorWorkerSchedulerTaskKey,
         label: string,
@@ -336,6 +353,12 @@ export const MonitoringDashboard: React.FC = () => {
                     {task.last_run && (
                         <p className="mt-0.5 text-[10px] opacity-75 truncate">Last run: {task.last_run}</p>
                     )}
+                    {task.exists && workerSchedulerStatus.platform === 'windows' && (task.last_result_label || task.never_run || task.needs_logged_on_user) && (
+                        <p className={`mt-0.5 text-[10px] leading-snug ${task.never_run || task.needs_logged_on_user ? 'text-amber-800 dark:text-amber-200 font-medium' : 'opacity-75'}`}>
+                            {task.last_result_label}
+                            {task.run_as ? ` · ${task.run_as}` : ''}
+                        </p>
+                    )}
                     {!task.exists && schedulerHostManaged && (
                         <p className="mt-0.5 text-[10px] opacity-75">
                             {workerSchedulerStatus.platform === 'docker'
@@ -346,6 +369,17 @@ export const MonitoringDashboard: React.FC = () => {
                 </div>
                 {canToggle && (
                     <div className="flex items-center gap-1.5 shrink-0">
+                        {workerSchedulerStatus.platform === 'windows' && task.enabled && (
+                            <button
+                                type="button"
+                                onClick={() => runSchedulerTask(taskKey)}
+                                disabled={schedulerRunningTask !== null || toggling || workerSchedulerLoading}
+                                className="inline-flex items-center gap-1 px-2.5 py-1 rounded-lg text-[10px] font-bold uppercase tracking-wide bg-sky-600 hover:bg-sky-700 text-white transition-colors disabled:opacity-40 disabled:cursor-not-allowed"
+                                title="Start this job immediately (does not wait for the next interval)"
+                            >
+                                {schedulerRunningTask === taskKey ? '…' : 'Run now'}
+                            </button>
+                        )}
                         <button
                             type="button"
                             onClick={() => toggleSchedulerTask(taskKey, true)}
@@ -366,7 +400,7 @@ export const MonitoringDashboard: React.FC = () => {
                 )}
             </div>
         );
-    }, [workerSchedulerStatus, isAdmin, schedulerTaskToggling, workerSchedulerLoading, toggleSchedulerTask, schedulerInstallNeeded, schedulerHostManaged]);
+    }, [workerSchedulerStatus, isAdmin, schedulerTaskToggling, schedulerRunningTask, workerSchedulerLoading, toggleSchedulerTask, runSchedulerTask, schedulerInstallNeeded, schedulerHostManaged]);
 
     const confirmPythonRunDespiteScheduler = useCallback((): boolean => {
         if (!workerSchedulerStatus?.scheduler_applicable) {
@@ -3473,7 +3507,7 @@ export const MonitoringDashboard: React.FC = () => {
                                 <ul className="text-xs text-slate-600 dark:text-slate-400 list-disc list-inside space-y-1">
                                     <li><strong>Scheduler</strong> chip (toolbar) — opens the floating status panel (amber = needs attention, green = healthy)</li>
                                     <li><strong>Install Python</strong> — Windows: downloads a bundled Python 3.12 into <code className="bg-slate-100 dark:bg-[#333] px-1 rounded">bin\python</code> when the host has no Python 3.9+</li>
-                            <li><strong>Install tasks</strong> — Windows: registers <em>LinkNest - Monitor Runner</em> + <em>Email Sender</em> (default every 1 min, 20 workers). Disabled until Python is ready. Docker: enables both entrypoint workers.</li>
+                            <li><strong>Install tasks</strong> — Windows: registers <em>{folder} - Monitor Runner</em> + <em>Email Sender</em> (folder name so ERP3 / ArchLinks / linknest can coexist; default every 1 min, 20 workers). Disabled until Python is ready. Docker: enables both entrypoint workers.</li>
                                     <li><strong>Enable / Disable</strong> — per worker without opening Task Scheduler (Windows) or restarting the container (Docker)</li>
                                     <li><strong>Uninstall / Remove</strong> — Windows: deletes both Task Scheduler jobs. Docker: disables both workers in settings</li>
                                     <li><strong>Refresh status</strong> — re-probes Task Scheduler or Docker worker settings</li>
@@ -3675,7 +3709,7 @@ export const MonitoringDashboard: React.FC = () => {
                                 <ul className="text-xs text-slate-600 dark:text-slate-400 list-disc list-inside space-y-1">
                                     <li>Requires Python 3.9+ on the Windows host — use <strong>Install Python runtime</strong> in this dialog if Python is missing, or install from python.org</li>
                                     <li>Default install: every <strong>1 minute</strong>, <strong>20</strong> parallel workers (pass <code className="bg-slate-100 dark:bg-[#333] px-1 rounded">2</code> as the second bat argument for every 2 minutes)</li>
-                                    <li>Tasks: <strong>LinkNest - Monitor Runner</strong> and <strong>LinkNest - Email Sender</strong></li>
+                                    <li>Tasks: <strong>{folder} - Monitor Runner</strong> and <strong>{folder} - Email Sender</strong> (folder name, e.g. ERP3 / ArchLinks / linknest). Each clone on the same PC gets its own jobs.</li>
                                     <li>Install from the panel above, or CLI: <code className="bg-slate-100 dark:bg-[#333] px-1 rounded">scripts\schedule-monitor-workers.bat</code></li>
                                     <li>Full walkthrough: <code className="bg-slate-100 dark:bg-[#333] px-1 rounded">docs/PYTHON_WORKERS.md</code></li>
                                 </ul>
@@ -3907,11 +3941,13 @@ ON CONFLICT(key) DO UPDATE SET value = excluded.value, updated_at = excluded.upd
                                         ? (workerSchedulerStatus.platform === 'docker'
                                             ? 'Docker workers — Python missing'
                                             : 'Task Scheduler — Python not found')
-                                        : (workerSchedulerStatus.python_ready === false
-                                            ? (workerSchedulerStatus.platform === 'docker'
-                                                ? 'Docker workers — off'
-                                                : 'Task Scheduler — workers off')
-                                            : 'Email sender task issue'))
+                                        : (workerSchedulerStatus.status === 'not_running'
+                                            ? 'Task Scheduler — jobs not running'
+                                            : (workerSchedulerStatus.python_ready === false
+                                                ? (workerSchedulerStatus.platform === 'docker'
+                                                    ? 'Docker workers — off'
+                                                    : 'Task Scheduler — workers off')
+                                                : 'Email sender task issue')))
                                     : (workerSchedulerStatus.platform === 'docker'
                                         ? 'Docker workers — running'
                                         : 'Task Scheduler — workers running')}

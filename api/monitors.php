@@ -99,6 +99,8 @@ switch ($method) {
             monitorWorkerSchedulerHandleUninstall();
         } elseif ($path === '/worker-python-install') {
             monitorWorkerSchedulerHandleInstallPython();
+        } elseif ($path === '/worker-scheduler-run') {
+            monitorWorkerSchedulerHandleRun();
         } else {
             sendJSON(['error' => 'Invalid endpoint'], 404);
         }

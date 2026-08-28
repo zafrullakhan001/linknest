@@ -9,6 +9,27 @@ require_once __DIR__ . '/monitor_check_jobs_lib.php';
 const MONITOR_WORKER_TASK_MONITOR = 'LinkNest - Monitor Runner';
 const MONITOR_WORKER_TASK_EMAIL = 'LinkNest - Email Sender';
 
+function monitorWorkerSchedulerFolderLabel(): string {
+    $root = function_exists('monitorWorkerSchedulerProjectRoot')
+        ? monitorWorkerSchedulerProjectRoot()
+        : (realpath(__DIR__ . '/..') ?: (__DIR__ . '/..'));
+    $base = basename(str_replace('\\', '/', (string)$root));
+    $safe = preg_replace('/[^A-Za-z0-9._ -]+/', '', $base);
+    $safe = is_string($safe) ? trim($safe, " .-") : '';
+    return $safe !== '' ? $safe : 'LinkNest';
+}
+
+function monitorWorkerSchedulerPreferredTaskName(string $kind): string {
+    $label = monitorWorkerSchedulerFolderLabel();
+    return $kind === 'email'
+        ? $label . ' - Email Sender'
+        : $label . ' - Monitor Runner';
+}
+
+function monitorWorkerSchedulerLegacyTaskName(string $kind): string {
+    return $kind === 'email' ? MONITOR_WORKER_TASK_EMAIL : MONITOR_WORKER_TASK_MONITOR;
+}
+
 function monitorWorkerSchedulerIsDocker(): bool {
     if (is_file('/.dockerenv')) {
         return true;
@@ -245,6 +266,13 @@ function monitorWorkerSchedulerQueryWindowsTask(string $taskName): array {
         'next_run' => null,
         'last_run' => null,
         'last_result' => null,
+        'last_result_label' => null,
+        'run_as' => null,
+        'logon_mode' => null,
+        'start_in' => null,
+        'task_to_run' => null,
+        'never_run' => false,
+        'needs_logged_on_user' => false,
     ];
 
     if (stripos(PHP_OS, 'WIN') !== 0) {
@@ -281,8 +309,32 @@ function monitorWorkerSchedulerQueryWindowsTask(string $taskName): array {
             }
         } elseif (stripos($line, 'Last Result:') === 0) {
             $val = monitorWorkerSchedulerParseListValue($line);
-            if ($val !== null && $val !== '' && is_numeric($val)) {
-                $task['last_result'] = (int)$val;
+            if ($val !== null && $val !== '') {
+                if (is_numeric($val)) {
+                    $task['last_result'] = (int)$val;
+                } elseif (preg_match('/^0x([0-9a-f]+)$/i', trim($val), $hm)) {
+                    $task['last_result'] = hexdec($hm[1]);
+                }
+            }
+        } elseif (stripos($line, 'Run As User:') === 0) {
+            $val = monitorWorkerSchedulerParseListValue($line);
+            if ($val !== null && $val !== '') {
+                $task['run_as'] = $val;
+            }
+        } elseif (stripos($line, 'Logon Mode:') === 0) {
+            $val = monitorWorkerSchedulerParseListValue($line);
+            if ($val !== null && $val !== '') {
+                $task['logon_mode'] = $val;
+            }
+        } elseif (stripos($line, 'Start In:') === 0) {
+            $val = monitorWorkerSchedulerParseListValue($line);
+            if ($val !== null && $val !== '') {
+                $task['start_in'] = $val;
+            }
+        } elseif (stripos($line, 'Task To Run:') === 0) {
+            $val = monitorWorkerSchedulerParseListValue($line);
+            if ($val !== null && $val !== '') {
+                $task['task_to_run'] = $val;
             }
         }
     }
@@ -301,7 +353,105 @@ function monitorWorkerSchedulerQueryWindowsTask(string $taskName): array {
     }
     $task['enabled'] = (bool)$task['enabled'];
     $task['exists'] = (bool)$task['exists'];
+    $task['never_run'] = monitorWorkerSchedulerTaskNeverRan($task['last_run'] ?? null, $task['last_result'] ?? null);
+    $logon = (string)($task['logon_mode'] ?? '');
+    $task['needs_logged_on_user'] = stripos($logon, 'Interactive only') !== false
+        || (stripos($logon, 'Interactive') !== false && stripos($logon, 'Background') === false);
+    $task['last_result_label'] = monitorWorkerSchedulerDecodeLastResult(
+        isset($task['last_result']) ? $task['last_result'] : null,
+        !empty($task['never_run']),
+        !empty($task['needs_logged_on_user'])
+    );
 
+    return $task;
+}
+
+function monitorWorkerSchedulerTaskNeverRan(?string $lastRun, $lastResult): bool {
+    if ($lastResult === 267011) {
+        return true;
+    }
+    if ($lastRun === null || $lastRun === '') {
+        return true;
+    }
+    if (strcasecmp($lastRun, 'N/A') === 0 || stripos($lastRun, 'Never') !== false) {
+        return true;
+    }
+    if (preg_match('/11[\/\-]30[\/\-]1999/', $lastRun) || preg_match('/1999-11-30/', $lastRun)) {
+        return true;
+    }
+    return false;
+}
+
+function monitorWorkerSchedulerDecodeLastResult($code, bool $neverRun, bool $needsLogon): ?string {
+    if ($neverRun) {
+        return 'Never run — Task Scheduler has not started this job yet.';
+    }
+    if ($code === null || $code === '') {
+        return $needsLogon ? 'Requires a logged-on user (reinstall tasks so they run as SYSTEM).' : null;
+    }
+    $n = (int)$code;
+    $map = [
+        0 => 'Last run succeeded',
+        267009 => 'Currently running',
+        267010 => 'Disabled',
+        267011 => 'Never run',
+        267012 => 'No more runs scheduled (first trigger was missed — reinstall tasks)',
+    ];
+    if (isset($map[$n])) {
+        return $map[$n];
+    }
+    if ($n === -2147216624 || $n === 2147942672) {
+        return 'User was not logged on (0x80041310). Reinstall so the task runs as SYSTEM.';
+    }
+    if ($n === -2147216625) {
+        return 'Account information not set. Reinstall so the task runs as SYSTEM.';
+    }
+    if ($n === -2147023570) {
+        return 'Logon failure. Reinstall so the task runs as SYSTEM.';
+    }
+    return 'Last result ' . $n . ($needsLogon ? ' — task requires a logged-on user; reinstall as SYSTEM.' : '');
+}
+
+function monitorWorkerSchedulerTaskBelongsToThisInstall(array $task): bool {
+    $root = monitorWorkerSchedulerProjectRoot();
+    $rootNorm = strtolower(rtrim(str_replace('/', '\\', $root), '\\'));
+    if ($rootNorm === '') {
+        return false;
+    }
+    foreach (['start_in', 'task_to_run'] as $key) {
+        $val = strtolower(str_replace('/', '\\', (string)($task[$key] ?? '')));
+        if ($val !== '' && str_contains($val, $rootNorm)) {
+            return true;
+        }
+    }
+    return false;
+}
+
+/**
+ * Folder-specific task name (ERP3 - Monitor Runner) with fallback to legacy
+ * "LinkNest - …" only when that job's Start In / command points at this install.
+ *
+ * @param 'monitor'|'email' $kind
+ */
+function monitorWorkerSchedulerResolveInstalledTask(string $kind): array {
+    $preferred = monitorWorkerSchedulerPreferredTaskName($kind);
+    $task = monitorWorkerSchedulerQueryWindowsTask($preferred);
+    $task['name'] = $preferred;
+    if (!empty($task['exists'])) {
+        return $task;
+    }
+
+    $legacyName = monitorWorkerSchedulerLegacyTaskName($kind);
+    if (strcasecmp($preferred, $legacyName) === 0) {
+        return $task;
+    }
+
+    $legacy = monitorWorkerSchedulerQueryWindowsTask($legacyName);
+    if (!empty($legacy['exists']) && monitorWorkerSchedulerTaskBelongsToThisInstall($legacy)) {
+        return $legacy;
+    }
+
+    $task['name'] = $preferred;
     return $task;
 }
 
@@ -318,15 +468,15 @@ function monitorWorkerSchedulerBuildStatus(): array {
             'status' => 'unavailable',
             'message' => 'Task Scheduler probe is Windows-only. Ensure cron (or systemd) runs monitor_runner.py and email_sender.py — see Help → Python Monitor Workers.',
             'tasks' => [
-                'monitor_runner' => monitorWorkerSchedulerQueryWindowsTask(MONITOR_WORKER_TASK_MONITOR),
-                'email_sender' => monitorWorkerSchedulerQueryWindowsTask(MONITOR_WORKER_TASK_EMAIL),
+                'monitor_runner' => monitorWorkerSchedulerResolveInstalledTask('monitor'),
+                'email_sender' => monitorWorkerSchedulerResolveInstalledTask('email'),
             ],
             'install_hint' => 'See docs/PYTHON_WORKERS.md (Linux cron examples).',
         ]);
     }
 
-    $monitor = monitorWorkerSchedulerQueryWindowsTask(MONITOR_WORKER_TASK_MONITOR);
-    $email = monitorWorkerSchedulerQueryWindowsTask(MONITOR_WORKER_TASK_EMAIL);
+    $monitor = monitorWorkerSchedulerResolveInstalledTask('monitor');
+    $email = monitorWorkerSchedulerResolveInstalledTask('email');
 
     $monitorOk = !empty($monitor['exists']) && !empty($monitor['enabled']);
     $emailOk = !empty($email['exists']) && !empty($email['enabled']);
@@ -341,20 +491,30 @@ function monitorWorkerSchedulerBuildStatus(): array {
         $pythonReady = false;
     } elseif (!$monitor['exists']) {
         $status = 'partial';
-        $message = 'Task "' . MONITOR_WORKER_TASK_MONITOR . '" is missing. Python monitor checks will not run on a schedule or pick up queued jobs reliably.';
+        $message = 'Task "' . ($monitor['name'] ?? monitorWorkerSchedulerPreferredTaskName('monitor')) . '" is missing. Python monitor checks will not run on a schedule or pick up queued jobs reliably.';
         $pythonReady = false;
     } elseif (!$monitor['enabled']) {
         $status = 'disabled';
-        $message = 'Task "' . MONITOR_WORKER_TASK_MONITOR . '" is disabled in Task Scheduler. Python checks and Py force-all pickup will not run until you enable it (or re-run scripts\\schedule-monitor-workers.bat).';
+        $message = 'Task "' . ($monitor['name'] ?? monitorWorkerSchedulerPreferredTaskName('monitor')) . '" is disabled in Task Scheduler. Python checks and Py force-all pickup will not run until you enable it (or re-run scripts\\schedule-monitor-workers.bat).';
         $pythonReady = false;
     } elseif (!$emailOk) {
         $status = 'partial';
         if (!$email['exists']) {
-            $message = 'Monitor Runner is enabled, but "' . MONITOR_WORKER_TASK_EMAIL . '" is not installed — checks will run but alert emails may not send.';
+            $message = 'Monitor Runner is enabled, but "' . ($email['name'] ?? monitorWorkerSchedulerPreferredTaskName('email')) . '" is not installed — checks will run but alert emails may not send.';
         } else {
-            $message = 'Monitor Runner is enabled, but "' . MONITOR_WORKER_TASK_EMAIL . '" is disabled — checks will run but alert emails may not send.';
+            $message = 'Monitor Runner is enabled, but "' . ($email['name'] ?? monitorWorkerSchedulerPreferredTaskName('email')) . '" is disabled — checks will run but alert emails may not send.';
         }
         $pythonReady = true;
+    }
+
+    if ($monitorOk && (!empty($monitor['needs_logged_on_user']) || !empty($monitor['never_run']))) {
+        $status = 'not_running';
+        $pythonReady = false;
+        if (!empty($monitor['needs_logged_on_user'])) {
+            $message = 'Monitor Runner is installed but set to "Run only when user is logged on". If the first trigger is missed, Windows never starts the repeating schedule — queued Py jobs stay queued. Reinstall tasks (now registers SYSTEM/S4U) then click Run now.';
+        } else {
+            $message = 'Monitor Runner is installed but has never run, so queued Py jobs are not picked up. Click Run now, or Uninstall then Install tasks so they start immediately as SYSTEM.';
+        }
     }
 
     return monitorWorkerSchedulerAttachPythonHealth([
@@ -367,7 +527,9 @@ function monitorWorkerSchedulerBuildStatus(): array {
             'monitor_runner' => $monitor,
             'email_sender' => $email,
         ],
-        'install_hint' => 'Use Install tasks in the scheduler panel, run scripts\\schedule-monitor-workers.bat from the project root, or enable tasks in Task Scheduler → Task Scheduler Library.',
+        'install_hint' => ($status === 'not_running')
+            ? 'Uninstall then Install tasks in this panel (registers SYSTEM so no login is required), then Run now. Check data\\monitor_runner_last.log on the server to confirm Python started.'
+            : 'Use Install tasks in the scheduler panel, run scripts\\schedule-monitor-workers.bat from the project root, or enable tasks in Task Scheduler → Task Scheduler Library.',
     ]);
 }
 
@@ -403,11 +565,15 @@ function monitorWorkerSchedulerAttachPythonHealth(array $status): array {
 }
 
 function monitorWorkerSchedulerResolveTaskKey(string $key): ?string {
-    $map = [
-        'monitor_runner' => MONITOR_WORKER_TASK_MONITOR,
-        'email_sender' => MONITOR_WORKER_TASK_EMAIL,
-    ];
-    return $map[$key] ?? null;
+    if ($key === 'monitor_runner') {
+        $task = monitorWorkerSchedulerResolveInstalledTask('monitor');
+        return (string)($task['name'] ?? monitorWorkerSchedulerPreferredTaskName('monitor'));
+    }
+    if ($key === 'email_sender') {
+        $task = monitorWorkerSchedulerResolveInstalledTask('email');
+        return (string)($task['name'] ?? monitorWorkerSchedulerPreferredTaskName('email'));
+    }
+    return null;
 }
 
 /**
@@ -758,7 +924,20 @@ function monitorWorkerSchedulerUninstallWindowsTasks(): array {
     if (!is_file($ps1)) {
         // Fallback: schtasks delete per task
         $removed = 0;
-        foreach ([MONITOR_WORKER_TASK_MONITOR, MONITOR_WORKER_TASK_EMAIL] as $taskName) {
+            foreach ([
+                monitorWorkerSchedulerPreferredTaskName('monitor'),
+                monitorWorkerSchedulerPreferredTaskName('email'),
+                MONITOR_WORKER_TASK_MONITOR,
+                MONITOR_WORKER_TASK_EMAIL,
+            ] as $taskName) {
+                $current = monitorWorkerSchedulerQueryWindowsTask($taskName);
+                if (empty($current['exists'])) {
+                    continue;
+                }
+                if (in_array($taskName, [MONITOR_WORKER_TASK_MONITOR, MONITOR_WORKER_TASK_EMAIL], true)
+                    && !monitorWorkerSchedulerTaskBelongsToThisInstall($current)) {
+                    continue;
+                }
             $current = monitorWorkerSchedulerQueryWindowsTask($taskName);
             if (empty($current['exists'])) {
                 continue;
@@ -1138,5 +1317,98 @@ function monitorWorkerSchedulerHandleInstallPython(): void {
         'message' => $result['message'] ?? 'Python runtime installed.',
         'scheduler' => $result['scheduler'] ?? monitorWorkerSchedulerBuildStatus(),
         'python' => $result['python'] ?? null,
+    ]);
+}
+
+/**
+ * Start a registered Windows Task Scheduler job immediately (does not wait for the next interval).
+ *
+ * @return array{ok:bool,error?:string,http?:int,message?:string,task_key?:string,task_name?:string}
+ */
+function monitorWorkerSchedulerRunTask(string $taskKey): array {
+    if (monitorWorkerSchedulerIsDocker()) {
+        return [
+            'ok' => false,
+            'error' => 'Docker workers run on the entrypoint loop. Enable the worker instead of Run now.',
+            'http' => 400,
+        ];
+    }
+    if (stripos(PHP_OS, 'WIN') !== 0) {
+        return ['ok' => false, 'error' => 'Run now is Windows-only.', 'http' => 400];
+    }
+
+    $taskName = monitorWorkerSchedulerResolveTaskKey($taskKey);
+    if ($taskName === null) {
+        return ['ok' => false, 'error' => 'Invalid task key.', 'http' => 400];
+    }
+
+    $current = monitorWorkerSchedulerQueryWindowsTask($taskName);
+    if (empty($current['exists'])) {
+        return [
+            'ok' => false,
+            'error' => 'Task is not installed. Install tasks first.',
+            'http' => 404,
+        ];
+    }
+    if (empty($current['enabled'])) {
+        return [
+            'ok' => false,
+            'error' => 'Task is disabled. Enable it, then Run now.',
+            'http' => 409,
+        ];
+    }
+
+    $cmd = 'schtasks /Run /TN ' . escapeshellarg($taskName) . ' 2>&1';
+    $out = [];
+    $code = 1;
+    @exec($cmd, $out, $code);
+    if ($code !== 0) {
+        $detail = trim(implode("\n", array_map('strval', $out)));
+        $hint = !empty($current['needs_logged_on_user'])
+            ? ' This task is set to run only when a user is logged on. Uninstall then Install tasks so they run as SYSTEM, then Run now.'
+            : ' Ensure Apache/PHP can start scheduled tasks.';
+        return [
+            'ok' => false,
+            'error' => ($detail !== '' ? $detail : 'schtasks /Run failed.') . $hint,
+            'http' => 500,
+        ];
+    }
+
+    return [
+        'ok' => true,
+        'message' => 'Started "' . $taskName . '". Queued Py jobs should move to running within a few seconds.',
+        'task_key' => $taskKey,
+        'task_name' => $taskName,
+    ];
+}
+
+function monitorWorkerSchedulerHandleRun(): void {
+    requireAdmin();
+
+    $raw = file_get_contents('php://input');
+    $input = is_string($raw) && $raw !== '' ? json_decode($raw, true) : null;
+    if (!is_array($input)) {
+        $input = [];
+    }
+
+    $taskKey = isset($input['task']) ? trim((string)$input['task']) : 'monitor_runner';
+    $result = monitorWorkerSchedulerRunTask($taskKey);
+    if (empty($result['ok'])) {
+        sendJSON(['error' => $result['error'] ?? 'Failed to start task'], (int)($result['http'] ?? 500));
+        return;
+    }
+
+    require_once __DIR__ . '/user_audit_helper.php';
+    logUserAudit('monitor.worker_scheduler_run', [
+        'details' => [
+            'task_key' => $taskKey,
+            'task_name' => $result['task_name'] ?? $taskKey,
+        ],
+    ]);
+
+    sendJSON([
+        'success' => true,
+        'message' => $result['message'] ?? 'Task started.',
+        'scheduler' => monitorWorkerSchedulerBuildStatus(),
     ]);
 }

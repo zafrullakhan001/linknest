@@ -612,15 +612,28 @@ def count_status(eff_status: str) -> str:
     return "error"
 
 
+def write_runner_heartbeat(db_path: str, note: str) -> None:
+    try:
+        log_path = os.path.join(os.path.dirname(os.path.abspath(db_path)), "monitor_runner_last.log")
+        ts = time.strftime("%Y-%m-%d %H:%M:%S")
+        with open(log_path, "a", encoding="utf-8") as fh:
+            fh.write(f"{ts} pid={os.getpid()} {note}\n")
+    except Exception:
+        pass
+
+
 def main() -> int:
     args = parse_args()
     db_path = os.path.normpath(args.db)
+    write_runner_heartbeat(db_path, f"start db={db_path}")
     if not os.path.exists(db_path):
         print(f"ERROR: DB not found: {db_path}", file=sys.stderr)
+        write_runner_heartbeat(db_path, f"exit db_missing {db_path}")
         return 2
 
     lock_handle = try_acquire_runner_lock(lock_path_for_db(db_path))
     if lock_handle is None:
+        write_runner_heartbeat(db_path, "exit another_instance_active")
         if args.verbose:
             print("[INFO] Another monitor_runner instance is active; exiting.")
         return 0
@@ -664,6 +677,7 @@ def main() -> int:
                 force_notify_rules = int(claimed_job.get("force_notify_rules") or 0) == 1
                 if args.verbose:
                     print(f"[INFO] claimed job={job_id} forced_ids={len(forced_ids)} force_notify_rules={force_notify_rules}")
+                write_runner_heartbeat(db_path, f"claimed job={job_id} forced={len(forced_ids)}")
 
         now = now_ts()
         monitors = conn.execute("SELECT * FROM monitors WHERE is_active = 1").fetchall()
