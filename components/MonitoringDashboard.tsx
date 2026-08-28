@@ -1,12 +1,13 @@
 import React, { useState, useEffect, useCallback, useRef, useMemo } from 'react';
-import { Monitor, MonitorLog, monitoringService } from '../services/monitoringService';
+import { createPortal } from 'react-dom';
+import { Monitor, MonitorLog, MonitorForceEngine, MonitorCheckJob, MonitorWorkerSchedulerStatus, MonitorWorkerSchedulerTaskKey, monitoringService } from '../services/monitoringService';
 import { MonitorForm } from './MonitorForm';
 import { MonitorBulkImportDialog } from './MonitorBulkImportDialog';
 import { MonitorSslBulkImportDialog } from './MonitorSslBulkImportDialog';
 import { MonitorAuditLogDialog } from './MonitorAuditLogDialog';
 import { MonitorTargetLabel } from './MonitorTargetLabel';
 import { MonitorUptimeCalendar, MonitorUptimeDayBanner } from './MonitorUptimeCalendar';
-import { FaServer, FaGlobe, FaSearch, FaCheck, FaTimes, FaQuestion, FaPlus, FaRedo, FaSyncAlt, FaTrash, FaEdit, FaClock, FaThLarge, FaList, FaCopy, FaBars, FaDownload, FaUpload, FaHistory, FaCalendarAlt, FaEnvelope, FaArrowsAlt, FaPalette, FaCircle, FaExpand, FaCompress, FaBell, FaBellSlash, FaFileExport, FaFileCsv, FaLock, FaCode, FaMagic, FaStream, FaClipboardList } from 'react-icons/fa';
+import { FaServer, FaGlobe, FaSearch, FaCheck, FaTimes, FaQuestion, FaPlus, FaRedo, FaSyncAlt, FaTrash, FaEdit, FaClock, FaThLarge, FaList, FaCopy, FaBars, FaDownload, FaUpload, FaHistory, FaCalendarAlt, FaEnvelope, FaArrowsAlt, FaPalette, FaCircle, FaExpand, FaCompress, FaBell, FaBellSlash, FaFileExport, FaFileCsv, FaLock, FaCode, FaMagic, FaStream, FaClipboardList, FaStop, FaExclamationTriangle } from 'react-icons/fa';
 import { SSL_CERTS_TAB, formatMonitorCornerMetric, isSslCertsTab, isSslMonitor } from '../utils/monitorSsl';
 import { dayKeyFromUnix } from '../utils/monitorUptimeCalendar';
 import { useTileAnimation, getTileAnimationClass, getTileDecorationClass } from './TileAnimationSelector';
@@ -22,6 +23,17 @@ import {
 import { AreaChart, Area, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, ReferenceLine, Brush, BarChart, Bar, Cell } from 'recharts';
 import { useAuth } from '../contexts/AuthContext';
 import { useEscapeToClose } from '../hooks/useEscapeToClose';
+
+/** Estimated max wait shown while a queued job awaits monitor_runner pickup. */
+const PYTHON_WORKER_PICKUP_COUNTDOWN_SEC = 65;
+/** Minimum auto-refresh interval when mode is force (avoids hammering PHP/Python). */
+const FORCE_AUTO_MIN_INTERVAL_SEC = 60;
+/** Quiet period after a PHP force-all completes before auto force may run again. */
+const FORCE_AUTO_RELAX_PHP_SEC = 180;
+/** Quiet period after a Python force-all completes before auto force may run again. */
+const FORCE_AUTO_RELAX_PYTHON_SEC = 120;
+/** When auto force is deferred because a check is in flight, retry after this many seconds. */
+const FORCE_AUTO_BUSY_RETRY_SEC = 15;
 
 export const MonitoringDashboard: React.FC = () => {
     const { user } = useAuth();
@@ -59,7 +71,36 @@ export const MonitoringDashboard: React.FC = () => {
         const saved = localStorage.getItem('linknest_monitor_auto_refresh_mode');
         return saved === 'force' ? 'force' : 'normal';
     });
+    const [forceEngine, setForceEngine] = useState<MonitorForceEngine>(() => {
+        const saved = localStorage.getItem('linknest_monitor_force_engine');
+        return saved === 'python' ? 'python' : 'php';
+    });
+    const activePythonJobRef = useRef<number | null>(null);
+    const pythonJobFollowRef = useRef<number | null>(null);
+    const forceCheckBusyRef = useRef(false);
+    const forceAutoCooldownUntilRef = useRef(0);
+    const pollAbortRef = useRef(false);
+    const [forceCheckBusy, setForceCheckBusy] = useState(false);
+    const [pythonJobActivity, setPythonJobActivity] = useState<{
+        jobId: number;
+        phase: 'submitting' | 'queued' | 'running' | 'waiting_worker' | 'done' | 'error' | 'timeout' | 'cancelled' | 'cancelling';
+        message: string;
+        kicked?: boolean;
+        coalesced?: boolean;
+        checked: number;
+        total: number;
+        jobCreatedAt?: number;
+        pickupWaitStartedAt?: number;
+    } | null>(null);
+    const [pythonJobPanelVisible, setPythonJobPanelVisible] = useState(false);
+    const [isAbortingPythonJob, setIsAbortingPythonJob] = useState(false);
+    const [pickupCountdown, setPickupCountdown] = useState<{
+        seconds: number;
+        interval: number;
+    } | null>(null);
+    const [isRefreshingList, setIsRefreshingList] = useState(false);
     const [refreshCountdown, setRefreshCountdown] = useState<number>(30);
+    const [autoForceHold, setAutoForceHold] = useState<'busy' | 'cooldown' | null>(null);
     const { animation, decoration } = useTileAnimation();
     const fileInputRef = useRef<HTMLInputElement>(null);
     const [activeTab, setActiveTab] = useState<string>(() => {
@@ -76,6 +117,251 @@ export const MonitoringDashboard: React.FC = () => {
     });
     const [notificationsPaused, setNotificationsPaused] = useState<boolean>(false);
     const [checkStatus, setCheckStatus] = useState<{ count: number; total: number; up: number; down: number; error: number } | null>(null);
+    const [workerSchedulerStatus, setWorkerSchedulerStatus] = useState<MonitorWorkerSchedulerStatus | null>(null);
+    const [workerSchedulerLoading, setWorkerSchedulerLoading] = useState(false);
+    const [schedulerPanelVisible, setSchedulerPanelVisible] = useState(false);
+    const [schedulerTaskToggling, setSchedulerTaskToggling] = useState<MonitorWorkerSchedulerTaskKey | null>(null);
+    const [schedulerInstalling, setSchedulerInstalling] = useState(false);
+    const [schedulerUninstalling, setSchedulerUninstalling] = useState(false);
+    const [schedulerMessageDialog, setSchedulerMessageDialog] = useState<{
+        title: string;
+        message: string;
+        variant: 'success' | 'error';
+    } | null>(null);
+
+    const showSchedulerActionMessage = useCallback((title: string, message: string, variant: 'success' | 'error' = 'success') => {
+        setSchedulerMessageDialog({ title, message, variant });
+    }, []);
+
+    const loadWorkerSchedulerStatus = useCallback(async () => {
+        setWorkerSchedulerLoading(true);
+        try {
+            const status = await monitoringService.getWorkerSchedulerStatus();
+            setWorkerSchedulerStatus(status);
+        } catch (error) {
+            console.error('Failed to load worker scheduler status', error);
+        } finally {
+            setWorkerSchedulerLoading(false);
+        }
+    }, []);
+
+    const toggleSchedulerTask = useCallback(async (task: MonitorWorkerSchedulerTaskKey, enabled: boolean) => {
+        if (!isAdmin) return;
+        setSchedulerTaskToggling(task);
+        try {
+            const result = await monitoringService.setWorkerSchedulerTaskEnabled(task, enabled);
+            setWorkerSchedulerStatus(result.scheduler);
+        } catch (error: unknown) {
+            const message = error instanceof Error ? error.message : 'Failed to update Task Scheduler job';
+            showSchedulerActionMessage('Task update failed', message, 'error');
+        } finally {
+            setSchedulerTaskToggling(null);
+        }
+    }, [isAdmin, showSchedulerActionMessage]);
+
+    const schedulerHostManaged = workerSchedulerStatus?.platform === 'windows'
+        || workerSchedulerStatus?.platform === 'docker';
+
+    const schedulerInstallNeeded = useMemo(() => {
+        if (!isAdmin || !workerSchedulerStatus) {
+            return false;
+        }
+        const tasks = workerSchedulerStatus.tasks;
+        if (workerSchedulerStatus.platform === 'windows') {
+            return !tasks?.monitor_runner?.exists || !tasks?.email_sender?.exists;
+        }
+        if (workerSchedulerStatus.platform === 'docker') {
+            if (!tasks?.monitor_runner?.exists || !tasks?.email_sender?.exists) {
+                return true;
+            }
+            return !tasks.monitor_runner.enabled || !tasks.email_sender.enabled;
+        }
+        return false;
+    }, [isAdmin, workerSchedulerStatus]);
+
+    const schedulerUninstallAvailable = useMemo(() => {
+        if (!isAdmin || !workerSchedulerStatus) {
+            return false;
+        }
+        if (workerSchedulerStatus.platform === 'windows') {
+            return !!(workerSchedulerStatus.tasks.monitor_runner?.exists || workerSchedulerStatus.tasks.email_sender?.exists);
+        }
+        if (workerSchedulerStatus.platform === 'docker') {
+            return !!(workerSchedulerStatus.tasks.monitor_runner?.exists || workerSchedulerStatus.tasks.email_sender?.exists);
+        }
+        return false;
+    }, [isAdmin, workerSchedulerStatus]);
+
+    const uninstallSchedulerTasks = useCallback(async () => {
+        if (!isAdmin || !workerSchedulerStatus) return;
+        const isDocker = workerSchedulerStatus.platform === 'docker';
+        const confirmMessage = isDocker
+            ? 'Remove Docker worker scheduling for Monitor Runner and Email Sender?\n\n' +
+                'Both workers will be disabled. The entrypoint loop will skip them until you install/enable again. ' +
+                'No container restart is required.'
+            : 'Remove LinkNest Monitor Runner and Email Sender from Windows Task Scheduler?\n\n' +
+                'Scheduled Python checks and alert emails will stop until you install the tasks again.';
+
+        if (!window.confirm(confirmMessage)) {
+            return;
+        }
+
+        setSchedulerUninstalling(true);
+        try {
+            const result = await monitoringService.uninstallWorkerSchedulerTasks();
+            setWorkerSchedulerStatus(result.scheduler);
+            setSchedulerPanelVisible(true);
+            showSchedulerActionMessage('Workers removed', result.message, 'success');
+        } catch (error: unknown) {
+            const message = error instanceof Error ? error.message : 'Failed to uninstall worker scheduler jobs';
+            showSchedulerActionMessage('Remove failed', message, 'error');
+        } finally {
+            setSchedulerUninstalling(false);
+        }
+    }, [isAdmin, workerSchedulerStatus, showSchedulerActionMessage]);
+
+    const installSchedulerTasks = useCallback(async () => {
+        if (!isAdmin || !workerSchedulerStatus) return;
+        const isDocker = workerSchedulerStatus.platform === 'docker';
+        const missing = [];
+        if (!workerSchedulerStatus.tasks.monitor_runner?.exists) missing.push('Monitor Runner');
+        if (!workerSchedulerStatus.tasks.email_sender?.exists) missing.push('Email Sender');
+        const missingLabel = missing.length > 0 ? missing.join(' and ') : 'LinkNest worker tasks';
+
+        const confirmMessage = isDocker
+            ? (missing.length > 0
+                ? `${missingLabel} ${missing.length === 1 ? 'is' : 'are'} missing in this container.\n\nInstall cannot add Python to the container from the UI — rebuild the LinkNest Docker image.`
+                : 'Enable Docker Monitor Runner and Email Sender workers?\n\nThis turns on the entrypoint Python loop for scheduled checks and alert emails. Changes apply within one worker interval.')
+            : (`Install ${missingLabel} in Windows Task Scheduler?\n\n` +
+                'This registers repeating jobs for Python monitor checks and alert email delivery. ' +
+                'Apache/PHP must run as a Windows user allowed to create scheduled tasks.');
+
+        if (!window.confirm(confirmMessage)) {
+            return;
+        }
+        if (isDocker && missing.length > 0) {
+            return;
+        }
+
+        setSchedulerInstalling(true);
+        try {
+            const result = await monitoringService.installWorkerSchedulerTasks();
+            setWorkerSchedulerStatus(result.scheduler);
+            setSchedulerPanelVisible(true);
+            showSchedulerActionMessage(
+                workerSchedulerStatus.platform === 'docker' ? 'Workers enabled' : 'Tasks installed',
+                result.message,
+                'success'
+            );
+        } catch (error: unknown) {
+            const message = error instanceof Error ? error.message : 'Failed to install worker scheduler jobs';
+            showSchedulerActionMessage('Install failed', message, 'error');
+        } finally {
+            setSchedulerInstalling(false);
+        }
+    }, [isAdmin, workerSchedulerStatus, showSchedulerActionMessage]);
+
+    const renderSchedulerTaskRow = useCallback((
+        taskKey: MonitorWorkerSchedulerTaskKey,
+        label: string,
+        variant: 'float' | 'modal' = 'float'
+    ) => {
+        if (!workerSchedulerStatus) return null;
+        const task = workerSchedulerStatus.tasks[taskKey];
+        const canToggle = isAdmin && schedulerHostManaged && task.exists;
+        const toggling = schedulerTaskToggling === taskKey;
+        const statusLabel = !task.exists
+            ? 'Not installed'
+            : (task.enabled ? 'Enabled' : 'Disabled');
+        const statusClass = !task.exists
+            ? 'text-slate-500'
+            : task.enabled
+                ? 'text-emerald-700 dark:text-emerald-300'
+                : 'text-amber-700 dark:text-amber-300';
+
+        const rowClass = variant === 'modal'
+            ? 'flex flex-wrap items-center justify-between gap-2 rounded-xl border border-slate-200 dark:border-[#333] bg-white/70 dark:bg-[#252525]/70 px-3 py-2.5'
+            : 'rounded-lg border border-amber-200/60 dark:border-amber-800/60 bg-white/50 dark:bg-amber-950/30 px-2.5 py-2';
+
+        return (
+            <div key={taskKey} className={rowClass}>
+                <div className="min-w-0 flex-1">
+                    <div className="flex flex-wrap items-center gap-x-2 gap-y-0.5">
+                        <span className="font-semibold text-[10px]">{label}</span>
+                        <span className={`text-[10px] font-bold uppercase tracking-wide ${statusClass}`}>{statusLabel}</span>
+                    </div>
+                    {task.last_run && (
+                        <p className="mt-0.5 text-[10px] opacity-75 truncate">Last run: {task.last_run}</p>
+                    )}
+                    {!task.exists && schedulerHostManaged && (
+                        <p className="mt-0.5 text-[10px] opacity-75">
+                            {workerSchedulerStatus.platform === 'docker'
+                                ? 'Missing in container — rebuild the Docker image'
+                                : (schedulerInstallNeeded ? 'Not installed — use Install tasks below' : 'Install with schedule-monitor-workers.bat')}
+                        </p>
+                    )}
+                </div>
+                {canToggle && (
+                    <div className="flex items-center gap-1.5 shrink-0">
+                        <button
+                            type="button"
+                            onClick={() => toggleSchedulerTask(taskKey, true)}
+                            disabled={task.enabled || toggling || workerSchedulerLoading}
+                            className="inline-flex items-center gap-1 px-2.5 py-1 rounded-lg text-[10px] font-bold uppercase tracking-wide bg-emerald-600 hover:bg-emerald-700 text-white transition-colors disabled:opacity-40 disabled:cursor-not-allowed disabled:hover:bg-emerald-600"
+                        >
+                            {toggling && !task.enabled ? '…' : 'Enable'}
+                        </button>
+                        <button
+                            type="button"
+                            onClick={() => toggleSchedulerTask(taskKey, false)}
+                            disabled={!task.enabled || toggling || workerSchedulerLoading}
+                            className="inline-flex items-center gap-1 px-2.5 py-1 rounded-lg text-[10px] font-bold uppercase tracking-wide bg-amber-600 hover:bg-amber-700 text-white transition-colors disabled:opacity-40 disabled:cursor-not-allowed disabled:hover:bg-amber-600"
+                        >
+                            {toggling && task.enabled ? '…' : 'Disable'}
+                        </button>
+                    </div>
+                )}
+            </div>
+        );
+    }, [workerSchedulerStatus, isAdmin, schedulerTaskToggling, workerSchedulerLoading, toggleSchedulerTask, schedulerInstallNeeded, schedulerHostManaged]);
+
+    const confirmPythonRunDespiteScheduler = useCallback((): boolean => {
+        if (!workerSchedulerStatus?.scheduler_applicable) {
+            return true;
+        }
+        if (workerSchedulerStatus.python_ready !== false) {
+            return true;
+        }
+        const hint = workerSchedulerStatus.install_hint ?? 'Enable or install LinkNest Task Scheduler jobs.';
+        return window.confirm(
+            `${workerSchedulerStatus.message}\n\n` +
+            `${hint}\n\n` +
+            'Proceed anyway? A one-time kick may still start monitor_runner, but queued jobs will not be picked up on a schedule until the Monitor Runner task is enabled.'
+        );
+    }, [workerSchedulerStatus]);
+
+    const showWorkerSchedulerBanner = useMemo(() => {
+        if (!workerSchedulerStatus?.scheduler_applicable) {
+            return false;
+        }
+        if (workerSchedulerStatus.python_ready === false) {
+            return true;
+        }
+        return forceEngine === 'python' && workerSchedulerStatus.status === 'partial';
+    }, [workerSchedulerStatus, forceEngine]);
+
+    /** Admins on Windows can open the scheduler panel to enable/disable installed tasks even when status is OK. */
+    const schedulerManageAvailable = useMemo(() => {
+        if (!isAdmin || !workerSchedulerStatus) {
+            return false;
+        }
+        if (workerSchedulerStatus.platform === 'windows' || workerSchedulerStatus.platform === 'docker') {
+            return schedulerInstallNeeded || workerSchedulerStatus.scheduler_applicable === true;
+        }
+        return false;
+    }, [isAdmin, workerSchedulerStatus, schedulerInstallNeeded]);
+
+    const showSchedulerToolbarChip = showWorkerSchedulerBanner || schedulerManageAvailable;
 
     // Handle Escape key for fullscreen
     useEffect(() => {
@@ -247,30 +533,469 @@ export const MonitoringDashboard: React.FC = () => {
         }
     }, []);
 
+    const showPythonJobPanel = useCallback(() => {
+        setPythonJobPanelVisible(true);
+    }, []);
+
+    const hidePythonJobPanel = useCallback(() => {
+        setPythonJobPanelVisible(false);
+    }, []);
+
+    const showSchedulerPanel = useCallback(() => {
+        setSchedulerPanelVisible(true);
+    }, []);
+
+    const hideSchedulerPanel = useCallback(() => {
+        setSchedulerPanelVisible(false);
+    }, []);
+
+    const isPythonJobActive = useCallback((phase?: 'submitting' | 'queued' | 'running' | 'waiting_worker' | 'done' | 'error' | 'timeout' | 'cancelled' | 'cancelling') => {
+        const p = phase ?? pythonJobActivity?.phase;
+        return p === 'submitting' || p === 'queued' || p === 'running' || p === 'waiting_worker' || p === 'cancelling';
+    }, [pythonJobActivity?.phase]);
+
+    const buildPythonActivity = useCallback((
+        job: MonitorCheckJob,
+        opts?: { kicked?: boolean; coalesced?: boolean; submitting?: boolean }
+    ) => {
+        const kicked = opts?.kicked ?? job.worker_kicked;
+        const coalesced = opts?.coalesced;
+        const awaitingPickup = job.awaiting_pickup ?? (job.status === 'queued' && !job.started_at);
+        let phase: 'submitting' | 'queued' | 'running' | 'waiting_worker' | 'done' | 'error' | 'timeout' | 'cancelled' | 'cancelling' = 'queued';
+        let message = '';
+
+        if (opts?.submitting) {
+            phase = 'submitting';
+            message = 'Submitting force check to Python worker…';
+        } else if (job.status === 'cancelled') {
+            phase = 'cancelled';
+            message = `Job #${job.id} cancelled — ${job.checked_count}/${job.total_count} monitors were checked before stop.`;
+        } else if (job.status === 'done') {
+            phase = 'done';
+            message = `Python check complete — ${job.checked_count}/${job.total_count} monitors updated.`;
+        } else if (job.status === 'error') {
+            phase = 'error';
+            message = `Python check failed: ${job.last_error || 'Unknown error'}`;
+        } else if (job.status === 'running') {
+            phase = 'running';
+            message = `Python is checking monitors… ${job.checked_count}/${job.total_count}`;
+        } else if (job.status === 'queued') {
+            if (awaitingPickup && kicked === true) {
+                phase = 'queued';
+                message = `Job #${job.id} queued — monitor_runner started (${job.checked_count}/${job.total_count}).`;
+            } else if (awaitingPickup) {
+                phase = 'waiting_worker';
+                if (coalesced) {
+                    message = `Job #${job.id} already in progress — shared queue (${job.checked_count}/${job.total_count}). All admins see this job.`;
+                } else if (kicked === false) {
+                    message = `Job #${job.id} queued — waiting for scheduled monitor_runner (up to ~${PYTHON_WORKER_PICKUP_COUNTDOWN_SEC}s).`;
+                } else {
+                    message = `Job #${job.id} queued — waiting for monitor_runner (up to ~${PYTHON_WORKER_PICKUP_COUNTDOWN_SEC}s).`;
+                }
+            } else {
+                phase = 'queued';
+                message = `Job #${job.id} queued — ${job.checked_count}/${job.total_count}`;
+            }
+        } else {
+            phase = 'queued';
+            message = `Job #${job.id} — ${job.status}`;
+        }
+
+        const createdAt = job.created_at != null ? Number(job.created_at) : undefined;
+
+        return {
+            jobId: job.id,
+            phase,
+            message,
+            kicked: kicked === true ? true : kicked === false ? false : undefined,
+            coalesced: coalesced ?? undefined,
+            checked: job.checked_count,
+            total: job.total_count,
+            jobCreatedAt: createdAt && createdAt > 0 ? createdAt : undefined,
+        };
+    }, []);
+
+    const isPickupWaitPhase = useCallback((activity: {
+        phase: string;
+        kicked?: boolean;
+    }) => {
+        return activity.phase === 'waiting_worker'
+            || (activity.phase === 'queued' && activity.kicked === true);
+    }, []);
+
+    const mergePythonJobActivity = useCallback((
+        job: MonitorCheckJob,
+        prev?: typeof pythonJobActivity,
+        opts?: { kicked?: boolean; coalesced?: boolean; submitting?: boolean }
+    ) => {
+        const next = buildPythonActivity(job, {
+            kicked: opts?.kicked ?? prev?.kicked,
+            coalesced: opts?.coalesced ?? prev?.coalesced,
+            submitting: opts?.submitting,
+        });
+        const wasWaiting = prev ? isPickupWaitPhase(prev) : false;
+        const isWaiting = isPickupWaitPhase(next);
+        let pickupWaitStartedAt = prev?.pickupWaitStartedAt;
+        if (isWaiting && (!wasWaiting || prev?.jobId !== next.jobId)) {
+            pickupWaitStartedAt = Math.floor(Date.now() / 1000);
+        }
+        return { ...next, pickupWaitStartedAt };
+    }, [buildPythonActivity, isPickupWaitPhase]);
+
+    useEffect(() => {
+        if (!pythonJobActivity) {
+            setPickupCountdown(null);
+            return;
+        }
+
+        const anchor = pythonJobActivity.pickupWaitStartedAt
+            ?? pythonJobActivity.jobCreatedAt
+            ?? Math.floor(Date.now() / 1000);
+        const isAwaitingPickup = isPickupWaitPhase(pythonJobActivity);
+
+        if (!isAwaitingPickup) {
+            setPickupCountdown(null);
+            return;
+        }
+
+        const tick = () => {
+            const now = Math.floor(Date.now() / 1000);
+            const elapsed = Math.max(0, now - anchor);
+            const remaining = Math.max(1, PYTHON_WORKER_PICKUP_COUNTDOWN_SEC - elapsed);
+            setPickupCountdown({
+                seconds: remaining,
+                interval: PYTHON_WORKER_PICKUP_COUNTDOWN_SEC,
+            });
+        };
+
+        tick();
+        const timer = window.setInterval(tick, 1000);
+        return () => window.clearInterval(timer);
+    }, [pythonJobActivity, isPickupWaitPhase]);
+
+    const pollPythonJobUntilDone = useCallback(async (jobId: number) => {
+        const deadline = Date.now() + 120000;
+        let finalJob: MonitorCheckJob | null = null;
+
+        while (Date.now() < deadline && !pollAbortRef.current) {
+            await fetchMonitors();
+            const job = await monitoringService.getCheckJob(jobId);
+            setPythonJobActivity((prev) => mergePythonJobActivity(job, prev));
+
+            if (job.status === 'done' || job.status === 'error' || job.status === 'cancelled') {
+                finalJob = job;
+                break;
+            }
+            await new Promise((resolve) => setTimeout(resolve, 1500));
+        }
+
+        return finalJob;
+    }, [fetchMonitors, mergePythonJobActivity]);
+
+    const markForceAutoRelaxPeriod = useCallback((engine: MonitorForceEngine) => {
+        const sec = engine === 'php' ? FORCE_AUTO_RELAX_PHP_SEC : FORCE_AUTO_RELAX_PYTHON_SEC;
+        forceAutoCooldownUntilRef.current = Date.now() + sec * 1000;
+        setAutoForceHold('cooldown');
+        setRefreshCountdown(sec);
+    }, []);
+
+    const getForceAutoRelaxRemainingSec = useCallback(() => {
+        const remainMs = forceAutoCooldownUntilRef.current - Date.now();
+        return remainMs > 0 ? Math.ceil(remainMs / 1000) : 0;
+    }, []);
+
+    const beginForceCheckBusy = useCallback(() => {
+        forceCheckBusyRef.current = true;
+        setForceCheckBusy(true);
+    }, []);
+
+    const endForceCheckBusy = useCallback(() => {
+        forceCheckBusyRef.current = false;
+        setForceCheckBusy(false);
+        activePythonJobRef.current = null;
+        pythonJobFollowRef.current = null;
+    }, []);
+
+    const finishPythonJobSession = useCallback((finalJob: MonitorCheckJob | null, jobId: number) => {
+        if (finalJob) {
+            setPythonJobActivity((prev) => mergePythonJobActivity(finalJob, prev, { coalesced: false }));
+            showPythonJobPanel();
+            if (finalJob.status !== 'cancelled') {
+                setCheckStatus({
+                    count: finalJob.checked_count,
+                    total: finalJob.total_count,
+                    up: finalJob.up_count,
+                    down: finalJob.down_count,
+                    error: finalJob.error_count,
+                });
+            }
+            setTimeout(() => {
+                setCheckStatus(null);
+                setPythonJobActivity(null);
+                hidePythonJobPanel();
+            }, 5000);
+        } else if (!pollAbortRef.current) {
+            setPythonJobActivity({
+                jobId,
+                phase: 'timeout',
+                message: `Job #${jobId} timed out after 2 minutes. The worker may still finish — refresh the list or ensure Task Scheduler / monitor_runner is running.`,
+                checked: 0,
+                total: 0,
+            });
+            showPythonJobPanel();
+            setTimeout(() => {
+                setPythonJobActivity(null);
+                hidePythonJobPanel();
+            }, 10000);
+        }
+        endForceCheckBusy();
+        markForceAutoRelaxPeriod('python');
+    }, [mergePythonJobActivity, showPythonJobPanel, hidePythonJobPanel, endForceCheckBusy, markForceAutoRelaxPeriod]);
+
+    const followPythonJob = useCallback(async (
+        jobId: number,
+        opts?: { kicked?: boolean; coalesced?: boolean; initialJob?: MonitorCheckJob }
+    ) => {
+        if (pythonJobFollowRef.current === jobId) {
+            showPythonJobPanel();
+            if (opts?.coalesced) {
+                setPythonJobActivity((prev) => prev ? {
+                    ...prev,
+                    message: `Shared Python job #${jobId} already running — showing live progress for all admins.`,
+                } : prev);
+            }
+            return;
+        }
+
+        pythonJobFollowRef.current = jobId;
+        activePythonJobRef.current = jobId;
+        pollAbortRef.current = false;
+        beginForceCheckBusy();
+        showPythonJobPanel();
+
+        const initialJob = opts?.initialJob ?? await monitoringService.getCheckJob(jobId);
+        setPythonJobActivity((prev) => mergePythonJobActivity(initialJob, prev, {
+            kicked: opts?.kicked,
+            coalesced: opts?.coalesced,
+        }));
+
+        const finalJob = await pollPythonJobUntilDone(jobId);
+        if (pythonJobFollowRef.current !== jobId) {
+            return finalJob;
+        }
+
+        finishPythonJobSession(finalJob, jobId);
+        return finalJob;
+    }, [
+        beginForceCheckBusy,
+        showPythonJobPanel,
+        mergePythonJobActivity,
+        pollPythonJobUntilDone,
+        finishPythonJobSession,
+    ]);
+
+    const handleAbortPythonJob = useCallback(async () => {
+        const jobId = pythonJobActivity?.jobId ?? activePythonJobRef.current;
+        if (!jobId || jobId <= 0 || isAbortingPythonJob) {
+            return;
+        }
+        if (!window.confirm('Cancel this Python check job? Probes already in flight may finish, but no further monitors will be checked.')) {
+            return;
+        }
+
+        setIsAbortingPythonJob(true);
+        showPythonJobPanel();
+        setPythonJobActivity((prev) => prev ? {
+            ...prev,
+            phase: 'cancelling',
+            message: `Requesting cancellation for job #${jobId}…`,
+        } : prev);
+
+        try {
+            const job = await monitoringService.cancelCheckJob(jobId);
+            pollAbortRef.current = true;
+            pythonJobFollowRef.current = null;
+            setPythonJobActivity(buildPythonActivity(job));
+            await fetchMonitors();
+            setTimeout(() => {
+                setPythonJobActivity(null);
+                hidePythonJobPanel();
+            }, 5000);
+        } catch (error) {
+            console.error('Failed to cancel Python job', error);
+            setPythonJobActivity((prev) => prev ? {
+                ...prev,
+                phase: 'error',
+                message: error instanceof Error ? error.message : 'Failed to cancel job',
+            } : prev);
+        } finally {
+            setIsAbortingPythonJob(false);
+            markForceAutoRelaxPeriod('python');
+            endForceCheckBusy();
+        }
+    }, [
+        pythonJobActivity?.jobId,
+        isAbortingPythonJob,
+        showPythonJobPanel,
+        hidePythonJobPanel,
+        buildPythonActivity,
+        fetchMonitors,
+        endForceCheckBusy,
+        markForceAutoRelaxPeriod,
+    ]);
+
     const refreshAll = useCallback(async (isFullCheck = false) => {
-        setIsLoading(true);
-        setCheckStatus(null); // Clear previous status
+        if (isFullCheck && forceCheckBusyRef.current) {
+            showPythonJobPanel();
+            setPythonJobActivity((prev) => prev ? {
+                ...prev,
+                message: `Shared Python job #${prev.jobId} already running — extra force clicks were ignored.`,
+            } : prev);
+            return;
+        }
+
+        if (!isFullCheck) {
+            setIsRefreshingList(true);
+        }
+        setCheckStatus(null);
+        pollAbortRef.current = false;
+
         try {
             if (isFullCheck) {
-                const checkResult = await monitoringService.checkAllMonitors();
-                setCheckStatus({
-                    count: checkResult.count,
-                    total: checkResult.total,
-                    up: checkResult.up_count,
-                    down: checkResult.down_count,
-                    error: checkResult.error_count
-                });
-                // Clear status after 5 seconds
-                setTimeout(() => setCheckStatus(null), 5000);
+                if (forceEngine === 'python' && !confirmPythonRunDespiteScheduler()) {
+                    return;
+                }
+                beginForceCheckBusy();
+                const forceNotifyRules = autoRefreshMode === 'force';
+
+                if (forceEngine === 'python') {
+                    let jobId = activePythonJobRef.current;
+
+                    if (!jobId) {
+                        const activeJob = await monitoringService.getActiveCheckJob();
+                        if (activeJob) {
+                            await followPythonJob(activeJob.id, {
+                                coalesced: true,
+                                initialJob: activeJob,
+                                kicked: activeJob.worker_kicked,
+                            });
+                            await fetchMonitors();
+                            return;
+                        }
+
+                        showPythonJobPanel();
+                        setPythonJobActivity({
+                            jobId: 0,
+                            phase: 'submitting',
+                            message: 'Submitting force check to Python worker…',
+                            checked: 0,
+                            total: 0,
+                        });
+
+                        const queued = await monitoringService.checkAllMonitors({
+                            engine: 'python',
+                            forceNotifyRules,
+                        });
+
+                        if (queued.engine === 'python') {
+                            jobId = queued.job_id;
+                            const initialJob = queued.job ?? await monitoringService.getCheckJob(jobId);
+                            await followPythonJob(jobId, {
+                                kicked: queued.kicked,
+                                coalesced: queued.coalesced,
+                                initialJob,
+                            });
+                        }
+                    } else {
+                        await followPythonJob(jobId, { coalesced: true });
+                    }
+                } else {
+                    setPythonJobActivity(null);
+                    const checkResult = await monitoringService.checkAllMonitors({ engine: 'php' });
+                    if (checkResult.engine === 'php') {
+                        setCheckStatus({
+                            count: checkResult.count,
+                            total: checkResult.total,
+                            up: checkResult.up_count,
+                            down: checkResult.down_count,
+                            error: checkResult.error_count,
+                        });
+                        setTimeout(() => setCheckStatus(null), 5000);
+                        markForceAutoRelaxPeriod('php');
+                    }
+                }
+            } else {
+                await fetchMonitors();
+                return;
             }
             await fetchMonitors();
         } catch (error) {
             console.error('Failed to refresh monitors', error);
             setCheckStatus(null);
+            setPythonJobActivity({
+                jobId: activePythonJobRef.current ?? 0,
+                phase: 'error',
+                message: error instanceof Error ? error.message : 'Force check failed',
+                checked: 0,
+                total: 0,
+            });
+            pythonJobFollowRef.current = null;
+            showPythonJobPanel();
+            markForceAutoRelaxPeriod(forceEngine);
+            setTimeout(() => {
+                setPythonJobActivity(null);
+                hidePythonJobPanel();
+            }, 8000);
         } finally {
-            setIsLoading(false);
+            if (forceEngine !== 'python' || !pythonJobFollowRef.current) {
+                endForceCheckBusy();
+            }
+            setIsRefreshingList(false);
         }
-    }, [fetchMonitors]);
+    }, [
+        fetchMonitors,
+        forceEngine,
+        autoRefreshMode,
+        beginForceCheckBusy,
+        endForceCheckBusy,
+        followPythonJob,
+        confirmPythonRunDespiteScheduler,
+        showPythonJobPanel,
+        hidePythonJobPanel,
+        markForceAutoRelaxPeriod,
+    ]);
+
+    useEffect(() => {
+        let cancelled = false;
+
+        const watchSharedPythonJob = async () => {
+            if (cancelled || pythonJobFollowRef.current) {
+                return;
+            }
+            try {
+                const activeJob = await monitoringService.getActiveCheckJob();
+                if (cancelled || !activeJob || pythonJobFollowRef.current) {
+                    return;
+                }
+                await followPythonJob(activeJob.id, {
+                    coalesced: true,
+                    initialJob: activeJob,
+                    kicked: activeJob.worker_kicked,
+                });
+            } catch (error) {
+                console.error('Failed to watch shared Python check job', error);
+            }
+        };
+
+        watchSharedPythonJob();
+        const timer = window.setInterval(watchSharedPythonJob, 3000);
+
+        return () => {
+            cancelled = true;
+            window.clearInterval(timer);
+            pollAbortRef.current = true;
+        };
+    }, [followPythonJob]);
 
     const loadTileStyles = useCallback(async () => {
         try {
@@ -285,6 +1010,24 @@ export const MonitoringDashboard: React.FC = () => {
     }, []);
 
     useEffect(() => {
+        if (showWorkerSchedulerBanner) {
+            setSchedulerPanelVisible(true);
+        }
+    }, [showWorkerSchedulerBanner]);
+
+    useEffect(() => {
+        loadWorkerSchedulerStatus();
+        const timer = window.setInterval(loadWorkerSchedulerStatus, 60000);
+        return () => window.clearInterval(timer);
+    }, [loadWorkerSchedulerStatus]);
+
+    useEffect(() => {
+        if (showCronModal) {
+            loadWorkerSchedulerStatus();
+        }
+    }, [showCronModal, loadWorkerSchedulerStatus]);
+
+    useEffect(() => {
         fetchMonitors();
         loadTileStyles();
     }, [fetchMonitors, loadTileStyles]);
@@ -293,27 +1036,83 @@ export const MonitoringDashboard: React.FC = () => {
         setTileStyles(styles);
     }, []);
 
-    // Auto refresh logic
+    // Auto refresh — force mode waits for in-flight checks and enforces a post-run relax period.
     useEffect(() => {
-        let timer: any;
-        if (isAutoRefreshEnabled) {
-            timer = setInterval(() => {
-                setRefreshCountdown(prev => {
-                    if (prev <= 1) {
-                        refreshAll(autoRefreshMode === 'force');
-                        return autoRefreshInterval;
+        if (!isAutoRefreshEnabled) {
+            setAutoForceHold(null);
+            return;
+        }
+
+        const timer = window.setInterval(() => {
+            setRefreshCountdown((prev) => {
+                const forceTickInterval = Math.max(autoRefreshInterval, FORCE_AUTO_MIN_INTERVAL_SEC);
+
+                if (prev > 1) {
+                    if (autoRefreshMode === 'force') {
+                        if (forceCheckBusyRef.current) {
+                            setAutoForceHold('busy');
+                        } else if (getForceAutoRelaxRemainingSec() > 0) {
+                            setAutoForceHold('cooldown');
+                        } else {
+                            setAutoForceHold(null);
+                        }
+                    } else {
+                        setAutoForceHold(null);
                     }
                     return prev - 1;
-                });
-            }, 1000);
-        }
-        return () => clearInterval(timer);
-    }, [isAutoRefreshEnabled, autoRefreshInterval, autoRefreshMode, refreshAll]);
+                }
 
-    // Reset countdown when interval changes
+                if (autoRefreshMode === 'force') {
+                    if (forceCheckBusyRef.current) {
+                        setAutoForceHold('busy');
+                        return FORCE_AUTO_BUSY_RETRY_SEC;
+                    }
+                    const cooldownRemain = getForceAutoRelaxRemainingSec();
+                    if (cooldownRemain > 0) {
+                        setAutoForceHold('cooldown');
+                        return cooldownRemain;
+                    }
+                    setAutoForceHold(null);
+                    void refreshAll(true);
+                    return forceTickInterval;
+                }
+
+                setAutoForceHold(null);
+                void refreshAll(false);
+                return autoRefreshInterval;
+            });
+        }, 1000);
+
+        return () => window.clearInterval(timer);
+    }, [isAutoRefreshEnabled, autoRefreshInterval, autoRefreshMode, refreshAll, getForceAutoRelaxRemainingSec]);
+
+    // Force auto-refresh needs a sane minimum interval (5s/10s hammer PHP/Python).
     useEffect(() => {
-        setRefreshCountdown(autoRefreshInterval);
-    }, [autoRefreshInterval]);
+        if (autoRefreshMode === 'force' && autoRefreshInterval < FORCE_AUTO_MIN_INTERVAL_SEC) {
+            setAutoRefreshInterval(FORCE_AUTO_MIN_INTERVAL_SEC);
+        }
+    }, [autoRefreshMode, autoRefreshInterval]);
+
+    // Reset countdown when interval or mode changes
+    useEffect(() => {
+        setRefreshCountdown(
+            autoRefreshMode === 'force'
+                ? Math.max(autoRefreshInterval, FORCE_AUTO_MIN_INTERVAL_SEC)
+                : autoRefreshInterval
+        );
+        setAutoForceHold(null);
+    }, [autoRefreshInterval, autoRefreshMode]);
+
+    useEffect(() => {
+        if (!isAutoRefreshEnabled || autoRefreshMode !== 'force') {
+            return;
+        }
+        if (forceCheckBusy) {
+            setAutoForceHold('busy');
+        } else if (getForceAutoRelaxRemainingSec() <= 0) {
+            setAutoForceHold(null);
+        }
+    }, [forceCheckBusy, isAutoRefreshEnabled, autoRefreshMode, getForceAutoRelaxRemainingSec]);
 
     // Persist auto refresh toggle
     useEffect(() => {
@@ -324,6 +1123,10 @@ export const MonitoringDashboard: React.FC = () => {
     useEffect(() => {
         localStorage.setItem('linknest_monitor_auto_refresh_mode', autoRefreshMode);
     }, [autoRefreshMode]);
+
+    useEffect(() => {
+        localStorage.setItem('linknest_monitor_force_engine', forceEngine);
+    }, [forceEngine]);
 
     const openAddMonitor = (type?: Monitor['type']) => {
         setSelectedMonitor(undefined);
@@ -1096,43 +1899,140 @@ export const MonitoringDashboard: React.FC = () => {
                             className="flex items-center justify-center w-9 h-9 text-blue-600 dark:text-blue-400 hover:text-blue-700 dark:hover:text-blue-300 bg-slate-100 dark:bg-[#252525] rounded-xl transition-all"
                             title="Refresh list (no checks)"
                         >
-                            <FaSyncAlt size={14} {...({ className: isLoading ? 'animate-spin' : '' } as any)} />
+                            <FaSyncAlt size={14} {...({ className: isRefreshingList ? 'animate-spin' : '' } as any)} />
                         </button>
+
+                        {showSchedulerToolbarChip && !schedulerPanelVisible && (
+                            <button
+                                type="button"
+                                onClick={showSchedulerPanel}
+                                className={`flex items-center gap-1.5 px-2.5 h-9 rounded-xl text-[10px] font-bold uppercase tracking-wide shadow-lg transition-all ${
+                                    showWorkerSchedulerBanner
+                                        ? 'bg-amber-500 hover:bg-amber-600 text-white shadow-amber-500/30 animate-pulse'
+                                        : 'bg-emerald-600 hover:bg-emerald-700 text-white shadow-emerald-600/30'
+                                }`}
+                                title={
+                                    showWorkerSchedulerBanner
+                                        ? 'Task Scheduler — Python workers need attention'
+                                        : 'Task Scheduler — enable or disable Python worker tasks'
+                                }
+                            >
+                                {showWorkerSchedulerBanner ? (
+                                    <FaExclamationTriangle size={10} />
+                                ) : (
+                                    <FaClock size={10} />
+                                )}
+                                <span>Scheduler</span>
+                            </button>
+                        )}
+
+                        {pythonJobActivity && !pythonJobPanelVisible && (
+                            <button
+                                type="button"
+                                onClick={showPythonJobPanel}
+                                className={`flex items-center gap-1.5 px-2.5 h-9 rounded-xl text-[10px] font-bold uppercase tracking-wide shadow-lg transition-all ${
+                                    isPythonJobActive()
+                                        ? 'bg-emerald-600 hover:bg-emerald-700 text-white shadow-emerald-600/30 animate-pulse'
+                                        : pythonJobActivity.phase === 'error' || pythonJobActivity.phase === 'timeout'
+                                            ? 'bg-amber-500 hover:bg-amber-600 text-white shadow-amber-500/30'
+                                            : 'bg-emerald-500 hover:bg-emerald-600 text-white shadow-emerald-500/30'
+                                }`}
+                                title="Show Python job status"
+                            >
+                                <FaRedo size={10} {...({ className: isPythonJobActive() ? 'animate-spin' : '' } as any)} />
+                                <span>Py job</span>
+                                {pythonJobActivity.total > 0 && (
+                                    <span className="tabular-nums">{pythonJobActivity.checked}/{pythonJobActivity.total}</span>
+                                )}
+                            </button>
+                        )}
 
                         <button
                             onClick={() => refreshAll(true)}
-                            className="flex items-center justify-center w-9 h-9 text-red-600 dark:text-red-400 hover:text-red-700 dark:hover:text-red-300 bg-slate-100 dark:bg-[#252525] rounded-xl transition-all"
-                            title="Force refresh all monitors"
+                            disabled={forceCheckBusy}
+                            className={`flex items-center justify-center w-9 h-9 text-red-600 dark:text-red-400 hover:text-red-700 dark:hover:text-red-300 bg-slate-100 dark:bg-[#252525] rounded-xl transition-all disabled:opacity-50 disabled:cursor-not-allowed ${forceCheckBusy ? 'ring-2 ring-red-400/40' : ''}`}
+                            title={forceCheckBusy
+                                ? (pythonJobActivity ? pythonJobActivity.message : 'Force check already in progress')
+                                : (forceEngine === 'python'
+                                    ? 'Force refresh all monitors (Python background worker)'
+                                    : 'Force refresh all monitors (PHP in-request)')}
                         >
-                            <FaRedo size={14} {...({ className: isLoading ? 'animate-spin' : '' } as any)} />
+                            <FaRedo size={14} {...({ className: forceCheckBusy ? 'animate-spin' : '' } as any)} />
                         </button>
 
-                        <div className="flex items-center gap-2 bg-slate-100 dark:bg-[#252525] rounded-xl px-2 py-1">
+                        <div
+                            className="flex items-center rounded-xl bg-slate-100 dark:bg-[#252525] p-0.5 text-[10px] font-bold uppercase tracking-wide"
+                            title="Force-all engine: PHP runs checks in this request; Python queues monitor_runner (no Apache freeze)"
+                        >
+                            <button
+                                type="button"
+                                onClick={() => setForceEngine('php')}
+                                disabled={forceCheckBusy}
+                                className={`px-2 py-1 rounded-lg transition-colors disabled:opacity-50 disabled:cursor-not-allowed ${forceEngine === 'php' ? 'bg-white dark:bg-[#333] text-red-600 dark:text-red-400 shadow-sm' : 'text-slate-500 dark:text-slate-400 hover:text-slate-700 dark:hover:text-slate-200'}`}
+                            >
+                                PHP
+                            </button>
+                            <button
+                                type="button"
+                                onClick={() => {
+                                    if (forceEngine !== 'python') {
+                                        if (workerSchedulerStatus?.python_ready === false) {
+                                            const proceed = window.confirm(
+                                                `${workerSchedulerStatus.message}\n\nSwitch to Py anyway? Fix Task Scheduler first for reliable background checks.`
+                                            );
+                                            if (!proceed) return;
+                                        }
+                                    }
+                                    setForceEngine('python');
+                                }}
+                                disabled={forceCheckBusy}
+                                className={`px-2 py-1 rounded-lg transition-colors disabled:opacity-50 disabled:cursor-not-allowed ${forceEngine === 'python' ? 'bg-white dark:bg-[#333] text-emerald-600 dark:text-emerald-400 shadow-sm' : 'text-slate-500 dark:text-slate-400 hover:text-slate-700 dark:hover:text-slate-200'}`}
+                            >
+                                Py
+                            </button>
+                        </div>
+
+                        <div
+                            className="flex items-center gap-2 bg-slate-100 dark:bg-[#252525] rounded-xl px-2 py-1"
+                            title={
+                                autoRefreshMode === 'force' && isAutoRefreshEnabled
+                                    ? autoForceHold === 'busy'
+                                        ? 'Auto force paused — a check is already running'
+                                        : autoForceHold === 'cooldown'
+                                            ? `Auto force resting — next run in ~${refreshCountdown}s (min interval ${FORCE_AUTO_MIN_INTERVAL_SEC}s; relax ${forceEngine === 'php' ? FORCE_AUTO_RELAX_PHP_SEC : FORCE_AUTO_RELAX_PYTHON_SEC}s after each run)`
+                                            : `Auto force refresh every ${Math.max(autoRefreshInterval, FORCE_AUTO_MIN_INTERVAL_SEC)}s (skips while busy, relaxes after each run)`
+                                    : isAutoRefreshEnabled
+                                        ? `Auto refresh every ${autoRefreshInterval}s`
+                                        : 'Auto refresh disabled'
+                            }
+                        >
                             <div className="relative w-7 h-7 flex items-center justify-center">
                                 <svg className="w-6 h-6 rotate-[-90deg]">
                                     <circle cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="2" fill="transparent" className="text-slate-200 dark:text-slate-800" />
-                                    <circle cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="2" fill="transparent" strokeDasharray={2 * Math.PI * 10} strokeDashoffset={isAutoRefreshEnabled ? (2 * Math.PI * 10) * (1 - refreshCountdown / autoRefreshInterval) : (2 * Math.PI * 10)} className={`${isAutoRefreshEnabled ? (autoRefreshMode === 'force' ? 'text-red-500' : 'text-blue-500') : 'text-slate-400'} transition-all duration-1000 ease-linear`} strokeLinecap="round" />
+                                    <circle cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="2" fill="transparent" strokeDasharray={2 * Math.PI * 10} strokeDashoffset={isAutoRefreshEnabled ? (2 * Math.PI * 10) * (1 - refreshCountdown / (autoRefreshMode === 'force' ? Math.max(autoRefreshInterval, FORCE_AUTO_MIN_INTERVAL_SEC) : autoRefreshInterval)) : (2 * Math.PI * 10)} className={`${isAutoRefreshEnabled ? (autoForceHold ? 'text-amber-500' : autoRefreshMode === 'force' ? 'text-red-500' : 'text-blue-500') : 'text-slate-400'} transition-all duration-1000 ease-linear`} strokeLinecap="round" />
                                 </svg>
                                 <button onClick={() => setIsAutoRefreshEnabled(!isAutoRefreshEnabled)} className="absolute inset-0 flex items-center justify-center" title={isAutoRefreshEnabled ? "Disable auto-refresh" : "Enable auto-refresh"}>
-                                    <div className={`w-1.5 h-1.5 rounded-full ${isAutoRefreshEnabled ? (autoRefreshMode === 'force' ? 'bg-red-500 animate-pulse' : 'bg-blue-500 animate-pulse') : 'bg-slate-400'}`}></div>
+                                    <div className={`w-1.5 h-1.5 rounded-full ${isAutoRefreshEnabled ? (autoForceHold ? 'bg-amber-500 animate-pulse' : autoRefreshMode === 'force' ? 'bg-red-500 animate-pulse' : 'bg-blue-500 animate-pulse') : 'bg-slate-400'}`}></div>
                                 </button>
                             </div>
                             <button
                                 onClick={() => setAutoRefreshMode(m => (m === 'normal' ? 'force' : 'normal'))}
                                 disabled={!isAutoRefreshEnabled}
                                 className={`flex items-center justify-center w-7 h-7 rounded-lg transition-all disabled:opacity-50 ${autoRefreshMode === 'force' ? 'text-red-600 dark:text-red-400 hover:text-red-700 dark:hover:text-red-300' : 'text-blue-600 dark:text-blue-400 hover:text-blue-700 dark:hover:text-blue-300'}`}
-                                title={autoRefreshMode === 'force' ? "Auto-refresh mode: Force check (click to switch to normal refresh)" : "Auto-refresh mode: Normal refresh (click to switch to force check)"}
+                                title={autoRefreshMode === 'force'
+                                    ? "Auto force check — waits if busy, rests after each run (click for list-only refresh)"
+                                    : "Auto list refresh only (click for force check mode)"}
                             >
                                 {autoRefreshMode === 'force' ? <FaRedo size={12} /> : <FaSyncAlt size={12} />}
                             </button>
                             <select
-                                value={autoRefreshInterval}
+                                value={autoRefreshMode === 'force' ? Math.max(autoRefreshInterval, FORCE_AUTO_MIN_INTERVAL_SEC) : autoRefreshInterval}
                                 onChange={(e) => setAutoRefreshInterval(Number(e.target.value))}
                                 disabled={!isAutoRefreshEnabled}
-                                className="bg-transparent text-[11px] font-bold text-slate-600 dark:text-slate-400 border-none focus:ring-0 cursor-pointer disabled:opacity-50 pr-2 pl-0"
+                                className="bg-transparent text-[11px] font-bold text-slate-600 dark:text-slate-400 border-none focus:ring-0 cursor-pointer disabled:opacity-50 pr-2 pl-0 min-w-[2.5rem]"
                             >
-                                <option value={5}>5s</option>
-                                <option value={10}>10s</option>
+                                {autoRefreshMode !== 'force' && <option value={5}>5s</option>}
+                                {autoRefreshMode !== 'force' && <option value={10}>10s</option>}
                                 <option value={30}>30s</option>
                                 <option value={60}>1m</option>
                                 <option value={180}>3m</option>
@@ -1424,8 +2324,8 @@ export const MonitoringDashboard: React.FC = () => {
                                             <div className="absolute top-2 right-2 flex gap-1 opacity-0 group-hover:opacity-100 transition-all transform translate-y-1 group-hover:translate-y-0 z-10">
                                                 <button
                                                     onClick={() => handleCheckNow(monitor.id)}
-                                                    disabled={checkingId === monitor.id}
-                                                    className={`p-1.5 rounded-lg hover:bg-white/20 text-white transition-colors ${checkingId === monitor.id ? 'animate-spin' : ''} ${monitor.last_status === 'up' || monitor.last_status === 'down' || monitor.last_status === 'warning' ? 'bg-black/20 text-white' : 'bg-slate-100 dark:bg-[#333] text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-white'}`}
+                                                    disabled={checkingId === monitor.id || monitor.check_pending === 1}
+                                                    className={`p-1.5 rounded-lg hover:bg-white/20 text-white transition-colors ${checkingId === monitor.id || monitor.check_pending === 1 ? 'animate-spin' : ''} ${monitor.last_status === 'up' || monitor.last_status === 'down' || monitor.last_status === 'warning' ? 'bg-black/20 text-white' : 'bg-slate-100 dark:bg-[#333] text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-white'}`}
                                                     title="Check Now"
                                                 >
                                                     <FaRedo size={10} />
@@ -1833,8 +2733,8 @@ export const MonitoringDashboard: React.FC = () => {
                                                         <div className="flex justify-end gap-2">
                                                             <button
                                                                 onClick={() => handleCheckNow(monitor.id)}
-                                                                disabled={checkingId === monitor.id}
-                                                                className={`p-2 rounded-xl transition-colors ${checkingId === monitor.id ? 'animate-spin' : ''} ${monitor.last_status === 'up' || monitor.last_status === 'down' ? 'bg-white/20 hover:bg-white/30' : 'bg-slate-100 dark:bg-[#252525] text-slate-600 dark:text-slate-400 hover:text-blue-500'}`}
+                                                                disabled={checkingId === monitor.id || monitor.check_pending === 1}
+                                                                className={`p-2 rounded-xl transition-colors ${checkingId === monitor.id || monitor.check_pending === 1 ? 'animate-spin' : ''} ${monitor.last_status === 'up' || monitor.last_status === 'down' ? 'bg-white/20 hover:bg-white/30' : 'bg-slate-100 dark:bg-[#252525] text-slate-600 dark:text-slate-400 hover:text-blue-500'}`}
                                                                 style={monitor.last_status === 'up' || monitor.last_status === 'down' ? getTileTextStyle(monitor.last_status) : {}}
                                                                 title="Check Now"
                                                             >
@@ -2475,15 +3375,171 @@ export const MonitoringDashboard: React.FC = () => {
                         </div>
 
                         <div className="p-6 space-y-6 overflow-y-auto">
-                            <div className="p-4 bg-blue-50 dark:bg-blue-500/5 rounded-2xl border border-blue-100 dark:border-blue-500/20">
+                            <div className="p-4 bg-blue-50 dark:bg-blue-500/5 rounded-2xl border border-blue-100 dark:border-blue-500/20 space-y-2">
                                 <p className="text-sm text-blue-700 dark:text-blue-400">
                                     Recommended: run the Python workers on a schedule. They check due monitors and send queued alert emails
-                                    without freezing PHP. Manual &quot;Check now&quot; in this dashboard still works anytime.
+                                    without freezing PHP. Per-row &quot;Check now&quot; always uses PHP. For force refresh all, use the toolbar
+                                    <strong> PHP / Py </strong> toggle: PHP keeps the original in-request checks; Py queues
+                                    <code className="mx-1 px-1 rounded bg-blue-100/80 dark:bg-blue-500/20">monitor_runner.py</code>
+                                    so the dashboard stays responsive.
+                                </p>
+                                <p className="text-xs text-blue-600 dark:text-blue-300">
+                                    <strong>Admins:</strong> use the toolbar <strong>Scheduler</strong> chip or this dialog for live status.
+                                    Install, Enable, Disable, and Uninstall workers without opening Task Scheduler manually.
+                                    Errors open in a copyable dialog (select text or <strong>Copy text</strong>).
+                                </p>
+                            </div>
+
+                            <div className="rounded-2xl border border-slate-200 dark:border-[#333] bg-slate-50 dark:bg-[#252525] p-4 space-y-2">
+                                <p className="text-xs font-bold text-slate-700 dark:text-slate-200">In-app controls (admin)</p>
+                                <ul className="text-xs text-slate-600 dark:text-slate-400 list-disc list-inside space-y-1">
+                                    <li><strong>Scheduler</strong> chip (toolbar) — opens the floating status panel (amber = needs attention, green = healthy)</li>
+                                    <li><strong>Install tasks</strong> — Windows: registers <em>LinkNest - Monitor Runner</em> + <em>Email Sender</em> (default every 1 min, 20 workers). Docker: enables both entrypoint workers.</li>
+                                    <li><strong>Enable / Disable</strong> — per worker without opening Task Scheduler (Windows) or restarting the container (Docker)</li>
+                                    <li><strong>Uninstall / Remove</strong> — Windows: deletes both Task Scheduler jobs. Docker: disables both workers in settings</li>
+                                    <li><strong>Refresh status</strong> — re-probes Task Scheduler or Docker worker settings</li>
+                                </ul>
+                                <p className="text-[10px] text-slate-500 leading-relaxed">
+                                    Requires <strong>Python 3.9+</strong> on the host. On Windows/XAMPP, Apache/PHP must run as a user allowed to
+                                    create or change scheduled tasks (or set <code className="bg-slate-100 dark:bg-[#333] px-1 rounded">monitor_worker_task_user</code> below).
                                 </p>
                             </div>
 
                             <div className="space-y-3">
+                                <h3 className="text-xs font-black uppercase tracking-widest text-slate-400">Docker — entrypoint workers</h3>
+                                {workerSchedulerStatus?.platform === 'docker' && (
+                                    <div className="space-y-2 rounded-2xl border border-slate-200 dark:border-[#333] bg-slate-50 dark:bg-[#252525] p-4">
+                                        <div className="flex flex-wrap items-center justify-between gap-2">
+                                            <p className="text-xs font-bold text-slate-700 dark:text-slate-200">Container workers</p>
+                                            <button
+                                                type="button"
+                                                onClick={() => loadWorkerSchedulerStatus()}
+                                                disabled={workerSchedulerLoading}
+                                                className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-lg text-[10px] font-bold uppercase tracking-wide bg-white dark:bg-[#333] border border-slate-200 dark:border-[#444] text-slate-600 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-[#3a3a3a] transition-colors disabled:opacity-50"
+                                            >
+                                                <FaSyncAlt size={9} {...({ className: workerSchedulerLoading ? 'animate-spin' : '' } as any)} />
+                                                {workerSchedulerLoading ? 'Checking…' : 'Refresh status'}
+                                            </button>
+                                        </div>
+                                        <div className="space-y-2">
+                                            {renderSchedulerTaskRow('monitor_runner', 'Monitor Runner', 'modal')}
+                                            {renderSchedulerTaskRow('email_sender', 'Email Sender', 'modal')}
+                                        </div>
+                                        {schedulerInstallNeeded && (
+                                            <button
+                                                type="button"
+                                                onClick={installSchedulerTasks}
+                                                disabled={schedulerInstalling || schedulerUninstalling || workerSchedulerLoading}
+                                                className="mt-3 inline-flex items-center gap-1.5 px-3 py-2 rounded-lg text-[10px] font-bold uppercase tracking-wide bg-purple-600 hover:bg-purple-700 text-white transition-colors disabled:opacity-50"
+                                            >
+                                                <FaPlus size={9} />
+                                                {schedulerInstalling ? 'Enabling…' : 'Install / enable workers'}
+                                            </button>
+                                        )}
+                                        {schedulerUninstallAvailable && (
+                                            <button
+                                                type="button"
+                                                onClick={uninstallSchedulerTasks}
+                                                disabled={schedulerInstalling || schedulerUninstalling || workerSchedulerLoading}
+                                                className={`${schedulerInstallNeeded ? '' : 'mt-3 '}inline-flex items-center gap-1.5 px-3 py-2 rounded-lg text-[10px] font-bold uppercase tracking-wide border border-red-300 dark:border-red-700 text-red-700 dark:text-red-300 bg-white dark:bg-red-950/30 hover:bg-red-50 dark:hover:bg-red-950/50 transition-colors disabled:opacity-50`}
+                                            >
+                                                <FaTrash size={9} />
+                                                {schedulerUninstalling ? 'Removing…' : 'Remove workers'}
+                                            </button>
+                                        )}
+                                        {isAdmin && (
+                                            <p className="text-[10px] text-slate-500 leading-relaxed">
+                                                {schedulerInstallNeeded
+                                                    ? 'Install enables both Docker entrypoint workers (Monitor Runner + Email Sender). No Task Scheduler is needed inside the container.'
+                                                    : `Enable or disable each worker without restarting the container. Changes apply on the next loop${workerSchedulerStatus.docker?.interval_seconds ? ` (~${workerSchedulerStatus.docker.interval_seconds}s)` : ''}. Upgrade/restart the container once after updating LinkNest so the entrypoint reads these settings.`}
+                                            </p>
+                                        )}
+                                    </div>
+                                )}
+                                <p className="text-sm text-slate-600 dark:text-slate-400">
+                                    Monitoring workers run inside the container entrypoint loop. No Windows Task Scheduler needed.
+                                </p>
+                                <ul className="text-xs text-slate-600 dark:text-slate-400 list-disc list-inside space-y-1">
+                                    <li>
+                                        Enabled by default: <code className="bg-slate-100 dark:bg-[#333] px-1 rounded">LINKNEST_WORKERS_ENABLED=1</code>
+                                    </li>
+                                    <li>
+                                        Interval (seconds): <code className="bg-slate-100 dark:bg-[#333] px-1 rounded">LINKNEST_WORKER_INTERVAL_SECONDS=60</code>
+                                    </li>
+                                    <li>
+                                        Use the scheduler panel above (or toolbar <strong>Scheduler</strong> chip) to enable/disable workers at runtime
+                                    </li>
+                                </ul>
+                                <div className="relative group">
+                                    <div className="bg-slate-900 text-slate-300 p-4 rounded-xl font-mono text-xs overflow-x-auto break-all">
+                                        {`# Verify workers inside the container\ndocker compose -f docker/docker-compose.yml exec -T linknest python3 /var/www/html/scripts/monitor_runner.py --db /var/www/html/data/linknest.db --verbose`}
+                                    </div>
+                                    <button
+                                        type="button"
+                                        onClick={() => {
+                                            navigator.clipboard.writeText(
+                                                'docker compose -f docker/docker-compose.yml exec -T linknest python3 /var/www/html/scripts/monitor_runner.py --db /var/www/html/data/linknest.db --verbose'
+                                            );
+                                            alert('Command copied to clipboard!');
+                                        }}
+                                        className="absolute top-2 right-2 p-2 bg-white/10 hover:bg-white/20 rounded-lg text-white opacity-0 group-hover:opacity-100 transition-opacity"
+                                    >
+                                        <FaCopy size={12} />
+                                    </button>
+                                </div>
+                            </div>
+
+                            <div className="space-y-3">
                                 <h3 className="text-xs font-black uppercase tracking-widest text-slate-400">Windows (Task Scheduler) — XAMPP / host</h3>
+                                {workerSchedulerStatus?.platform === 'windows' && (
+                                    <div className="space-y-2 rounded-2xl border border-slate-200 dark:border-[#333] bg-slate-50 dark:bg-[#252525] p-4">
+                                        <div className="flex flex-wrap items-center justify-between gap-2">
+                                            <p className="text-xs font-bold text-slate-700 dark:text-slate-200">Installed tasks</p>
+                                            <button
+                                                type="button"
+                                                onClick={() => loadWorkerSchedulerStatus()}
+                                                disabled={workerSchedulerLoading}
+                                                className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-lg text-[10px] font-bold uppercase tracking-wide bg-white dark:bg-[#333] border border-slate-200 dark:border-[#444] text-slate-600 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-[#3a3a3a] transition-colors disabled:opacity-50"
+                                            >
+                                                <FaSyncAlt size={9} {...({ className: workerSchedulerLoading ? 'animate-spin' : '' } as any)} />
+                                                {workerSchedulerLoading ? 'Checking…' : 'Refresh status'}
+                                            </button>
+                                        </div>
+                                        <div className="space-y-2">
+                                            {renderSchedulerTaskRow('monitor_runner', 'Monitor Runner', 'modal')}
+                                            {renderSchedulerTaskRow('email_sender', 'Email Sender', 'modal')}
+                                        </div>
+                                        {schedulerInstallNeeded && (
+                                            <button
+                                                type="button"
+                                                onClick={installSchedulerTasks}
+                                                disabled={schedulerInstalling || schedulerUninstalling || workerSchedulerLoading}
+                                                className="mt-3 inline-flex items-center gap-1.5 px-3 py-2 rounded-lg text-[10px] font-bold uppercase tracking-wide bg-purple-600 hover:bg-purple-700 text-white transition-colors disabled:opacity-50"
+                                            >
+                                                <FaPlus size={9} />
+                                                {schedulerInstalling ? 'Installing…' : 'Install tasks'}
+                                            </button>
+                                        )}
+                                        {schedulerUninstallAvailable && (
+                                            <button
+                                                type="button"
+                                                onClick={uninstallSchedulerTasks}
+                                                disabled={schedulerInstalling || schedulerUninstalling || workerSchedulerLoading}
+                                                className={`${schedulerInstallNeeded ? '' : 'mt-3 '}inline-flex items-center gap-1.5 px-3 py-2 rounded-lg text-[10px] font-bold uppercase tracking-wide border border-red-300 dark:border-red-700 text-red-700 dark:text-red-300 bg-white dark:bg-red-950/30 hover:bg-red-50 dark:hover:bg-red-950/50 transition-colors disabled:opacity-50`}
+                                            >
+                                                <FaTrash size={9} />
+                                                {schedulerUninstalling ? 'Removing…' : 'Uninstall tasks'}
+                                            </button>
+                                        )}
+                                        {isAdmin && (
+                                            <p className="text-[10px] text-slate-500 leading-relaxed">
+                                                {schedulerInstallNeeded
+                                                    ? 'Install registers both Monitor Runner and Email Sender jobs. Enable / Disable controls tasks after install. Requires Apache/PHP to run as a Windows user with Task Scheduler permissions.'
+                                                    : 'Enable or disable tasks here without opening Task Scheduler. Requires Apache/PHP to run as a Windows user with permission to change scheduled tasks.'}
+                                            </p>
+                                        )}
+                                    </div>
+                                )}
                                 <p className="text-sm text-slate-600 dark:text-slate-400">
                                     From the LinkNest project root, register two repeating tasks (monitor runner + email sender):
                                 </p>
@@ -2516,45 +3572,33 @@ export const MonitoringDashboard: React.FC = () => {
                                 </p>
                                 <ul className="text-xs text-slate-600 dark:text-slate-400 list-disc list-inside space-y-1">
                                     <li>Requires Python 3.9+ on the Windows host</li>
-                                    <li>Default interval: every 1 minute (pass <code className="bg-slate-100 dark:bg-[#333] px-1 rounded">2</code> as the second bat argument for every 2 minutes)</li>
+                                    <li>Default install: every <strong>1 minute</strong>, <strong>20</strong> parallel workers (pass <code className="bg-slate-100 dark:bg-[#333] px-1 rounded">2</code> as the second bat argument for every 2 minutes)</li>
                                     <li>Tasks: <strong>LinkNest - Monitor Runner</strong> and <strong>LinkNest - Email Sender</strong></li>
+                                    <li>Install from the panel above, or CLI: <code className="bg-slate-100 dark:bg-[#333] px-1 rounded">scripts\schedule-monitor-workers.bat</code></li>
                                     <li>Full walkthrough: <code className="bg-slate-100 dark:bg-[#333] px-1 rounded">docs/PYTHON_WORKERS.md</code></li>
                                 </ul>
-                            </div>
-
-                            <div className="space-y-3">
-                                <h3 className="text-xs font-black uppercase tracking-widest text-slate-400">Docker</h3>
-                                <p className="text-sm text-slate-600 dark:text-slate-400">
-                                    Monitoring workers already run inside the container entrypoint. No Windows Task Scheduler needed.
-                                </p>
-                                <ul className="text-xs text-slate-600 dark:text-slate-400 list-disc list-inside space-y-1">
-                                    <li>
-                                        Enabled by default: <code className="bg-slate-100 dark:bg-[#333] px-1 rounded">LINKNEST_WORKERS_ENABLED=1</code>
-                                    </li>
-                                    <li>
-                                        Interval (seconds): <code className="bg-slate-100 dark:bg-[#333] px-1 rounded">LINKNEST_WORKER_INTERVAL_SECONDS=60</code>
-                                    </li>
-                                    <li>
-                                        Disable workers: <code className="bg-slate-100 dark:bg-[#333] px-1 rounded">LINKNEST_WORKERS_ENABLED=0</code>
-                                    </li>
-                                </ul>
-                                <div className="relative group">
-                                    <div className="bg-slate-900 text-slate-300 p-4 rounded-xl font-mono text-xs overflow-x-auto break-all">
-                                        {`# Verify workers inside the container\ndocker compose -f docker/docker-compose.yml exec -T linknest python3 /var/www/html/scripts/monitor_runner.py --db /var/www/html/data/linknest.db --verbose`}
-                                    </div>
-                                    <button
-                                        type="button"
-                                        onClick={() => {
-                                            navigator.clipboard.writeText(
-                                                'docker compose -f docker/docker-compose.yml exec -T linknest python3 /var/www/html/scripts/monitor_runner.py --db /var/www/html/data/linknest.db --verbose'
-                                            );
-                                            alert('Command copied to clipboard!');
-                                        }}
-                                        className="absolute top-2 right-2 p-2 bg-white/10 hover:bg-white/20 rounded-lg text-white opacity-0 group-hover:opacity-100 transition-opacity"
-                                    >
-                                        <FaCopy size={12} />
-                                    </button>
-                                </div>
+                                <details className="mt-3 rounded-xl border border-amber-200 dark:border-amber-800/60 bg-amber-50/80 dark:bg-amber-950/20 p-3">
+                                    <summary className="cursor-pointer text-xs font-bold text-amber-900 dark:text-amber-200">
+                                        Troubleshooting — install fails from the web UI
+                                    </summary>
+                                    <ul className="mt-2 text-[11px] text-amber-900/90 dark:text-amber-100/90 list-disc list-inside space-y-1.5 leading-relaxed">
+                                        <li>
+                                            <strong>No mapping between account names and security IDs</strong> — Apache runs as SYSTEM; the installer
+                                            auto-detects your logged-on desktop user. If that fails, set the task run-as user in the database:
+                                        </li>
+                                    </ul>
+                                    <pre className="mt-2 text-[10px] leading-relaxed bg-slate-900 text-slate-100 rounded-lg p-3 overflow-x-auto font-mono whitespace-pre-wrap">{`-- Replace MYPC and YourUsername (use backslash: COMPUTER\\user)
+INSERT INTO settings (key, value, updated_at)
+VALUES ('monitor_worker_task_user', 'MYPC\\YourUsername', unixepoch())
+ON CONFLICT(key) DO UPDATE SET value = excluded.value, updated_at = excluded.updated_at;`}
+                                    </pre>
+                                    <ul className="mt-2 text-[11px] text-amber-900/90 dark:text-amber-100/90 list-disc list-inside space-y-1 leading-relaxed">
+                                        <li>Or run PowerShell manually: <code className="bg-amber-100/80 dark:bg-amber-900/40 px-1 rounded">.\scripts\schedule-monitor-workers.ps1 -TaskUser "MYPC\YourUsername"</code></li>
+                                        <li>Server log: <code className="bg-amber-100/80 dark:bg-amber-900/40 px-1 rounded">data/monitor_scheduler_install.log</code></li>
+                                        <li>Verify: <code className="bg-amber-100/80 dark:bg-amber-900/40 px-1 rounded">scripts\schedule-monitor-workers.bat status</code> or <code className="bg-amber-100/80 dark:bg-amber-900/40 px-1 rounded">run-once</code></li>
+                                        <li>Optional settings: <code className="bg-amber-100/80 dark:bg-amber-900/40 px-1 rounded">monitor_worker_max_workers</code>, <code className="bg-amber-100/80 dark:bg-amber-900/40 px-1 rounded">monitor_worker_python_path</code></li>
+                                    </ul>
+                                </details>
                             </div>
 
                             <div className="space-y-3">
@@ -2608,8 +3652,339 @@ export const MonitoringDashboard: React.FC = () => {
         </>
     );
 
+    const pythonJobFloatPanel = pythonJobActivity && pythonJobPanelVisible && typeof document !== 'undefined'
+        ? createPortal(
+            <div
+                className="fixed bottom-6 right-6 z-[9999] w-[min(calc(100vw-2rem),22rem)] animate-in fade-in slide-in-from-bottom-2 duration-300"
+                role="status"
+                aria-live="polite"
+            >
+                <div className={`rounded-2xl border text-xs shadow-2xl backdrop-blur-md ${
+                    pythonJobActivity.phase === 'cancelled' || pythonJobActivity.phase === 'cancelling'
+                        ? 'bg-slate-100/95 dark:bg-slate-900/95 border-slate-300 dark:border-slate-600 text-slate-800 dark:text-slate-100'
+                        : pythonJobActivity.phase === 'error' || pythonJobActivity.phase === 'timeout'
+                        ? 'bg-amber-50/95 dark:bg-amber-950/95 border-amber-300 dark:border-amber-700 text-amber-900 dark:text-amber-100'
+                        : pythonJobActivity.phase === 'done'
+                            ? 'bg-emerald-50/95 dark:bg-emerald-950/95 border-emerald-300 dark:border-emerald-700 text-emerald-900 dark:text-emerald-100'
+                            : 'bg-emerald-50/95 dark:bg-emerald-950/95 border-emerald-300 dark:border-emerald-700 text-emerald-900 dark:text-emerald-100'
+                }`}>
+                    <div className={`flex items-center justify-between gap-2 px-4 py-3 border-b ${
+                        pythonJobActivity.phase === 'cancelled' || pythonJobActivity.phase === 'cancelling'
+                            ? 'border-slate-200/70 dark:border-slate-700/70'
+                            : 'border-emerald-200/70 dark:border-emerald-800/70'
+                    }`}>
+                        <div className="flex items-center gap-2 min-w-0">
+                            {isPythonJobActive(pythonJobActivity.phase) && (
+                                <FaRedo className="shrink-0 animate-spin" size={12} />
+                            )}
+                            <span className="font-bold truncate">
+                                {pythonJobActivity.phase === 'submitting' && 'Handing off to Python'}
+                                {pythonJobActivity.phase === 'cancelling' && `Cancelling job #${pythonJobActivity.jobId}`}
+                                {pythonJobActivity.phase === 'queued' && `Python job #${pythonJobActivity.jobId}`}
+                                {pythonJobActivity.phase === 'waiting_worker' && `Job #${pythonJobActivity.jobId} — waiting`}
+                                {pythonJobActivity.phase === 'running' && `Job #${pythonJobActivity.jobId} — checking`}
+                                {pythonJobActivity.phase === 'done' && `Job #${pythonJobActivity.jobId} complete`}
+                                {pythonJobActivity.phase === 'cancelled' && `Job #${pythonJobActivity.jobId} cancelled`}
+                                {pythonJobActivity.phase === 'error' && `Job #${pythonJobActivity.jobId} failed`}
+                                {pythonJobActivity.phase === 'timeout' && `Job #${pythonJobActivity.jobId} timed out`}
+                            </span>
+                        </div>
+                        <button
+                            type="button"
+                            onClick={hidePythonJobPanel}
+                            className="shrink-0 p-1.5 rounded-lg hover:bg-black/5 dark:hover:bg-white/10 transition-colors"
+                            title="Hide status panel (click Py job chip in toolbar to reopen)"
+                            aria-label="Hide Python job status"
+                        >
+                            <FaTimes size={12} />
+                        </button>
+                    </div>
+                    <div className="px-4 py-3">
+                        <p className="text-[11px] leading-relaxed opacity-90">
+                            {pythonJobActivity.message}
+                        </p>
+                        {pythonJobActivity.coalesced && (
+                            <p className="mt-2 text-[10px] font-medium opacity-80">
+                                Shared job — another admin may have started this check. Duplicate submits are ignored.
+                            </p>
+                        )}
+                        {pickupCountdown && (
+                            <div className="mt-3 p-2.5 rounded-lg bg-emerald-100/90 dark:bg-emerald-900/50 border border-emerald-200 dark:border-emerald-800">
+                                <div className="flex items-center justify-between gap-3">
+                                    <span className="text-[10px] font-semibold leading-tight">
+                                        Waiting for worker pickup
+                                    </span>
+                                    <span className="text-2xl font-black tabular-nums leading-none text-emerald-700 dark:text-emerald-300 min-w-[3ch] text-right">
+                                        {pickupCountdown.seconds}s
+                                    </span>
+                                </div>
+                                <div className="mt-2 h-1.5 rounded-full bg-emerald-200/90 dark:bg-emerald-950/70 overflow-hidden">
+                                    <div
+                                        className="h-full bg-emerald-500 dark:bg-emerald-400 transition-all duration-1000 ease-linear"
+                                        style={{
+                                            width: `${Math.max(4, Math.round((pickupCountdown.seconds / pickupCountdown.interval) * 100))}%`,
+                                        }}
+                                    />
+                                </div>
+                                <p className="mt-1.5 text-[10px] leading-relaxed opacity-85">
+                                    Estimated pickup in ~{pickupCountdown.seconds}s (often sooner if the worker is already running).
+                                </p>
+                            </div>
+                        )}
+                        {pythonJobActivity.total > 0 && isPythonJobActive(pythonJobActivity.phase) && (
+                            <div className="mt-3">
+                                <div className="h-2 w-full rounded-full bg-emerald-200/80 dark:bg-emerald-900/60 overflow-hidden">
+                                    <div
+                                        className="h-full bg-emerald-500 dark:bg-emerald-400 transition-all duration-500"
+                                        style={{ width: `${Math.min(100, Math.round((pythonJobActivity.checked / Math.max(pythonJobActivity.total, 1)) * 100))}%` }}
+                                    />
+                                </div>
+                                <p className="mt-1.5 text-[10px] font-semibold tabular-nums">
+                                    {pythonJobActivity.checked}/{pythonJobActivity.total} monitors checked
+                                </p>
+                            </div>
+                        )}
+                        {!isPythonJobActive(pythonJobActivity.phase) && pythonJobActivity.total > 0 && (
+                            <p className="mt-2 text-[10px] font-semibold tabular-nums opacity-80">
+                                Final: {pythonJobActivity.checked}/{pythonJobActivity.total} monitors
+                            </p>
+                        )}
+                        {isPythonJobActive(pythonJobActivity.phase) && pythonJobActivity.jobId > 0 && (
+                            <div className="mt-3 pt-3 border-t border-emerald-200/60 dark:border-emerald-800/60 flex justify-end">
+                                <button
+                                    type="button"
+                                    onClick={handleAbortPythonJob}
+                                    disabled={isAbortingPythonJob || pythonJobActivity.phase === 'cancelling'}
+                                    className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-[10px] font-bold uppercase tracking-wide bg-red-600 hover:bg-red-700 disabled:opacity-50 disabled:cursor-not-allowed text-white transition-colors"
+                                    title="Cancel this Python check job"
+                                >
+                                    <FaStop size={9} />
+                                    {isAbortingPythonJob || pythonJobActivity.phase === 'cancelling' ? 'Cancelling…' : 'Abort job'}
+                                </button>
+                            </div>
+                        )}
+                    </div>
+                </div>
+            </div>,
+            document.body
+        )
+        : null;
+
+    const schedulerFloatPanel = showSchedulerToolbarChip && workerSchedulerStatus && schedulerPanelVisible && typeof document !== 'undefined'
+        ? createPortal(
+            <div
+                className={`fixed right-6 z-[9998] w-[min(calc(100vw-2rem),22rem)] animate-in fade-in slide-in-from-bottom-2 duration-300 ${
+                    pythonJobActivity && pythonJobPanelVisible ? 'bottom-[21rem]' : 'bottom-6'
+                }`}
+                role="status"
+                aria-live="polite"
+            >
+                <div className={`rounded-2xl border text-xs shadow-2xl backdrop-blur-md ${
+                    showWorkerSchedulerBanner
+                        ? workerSchedulerStatus.python_ready === false
+                            ? 'bg-amber-50/95 dark:bg-amber-950/95 border-amber-300 dark:border-amber-700 text-amber-900 dark:text-amber-100'
+                            : 'bg-orange-50/95 dark:bg-orange-950/95 border-orange-300 dark:border-orange-700 text-orange-900 dark:text-orange-100'
+                        : 'bg-emerald-50/95 dark:bg-emerald-950/95 border-emerald-300 dark:border-emerald-700 text-emerald-900 dark:text-emerald-100'
+                }`}>
+                    <div className={`flex items-center justify-between gap-2 px-4 py-3 border-b ${
+                        showWorkerSchedulerBanner
+                            ? workerSchedulerStatus.python_ready === false
+                                ? 'border-amber-200/70 dark:border-amber-800/70'
+                                : 'border-orange-200/70 dark:border-orange-800/70'
+                            : 'border-emerald-200/70 dark:border-emerald-800/70'
+                    }`}>
+                        <div className="flex items-center gap-2 min-w-0">
+                            {showWorkerSchedulerBanner ? (
+                                <FaExclamationTriangle className="shrink-0" size={12} />
+                            ) : (
+                                <FaClock className="shrink-0" size={12} />
+                            )}
+                            <span className="font-bold truncate">
+                                {showWorkerSchedulerBanner
+                                    ? (workerSchedulerStatus.python_ready === false
+                                        ? (workerSchedulerStatus.platform === 'docker'
+                                            ? 'Docker workers — off'
+                                            : 'Task Scheduler — workers off')
+                                        : 'Email sender task issue')
+                                    : (workerSchedulerStatus.platform === 'docker'
+                                        ? 'Docker workers — running'
+                                        : 'Task Scheduler — workers running')}
+                            </span>
+                        </div>
+                        <button
+                            type="button"
+                            onClick={hideSchedulerPanel}
+                            className="shrink-0 p-1.5 rounded-lg hover:bg-black/5 dark:hover:bg-white/10 transition-colors"
+                            title="Hide panel (click Scheduler chip in toolbar to reopen)"
+                            aria-label="Hide scheduler status"
+                        >
+                            <FaTimes size={12} />
+                        </button>
+                    </div>
+                    <div className="px-4 py-3">
+                        <p className="text-[11px] leading-relaxed opacity-90">
+                            {workerSchedulerStatus.message}
+                        </p>
+                        <div className="mt-2.5 space-y-2">
+                            {renderSchedulerTaskRow('monitor_runner', 'Monitor Runner', 'float')}
+                            {renderSchedulerTaskRow('email_sender', 'Email Sender', 'float')}
+                        </div>
+                        {schedulerInstallNeeded && (
+                            <button
+                                type="button"
+                                onClick={installSchedulerTasks}
+                                disabled={schedulerInstalling || schedulerUninstalling || workerSchedulerLoading}
+                                className="mt-2.5 w-full inline-flex items-center justify-center gap-1.5 px-3 py-2 rounded-lg text-[10px] font-bold uppercase tracking-wide bg-purple-600 hover:bg-purple-700 text-white transition-colors disabled:opacity-50"
+                            >
+                                <FaPlus size={9} />
+                                {schedulerInstalling ? 'Installing tasks…' : (workerSchedulerStatus.platform === 'docker' ? 'Install / enable workers' : 'Install tasks')}
+                            </button>
+                        )}
+                        {schedulerUninstallAvailable && (
+                            <button
+                                type="button"
+                                onClick={uninstallSchedulerTasks}
+                                disabled={schedulerInstalling || schedulerUninstalling || workerSchedulerLoading}
+                                className="mt-2.5 w-full inline-flex items-center justify-center gap-1.5 px-3 py-2 rounded-lg text-[10px] font-bold uppercase tracking-wide border border-red-400/80 dark:border-red-700 text-red-800 dark:text-red-200 bg-white/80 dark:bg-red-950/40 hover:bg-red-50 dark:hover:bg-red-950/60 transition-colors disabled:opacity-50"
+                            >
+                                <FaTrash size={9} />
+                                {schedulerUninstalling
+                                    ? 'Removing…'
+                                    : (workerSchedulerStatus.platform === 'docker' ? 'Remove workers' : 'Uninstall tasks')}
+                            </button>
+                        )}
+                        {!showWorkerSchedulerBanner && !schedulerInstallNeeded && (
+                            <p className="mt-2.5 text-[10px] leading-relaxed opacity-85">
+                                Use Enable / Disable to control scheduled Python workers without opening Task Scheduler.
+                            </p>
+                        )}
+                        {workerSchedulerStatus.install_hint && (
+                            <p className="mt-2.5 text-[10px] leading-relaxed opacity-85">
+                                {workerSchedulerStatus.install_hint}
+                            </p>
+                        )}
+                        {forceEngine === 'python' && workerSchedulerStatus.python_ready === false && (
+                            <p className="mt-2.5 text-[10px] font-semibold leading-relaxed opacity-90">
+                                Py force-all and pickup countdown need an enabled Monitor Runner task (or a successful one-time kick).
+                            </p>
+                        )}
+                        <div className={`mt-3 pt-3 border-t flex flex-wrap items-center justify-end gap-2 ${
+                            showWorkerSchedulerBanner
+                                ? 'border-amber-200/60 dark:border-amber-800/60'
+                                : 'border-emerald-200/60 dark:border-emerald-800/60'
+                        }`}>
+                            {schedulerUninstallAvailable && (
+                                <button
+                                    type="button"
+                                    onClick={uninstallSchedulerTasks}
+                                    disabled={schedulerInstalling || schedulerUninstalling || workerSchedulerLoading}
+                                    className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-[10px] font-bold uppercase tracking-wide border border-red-400/80 dark:border-red-700 text-red-800 dark:text-red-200 bg-white/80 dark:bg-red-950/40 hover:bg-red-50 dark:hover:bg-red-950/60 transition-colors disabled:opacity-50"
+                                >
+                                    <FaTrash size={9} />
+                                    {schedulerUninstalling
+                                        ? 'Removing…'
+                                        : (workerSchedulerStatus.platform === 'docker' ? 'Remove' : 'Uninstall')}
+                                </button>
+                            )}
+                            {isAdmin && (
+                                <button
+                                    type="button"
+                                    onClick={() => setShowCronModal(true)}
+                                    className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-[10px] font-bold uppercase tracking-wide bg-amber-600 hover:bg-amber-700 text-white transition-colors"
+                                >
+                                    <FaClock size={9} />
+                                    Scheduler Setup
+                                </button>
+                            )}
+                            <button
+                                type="button"
+                                onClick={() => loadWorkerSchedulerStatus()}
+                                disabled={workerSchedulerLoading}
+                                className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-[10px] font-bold uppercase tracking-wide bg-white/80 dark:bg-amber-950/50 border border-amber-300 dark:border-amber-700 text-amber-900 dark:text-amber-100 hover:bg-white dark:hover:bg-amber-900/60 transition-colors disabled:opacity-50"
+                            >
+                                <FaSyncAlt size={9} {...({ className: workerSchedulerLoading ? 'animate-spin' : '' } as any)} />
+                                {workerSchedulerLoading ? 'Checking…' : 'Recheck'}
+                            </button>
+                        </div>
+                    </div>
+                </div>
+            </div>,
+            document.body
+        )
+        : null;
+
+    const schedulerMessageDialogPortal = schedulerMessageDialog && typeof document !== 'undefined'
+        ? createPortal(
+            <div
+                className="fixed inset-0 z-[110] flex items-center justify-center p-4 bg-black/60 backdrop-blur-sm"
+                role="dialog"
+                aria-modal="true"
+                aria-labelledby="scheduler-message-dialog-title"
+            >
+                <div className="bg-white dark:bg-[#1e1e1e] rounded-2xl w-full max-w-xl border border-slate-200 dark:border-[#333] shadow-2xl overflow-hidden animate-in fade-in zoom-in duration-200">
+                    <div className={`flex items-center justify-between gap-3 px-4 py-3 border-b border-slate-100 dark:border-[#333] ${
+                        schedulerMessageDialog.variant === 'error'
+                            ? 'bg-red-50 dark:bg-red-950/30'
+                            : 'bg-emerald-50 dark:bg-emerald-950/30'
+                    }`}>
+                        <h3
+                            id="scheduler-message-dialog-title"
+                            className={`text-sm font-bold ${
+                                schedulerMessageDialog.variant === 'error'
+                                    ? 'text-red-800 dark:text-red-200'
+                                    : 'text-emerald-800 dark:text-emerald-200'
+                            }`}
+                        >
+                            {schedulerMessageDialog.title}
+                        </h3>
+                        <button
+                            type="button"
+                            onClick={() => setSchedulerMessageDialog(null)}
+                            className="p-1.5 rounded-lg hover:bg-black/5 dark:hover:bg-white/10 text-slate-500"
+                            aria-label="Close"
+                        >
+                            <FaTimes size={14} />
+                        </button>
+                    </div>
+                    <div className="p-4">
+                        <p className="text-[11px] text-slate-500 dark:text-slate-400 mb-2">
+                            Select all or use Copy — full installer output is included for troubleshooting.
+                        </p>
+                        <textarea
+                            readOnly
+                            value={schedulerMessageDialog.message}
+                            className="w-full min-h-[12rem] max-h-[50vh] text-xs font-mono leading-relaxed rounded-xl border border-slate-200 dark:border-[#333] bg-slate-50 dark:bg-[#121212] text-slate-800 dark:text-slate-200 p-3 resize-y focus:outline-none focus:ring-2 focus:ring-blue-500/40"
+                            onFocus={(e) => e.currentTarget.select()}
+                        />
+                    </div>
+                    <div className="px-4 py-3 border-t border-slate-100 dark:border-[#333] bg-slate-50 dark:bg-[#252525] flex flex-wrap items-center justify-end gap-2">
+                        <button
+                            type="button"
+                            onClick={() => {
+                                navigator.clipboard.writeText(schedulerMessageDialog.message);
+                            }}
+                            className="inline-flex items-center gap-1.5 px-3 py-2 rounded-lg text-[10px] font-bold uppercase tracking-wide bg-white dark:bg-[#333] border border-slate-200 dark:border-[#444] text-slate-700 dark:text-slate-200 hover:bg-slate-100 dark:hover:bg-[#3a3a3a] transition-colors"
+                        >
+                            <FaCopy size={10} />
+                            Copy text
+                        </button>
+                        <button
+                            type="button"
+                            onClick={() => setSchedulerMessageDialog(null)}
+                            className="inline-flex items-center gap-1.5 px-4 py-2 rounded-lg text-[10px] font-bold uppercase tracking-wide bg-slate-700 hover:bg-slate-800 dark:bg-[#444] dark:hover:bg-[#555] text-white transition-colors"
+                        >
+                            Close
+                        </button>
+                    </div>
+                </div>
+            </div>,
+            document.body
+        )
+        : null;
+
     if (isFullscreen) {
         return (
+            <>
             <div className="fixed top-16 left-0 right-0 bottom-0 overflow-y-auto bg-slate-50 dark:bg-[#121212] transition-colors z-50">
                 <div className="sticky top-0 z-10 flex items-center gap-3 px-4 py-3 bg-white/95 dark:bg-[#1e1e1e]/95 backdrop-blur-md border-b border-slate-200 dark:border-[#333]">
                     <button
@@ -2625,8 +4000,19 @@ export const MonitoringDashboard: React.FC = () => {
                     {content}
                 </div>
             </div>
+            {pythonJobFloatPanel}
+            {schedulerFloatPanel}
+            {schedulerMessageDialogPortal}
+            </>
         );
     }
 
-    return <>{content}</>;
+    return (
+        <>
+            {content}
+            {pythonJobFloatPanel}
+            {schedulerFloatPanel}
+            {schedulerMessageDialogPortal}
+        </>
+    );
 };

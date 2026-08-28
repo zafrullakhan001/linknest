@@ -138,7 +138,7 @@ if (!defined('SYSTEM_TOKEN')) {
 
 // Bump when schema/migrations in initDatabase() change. Enables fast-path getDB().
 if (!defined('LINKNEST_SCHEMA_VERSION')) {
-    define('LINKNEST_SCHEMA_VERSION', 98);
+    define('LINKNEST_SCHEMA_VERSION', 99);
 }
 
 function getSchemaPatchFlagPath(): string {
@@ -3457,6 +3457,33 @@ function initDatabase() {
             legacy_clear_pending INTEGER DEFAULT 0,
             legacy_update_last_notified_status TEXT
         )');
+
+        // Queue for force-all monitor checks handed off to Python (monitor_runner.py).
+        $db->exec('CREATE TABLE IF NOT EXISTS monitor_check_jobs (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            created_at INTEGER NOT NULL,
+            started_at INTEGER,
+            finished_at INTEGER,
+            requested_by INTEGER,
+            scope TEXT NOT NULL DEFAULT "all",
+            monitor_ids TEXT NOT NULL,
+            force_notify_rules INTEGER DEFAULT 0,
+            status TEXT NOT NULL DEFAULT "queued",
+            checked_count INTEGER DEFAULT 0,
+            total_count INTEGER DEFAULT 0,
+            up_count INTEGER DEFAULT 0,
+            down_count INTEGER DEFAULT 0,
+            error_count INTEGER DEFAULT 0,
+            last_error TEXT,
+            worker_kicked INTEGER DEFAULT 0
+        )');
+        try {
+            $db->exec('ALTER TABLE monitor_check_jobs ADD COLUMN worker_kicked INTEGER DEFAULT 0');
+        } catch (PDOException $e) { /* column exists */ }
+        try {
+            $db->exec('CREATE INDEX IF NOT EXISTS idx_monitor_check_jobs_status ON monitor_check_jobs(status)');
+            $db->exec('CREATE INDEX IF NOT EXISTS idx_monitor_check_jobs_created_at ON monitor_check_jobs(created_at)');
+        } catch (PDOException $e) { /* ignore */ }
         
         // Migrate existing table to allow NULL rule_id (for legacy notifications)
         // Only run migration once by checking a flag

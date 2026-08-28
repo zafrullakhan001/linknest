@@ -10,13 +10,13 @@ set -u
 # - LINKNEST_WORKERS_ENABLED: "1" (default) to run python workers, "0" to disable
 # - LINKNEST_WORKER_INTERVAL_SECONDS: loop interval seconds (default 60)
 # - LINKNEST_DB_PATH: SQLite DB path (default /var/www/html/data/linknest.db)
-# - LINKNEST_WORKER_MAX_WORKERS: monitor_runner --max-workers (default 10)
+# - LINKNEST_WORKER_MAX_WORKERS: monitor_runner --max-workers (default 20)
 # - LINKNEST_EMAIL_LIMIT: email_sender --limit (default 50)
 
 ENABLED="${LINKNEST_WORKERS_ENABLED:-1}"
 INTERVAL="${LINKNEST_WORKER_INTERVAL_SECONDS:-60}"
 DB_PATH="${LINKNEST_DB_PATH:-/var/www/html/data/linknest.db}"
-MAX_WORKERS="${LINKNEST_WORKER_MAX_WORKERS:-10}"
+MAX_WORKERS="${LINKNEST_WORKER_MAX_WORKERS:-20}"
 EMAIL_LIMIT="${LINKNEST_EMAIL_LIMIT:-50}"
 
 # Set timezone from environment variable or detect from system
@@ -153,13 +153,44 @@ echo "[ENTRYPOINT] Backup location: $BACKUPS_DIR"
 echo "[ENTRYPOINT] Old backups (>30 days) are automatically removed by both scripts"
 
 worker_loop() {
-  echo "[WORKER] LinkNest workers enabled=${ENABLED} interval=${INTERVAL}s db=${DB_PATH}"
+  docker_worker_setting() {
+    local key="$1"
+    local fallback="$2"
+    if [ ! -f "${DB_PATH}" ] || ! command -v sqlite3 >/dev/null 2>&1; then
+      echo "${fallback}"
+      return
+    fi
+    local val
+    val="$(sqlite3 "${DB_PATH}" "SELECT value FROM settings WHERE key='${key}';" 2>/dev/null || true)"
+    if [ -z "${val}" ]; then
+      echo "${fallback}"
+    else
+      echo "${val}"
+    fi
+  }
+
+  docker_setting_enabled() {
+    local val="$1"
+    [ "${val}" = "1" ] || [ "${val}" = "true" ] || [ "${val}" = "yes" ] || [ "${val}" = "on" ]
+  }
+
+  echo "[WORKER] LinkNest Docker worker loop interval=${INTERVAL}s db=${DB_PATH} (runtime enable/disable via settings table)"
   while true; do
-    # Run checks (queues emails into email_outbox)
     if command -v python3 >/dev/null 2>&1; then
-      python3 /var/www/html/scripts/monitor_runner.py --db "${DB_PATH}" --max-workers "${MAX_WORKERS}" || true
-      # Send queued emails
-      python3 /var/www/html/scripts/email_sender.py --db "${DB_PATH}" --limit "${EMAIL_LIMIT}" || true
+      MONITOR_ENABLED="$(docker_worker_setting docker_workers_monitor_enabled "${ENABLED}")"
+      EMAIL_ENABLED="$(docker_worker_setting docker_workers_email_enabled "${ENABLED}")"
+
+      if docker_setting_enabled "${MONITOR_ENABLED}"; then
+        python3 /var/www/html/scripts/monitor_runner.py --db "${DB_PATH}" --max-workers "${MAX_WORKERS}" || true
+      else
+        echo "[WORKER] Monitor Runner paused (docker_workers_monitor_enabled=${MONITOR_ENABLED})"
+      fi
+
+      if docker_setting_enabled "${EMAIL_ENABLED}"; then
+        python3 /var/www/html/scripts/email_sender.py --db "${DB_PATH}" --limit "${EMAIL_LIMIT}" || true
+      else
+        echo "[WORKER] Email Sender paused (docker_workers_email_enabled=${EMAIL_ENABLED})"
+      fi
     else
       echo "[WORKER] python3 not found; workers disabled"
       break
@@ -168,11 +199,7 @@ worker_loop() {
   done
 }
 
-if [ "${ENABLED}" = "1" ] || [ "${ENABLED}" = "true" ] || [ "${ENABLED}" = "yes" ]; then
-  worker_loop &
-else
-  echo "[WORKER] LinkNest workers disabled via LINKNEST_WORKERS_ENABLED=${ENABLED}"
-fi
+worker_loop &
 
 exec apache2-foreground
 

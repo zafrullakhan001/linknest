@@ -37,14 +37,46 @@ def now_ts() -> int:
     return int(time.time())
 
 
+DEFAULT_MONITOR_MAX_WORKERS = 20
+MONITOR_MAX_WORKERS_CEILING = 64
+
+
 def open_db(db_path: str, timeout_seconds: int = 10) -> sqlite3.Connection:
     conn = sqlite3.connect(db_path, timeout=timeout_seconds)
     conn.row_factory = sqlite3.Row
     with contextlib.suppress(Exception):
         conn.execute("PRAGMA busy_timeout = 5000")
     with contextlib.suppress(Exception):
+        conn.execute("PRAGMA journal_mode = WAL")
+    with contextlib.suppress(Exception):
         conn.execute("PRAGMA foreign_keys = OFF")
     return conn
+
+
+def read_setting(conn: sqlite3.Connection, key: str, default: str = "") -> str:
+    try:
+        row = conn.execute("SELECT value FROM settings WHERE key = ? LIMIT 1", (key,)).fetchone()
+        if row is None:
+            return default
+        val = row["value"] if isinstance(row, sqlite3.Row) else row[0]
+        return str(val).strip() if val is not None else default
+    except Exception:
+        return default
+
+
+def clamp_monitor_max_workers(value: Any, default: int = DEFAULT_MONITOR_MAX_WORKERS) -> int:
+    try:
+        n = int(value)
+    except (TypeError, ValueError):
+        n = int(default)
+    return max(1, min(MONITOR_MAX_WORKERS_CEILING, n))
+
+
+def resolve_monitor_max_workers(conn: sqlite3.Connection, cli_value: Optional[int] = None) -> int:
+    if cli_value is not None:
+        return clamp_monitor_max_workers(cli_value)
+    setting = read_setting(conn, "monitor_worker_max_workers", str(DEFAULT_MONITOR_MAX_WORKERS))
+    return clamp_monitor_max_workers(setting)
 
 
 def ensure_outbox_schema(conn: sqlite3.Connection) -> None:
@@ -128,6 +160,36 @@ def ensure_monitors_schema(conn: sqlite3.Connection) -> None:
         conn.execute("CREATE INDEX IF NOT EXISTS idx_user_monitor_permissions_monitor_id ON user_monitor_permissions(monitor_id)")
     with contextlib.suppress(Exception):
         conn.execute("CREATE INDEX IF NOT EXISTS idx_user_monitor_permissions_user_id ON user_monitor_permissions(user_id)")
+
+
+def ensure_monitor_check_jobs_schema(conn: sqlite3.Connection) -> None:
+    conn.execute(
+        """
+        CREATE TABLE IF NOT EXISTS monitor_check_jobs (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            created_at INTEGER NOT NULL,
+            started_at INTEGER,
+            finished_at INTEGER,
+            requested_by INTEGER,
+            scope TEXT NOT NULL DEFAULT 'all',
+            monitor_ids TEXT NOT NULL,
+            force_notify_rules INTEGER DEFAULT 0,
+            status TEXT NOT NULL DEFAULT 'queued',
+            checked_count INTEGER DEFAULT 0,
+            total_count INTEGER DEFAULT 0,
+            up_count INTEGER DEFAULT 0,
+            down_count INTEGER DEFAULT 0,
+            error_count INTEGER DEFAULT 0,
+            last_error TEXT,
+            worker_kicked INTEGER DEFAULT 0
+        )
+        """
+    )
+    with contextlib.suppress(Exception):
+        conn.execute("ALTER TABLE monitor_check_jobs ADD COLUMN worker_kicked INTEGER DEFAULT 0")
+    with contextlib.suppress(Exception):
+        conn.execute("CREATE INDEX IF NOT EXISTS idx_monitor_check_jobs_status ON monitor_check_jobs(status)")
+        conn.execute("CREATE INDEX IF NOT EXISTS idx_monitor_check_jobs_created_at ON monitor_check_jobs(created_at)")
 
 
 def normalize_email_list(raw: Any) -> List[str]:

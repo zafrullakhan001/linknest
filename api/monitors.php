@@ -1,6 +1,8 @@
 <?php
 require_once __DIR__ . '/config.php';
 require_once __DIR__ . '/monitor_check.php'; // Include check logic for immediate "check now"
+require_once __DIR__ . '/monitor_check_jobs_lib.php';
+require_once __DIR__ . '/monitor_worker_scheduler_lib.php';
 require_once __DIR__ . '/monitor_suggest.php';
 require_once __DIR__ . '/user_audit_helper.php';
 
@@ -59,6 +61,12 @@ switch ($method) {
             handleGetMonitor($matches[1]);
         } elseif (preg_match('/^\/(\d+)\/logs$/', $path, $matches)) {
             handleGetMonitorLogs($matches[1]);
+        } elseif ($path === '/check-jobs/active') {
+            monitorCheckJobsHandleGetActive();
+        } elseif ($path === '/worker-scheduler-status') {
+            monitorWorkerSchedulerHandleStatus();
+        } elseif (preg_match('/^\/check-jobs\/(\d+)$/', $path, $matches)) {
+            monitorCheckJobsHandleGet((int)$matches[1]);
         } else {
             sendJSON(['error' => 'Invalid endpoint'], 404);
         }
@@ -81,6 +89,14 @@ switch ($method) {
             handleMonitorSuggestBulk();
         } elseif ($path === '/bulk-create') {
             handleBulkCreateMonitors();
+        } elseif (preg_match('/^\/check-jobs\/(\d+)\/cancel$/', $path, $matches)) {
+            monitorCheckJobsHandleCancel((int)$matches[1]);
+        } elseif ($path === '/worker-scheduler-task') {
+            monitorWorkerSchedulerHandleSetTask();
+        } elseif ($path === '/worker-scheduler-install') {
+            monitorWorkerSchedulerHandleInstall();
+        } elseif ($path === '/worker-scheduler-uninstall') {
+            monitorWorkerSchedulerHandleUninstall();
         } else {
             sendJSON(['error' => 'Invalid endpoint'], 404);
         }
@@ -751,6 +767,13 @@ function handleGetMonitors() {
         }
         unset($m);
     }
+
+    $pendingIds = monitorCheckJobsGetPendingMonitorIds($db);
+    $pendingLookup = array_fill_keys($pendingIds, true);
+    foreach ($monitors as &$m) {
+        $m['check_pending'] = !empty($pendingLookup[(int)$m['id']]) ? 1 : 0;
+    }
+    unset($m);
     
     sendJSON(['monitors' => $monitors]);
 }
@@ -1441,37 +1464,31 @@ function handleCheckMonitor($id) {
 function handleCheckAllMonitors() {
     error_log("[MONITOR] handleCheckAllMonitors called");
     try {
-        // Set execution time limit to prevent hanging on multiple checks
-        // Allow more time for multiple monitors - calculate based on number of monitors
         $db = getDB();
         if (!$db) {
             throw new Exception("Failed to get database connection");
         }
-        
-        error_log("[MONITOR] Getting active monitor count");
+
         $user = getAuthUserFromGlobals();
-        if (!empty($user['is_admin'])) {
-            $stmt = $db->prepare('SELECT COUNT(*) FROM monitors WHERE is_active = 1');
-            $stmt->execute();
-            $monitorCount = (int)$stmt->fetchColumn();
-        } else {
-            $stmt = $db->prepare('
-                SELECT COUNT(*)
-                FROM monitors m
-                LEFT JOIN user_monitor_permissions ump
-                  ON ump.monitor_id = m.id AND ump.user_id = ?
-                WHERE m.is_active = 1 AND COALESCE(ump.can_view, 0) = 1
-            ');
-            $stmt->execute([(int)$user['id']]);
-            $monitorCount = (int)$stmt->fetchColumn();
+        $input = getJSONInput();
+        if (!is_array($input)) {
+            $input = [];
         }
-        error_log("[MONITOR] Found $monitorCount active monitors");
-        
-        // Calculate time limit: allow for retry confirmation on failures (up to ~20s per monitor), min 60s, max 300s
-        $timeLimit = max(60, min(300, $monitorCount * 20));
-        set_time_limit($timeLimit);
-        error_log("[MONITOR] Set time limit to $timeLimit seconds");
-        
+
+        $engine = strtolower(trim((string)($input['engine'] ?? $_GET['engine'] ?? 'php')));
+        if (!in_array($engine, ['php', 'python'], true)) {
+            $engine = 'php';
+        }
+
+        $forceNotifyRules = false;
+        if (isset($input['force_notify_rules'])) {
+            $v = strtolower(trim((string)$input['force_notify_rules']));
+            $forceNotifyRules = in_array($v, ['1', 'true', 'yes', 'on'], true);
+        } elseif (isset($_GET['force_notify_rules'])) {
+            $v = strtolower(trim((string)$_GET['force_notify_rules']));
+            $forceNotifyRules = in_array($v, ['1', 'true', 'yes', 'on'], true);
+        }
+
         if (!empty($user['is_admin'])) {
             $stmt = $db->prepare('SELECT * FROM monitors WHERE is_active = 1');
             $stmt->execute();
@@ -1487,6 +1504,20 @@ function handleCheckAllMonitors() {
             $stmt->execute([(int)$user['id']]);
             $monitors = $stmt->fetchAll();
         }
+
+        if ($engine === 'python') {
+            monitorCheckJobsHandleEnqueueAll($user, $monitors, $forceNotifyRules);
+            return;
+        }
+
+        $monitorCount = count($monitors);
+        error_log("[MONITOR] Found $monitorCount active monitors (engine=php)");
+        
+        // Calculate time limit: allow for retry confirmation on failures (up to ~20s per monitor), min 60s, max 300s
+        $timeLimit = max(60, min(300, $monitorCount * 20));
+        set_time_limit($timeLimit);
+        error_log("[MONITOR] Set time limit to $timeLimit seconds");
+        
         error_log("[MONITOR] Retrieved " . count($monitors) . " monitors to check");
         
         $results = [];
@@ -1554,7 +1585,8 @@ function handleCheckAllMonitors() {
         error_log("[MONITOR] Check complete - Total: $totalCount, Checked: $checkedCount, UP: $upCount, DOWN: $downCount, Errors: $errorCount");
         
         sendJSON([
-            'success' => true, 
+            'success' => true,
+            'engine' => 'php',
             'count' => $checkedCount, 
             'total' => $totalCount, 
             'up_count' => $upCount,

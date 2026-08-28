@@ -35,6 +35,77 @@ export interface Monitor {
     maintenance_start?: number | null;
     maintenance_end?: number | null;
     history?: { status: 'up' | 'down' | 'warning'; response_time: number; checked_at: number }[];
+    check_pending?: number;
+}
+
+export type MonitorForceEngine = 'php' | 'python';
+
+export interface MonitorWorkerSchedulerTask {
+    name: string;
+    exists: boolean;
+    enabled: boolean;
+    state: string;
+    status: string;
+    next_run?: string | null;
+    last_run?: string | null;
+    last_result?: number | null;
+}
+
+export type MonitorWorkerSchedulerTaskKey = 'monitor_runner' | 'email_sender';
+
+export interface MonitorWorkerSchedulerStatus {
+    platform: 'windows' | 'linux' | 'docker' | 'unknown';
+    scheduler_applicable: boolean;
+    python_ready: boolean | null;
+    status: 'ok' | 'not_installed' | 'disabled' | 'partial' | 'unavailable';
+    message: string;
+    tasks: {
+        monitor_runner: MonitorWorkerSchedulerTask;
+        email_sender: MonitorWorkerSchedulerTask;
+    };
+    install_hint?: string | null;
+    docker?: {
+        interval_seconds?: number;
+        runtime_control?: boolean;
+    };
+}
+
+export interface MonitorCheckJob {
+    id: number;
+    status: 'queued' | 'running' | 'done' | 'error' | 'cancelled';
+    created_at?: number | null;
+    started_at?: number | null;
+    finished_at?: number | null;
+    scope?: string;
+    force_notify_rules?: boolean;
+    worker_kicked?: boolean;
+    awaiting_pickup?: boolean;
+    checked_count: number;
+    total_count: number;
+    up_count: number;
+    down_count: number;
+    error_count: number;
+    last_error?: string | null;
+}
+
+export interface MonitorCheckAllPhpResult {
+    engine: 'php';
+    count: number;
+    total: number;
+    up_count: number;
+    down_count: number;
+    error_count: number;
+}
+
+export interface MonitorCheckAllPythonResult {
+    engine: 'python';
+    queued: true;
+    job_id: number;
+    kicked: boolean;
+    coalesced?: boolean;
+    total: number;
+    message?: string;
+    job?: MonitorCheckJob;
 }
 
 export interface MonitorLog {
@@ -191,10 +262,19 @@ export const monitoringService = {
         return data.result;
     },
 
-    async checkAllMonitors(): Promise<{ count: number; total: number; up_count: number; down_count: number; error_count: number }> {
+    async checkAllMonitors(options?: {
+        engine?: MonitorForceEngine;
+        forceNotifyRules?: boolean;
+    }): Promise<MonitorCheckAllPhpResult | MonitorCheckAllPythonResult> {
         try {
+            const engine = options?.engine ?? 'php';
             const response = await fetch('api/monitors.php/check-all', {
-                method: 'POST'
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({
+                    engine,
+                    force_notify_rules: options?.forceNotifyRules ? 1 : 0,
+                }),
             });
 
             if (!response.ok) {
@@ -207,7 +287,6 @@ export const monitoringService = {
                         errorMessage = errorData.message;
                     }
                 } catch (e) {
-                    // If response isn't JSON, use status text
                     errorMessage = `HTTP ${response.status}: ${response.statusText}`;
                 }
                 throw new Error(errorMessage);
@@ -215,22 +294,144 @@ export const monitoringService = {
 
             const data = await response.json();
 
-            // Check if the response indicates failure
             if (data.success === false) {
                 throw new Error(data.error || 'Failed to check all monitors');
             }
 
+            if (data.queued && data.engine === 'python') {
+                return {
+                    engine: 'python',
+                    queued: true,
+                    job_id: data.job_id,
+                    kicked: !!data.kicked,
+                    coalesced: !!data.coalesced,
+                    total: data.total || 0,
+                    message: data.message,
+                    job: data.job,
+                };
+            }
+
             return {
+                engine: 'php',
                 count: data.count || 0,
                 total: data.total || 0,
                 up_count: data.up_count || 0,
                 down_count: data.down_count || 0,
-                error_count: data.error_count || 0
+                error_count: data.error_count || 0,
             };
         } catch (error: any) {
             console.error('Error in checkAllMonitors:', error);
             throw error;
         }
+    },
+
+    async getWorkerSchedulerStatus(): Promise<MonitorWorkerSchedulerStatus> {
+        const response = await fetch('api/monitors.php/worker-scheduler-status');
+        if (!response.ok) throw new Error('Failed to fetch worker scheduler status');
+        const data = await response.json();
+        if (!data.scheduler) throw new Error('Scheduler status missing from response');
+        return data.scheduler as MonitorWorkerSchedulerStatus;
+    },
+
+    async setWorkerSchedulerTaskEnabled(
+        task: MonitorWorkerSchedulerTaskKey,
+        enabled: boolean
+    ): Promise<{ scheduler: MonitorWorkerSchedulerStatus; message: string; already?: boolean }> {
+        const response = await fetch('api/monitors.php/worker-scheduler-task', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ task, enabled }),
+        });
+        const data = await response.json().catch(() => ({}));
+        if (!response.ok) {
+            throw new Error(data.error || 'Failed to update Task Scheduler job');
+        }
+        if (!data.scheduler) {
+            throw new Error('Scheduler status missing from response');
+        }
+        return {
+            scheduler: data.scheduler as MonitorWorkerSchedulerStatus,
+            message: data.message || (enabled ? 'Task enabled.' : 'Task disabled.'),
+            already: data.already,
+        };
+    },
+
+    async installWorkerSchedulerTasks(opts?: {
+        intervalMinutes?: number;
+        maxWorkers?: number;
+    }): Promise<{ scheduler: MonitorWorkerSchedulerStatus; message: string }> {
+        const response = await fetch('api/monitors.php/worker-scheduler-install', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+                interval_minutes: opts?.intervalMinutes,
+                max_workers: opts?.maxWorkers,
+            }),
+        });
+        const data = await response.json().catch(() => ({}));
+        if (!response.ok) {
+            throw new Error(data.error || 'Failed to install Task Scheduler jobs');
+        }
+        if (!data.scheduler) {
+            throw new Error('Scheduler status missing from response');
+        }
+        return {
+            scheduler: data.scheduler as MonitorWorkerSchedulerStatus,
+            message: data.message || 'Scheduler tasks installed.',
+        };
+    },
+
+    async uninstallWorkerSchedulerTasks(): Promise<{
+        scheduler: MonitorWorkerSchedulerStatus;
+        message: string;
+        already?: boolean;
+    }> {
+        const response = await fetch('api/monitors.php/worker-scheduler-uninstall', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({}),
+        });
+        const data = await response.json().catch(() => ({}));
+        if (!response.ok) {
+            throw new Error(data.error || 'Failed to uninstall worker scheduler jobs');
+        }
+        if (!data.scheduler) {
+            throw new Error('Scheduler status missing from response');
+        }
+        return {
+            scheduler: data.scheduler as MonitorWorkerSchedulerStatus,
+            message: data.message || 'Scheduler tasks removed.',
+            already: data.already,
+        };
+    },
+
+    async getCheckJob(jobId: number): Promise<MonitorCheckJob> {
+        const response = await fetch(`api/monitors.php/check-jobs/${jobId}`);
+        if (!response.ok) throw new Error('Failed to fetch check job status');
+        const data = await response.json();
+        if (!data.job) throw new Error('Check job not found');
+        return data.job as MonitorCheckJob;
+    },
+
+    async getActiveCheckJob(): Promise<MonitorCheckJob | null> {
+        const response = await fetch('api/monitors.php/check-jobs/active');
+        if (!response.ok) throw new Error('Failed to fetch active check job');
+        const data = await response.json();
+        return data.job ?? null;
+    },
+
+    async cancelCheckJob(jobId: number): Promise<MonitorCheckJob> {
+        const response = await fetch(`api/monitors.php/check-jobs/${jobId}/cancel`, {
+            method: 'POST',
+        });
+        const data = await response.json().catch(() => ({}));
+        if (!response.ok) {
+            throw new Error(data.error || 'Failed to cancel check job');
+        }
+        if (!data.job) {
+            throw new Error('Cancel response missing job');
+        }
+        return data.job as MonitorCheckJob;
     },
 
     async deleteAllMonitors(): Promise<void> {

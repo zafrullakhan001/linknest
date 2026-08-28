@@ -31,6 +31,10 @@
 .PARAMETER SkipSmoke
   With install: skip the post-install run-once smoke test.
 
+.PARAMETER TaskUser
+  Optional DOMAIN\User to run tasks as. When install runs from Apache/PHP (SYSTEM), the script
+  auto-detects the logged-on desktop user; pass this to override.
+
 .EXAMPLE
   .\scripts\schedule-monitor-workers.ps1
   .\scripts\schedule-monitor-workers.ps1 -Action verify
@@ -50,7 +54,12 @@ param(
     [ValidateRange(1, 60)]
     [int]$IntervalMinutes = 1,
 
+    [ValidateRange(1, 64)]
+    [int]$MaxWorkers = 20,
+
     [string]$DbPath = '',
+
+    [string]$TaskUser = '',
 
     [switch]$SkipSmoke
 )
@@ -417,6 +426,76 @@ function Remove-WorkerTasks {
     }
 }
 
+function Resolve-TaskRunAsUser {
+    param([string]$Preferred = '')
+
+    $candidates = [System.Collections.Generic.List[string]]::new()
+    if ($Preferred) {
+        $candidates.Add($Preferred.Trim())
+    }
+
+    if ($TaskUser) {
+        $candidates.Add($TaskUser.Trim())
+    }
+
+    if ($env:USERNAME -and $env:USERNAME -notin @('SYSTEM', 'LOCAL SERVICE', 'NETWORK SERVICE', 'SERVICE', 'ANONYMOUS LOGON')) {
+        if ($env:USERDOMAIN -and $env:USERDOMAIN -ne '.' -and $env:USERDOMAIN -ne 'WORKGROUP') {
+            $candidates.Add("$env:USERDOMAIN\$env:USERNAME")
+        }
+        $candidates.Add($env:USERNAME)
+    }
+
+    $current = [System.Security.Principal.WindowsIdentity]::GetCurrent().Name
+    if ($current -and $current -notmatch 'SYSTEM|LOCAL SERVICE|NETWORK SERVICE|ANONYMOUS LOGON') {
+        $candidates.Add($current)
+    }
+
+    try {
+        $consoleUser = (Get-CimInstance -ClassName Win32_ComputerSystem -ErrorAction Stop).UserName
+        if ($consoleUser) {
+            $candidates.Add($consoleUser)
+        }
+    } catch {}
+
+    try {
+        $quserLines = @(query user 2>$null)
+        foreach ($line in $quserLines) {
+            if ($line -notmatch 'Active') { continue }
+            $clean = ($line -replace '^\s*>', '').Trim()
+            $parts = $clean.Split(' ', [System.StringSplitOptions]::RemoveEmptyEntries)
+            if ($parts.Count -ge 1 -and $parts[0]) {
+                $candidates.Add($parts[0])
+            }
+        }
+    } catch {}
+
+    $seen = @{}
+    foreach ($user in $candidates) {
+        if (-not $user) { continue }
+        $key = $user.ToLowerInvariant()
+        if ($seen.ContainsKey($key)) { continue }
+        $seen[$key] = $true
+        try {
+            $nt = New-Object System.Security.Principal.NTAccount($user)
+            $null = $nt.Translate([System.Security.Principal.SecurityIdentifier])
+            return $user
+        } catch {}
+    }
+
+    return $null
+}
+
+function New-WorkerTaskPrincipal {
+    $runAs = Resolve-TaskRunAsUser
+    if ($runAs) {
+        Write-Info "Task run-as user: $runAs (Interactive)"
+        return New-ScheduledTaskPrincipal -UserId $runAs -LogonType Interactive -RunLevel Limited
+    }
+
+    Write-WarnLine "Could not resolve a desktop user account; registering tasks to run as SYSTEM."
+    return New-ScheduledTaskPrincipal -UserId 'SYSTEM' -LogonType ServiceAccount -RunLevel Highest
+}
+
 function Register-WorkerTask {
     param(
         [string]$Name,
@@ -444,7 +523,7 @@ function Register-WorkerTask {
         -MultipleInstances IgnoreNew `
         -ExecutionTimeLimit (New-TimeSpan -Minutes 10)
 
-    $principal = New-ScheduledTaskPrincipal -UserId $env:USERNAME -LogonType Interactive -RunLevel Limited
+    $principal = New-WorkerTaskPrincipal
 
     Register-ScheduledTask `
         -TaskName $Name `
@@ -464,7 +543,7 @@ function Install-WorkerTasks {
     Write-Section "Install Task Scheduler jobs"
 
     $dbQuoted = $DbPath
-    $monitorArgs = "scripts\monitor_runner.py --db `"$dbQuoted`" --max-workers 10"
+    $monitorArgs = "scripts\monitor_runner.py --db `"$dbQuoted`" --max-workers $MaxWorkers"
     $emailArgs = "scripts\email_sender.py --db `"$dbQuoted`" --limit 25 --smtp-timeout 20"
 
     Register-WorkerTask -Name $taskMonitor -Arguments $monitorArgs `
@@ -497,7 +576,12 @@ function Install-WorkerTasks {
 
     Write-Section "Summary"
     Write-Ok "Install finished."
-    Write-Info "Tasks run as user '$env:USERNAME' while logged on (no admin required)."
+    $resolvedUser = Resolve-TaskRunAsUser
+    if ($resolvedUser) {
+        Write-Info "Tasks run as user '$resolvedUser' while logged on."
+    } else {
+        Write-Info "Tasks run as SYSTEM (ServiceAccount) - suitable when installed from Apache/PHP."
+    }
     Write-Info "Useful commands:"
     Write-Host "    scripts\schedule-monitor-workers.bat status"
     Write-Host "    scripts\schedule-monitor-workers.bat verify"
@@ -512,7 +596,7 @@ function Invoke-RunOnce {
         $script:pythonExe = Resolve-PythonExe -Preferred $Python
     }
     Write-Host "Running monitor_runner once..."
-    & $script:pythonExe $runnerPy --db $DbPath --max-workers 10 --verbose
+    & $script:pythonExe $runnerPy --db $DbPath --max-workers $MaxWorkers --verbose
     if ($LASTEXITCODE -ne 0) { throw "monitor_runner exited with code $LASTEXITCODE" }
 
     Write-Host ""

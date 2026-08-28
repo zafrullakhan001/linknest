@@ -4,6 +4,7 @@ import { useSettings } from '../contexts/SettingsContext';
 import { HelpGuidesPanel } from './HelpGuidesPanel';
 import { HelpFingerprintPanel } from './HelpFingerprintPanel';
 import { HelpMonitorArchitecture } from './HelpMonitorArchitecture';
+import { HelpPythonWorkersPanel } from './HelpPythonWorkersPanel';
 import { MCP_EXAMPLE_NEED_LABEL, MCP_EXAMPLE_PROMPTS } from '../utils/mcpExamplePrompts';
 
 type TabType = 'help' | 'guides' | 'about' | 'fingerprint';
@@ -389,7 +390,7 @@ export const HelpAboutDialog: React.FC<HelpAboutDialogProps> = ({
                   <div className="bg-emerald-50 dark:bg-emerald-900/20 rounded-lg p-4 space-y-2 border border-emerald-200 dark:border-emerald-800">
                     <p className="font-medium text-emerald-900 dark:text-emerald-100">Guides tab:</p>
                     <p className="text-sm">
-                      Open the <strong>Guides</strong> tab in this dialog for searchable in-app docs (MCP / AI, Your Bookmarks, Bookmark Sync Extension, setup, architecture, Python workers / monitoring, App Updates, Docker deployment &amp; database, Admin password &amp; lockout recovery, SSH / VNC, Package for Deployment, Vanilla Apache + PHP 8.5, and more). Start with <strong>MCP / AI</strong> to let Cursor or Claude create spaces and links, <strong>Your Bookmarks</strong> or <strong>Bookmark Sync Extension</strong> for guest bookmark Sync / OutSync, <strong>Admin Password &amp; Lockout Recovery</strong> if you cannot sign in, <strong>Python Workers (Monitoring + Email)</strong> for the monitor architecture diagrams, or App Updates / Docker Deployment / Architecture for admin workflows.
+                      Open the <strong>Guides</strong> tab in this dialog for searchable in-app docs (MCP / AI, Your Bookmarks, Bookmark Sync Extension, setup, architecture, <strong>Python Workers (Monitoring + Email)</strong>, App Updates, Docker deployment &amp; database, Admin password &amp; lockout recovery, SSH / VNC, Package for Deployment, Vanilla Apache + PHP 8.5, and more). In <strong>Help</strong>, see the dedicated topic <strong>Python Monitor Workers &amp; Task Scheduler</strong> for CLI options, scheduling, and force-all Py handover. Start with <strong>MCP / AI</strong> to let Cursor or Claude create spaces and links, <strong>Your Bookmarks</strong> or <strong>Bookmark Sync Extension</strong> for guest bookmark Sync / OutSync, <strong>Admin Password &amp; Lockout Recovery</strong> if you cannot sign in, or App Updates / Docker Deployment / Architecture for admin workflows.
                     </p>
                   </div>
                 </div>
@@ -1311,37 +1312,12 @@ docker\\docker-sync-database.bat -Direction Out -HostBasePath "/ArchLinks"`}</pr
                   </div>
                   <div className="bg-violet-50 dark:bg-violet-900/20 rounded-lg p-4 space-y-2">
                     <p className="font-medium text-violet-900 dark:text-violet-100">How checks run (outside Apache):</p>
-                    <ul className="list-disc list-inside space-y-1 ml-2 text-sm">
-                      <li>
-                        <strong>monitor_runner.py</strong> probes due monitors concurrently (hard timeouts), writes{' '}
-                        <code className="text-xs bg-white/70 dark:bg-slate-800 px-1 rounded">monitors</code> /{' '}
-                        <code className="text-xs bg-white/70 dark:bg-slate-800 px-1 rounded">monitor_logs</code>, and queues mail into{' '}
-                        <code className="text-xs bg-white/70 dark:bg-slate-800 px-1 rounded">email_outbox</code>.
-                      </li>
-                      <li>
-                        <strong>email_sender.py</strong> is a second process that sends queued mail via SMTP and records{' '}
-                        <code className="text-xs bg-white/70 dark:bg-slate-800 px-1 rounded">monitor_notification_logs</code>. Slow SMTP cannot block checks or Apache.
-                      </li>
-                      <li>
-                        PHP/Apache only serves the dashboard and stores configuration. Both workers share the same SQLite file{' '}
-                        (<code className="text-xs bg-white/70 dark:bg-slate-800 px-1 rounded">data/linknest.db</code>).
-                      </li>
-                      <li>
-                        <strong>Windows / XAMPP:</strong> run{' '}
-                        <code className="text-xs bg-white/70 dark:bg-slate-800 px-1 rounded">scripts\schedule-monitor-workers.bat</code>{' '}
-                        to register Task Scheduler jobs every 1–2 minutes.
-                      </li>
-                      <li>
-                        <strong>Docker:</strong> workers run automatically in the container entrypoint
-                        (<code className="text-xs bg-white/70 dark:bg-slate-800 px-1 rounded">LINKNEST_WORKERS_ENABLED=1</code>,
-                        interval via <code className="text-xs bg-white/70 dark:bg-slate-800 px-1 rounded">LINKNEST_WORKER_INTERVAL_SECONDS</code>).
-                      </li>
-                      <li>
-                        In-app: Monitoring dashboard → Scheduler Setup. Diagrams:{' '}
-                        <strong>Guides → Python Workers (Monitoring + Email)</strong>
-                        {' '}(<code className="text-xs bg-white/70 dark:bg-slate-800 px-1 rounded">docs/PYTHON_WORKERS.md</code>).
-                      </li>
-                    </ul>
+                    <p className="text-sm">
+                      Scheduled checks and alert mail run in <strong>Python workers</strong> (Task Scheduler / cron / Docker), not in Apache.
+                      Admins can <strong>Install</strong>, <strong>Enable</strong>, <strong>Disable</strong>, and <strong>Uninstall</strong> workers from the Monitoring dashboard <strong>Scheduler</strong> panel.
+                      See the dedicated topic <strong>Python Monitor Workers &amp; Task Scheduler</strong> below, or{' '}
+                      <strong>Guides → Python Workers (Monitoring + Email)</strong> for the full reference with diagrams.
+                    </p>
                   </div>
                   <HelpMonitorArchitecture />
                   <div className="bg-emerald-50 dark:bg-emerald-900/20 rounded-lg p-4 space-y-2">
@@ -1366,6 +1342,16 @@ docker\\docker-sync-database.bat -Direction Out -HostBasePath "/ArchLinks"`}</pr
                     </ul>
                   </div>
                 </div>
+              </section>
+
+              <section>
+                <h3 className="text-xl font-semibold text-slate-900 dark:text-white mb-3 flex items-center gap-2">
+                  <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor" className="w-5 h-5 text-emerald-600 dark:text-emerald-400">
+                    <path fillRule="evenodd" d="M12.316 3.051a1 1 0 01.633 1.265l-4 12a1 1 0 11-1.898-.632l4-12a1 1 0 011.265-.633zM5.707 6.293a1 1 0 010 1.414L3.414 10l2.293 2.293a1 1 0 11-1.414 1.414l-3-3a1 1 0 010-1.414l3-3a1 1 0 011.414 0zm8.586 0a1 1 0 011.414 0l3 3a1 1 0 010 1.414l-3 3a1 1 0 11-1.414-1.414L16.586 10l-2.293-2.293a1 1 0 010-1.414z" clipRule="evenodd" />
+                  </svg>
+                  Python Monitor Workers &amp; Task Scheduler
+                </h3>
+                <HelpPythonWorkersPanel />
               </section>
 
               <section>
@@ -1926,7 +1912,7 @@ docker\\docker-sync-database.bat -Direction Out -HostBasePath "/ArchLinks"`}</pr
                     <li>For SSH/VNC: follow Help → Remote Widgets — SSH / VNC Manual Deployment (or Guides → SSH / VNC Manual Deployment) before first Connect</li>
                     <li>SSH page refresh: sessions can stay alive in a browser SharedWorker — close the widget to disconnect (Guides → SSH Session Shared Worker)</li>
                     <li>Monitor system health with URL, keyword, port, ping, SSL, DNS, and JSON checks — Python workers run outside Apache so checks do not freeze PHP</li>
-                    <li>Install workers with <code className="text-xs">scripts\schedule-monitor-workers.bat</code>; diagrams in Guides → Python Workers (Monitoring + Email)</li>
+                    <li>Install/manage workers from Monitoring toolbar <strong>Scheduler</strong> (Install, Enable, Disable, Uninstall) or CLI <code className="text-xs">scripts\schedule-monitor-workers.bat</code>; diagrams in Guides → Python Workers (Monitoring + Email)</li>
                     <li>Set up email notifications with advanced rules and multiple SMTP servers (email_sender.py sends the queue separately)</li>
                     <li>View monitoring history with interactive charts and graphs</li>
                     <li>Schedule maintenance windows to suppress monitoring alerts</li>
@@ -2119,7 +2105,7 @@ php scripts/reset_admin_password.php admin 'NewStrongPass1!'`}</pre>
                     <li><strong>Package for Deployment:</strong> <code className="text-xs bg-slate-200 dark:bg-slate-800 px-1 rounded">package-for-deployment.bat</code> builds a full XAMPP ZIP with SQLite runtime, remote-widget binaries, and optional DB/uploads flags</li>
                     <li><strong>Docker database sync:</strong> <code className="text-xs bg-slate-200 dark:bg-slate-800 px-1 rounded">docker\docker-sync-database.bat</code> copies SQLite + uploads in or out of the container (<code className="text-xs">-Direction Out</code>, <code className="text-xs">-DatabaseOnly</code>, <code className="text-xs">-UploadsOnly</code>)</li>
                     <li><strong>Bookmark Sync extension:</strong> Origin allowlist, Bookmark sync Off by default, same-origin messages, per-browser-profile isolation, and OutSync (app → Other Bookmarks → LinkNest) — Help → Guides → Bookmark Sync Extension</li>
-                    <li><strong>Python monitor workers:</strong> <code className="text-xs bg-slate-200 dark:bg-slate-800 px-1 rounded">monitor_runner.py</code> and <code className="text-xs bg-slate-200 dark:bg-slate-800 px-1 rounded">email_sender.py</code> run outside Apache/PHP (Task Scheduler / cron / Docker) so slow checks or SMTP cannot freeze the site. Install with <code className="text-xs bg-slate-200 dark:bg-slate-800 px-1 rounded">scripts\schedule-monitor-workers.bat</code> — Help → System Monitoring Dashboard / Guides → Python Workers (Monitoring + Email) (Mermaid architecture diagrams)</li>
+                    <li><strong>Python monitor workers:</strong> <code className="text-xs bg-slate-200 dark:bg-slate-800 px-1 rounded">monitor_runner.py</code> and <code className="text-xs bg-slate-200 dark:bg-slate-800 px-1 rounded">email_sender.py</code> run outside Apache/PHP (Task Scheduler / cron / Docker). Admins manage them from the Monitoring <strong>Scheduler</strong> panel (install, enable, disable, uninstall) or <code className="text-xs bg-slate-200 dark:bg-slate-800 px-1 rounded">scripts\schedule-monitor-workers.bat</code> — Help → Python Monitor Workers &amp; Task Scheduler / Guides → Python Workers</li>
                     <li><strong>Guides tab:</strong> Searchable in-app documentation (MCP / AI, Your Bookmarks, Bookmark Sync Extension, Architecture, Python Workers / monitoring, App Updates, Admin Password &amp; Lockout Recovery, Docker Deployment, Package for Deployment, Windows Bootstrap Bundles, Vanilla Apache + PHP 8.5, XAMPP PHP upgrade, SSH / VNC Manual Deployment, SSH Session Shared Worker, Remote Widgets Setup, and more)</li>
                     <li><strong>SSH sessions across refresh:</strong> SharedWorker in browser memory keeps live SSH sockets through page reload; close the widget to disconnect — Help → SSH sessions across refresh / Guides → SSH Session Shared Worker</li>
                     <li><strong>SSH / VNC manual deploy:</strong> Online, air-gapped runtime pack, HTTPS WSS proxy, Easy mode, <code className="text-xs bg-slate-200 dark:bg-slate-800 px-1 rounded">ssh://</code> / <code className="text-xs bg-slate-200 dark:bg-slate-800 px-1 rounded">vnc://</code> space links — Help and Guides</li>
@@ -2180,13 +2166,37 @@ php scripts/reset_admin_password.php admin 'NewStrongPass1!'`}</pre>
               </section>
 
               <section>
-                <h3 className="text-xl font-semibold text-slate-900 dark:text-white mb-3">Monitor architecture</h3>
-                <p className="text-sm text-slate-700 dark:text-slate-300 mb-2">
-                  Scheduled checks run in Python outside Apache/PHP. Full sequences:{' '}
-                  <strong>Help → System Monitoring Dashboard</strong> and{' '}
+                <h3 className="text-xl font-semibold text-slate-900 dark:text-white mb-3">Python Monitor Workers &amp; Task Scheduler</h3>
+                <p className="text-sm text-slate-700 dark:text-slate-300 mb-3">
+                  Monitor checks and alert email run in <strong>Python 3.9+</strong> outside Apache (
+                  <code className="text-xs bg-slate-200 dark:bg-slate-800 px-1 rounded">monitor_runner.py</code>,{' '}
+                  <code className="text-xs bg-slate-200 dark:bg-slate-800 px-1 rounded">email_sender.py</code>).
+                  On the <strong>Monitoring dashboard</strong>, admins use the toolbar <strong>Scheduler</strong> chip to
+                  <strong> Install</strong>, <strong>Enable</strong>, <strong>Disable</strong>, and <strong>Uninstall</strong> workers
+                  (Windows Task Scheduler or Docker entrypoint). Default Windows install: every <strong>1 min</strong>,{' '}
+                  <strong>20</strong> parallel workers.
+                </p>
+                <div className="mb-3 rounded-lg border border-amber-200 dark:border-amber-800 bg-amber-50 dark:bg-amber-950/30 p-3 text-xs text-amber-900 dark:text-amber-100 space-y-1">
+                  <p className="font-semibold">If web UI install fails on XAMPP</p>
+                  <p>
+                    Set <code className="bg-amber-100/80 dark:bg-amber-900/40 px-1 rounded">monitor_worker_task_user</code> to{' '}
+                    <code className="bg-amber-100/80 dark:bg-amber-900/40 px-1 rounded">COMPUTER\username</code> in the{' '}
+                    <code className="bg-amber-100/80 dark:bg-amber-900/40 px-1 rounded">settings</code> table, or run{' '}
+                    <code className="bg-amber-100/80 dark:bg-amber-900/40 px-1 rounded">schedule-monitor-workers.ps1 -TaskUser</code> manually.
+                    See Help topic for full SQL and logs (<code className="bg-amber-100/80 dark:bg-amber-900/40 px-1 rounded">data/monitor_scheduler_install.log</code>).
+                  </p>
+                </div>
+                <p className="text-sm text-slate-600 dark:text-slate-400 mb-3">
+                  CLI install on Windows: <code className="text-xs bg-slate-200 dark:bg-slate-800 px-1 rounded">scripts\schedule-monitor-workers.bat</code>.
+                  Full options: <strong>Help → Python Monitor Workers &amp; Task Scheduler</strong> and{' '}
                   <strong>Guides → Python Workers (Monitoring + Email)</strong>.
                 </p>
                 <HelpMonitorArchitecture compact />
+                <pre className="mt-3 text-[11px] leading-relaxed bg-slate-900 text-slate-100 dark:bg-black/40 rounded-lg p-3 overflow-x-auto font-mono whitespace-pre-wrap">{`scripts\\schedule-monitor-workers.bat
+scripts\\schedule-monitor-workers.bat verify
+scripts\\schedule-monitor-workers.bat uninstall
+.\\scripts\\schedule-monitor-workers.ps1 -IntervalMinutes 2 -MaxWorkers 32
+.\\scripts\\schedule-monitor-workers.ps1 -TaskUser "MYPC\\YourUsername"`}</pre>
               </section>
 
               <section>
