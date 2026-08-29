@@ -1023,6 +1023,31 @@ export function saveSpeedTestResult(result: SpeedTestResult): SpeedTestResult[] 
   return next;
 }
 
+export function speedTestTargetLabel(target: SpeedTestTarget): string {
+  return target === 'internet' ? 'Internet' : 'This server';
+}
+
+/** Same path + stream mode + runner so Internet is never compared to host LAN speeds. */
+export function isLikeForLikeSpeedTest(
+  current: Pick<SpeedTestResult, 'target' | 'connectionMode' | 'executor'>,
+  other: SpeedTestResult
+): boolean {
+  const mode = current.connectionMode || 'multi';
+  const executor = current.executor || 'browser';
+  return (
+    other.target === current.target &&
+    (other.connectionMode || 'multi') === mode &&
+    (other.executor || 'browser') === executor
+  );
+}
+
+export function findPreviousLikeForLikeResult(
+  history: SpeedTestResult[],
+  current: SpeedTestResult
+): SpeedTestResult | null {
+  return history.find((h) => h.id !== current.id && isLikeForLikeSpeedTest(current, h)) ?? null;
+}
+
 export function clearSpeedTestHistory(): void {
   try {
     localStorage.removeItem(HISTORY_KEY);

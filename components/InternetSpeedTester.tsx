@@ -30,13 +30,16 @@ import {
     SpeedTestResult,
     SpeedTestTarget,
     clearSpeedTestHistory,
+    findPreviousLikeForLikeResult,
     formatBytes,
     formatMbps,
     formatMs,
+    isLikeForLikeSpeedTest,
     loadSpeedTestHistory,
     runDualSpeedTest,
     runSpeedTest,
     saveSpeedTestResult,
+    speedTestTargetLabel,
 } from '../services/speedTestService';
 import { loadSpeedTestPreferences, patchSpeedTestPreferences, SpeedTestPreferences } from '../services/speedTestPreferences';
 import { notifySpeedTestAlerts, notifySpeedTestComplete } from '../services/speedTestNotifications';
@@ -596,7 +599,6 @@ export const InternetSpeedTester: React.FC<InternetSpeedTesterProps> = ({ isOpen
             setCompareServer(dual.server);
             await finalizeResult(dual.internet);
             setHistory(saveSpeedTestResult(dual.server));
-            setResult(dual.server);
             setProgress((p) => ({ ...p, phase: 'complete', phaseLabel: 'Done', percent: 100 }));
         } catch (err) {
             if (ac.signal.aborted || (err instanceof DOMException && err.name === 'AbortError')) {
@@ -636,20 +638,31 @@ export const InternetSpeedTester: React.FC<InternetSpeedTesterProps> = ({ isOpen
                         ? 'Download'
                         : 'Live';
 
-    const previous = history.find((h) => result && h.id !== result.id);
+    const previous = result ? findPreviousLikeForLikeResult(history, result) : null;
     const deltaDown =
         result && previous?.downloadMbps != null && result.downloadMbps != null
             ? result.downloadMbps - previous.downloadMbps
             : null;
 
+    const historyChartTarget = result?.target ?? target;
+    const historyChartMode = result?.connectionMode ?? connectionMode;
     const historyChart = useMemo(
         () =>
-            [...history].slice(0, 16).reverse().map((h) => ({
-                t: new Date(h.at).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
-                down: h.downloadMbps ?? 0,
-                up: h.uploadMbps ?? 0,
-            })),
-        [history]
+            history
+                .filter((h) =>
+                    isLikeForLikeSpeedTest(
+                        { target: historyChartTarget, connectionMode: historyChartMode, executor: result?.executor || 'browser' },
+                        h
+                    )
+                )
+                .slice(0, 16)
+                .reverse()
+                .map((h) => ({
+                    t: new Date(h.at).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
+                    down: h.downloadMbps ?? 0,
+                    up: h.uploadMbps ?? 0,
+                })),
+        [history, historyChartTarget, historyChartMode, result?.executor]
     );
 
     const copyResult = async () => {
@@ -1036,12 +1049,19 @@ export const InternetSpeedTester: React.FC<InternetSpeedTesterProps> = ({ isOpen
                                         <div className="text-lg font-black tabular-nums">{result.score}<span className="text-xs font-bold opacity-70">/100</span></div>
                                     </div>
                                     <p className="text-xs mt-1 opacity-90">{result.quality.hint}</p>
-                                    {deltaDown != null && (
-                                        <p className="text-xs mt-1.5 font-semibold">
-                                            vs last test:{' '}
+                                    {deltaDown != null && previous && (
+                                        <p
+                                            className="text-xs mt-1.5 font-semibold"
+                                            title={`Compared with the previous ${speedTestTargetLabel(result.target)} ${previous.connectionMode} test on the same path (${previous.executor === 'worker' ? 'worker' : 'browser'}). Internet and This-server results are never mixed.`}
+                                        >
+                                            vs last {speedTestTargetLabel(result.target)} ({previous.connectionMode}) test:{' '}
                                             <span className={deltaDown >= 0 ? 'text-emerald-600 dark:text-emerald-300' : 'text-red-600 dark:text-red-300'}>
-                                                {deltaDown >= 0 ? '+' : ''}
+                                                {deltaDown >= 0 ? '+' : '−'}
                                                 {formatMbps(Math.abs(deltaDown))}
+                                            </span>
+                                            <span className="opacity-70 font-medium">
+                                                {' '}
+                                                (was {formatMbps(previous.downloadMbps)})
                                             </span>
                                         </p>
                                     )}
@@ -1117,8 +1137,13 @@ export const InternetSpeedTester: React.FC<InternetSpeedTesterProps> = ({ isOpen
 
                     <div className="rounded-3xl border border-slate-200 dark:border-[#333] bg-white/70 dark:bg-[#1a1a1a]/70 p-4">
                         <div className="flex items-center justify-between gap-2 mb-3">
-                            <div className="flex items-center gap-2 text-sm font-bold text-slate-800 dark:text-white">
-                                <FaHistory className="text-cyan-500" /> Test history
+                            <div>
+                                <div className="flex items-center gap-2 text-sm font-bold text-slate-800 dark:text-white">
+                                    <FaHistory className="text-cyan-500" /> Test history
+                                </div>
+                                <p className="text-[11px] text-slate-500 dark:text-slate-400 mt-0.5">
+                                    Trend shows {speedTestTargetLabel(historyChartTarget)} ({historyChartMode}) tests only — Internet and This-server speeds are not mixed.
+                                </p>
                             </div>
                             {history.length > 0 && (
                                 <div className="flex items-center gap-2">
@@ -1146,6 +1171,11 @@ export const InternetSpeedTester: React.FC<InternetSpeedTesterProps> = ({ isOpen
                             <p className="text-sm text-slate-500 dark:text-slate-400">No tests yet. Run GO to save results on this device.</p>
                         ) : (
                             <>
+                                {historyChart.length === 0 ? (
+                                    <p className="text-xs text-slate-500 dark:text-slate-400 mb-3">
+                                        No {speedTestTargetLabel(historyChartTarget)} ({historyChartMode}) tests yet. Run GO on that path and mode to build a like-to-like trend. Other path results stay in the list below.
+                                    </p>
+                                ) : (
                                 <div className="h-36 mb-3">
                                     <ResponsiveContainer width="100%" height="100%">
                                         <AreaChart data={historyChart} margin={{ top: 8, right: 8, left: 0, bottom: 0 }}>
@@ -1167,6 +1197,7 @@ export const InternetSpeedTester: React.FC<InternetSpeedTesterProps> = ({ isOpen
                                         </AreaChart>
                                     </ResponsiveContainer>
                                 </div>
+                                )}
                                 <div className="overflow-x-auto">
                                     <table className="w-full text-xs text-left">
                                         <thead>
@@ -1181,8 +1212,25 @@ export const InternetSpeedTester: React.FC<InternetSpeedTesterProps> = ({ isOpen
                                             </tr>
                                         </thead>
                                         <tbody>
-                                            {history.slice(0, 12).map((h) => (
-                                                <tr key={h.id} className="border-t border-slate-100 dark:border-[#2a2a2a] text-slate-700 dark:text-slate-300">
+                                            {history.slice(0, 12).map((h) => {
+                                                const likeForLike = result
+                                                    ? isLikeForLikeSpeedTest(result, h)
+                                                    : isLikeForLikeSpeedTest(
+                                                          { target, connectionMode, executor: 'browser' },
+                                                          h
+                                                      );
+                                                return (
+                                                <tr
+                                                    key={h.id}
+                                                    className={`border-t border-slate-100 dark:border-[#2a2a2a] text-slate-700 dark:text-slate-300 ${
+                                                        likeForLike ? '' : 'opacity-45'
+                                                    }`}
+                                                    title={
+                                                        likeForLike
+                                                            ? 'Same path and mode as the current result.'
+                                                            : 'Different path or mode — excluded from “vs last” and from the trend for the current target.'
+                                                    }
+                                                >
                                                     <td className="py-1.5 pr-3 whitespace-nowrap">{new Date(h.at).toLocaleString()}</td>
                                                     <td className="py-1.5 pr-3">
                                                         {h.executor === 'worker' ? 'Worker' : 'Browser'} · {h.target === 'internet' ? 'Internet' : 'Server'}
@@ -1193,7 +1241,8 @@ export const InternetSpeedTester: React.FC<InternetSpeedTesterProps> = ({ isOpen
                                                     <td className="py-1.5 pr-3 tabular-nums">{formatMs(h.pingMs)}</td>
                                                     <td className="py-1.5 font-semibold">{h.quality.label}</td>
                                                 </tr>
-                                            ))}
+                                                );
+                                            })}
                                         </tbody>
                                     </table>
                                 </div>

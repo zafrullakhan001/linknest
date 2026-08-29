@@ -157,6 +157,30 @@ const countryNames: Record<string, string> = {
   australia: 'Australia',
 };
 
+const RATE_STORAGE_KEY = 'linknest_phonetic_speech_rate';
+const VOLUME_STORAGE_KEY = 'linknest_phonetic_speech_volume';
+const NAME_PAUSE_MS = 450;
+
+/** Split names on comma/semicolon first (keeps "John Smith"); otherwise on spaces. */
+function parseReadAloudNames(text: string): string[] {
+  const trimmed = text.trim();
+  if (!trimmed) return [];
+  if (/[,;]/.test(trimmed)) {
+    return trimmed.split(/[,;]+/).map((part) => part.trim()).filter(Boolean);
+  }
+  return trimmed.split(/\s+/).filter(Boolean);
+}
+
+function readStoredNumber(key: string, fallback: number, min: number, max: number): number {
+  try {
+    const raw = parseFloat(localStorage.getItem(key) || '');
+    if (Number.isFinite(raw)) return Math.min(max, Math.max(min, raw));
+  } catch {
+    // Ignore storage failures
+  }
+  return fallback;
+}
+
 interface PhoneticAlphabetProps {
   onClose?: () => void;
 }
@@ -200,8 +224,18 @@ export const PhoneticAlphabet: React.FC<PhoneticAlphabetProps> = ({ onClose }) =
     }
   });
   const [isReading, setIsReading] = useState<boolean>(false);
+  const [speakingIndex, setSpeakingIndex] = useState<number | null>(null);
+  const [speechRate, setSpeechRate] = useState<number>(() =>
+    readStoredNumber(RATE_STORAGE_KEY, 1, 0.5, 2)
+  );
+  const [speechVolume, setSpeechVolume] = useState<number>(() =>
+    readStoredNumber(VOLUME_STORAGE_KEY, 1, 0, 1)
+  );
+  const cancelledRef = useRef(false);
+  const nextTimerRef = useRef<number | null>(null);
 
   const currentAlphabet = phoneticAlphabets[activeTab] || phoneticAlphabets.usa;
+  const readAloudNames = parseReadAloudNames(inputText);
 
   // Load available voices
   useEffect(() => {
@@ -242,6 +276,33 @@ export const PhoneticAlphabet: React.FC<PhoneticAlphabetProps> = ({ onClose }) =
       }
     }
   }, [selectedVoiceUri]);
+
+  useEffect(() => {
+    try {
+      localStorage.setItem(RATE_STORAGE_KEY, String(speechRate));
+    } catch {
+      // Ignore storage failures
+    }
+  }, [speechRate]);
+
+  useEffect(() => {
+    try {
+      localStorage.setItem(VOLUME_STORAGE_KEY, String(speechVolume));
+    } catch {
+      // Ignore storage failures
+    }
+  }, [speechVolume]);
+
+  useEffect(() => {
+    return () => {
+      cancelledRef.current = true;
+      if (nextTimerRef.current) {
+        window.clearTimeout(nextTimerRef.current);
+        nextTimerRef.current = null;
+      }
+      window.speechSynthesis.cancel();
+    };
+  }, []);
 
   // Filter voices for English (US and UK)
   const englishVoices = voices.filter(voice => 
@@ -284,6 +345,7 @@ export const PhoneticAlphabet: React.FC<PhoneticAlphabetProps> = ({ onClose }) =
   const phoneticText = convertToPhonetic(inputText);
 
   const clearInput = () => {
+    stopAudio();
     setInputText('');
   };
 
@@ -352,9 +414,15 @@ export const PhoneticAlphabet: React.FC<PhoneticAlphabetProps> = ({ onClose }) =
   };
 
   const stopAudio = () => {
+    cancelledRef.current = true;
+    if (nextTimerRef.current) {
+      window.clearTimeout(nextTimerRef.current);
+      nextTimerRef.current = null;
+    }
     window.speechSynthesis.cancel();
     setPlayingIndex(null);
     setIsReading(false);
+    setSpeakingIndex(null);
   };
 
   // Get selected voice object
@@ -369,34 +437,60 @@ export const PhoneticAlphabet: React.FC<PhoneticAlphabetProps> = ({ onClose }) =
     return voice || availableVoices.find(voice => voice.default) || availableVoices[0] || null;
   };
 
-  // Read aloud function
+  // Read aloud function — speaks each parsed name in sequence
   const readAloud = () => {
-    if (!inputText.trim()) return;
-    
-    // Stop any current speech
+    const names = parseReadAloudNames(inputText);
+    if (names.length === 0) return;
+
+    cancelledRef.current = false;
+    if (nextTimerRef.current) {
+      window.clearTimeout(nextTimerRef.current);
+      nextTimerRef.current = null;
+    }
     window.speechSynthesis.cancel();
     setIsReading(true);
-    
+
     const voice = getSelectedVoice();
-    const utterance = new SpeechSynthesisUtterance(inputText);
-    
-    if (voice) {
-      utterance.voice = voice;
-    }
-    
-    utterance.rate = 1.0;
-    utterance.pitch = 1.0;
-    utterance.volume = 1.0;
-    
-    utterance.onend = () => {
-      setIsReading(false);
+    const rate = speechRate;
+    const volume = speechVolume;
+
+    const speakAt = (index: number) => {
+      if (cancelledRef.current) return;
+      if (index >= names.length) {
+        setIsReading(false);
+        setSpeakingIndex(null);
+        return;
+      }
+
+      setSpeakingIndex(index);
+      const utterance = new SpeechSynthesisUtterance(names[index]);
+      if (voice) {
+        utterance.voice = voice;
+      }
+      utterance.rate = rate;
+      utterance.pitch = 1.0;
+      utterance.volume = volume;
+
+      utterance.onend = () => {
+        if (cancelledRef.current) return;
+        if (index + 1 >= names.length) {
+          setIsReading(false);
+          setSpeakingIndex(null);
+          return;
+        }
+        nextTimerRef.current = window.setTimeout(() => speakAt(index + 1), NAME_PAUSE_MS);
+      };
+
+      utterance.onerror = () => {
+        if (cancelledRef.current) return;
+        setIsReading(false);
+        setSpeakingIndex(null);
+      };
+
+      window.speechSynthesis.speak(utterance);
     };
-    
-    utterance.onerror = () => {
-      setIsReading(false);
-    };
-    
-    window.speechSynthesis.speak(utterance);
+
+    speakAt(0);
   };
 
   return (
@@ -454,23 +548,39 @@ export const PhoneticAlphabet: React.FC<PhoneticAlphabetProps> = ({ onClose }) =
         </div>
         {/* Text Input Field */}
         <div className="mb-3 relative">
-          <input
-            type="text"
-            value={inputText}
-            onChange={(e) => setInputText(e.target.value)}
-            placeholder={
-              viewMode === 'chart' 
-                ? 'Enter text to highlight letters...' 
-                : viewMode === 'converter'
-                ? 'Enter text to convert to phonetic...'
-                : 'Enter text to read aloud...'
-            }
-            className="w-full px-3 py-2 pr-10 text-sm border border-slate-300 dark:border-slate-600 rounded bg-white dark:bg-slate-700 text-slate-900 dark:text-slate-100 focus:outline-none focus:ring-2 focus:ring-brand-500"
-          />
+          {viewMode === 'readaloud' ? (
+            <textarea
+              value={inputText}
+              onChange={(e) => setInputText(e.target.value)}
+              onKeyDown={(e) => {
+                if (e.key === 'Enter' && !e.shiftKey) {
+                  e.preventDefault();
+                  if (!isReading && inputText.trim()) readAloud();
+                }
+              }}
+              placeholder="Enter names separated by comma, semicolon, or space..."
+              rows={2}
+              className="w-full px-3 py-2 pr-10 text-sm border border-slate-300 dark:border-slate-600 rounded bg-white dark:bg-slate-700 text-slate-900 dark:text-slate-100 focus:outline-none focus:ring-2 focus:ring-brand-500 resize-y min-h-[2.5rem]"
+            />
+          ) : (
+            <input
+              type="text"
+              value={inputText}
+              onChange={(e) => setInputText(e.target.value)}
+              placeholder={
+                viewMode === 'chart'
+                  ? 'Enter text to highlight letters...'
+                  : 'Enter text to convert to phonetic...'
+              }
+              className="w-full px-3 py-2 pr-10 text-sm border border-slate-300 dark:border-slate-600 rounded bg-white dark:bg-slate-700 text-slate-900 dark:text-slate-100 focus:outline-none focus:ring-2 focus:ring-brand-500"
+            />
+          )}
           {inputText && (
             <button
               onClick={clearInput}
-              className="absolute right-2 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-600 dark:hover:text-slate-300 p-1 rounded transition-colors"
+              className={`absolute right-2 text-slate-400 hover:text-slate-600 dark:hover:text-slate-300 p-1 rounded transition-colors ${
+                viewMode === 'readaloud' ? 'top-2' : 'top-1/2 -translate-y-1/2'
+              }`}
               title="Clear text"
             >
               <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor" className="w-4 h-4">
@@ -515,27 +625,67 @@ export const PhoneticAlphabet: React.FC<PhoneticAlphabetProps> = ({ onClose }) =
             ))}
           </div>
         )}
-        {/* Voice Selection - show in readaloud mode */}
+        {/* Voice, speed, and volume - show in readaloud mode */}
         {viewMode === 'readaloud' && (
-          <div className="mb-3">
-            <label className="block text-xs font-medium text-slate-600 dark:text-slate-400 mb-1">
-              Voice
-            </label>
-            <select
-              value={selectedVoiceUri}
-              onChange={(e) => setSelectedVoiceUri(e.target.value)}
-              className="w-full px-3 py-2 text-sm border border-slate-300 dark:border-slate-600 rounded bg-white dark:bg-slate-700 text-slate-900 dark:text-slate-100 focus:outline-none focus:ring-2 focus:ring-brand-500"
-            >
-              {englishVoices.length > 0 ? (
-                englishVoices.map((voice) => (
-                  <option key={voice.voiceURI} value={voice.voiceURI}>
-                    {voice.name} ({voice.lang})
-                  </option>
-                ))
-              ) : (
-                <option value="">Loading voices...</option>
-              )}
-            </select>
+          <div className="mb-3 space-y-2">
+            <div>
+              <label className="block text-xs font-medium text-slate-600 dark:text-slate-400 mb-1">
+                Voice
+              </label>
+              <select
+                value={selectedVoiceUri}
+                onChange={(e) => setSelectedVoiceUri(e.target.value)}
+                className="w-full px-3 py-2 text-sm border border-slate-300 dark:border-slate-600 rounded bg-white dark:bg-slate-700 text-slate-900 dark:text-slate-100 focus:outline-none focus:ring-2 focus:ring-brand-500"
+              >
+                {englishVoices.length > 0 ? (
+                  englishVoices.map((voice) => (
+                    <option key={voice.voiceURI} value={voice.voiceURI}>
+                      {voice.name} ({voice.lang})
+                    </option>
+                  ))
+                ) : (
+                  <option value="">Loading voices...</option>
+                )}
+              </select>
+            </div>
+            <div className="grid grid-cols-2 gap-3">
+              <div>
+                <label htmlFor="phonetic-speech-rate" className="flex items-center justify-between text-xs font-medium text-slate-600 dark:text-slate-400 mb-1">
+                  <span>Speed</span>
+                  <span className="tabular-nums text-slate-500 dark:text-slate-400">{speechRate.toFixed(2)}×</span>
+                </label>
+                <input
+                  id="phonetic-speech-rate"
+                  type="range"
+                  min={0.5}
+                  max={2}
+                  step={0.05}
+                  value={speechRate}
+                  onChange={(e) => setSpeechRate(parseFloat(e.target.value))}
+                  className="w-full accent-brand-500"
+                  aria-label="Read aloud speed"
+                  title="Read aloud speed"
+                />
+              </div>
+              <div>
+                <label htmlFor="phonetic-speech-volume" className="flex items-center justify-between text-xs font-medium text-slate-600 dark:text-slate-400 mb-1">
+                  <span>Volume</span>
+                  <span className="tabular-nums text-slate-500 dark:text-slate-400">{Math.round(speechVolume * 100)}%</span>
+                </label>
+                <input
+                  id="phonetic-speech-volume"
+                  type="range"
+                  min={0}
+                  max={1}
+                  step={0.05}
+                  value={speechVolume}
+                  onChange={(e) => setSpeechVolume(parseFloat(e.target.value))}
+                  className="w-full accent-brand-500"
+                  aria-label="Read aloud volume"
+                  title="Read aloud volume"
+                />
+              </div>
+            </div>
           </div>
         )}
       </div>
@@ -673,7 +823,7 @@ export const PhoneticAlphabet: React.FC<PhoneticAlphabetProps> = ({ onClose }) =
       ) : (
         /* Read Aloud */
         <div className="overflow-y-auto flex-1 min-h-0">
-          {inputText.trim() ? (
+          {readAloudNames.length > 0 ? (
             <div className="space-y-3">
               <div className="flex gap-2">
                 <button
@@ -684,21 +834,23 @@ export const PhoneticAlphabet: React.FC<PhoneticAlphabetProps> = ({ onClose }) =
                       ? 'bg-slate-400 dark:bg-slate-600 text-white cursor-not-allowed'
                       : 'bg-brand-500 hover:bg-brand-600 text-white'
                   }`}
-                  title="Read text aloud"
+                  title={readAloudNames.length === 1 ? 'Read name aloud' : `Read ${readAloudNames.length} names aloud`}
                 >
                   {isReading ? (
                     <>
                       <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor" className="w-4 h-4 animate-pulse">
                         <path d="M5.25 3a.75.75 0 00-.75.75v12.5c0 .414.336.75.75.75h1.5a.75.75 0 00.75-.75V3.75A.75.75 0 006.75 3h-1.5zM11.25 3a.75.75 0 00-.75.75v12.5c0 .414.336.75.75.75h1.5a.75.75 0 00.75-.75V3.75a.75.75 0 00-.75-.75h-1.5z" />
                       </svg>
-                      Reading...
+                      {speakingIndex !== null
+                        ? `Reading ${speakingIndex + 1} of ${readAloudNames.length}…`
+                        : 'Reading...'}
                     </>
                   ) : (
                     <>
                       <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor" className="w-4 h-4">
                         <path d="M6.3 2.841A1.5 1.5 0 004 4.11V15.89a1.5 1.5 0 002.3 1.269l9.344-5.89a1.5 1.5 0 000-2.538L6.3 2.84z" />
                       </svg>
-                      Read Aloud
+                      {readAloudNames.length === 1 ? 'Read Aloud' : `Read ${readAloudNames.length} Names`}
                     </>
                   )}
                 </button>
@@ -715,15 +867,30 @@ export const PhoneticAlphabet: React.FC<PhoneticAlphabetProps> = ({ onClose }) =
                   </button>
                 )}
               </div>
-              <div className="p-4 bg-slate-50 dark:bg-slate-700/50 rounded border border-slate-200 dark:border-slate-600">
-                <div className="text-sm text-slate-700 dark:text-slate-300 whitespace-pre-wrap">
-                  {inputText}
-                </div>
+              <p className="text-[11px] text-slate-500 dark:text-slate-400">
+                Separate names with commas, semicolons, or spaces. Use commas to keep first and last names together.
+              </p>
+              <div className="flex flex-wrap gap-1.5">
+                {readAloudNames.map((name, index) => {
+                  const isSpeaking = speakingIndex === index;
+                  return (
+                    <span
+                      key={`${name}-${index}`}
+                      className={`inline-flex items-center px-2 py-1 rounded text-xs font-medium border transition-colors ${
+                        isSpeaking
+                          ? 'bg-brand-500 text-white border-brand-500'
+                          : 'bg-slate-50 dark:bg-slate-700/50 text-slate-700 dark:text-slate-300 border-slate-200 dark:border-slate-600'
+                      }`}
+                    >
+                      {name}
+                    </span>
+                  );
+                })}
               </div>
             </div>
           ) : (
-            <div className="flex items-center justify-center h-full text-slate-400 dark:text-slate-500 text-sm">
-              Enter text above to read aloud
+            <div className="flex items-center justify-center h-full text-slate-400 dark:text-slate-500 text-sm text-center px-4">
+              Enter one or more names above to read aloud
             </div>
           )}
         </div>
