@@ -133,6 +133,20 @@ export const MonitoringOverview: React.FC<MonitoringOverviewProps> = ({ hasMonit
             </div>
           </div>
 
+          <div className="bg-white dark:bg-slate-800 border border-cyan-200 dark:border-cyan-800/50 rounded-xl p-4 flex items-start gap-3">
+            <div className="w-9 h-9 rounded-lg bg-cyan-100 dark:bg-cyan-900/40 text-cyan-800 dark:text-cyan-200 flex items-center justify-center shrink-0">
+              <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor" className="w-5 h-5">
+                <path fillRule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zm.75-13a.75.75 0 00-1.5 0v5c0 .192.072.384.21.53l3 3.25a.75.75 0 101.08-1.04L10.75 9.64V5z" clipRule="evenodd" />
+              </svg>
+            </div>
+            <div className="min-w-0">
+              <h4 className="text-sm font-semibold text-slate-900 dark:text-white">Internet speed test</h4>
+              <p className="text-sm text-slate-600 dark:text-slate-400 mt-1">
+                Use the gauge icon for ping, jitter, download/upload, bufferbloat, grades, path comparison, PNG/CSV export, alerts, and browser or server-worker schedules. Browser tests measure this device; worker schedules measure the LinkNest host.
+              </p>
+            </div>
+          </div>
+
           <div className="bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-xl p-5">
             <h4 className="text-sm font-semibold text-slate-900 dark:text-white mb-2">Automatic scheduling</h4>
             <p className="text-sm text-slate-600 dark:text-slate-400 mb-3">

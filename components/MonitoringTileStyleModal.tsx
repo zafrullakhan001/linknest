@@ -5,6 +5,7 @@ import { useEscapeToClose } from '../hooks/useEscapeToClose';
 import {
     DEFAULT_FONT_FAMILY,
     DEFAULT_MONITOR_TILE_STYLES,
+    PHP_SERVER_MONITOR_TILE_STYLES,
     hasMonitorTileStylePreferences,
     readCachedMonitorTileStyles,
     tileStylesFromPreferences,
@@ -24,6 +25,7 @@ interface MonitoringTileStyleModalProps {
 
 const FONT_OPTIONS: { label: string; value: string }[] = [
     { label: 'System (Default)', value: DEFAULT_FONT_FAMILY },
+    { label: 'Helvetica Neue (PHP Server Monitor)', value: '"Helvetica Neue", Helvetica, Arial, sans-serif' },
     { label: 'Arial', value: 'Arial, Helvetica, sans-serif' },
     { label: 'Segoe UI', value: '"Segoe UI", Tahoma, Geneva, Verdana, sans-serif' },
     { label: 'Verdana', value: 'Verdana, Geneva, sans-serif' },
@@ -100,6 +102,12 @@ export const MonitoringTileStyleModal: React.FC<MonitoringTileStyleModalProps> =
 
     const resetToDefaults = () => {
         setStyles(defaultStyles);
+        onStylesChange(defaultStyles);
+    };
+
+    const applyPhpServerMonitorProfile = () => {
+        setStyles(PHP_SERVER_MONITOR_TILE_STYLES);
+        onStylesChange(PHP_SERVER_MONITOR_TILE_STYLES);
     };
 
     const exportStyles = () => {
@@ -309,7 +317,7 @@ export const MonitoringTileStyleModal: React.FC<MonitoringTileStyleModalProps> =
                                         />
                                     </div>
                                     <p className="text-xs text-slate-500 dark:text-slate-400 mt-2">
-                                        Applies to monitor tiles in the dashboard (tiles/compact views).
+                                        Applies to monitor tiles, compact view, and PHP Server Monitor status board.
                                     </p>
                                 </div>
                                 <div className="flex items-center justify-center">
@@ -813,13 +821,22 @@ export const MonitoringTileStyleModal: React.FC<MonitoringTileStyleModalProps> =
                 </div>
 
                 {/* Footer */}
-                <div className="p-4 bg-slate-50 dark:bg-[#252525] border-t border-slate-100 dark:border-[#333] flex items-center justify-between">
-                    <div className="flex items-center gap-3">
+                <div className="p-4 bg-slate-50 dark:bg-[#252525] border-t border-slate-100 dark:border-[#333] flex flex-wrap items-center justify-between gap-3">
+                    <div className="flex flex-wrap items-center gap-3">
                         <button
                             onClick={resetToDefaults}
                             className="px-4 py-2 text-sm font-medium text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-white transition-colors"
+                            title="LinkNest default greens and reds"
                         >
                             Reset to Defaults
+                        </button>
+                        <button
+                            type="button"
+                            onClick={applyPhpServerMonitorProfile}
+                            className="px-4 py-2 text-sm font-medium text-emerald-700 dark:text-emerald-400 hover:text-emerald-900 dark:hover:text-emerald-200 transition-colors"
+                            title="Classic PHP Server Monitor green / red / amber profile"
+                        >
+                            PHP Server Monitor
                         </button>
                         <div className="h-6 w-px bg-slate-300 dark:bg-slate-600"></div>
                         <button

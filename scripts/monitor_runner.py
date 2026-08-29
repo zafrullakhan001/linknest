@@ -962,6 +962,16 @@ def main() -> int:
         if args.verbose:
             checked_n = job_counts["checked"] if job_counts is not None else len(due)
             print(f"[DONE] checked={checked_n} queued_emails={queued_emails}")
+
+        # Optional scheduled speed tests (host path) — at most one per runner cycle.
+        try:
+            from speedtest_runner import run_due_speedtests
+
+            run_due_speedtests(conn, db_path=db_path, verbose=args.verbose)
+        except Exception as speed_err:
+            if args.verbose:
+                print(f"[speedtest] skipped: {speed_err}")
+
         return 0
     except Exception as e:
         if job_id is not None:

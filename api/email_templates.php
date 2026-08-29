@@ -134,7 +134,7 @@ function ln_email_brand_logo_setting_raw(): string {
 }
 
 /**
- * Resolve brand logo to a local uploads file path (for CID embedding in Outlook).
+ * Resolve brand logo to a local uploads file path.
  */
 function ln_email_brand_logo_filesystem_path(): ?string {
     $logo = ln_email_brand_logo_setting_raw();
@@ -157,50 +157,19 @@ function ln_email_brand_logo_filesystem_path(): ?string {
     return is_file($disk) ? $disk : null;
 }
 
-/** Content-ID used when embedding the brand logo inline (Outlook-friendly). */
+/** @deprecated CID logo embedding caused Outlook paperclip icons; emails use hosted URLs. */
 function ln_email_brand_logo_cid(): string {
     return 'ln-brand-logo';
 }
 
 /**
- * Inline image attachments referenced by cid: in HTML (for multipart/related).
+ * Previously returned CID image parts for multipart/related.
+ * Always empty: related/CID parts make Outlook show an attachment paperclip.
  *
  * @return list<array{cid:string,path:string,mime:string,name:string}>
  */
 function ln_email_inline_attachments_for_html(string $html): array {
-    $out = [];
-    $cid = ln_email_brand_logo_cid();
-    if (stripos($html, 'cid:' . $cid) === false) {
-        return $out;
-    }
-    $path = ln_email_brand_logo_filesystem_path();
-    if ($path === null) {
-        return $out;
-    }
-    $mime = 'image/png';
-    if (function_exists('finfo_open')) {
-        $f = @finfo_open(FILEINFO_MIME_TYPE);
-        if ($f) {
-            $detected = @finfo_file($f, $path);
-            @finfo_close($f);
-            if (is_string($detected) && str_starts_with($detected, 'image/')) {
-                $mime = $detected;
-            }
-        }
-    } else {
-        $ext = strtolower(pathinfo($path, PATHINFO_EXTENSION));
-        $map = ['jpg' => 'image/jpeg', 'jpeg' => 'image/jpeg', 'gif' => 'image/gif', 'webp' => 'image/webp', 'png' => 'image/png'];
-        if (isset($map[$ext])) {
-            $mime = $map[$ext];
-        }
-    }
-    $out[] = [
-        'cid' => $cid,
-        'path' => $path,
-        'mime' => $mime,
-        'name' => basename($path),
-    ];
-    return $out;
+    return [];
 }
 
 function ln_email_brand_accent(): string {
@@ -247,11 +216,12 @@ function ln_email_base_layout(
         $customLogo = trim((string)($options['logo_url'] ?? ''));
         if ($customLogo !== '') {
             $logoSrc = $customLogo;
-        } elseif (ln_email_brand_logo_filesystem_path() !== null) {
-            // Prefer CID so Outlook shows the logo without downloading remote images
-            $logoSrc = 'cid:' . ln_email_brand_logo_cid();
         } else {
+            // Hosted URL only — CID/related MIME parts make Outlook show a paperclip
             $logoSrc = ln_email_brand_logo_url($options['public_base'] ?? null);
+        }
+        if (stripos($logoSrc, 'cid:') === 0) {
+            $logoSrc = '';
         }
     }
 

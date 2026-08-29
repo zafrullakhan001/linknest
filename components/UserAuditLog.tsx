@@ -50,6 +50,7 @@ const ACTION_LABELS: Record<string, string> = {
   'monitor.imported': 'Monitors imported',
   'monitor.tab_renamed': 'Monitor tab renamed',
   'monitor.group_renamed': 'Monitor group renamed',
+  'monitor.audit_purged': 'Monitor audit log purged',
 };
 
 const ACTION_BADGE: Record<string, string> = {
@@ -92,6 +93,7 @@ const ACTION_BADGE: Record<string, string> = {
   'monitor.imported': 'bg-blue-100 text-blue-800 dark:bg-blue-900/40 dark:text-blue-200',
   'monitor.tab_renamed': 'bg-amber-100 text-amber-800 dark:bg-amber-900/40 dark:text-amber-200',
   'monitor.group_renamed': 'bg-amber-100 text-amber-800 dark:bg-amber-900/40 dark:text-amber-200',
+  'monitor.audit_purged': 'bg-rose-100 text-rose-800 dark:bg-rose-900/40 dark:text-rose-200',
 };
 
 function actionLabel(action: string): string {

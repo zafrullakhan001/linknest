@@ -1,5 +1,5 @@
 import React, { useCallback, useEffect, useState } from 'react';
-import { FaDownload, FaTimes } from 'react-icons/fa';
+import { FaDownload, FaTimes, FaTrash } from 'react-icons/fa';
 import { useEscapeToClose } from '../hooks/useEscapeToClose';
 import { userAuditService, UserAuditLogEntry } from '../services/userAuditService';
 
@@ -13,6 +13,7 @@ const ACTION_LABELS: Record<string, string> = {
   'monitor.imported': 'Imported',
   'monitor.tab_renamed': 'Tab renamed',
   'monitor.group_renamed': 'Group renamed',
+  'monitor.audit_purged': 'Log purged',
 };
 
 const ACTION_EMOJI: Record<string, string> = {
@@ -25,6 +26,7 @@ const ACTION_EMOJI: Record<string, string> = {
   'monitor.imported': '📥',
   'monitor.tab_renamed': '📑',
   'monitor.group_renamed': '📁',
+  'monitor.audit_purged': '🧹',
 };
 
 const ACTION_BADGE: Record<string, string> = {
@@ -37,6 +39,7 @@ const ACTION_BADGE: Record<string, string> = {
   'monitor.imported': 'bg-blue-100 text-blue-800 dark:bg-blue-900/40 dark:text-blue-200',
   'monitor.tab_renamed': 'bg-amber-100 text-amber-800 dark:bg-amber-900/40 dark:text-amber-200',
   'monitor.group_renamed': 'bg-orange-100 text-orange-800 dark:bg-orange-900/40 dark:text-orange-200',
+  'monitor.audit_purged': 'bg-rose-100 text-rose-800 dark:bg-rose-900/40 dark:text-rose-200',
 };
 
 const ACTION_ROW: Record<string, string> = {
@@ -49,6 +52,7 @@ const ACTION_ROW: Record<string, string> = {
   'monitor.imported': 'border-l-4 border-l-blue-400',
   'monitor.tab_renamed': 'border-l-4 border-l-amber-400',
   'monitor.group_renamed': 'border-l-4 border-l-orange-400',
+  'monitor.audit_purged': 'border-l-4 border-l-rose-500',
 };
 
 function actionEmoji(action: string): string {
@@ -76,6 +80,9 @@ function monitorSummary(details: UserAuditLogEntry['details']): string {
   }
   if (typeof d.monitor_id === 'number') return `#${d.monitor_id}`;
   if (typeof d.count === 'number') return `${d.count} monitor${d.count === 1 ? '' : 's'}`;
+  if (typeof d.deleted_count === 'number') {
+    return `${d.deleted_count} event${d.deleted_count === 1 ? '' : 's'} removed`;
+  }
   if (typeof d.from === 'string' && typeof d.to === 'string') return `${d.from} → ${d.to}`;
   return '—';
 }
@@ -86,7 +93,7 @@ function formatDetails(details: UserAuditLogEntry['details']): string {
   const parts: string[] = [];
   for (const [key, value] of Object.entries(details)) {
     if (value === null || value === undefined || value === false || value === '') continue;
-    if (key === 'name' || key === 'monitor_id') continue;
+    if (key === 'name' || key === 'monitor_id' || key === 'deleted_count' || key === 'action_prefix') continue;
     if (key === 'monitors' && Array.isArray(value)) {
       const names = value
         .map((m) => (m && typeof m === 'object' && 'name' in m ? String((m as { name?: string }).name || '') : ''))
@@ -132,7 +139,10 @@ export const MonitorAuditLogDialog: React.FC<MonitorAuditLogDialogProps> = ({ on
   const [actionFilter, setActionFilter] = useState('');
   const [loading, setLoading] = useState(true);
   const [exporting, setExporting] = useState(false);
+  const [purging, setPurging] = useState(false);
+  const [purgeOlderDays, setPurgeOlderDays] = useState<number>(0);
   const [error, setError] = useState('');
+  const [successMessage, setSuccessMessage] = useState('');
 
   const [modalStyle, setModalStyle] = useState(() => {
     const width = Math.min(typeof window !== 'undefined' ? window.innerWidth - 40 : 1000, 1000);
@@ -246,6 +256,7 @@ export const MonitorAuditLogDialog: React.FC<MonitorAuditLogDialogProps> = ({ on
     try {
       setExporting(true);
       setError('');
+      setSuccessMessage('');
       const all: UserAuditLogEntry[] = [];
       let fetchPage = 1;
       while (all.length < 2000) {
@@ -283,6 +294,41 @@ export const MonitorAuditLogDialog: React.FC<MonitorAuditLogDialogProps> = ({ on
       setError(err instanceof Error ? err.message : 'Failed to export audit log');
     } finally {
       setExporting(false);
+    }
+  };
+
+  const handlePurge = async () => {
+    const scopeLabel =
+      purgeOlderDays > 0
+        ? `all monitor audit events older than ${purgeOlderDays} days`
+        : 'ALL monitor audit log events and start fresh';
+    if (
+      !confirm(
+        `Permanently delete ${scopeLabel}?\n\nThis cannot be undone. A single “Monitor audit log purged” event will be recorded.`
+      )
+    ) {
+      return;
+    }
+    try {
+      setPurging(true);
+      setError('');
+      setSuccessMessage('');
+      const result = await userAuditService.purge(
+        purgeOlderDays > 0 ? purgeOlderDays : undefined,
+        'monitor.'
+      );
+      setSuccessMessage(
+        `Purged ${result.deleted_count} event${result.deleted_count === 1 ? '' : 's'}. The purge was recorded in the audit log.`
+      );
+      setSearch('');
+      setDebouncedSearch('');
+      setActionFilter('');
+      setPage(1);
+      await loadLogs();
+    } catch (err: unknown) {
+      setError(err instanceof Error ? err.message : 'Failed to purge monitor audit log');
+    } finally {
+      setPurging(false);
     }
   };
 
@@ -357,6 +403,28 @@ export const MonitorAuditLogDialog: React.FC<MonitorAuditLogDialogProps> = ({ on
             <option value={50}>50 / page</option>
             <option value={100}>100 / page</option>
           </select>
+          <select
+            value={purgeOlderDays}
+            onChange={(e) => setPurgeOlderDays(Number(e.target.value))}
+            disabled={purging || total === 0}
+            className="bg-white dark:bg-[#252525] border border-slate-200 dark:border-[#333] rounded-xl px-3 py-2 text-sm text-slate-900 dark:text-white disabled:opacity-50 focus:outline-none focus:ring-2 focus:ring-rose-400/50"
+            title="Purge scope"
+          >
+            <option value={0}>Purge all</option>
+            <option value={30}>Older than 30 days</option>
+            <option value={90}>Older than 90 days</option>
+            <option value={365}>Older than 1 year</option>
+          </select>
+          <button
+            type="button"
+            onClick={() => void handlePurge()}
+            disabled={purging || total === 0}
+            className="inline-flex items-center gap-2 px-3 py-2 rounded-xl text-sm font-semibold text-white bg-rose-600 hover:bg-rose-500 disabled:opacity-50 transition-all shadow-sm"
+            title="Permanently delete monitor audit events"
+          >
+            <FaTrash size={11} />
+            {purging ? 'Purging…' : '🧹 Purge'}
+          </button>
           <button
             type="button"
             onClick={() => void handleExport()}
@@ -372,6 +440,11 @@ export const MonitorAuditLogDialog: React.FC<MonitorAuditLogDialogProps> = ({ on
           {error && (
             <div className="mb-3 px-3 py-2 rounded-xl bg-rose-50 dark:bg-rose-900/20 text-rose-700 dark:text-rose-300 text-sm">
               ⚠️ {error}
+            </div>
+          )}
+          {successMessage && (
+            <div className="mb-3 px-3 py-2 rounded-xl bg-emerald-50 dark:bg-emerald-900/20 text-emerald-700 dark:text-emerald-300 text-sm">
+              ✅ {successMessage}
             </div>
           )}
           {loading ? (

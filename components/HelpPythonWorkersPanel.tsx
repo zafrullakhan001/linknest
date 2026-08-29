@@ -27,7 +27,12 @@ export const HelpPythonWorkersPanel: React.FC = () => {
             <code className={code}>scripts/monitor_runner.py</code> — probes due monitors <strong>in parallel</strong>,
             writes <code className={code}>monitors</code> / <code className={code}>monitor_logs</code>, queues{' '}
             <code className={code}>email_outbox</code>, processes force-all jobs from{' '}
-            <code className={code}>monitor_check_jobs</code>.
+            <code className={code}>monitor_check_jobs</code>, then runs due <strong>worker speed tests</strong> (host path).
+          </li>
+          <li>
+            <code className={code}>scripts/speedtest_runner.py</code> — scheduled server-side speed tests (Cloudflare or
+            LinkNest loopback). Measures this host, not an end-user browser. Admin schedules live in Monitoring → Internet
+            speed test → Settings.
           </li>
           <li>
             <code className={code}>scripts/email_sender.py</code> — drains <code className={code}>email_outbox</code>{' '}

@@ -8,7 +8,7 @@ import { MonitorSslBulkImportDialog } from './MonitorSslBulkImportDialog';
 import { MonitorAuditLogDialog } from './MonitorAuditLogDialog';
 import { MonitorTargetLabel } from './MonitorTargetLabel';
 import { MonitorUptimeCalendar, MonitorUptimeDayBanner } from './MonitorUptimeCalendar';
-import { FaServer, FaGlobe, FaSearch, FaCheck, FaTimes, FaQuestion, FaPlus, FaRedo, FaSyncAlt, FaTrash, FaEdit, FaClock, FaThLarge, FaList, FaCopy, FaBars, FaDownload, FaUpload, FaHistory, FaCalendarAlt, FaEnvelope, FaArrowsAlt, FaPalette, FaCircle, FaExpand, FaCompress, FaBell, FaBellSlash, FaFileExport, FaFileCsv, FaLock, FaCode, FaMagic, FaStream, FaClipboardList, FaStop, FaExclamationTriangle, FaThumbtack, FaVolumeUp, FaVolumeMute, FaColumns } from 'react-icons/fa';
+import { FaServer, FaGlobe, FaSearch, FaCheck, FaTimes, FaQuestion, FaPlus, FaRedo, FaSyncAlt, FaTrash, FaEdit, FaClock, FaThLarge, FaList, FaCopy, FaBars, FaDownload, FaUpload, FaHistory, FaCalendarAlt, FaEnvelope, FaArrowsAlt, FaPalette, FaCircle, FaExpand, FaCompress, FaBell, FaBellSlash, FaFileExport, FaFileCsv, FaLock, FaCode, FaMagic, FaStream, FaClipboardList, FaStop, FaExclamationTriangle, FaThumbtack, FaVolumeUp, FaVolumeMute, FaColumns, FaSortAmountUp, FaSortAmountDown, FaTachometerAlt, FaDesktop } from 'react-icons/fa';
 import { SSL_CERTS_TAB, formatMonitorCornerMetric, isSslCertsTab, isSslMonitor } from '../utils/monitorSsl';
 import { dayKeyFromUnix } from '../utils/monitorUptimeCalendar';
 import { useTileAnimation, getTileAnimationClass, getTileDecorationClass } from './TileAnimationSelector';
@@ -21,11 +21,21 @@ import {
     tileStylesFromPreferences,
     writeCachedMonitorTileStyles,
 } from '../utils/monitorTileStyles';
+import {
+    diffAndNotifyMonitorStatuses,
+    MonitorStatusSnapshot,
+    readBrowserNotificationsEnabled,
+    requestMonitorBrowserNotificationPermission,
+    writeBrowserNotificationsEnabled,
+} from '../utils/monitorBrowserNotifications';
+import { MonitorStatusToast, MonitorStatusToastStack } from './MonitorStatusToastStack';
 import { AreaChart, Area, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, ReferenceLine, Brush, BarChart, Bar, Cell } from 'recharts';
 import { useAuth } from '../contexts/AuthContext';
 import { useEscapeToClose } from '../hooks/useEscapeToClose';
 import { ThemeModeMenu } from './ThemeModeMenu';
 import { resolveDarkMode, subscribeThemePreference } from '../services/themePreferenceService';
+import { MonitorStatusBoard, StatusBoardToolbarIcon } from './MonitorStatusBoard';
+import { InternetSpeedTester } from './InternetSpeedTester';
 
 /** Estimated max wait shown while a queued job awaits monitor_runner pickup. */
 const PYTHON_WORKER_PICKUP_COUNTDOWN_SEC = 65;
@@ -40,6 +50,19 @@ const DEFAULT_MONITOR_SECTION_BG_LIGHT = '#e8eef7';
 const DEFAULT_MONITOR_SECTION_BG_DARK = '#1a2332';
 const DEFAULT_MONITOR_SECTION_TEXT_LIGHT = '#334155';
 const DEFAULT_MONITOR_SECTION_TEXT_DARK = '#e2e8f0';
+const MONITOR_ALL_TABS_SORT_KEY = 'linknest_monitor_fullscreen_all_sort';
+
+type AllTabsSortMode = 'name' | 'links-asc' | 'links-desc';
+
+function parseAllTabsSortMode(value: string | null): AllTabsSortMode {
+    return value === 'links-asc' || value === 'links-desc' ? value : 'name';
+}
+
+function nextAllTabsSortMode(mode: AllTabsSortMode): AllTabsSortMode {
+    if (mode === 'name') return 'links-asc';
+    if (mode === 'links-asc') return 'links-desc';
+    return 'name';
+}
 
 function readMonitorSectionColor(key: string, fallback: string): string {
     try {
@@ -507,6 +530,7 @@ export const MonitoringDashboard: React.FC = () => {
     const [showBulkImport, setShowBulkImport] = useState(false);
     const [showSslBulkImport, setShowSslBulkImport] = useState(false);
     const [showAuditLog, setShowAuditLog] = useState(false);
+    const [showSpeedTester, setShowSpeedTester] = useState(false);
     const [addMonitorType, setAddMonitorType] = useState<Monitor['type'] | undefined>(undefined);
     const [selectedMonitor, setSelectedMonitor] = useState<Monitor | undefined>(undefined);
     const [isDuplicate, setIsDuplicate] = useState(false);
@@ -521,9 +545,9 @@ export const MonitoringDashboard: React.FC = () => {
     });
     const [isLogsLoading, setIsLogsLoading] = useState(false);
     const [checkingId, setCheckingId] = useState<number | null>(null);
-    const [viewMode, setViewMode] = useState<'tiles' | 'grid' | 'compact' | 'capsule' | 'status-bar' | 'kanban' | 'timeline'>(() => {
+    const [viewMode, setViewMode] = useState<'tiles' | 'grid' | 'compact' | 'capsule' | 'status-bar' | 'status-board' | 'kanban' | 'timeline'>(() => {
         const saved = localStorage.getItem('linknest_monitor_view_mode');
-        return (saved === 'tiles' || saved === 'grid' || saved === 'compact' || saved === 'capsule' || saved === 'status-bar' || saved === 'kanban' || saved === 'timeline') ? saved : 'tiles';
+        return (saved === 'tiles' || saved === 'grid' || saved === 'compact' || saved === 'capsule' || saved === 'status-bar' || saved === 'status-board' || saved === 'kanban' || saved === 'timeline') ? saved : 'tiles';
     });
     const [autoRefreshInterval, setAutoRefreshInterval] = useState<number>(30); // Default 30s
     const [isAutoRefreshEnabled, setIsAutoRefreshEnabled] = useState(() => {
@@ -619,6 +643,13 @@ export const MonitoringDashboard: React.FC = () => {
         const saved = localStorage.getItem('linknest_monitor_fullscreen_all_layout');
         return saved === 'columns' ? 'columns' : 'stack';
     });
+    const [allTabsSortMode, setAllTabsSortMode] = useState<AllTabsSortMode>(() => {
+        try {
+            return parseAllTabsSortMode(localStorage.getItem(MONITOR_ALL_TABS_SORT_KEY));
+        } catch {
+            return 'name';
+        }
+    });
     const [sectionBoxBgLight, setSectionBoxBgLight] = useState(() =>
         readMonitorSectionColor(MONITOR_SECTION_BG_LIGHT_KEY, DEFAULT_MONITOR_SECTION_BG_LIGHT)
     );
@@ -634,6 +665,9 @@ export const MonitoringDashboard: React.FC = () => {
     const [darkMode, setDarkMode] = useState(() => resolveDarkMode());
     const ownsBrowserFullscreenRef = useRef(false);
     const [notificationsPaused, setNotificationsPaused] = useState<boolean>(false);
+    const [browserNotificationsEnabled, setBrowserNotificationsEnabled] = useState(() => readBrowserNotificationsEnabled());
+    const prevMonitorStatusByIdRef = useRef<Map<number, MonitorStatusSnapshot>>(new Map());
+    const [statusToasts, setStatusToasts] = useState<MonitorStatusToast[]>([]);
     const [checkStatus, setCheckStatus] = useState<{ count: number; total: number; up: number; down: number; error: number } | null>(null);
     const [workerSchedulerStatus, setWorkerSchedulerStatus] = useState<MonitorWorkerSchedulerStatus | null>(null);
     const [workerSchedulerLoading, setWorkerSchedulerLoading] = useState(false);
@@ -1225,6 +1259,10 @@ export const MonitoringDashboard: React.FC = () => {
     }, [fullscreenAllTabsLayout]);
 
     useEffect(() => {
+        localStorage.setItem(MONITOR_ALL_TABS_SORT_KEY, allTabsSortMode);
+    }, [allTabsSortMode]);
+
+    useEffect(() => {
         localStorage.setItem(MONITOR_SECTION_BG_LIGHT_KEY, sectionBoxBgLight);
     }, [sectionBoxBgLight]);
 
@@ -1286,6 +1324,45 @@ export const MonitoringDashboard: React.FC = () => {
             console.error('Failed to toggle notifications', error);
         }
     }, []);
+
+    const dismissStatusToast = useCallback((key: string) => {
+        setStatusToasts((prev) => prev.filter((t) => t.key !== key));
+    }, []);
+
+    const toggleBrowserNotifications = useCallback(async () => {
+        if (browserNotificationsEnabled) {
+            setBrowserNotificationsEnabled(false);
+            return;
+        }
+        // Permission enables OS corner toast when the tab is in the background.
+        // In-app popups work even if permission is denied.
+        await requestMonitorBrowserNotificationPermission();
+        // Re-seed so currently-down monitors do not all fire at once.
+        prevMonitorStatusByIdRef.current = new Map();
+        setBrowserNotificationsEnabled(true);
+    }, [browserNotificationsEnabled]);
+
+    useEffect(() => {
+        writeBrowserNotificationsEnabled(browserNotificationsEnabled);
+    }, [browserNotificationsEnabled]);
+
+    useEffect(() => {
+        const { prev, alerts } = diffAndNotifyMonitorStatuses(
+            prevMonitorStatusByIdRef.current,
+            monitors,
+            browserNotificationsEnabled
+        );
+        prevMonitorStatusByIdRef.current = prev;
+        if (alerts.length === 0) return;
+        const stamp = Date.now();
+        setStatusToasts((current) => [
+            ...current,
+            ...alerts.map((a, i) => ({
+                ...a,
+                key: `${a.id}-${a.status}-${stamp}-${i}`,
+            })),
+        ]);
+    }, [monitors, browserNotificationsEnabled]);
 
     const showPythonJobPanel = useCallback(() => {
         setPythonJobPanelVisible(true);
@@ -2390,7 +2467,7 @@ export const MonitoringDashboard: React.FC = () => {
 
     const displayTabSections = useMemo(() => {
         const tabs = (isFullscreen && fullscreenShowAllTabs) ? tabNames : [activeTab];
-        return tabs
+        const sections = tabs
             .map((tab) => {
                 const list = groupedByTabs[tab] || [];
                 const groups = groupMonitorsByGroupName(list);
@@ -2402,6 +2479,15 @@ export const MonitoringDashboard: React.FC = () => {
                 };
             })
             .filter((section) => !(isFullscreen && fullscreenShowAllTabs) || section.count > 0);
+        if (!(isFullscreen && fullscreenShowAllTabs) || allTabsSortMode === 'name') {
+            return sections;
+        }
+        const dir = allTabsSortMode === 'links-asc' ? 1 : -1;
+        return [...sections].sort((a, b) => {
+            const byCount = (a.count - b.count) * dir;
+            if (byCount !== 0) return byCount;
+            return a.tab.localeCompare(b.tab);
+        });
     }, [
         isFullscreen,
         fullscreenShowAllTabs,
@@ -2410,6 +2496,7 @@ export const MonitoringDashboard: React.FC = () => {
         groupedByTabs,
         groupMonitorsByGroupName,
         sortGroupNames,
+        allTabsSortMode,
     ]);
 
     const displayMonitorCount = useMemo(
@@ -2707,6 +2794,7 @@ export const MonitoringDashboard: React.FC = () => {
 
     const content = (
         <>
+            <MonitorStatusToastStack toasts={statusToasts} onDismiss={dismissStatusToast} />
             <input
                 type="file"
                 ref={fileInputRef}
@@ -2758,6 +2846,15 @@ export const MonitoringDashboard: React.FC = () => {
                                 <rect x="2" y="10" width="20" height="4" rx="2" />
                                 <rect x="2" y="16" width="20" height="4" rx="2" />
                             </svg>
+                        </button>
+                        <button
+                            onClick={() => setViewMode('status-board')}
+                            className={`p-1.5 rounded-md transition-all ${viewMode === 'status-board' ? 'bg-white dark:bg-[#333] text-blue-500 shadow-sm' : 'text-slate-400 hover:text-slate-600'}`}
+                            title="Status Board (PHP Server Monitor style)"
+                            aria-label="Status Board"
+                            aria-pressed={viewMode === 'status-board'}
+                        >
+                            <StatusBoardToolbarIcon size={13} />
                         </button>
                         <button
                             onClick={() => setViewMode('kanban')}
@@ -2824,6 +2921,22 @@ export const MonitoringDashboard: React.FC = () => {
                                         aria-pressed={fullscreenAllTabsLayout === 'columns'}
                                     >
                                         <FaColumns size={12} />
+                                    </button>
+                                    <button
+                                        type="button"
+                                        onClick={() => setAllTabsSortMode(nextAllTabsSortMode)}
+                                        className={`p-1.5 rounded-md transition-all ${allTabsSortMode !== 'name' ? 'bg-white dark:bg-[#333] text-indigo-600 shadow-sm' : 'text-slate-400 hover:text-slate-600'}`}
+                                        title={
+                                            allTabsSortMode === 'links-asc'
+                                                ? 'Sorted by link count (least to most). Click for most to least.'
+                                                : allTabsSortMode === 'links-desc'
+                                                    ? 'Sorted by link count (most to least). Click for tab name order.'
+                                                    : 'Sort side-by-side tiles by link count (least to most)'
+                                        }
+                                        aria-label="Sort tab tiles by link count"
+                                        aria-pressed={allTabsSortMode !== 'name'}
+                                    >
+                                        {allTabsSortMode === 'links-desc' ? <FaSortAmountDown size={12} /> : <FaSortAmountUp size={12} />}
                                     </button>
                                 </div>
                             )}
@@ -2911,6 +3024,29 @@ export const MonitoringDashboard: React.FC = () => {
                     )}
 
                     <div className="flex items-center gap-1.5 ml-auto">
+                        <button
+                            type="button"
+                            onClick={() => void toggleBrowserNotifications()}
+                            className={`flex items-center justify-center w-8 h-8 rounded-lg transition-all ${
+                                browserNotificationsEnabled
+                                    ? 'text-green-500 bg-green-50 dark:bg-green-900/30'
+                                    : 'text-slate-500 bg-slate-100 dark:bg-[#252525] dark:text-slate-400'
+                            }`}
+                            title={browserNotificationsEnabled ? 'Browser notifications on — click to turn off' : 'Browser notifications off — click to turn on'}
+                            aria-label={browserNotificationsEnabled ? 'Turn off browser notifications' : 'Turn on browser notifications'}
+                            aria-pressed={browserNotificationsEnabled}
+                        >
+                            <FaDesktop size={13} />
+                        </button>
+                        <button
+                            type="button"
+                            onClick={() => setShowSpeedTester(true)}
+                            className="flex items-center justify-center w-8 h-8 text-cyan-600 dark:text-cyan-400 bg-slate-100 dark:bg-[#252525] rounded-lg transition-all"
+                            title="Internet speed test"
+                            aria-label="Internet speed test"
+                        >
+                            <FaTachometerAlt size={13} />
+                        </button>
                         <ThemeModeMenu darkMode={darkMode} compact />
                         <button
                             type="button"
@@ -2925,6 +3061,48 @@ export const MonitoringDashboard: React.FC = () => {
                         >
                             <FaSyncAlt size={13} className={isRefreshingList ? 'animate-spin' : undefined} />
                         </button>
+                        {showSchedulerToolbarChip && !schedulerPanelVisible && (
+                            <button
+                                type="button"
+                                onClick={showSchedulerPanel}
+                                className={`inline-flex items-center gap-1 px-2 h-8 rounded-lg text-[9px] font-bold uppercase tracking-wide shadow-sm transition-all ${
+                                    showWorkerSchedulerBanner
+                                        ? 'bg-amber-500 hover:bg-amber-600 text-white animate-pulse'
+                                        : 'bg-emerald-600 hover:bg-emerald-700 text-white'
+                                }`}
+                                title={
+                                    showWorkerSchedulerBanner
+                                        ? (pythonRuntimeMissing
+                                            ? 'Task Scheduler — Python is not installed'
+                                            : 'Task Scheduler — Python workers need attention')
+                                        : 'Task Scheduler — enable or disable Python worker tasks'
+                                }
+                            >
+                                {showWorkerSchedulerBanner ? (
+                                    <FaExclamationTriangle size={9} />
+                                ) : (
+                                    <FaClock size={9} />
+                                )}
+                                <span>Scheduler</span>
+                            </button>
+                        )}
+                        {pythonJobActivity && !pythonJobPanelVisible && (
+                            <button
+                                type="button"
+                                onClick={showPythonJobPanel}
+                                className={`inline-flex items-center gap-1 px-2 h-8 rounded-lg text-[9px] font-bold uppercase tracking-wide shadow-sm transition-all ${
+                                    isPythonJobActive()
+                                        ? 'bg-emerald-600 hover:bg-emerald-700 text-white animate-pulse'
+                                        : pythonJobActivity.phase === 'error' || pythonJobActivity.phase === 'timeout'
+                                            ? 'bg-amber-500 hover:bg-amber-600 text-white'
+                                            : 'bg-emerald-500 hover:bg-emerald-600 text-white'
+                                }`}
+                                title="Show Python job status"
+                            >
+                                <FaRedo size={9} {...({ className: isPythonJobActive() ? 'animate-spin' : '' } as any)} />
+                                <span>Py job</span>
+                            </button>
+                        )}
                         <button
                             type="button"
                             onClick={() => refreshAll(true)}
@@ -2938,6 +3116,42 @@ export const MonitoringDashboard: React.FC = () => {
                         >
                             <FaRedo size={13} {...({ className: forceCheckBusy ? 'animate-spin' : '' } as any)} />
                         </button>
+                        <div
+                            className="flex items-center rounded-lg bg-slate-100 dark:bg-[#252525] p-0.5 text-[9px] font-bold uppercase tracking-wide"
+                            title="Force-all engine: PHP runs checks in this request; Python queues monitor_runner (no Apache freeze)"
+                        >
+                            <button
+                                type="button"
+                                onClick={() => setForceEngine('php')}
+                                disabled={forceCheckBusy}
+                                className={`px-1.5 py-1 rounded-md transition-colors disabled:opacity-50 disabled:cursor-not-allowed ${forceEngine === 'php' ? 'bg-white dark:bg-[#333] text-red-600 dark:text-red-400 shadow-sm' : 'text-slate-500 dark:text-slate-400 hover:text-slate-700 dark:hover:text-slate-200'}`}
+                            >
+                                PHP
+                            </button>
+                            <button
+                                type="button"
+                                onClick={() => {
+                                    if (forceEngine !== 'python') {
+                                        if (workerSchedulerStatus?.python && workerSchedulerStatus.python.available !== true) {
+                                            const proceed = window.confirm(
+                                                `${workerSchedulerStatus.python.message}\n\nInstall Python first from the Scheduler panel. Switch to Py anyway?`
+                                            );
+                                            if (!proceed) return;
+                                        } else if (workerSchedulerStatus?.python_ready === false) {
+                                            const proceed = window.confirm(
+                                                `${workerSchedulerStatus.message}\n\nSwitch to Py anyway? Fix Task Scheduler first for reliable background checks.`
+                                            );
+                                            if (!proceed) return;
+                                        }
+                                    }
+                                    setForceEngine('python');
+                                }}
+                                disabled={forceCheckBusy}
+                                className={`px-1.5 py-1 rounded-md transition-colors disabled:opacity-50 disabled:cursor-not-allowed ${forceEngine === 'python' ? 'bg-white dark:bg-[#333] text-emerald-600 dark:text-emerald-400 shadow-sm' : 'text-slate-500 dark:text-slate-400 hover:text-slate-700 dark:hover:text-slate-200'}`}
+                            >
+                                Py
+                            </button>
+                        </div>
                         <div
                             className="flex items-center gap-1.5 bg-slate-100 dark:bg-[#252525] rounded-lg px-1.5 py-0.5"
                             title={
@@ -3056,11 +3270,34 @@ export const MonitoringDashboard: React.FC = () => {
                         )}
 
                         <button
+                            type="button"
+                            onClick={() => void toggleBrowserNotifications()}
+                            className={`p-2 rounded-lg transition-all ${
+                                browserNotificationsEnabled
+                                    ? 'text-green-500 bg-green-50 dark:bg-green-900/20'
+                                    : 'text-slate-400 hover:text-green-500 hover:bg-white dark:hover:bg-[#333]'
+                            }`}
+                            title={browserNotificationsEnabled ? 'Browser notifications on — click to turn off' : 'Browser notifications off — click to turn on'}
+                            aria-label={browserNotificationsEnabled ? 'Turn off browser notifications' : 'Turn on browser notifications'}
+                            aria-pressed={browserNotificationsEnabled}
+                        >
+                            <FaDesktop size={14} />
+                        </button>
+
+                        <button
                             onClick={() => setShowTileStyleModal(true)}
                             className="p-2 rounded-lg transition-all text-slate-400 hover:text-purple-500 hover:bg-white dark:hover:bg-[#333]"
                             title="Tile Style Settings"
                         >
                             <FaPalette size={14} />
+                        </button>
+                        <button
+                            type="button"
+                            onClick={() => setShowSpeedTester(true)}
+                            className="p-2 rounded-lg transition-all text-slate-400 hover:text-cyan-500 hover:bg-white dark:hover:bg-[#333]"
+                            title="Internet speed test"
+                        >
+                            <FaTachometerAlt size={14} />
                         </button>
                         <button
                             onClick={() => setFullscreenMode(true)}
@@ -3137,6 +3374,15 @@ export const MonitoringDashboard: React.FC = () => {
                                 <rect x="2" y="10" width="20" height="4" rx="2" />
                                 <rect x="2" y="16" width="20" height="4" rx="2" />
                             </svg>
+                        </button>
+                        <button
+                            onClick={() => setViewMode('status-board')}
+                            className={`p-2 rounded-lg transition-all ${viewMode === 'status-board' ? 'bg-white dark:bg-[#333] text-blue-500 shadow-sm' : 'text-slate-400 hover:text-slate-600'}`}
+                            title="Status Board (PHP Server Monitor style)"
+                            aria-label="Status Board"
+                            aria-pressed={viewMode === 'status-board'}
+                        >
+                            <StatusBoardToolbarIcon size={14} />
                         </button>
                         <button
                             onClick={() => setViewMode('kanban')}
@@ -3543,7 +3789,9 @@ export const MonitoringDashboard: React.FC = () => {
                         }
                         style={
                             isFullscreen && fullscreenShowAllTabs
-                                ? { backgroundColor: sectionBoxBg, color: sectionBoxText }
+                                ? viewMode === 'status-board'
+                                    ? { backgroundColor: '#000', color: '#d0d0d0' }
+                                    : { backgroundColor: sectionBoxBg, color: sectionBoxText }
                                 : undefined
                         }
                     >
@@ -3577,7 +3825,17 @@ export const MonitoringDashboard: React.FC = () => {
                         </div>
                     )}
 
-                    {sortedGroupNames.map((groupName) => (
+                    {viewMode === 'status-board' ? (
+                        <MonitorStatusBoard
+                            monitors={sortedGroupNames.flatMap((name) => groups[name] || [])}
+                            tileStyles={tileStyles}
+                            showTitle={!isFullscreen || !fullscreenShowAllTabs}
+                            compact={isAllTabsColumns}
+                            highlightedId={highlightedMonitorId}
+                            onMonitorClick={handleTileClick}
+                        />
+                    ) : (
+                    sortedGroupNames.map((groupName) => (
                         <div key={`${sectionTab}::${groupName}`} className={isFullscreen ? 'space-y-2' : 'space-y-4'}>
                             <div className={`flex items-center gap-4 ${isFullscreen ? '' : 'group/header'}`}>
                                 {editingGroupName === groupName && !isFullscreen ? (
@@ -4169,7 +4427,8 @@ export const MonitoringDashboard: React.FC = () => {
                                 </div>
                             )}
                         </div>
-                    ))}
+                    ))
+                    )}
                     </div>
                     ))}
                     </div>
@@ -4187,6 +4446,10 @@ export const MonitoringDashboard: React.FC = () => {
                         fetchMonitors();
                     }}
                 />
+            )}
+
+            {showSpeedTester && (
+                <InternetSpeedTester isOpen={showSpeedTester} onClose={() => setShowSpeedTester(false)} />
             )}
 
             {showAuditLog && isAdmin && (
@@ -5791,7 +6054,7 @@ ON CONFLICT(key) DO UPDATE SET value = excluded.value, updated_at = excluded.upd
         return (
             <>
             {typeof document !== 'undefined' && createPortal(
-                <div className="fixed inset-0 overflow-y-auto bg-slate-50 dark:bg-[#121212] transition-colors z-[200]">
+                <div className={`fixed inset-0 overflow-y-auto transition-colors z-[200] ${viewMode === 'status-board' ? 'bg-black' : 'bg-slate-50 dark:bg-[#121212]'}`}>
                     <div className="min-h-full p-2 sm:p-3">
                         {content}
                     </div>

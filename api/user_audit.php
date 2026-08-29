@@ -123,7 +123,27 @@ sendJSON([
 ]);
 
 /**
- * Delete audit rows (all, or older than N days), then record audit.purged.
+ * Normalize action_prefix to 'foo.' or empty. Only known prefixes are allowed.
+ */
+function normalizeAuditPurgeActionPrefix(string $raw): string
+{
+    $prefix = trim($raw);
+    if ($prefix === '') {
+        return '';
+    }
+    $prefix = rtrim($prefix, '%');
+    if (substr($prefix, -1) !== '.') {
+        $prefix .= '.';
+    }
+    $allowed = ['monitor.'];
+    if (!in_array($prefix, $allowed, true)) {
+        sendJSON(['error' => 'Unsupported action_prefix for purge'], 400);
+    }
+    return $prefix;
+}
+
+/**
+ * Delete audit rows (all, or older than N days, optionally scoped by action_prefix), then record a purge event.
  */
 function handlePurgeUserAuditLog(PDO $db): void
 {
@@ -142,16 +162,33 @@ function handlePurgeUserAuditLog(PDO $db): void
         sendJSON(['error' => 'older_than_days must be 0 or greater'], 400);
     }
 
+    $actionPrefix = normalizeAuditPurgeActionPrefix((string) ($data['action_prefix'] ?? ''));
+    $likePrefix = $actionPrefix !== '' ? ($actionPrefix . '%') : '';
+
     try {
         $db->beginTransaction();
 
         if ($olderThanDays > 0) {
             $cutoff = time() - ($olderThanDays * 86400);
-            $countStmt = $db->prepare('SELECT COUNT(*) FROM user_audit_log WHERE created_at < ?');
-            $countStmt->execute([$cutoff]);
+            if ($likePrefix !== '') {
+                $countStmt = $db->prepare('SELECT COUNT(*) FROM user_audit_log WHERE action LIKE ? AND created_at < ?');
+                $countStmt->execute([$likePrefix, $cutoff]);
+                $deletedCount = (int)$countStmt->fetchColumn();
+                $delStmt = $db->prepare('DELETE FROM user_audit_log WHERE action LIKE ? AND created_at < ?');
+                $delStmt->execute([$likePrefix, $cutoff]);
+            } else {
+                $countStmt = $db->prepare('SELECT COUNT(*) FROM user_audit_log WHERE created_at < ?');
+                $countStmt->execute([$cutoff]);
+                $deletedCount = (int)$countStmt->fetchColumn();
+                $delStmt = $db->prepare('DELETE FROM user_audit_log WHERE created_at < ?');
+                $delStmt->execute([$cutoff]);
+            }
+        } elseif ($likePrefix !== '') {
+            $countStmt = $db->prepare('SELECT COUNT(*) FROM user_audit_log WHERE action LIKE ?');
+            $countStmt->execute([$likePrefix]);
             $deletedCount = (int)$countStmt->fetchColumn();
-            $delStmt = $db->prepare('DELETE FROM user_audit_log WHERE created_at < ?');
-            $delStmt->execute([$cutoff]);
+            $delStmt = $db->prepare('DELETE FROM user_audit_log WHERE action LIKE ?');
+            $delStmt->execute([$likePrefix]);
         } else {
             $deletedCount = (int)$db->query('SELECT COUNT(*) FROM user_audit_log')->fetchColumn();
             $db->exec('DELETE FROM user_audit_log');
@@ -173,13 +210,18 @@ function handlePurgeUserAuditLog(PDO $db): void
     if ($olderThanDays > 0) {
         $details['older_than_days'] = $olderThanDays;
     }
+    if ($actionPrefix !== '') {
+        $details['action_prefix'] = $actionPrefix;
+    }
 
     // Written after delete so this event remains as proof of the purge.
-    logUserAudit('audit.purged', ['details' => $details]);
+    $purgeAction = $actionPrefix !== '' ? ($actionPrefix . 'audit_purged') : 'audit.purged';
+    logUserAudit($purgeAction, ['details' => $details]);
 
     sendJSON([
         'success' => true,
         'deleted_count' => $deletedCount,
         'older_than_days' => $olderThanDays > 0 ? $olderThanDays : null,
+        'action_prefix' => $actionPrefix !== '' ? $actionPrefix : null,
     ]);
 }

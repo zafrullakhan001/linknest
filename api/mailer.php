@@ -95,7 +95,9 @@ function normalizeEmailList($emails) {
 }
 
 /**
- * Build MIME body for text (+ optional HTML) with CID inline images for Outlook.
+ * Build MIME body for text (+ optional HTML).
+ * Never attach CID/related image parts: Outlook treats those as attachments
+ * (paperclip) even when Content-Disposition is inline.
  * Returns [contentTypeHeaderValue, bodyString].
  *
  * @param array $options
@@ -109,14 +111,8 @@ function ln_build_multipart_email_body(string $plainBody, array $options = []): 
         return ['text/plain; charset=UTF-8', $plainBody];
     }
 
-    if (!function_exists('ln_email_inline_attachments_for_html')) {
-        require_once __DIR__ . '/email_templates.php';
-    }
-
     $textPart = (string)($options['text'] ?? $plainBody);
     $htmlPart = (string)$options['html'];
-    $inline = ln_email_inline_attachments_for_html($htmlPart);
-
     $altBoundary = 'ln_alt_' . bin2hex(random_bytes(8));
     $altBody =
         "--{$altBoundary}\r\n" .
@@ -129,36 +125,7 @@ function ln_build_multipart_email_body(string $plainBody, array $options = []): 
         $htmlPart . "\r\n" .
         "--{$altBoundary}--\r\n";
 
-    if (empty($inline)) {
-        return ['multipart/alternative; boundary="' . $altBoundary . '"', $altBody];
-    }
-
-    $relBoundary = 'ln_rel_' . bin2hex(random_bytes(8));
-    $relBody =
-        "--{$relBoundary}\r\n" .
-        "Content-Type: multipart/alternative; boundary=\"{$altBoundary}\"\r\n\r\n" .
-        $altBody . "\r\n";
-
-    foreach ($inline as $att) {
-        $bytes = @file_get_contents($att['path']);
-        if ($bytes === false || $bytes === '') {
-            continue;
-        }
-        $b64 = chunk_split(base64_encode($bytes));
-        $name = preg_replace('/[^a-zA-Z0-9._-]/', '_', (string)($att['name'] ?? 'logo.png'));
-        $mime = (string)($att['mime'] ?? 'image/png');
-        $cid = (string)($att['cid'] ?? 'ln-brand-logo');
-        $relBody .=
-            "--{$relBoundary}\r\n" .
-            "Content-Type: {$mime}; name=\"{$name}\"\r\n" .
-            "Content-Transfer-Encoding: base64\r\n" .
-            "Content-ID: <{$cid}>\r\n" .
-            "Content-Disposition: inline; filename=\"{$name}\"\r\n\r\n" .
-            $b64 . "\r\n";
-    }
-    $relBody .= "--{$relBoundary}--\r\n";
-
-    return ['multipart/related; type="multipart/alternative"; boundary="' . $relBoundary . '"', $relBody];
+    return ['multipart/alternative; boundary="' . $altBoundary . '"', $altBody];
 }
 
 function sendEmail($to, $subject, $body, $config = null, $cc = [], $options = []) {

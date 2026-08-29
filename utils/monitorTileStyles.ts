@@ -44,6 +44,74 @@ export const DEFAULT_MONITOR_TILE_STYLES: TileStyle = {
     borderRadius: 16,
 };
 
+/** Classic PHP Server Monitor homepage (Bootstrap 3 success / danger / warning). */
+export const PHP_SERVER_MONITOR_TILE_STYLES: TileStyle = {
+    upBackgroundColor: '#5cb85c',
+    upTextColor: '#ffffff',
+    upUseGradient: false,
+    upGradientStart: '#5cb85c',
+    upGradientEnd: '#449d44',
+    upFontFamily: '"Helvetica Neue", Helvetica, Arial, sans-serif',
+    downBackgroundColor: '#d9534f',
+    downTextColor: '#ffffff',
+    downUseGradient: false,
+    downGradientStart: '#d9534f',
+    downGradientEnd: '#c9302c',
+    downFontFamily: '"Helvetica Neue", Helvetica, Arial, sans-serif',
+    warningBackgroundColor: '#f0ad4e',
+    warningTextColor: '#ffffff',
+    warningUseGradient: false,
+    warningGradientStart: '#f0ad4e',
+    warningGradientEnd: '#ec971f',
+    warningFontFamily: '"Helvetica Neue", Helvetica, Arial, sans-serif',
+    borderRadius: 4,
+};
+
+export function tileBackgroundStyle(
+    styles: TileStyle,
+    status: 'up' | 'down' | 'warning' | 'unknown' | null
+): { background?: string; backgroundColor?: string } {
+    if (status === 'up') {
+        if (styles.upUseGradient) {
+            return { background: `linear-gradient(135deg, ${styles.upGradientStart}, ${styles.upGradientEnd})` };
+        }
+        return { backgroundColor: styles.upBackgroundColor };
+    }
+    if (status === 'down') {
+        if (styles.downUseGradient) {
+            return { background: `linear-gradient(135deg, ${styles.downGradientStart}, ${styles.downGradientEnd})` };
+        }
+        return { backgroundColor: styles.downBackgroundColor };
+    }
+    if (status === 'warning') {
+        if (styles.warningUseGradient) {
+            return { background: `linear-gradient(135deg, ${styles.warningGradientStart}, ${styles.warningGradientEnd})` };
+        }
+        return { backgroundColor: styles.warningBackgroundColor };
+    }
+    return { backgroundColor: '#777777' };
+}
+
+export function tileTextColor(
+    styles: TileStyle,
+    status: 'up' | 'down' | 'warning' | 'unknown' | null
+): string {
+    if (status === 'up') return styles.upTextColor;
+    if (status === 'down') return styles.downTextColor;
+    if (status === 'warning') return styles.warningTextColor;
+    return '#ffffff';
+}
+
+export function tileFontFamily(
+    styles: TileStyle,
+    status: 'up' | 'down' | 'warning' | 'unknown' | null
+): string {
+    if (status === 'up') return styles.upFontFamily;
+    if (status === 'down') return styles.downFontFamily;
+    if (status === 'warning') return styles.warningFontFamily;
+    return styles.upFontFamily || DEFAULT_FONT_FAMILY;
+}
+
 const STORAGE_KEY = 'linknest_monitor_tile_styles';
 
 function asBool(value: unknown): boolean {

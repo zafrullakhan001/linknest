@@ -116,15 +116,41 @@ sequenceDiagram
 
 | File | Role |
 |------|------|
-| `scripts/monitor_runner.py` | Parallel probes, SQLite writes, email queue, force-all job processor |
+| `scripts/monitor_runner.py` | Parallel probes, SQLite writes, email queue, force-all job processor; also runs due **worker speed tests** |
+| `scripts/speedtest_runner.py` | Host-path internet/server speed tests (invoked from monitor_runner) |
 | `scripts/email_sender.py` | SMTP send from `email_outbox` |
 | `scripts/linknest_worker_lib.py` | Shared probe logic, schema helpers |
 | `scripts/schedule-monitor-workers.ps1` | Install / verify / uninstall Task Scheduler jobs |
 | `scripts/schedule-monitor-workers.bat` | Wrapper for the PowerShell installer |
 | `scripts/ensure-python-runtime.ps1` | Download embeddable CPython into `bin/python` (Windows) |
 | `api/monitor_check_jobs_lib.php` | Queue force-all jobs, kick runner from PHP |
+| `api/speedtest.php` + `api/speedtest_schedules_lib.php` | Interactive speed-test streams + schedules/results APIs |
 
 ---
+
+## Scheduled speed tests (host path)
+
+The Monitoring **Internet speed test** dialog supports two executors:
+
+| Executor | Where it runs | What it measures | Requirements |
+|----------|---------------|------------------|--------------|
+| **Browser** | User’s open LinkNest tab | That device’s path to Cloudflare or this host | Tab open / online; optional localStorage schedule |
+| **Worker** | `monitor_runner.py` → `speedtest_runner.py` | **This server’s** path (not an end-user PC) | Monitor worker Task Scheduler / Docker loop; admin schedules |
+
+Worker results are labeled `executor: worker` and must not be compared directly to browser results without noting the different paths.
+
+### Settings (SQLite `settings` keys)
+
+| Key | Default | Meaning |
+|-----|---------|---------|
+| `speedtest_interactive_max_per_hour` | `12` | Max interactive tests per user per hour (plus stream burst allowance) |
+| `speedtest_worker_min_interval_minutes` | `15` | Minimum worker schedule interval |
+| `speedtest_worker_daily_cap_mb` | `500` | Daily bandwidth cap for worker tests |
+| `speedtest_loopback_base_url` | (auto) | Base URL for worker → PHP `/api/speedtest/*` (or env `LINKNEST_LOOPBACK_URL`) |
+
+Privacy: results may include client IP / Network Information API fields. Browser history is device-local; mirrored server results are scoped to the owning user (admins can list worker results).
+
+No extra Task Scheduler job is required — speed tests ride the existing Monitor Runner cycle.
 
 ## Requirements
 

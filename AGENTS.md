@@ -363,7 +363,7 @@ Default credentials:
 - `docs/MCP.md` - MCP / AI: LLMs (Cursor, Claude Desktop) list spaces, search links, create or edit bookmarks, and (admin tokens) manage users, roles, Device Presets, and database export/import
 - `docs/ADMIN_LOCKOUT_RECOVERY.md` - Re-enable Local auth and reset local admin password (`scripts/reset_admin_password.php`); unlock Fingerprint-only access (`scripts/unlock_fingerprint_lock.php`) when locked out
 - `docs/APP_UPDATES.md` - In-app App Updates (portable Releases for ArchLinks / ERP3)
-- `docs/PYTHON_WORKERS.md` - Monitoring + email Python workers; Windows Task Scheduler (`scripts/schedule-monitor-workers.bat`) and Docker entrypoint loop
+- `docs/PYTHON_WORKERS.md` - Monitoring + email Python workers; Windows Task Scheduler (`scripts/schedule-monitor-workers.bat`) and Docker entrypoint loop; also documents **scheduled worker speed tests** (host path vs browser path)
 - `docs/SETUP.md` - Detailed setup instructions
 - `docs/VANILLA_APACHE_PHP85_WINDOWS.md` - Vanilla Apache + PHP 8.5 on Windows (`D:\Apache` + `D:\php`, post-install `httpd.conf` / `php.ini`)
 - `docs/PACKAGE_FOR_DEPLOYMENT.md` - Windows XAMPP deploy ZIP (`package-for-deployment.bat`)

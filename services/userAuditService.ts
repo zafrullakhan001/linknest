@@ -62,10 +62,21 @@ export const userAuditService = {
     };
   },
 
-  async purge(olderThanDays?: number): Promise<{ success: boolean; deleted_count: number; older_than_days: number | null }> {
-    const body: { older_than_days?: number } = {};
+  async purge(
+    olderThanDays?: number,
+    actionPrefix?: string
+  ): Promise<{
+    success: boolean;
+    deleted_count: number;
+    older_than_days: number | null;
+    action_prefix: string | null;
+  }> {
+    const body: { older_than_days?: number; action_prefix?: string } = {};
     if (olderThanDays !== undefined && olderThanDays > 0) {
       body.older_than_days = olderThanDays;
+    }
+    if (actionPrefix) {
+      body.action_prefix = actionPrefix;
     }
     const response = await fetch(`${API_BASE}/user-audit/purge`, {
       method: 'POST',
@@ -81,6 +92,7 @@ export const userAuditService = {
       success: !!data.success,
       deleted_count: typeof data.deleted_count === 'number' ? data.deleted_count : 0,
       older_than_days: data.older_than_days ?? null,
+      action_prefix: data.action_prefix ?? null,
     };
   },
 };

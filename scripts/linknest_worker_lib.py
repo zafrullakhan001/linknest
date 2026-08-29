@@ -1065,27 +1065,9 @@ def send_smtp_email(
     msg["Subject"] = subject
     msg.set_content(body or "")
     if html_body:
-        # Provide an HTML alternative (many clients prefer this), while keeping the plain-text fallback.
+        # HTML alternative only — do not CID-attach the logo. Outlook shows a
+        # paperclip for related image parts even when they are inline.
         msg.add_alternative(str(html_body), subtype="html")
-        # Inline brand logo for Outlook (cid:ln-brand-logo)
-        if "cid:ln-brand-logo" in str(html_body):
-            logo_path = resolve_brand_logo_filesystem_path(db_conn)
-            if logo_path and os.path.isfile(logo_path):
-                try:
-                    with open(logo_path, "rb") as fh:
-                        img_bytes = fh.read()
-                    ext = os.path.splitext(logo_path)[1].lower().lstrip(".")
-                    subtype = {"jpg": "jpeg", "jpeg": "jpeg", "gif": "gif", "webp": "webp"}.get(ext, "png")
-                    html_part = msg.get_payload()[-1]
-                    html_part.add_related(
-                        img_bytes,
-                        maintype="image",
-                        subtype=subtype,
-                        cid="ln-brand-logo",
-                        filename=os.path.basename(logo_path),
-                    )
-                except Exception:
-                    pass
 
     try:
         import smtplib
@@ -1148,7 +1130,7 @@ def _setting_value(conn: Optional[sqlite3.Connection], key: str) -> str:
 
 
 def resolve_brand_logo_filesystem_path(conn: Optional[sqlite3.Connection] = None) -> Optional[str]:
-    """Map header/logo setting to uploads/<file> on disk for CID embedding."""
+    """Map header/logo setting to uploads/<file> on disk."""
     raw = ""
     for key in ("header_logo_image", "logo_image", "favicon"):
         raw = (_setting_value(conn, key) or "").strip()
@@ -1164,6 +1146,38 @@ def resolve_brand_logo_filesystem_path(conn: Optional[sqlite3.Connection] = None
         return None
     disk = os.path.normpath(os.path.join(os.path.dirname(__file__), "..", "uploads", filename))
     return disk if os.path.isfile(disk) else None
+
+
+def resolve_email_public_base_url(conn: Optional[sqlite3.Connection] = None) -> str:
+    """Public origin for hosted email images (no trailing slash)."""
+    setting = (_setting_value(conn, "auth_email_public_url") or "").strip().rstrip("/")
+    if setting:
+        return setting
+    env = (os.environ.get("LINKNEST_PUBLIC_URL") or os.environ.get("LINKNEST_URL") or "").strip().rstrip("/")
+    return env
+
+
+def resolve_brand_logo_url(conn: Optional[sqlite3.Connection] = None) -> str:
+    """Hosted logo URL for HTML email (never cid: — that creates a paperclip in Outlook)."""
+    raw = ""
+    for key in ("header_logo_image", "logo_image", "favicon"):
+        raw = (_setting_value(conn, key) or "").strip()
+        if raw:
+            break
+    if not raw:
+        return ""
+    if re.match(r"^https?://", raw, re.I) or raw.startswith("data:"):
+        return raw
+    normalized = re.sub(r"^/[^/]+/uploads/", "/uploads/", raw)
+    if not normalized.startswith("/uploads/"):
+        if raw.startswith("/uploads/"):
+            normalized = raw
+        else:
+            return ""
+    base = resolve_email_public_base_url(conn)
+    if not base:
+        return ""
+    return base + normalized
 
 
 def ln_email_base_layout(
@@ -1187,11 +1201,13 @@ def ln_email_base_layout(
     now_s = _ln_html_escape(_dt.datetime.now().strftime("%Y-%m-%d %H:%M:%S"))
 
     logo_row = ""
-    if resolve_brand_logo_filesystem_path(db_conn):
+    logo_src = resolve_brand_logo_url(db_conn)
+    if logo_src and not logo_src.lower().startswith("cid:"):
+        safe_logo = _ln_html_escape(logo_src)
         logo_row = f"""
           <tr>
             <td bgcolor="#ffffff" style="background-color:#ffffff;padding:18px 24px 12px 24px;border-bottom:1px solid #e2e8f0;">
-              <img src="cid:ln-brand-logo" alt="{safe_app_name}" width="180" border="0" style="display:block;border:0;outline:none;text-decoration:none;height:auto;max-width:180px;width:180px;" />
+              <img src="{safe_logo}" alt="{safe_app_name}" width="180" border="0" style="display:block;border:0;outline:none;text-decoration:none;height:auto;max-width:180px;width:180px;" />
             </td>
           </tr>"""
 

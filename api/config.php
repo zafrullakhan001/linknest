@@ -138,7 +138,7 @@ if (!defined('SYSTEM_TOKEN')) {
 
 // Bump when schema/migrations in initDatabase() change. Enables fast-path getDB().
 if (!defined('LINKNEST_SCHEMA_VERSION')) {
-    define('LINKNEST_SCHEMA_VERSION', 99);
+    define('LINKNEST_SCHEMA_VERSION', 100);
 }
 
 function getSchemaPatchFlagPath(): string {
@@ -1506,6 +1506,8 @@ function initDatabase() {
             require_once __DIR__ . '/visit_analytics_lib.php';
             ensureVisitAnalyticsTables($db);
             backfillVisitAnalyticsIfNeeded($db);
+            require_once __DIR__ . '/speedtest_schedules_lib.php';
+            speedtestEnsureSchema($db);
             if (!schemaPatchesAlreadyApplied()) {
                 ensureTilesHeaderImageColumns($db);
                 ensureTilesSearchTagsColumn($db);
@@ -1544,6 +1546,8 @@ function initDatabase() {
             require_once __DIR__ . '/visit_analytics_lib.php';
             ensureVisitAnalyticsTables($db);
             backfillVisitAnalyticsIfNeeded($db);
+            require_once __DIR__ . '/speedtest_schedules_lib.php';
+            speedtestEnsureSchema($db);
             if (!schemaPatchesAlreadyApplied()) {
                 ensureTilesHeaderImageColumns($db);
                 ensureTilesSearchTagsColumn($db);
@@ -3840,6 +3844,8 @@ function initDatabase() {
         require_once __DIR__ . '/visit_analytics_lib.php';
         ensureVisitAnalyticsTables($db);
         backfillVisitAnalyticsIfNeeded($db);
+        require_once __DIR__ . '/speedtest_schedules_lib.php';
+        speedtestEnsureSchema($db);
         
         // Create indexes for optimal performance
         createDatabaseIndexes($db);
@@ -4811,7 +4817,7 @@ function requireAuth() {
     }
 
     if ($token && defined('SYSTEM_TOKEN') && $token === SYSTEM_TOKEN) {
-        return ['id' => 0, 'username' => 'system', 'is_admin' => true, 'is_approved' => true];
+        return ['id' => 0, 'username' => 'system', 'is_admin' => true, 'is_approved' => true, 'is_system' => true];
     }
 
     $user = getAuthenticatedUser();
