@@ -80,7 +80,7 @@ function mcpAdminBuiltInWidgetIds(): array {
     return [
         'clock', 'weather', 'calculator', 'notes', 'password-generator',
         'phonetic-alphabet', 'zoom-control', 'theme', 'fav-organizer',
-        'chat', 'snake-game', 'vnc-viewer', 'ssh-terminal',
+        'chat', 'snake-game', 'vnc-viewer', 'ssh-terminal', 'internet-speed-tester',
     ];
 }
 

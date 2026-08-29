@@ -402,8 +402,8 @@ export const Monitorv2Dashboard: React.FC = () => {
             setBrowserNotificationsEnabled(false);
             return;
         }
-        // Permission enables OS corner toast when the tab is in the background.
-        // In-app popups work even if permission is denied.
+        // Request permission so OS browser notifications fire alongside in-app toasts.
+        // In-app toasts still work if permission is denied.
         await requestMonitorBrowserNotificationPermission();
         // Re-seed so currently-down monitors do not all fire at once.
         prevMonitorStatusByIdRef.current = new Map();

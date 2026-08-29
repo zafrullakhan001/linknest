@@ -2978,7 +2978,10 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({ onUserApproved }) => {
             { id: 'theme', label: 'Theme', description: 'Theme switcher widget' },
             { id: 'fav-organizer', label: 'Favorite Organizer', description: 'Organize favorite links' },
             { id: 'chat', label: 'Chat', description: 'Chat widget (requires authentication)' },
-            { id: 'snake-game', label: 'Snake Game', description: 'Snake game widget' }
+            { id: 'snake-game', label: 'Snake Game', description: 'Snake game widget' },
+            { id: 'vnc-viewer', label: 'VNC Viewer', description: 'noVNC remote desktop viewer (websockify URL)' },
+            { id: 'ssh-terminal', label: 'SSH Terminal', description: 'xterm.js web SSH terminal (ttyd WebSocket URL)' },
+            { id: 'internet-speed-tester', label: 'Internet Speed Tester', description: 'Ping, download, and upload speed test (requires authentication)' }
           ]);
         }
       } catch (err) {
@@ -2994,7 +2997,10 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({ onUserApproved }) => {
           { id: 'theme', label: 'Theme', description: 'Theme switcher widget' },
           { id: 'fav-organizer', label: 'Favorite Organizer', description: 'Organize favorite links' },
           { id: 'chat', label: 'Chat', description: 'Chat widget (requires authentication)' },
-          { id: 'snake-game', label: 'Snake Game', description: 'Snake game widget' }
+          { id: 'snake-game', label: 'Snake Game', description: 'Snake game widget' },
+          { id: 'vnc-viewer', label: 'VNC Viewer', description: 'noVNC remote desktop viewer (websockify URL)' },
+          { id: 'ssh-terminal', label: 'SSH Terminal', description: 'xterm.js web SSH terminal (ttyd WebSocket URL)' },
+          { id: 'internet-speed-tester', label: 'Internet Speed Tester', description: 'Ping, download, and upload speed test (requires authentication)' }
         ]);
       }
 

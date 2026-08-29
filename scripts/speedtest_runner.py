@@ -468,6 +468,35 @@ def run_due_speedtests(conn, db_path: str = "", verbose: bool = False) -> int:
                 "interval_minutes": row[4],
             }
             trigger = "worker"
+    if not schedule and job:
+        # Manual "Run worker now" with no schedule_id — prefer any enabled worker
+        # schedule, otherwise run an ad-hoc internet/quick test.
+        due_or_any = _due_schedules(conn, min_interval)
+        if not due_or_any:
+            any_row = conn.execute(
+                "SELECT id, name, target, profile, interval_minutes "
+                "FROM speedtest_schedules WHERE executor='worker' AND is_enabled=1 "
+                "ORDER BY id ASC LIMIT 1"
+            ).fetchone()
+            if any_row:
+                schedule = {
+                    "id": any_row[0],
+                    "name": any_row[1],
+                    "target": any_row[2],
+                    "profile": any_row[3],
+                    "interval_minutes": any_row[4],
+                }
+        else:
+            schedule = due_or_any[0]
+        if not schedule:
+            schedule = {
+                "id": None,
+                "name": "Ad-hoc worker",
+                "target": "internet",
+                "profile": "quick",
+                "interval_minutes": min_interval,
+            }
+        trigger = "worker"
     if not schedule:
         due = _due_schedules(conn, min_interval)
         if due:
@@ -490,11 +519,12 @@ def run_due_speedtests(conn, db_path: str = "", verbose: bool = False) -> int:
     target = schedule["target"] if schedule["target"] in ("internet", "server") else "internet"
     profile = schedule["profile"] if schedule["profile"] in ("quick", "standard", "thorough") else "standard"
     if verbose:
-        print(f"[speedtest] running schedule#{schedule['id']} target={target} profile={profile}")
+        label = schedule["id"] if schedule.get("id") is not None else "ad-hoc"
+        print(f"[speedtest] running schedule#{label} target={target} profile={profile}")
 
     try:
         result = run_one_test(conn, target, profile)
-        _store_result(conn, schedule["id"], result, trigger)
+        _store_result(conn, schedule.get("id"), result, trigger)
         if job:
             conn.execute("UPDATE speedtest_worker_queue SET status='done' WHERE id=?", (job["id"],))
             conn.commit()
@@ -510,10 +540,11 @@ def run_due_speedtests(conn, db_path: str = "", verbose: bool = False) -> int:
         err = err.replace(_system_token(), "***")
         if verbose:
             print(f"[speedtest] error: {err}")
-        conn.execute(
-            "UPDATE speedtest_schedules SET last_run_at=?, last_status=?, last_error=?, updated_at=datetime('now') WHERE id=?",
-            (_now_iso(), "error", err[:500], schedule["id"]),
-        )
+        if schedule.get("id") is not None:
+            conn.execute(
+                "UPDATE speedtest_schedules SET last_run_at=?, last_status=?, last_error=?, updated_at=datetime('now') WHERE id=?",
+                (_now_iso(), "error", err[:500], schedule["id"]),
+            )
         if job:
             conn.execute("UPDATE speedtest_worker_queue SET status='error' WHERE id=?", (job["id"],))
         conn.commit()

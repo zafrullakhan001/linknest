@@ -713,6 +713,94 @@ export const MonitoringDashboard: React.FC = () => {
         }
     }, [isAdmin, showSchedulerActionMessage]);
 
+    const disableBothSchedulerTasks = useCallback(async () => {
+        if (!isAdmin || !workerSchedulerStatus) return;
+        const monitor = workerSchedulerStatus.tasks.monitor_runner;
+        const email = workerSchedulerStatus.tasks.email_sender;
+        const targets: MonitorWorkerSchedulerTaskKey[] = [];
+        if (monitor?.exists && monitor.enabled) targets.push('monitor_runner');
+        if (email?.exists && email.enabled) targets.push('email_sender');
+        if (!targets.length) {
+            showSchedulerActionMessage('Already disabled', 'Monitor Runner and Email Sender are already disabled.', 'success');
+            return;
+        }
+        setSchedulerTaskToggling(targets[0]);
+        try {
+            let lastScheduler = workerSchedulerStatus;
+            const messages: string[] = [];
+            for (const task of targets) {
+                setSchedulerTaskToggling(task);
+                const result = await monitoringService.setWorkerSchedulerTaskEnabled(task, false);
+                lastScheduler = result.scheduler;
+                if (!result.already) {
+                    messages.push(task === 'monitor_runner' ? 'Monitor Runner' : 'Email Sender');
+                }
+            }
+            setWorkerSchedulerStatus(lastScheduler);
+            showSchedulerActionMessage(
+                'Tasks disabled',
+                messages.length
+                    ? `Disabled ${messages.join(' and ')}.`
+                    : 'Both tasks were already disabled.',
+                'success'
+            );
+        } catch (error: unknown) {
+            const message = error instanceof Error ? error.message : 'Failed to disable scheduler jobs';
+            showSchedulerActionMessage('Disable both failed', message, 'error');
+            try {
+                await loadWorkerSchedulerStatus();
+            } catch {
+                /* ignore refresh error */
+            }
+        } finally {
+            setSchedulerTaskToggling(null);
+        }
+    }, [isAdmin, workerSchedulerStatus, showSchedulerActionMessage, loadWorkerSchedulerStatus]);
+
+    const enableBothSchedulerTasks = useCallback(async () => {
+        if (!isAdmin || !workerSchedulerStatus) return;
+        const monitor = workerSchedulerStatus.tasks.monitor_runner;
+        const email = workerSchedulerStatus.tasks.email_sender;
+        const targets: MonitorWorkerSchedulerTaskKey[] = [];
+        if (monitor?.exists && !monitor.enabled) targets.push('monitor_runner');
+        if (email?.exists && !email.enabled) targets.push('email_sender');
+        if (!targets.length) {
+            showSchedulerActionMessage('Already enabled', 'Monitor Runner and Email Sender are already enabled.', 'success');
+            return;
+        }
+        setSchedulerTaskToggling(targets[0]);
+        try {
+            let lastScheduler = workerSchedulerStatus;
+            const messages: string[] = [];
+            for (const task of targets) {
+                setSchedulerTaskToggling(task);
+                const result = await monitoringService.setWorkerSchedulerTaskEnabled(task, true);
+                lastScheduler = result.scheduler;
+                if (!result.already) {
+                    messages.push(task === 'monitor_runner' ? 'Monitor Runner' : 'Email Sender');
+                }
+            }
+            setWorkerSchedulerStatus(lastScheduler);
+            showSchedulerActionMessage(
+                'Tasks enabled',
+                messages.length
+                    ? `Enabled ${messages.join(' and ')}.`
+                    : 'Both tasks were already enabled.',
+                'success'
+            );
+        } catch (error: unknown) {
+            const message = error instanceof Error ? error.message : 'Failed to enable scheduler jobs';
+            showSchedulerActionMessage('Enable both failed', message, 'error');
+            try {
+                await loadWorkerSchedulerStatus();
+            } catch {
+                /* ignore refresh error */
+            }
+        } finally {
+            setSchedulerTaskToggling(null);
+        }
+    }, [isAdmin, workerSchedulerStatus, showSchedulerActionMessage, loadWorkerSchedulerStatus]);
+
     const schedulerHostManaged = workerSchedulerStatus?.platform === 'windows'
         || workerSchedulerStatus?.platform === 'docker';
 
@@ -754,6 +842,39 @@ export const MonitoringDashboard: React.FC = () => {
         }
         return false;
     }, [isAdmin, workerSchedulerStatus]);
+
+    const schedulerDisableBothAvailable = useMemo(() => {
+        if (!isAdmin || !workerSchedulerStatus || !schedulerHostManaged) {
+            return false;
+        }
+        const monitor = workerSchedulerStatus.tasks.monitor_runner;
+        const email = workerSchedulerStatus.tasks.email_sender;
+        return !!(monitor?.exists || email?.exists);
+    }, [isAdmin, workerSchedulerStatus, schedulerHostManaged]);
+
+    const schedulerBothAlreadyDisabled = useMemo(() => {
+        if (!workerSchedulerStatus) return true;
+        const monitor = workerSchedulerStatus.tasks.monitor_runner;
+        const email = workerSchedulerStatus.tasks.email_sender;
+        const anyEnabled = !!(monitor?.exists && monitor.enabled) || !!(email?.exists && email.enabled);
+        return !anyEnabled;
+    }, [workerSchedulerStatus]);
+
+    const schedulerBothAlreadyEnabled = useMemo(() => {
+        if (!workerSchedulerStatus) return true;
+        const monitor = workerSchedulerStatus.tasks.monitor_runner;
+        const email = workerSchedulerStatus.tasks.email_sender;
+        const monitorOk = !!(monitor?.exists && monitor.enabled);
+        const emailOk = !!(email?.exists && email.enabled);
+        // Only treat as "both enabled" when every installed task is on.
+        if (monitor?.exists && email?.exists) return monitorOk && emailOk;
+        if (monitor?.exists) return monitorOk;
+        if (email?.exists) return emailOk;
+        return true;
+    }, [workerSchedulerStatus]);
+
+    const schedulerBulkBusy =
+        schedulerInstalling || schedulerUninstalling || schedulerPythonInstalling || workerSchedulerLoading || schedulerTaskToggling !== null;
 
     const uninstallSchedulerTasks = useCallback(async () => {
         if (!isAdmin || !workerSchedulerStatus) return;
@@ -1334,8 +1455,8 @@ export const MonitoringDashboard: React.FC = () => {
             setBrowserNotificationsEnabled(false);
             return;
         }
-        // Permission enables OS corner toast when the tab is in the background.
-        // In-app popups work even if permission is denied.
+        // Request permission so OS browser notifications fire alongside in-app toasts.
+        // In-app toasts still work if permission is denied.
         await requestMonitorBrowserNotificationPermission();
         // Re-seed so currently-down monitors do not all fire at once.
         prevMonitorStatusByIdRef.current = new Map();
@@ -5099,33 +5220,61 @@ export const MonitoringDashboard: React.FC = () => {
                                             {renderSchedulerTaskRow('monitor_runner', 'Monitor Runner', 'modal')}
                                             {renderSchedulerTaskRow('email_sender', 'Email Sender', 'modal')}
                                         </div>
-                                        {schedulerInstallNeeded && (
-                                            <button
-                                                type="button"
-                                                onClick={installSchedulerTasks}
-                                                disabled={schedulerInstalling || schedulerUninstalling || workerSchedulerLoading}
-                                                className="mt-3 inline-flex items-center gap-1.5 px-3 py-2 rounded-lg text-[10px] font-bold uppercase tracking-wide bg-purple-600 hover:bg-purple-700 text-white transition-colors disabled:opacity-50"
-                                            >
-                                                <FaPlus size={9} />
-                                                {schedulerInstalling ? 'Enabling…' : 'Install / enable workers'}
-                                            </button>
-                                        )}
-                                        {schedulerUninstallAvailable && (
-                                            <button
-                                                type="button"
-                                                onClick={uninstallSchedulerTasks}
-                                                disabled={schedulerInstalling || schedulerUninstalling || workerSchedulerLoading}
-                                                className={`${schedulerInstallNeeded ? '' : 'mt-3 '}inline-flex items-center gap-1.5 px-3 py-2 rounded-lg text-[10px] font-bold uppercase tracking-wide border border-red-300 dark:border-red-700 text-red-700 dark:text-red-300 bg-white dark:bg-red-950/30 hover:bg-red-50 dark:hover:bg-red-950/50 transition-colors disabled:opacity-50`}
-                                            >
-                                                <FaTrash size={9} />
-                                                {schedulerUninstalling ? 'Removing…' : 'Remove workers'}
-                                            </button>
+                                        {(schedulerDisableBothAvailable || schedulerInstallNeeded || schedulerUninstallAvailable) && (
+                                            <div className="mt-3 flex flex-wrap gap-2">
+                                                {schedulerDisableBothAvailable && (
+                                                    <>
+                                                    <button
+                                                        type="button"
+                                                        onClick={() => void enableBothSchedulerTasks()}
+                                                        disabled={schedulerBulkBusy || schedulerBothAlreadyEnabled}
+                                                        className="inline-flex items-center gap-1.5 px-3 py-2 rounded-lg text-[10px] font-bold uppercase tracking-wide bg-emerald-600 hover:bg-emerald-700 text-white transition-colors disabled:opacity-50"
+                                                        title="Enable Monitor Runner and Email Sender in one step"
+                                                    >
+                                                        <FaCheck size={9} />
+                                                        {schedulerTaskToggling ? 'Updating…' : 'Enable both'}
+                                                    </button>
+                                                    <button
+                                                        type="button"
+                                                        onClick={() => void disableBothSchedulerTasks()}
+                                                        disabled={schedulerBulkBusy || schedulerBothAlreadyDisabled}
+                                                        className="inline-flex items-center gap-1.5 px-3 py-2 rounded-lg text-[10px] font-bold uppercase tracking-wide bg-amber-600 hover:bg-amber-700 text-white transition-colors disabled:opacity-50"
+                                                        title="Disable Monitor Runner and Email Sender in one step"
+                                                    >
+                                                        <FaStop size={9} />
+                                                        {schedulerTaskToggling ? 'Disabling…' : 'Disable both'}
+                                                    </button>
+                                                    </>
+                                                )}
+                                                {schedulerInstallNeeded && (
+                                                    <button
+                                                        type="button"
+                                                        onClick={installSchedulerTasks}
+                                                        disabled={schedulerBulkBusy}
+                                                        className="inline-flex items-center gap-1.5 px-3 py-2 rounded-lg text-[10px] font-bold uppercase tracking-wide bg-purple-600 hover:bg-purple-700 text-white transition-colors disabled:opacity-50"
+                                                    >
+                                                        <FaPlus size={9} />
+                                                        {schedulerInstalling ? 'Enabling…' : 'Install / enable workers'}
+                                                    </button>
+                                                )}
+                                                {schedulerUninstallAvailable && (
+                                                    <button
+                                                        type="button"
+                                                        onClick={uninstallSchedulerTasks}
+                                                        disabled={schedulerBulkBusy}
+                                                        className="inline-flex items-center gap-1.5 px-3 py-2 rounded-lg text-[10px] font-bold uppercase tracking-wide border border-red-300 dark:border-red-700 text-red-700 dark:text-red-300 bg-white dark:bg-red-950/30 hover:bg-red-50 dark:hover:bg-red-950/50 transition-colors disabled:opacity-50"
+                                                    >
+                                                        <FaTrash size={9} />
+                                                        {schedulerUninstalling ? 'Removing…' : 'Remove workers'}
+                                                    </button>
+                                                )}
+                                            </div>
                                         )}
                                         {isAdmin && (
                                             <p className="text-[10px] text-slate-500 leading-relaxed">
                                                 {schedulerInstallNeeded
                                                     ? 'Install enables both Docker entrypoint workers (Monitor Runner + Email Sender). No Task Scheduler is needed inside the container.'
-                                                    : `Enable or disable each worker without restarting the container. Changes apply on the next loop${workerSchedulerStatus.docker?.interval_seconds ? ` (~${workerSchedulerStatus.docker.interval_seconds}s)` : ''}. Upgrade/restart the container once after updating LinkNest so the entrypoint reads these settings.`}
+                                                    : `Enable or disable each worker without restarting the container. Use Enable both / Disable both for both workers at once. Changes apply on the next loop${workerSchedulerStatus.docker?.interval_seconds ? ` (~${workerSchedulerStatus.docker.interval_seconds}s)` : ''}. Upgrade/restart the container once after updating LinkNest so the entrypoint reads these settings.`}
                                             </p>
                                         )}
                                     </div>
@@ -5205,28 +5354,56 @@ export const MonitoringDashboard: React.FC = () => {
                                             {renderSchedulerTaskRow('monitor_runner', 'Monitor Runner', 'modal')}
                                             {renderSchedulerTaskRow('email_sender', 'Email Sender', 'modal')}
                                         </div>
-                                        {schedulerInstallNeeded && (
-                                            <button
-                                                type="button"
-                                                onClick={installSchedulerTasks}
-                                                disabled={schedulerInstalling || schedulerUninstalling || schedulerPythonInstalling || workerSchedulerLoading || !pythonRuntimeReady}
-                                                className="mt-3 inline-flex items-center gap-1.5 px-3 py-2 rounded-lg text-[10px] font-bold uppercase tracking-wide bg-purple-600 hover:bg-purple-700 text-white transition-colors disabled:opacity-50"
-                                                title={!pythonRuntimeReady ? 'Install Python first' : undefined}
-                                            >
-                                                <FaPlus size={9} />
-                                                {schedulerInstalling ? 'Installing…' : 'Install tasks'}
-                                            </button>
-                                        )}
-                                        {schedulerUninstallAvailable && (
-                                            <button
-                                                type="button"
-                                                onClick={uninstallSchedulerTasks}
-                                                disabled={schedulerInstalling || schedulerUninstalling || schedulerPythonInstalling || workerSchedulerLoading}
-                                                className={`${schedulerInstallNeeded ? '' : 'mt-3 '}inline-flex items-center gap-1.5 px-3 py-2 rounded-lg text-[10px] font-bold uppercase tracking-wide border border-red-300 dark:border-red-700 text-red-700 dark:text-red-300 bg-white dark:bg-red-950/30 hover:bg-red-50 dark:hover:bg-red-950/50 transition-colors disabled:opacity-50`}
-                                            >
-                                                <FaTrash size={9} />
-                                                {schedulerUninstalling ? 'Removing…' : 'Uninstall tasks'}
-                                            </button>
+                                        {(schedulerDisableBothAvailable || schedulerInstallNeeded || schedulerUninstallAvailable) && (
+                                            <div className="mt-3 flex flex-wrap gap-2">
+                                                {schedulerDisableBothAvailable && (
+                                                    <>
+                                                    <button
+                                                        type="button"
+                                                        onClick={() => void enableBothSchedulerTasks()}
+                                                        disabled={schedulerBulkBusy || schedulerBothAlreadyEnabled}
+                                                        className="inline-flex items-center gap-1.5 px-3 py-2 rounded-lg text-[10px] font-bold uppercase tracking-wide bg-emerald-600 hover:bg-emerald-700 text-white transition-colors disabled:opacity-50"
+                                                        title="Enable Monitor Runner and Email Sender in one step"
+                                                    >
+                                                        <FaCheck size={9} />
+                                                        {schedulerTaskToggling ? 'Updating…' : 'Enable both'}
+                                                    </button>
+                                                    <button
+                                                        type="button"
+                                                        onClick={() => void disableBothSchedulerTasks()}
+                                                        disabled={schedulerBulkBusy || schedulerBothAlreadyDisabled}
+                                                        className="inline-flex items-center gap-1.5 px-3 py-2 rounded-lg text-[10px] font-bold uppercase tracking-wide bg-amber-600 hover:bg-amber-700 text-white transition-colors disabled:opacity-50"
+                                                        title="Disable Monitor Runner and Email Sender in one step"
+                                                    >
+                                                        <FaStop size={9} />
+                                                        {schedulerTaskToggling ? 'Disabling…' : 'Disable both'}
+                                                    </button>
+                                                    </>
+                                                )}
+                                                {schedulerInstallNeeded && (
+                                                    <button
+                                                        type="button"
+                                                        onClick={installSchedulerTasks}
+                                                        disabled={schedulerBulkBusy || !pythonRuntimeReady}
+                                                        className="inline-flex items-center gap-1.5 px-3 py-2 rounded-lg text-[10px] font-bold uppercase tracking-wide bg-purple-600 hover:bg-purple-700 text-white transition-colors disabled:opacity-50"
+                                                        title={!pythonRuntimeReady ? 'Install Python first' : undefined}
+                                                    >
+                                                        <FaPlus size={9} />
+                                                        {schedulerInstalling ? 'Installing…' : 'Install tasks'}
+                                                    </button>
+                                                )}
+                                                {schedulerUninstallAvailable && (
+                                                    <button
+                                                        type="button"
+                                                        onClick={uninstallSchedulerTasks}
+                                                        disabled={schedulerBulkBusy}
+                                                        className="inline-flex items-center gap-1.5 px-3 py-2 rounded-lg text-[10px] font-bold uppercase tracking-wide border border-red-300 dark:border-red-700 text-red-700 dark:text-red-300 bg-white dark:bg-red-950/30 hover:bg-red-50 dark:hover:bg-red-950/50 transition-colors disabled:opacity-50"
+                                                    >
+                                                        <FaTrash size={9} />
+                                                        {schedulerUninstalling ? 'Removing…' : 'Uninstall tasks'}
+                                                    </button>
+                                                )}
+                                            </div>
                                         )}
                                         {isAdmin && (
                                             <p className="text-[10px] text-slate-500 leading-relaxed">
@@ -5234,7 +5411,7 @@ export const MonitoringDashboard: React.FC = () => {
                                                     ? 'Install Python 3.9+ first. Then Install registers both Monitor Runner and Email Sender jobs.'
                                                     : (schedulerInstallNeeded
                                                         ? 'Install registers both Monitor Runner and Email Sender jobs. Enable / Disable controls tasks after install. Requires Apache/PHP to run as a Windows user with Task Scheduler permissions.'
-                                                        : 'Enable or disable tasks here without opening Task Scheduler. Requires Apache/PHP to run as a Windows user with permission to change scheduled tasks.')}
+                                                        : 'Enable or disable tasks here without opening Task Scheduler. Use Enable both / Disable both for Monitor Runner and Email Sender together.')}
                                             </p>
                                         )}
                                     </div>
@@ -5891,11 +6068,35 @@ ON CONFLICT(key) DO UPDATE SET value = excluded.value, updated_at = excluded.upd
                             {renderSchedulerTaskRow('monitor_runner', 'Monitor Runner', 'float')}
                             {renderSchedulerTaskRow('email_sender', 'Email Sender', 'float')}
                         </div>
+                        {schedulerDisableBothAvailable && (
+                            <div className="mt-2.5 grid grid-cols-2 gap-2">
+                                <button
+                                    type="button"
+                                    onClick={() => void enableBothSchedulerTasks()}
+                                    disabled={schedulerBulkBusy || schedulerBothAlreadyEnabled}
+                                    className="inline-flex items-center justify-center gap-1.5 px-3 py-2 rounded-lg text-[10px] font-bold uppercase tracking-wide bg-emerald-600 hover:bg-emerald-700 text-white transition-colors disabled:opacity-50"
+                                    title="Enable Monitor Runner and Email Sender in one step"
+                                >
+                                    <FaCheck size={9} />
+                                    {schedulerTaskToggling ? 'Updating…' : 'Enable both'}
+                                </button>
+                                <button
+                                    type="button"
+                                    onClick={() => void disableBothSchedulerTasks()}
+                                    disabled={schedulerBulkBusy || schedulerBothAlreadyDisabled}
+                                    className="inline-flex items-center justify-center gap-1.5 px-3 py-2 rounded-lg text-[10px] font-bold uppercase tracking-wide bg-amber-600 hover:bg-amber-700 text-white transition-colors disabled:opacity-50"
+                                    title="Disable Monitor Runner and Email Sender in one step"
+                                >
+                                    <FaStop size={9} />
+                                    {schedulerTaskToggling ? 'Disabling…' : 'Disable both'}
+                                </button>
+                            </div>
+                        )}
                         {schedulerInstallNeeded && (
                             <button
                                 type="button"
                                 onClick={installSchedulerTasks}
-                                disabled={schedulerInstalling || schedulerUninstalling || schedulerPythonInstalling || workerSchedulerLoading || (workerSchedulerStatus.platform === 'windows' && !pythonRuntimeReady)}
+                                disabled={schedulerBulkBusy || (workerSchedulerStatus.platform === 'windows' && !pythonRuntimeReady)}
                                 className="mt-2.5 w-full inline-flex items-center justify-center gap-1.5 px-3 py-2 rounded-lg text-[10px] font-bold uppercase tracking-wide bg-purple-600 hover:bg-purple-700 text-white transition-colors disabled:opacity-50"
                                 title={workerSchedulerStatus.platform === 'windows' && !pythonRuntimeReady ? 'Install Python first' : undefined}
                             >
@@ -5907,7 +6108,7 @@ ON CONFLICT(key) DO UPDATE SET value = excluded.value, updated_at = excluded.upd
                             <button
                                 type="button"
                                 onClick={uninstallSchedulerTasks}
-                                disabled={schedulerInstalling || schedulerUninstalling || workerSchedulerLoading}
+                                disabled={schedulerBulkBusy}
                                 className="mt-2.5 w-full inline-flex items-center justify-center gap-1.5 px-3 py-2 rounded-lg text-[10px] font-bold uppercase tracking-wide border border-red-400/80 dark:border-red-700 text-red-800 dark:text-red-200 bg-white/80 dark:bg-red-950/40 hover:bg-red-50 dark:hover:bg-red-950/60 transition-colors disabled:opacity-50"
                             >
                                 <FaTrash size={9} />
@@ -5918,7 +6119,7 @@ ON CONFLICT(key) DO UPDATE SET value = excluded.value, updated_at = excluded.upd
                         )}
                         {!showWorkerSchedulerBanner && !schedulerInstallNeeded && (
                             <p className="mt-2.5 text-[10px] leading-relaxed opacity-85">
-                                Use Enable / Disable to control scheduled Python workers without opening Task Scheduler.
+                                Use Enable both / Disable both to control Monitor Runner and Email Sender together, or toggle each job separately.
                             </p>
                         )}
                         {workerSchedulerStatus.install_hint && !pythonRuntimeMissing && (

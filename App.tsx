@@ -79,6 +79,7 @@ const FloatingVncViewerWidget = lazy(() => import('./components/FloatingVncViewe
 const VncViewerWidget = lazy(() => import('./components/VncViewerWidget').then(m => ({ default: m.VncViewerWidget })));
 const FloatingSshTerminalWidget = lazy(() => import('./components/FloatingSshTerminalWidget').then(m => ({ default: m.FloatingSshTerminalWidget })));
 const SshTerminalWidget = lazy(() => import('./components/SshTerminalWidget').then(m => ({ default: m.SshTerminalWidget })));
+const InternetSpeedTester = lazy(() => import('./components/InternetSpeedTester').then(m => ({ default: m.InternetSpeedTester })));
 
 function hasLikelySession(): boolean {
   try {
@@ -330,6 +331,16 @@ const AppContent: React.FC = () => {
     localStorage.setItem('linknest_show_ssh_terminal_widget', showSshTerminal.toString());
   }, [showSshTerminal]);
 
+  // Internet Speed Tester Widget Visibility State (auth-only dialog widget)
+  const [showInternetSpeedTester, setShowInternetSpeedTester] = useState(() => {
+    const saved = localStorage.getItem('linknest_show_internet_speed_tester_widget');
+    return saved !== null ? saved === 'true' : false;
+  });
+
+  useEffect(() => {
+    localStorage.setItem('linknest_show_internet_speed_tester_widget', showInternetSpeedTester.toString());
+  }, [showInternetSpeedTester]);
+
   // Chat unread messages state
   const [hasUnreadChatMessages, setHasUnreadChatMessages] = useState(false);
   const lastChatNotifiedIdRef = useRef<number>(0);
@@ -531,7 +542,7 @@ const AppContent: React.FC = () => {
         setAllowedWidgetIds(new Set([
           'clock', 'weather', 'calculator', 'notes', 'password-generator',
           'phonetic-alphabet', 'zoom-control', 'theme', 'fav-organizer',
-          'chat', 'snake-game', 'vnc-viewer', 'ssh-terminal'
+          'chat', 'snake-game', 'vnc-viewer', 'ssh-terminal', 'internet-speed-tester'
         ]));
         setWidgetsLoading(false);
         return;
@@ -559,7 +570,7 @@ const AppContent: React.FC = () => {
   // Helper function to check if a widget is allowed
   const isWidgetAllowed = useCallback((widgetId: string): boolean => {
     // Auth-only widgets are never available to guests
-    if ((!isAuthenticated || !user) && ['notes', 'chat', 'fav-organizer'].includes(widgetId)) {
+    if ((!isAuthenticated || !user) && ['notes', 'chat', 'fav-organizer', 'internet-speed-tester'].includes(widgetId)) {
       return false;
     }
 
@@ -823,6 +834,10 @@ const AppContent: React.FC = () => {
       return;
     }
     setShowSshTerminal(true);
+  };
+
+  const toggleInternetSpeedTester = () => {
+    setShowInternetSpeedTester(!showInternetSpeedTester);
   };
 
   const handleTabClick = (tab: string) => {
@@ -1287,6 +1302,8 @@ const AppContent: React.FC = () => {
             toggleVncViewer={toggleVncViewer}
             showSshTerminal={showSshTerminal}
             toggleSshTerminal={toggleSshTerminal}
+            showInternetSpeedTester={showInternetSpeedTester}
+            toggleInternetSpeedTester={toggleInternetSpeedTester}
             hasUnreadChatMessages={hasUnreadChatMessages}
             user={user}
             onLoginClick={() => setAuthModalOpen(true)}
@@ -1598,6 +1615,8 @@ const AppContent: React.FC = () => {
           toggleVncViewer={toggleVncViewer}
           showSshTerminal={showSshTerminal}
           toggleSshTerminal={toggleSshTerminal}
+          showInternetSpeedTester={showInternetSpeedTester}
+          toggleInternetSpeedTester={toggleInternetSpeedTester}
           hasUnreadChatMessages={hasUnreadChatMessages}
             user={user}
             onLoginClick={() => setAuthModalOpen(true)}
@@ -1936,6 +1955,12 @@ const AppContent: React.FC = () => {
               />
             </FloatingSshTerminalWidget>
           )}
+          {isAuthenticated && showInternetSpeedTester && isWidgetAllowed('internet-speed-tester') && (
+            <InternetSpeedTester
+              isOpen={showInternetSpeedTester}
+              onClose={toggleInternetSpeedTester}
+            />
+          )}
         </Suspense>
       )}
       <AuthModal
@@ -2162,6 +2187,18 @@ const AppContent: React.FC = () => {
                 ),
                 isVisible: showSshTerminal,
                 onToggle: toggleSshTerminal,
+              },
+              {
+                id: 'internet-speed-tester',
+                name: 'Internet Speed Tester',
+                icon: (
+                  <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 576 512" fill="currentColor" className="w-5 h-5">
+                    <path d="M288 32C128.94 32 0 160.94 0 320c0 52.8 19.94 101.47 53.13 139.72 8.06 9.22 21.41 9.66 30.28 1.41l.03-.03c7.56-7.03 8.28-18.91 1.56-26.88A222.08 222.08 0 0 1 64 320c0-123.71 100.29-224 224-224s224 100.29 224 224c0 29.94-5.91 58.56-16.66 84.75-6.03 14.72 2.47 31.5 17.69 35.03 14.72 3.41 29.75-5.47 33.16-20.19A287.05 287.05 0 0 0 576 320C576 160.94 447.06 32 288 32zm0 64c-88.22 0-160 71.78-160 160 0 24.28 5.53 47.28 15.28 68.03l118.97-118.97c7.5-7.5 19.69-7.5 27.19 0 7.5 7.5 7.5 19.69 0 27.19L170.47 351.22A158.2 158.2 0 0 0 288 384c88.22 0 160-71.78 160-160S376.22 96 288 96z" />
+                  </svg>
+                ),
+                isVisible: showInternetSpeedTester,
+                onToggle: toggleInternetSpeedTester,
+                requiresAuth: true,
               },
             ].filter(widget => isWidgetAllowed(widget.id))}
           />

@@ -149,6 +149,9 @@ function speedtestIsWorkerRunning(): bool
 {
     $db = getDB();
     speedtestEnsureSchema($db);
+    // Recover stale "running" rows (crashed kick / killed process).
+    $db->exec("UPDATE speedtest_worker_queue SET status='error'
+        WHERE status='running' AND datetime(requested_at) < datetime('now', '-10 minutes')");
     $stmt = $db->query("SELECT COUNT(*) FROM speedtest_worker_queue WHERE status = 'running'");
     return ((int)$stmt->fetchColumn()) > 0;
 }
@@ -205,13 +208,21 @@ function speedtestCreateSchedule(array $payload, array $user, bool $isAdmin): ar
     $stmt->execute([$name, $target, $profile, $executor, $owner, $interval, $enabled, $next, (int)$user['id']]);
     $id = (int)$db->lastInsertId();
     if (function_exists('logUserAudit')) {
-        logUserAudit((int)$user['id'], 'speedtest.schedule_create', 'speedtest_schedule', (string)$id, [
-            'executor' => $executor,
-            'target' => $target,
-            'interval_minutes' => $interval,
+        logUserAudit('speedtest.schedule_create', [
+            'actor' => $user,
+            'details' => [
+                'schedule_id' => $id,
+                'executor' => $executor,
+                'target' => $target,
+                'interval_minutes' => $interval,
+            ],
         ]);
     }
-    return speedtestGetSchedule($id);
+    $created = speedtestGetSchedule($id);
+    if (!$created) {
+        sendJSON(['error' => 'Schedule created but could not be loaded'], 500);
+    }
+    return $created;
 }
 
 function speedtestUpdateSchedule(int $id, array $payload, array $user, bool $isAdmin): array
@@ -238,12 +249,20 @@ function speedtestUpdateSchedule(int $id, array $payload, array $user, bool $isA
     $db->prepare('UPDATE speedtest_schedules SET name=?, target=?, profile=?, interval_minutes=?, is_enabled=?, updated_at=datetime(\'now\') WHERE id=?')
         ->execute([$name, $target, $profile, $interval, $enabled, $id]);
     if (function_exists('logUserAudit')) {
-        logUserAudit((int)$user['id'], 'speedtest.schedule_update', 'speedtest_schedule', (string)$id, [
-            'interval_minutes' => $interval,
-            'is_enabled' => $enabled,
+        logUserAudit('speedtest.schedule_update', [
+            'actor' => $user,
+            'details' => [
+                'schedule_id' => $id,
+                'interval_minutes' => $interval,
+                'is_enabled' => $enabled,
+            ],
         ]);
     }
-    return speedtestGetSchedule($id);
+    $updated = speedtestGetSchedule($id);
+    if (!$updated) {
+        sendJSON(['error' => 'Schedule updated but could not be loaded'], 500);
+    }
+    return $updated;
 }
 
 function speedtestDeleteSchedule(int $id, array $user, bool $isAdmin): void
@@ -257,7 +276,10 @@ function speedtestDeleteSchedule(int $id, array $user, bool $isAdmin): void
     $db = getDB();
     $db->prepare('DELETE FROM speedtest_schedules WHERE id = ?')->execute([$id]);
     if (function_exists('logUserAudit')) {
-        logUserAudit((int)$user['id'], 'speedtest.schedule_delete', 'speedtest_schedule', (string)$id, []);
+        logUserAudit('speedtest.schedule_delete', [
+            'actor' => $user,
+            'details' => ['schedule_id' => $id],
+        ]);
     }
 }
 
@@ -320,7 +342,87 @@ function speedtestListResults(array $user, bool $isAdmin, int $limit = 40): arra
     return $stmt->fetchAll(PDO::FETCH_ASSOC) ?: [];
 }
 
-function speedtestQueueWorkerRun(?int $scheduleId, array $user): void
+function speedtestPendingQueueCount(): int
+{
+    $db = getDB();
+    speedtestEnsureSchema($db);
+    $stmt = $db->query("SELECT COUNT(*) FROM speedtest_worker_queue WHERE status IN ('pending','running')");
+    return (int)$stmt->fetchColumn();
+}
+
+/**
+ * Prefer an enabled worker schedule when "run now" omits schedule_id.
+ */
+function speedtestDefaultWorkerScheduleId(): ?int
+{
+    $db = getDB();
+    speedtestEnsureSchema($db);
+    $stmt = $db->query("SELECT id FROM speedtest_schedules WHERE executor='worker' AND is_enabled=1 ORDER BY id ASC LIMIT 1");
+    $id = $stmt->fetchColumn();
+    return $id !== false ? (int)$id : null;
+}
+
+/**
+ * Spawn scripts/speedtest_runner.py once (background) so queued jobs run without waiting for Task Scheduler.
+ */
+function speedtestKickRunner(): array
+{
+    $root = realpath(__DIR__ . '/..') ?: (__DIR__ . '/..');
+    $runner = $root . DIRECTORY_SEPARATOR . 'scripts' . DIRECTORY_SEPARATOR . 'speedtest_runner.py';
+    if (!is_file($runner)) {
+        return ['kicked' => false, 'reason' => 'speedtest_runner.py missing'];
+    }
+
+    $python = null;
+    if (file_exists(__DIR__ . '/monitor_check_jobs_lib.php')) {
+        require_once __DIR__ . '/monitor_check_jobs_lib.php';
+        if (function_exists('monitorWorkerResolvePython')) {
+            $python = monitorWorkerResolvePython();
+        }
+    }
+    if (!$python) {
+        $bundled = $root . DIRECTORY_SEPARATOR . 'bin' . DIRECTORY_SEPARATOR . 'python' . DIRECTORY_SEPARATOR . 'python.exe';
+        if (is_file($bundled)) {
+            $python = $bundled;
+        }
+    }
+    if (!$python) {
+        return ['kicked' => false, 'reason' => 'Python not found. Install the monitor Python runtime or schedule monitor_runner.py.'];
+    }
+
+    $dbPath = defined('DB_PATH') ? DB_PATH : ($root . DIRECTORY_SEPARATOR . 'data' . DIRECTORY_SEPARATOR . 'linknest.db');
+    $dataDir = defined('DB_DIR') ? DB_DIR : ($root . DIRECTORY_SEPARATOR . 'data');
+    if (!is_dir($dataDir)) {
+        @mkdir($dataDir, 0755, true);
+    }
+    $logFile = $dataDir . DIRECTORY_SEPARATOR . 'speedtest_runner_kick.log';
+
+    $args = escapeshellarg($python) . ' '
+        . escapeshellarg($runner) . ' '
+        . escapeshellarg($dbPath);
+
+    if (!function_exists('proc_open') && !function_exists('popen') && !function_exists('exec')) {
+        return ['kicked' => false, 'reason' => 'PHP cannot spawn processes (proc_open/popen/exec disabled)'];
+    }
+
+    if (stripos(PHP_OS, 'WIN') === 0) {
+        $cmd = 'start /B "" ' . $args . ' >> ' . escapeshellarg($logFile) . ' 2>&1';
+        if (function_exists('popen')) {
+            $handle = @popen($cmd, 'r');
+            if ($handle === false) {
+                return ['kicked' => false, 'reason' => 'Failed to start Python worker'];
+            }
+            pclose($handle);
+            return ['kicked' => true, 'reason' => null];
+        }
+    }
+
+    $cmd = $args . ' >> ' . escapeshellarg($logFile) . ' 2>&1 &';
+    @exec($cmd);
+    return ['kicked' => true, 'reason' => null];
+}
+
+function speedtestQueueWorkerRun(?int $scheduleId, array $user): array
 {
     $db = getDB();
     speedtestEnsureSchema($db);
@@ -330,11 +432,31 @@ function speedtestQueueWorkerRun(?int $scheduleId, array $user): void
     if (speedtestWorkerBytesToday() >= speedtestWorkerDailyCapBytes()) {
         sendJSON(['error' => 'Daily worker bandwidth cap reached'], 429);
     }
+    if (!$scheduleId) {
+        $scheduleId = speedtestDefaultWorkerScheduleId();
+    }
+    // Clear older stuck pending null jobs so a fresh run-now is unambiguous.
+    $db->exec("UPDATE speedtest_worker_queue SET status='done' WHERE status='pending' AND schedule_id IS NULL");
     $db->prepare('INSERT INTO speedtest_worker_queue(schedule_id, status, requested_by) VALUES(?,?,?)')
         ->execute([$scheduleId, 'pending', (int)$user['id']]);
+    $queueId = (int)$db->lastInsertId();
     if (function_exists('logUserAudit')) {
-        logUserAudit((int)$user['id'], 'speedtest.worker_run_now', 'speedtest_schedule', $scheduleId ? (string)$scheduleId : null, []);
+        logUserAudit('speedtest.worker_run_now', [
+            'actor' => $user,
+            'details' => ['schedule_id' => $scheduleId, 'queue_id' => $queueId],
+        ]);
     }
+    $kick = speedtestKickRunner();
+    return [
+        'queued' => true,
+        'queue_id' => $queueId,
+        'schedule_id' => $scheduleId,
+        'kicked' => !empty($kick['kicked']),
+        'kick_reason' => $kick['reason'] ?? null,
+        'message' => !empty($kick['kicked'])
+            ? 'Worker speed test queued and Python runner started.'
+            : ('Worker speed test queued, but Python was not started: ' . ($kick['reason'] ?? 'unknown') . ' Start the monitor worker or install Python.'),
+    ];
 }
 
 function speedtestStatusPayload(array $user, bool $isAdmin): array
@@ -351,6 +473,7 @@ function speedtestStatusPayload(array $user, bool $isAdmin): array
         'worker_bytes_today' => speedtestWorkerBytesToday(),
         'worker_daily_cap_bytes' => speedtestWorkerDailyCapBytes(),
         'worker_running' => speedtestIsWorkerRunning(),
+        'pending_queue' => speedtestPendingQueueCount(),
         'last_worker_result' => $lastWorker,
         'worker_min_interval_minutes' => speedtestWorkerMinIntervalMinutes(),
     ];

@@ -67,14 +67,12 @@ function coloredIconDataUri(color: string): string {
 }
 
 /**
- * OS Notification — only when the page is hidden so Windows can show a corner toast.
- * While the tab is focused, Chrome/Edge often skip the toast and only log it in
- * Notification Center; dashboards use an in-app popup instead.
+ * OS / browser Notification (corner toast). Fired together with the in-app toaster
+ * whenever permission is granted. Color is applied via the SVG icon.
  */
 export function notifyMonitorStatusChange(opts: MonitorStatusAlert): void {
     if (!isBrowserNotificationSupported()) return;
     if (Notification.permission !== 'granted') return;
-    if (typeof document !== 'undefined' && document.visibilityState === 'visible') return;
 
     const color = opts.color || colorForStatus(opts.status);
     const icon = coloredIconDataUri(color);

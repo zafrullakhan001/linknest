@@ -119,15 +119,25 @@ export async function getSpeedTestStatus(): Promise<{
   worker_bytes_today: number;
   worker_daily_cap_bytes: number;
   worker_running: boolean;
+  pending_queue?: number;
   last_worker_result: SpeedTestStoredResult | null;
+  worker_min_interval_minutes?: number;
 }> {
   const json = await api<{ data: any }>('/status');
   return json.data;
 }
 
-export async function runWorkerSpeedTestNow(scheduleId?: number): Promise<void> {
-  await api('/run-now', {
+export async function runWorkerSpeedTestNow(scheduleId?: number): Promise<{
+  queued: boolean;
+  queue_id?: number;
+  schedule_id?: number | null;
+  kicked?: boolean;
+  kick_reason?: string | null;
+  message?: string;
+}> {
+  const json = await api<{ data: any }>('/run-now', {
     method: 'POST',
     body: JSON.stringify({ schedule_id: scheduleId ?? null }),
   });
+  return json.data;
 }

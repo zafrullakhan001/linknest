@@ -107,8 +107,8 @@ if ($path === '/run-now' && $method === 'POST') {
         sendJSON(['error' => 'Admin access required'], 403);
     }
     $scheduleId = isset($body['schedule_id']) ? (int)$body['schedule_id'] : null;
-    speedtestQueueWorkerRun($scheduleId ?: null, $AUTH_USER);
-    sendJSON(['data' => ['queued' => true]]);
+    $result = speedtestQueueWorkerRun($scheduleId ?: null, $AUTH_USER);
+    sendJSON(['data' => $result]);
 }
 
 // Interactive streaming endpoints — rate-limit non-system users lightly.

@@ -92,7 +92,8 @@ function handleGetAllAvailableWidgets() {
         ['id' => 'chat', 'label' => 'Chat', 'description' => 'Chat widget (requires authentication)', 'isCustom' => false],
         ['id' => 'snake-game', 'label' => 'Snake Game', 'description' => 'Snake game widget', 'isCustom' => false],
         ['id' => 'vnc-viewer', 'label' => 'VNC Viewer', 'description' => 'noVNC remote desktop viewer (websockify URL)', 'isCustom' => false],
-        ['id' => 'ssh-terminal', 'label' => 'SSH Terminal', 'description' => 'xterm.js web SSH terminal (ttyd WebSocket URL)', 'isCustom' => false]
+        ['id' => 'ssh-terminal', 'label' => 'SSH Terminal', 'description' => 'xterm.js web SSH terminal (ttyd WebSocket URL)', 'isCustom' => false],
+        ['id' => 'internet-speed-tester', 'label' => 'Internet Speed Tester', 'description' => 'Ping, download, and upload speed test (requires authentication)', 'isCustom' => false]
     ];
     
     $db = getDB();
@@ -158,7 +159,7 @@ function handleGetAllowedWidgets() {
 
     // Guests must never receive auth-only widgets even if mis-assigned on the guest role
     if (!$user) {
-        $authOnlyWidgets = ['notes', 'chat', 'fav-organizer'];
+        $authOnlyWidgets = ['notes', 'chat', 'fav-organizer', 'internet-speed-tester'];
         $allowedWidgetIds = array_values(array_filter(
             $allowedWidgetIds,
             function ($widgetId) use ($authOnlyWidgets) {
@@ -181,7 +182,8 @@ function handleGetAllowedWidgets() {
         ['id' => 'chat', 'label' => 'Chat', 'description' => 'Chat widget (requires authentication)', 'isCustom' => false],
         ['id' => 'snake-game', 'label' => 'Snake Game', 'description' => 'Snake game widget', 'isCustom' => false],
         ['id' => 'vnc-viewer', 'label' => 'VNC Viewer', 'description' => 'noVNC remote desktop viewer (websockify URL)', 'isCustom' => false],
-        ['id' => 'ssh-terminal', 'label' => 'SSH Terminal', 'description' => 'xterm.js web SSH terminal (ttyd WebSocket URL)', 'isCustom' => false]
+        ['id' => 'ssh-terminal', 'label' => 'SSH Terminal', 'description' => 'xterm.js web SSH terminal (ttyd WebSocket URL)', 'isCustom' => false],
+        ['id' => 'internet-speed-tester', 'label' => 'Internet Speed Tester', 'description' => 'Ping, download, and upload speed test (requires authentication)', 'isCustom' => false]
     ];
     
     $customWidgets = [];

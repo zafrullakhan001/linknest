@@ -152,7 +152,7 @@ function handleGetRoles() {
         error_log('roles totals tile/link counts: ' . $e->getMessage());
     }
 
-    $builtInWidgetCount = 13; // keep in sync with api/widgets.php built-in list
+    $builtInWidgetCount = 14; // keep in sync with api/widgets.php built-in list
     try {
         $customWidgetCount = (int)$db->query('SELECT COUNT(*) FROM custom_widgets WHERE enabled = 1')->fetchColumn();
         $widgetTotal = $builtInWidgetCount + $customWidgetCount;
@@ -717,7 +717,8 @@ function handleAssignWidgetsToRole($roleId) {
         'chat',
         'snake-game',
         'vnc-viewer',
-        'ssh-terminal'
+        'ssh-terminal',
+        'internet-speed-tester'
     ];
     
     // Get custom widget IDs from database

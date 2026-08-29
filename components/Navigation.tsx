@@ -39,6 +39,8 @@ interface NavigationProps {
   toggleVncViewer: () => void;
   showSshTerminal: boolean;
   toggleSshTerminal: () => void;
+  showInternetSpeedTester: boolean;
+  toggleInternetSpeedTester: () => void;
   hasUnreadChatMessages?: boolean;
   user: { id: number; username: string; email: string; is_admin?: boolean } | null;
   onLoginClick: () => void;
@@ -46,7 +48,7 @@ interface NavigationProps {
   isWidgetAllowed: (widgetId: string) => boolean;
 }
 
-export const Navigation: React.FC<NavigationProps> = ({ darkMode, showClock, toggleClock, showPhoneticAlphabet, togglePhoneticAlphabet, showNotes, toggleNotes, showWeather, toggleWeather, showCalculator, toggleCalculator, showPasswordGenerator, togglePasswordGenerator, showZoomControl, toggleZoomControl, showTheme, toggleThemeWidget, showFavOrganizer, toggleFavOrganizer, showChat, toggleChat, showSnakeGame, toggleSnakeGame, showVncViewer, toggleVncViewer, showSshTerminal, toggleSshTerminal, hasUnreadChatMessages = false, user, onLoginClick, onHelpClick, isWidgetAllowed }) => {
+export const Navigation: React.FC<NavigationProps> = ({ darkMode, showClock, toggleClock, showPhoneticAlphabet, togglePhoneticAlphabet, showNotes, toggleNotes, showWeather, toggleWeather, showCalculator, toggleCalculator, showPasswordGenerator, togglePasswordGenerator, showZoomControl, toggleZoomControl, showTheme, toggleThemeWidget, showFavOrganizer, toggleFavOrganizer, showChat, toggleChat, showSnakeGame, toggleSnakeGame, showVncViewer, toggleVncViewer, showSshTerminal, toggleSshTerminal, showInternetSpeedTester, toggleInternetSpeedTester, hasUnreadChatMessages = false, user, onLoginClick, onHelpClick, isWidgetAllowed }) => {
   const { logout } = useAuth();
   const { settings, loading: settingsLoading } = useSettings();
   const disabledTabs = getDisabledTabsFromSettings(settings);
@@ -415,6 +417,17 @@ export const Navigation: React.FC<NavigationProps> = ({ darkMode, showClock, tog
                 <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="w-4 h-4 sm:w-5 sm:h-5">
                   <polyline points="4 17 10 11 4 5"></polyline>
                   <line x1="12" y1="19" x2="20" y2="19"></line>
+                </svg>
+              </button>
+            )}
+            {user && isWidgetAllowed('internet-speed-tester') && (
+              <button
+                onClick={toggleInternetSpeedTester}
+                className={`p-2 rounded-full transition-all linknest-nav-icon ${showInternetSpeedTester ? 'bg-white dark:bg-slate-700 text-brand-500 shadow-sm' : 'hover:bg-slate-200 dark:hover:bg-slate-700 text-slate-500 dark:text-slate-400'}`}
+                title={showInternetSpeedTester ? "Hide Internet Speed Tester" : "Show Internet Speed Tester"}
+              >
+                <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 576 512" fill="currentColor" className="w-4 h-4 sm:w-5 sm:h-5">
+                  <path d="M288 32C128.94 32 0 160.94 0 320c0 52.8 19.94 101.47 53.13 139.72 8.06 9.22 21.41 9.66 30.28 1.41l.03-.03c7.56-7.03 8.28-18.91 1.56-26.88A222.08 222.08 0 0 1 64 320c0-123.71 100.29-224 224-224s224 100.29 224 224c0 29.94-5.91 58.56-16.66 84.75-6.03 14.72 2.47 31.5 17.69 35.03 14.72 3.41 29.75-5.47 33.16-20.19A287.05 287.05 0 0 0 576 320C576 160.94 447.06 32 288 32zm0 64c-88.22 0-160 71.78-160 160 0 24.28 5.53 47.28 15.28 68.03l118.97-118.97c7.5-7.5 19.69-7.5 27.19 0 7.5 7.5 7.5 19.69 0 27.19L170.47 351.22A158.2 158.2 0 0 0 288 384c88.22 0 160-71.78 160-160S376.22 96 288 96z" />
                 </svg>
               </button>
             )}

@@ -1,4 +1,4 @@
-import React, { useEffect, useState } from 'react';
+import React, { useEffect, useRef, useState } from 'react';
 import {
   SpeedTestPreferences,
   SpeedTestSchedulePreset,
@@ -19,6 +19,7 @@ import {
   runWorkerSpeedTestNow,
   SpeedTestScheduleRow,
 } from '../../services/speedTestScheduleService';
+import { formatMbps, formatMs } from '../../services/speedTestService';
 
 const SCHEDULE_PRESET_HINT: Record<SpeedTestSchedulePreset, string> = {
   off: 'Disable automatic browser speed tests on this device.',
@@ -49,22 +50,37 @@ export const SpeedTestSettingsPanel: React.FC<{
   const [status, setStatus] = useState<Awaited<ReturnType<typeof getSpeedTestStatus>> | null>(null);
   const [busy, setBusy] = useState(false);
   const [msg, setMsg] = useState<string | null>(null);
+  const pollRef = useRef<number | null>(null);
+  const baselineResultId = useRef<number | null>(null);
 
   const refreshServer = async () => {
     try {
       const [schedules, st] = await Promise.all([listSpeedTestSchedules(), getSpeedTestStatus()]);
       setWorkerSchedules(schedules.filter((s) => s.executor === 'worker'));
       setStatus(st);
+      return st;
     } catch (e) {
       setMsg(e instanceof Error ? e.message : 'Could not load server schedules');
+      return null;
+    }
+  };
+
+  const stopPoll = () => {
+    if (pollRef.current != null) {
+      window.clearInterval(pollRef.current);
+      pollRef.current = null;
     }
   };
 
   useEffect(() => {
     void refreshServer();
-    return subscribeBrowserSpeedSchedule(() => {
+    const unsub = subscribeBrowserSpeedSchedule(() => {
       onPrefsChange(loadSpeedTestPreferences());
     });
+    return () => {
+      stopPoll();
+      unsub();
+    };
   }, [onPrefsChange]);
 
   const setAlerts = (patch: Partial<SpeedTestPreferences['alerts']>) => {
@@ -72,14 +88,13 @@ export const SpeedTestSettingsPanel: React.FC<{
   };
 
   const setBrowserSchedulePreset = (preset: SpeedTestSchedulePreset) => {
-    const next = configureBrowserSpeedSchedule({ preset });
+    configureBrowserSpeedSchedule({ preset });
     onPrefsChange(loadSpeedTestPreferences());
     setMsg(
       preset === 'off'
         ? 'Browser schedule disabled'
         : `Browser schedule every ${SCHEDULE_PRESET_MINUTES[preset]} min (requires open tab)`
     );
-    void next;
   };
 
   const enableNotifications = async () => {
@@ -112,6 +127,75 @@ export const SpeedTestSettingsPanel: React.FC<{
       setBusy(false);
     }
   };
+
+  const runWorkerNow = async () => {
+    if (!isAdmin) return;
+    setBusy(true);
+    stopPoll();
+    try {
+      const before = await refreshServer();
+      baselineResultId.current = before?.last_worker_result?.id ?? null;
+      const scheduleId = workerSchedules.find((s) => s.is_enabled)?.id;
+      const res = await runWorkerSpeedTestNow(scheduleId);
+      setMsg(res.message || (res.kicked ? 'Worker queued and started…' : 'Worker queued.'));
+      await refreshServer();
+
+      let ticks = 0;
+      pollRef.current = window.setInterval(() => {
+        void (async () => {
+          ticks += 1;
+          const st = await refreshServer();
+          const latestId = st?.last_worker_result?.id ?? null;
+          const done =
+            (latestId != null && latestId !== baselineResultId.current) ||
+            (st && !st.worker_running && (st.pending_queue ?? 0) === 0 && ticks > 2);
+          if (done || ticks >= 45) {
+            stopPoll();
+            setBusy(false);
+            if (latestId != null && latestId !== baselineResultId.current) {
+              const row = st?.last_worker_result;
+              let summary = 'Worker finished.';
+              if (row?.result_json) {
+                try {
+                  const parsed = JSON.parse(row.result_json) as {
+                    downloadMbps?: number;
+                    uploadMbps?: number;
+                    pingMs?: number;
+                  };
+                  summary = `Worker result: ↓ ${formatMbps(parsed.downloadMbps ?? null)} · ↑ ${formatMbps(parsed.uploadMbps ?? null)} · ping ${formatMs(parsed.pingMs ?? null)}`;
+                } catch {
+                  /* ignore */
+                }
+              }
+              setMsg(summary);
+            } else if (ticks >= 45) {
+              setMsg(
+                'No worker result yet. Ensure the monitor Python worker can run (Admin → Monitoring workers / Help), then try again.'
+              );
+            }
+          }
+        })();
+      }, 2000);
+    } catch (e) {
+      setBusy(false);
+      setMsg(e instanceof Error ? e.message : 'Failed to queue worker speed test');
+    }
+  };
+
+  const last = status?.last_worker_result;
+  let lastSummary: string | null = null;
+  if (last?.result_json) {
+    try {
+      const parsed = JSON.parse(last.result_json) as {
+        downloadMbps?: number;
+        uploadMbps?: number;
+        pingMs?: number;
+      };
+      lastSummary = `Last worker: ↓ ${formatMbps(parsed.downloadMbps ?? null)} · ↑ ${formatMbps(parsed.uploadMbps ?? null)} · ping ${formatMs(parsed.pingMs ?? null)} · ${last.run_at}`;
+    } catch {
+      lastSummary = `Last worker run at ${last.run_at}`;
+    }
+  }
 
   return (
     <div className="rounded-3xl border border-slate-200 dark:border-[#333] bg-white/70 dark:bg-[#1a1a1a]/70 p-4 space-y-4">
@@ -220,9 +304,11 @@ export const SpeedTestSettingsPanel: React.FC<{
           >
             Interactive remaining this hour: {status.interactive_remaining}. Worker today:{' '}
             {Math.round(status.worker_bytes_today / 1_048_576)} / {Math.round(status.worker_daily_cap_bytes / 1_048_576)} MB.
+            {(status.pending_queue ?? 0) > 0 ? ` Queue: ${status.pending_queue}.` : ''}
             {status.worker_running ? ' Worker running…' : ''}
           </div>
         )}
+        {lastSummary && <div className="text-[11px] text-emerald-700 dark:text-emerald-300 font-semibold">{lastSummary}</div>}
         {isAdmin ? (
           <div className="flex flex-wrap gap-2">
             <button
@@ -237,11 +323,11 @@ export const SpeedTestSettingsPanel: React.FC<{
             <button
               type="button"
               disabled={busy}
-              onClick={() => void runWorkerSpeedTestNow().then(refreshServer).catch((e) => setMsg(e.message))}
-              title="Trigger one worker speed test immediately on the LinkNest host."
+              onClick={() => void runWorkerNow()}
+              title="Queue one worker speed test and start the Python runner immediately when possible."
               className="px-3 py-1.5 rounded-xl text-xs font-bold bg-slate-800 text-white dark:bg-slate-200 dark:text-slate-900 disabled:opacity-50"
             >
-              Run worker now
+              {busy ? 'Running…' : 'Run worker now'}
             </button>
           </div>
         ) : (
@@ -253,20 +339,29 @@ export const SpeedTestSettingsPanel: React.FC<{
               <span title="Worker schedule: runs on the server, not in your browser.">
                 #{s.id} {s.name} · {s.target}/{s.profile} every {s.interval_minutes}m · {s.is_enabled ? 'on' : 'off'}
                 {s.last_status ? ` · last ${s.last_status}` : ''}
+                {s.last_error ? ` · ${s.last_error}` : ''}
               </span>
               {isAdmin && (
                 <button
                   type="button"
                   className="text-red-500 font-bold"
                   title="Remove this worker schedule permanently."
-                  onClick={() => void deleteSpeedTestSchedule(s.id).then(refreshServer)}
+                  onClick={() =>
+                    void deleteSpeedTestSchedule(s.id)
+                      .then(refreshServer)
+                      .catch((e) => setMsg(e instanceof Error ? e.message : 'Delete failed'))
+                  }
                 >
                   Delete
                 </button>
               )}
             </li>
           ))}
-          {!workerSchedules.length && <li className="text-[11px] text-slate-500">No worker schedules yet.</li>}
+          {!workerSchedules.length && (
+            <li className="text-[11px] text-slate-500">
+              No worker schedules yet — Run worker now still runs an ad-hoc internet/quick test when Python is available.
+            </li>
+          )}
         </ul>
       </div>
     </div>
