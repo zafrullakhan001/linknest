@@ -622,6 +622,10 @@ function handleImportNotificationRules($monitorId) {
                 continue;
             }
             $sort++;
+            $sortOrder = isset($r['sort_order']) ? (int)$r['sort_order'] : $sort;
+            if ($sortOrder < 1) {
+                $sortOrder = $sort;
+            }
 
             $ruleName = trim((string)($r['name'] ?? ''));
             if ($ruleName === '') {
@@ -717,7 +721,7 @@ function handleImportNotificationRules($monitorId) {
             $insertRule->execute([
                 (int)$monitorId,
                 $ruleName,
-                $sort,
+                $sortOrder,
                 $statusTrigger,
                 $twStart,
                 $twEnd,

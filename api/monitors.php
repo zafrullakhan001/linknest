@@ -5,6 +5,7 @@ require_once __DIR__ . '/monitor_check_jobs_lib.php';
 require_once __DIR__ . '/monitor_worker_scheduler_lib.php';
 require_once __DIR__ . '/monitor_suggest.php';
 require_once __DIR__ . '/user_audit_helper.php';
+require_once __DIR__ . '/speedtest_schedules_lib.php';
 
 if (session_status() === PHP_SESSION_NONE) {
     session_start();
@@ -253,6 +254,9 @@ function validateMonitorTypeFields(array $data): ?string {
 }
 
 const MONITOR_EXPORT_LOG_LIMIT = 500;
+const MONITOR_EXPORT_BUNDLE_VERSION = 3;
+const MONITOR_EXPORT_SPEEDTEST_RESULT_LIMIT = 200;
+const MONITOR_EXPORT_AUDIT_LIMIT = 500;
 
 function monitorExportSanitizeMonitorRow(array $monitor): array {
     unset($monitor['email_rules_count'], $monitor['allowed_user_ids_csv']);
@@ -309,7 +313,261 @@ function monitorExportNotificationSettings(): array {
     return [
         'timezone' => (string)getSetting('monitor_notification_timezone', ''),
         'dst_correction' => getSetting('monitor_notification_dst_correction', '1') === '1',
+        'notifications_paused' => getSetting('notifications_paused', '0') === '1' || getSetting('notifications_paused', '0') === 'true',
     ];
+}
+
+function monitorExportSpeedtestSettings(): array {
+    $keys = [
+        'speedtest_interactive_max_per_hour',
+        'speedtest_worker_daily_cap_mb',
+        'speedtest_worker_min_interval_minutes',
+        'speedtest_loopback_base_url',
+    ];
+    $out = [];
+    foreach ($keys as $key) {
+        $val = getSetting($key, '');
+        if ($val !== '' && $val !== null) {
+            $out[$key] = (string)$val;
+        }
+    }
+    return $out;
+}
+
+function monitorExportSpeedtestPayload(PDO $db, int $resultLimit = MONITOR_EXPORT_SPEEDTEST_RESULT_LIMIT): array {
+    speedtestEnsureSchema($db);
+    $schedules = [];
+    try {
+        $schedules = $db->query('SELECT * FROM speedtest_schedules ORDER BY id ASC')->fetchAll(PDO::FETCH_ASSOC) ?: [];
+    } catch (PDOException $e) {
+        $schedules = [];
+    }
+
+    $results = [];
+    try {
+        $limit = max(1, (int)$resultLimit);
+        $stmt = $db->prepare('SELECT * FROM speedtest_results ORDER BY run_at DESC LIMIT ' . $limit);
+        $stmt->execute();
+        $results = array_reverse($stmt->fetchAll(PDO::FETCH_ASSOC) ?: []);
+    } catch (PDOException $e) {
+        $results = [];
+    }
+
+    return [
+        'schedules' => $schedules,
+        'results' => $results,
+        'settings' => monitorExportSpeedtestSettings(),
+    ];
+}
+
+function monitorExportAuditLogs(PDO $db, ?int $monitorId = null, int $limit = MONITOR_EXPORT_AUDIT_LIMIT): array {
+    ensureUserAuditLogTable($db);
+    $limit = max(1, min(2000, (int)$limit));
+    try {
+        $stmt = $db->prepare("SELECT created_at, actor_id, actor_username, action, details, ip_address
+            FROM user_audit_log
+            WHERE action LIKE 'monitor.%'
+            ORDER BY created_at DESC, id DESC
+            LIMIT " . ($monitorId === null ? $limit : 2000));
+        $stmt->execute();
+        $rows = $stmt->fetchAll(PDO::FETCH_ASSOC) ?: [];
+    } catch (PDOException $e) {
+        return [];
+    }
+
+    if ($monitorId === null) {
+        return $rows;
+    }
+
+    $out = [];
+    foreach ($rows as $row) {
+        $decoded = json_decode((string)($row['details'] ?? ''), true);
+        if (!is_array($decoded)) {
+            continue;
+        }
+        $id = (int)($decoded['monitor_id'] ?? 0);
+        if ($id !== $monitorId) {
+            continue;
+        }
+        $out[] = $row;
+        if (count($out) >= $limit) {
+            break;
+        }
+    }
+    return $out;
+}
+
+function monitorImportApplyNotificationSettings(array $ns): void {
+    $tz = isset($ns['timezone']) ? trim((string)$ns['timezone']) : '';
+    $dst = array_key_exists('dst_correction', $ns) ? (bool)$ns['dst_correction'] : null;
+    if ($tz !== '') {
+        setMonitorNotificationTimezone($tz, $dst);
+    } elseif ($dst !== null) {
+        setSetting('monitor_notification_dst_correction', $dst ? '1' : '0');
+    }
+    if (array_key_exists('notifications_paused', $ns)) {
+        $paused = $ns['notifications_paused'];
+        $isPaused = $paused === true || $paused === 1 || $paused === '1' || $paused === 'true';
+        setSetting('notifications_paused', $isPaused ? '1' : '0');
+    }
+}
+
+function monitorImportApplySpeedtestSettings(array $settings): void {
+    $allowed = [
+        'speedtest_interactive_max_per_hour' => true,
+        'speedtest_worker_daily_cap_mb' => true,
+        'speedtest_worker_min_interval_minutes' => true,
+        'speedtest_loopback_base_url' => true,
+    ];
+    foreach ($settings as $key => $value) {
+        $key = (string)$key;
+        if (!isset($allowed[$key])) {
+            continue;
+        }
+        setSetting($key, (string)$value);
+    }
+}
+
+function monitorImportSpeedtestPayload(PDO $db, $payload, bool $replace): void {
+    if (!is_array($payload)) {
+        return;
+    }
+    speedtestEnsureSchema($db);
+
+    if ($replace) {
+        try { $db->exec('DELETE FROM speedtest_worker_queue'); } catch (PDOException $e) { /* ignore */ }
+        try { $db->exec('DELETE FROM speedtest_results'); } catch (PDOException $e) { /* ignore */ }
+        try { $db->exec('DELETE FROM speedtest_schedules'); } catch (PDOException $e) { /* ignore */ }
+    }
+
+    if (!empty($payload['settings']) && is_array($payload['settings'])) {
+        monitorImportApplySpeedtestSettings($payload['settings']);
+    }
+
+    $schedules = $payload['schedules'] ?? [];
+    if (!is_array($schedules)) {
+        $schedules = [];
+    }
+    $idMap = [];
+
+    $insertWithId = $db->prepare('INSERT INTO speedtest_schedules (
+        id, name, target, profile, executor, owner_user_id, interval_minutes, is_enabled,
+        last_run_at, next_run_at, last_status, last_error, created_at, updated_at, created_by
+    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)');
+    $insertAuto = $db->prepare('INSERT INTO speedtest_schedules (
+        name, target, profile, executor, owner_user_id, interval_minutes, is_enabled,
+        last_run_at, next_run_at, last_status, last_error, created_at, updated_at, created_by
+    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)');
+
+    $nowIso = gmdate('Y-m-d H:i:s');
+    foreach ($schedules as $s) {
+        if (!is_array($s) || empty($s['name']) || empty($s['target']) || empty($s['profile']) || empty($s['executor'])) {
+            continue;
+        }
+        $oldId = isset($s['id']) ? (int)$s['id'] : 0;
+        $preserveId = $replace && $oldId > 0;
+        $row = [
+            (string)$s['name'],
+            (string)$s['target'],
+            (string)$s['profile'],
+            (string)$s['executor'],
+            isset($s['owner_user_id']) ? (int)$s['owner_user_id'] : null,
+            isset($s['interval_minutes']) ? (int)$s['interval_minutes'] : 60,
+            isset($s['is_enabled']) ? (int)$s['is_enabled'] : 1,
+            $s['last_run_at'] ?? null,
+            $s['next_run_at'] ?? null,
+            $s['last_status'] ?? null,
+            $s['last_error'] ?? null,
+            $s['created_at'] ?? $nowIso,
+            $s['updated_at'] ?? $nowIso,
+            isset($s['created_by']) ? (int)$s['created_by'] : null,
+        ];
+        if ($preserveId) {
+            $insertWithId->execute(array_merge([$oldId], $row));
+            $idMap[$oldId] = $oldId;
+        } else {
+            $insertAuto->execute($row);
+            if ($oldId > 0) {
+                $idMap[$oldId] = (int)$db->lastInsertId();
+            }
+        }
+    }
+
+    $results = $payload['results'] ?? [];
+    if (!is_array($results)) {
+        return;
+    }
+    $insertResult = $db->prepare('INSERT INTO speedtest_results (
+        schedule_id, executor, target, profile, run_at, duration_ms, status, result_json,
+        bytes_downloaded, bytes_uploaded, created_by, "trigger"
+    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)');
+    foreach ($results as $r) {
+        if (!is_array($r) || empty($r['executor']) || empty($r['target']) || empty($r['profile'])) {
+            continue;
+        }
+        $oldScheduleId = isset($r['schedule_id']) ? (int)$r['schedule_id'] : 0;
+        $scheduleId = null;
+        if ($oldScheduleId > 0) {
+            if (isset($idMap[$oldScheduleId])) {
+                $scheduleId = $idMap[$oldScheduleId];
+            } elseif ($replace) {
+                $scheduleId = $oldScheduleId;
+            }
+        }
+        $insertResult->execute([
+            $scheduleId,
+            (string)$r['executor'],
+            (string)$r['target'],
+            (string)$r['profile'],
+            $r['run_at'] ?? $nowIso,
+            isset($r['duration_ms']) ? (int)$r['duration_ms'] : null,
+            $r['status'] ?? 'complete',
+            $r['result_json'] ?? null,
+            isset($r['bytes_downloaded']) ? (int)$r['bytes_downloaded'] : 0,
+            isset($r['bytes_uploaded']) ? (int)$r['bytes_uploaded'] : 0,
+            isset($r['created_by']) ? (int)$r['created_by'] : null,
+            $r['trigger'] ?? 'manual',
+        ]);
+    }
+}
+
+function monitorImportAuditLogs(PDO $db, $logs, ?int $remapMonitorId = null): void {
+    if (!is_array($logs) || $logs === []) {
+        return;
+    }
+    ensureUserAuditLogTable($db);
+    $stmt = $db->prepare('INSERT INTO user_audit_log (
+        created_at, actor_id, actor_username, action, details, ip_address
+    ) VALUES (?, ?, ?, ?, ?, ?)');
+    foreach ($logs as $log) {
+        if (!is_array($log)) {
+            continue;
+        }
+        $action = (string)($log['action'] ?? '');
+        if ($action === '' || strncmp($action, 'monitor.', 8) !== 0) {
+            continue;
+        }
+        $details = $log['details'] ?? null;
+        if (is_array($details)) {
+            $decoded = $details;
+        } else {
+            $decoded = json_decode((string)$details, true);
+        }
+        if ($remapMonitorId !== null && is_array($decoded)) {
+            $decoded['monitor_id'] = $remapMonitorId;
+        }
+        if (is_array($decoded)) {
+            $details = json_encode($decoded, JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES);
+        }
+        $stmt->execute([
+            isset($log['created_at']) ? (int)$log['created_at'] : time(),
+            isset($log['actor_id']) && $log['actor_id'] !== '' ? (int)$log['actor_id'] : null,
+            $log['actor_username'] ?? null,
+            $action,
+            $details !== null && $details !== '' ? (string)$details : null,
+            $log['ip_address'] ?? null,
+        ]);
+    }
 }
 
 function monitorImportMonitorRowValues(array $m, int $now): array {
@@ -417,12 +675,13 @@ function handleExportMonitor($id) {
     sendJSON([
         'success' => true,
         'type' => 'single_monitor',
-        'bundle_version' => 2,
+        'bundle_version' => MONITOR_EXPORT_BUNDLE_VERSION,
         'exported_at' => $now,
         'monitor' => $entry['monitor'],
         'monitor_logs' => $entry['monitor_logs'],
         'notification_rules' => $entry['notification_rules'],
         'email_logs' => $entry['email_logs'],
+        'audit_logs' => monitorExportAuditLogs($db, $monitorId),
     ]);
 }
 
@@ -442,9 +701,11 @@ function handleExportMonitorsBundle() {
 
     sendJSON([
         'success' => true,
-        'bundle_version' => 2,
+        'bundle_version' => MONITOR_EXPORT_BUNDLE_VERSION,
         'exported_at' => $now,
         'notification_settings' => monitorExportNotificationSettings(),
+        'speedtest' => monitorExportSpeedtestPayload($db),
+        'audit_logs' => monitorExportAuditLogs($db),
         'monitors' => $bundleMonitors,
     ]);
 }
@@ -468,6 +729,7 @@ function handleImportMonitorsBundle() {
             'monitor_logs' => $data['monitor_logs'] ?? [],
             'notification_rules' => $data['notification_rules'] ?? [],
             'email_logs' => $data['email_logs'] ?? [],
+            'audit_logs' => $data['audit_logs'] ?? [],
         ]];
     } else {
         // Bundle import
@@ -493,13 +755,13 @@ function handleImportMonitorsBundle() {
             $db->exec('DELETE FROM monitors');
 
             if (isset($data['notification_settings']) && is_array($data['notification_settings'])) {
-                $ns = $data['notification_settings'];
-                $tz = isset($ns['timezone']) ? trim((string)$ns['timezone']) : '';
-                $dst = array_key_exists('dst_correction', $ns) ? (bool)$ns['dst_correction'] : null;
-                if ($tz !== '') {
-                    setMonitorNotificationTimezone($tz, $dst);
-                } elseif ($dst !== null) {
-                    setSetting('monitor_notification_dst_correction', $dst ? '1' : '0');
+                monitorImportApplyNotificationSettings($data['notification_settings']);
+            }
+            if (!$isSingleMonitor && array_key_exists('audit_logs', $data)) {
+                try {
+                    $db->prepare("DELETE FROM user_audit_log WHERE action LIKE 'monitor.%'")->execute();
+                } catch (PDOException $e) {
+                    /* ignore */
                 }
             }
         }
@@ -664,6 +926,19 @@ function handleImportMonitorsBundle() {
                         $log['error_message'] ?? null
                     ]);
                 }
+            }
+
+            if ($isSingleMonitor) {
+                monitorImportAuditLogs($db, $entry['audit_logs'] ?? [], $monitorId);
+            }
+        }
+
+        if (!$isSingleMonitor) {
+            if (array_key_exists('speedtest', $data)) {
+                monitorImportSpeedtestPayload($db, $data['speedtest'], $replace);
+            }
+            if (!empty($data['audit_logs']) && is_array($data['audit_logs'])) {
+                monitorImportAuditLogs($db, $data['audit_logs']);
             }
         }
 

@@ -4,7 +4,7 @@
  * Export files live in data/exports/ (gitignored with the rest of data/).
  */
 
-const LINKNEST_DB_EXPORT_VERSION = '3.0';
+const LINKNEST_DB_EXPORT_VERSION = '3.1';
 const LINKNEST_DB_EXPORT_MAX_BYTES = 536870912; // 512 MB
 
 function linknestDatabaseExportTableNames(): array
@@ -15,7 +15,10 @@ function linknestDatabaseExportTableNames(): array
         'user_tile_favorites', 'user_link_favorites', 'user_tile_permissions',
         'style_profiles', 'user_preferences', 'user_custom_timezones', 'user_alarms',
         'category_visibility_presets',
-        'monitors', 'monitor_logs',
+        'monitors', 'monitor_logs', 'user_monitor_permissions',
+        'monitor_notification_rules', 'monitor_notification_recipients', 'monitor_notification_logs',
+        'email_outbox',
+        'speedtest_schedules', 'speedtest_results',
         'browser_list', 'browser_list_metadata',
         'roles', 'user_roles', 'role_tile_permissions', 'role_link_permissions', 'role_tab_permissions',
         'user_audit_log',
@@ -25,6 +28,9 @@ function linknestDatabaseExportTableNames(): array
 function linknestDatabaseImportClearTableNames(): array
 {
     return [
+        'speedtest_results', 'speedtest_worker_queue', 'speedtest_schedules',
+        'monitor_notification_logs', 'monitor_notification_recipients', 'monitor_notification_rules',
+        'user_monitor_permissions', 'email_outbox',
         'monitor_logs', 'monitors',
         'role_link_permissions', 'role_tile_permissions', 'role_tab_permissions', 'user_roles',
         'user_tile_permissions', 'user_link_favorites', 'user_tile_favorites',

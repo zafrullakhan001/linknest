@@ -4220,6 +4220,11 @@ body {
   animation-fill-mode: both !important;
 }
 
+/* Monitoring tiles share space entrance animations; keep overflow visible so hover actions are not clipped. */
+.linknest-monitor-tile.linknest-tile-animated {
+  overflow: visible;
+}
+
 
 @keyframes tileAnimLiquid {
   0% {

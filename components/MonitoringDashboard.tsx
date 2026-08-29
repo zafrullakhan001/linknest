@@ -73,6 +73,16 @@ function readMonitorSectionColor(key: string, fallback: string): string {
     }
 }
 
+function withMonitorEntranceStyle(
+    animationClass: string,
+    index: number,
+    extra: React.CSSProperties = {},
+    groupIndex = 0,
+): React.CSSProperties {
+    if (!animationClass) return extra;
+    return { ...extra, animationDelay: `${groupIndex * 80 + index * 50}ms` };
+}
+
 function formatCheckDuration(ms: number | null | undefined): string {
     if (ms == null || Number.isNaN(ms)) {
         return '…';
@@ -2663,8 +2673,10 @@ export const MonitoringDashboard: React.FC = () => {
                 if (isSingleMonitor) {
                     const logCount = Array.isArray(data.monitor_logs) ? data.monitor_logs.length : 0;
                     const ruleCount = Array.isArray(data.notification_rules) ? data.notification_rules.length : 0;
+                    const emailLogCount = Array.isArray(data.email_logs) ? data.email_logs.length : 0;
+                    const auditCount = Array.isArray(data.audit_logs) ? data.audit_logs.length : 0;
                     const confirmImport = confirm(
-                        `Import monitor "${data.monitor.name}"?\n\nIncludes ${ruleCount} notification rule(s) and ${logCount} uptime log(s).`
+                        `Import monitor "${data.monitor.name}"?\n\nIncludes ${ruleCount} notification rule(s), ${logCount} uptime log(s), ${emailLogCount} email log(s), and ${auditCount} audit event(s).`
                     );
                     if (!confirmImport) return;
                     setIsLoading(true);
@@ -2673,7 +2685,7 @@ export const MonitoringDashboard: React.FC = () => {
                     alert('Monitor imported successfully!');
                 } else if (isBundle) {
                     const confirmReplace = confirm(
-                        'Import will replace ALL existing monitors, rules, permissions, logs, and email logs. Continue?'
+                        'Import will replace ALL existing monitors, notification rules, permissions, uptime logs, email logs, speed-test schedules/results, and monitor audit history. Continue?'
                     );
                     if (!confirmReplace) return;
                     setIsLoading(true);
@@ -2909,9 +2921,9 @@ export const MonitoringDashboard: React.FC = () => {
 
     const animationClass = getTileAnimationClass(animation);
     const decorationClass = getTileDecorationClass(decoration);
-    // Status tiles must stay visible after refresh. Space-tile entrance
-    // animations use opacity:0 + staggered delay, which hides custom styles.
-    const fullAnimClass = decorationClass;
+    const fullAnimClass = `${animationClass} ${decorationClass}`.trim();
+    const tileAnimatedClass = animationClass ? 'linknest-tile-animated' : '';
+    const monitorAnimClass = `${fullAnimClass} ${tileAnimatedClass} linknest-monitor-tile`.trim();
 
     const content = (
         <>
@@ -3956,7 +3968,7 @@ export const MonitoringDashboard: React.FC = () => {
                             onMonitorClick={handleTileClick}
                         />
                     ) : (
-                    sortedGroupNames.map((groupName) => (
+                    sortedGroupNames.map((groupName, groupIndex) => (
                         <div key={`${sectionTab}::${groupName}`} className={isFullscreen ? 'space-y-2' : 'space-y-4'}>
                             <div className={`flex items-center gap-4 ${isFullscreen ? '' : 'group/header'}`}>
                                 {editingGroupName === groupName && !isFullscreen ? (
@@ -4015,13 +4027,13 @@ export const MonitoringDashboard: React.FC = () => {
                                             key={monitor.id}
                                             data-monitor-id={monitor.id}
                                             onClick={(e) => handleTileClick(e, monitor)}
-                                            style={{
+                                            style={withMonitorEntranceStyle(animationClass, index, {
                                                 ...(monitor.last_status === 'up' || monitor.last_status === 'down' || monitor.last_status === 'warning' ? getTileStyle(monitor.last_status) : {}),
                                                 ...(monitor.last_status === 'up' || monitor.last_status === 'down' || monitor.last_status === 'warning'
                                                     ? { borderColor: getTileBorderColor(monitor.last_status), fontFamily: getTileFontFamily(monitor.last_status) }
                                                     : {})
-                                            }}
-                                            className={`inline-flex items-center gap-3 px-4 py-2 rounded-full border cursor-pointer transition-all hover:shadow-lg group relative ${fullAnimClass} ${monitor.last_status === 'up' || monitor.last_status === 'down' || monitor.last_status === 'warning' ? '' : 'bg-white dark:bg-[#1e1e1e] border-slate-200 dark:border-[#333]'} ${monitorHighlightClass(monitor.id, highlightedMonitorId)}`}
+                                            }, groupIndex)}
+                                            className={`inline-flex items-center gap-3 px-4 py-2 rounded-full border cursor-pointer transition-all hover:shadow-lg group relative ${monitorAnimClass} ${monitor.last_status === 'up' || monitor.last_status === 'down' || monitor.last_status === 'warning' ? '' : 'bg-white dark:bg-[#1e1e1e] border-slate-200 dark:border-[#333]'} ${monitorHighlightClass(monitor.id, highlightedMonitorId)}`}
                                         >
                                             <div className="flex items-center gap-3 min-w-0">
                                                 <span
@@ -4063,14 +4075,14 @@ export const MonitoringDashboard: React.FC = () => {
                                             key={monitor.id}
                                             data-monitor-id={monitor.id}
                                             onClick={(e) => handleTileClick(e, monitor)}
-                                            style={{
+                                            style={withMonitorEntranceStyle(animationClass, index, {
                                                 ...(monitor.last_status === 'up' || monitor.last_status === 'down' || monitor.last_status === 'warning' ? getTileStyle(monitor.last_status) : {}),
                                                 ...(monitor.last_status === 'up' || monitor.last_status === 'down' || monitor.last_status === 'warning'
                                                     ? { borderColor: getTileBorderColor(monitor.last_status), fontFamily: getTileFontFamily(monitor.last_status) }
                                                     : {}),
                                                 borderRadius: tileStyles.borderRadius,
-                                            }}
-                                            className={`border rounded-2xl shadow-lg hover:shadow-xl transition-all group relative cursor-pointer min-w-0 ${fullAnimClass}
+                                            }, groupIndex)}
+                                            className={`border rounded-2xl shadow-lg hover:shadow-xl transition-all group relative cursor-pointer min-w-0 ${monitorAnimClass}
                                                 ${monitor.last_status === 'up' || monitor.last_status === 'down' || monitor.last_status === 'warning' ? '' : 'bg-white dark:bg-[#1e1e1e] border-slate-200 dark:border-[#333] hover:border-slate-300 dark:hover:border-[#444]'}
                                                 ${viewMode === 'tiles' ? 'p-5' : 'p-3 flex flex-col justify-between min-h-[120px]'}
                                                 ${moveMenuId === monitor.id ? 'z-[60]' : 'z-10 hover:z-20'} ${monitorHighlightClass(monitor.id, highlightedMonitorId)}`}
@@ -4237,10 +4249,10 @@ export const MonitoringDashboard: React.FC = () => {
                                             key={monitor.id}
                                             data-monitor-id={monitor.id}
                                             onClick={(e) => handleTileClick(e, monitor)}
-                                            style={{
+                                            style={withMonitorEntranceStyle(animationClass, index, {
                                                 ...(monitor.last_status === 'up' || monitor.last_status === 'down' || monitor.last_status === 'warning' ? getTileStyle(monitor.last_status) : {})
-                                            }}
-                                            className={`flex items-center gap-4 p-4 rounded-xl cursor-pointer transition-all hover:shadow-lg group ${fullAnimClass} ${monitor.last_status === 'up' || monitor.last_status === 'down' || monitor.last_status === 'warning' ? '' : 'bg-white dark:bg-[#1e1e1e] border border-slate-200 dark:border-[#333]'} ${monitorHighlightClass(monitor.id, highlightedMonitorId)}`}
+                                            }, groupIndex)}
+                                            className={`flex items-center gap-4 p-4 rounded-xl cursor-pointer transition-all hover:shadow-lg group ${monitorAnimClass} ${monitor.last_status === 'up' || monitor.last_status === 'down' || monitor.last_status === 'warning' ? '' : 'bg-white dark:bg-[#1e1e1e] border border-slate-200 dark:border-[#333]'} ${monitorHighlightClass(monitor.id, highlightedMonitorId)}`}
                                         >
                                             <div className={`w-10 h-10 rounded-xl flex items-center justify-center flex-shrink-0 ${monitor.last_status === 'up' || monitor.last_status === 'down' ? 'bg-white/20' : 'bg-slate-100 dark:bg-[#252525]'}`}>
                                                 {React.cloneElement(getTypeIcon(monitor.type), {
@@ -4301,10 +4313,10 @@ export const MonitoringDashboard: React.FC = () => {
                                                             key={monitor.id}
                                                             data-monitor-id={monitor.id}
                                                             onClick={(e) => handleTileClick(e, monitor)}
-                                                            style={{
+                                                            style={withMonitorEntranceStyle(animationClass, index, {
                                                                 ...(monitor.last_status === 'up' || monitor.last_status === 'down' || monitor.last_status === 'warning' ? getTileStyle(monitor.last_status) : {})
-                                                            }}
-                                                            className={`p-3 rounded-xl cursor-pointer transition-all hover:shadow-lg ${fullAnimClass} ${monitor.last_status === 'up' || monitor.last_status === 'down' || monitor.last_status === 'warning' ? '' : 'bg-white dark:bg-[#1e1e1e] border border-slate-200 dark:border-[#333]'} ${monitorHighlightClass(monitor.id, highlightedMonitorId)}`}
+                                                            }, groupIndex)}
+                                                            className={`p-3 rounded-xl cursor-pointer transition-all hover:shadow-lg ${monitorAnimClass} ${monitor.last_status === 'up' || monitor.last_status === 'down' || monitor.last_status === 'warning' ? '' : 'bg-white dark:bg-[#1e1e1e] border border-slate-200 dark:border-[#333]'} ${monitorHighlightClass(monitor.id, highlightedMonitorId)}`}
                                                         >
                                                             <div className="flex items-center gap-2 mb-2">
                                                                 <span
@@ -4328,11 +4340,12 @@ export const MonitoringDashboard: React.FC = () => {
                                 </div>
                             ) : viewMode === 'timeline' ? (
                                 <div className="space-y-1">
-                                    {groups[groupName].map((monitor) => (
+                                    {groups[groupName].map((monitor, index) => (
                                         <div
                                             key={monitor.id}
                                             data-monitor-id={monitor.id}
                                             onClick={(e) => handleTileClick(e, monitor)}
+                                            style={withMonitorEntranceStyle(animationClass, index, {}, groupIndex)}
                                             className={`flex items-center gap-3 p-2 rounded-lg cursor-pointer transition-all hover:bg-slate-50 dark:hover:bg-[#252525] group ${fullAnimClass} ${monitorHighlightClass(monitor.id, highlightedMonitorId)}`}
                                         >
                                             <div className="flex items-center gap-2 w-[280px] flex-shrink-0">
@@ -4418,9 +4431,9 @@ export const MonitoringDashboard: React.FC = () => {
                                                     data-monitor-id={monitor.id}
                                                     onClick={(e) => handleTileClick(e, monitor)}
                                                     className={`group cursor-pointer hover:bg-slate-50 dark:hover:bg-[#252525] transition-colors ${monitor.last_status === 'up' || monitor.last_status === 'down' ? '' : ''} ${fullAnimClass} ${monitorHighlightClass(monitor.id, highlightedMonitorId)}`}
-                                                    style={{
+                                                    style={withMonitorEntranceStyle(animationClass, index, {
                                                         ...(monitor.last_status === 'up' || monitor.last_status === 'down' || monitor.last_status === 'warning' ? getTileStyle(monitor.last_status) : {})
-                                                    }}
+                                                    }, groupIndex)}
                                                 >
                                                     <td className="px-6 py-4">
                                                         <div className="flex items-center gap-3">

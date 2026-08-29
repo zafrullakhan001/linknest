@@ -397,6 +397,7 @@ export const EmailNotificationsTab: React.FC<EmailNotificationsTabProps> = ({ mo
             exported_at: new Date().toISOString(),
             rules: (rules || []).map(r => ({
                 name: r.name,
+                sort_order: r.sort_order ?? 0,
                 status_trigger: r.status_trigger,
                 time_window_start: r.time_window_start ?? null,
                 time_window_end: r.time_window_end ?? null,
