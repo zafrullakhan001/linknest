@@ -73,6 +73,18 @@ function withMonitorEntranceStyle(
     return { ...extra, animationDelay: `${groupIndex * 80 + index * 50}ms` };
 }
 
+function downloadMonitorJsonFile(filename: string, data: unknown): void {
+    const blob = new Blob([JSON.stringify(data, null, 2)], { type: 'application/json;charset=utf-8' });
+    const url = URL.createObjectURL(blob);
+    const link = document.createElement('a');
+    link.href = url;
+    link.download = filename;
+    document.body.appendChild(link);
+    link.click();
+    link.remove();
+    URL.revokeObjectURL(url);
+}
+
 export const Monitorv2Dashboard: React.FC = () => {
     const { user } = useAuth();
     const isAdmin = !!user?.is_admin;
@@ -577,16 +589,13 @@ export const Monitorv2Dashboard: React.FC = () => {
         try {
             setIsLoading(true);
             const data = await monitoringService.exportMonitor(monitor.id);
-            const dataStr = "data:text/json;charset=utf-8," + encodeURIComponent(JSON.stringify(data, null, 2));
-            const downloadAnchorNode = document.createElement('a');
-            downloadAnchorNode.setAttribute("href", dataStr);
-            downloadAnchorNode.setAttribute("download", `monitor_${monitor.name.replace(/[^a-z0-9]/gi, '_')}_${new Date().toISOString().split('T')[0]}.json`);
-            document.body.appendChild(downloadAnchorNode);
-            downloadAnchorNode.click();
-            downloadAnchorNode.remove();
+            downloadMonitorJsonFile(
+                `monitor_${monitor.name.replace(/[^a-z0-9]/gi, '_')}_${new Date().toISOString().split('T')[0]}.json`,
+                data
+            );
         } catch (error) {
             console.error('Failed to export monitor', error);
-            alert('Failed to export monitor. Please try again.');
+            alert(error instanceof Error ? error.message : 'Failed to export monitor. Please try again.');
         } finally {
             setIsLoading(false);
         }
@@ -605,21 +614,19 @@ export const Monitorv2Dashboard: React.FC = () => {
         }
     };
 
-    const handleExportJSON = async () => {
+    const handleExportJSON = async (includeLogs: boolean = false) => {
         if (!isAdmin) return;
         try {
             setIsLoading(true);
-            const bundle = await monitoringService.exportMonitorsBundle();
-            const dataStr = "data:text/json;charset=utf-8," + encodeURIComponent(JSON.stringify(bundle, null, 2));
-            const downloadAnchorNode = document.createElement('a');
-            downloadAnchorNode.setAttribute("href", dataStr);
-            downloadAnchorNode.setAttribute("download", `linknest_monitoring_bundle_${new Date().toISOString().split('T')[0]}.json`);
-            document.body.appendChild(downloadAnchorNode);
-            downloadAnchorNode.click();
-            downloadAnchorNode.remove();
+            const bundle = await monitoringService.exportMonitorsBundle(includeLogs);
+            const suffix = includeLogs ? '' : '_no_history';
+            downloadMonitorJsonFile(
+                `linknest_monitoring_bundle${suffix}_${new Date().toISOString().split('T')[0]}.json`,
+                bundle
+            );
         } catch (error) {
             console.error('Failed to export monitoring bundle', error);
-            alert('Failed to export monitoring bundle.');
+            alert(error instanceof Error ? error.message : 'Failed to export monitoring bundle.');
         } finally {
             setIsLoading(false);
         }
@@ -904,8 +911,11 @@ export const Monitorv2Dashboard: React.FC = () => {
                     await fetchMonitors();
                     alert('Monitor imported successfully!');
                 } else if (isBundle) {
+                    const noHistory = data.include_logs === false;
                     const confirmReplace = confirm(
-                        'Import will replace ALL existing monitors, notification rules, permissions, uptime logs, email logs, speed-test schedules/results, and monitor audit history. Continue?'
+                        noHistory
+                            ? 'This file has no history logs. Import will still replace ALL existing monitors and notification rules. Existing check history on this server will be deleted. Continue?'
+                            : 'Import will replace ALL existing monitors, notification rules, permissions, uptime logs, email logs, speed-test schedules/results, and monitor audit history. Continue?'
                     );
                     if (!confirmReplace) return;
                     setIsLoading(true);
@@ -1478,11 +1488,18 @@ export const Monitorv2Dashboard: React.FC = () => {
                         {isAdmin && (
                             <>
                                 <button
-                                    onClick={handleExportJSON}
+                                    onClick={() => handleExportJSON(false)}
                                     className="p-2 rounded-lg transition-all text-slate-400 hover:text-blue-500 hover:bg-white dark:hover:bg-[#333]"
-                                    title="Export Monitors (JSON)"
+                                    title="Export monitors without history logs (smaller file)"
                                 >
                                     <FaUpload size={14} />
+                                </button>
+                                <button
+                                    onClick={() => handleExportJSON(true)}
+                                    className="p-2 rounded-lg transition-all text-slate-400 hover:text-indigo-500 hover:bg-white dark:hover:bg-[#333]"
+                                    title="Export monitors with uptime history logs (large file)"
+                                >
+                                    <FaFileExport size={14} />
                                 </button>
                                 <button
                                     onClick={() => fileInputRef.current?.click()}

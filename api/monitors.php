@@ -7,6 +7,26 @@ require_once __DIR__ . '/monitor_suggest.php';
 require_once __DIR__ . '/user_audit_helper.php';
 require_once __DIR__ . '/speedtest_schedules_lib.php';
 
+if (!defined('MONITOR_EXPORT_LOG_LIMIT')) {
+    define('MONITOR_EXPORT_LOG_LIMIT', 500);
+}
+if (!defined('MONITOR_EXPORT_BUNDLE_VERSION')) {
+    define('MONITOR_EXPORT_BUNDLE_VERSION', 3);
+}
+if (!defined('MONITOR_EXPORT_SPEEDTEST_RESULT_LIMIT')) {
+    define('MONITOR_EXPORT_SPEEDTEST_RESULT_LIMIT', 200);
+}
+if (!defined('MONITOR_EXPORT_AUDIT_LIMIT')) {
+    define('MONITOR_EXPORT_AUDIT_LIMIT', 500);
+}
+
+/** Query flag: include_logs=0 skips uptime/email/speedtest/audit history (smaller export). Default is include. */
+function monitorExportIncludeHistoryLogs(): bool {
+    $raw = $_GET['include_logs'] ?? $_GET['include_history'] ?? $_GET['history'] ?? '1';
+    $raw = strtolower(trim((string)$raw));
+    return !in_array($raw, ['0', 'false', 'no', 'off'], true);
+}
+
 if (session_status() === PHP_SESSION_NONE) {
     session_start();
 }
@@ -253,11 +273,6 @@ function validateMonitorTypeFields(array $data): ?string {
     return null;
 }
 
-const MONITOR_EXPORT_LOG_LIMIT = 500;
-const MONITOR_EXPORT_BUNDLE_VERSION = 3;
-const MONITOR_EXPORT_SPEEDTEST_RESULT_LIMIT = 200;
-const MONITOR_EXPORT_AUDIT_LIMIT = 500;
-
 function monitorExportSanitizeMonitorRow(array $monitor): array {
     unset($monitor['email_rules_count'], $monitor['allowed_user_ids_csv']);
     return $monitor;
@@ -288,18 +303,23 @@ function monitorExportFetchRules(PDO $db, int $monitorId): array {
     return $rulesOut;
 }
 
-function monitorExportBuildEntry(PDO $db, array $monitorRow, int $logLimit = MONITOR_EXPORT_LOG_LIMIT): array {
+function monitorExportBuildEntry(PDO $db, array $monitorRow, ?int $logLimit = null, bool $includeLogs = true): array {
+    $logLimit = $logLimit ?? MONITOR_EXPORT_LOG_LIMIT;
     $monitorId = (int)$monitorRow['id'];
     $monitor = monitorExportSanitizeMonitorRow($monitorRow);
     $monitor['allowed_user_ids'] = monitorExportFetchAllowedUserIds($db, $monitorId);
 
-    $stmt = $db->prepare('SELECT * FROM monitor_logs WHERE monitor_id = ? ORDER BY checked_at DESC LIMIT ' . (int)$logLimit);
-    $stmt->execute([$monitorId]);
-    $monitorLogs = $stmt->fetchAll(PDO::FETCH_ASSOC);
+    $monitorLogs = [];
+    $emailLogs = [];
+    if ($includeLogs) {
+        $stmt = $db->prepare('SELECT * FROM monitor_logs WHERE monitor_id = ? ORDER BY checked_at DESC LIMIT ' . (int)$logLimit);
+        $stmt->execute([$monitorId]);
+        $monitorLogs = $stmt->fetchAll(PDO::FETCH_ASSOC);
 
-    $stmt = $db->prepare('SELECT * FROM monitor_notification_logs WHERE monitor_id = ? ORDER BY sent_at DESC LIMIT ' . (int)$logLimit);
-    $stmt->execute([$monitorId]);
-    $emailLogs = $stmt->fetchAll(PDO::FETCH_ASSOC);
+        $stmt = $db->prepare('SELECT * FROM monitor_notification_logs WHERE monitor_id = ? ORDER BY sent_at DESC LIMIT ' . (int)$logLimit);
+        $stmt->execute([$monitorId]);
+        $emailLogs = $stmt->fetchAll(PDO::FETCH_ASSOC);
+    }
 
     return [
         'monitor' => $monitor,
@@ -334,8 +354,14 @@ function monitorExportSpeedtestSettings(): array {
     return $out;
 }
 
-function monitorExportSpeedtestPayload(PDO $db, int $resultLimit = MONITOR_EXPORT_SPEEDTEST_RESULT_LIMIT): array {
-    speedtestEnsureSchema($db);
+function monitorExportSpeedtestPayload(PDO $db, ?int $resultLimit = null, bool $includeResults = true): array {
+    $resultLimit = $resultLimit ?? MONITOR_EXPORT_SPEEDTEST_RESULT_LIMIT;
+    try {
+        speedtestEnsureSchema($db);
+    } catch (Throwable $e) {
+        error_log('speedtestEnsureSchema during export: ' . $e->getMessage());
+        return ['schedules' => [], 'results' => [], 'settings' => monitorExportSpeedtestSettings()];
+    }
     $schedules = [];
     try {
         $schedules = $db->query('SELECT * FROM speedtest_schedules ORDER BY id ASC')->fetchAll(PDO::FETCH_ASSOC) ?: [];
@@ -344,13 +370,15 @@ function monitorExportSpeedtestPayload(PDO $db, int $resultLimit = MONITOR_EXPOR
     }
 
     $results = [];
-    try {
-        $limit = max(1, (int)$resultLimit);
-        $stmt = $db->prepare('SELECT * FROM speedtest_results ORDER BY run_at DESC LIMIT ' . $limit);
-        $stmt->execute();
-        $results = array_reverse($stmt->fetchAll(PDO::FETCH_ASSOC) ?: []);
-    } catch (PDOException $e) {
-        $results = [];
+    if ($includeResults) {
+        try {
+            $limit = max(1, (int)$resultLimit);
+            $stmt = $db->prepare('SELECT * FROM speedtest_results ORDER BY run_at DESC LIMIT ' . $limit);
+            $stmt->execute();
+            $results = array_reverse($stmt->fetchAll(PDO::FETCH_ASSOC) ?: []);
+        } catch (PDOException $e) {
+            $results = [];
+        }
     }
 
     return [
@@ -360,7 +388,8 @@ function monitorExportSpeedtestPayload(PDO $db, int $resultLimit = MONITOR_EXPOR
     ];
 }
 
-function monitorExportAuditLogs(PDO $db, ?int $monitorId = null, int $limit = MONITOR_EXPORT_AUDIT_LIMIT): array {
+function monitorExportAuditLogs(PDO $db, ?int $monitorId = null, ?int $limit = null): array {
+    $limit = $limit ?? MONITOR_EXPORT_AUDIT_LIMIT;
     ensureUserAuditLogTable($db);
     $limit = max(1, min(2000, (int)$limit));
     try {
@@ -657,57 +686,88 @@ function monitorImportRestorePermissions(PDO $db, int $monitorId, array $m, int 
 
 function handleExportMonitor($id) {
     requireAdmin(); // export is admin-only
-    $db = getDB();
-    $now = time();
-    $monitorId = (int)$id;
+    try {
+        $db = getDB();
+        $now = time();
+        $monitorId = (int)$id;
 
-    $stmt = $db->prepare('SELECT * FROM monitors WHERE id = ?');
-    $stmt->execute([$monitorId]);
-    $monitor = $stmt->fetch(PDO::FETCH_ASSOC);
+        $stmt = $db->prepare('SELECT * FROM monitors WHERE id = ?');
+        $stmt->execute([$monitorId]);
+        $monitor = $stmt->fetch(PDO::FETCH_ASSOC);
 
-    if (!$monitor) {
-        sendJSON(['error' => 'Monitor not found'], 404);
-        return;
+        if (!$monitor) {
+            sendJSON(['error' => 'Monitor not found'], 404);
+            return;
+        }
+
+        $includeLogs = monitorExportIncludeHistoryLogs();
+        $entry = monitorExportBuildEntry($db, $monitor, null, $includeLogs);
+
+        sendJSON([
+            'success' => true,
+            'type' => 'single_monitor',
+            'bundle_version' => MONITOR_EXPORT_BUNDLE_VERSION,
+            'exported_at' => $now,
+            'include_logs' => $includeLogs,
+            'monitor' => $entry['monitor'],
+            'monitor_logs' => $entry['monitor_logs'],
+            'notification_rules' => $entry['notification_rules'],
+            'email_logs' => $entry['email_logs'],
+            'audit_logs' => $includeLogs ? monitorExportAuditLogs($db, $monitorId) : [],
+        ]);
+    } catch (Throwable $e) {
+        error_log('Monitor export failed: ' . $e->getMessage() . ' in ' . $e->getFile() . ':' . $e->getLine());
+        sendJSON(['error' => 'Export failed: ' . $e->getMessage()], 500);
     }
-
-    $entry = monitorExportBuildEntry($db, $monitor);
-
-    sendJSON([
-        'success' => true,
-        'type' => 'single_monitor',
-        'bundle_version' => MONITOR_EXPORT_BUNDLE_VERSION,
-        'exported_at' => $now,
-        'monitor' => $entry['monitor'],
-        'monitor_logs' => $entry['monitor_logs'],
-        'notification_rules' => $entry['notification_rules'],
-        'email_logs' => $entry['email_logs'],
-        'audit_logs' => monitorExportAuditLogs($db, $monitorId),
-    ]);
 }
 
 function handleExportMonitorsBundle() {
     requireAdmin(); // export is admin-only
-    $db = getDB();
-    $now = time();
+    try {
+        $db = getDB();
+        $now = time();
 
-    $stmt = $db->prepare('SELECT * FROM monitors ORDER BY created_at DESC');
-    $stmt->execute();
-    $monitors = $stmt->fetchAll(PDO::FETCH_ASSOC);
+        $includeLogs = monitorExportIncludeHistoryLogs();
 
-    $bundleMonitors = [];
-    foreach ($monitors as $m) {
-        $bundleMonitors[] = monitorExportBuildEntry($db, $m);
+        $stmt = $db->prepare('SELECT * FROM monitors ORDER BY created_at DESC');
+        $stmt->execute();
+        $monitors = $stmt->fetchAll(PDO::FETCH_ASSOC);
+
+        $bundleMonitors = [];
+        foreach ($monitors as $m) {
+            $bundleMonitors[] = monitorExportBuildEntry($db, $m, null, $includeLogs);
+        }
+
+        $speedtest = ['schedules' => [], 'results' => [], 'settings' => []];
+        try {
+            $speedtest = monitorExportSpeedtestPayload($db, null, $includeLogs);
+        } catch (Throwable $e) {
+            error_log('Monitor bundle speedtest export skipped: ' . $e->getMessage());
+        }
+
+        $auditLogs = [];
+        if ($includeLogs) {
+            try {
+                $auditLogs = monitorExportAuditLogs($db);
+            } catch (Throwable $e) {
+                error_log('Monitor bundle audit export skipped: ' . $e->getMessage());
+            }
+        }
+
+        sendJSON([
+            'success' => true,
+            'bundle_version' => MONITOR_EXPORT_BUNDLE_VERSION,
+            'exported_at' => $now,
+            'include_logs' => $includeLogs,
+            'notification_settings' => monitorExportNotificationSettings(),
+            'speedtest' => $speedtest,
+            'audit_logs' => $auditLogs,
+            'monitors' => $bundleMonitors,
+        ]);
+    } catch (Throwable $e) {
+        error_log('Monitor bundle export failed: ' . $e->getMessage() . ' in ' . $e->getFile() . ':' . $e->getLine());
+        sendJSON(['error' => 'Export failed: ' . $e->getMessage()], 500);
     }
-
-    sendJSON([
-        'success' => true,
-        'bundle_version' => MONITOR_EXPORT_BUNDLE_VERSION,
-        'exported_at' => $now,
-        'notification_settings' => monitorExportNotificationSettings(),
-        'speedtest' => monitorExportSpeedtestPayload($db),
-        'audit_logs' => monitorExportAuditLogs($db),
-        'monitors' => $bundleMonitors,
-    ]);
 }
 
 function handleImportMonitorsBundle() {

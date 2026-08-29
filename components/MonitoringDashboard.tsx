@@ -83,6 +83,18 @@ function withMonitorEntranceStyle(
     return { ...extra, animationDelay: `${groupIndex * 80 + index * 50}ms` };
 }
 
+function downloadMonitorJsonFile(filename: string, data: unknown): void {
+    const blob = new Blob([JSON.stringify(data, null, 2)], { type: 'application/json;charset=utf-8' });
+    const url = URL.createObjectURL(blob);
+    const link = document.createElement('a');
+    link.href = url;
+    link.download = filename;
+    document.body.appendChild(link);
+    link.click();
+    link.remove();
+    URL.revokeObjectURL(url);
+}
+
 function formatCheckDuration(ms: number | null | undefined): string {
     if (ms == null || Number.isNaN(ms)) {
         return '…';
@@ -2338,21 +2350,19 @@ export const MonitoringDashboard: React.FC = () => {
         }
     };
 
-    const handleExportMonitor = async (monitor: Monitor) => {
+    const handleExportMonitor = async (monitor: Monitor, includeLogs: boolean = false) => {
         if (!isAdmin) return;
         try {
             setIsLoading(true);
-            const data = await monitoringService.exportMonitor(monitor.id);
-            const dataStr = "data:text/json;charset=utf-8," + encodeURIComponent(JSON.stringify(data, null, 2));
-            const downloadAnchorNode = document.createElement('a');
-            downloadAnchorNode.setAttribute("href", dataStr);
-            downloadAnchorNode.setAttribute("download", `monitor_${monitor.name.replace(/[^a-z0-9]/gi, '_')}_${new Date().toISOString().split('T')[0]}.json`);
-            document.body.appendChild(downloadAnchorNode);
-            downloadAnchorNode.click();
-            downloadAnchorNode.remove();
+            const data = await monitoringService.exportMonitor(monitor.id, includeLogs);
+            const suffix = includeLogs ? '' : '_no_history';
+            downloadMonitorJsonFile(
+                `monitor_${monitor.name.replace(/[^a-z0-9]/gi, '_')}${suffix}_${new Date().toISOString().split('T')[0]}.json`,
+                data
+            );
         } catch (error) {
             console.error('Failed to export monitor', error);
-            alert('Failed to export monitor. Please try again.');
+            alert(error instanceof Error ? error.message : 'Failed to export monitor. Please try again.');
         } finally {
             setIsLoading(false);
         }
@@ -2371,21 +2381,19 @@ export const MonitoringDashboard: React.FC = () => {
         }
     };
 
-    const handleExportJSON = async () => {
+    const handleExportJSON = async (includeLogs: boolean = false) => {
         if (!isAdmin) return;
         try {
             setIsLoading(true);
-            const bundle = await monitoringService.exportMonitorsBundle();
-            const dataStr = "data:text/json;charset=utf-8," + encodeURIComponent(JSON.stringify(bundle, null, 2));
-            const downloadAnchorNode = document.createElement('a');
-            downloadAnchorNode.setAttribute("href", dataStr);
-            downloadAnchorNode.setAttribute("download", `linknest_monitoring_bundle_${new Date().toISOString().split('T')[0]}.json`);
-            document.body.appendChild(downloadAnchorNode);
-            downloadAnchorNode.click();
-            downloadAnchorNode.remove();
+            const bundle = await monitoringService.exportMonitorsBundle(includeLogs);
+            const suffix = includeLogs ? '' : '_no_history';
+            downloadMonitorJsonFile(
+                `linknest_monitoring_bundle${suffix}_${new Date().toISOString().split('T')[0]}.json`,
+                bundle
+            );
         } catch (error) {
             console.error('Failed to export monitoring bundle', error);
-            alert('Failed to export monitoring bundle.');
+            alert(error instanceof Error ? error.message : 'Failed to export monitoring bundle.');
         } finally {
             setIsLoading(false);
         }
@@ -2684,8 +2692,11 @@ export const MonitoringDashboard: React.FC = () => {
                     await fetchMonitors();
                     alert('Monitor imported successfully!');
                 } else if (isBundle) {
+                    const noHistory = data.include_logs === false;
                     const confirmReplace = confirm(
-                        'Import will replace ALL existing monitors, notification rules, permissions, uptime logs, email logs, speed-test schedules/results, and monitor audit history. Continue?'
+                        noHistory
+                            ? 'This file has no history logs. Import will still replace ALL existing monitors, notification rules, permissions, and settings. Existing uptime history, email logs, and speed-test results on this server will be deleted. Continue?'
+                            : 'Import will replace ALL existing monitors, notification rules, permissions, uptime logs, email logs, speed-test schedules/results, and monitor audit history. Continue?'
                     );
                     if (!confirmReplace) return;
                     setIsLoading(true);
@@ -3372,11 +3383,18 @@ export const MonitoringDashboard: React.FC = () => {
                         {isAdmin && (
                             <>
                                 <button
-                                    onClick={handleExportJSON}
+                                    onClick={() => handleExportJSON(false)}
                                     className="p-2 rounded-lg transition-all text-slate-400 hover:text-blue-500 hover:bg-white dark:hover:bg-[#333]"
-                                    title="Export Monitors (JSON)"
+                                    title="Export monitors without history logs (smaller file)"
                                 >
                                     <FaUpload size={14} />
+                                </button>
+                                <button
+                                    onClick={() => handleExportJSON(true)}
+                                    className="p-2 rounded-lg transition-all text-slate-400 hover:text-indigo-500 hover:bg-white dark:hover:bg-[#333]"
+                                    title="Export monitors with uptime history logs (large file)"
+                                >
+                                    <FaFileExport size={14} />
                                 </button>
                                 <button
                                     onClick={() => fileInputRef.current?.click()}
@@ -4127,9 +4145,9 @@ export const MonitoringDashboard: React.FC = () => {
                                             {isAdmin && (
                                                 <div className="absolute bottom-2 left-2 flex gap-1 opacity-0 group-hover:opacity-100 transition-all transform -translate-y-1 group-hover:translate-y-0 z-10">
                                                     <button
-                                                        onClick={(e) => { e.stopPropagation(); handleExportMonitor(monitor); }}
+                                                        onClick={(e) => { e.stopPropagation(); handleExportMonitor(monitor, e.shiftKey); }}
                                                         className={`p-1.5 rounded-lg hover:bg-white/20 text-white transition-colors ${monitor.last_status === 'up' || monitor.last_status === 'down' || monitor.last_status === 'warning' ? 'bg-black/20 text-white' : 'bg-slate-100 dark:bg-[#333] text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-white'}`}
-                                                        title="Export to JSON"
+                                                        title="Export JSON without history. Hold Shift to include uptime logs."
                                                     >
                                                         <FaFileExport size={10} />
                                                     </button>
@@ -4515,10 +4533,10 @@ export const MonitoringDashboard: React.FC = () => {
                                                             {isAdmin && (
                                                                 <>
                                                                     <button
-                                                                        onClick={(e) => { e.stopPropagation(); handleExportMonitor(monitor); }}
+                                                                        onClick={(e) => { e.stopPropagation(); handleExportMonitor(monitor, e.shiftKey); }}
                                                                         className={`p-2 rounded-xl transition-colors ${monitor.last_status === 'up' || monitor.last_status === 'down' || monitor.last_status === 'warning' ? 'bg-white/20 hover:bg-white/30' : 'bg-slate-100 dark:bg-[#252525] text-slate-600 dark:text-slate-400 hover:text-green-500'}`}
                                                                         style={monitor.last_status === 'up' || monitor.last_status === 'down' || monitor.last_status === 'warning' ? getTileTextStyle(monitor.last_status) : {}}
-                                                                        title="Export to JSON"
+                                                                        title="Export JSON without history. Hold Shift to include uptime logs."
                                                                     >
                                                                         <FaFileExport size={12} />
                                                                     </button>

@@ -288,8 +288,9 @@ export const monitorv2Service = {
     },
 
     // Import/Export
-    async exportBundle(): Promise<any> {
-        const response = await fetch(`${API_BASE}/export-bundle`, { credentials: 'include' });
+    async exportBundle(includeLogs: boolean = true): Promise<any> {
+        const qs = includeLogs ? '' : '?include_logs=0';
+        const response = await fetch(`${API_BASE}/export-bundle${qs}`, { credentials: 'include' });
         if (!response.ok) throw new Error('Failed to export bundle');
         return await response.json();
     },
@@ -411,8 +412,9 @@ export const monitorv2Service = {
     },
 
     // Fixed export/import bundle methods
-    async exportMonitorsBundle(): Promise<any> {
-        const response = await fetch(`${API_BASE}/export-bundle`, { credentials: 'include' });
+    async exportMonitorsBundle(includeLogs: boolean = true): Promise<any> {
+        const qs = includeLogs ? '' : '?include_logs=0';
+        const response = await fetch(`${API_BASE}/export-bundle${qs}`, { credentials: 'include' });
         if (!response.ok) throw new Error('Failed to export monitoring bundle');
         return await response.json();
     },

@@ -1273,19 +1273,28 @@ function handleExportBundle() {
         $monitorsStmt = $db->query("SELECT * FROM zmonitoring.monitors ORDER BY id");
         $monitors = $monitorsStmt->fetchAll();
         
+        $includeLogs = true;
+        $raw = $_GET['include_logs'] ?? $_GET['include_history'] ?? $_GET['history'] ?? '1';
+        $raw = strtolower(trim((string)$raw));
+        if (in_array($raw, ['0', 'false', 'no', 'off'], true)) {
+            $includeLogs = false;
+        }
+
         $bundle = [];
         foreach ($monitors as $monitor) {
             $monitorId = $monitor['id'];
             
-            // Get checks (limited to 500)
-            $checksStmt = $db->prepare("
-                SELECT * FROM zmonitoring.monitor_checks 
-                WHERE monitor_id = :monitor_id 
-                ORDER BY checked_at DESC 
-                LIMIT 500
-            ");
-            $checksStmt->execute([':monitor_id' => $monitorId]);
-            $checks = $checksStmt->fetchAll();
+            $checks = [];
+            if ($includeLogs) {
+                $checksStmt = $db->prepare("
+                    SELECT * FROM zmonitoring.monitor_checks 
+                    WHERE monitor_id = :monitor_id 
+                    ORDER BY checked_at DESC 
+                    LIMIT 500
+                ");
+                $checksStmt->execute([':monitor_id' => $monitorId]);
+                $checks = $checksStmt->fetchAll();
+            }
             
             // Get rules
             $rulesStmt = $db->prepare("SELECT * FROM zmonitoring.notification_rules WHERE monitor_id = :monitor_id");
@@ -1309,6 +1318,7 @@ function handleExportBundle() {
         sendJSON([
             'bundle_version' => 1,
             'exported_at' => time(),
+            'include_logs' => $includeLogs,
             'monitors' => $bundle
         ]);
         

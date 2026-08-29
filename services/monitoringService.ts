@@ -341,9 +341,13 @@ export const monitoringService = {
         return data.monitor;
     },
 
-    async exportMonitor(id: number): Promise<any> {
-        const response = await fetch(`api/monitors.php/${id}/export`);
-        if (!response.ok) throw new Error('Failed to export monitor');
+    async exportMonitor(id: number, includeLogs: boolean = true): Promise<any> {
+        const qs = includeLogs ? '' : '?include_logs=0';
+        const response = await fetch(`api/monitors.php/${id}/export${qs}`);
+        if (!response.ok) {
+            const err = await response.json().catch(() => ({}));
+            throw new Error(err.error || 'Failed to export monitor');
+        }
         return await response.json();
     },
 
@@ -603,9 +607,13 @@ export const monitoringService = {
         if (!response.ok) throw new Error('Failed to delete all monitors');
     },
 
-    async exportMonitorsBundle(): Promise<any> {
-        const response = await fetch('api/monitors.php/export-bundle');
-        if (!response.ok) throw new Error('Failed to export monitors bundle');
+    async exportMonitorsBundle(includeLogs: boolean = true): Promise<any> {
+        const qs = includeLogs ? '' : '?include_logs=0';
+        const response = await fetch(`api/monitors.php/export-bundle${qs}`);
+        if (!response.ok) {
+            const err = await response.json().catch(() => ({}));
+            throw new Error(err.error || 'Failed to export monitors bundle');
+        }
         return await response.json();
     },
 
