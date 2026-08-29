@@ -8,7 +8,7 @@ import { MonitorSslBulkImportDialog } from './MonitorSslBulkImportDialog';
 import { MonitorAuditLogDialog } from './MonitorAuditLogDialog';
 import { MonitorTargetLabel } from './MonitorTargetLabel';
 import { MonitorUptimeCalendar, MonitorUptimeDayBanner } from './MonitorUptimeCalendar';
-import { FaServer, FaGlobe, FaSearch, FaCheck, FaTimes, FaQuestion, FaPlus, FaRedo, FaSyncAlt, FaTrash, FaEdit, FaClock, FaThLarge, FaList, FaCopy, FaBars, FaDownload, FaUpload, FaHistory, FaCalendarAlt, FaEnvelope, FaArrowsAlt, FaPalette, FaCircle, FaExpand, FaCompress, FaBell, FaBellSlash, FaFileExport, FaFileCsv, FaLock, FaCode, FaMagic, FaStream, FaClipboardList, FaStop, FaExclamationTriangle, FaThumbtack, FaVolumeUp, FaVolumeMute } from 'react-icons/fa';
+import { FaServer, FaGlobe, FaSearch, FaCheck, FaTimes, FaQuestion, FaPlus, FaRedo, FaSyncAlt, FaTrash, FaEdit, FaClock, FaThLarge, FaList, FaCopy, FaBars, FaDownload, FaUpload, FaHistory, FaCalendarAlt, FaEnvelope, FaArrowsAlt, FaPalette, FaCircle, FaExpand, FaCompress, FaBell, FaBellSlash, FaFileExport, FaFileCsv, FaLock, FaCode, FaMagic, FaStream, FaClipboardList, FaStop, FaExclamationTriangle, FaThumbtack, FaVolumeUp, FaVolumeMute, FaColumns } from 'react-icons/fa';
 import { SSL_CERTS_TAB, formatMonitorCornerMetric, isSslCertsTab, isSslMonitor } from '../utils/monitorSsl';
 import { dayKeyFromUnix } from '../utils/monitorUptimeCalendar';
 import { useTileAnimation, getTileAnimationClass, getTileDecorationClass } from './TileAnimationSelector';
@@ -24,11 +24,31 @@ import {
 import { AreaChart, Area, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, ReferenceLine, Brush, BarChart, Bar, Cell } from 'recharts';
 import { useAuth } from '../contexts/AuthContext';
 import { useEscapeToClose } from '../hooks/useEscapeToClose';
+import { ThemeModeMenu } from './ThemeModeMenu';
+import { resolveDarkMode, subscribeThemePreference } from '../services/themePreferenceService';
 
 /** Estimated max wait shown while a queued job awaits monitor_runner pickup. */
 const PYTHON_WORKER_PICKUP_COUNTDOWN_SEC = 65;
 /** Highlight checks that took this long (ms) so slow monitors are easy to spot. */
 const SLOW_CHECK_MS = 5000;
+
+const MONITOR_SECTION_BG_LIGHT_KEY = 'linknest_monitor_section_bg_light';
+const MONITOR_SECTION_BG_DARK_KEY = 'linknest_monitor_section_bg_dark';
+const MONITOR_SECTION_TEXT_LIGHT_KEY = 'linknest_monitor_section_text_light';
+const MONITOR_SECTION_TEXT_DARK_KEY = 'linknest_monitor_section_text_dark';
+const DEFAULT_MONITOR_SECTION_BG_LIGHT = '#e8eef7';
+const DEFAULT_MONITOR_SECTION_BG_DARK = '#1a2332';
+const DEFAULT_MONITOR_SECTION_TEXT_LIGHT = '#334155';
+const DEFAULT_MONITOR_SECTION_TEXT_DARK = '#e2e8f0';
+
+function readMonitorSectionColor(key: string, fallback: string): string {
+    try {
+        const saved = localStorage.getItem(key);
+        return saved && /^#[0-9A-Fa-f]{6}$/.test(saved) ? saved : fallback;
+    } catch {
+        return fallback;
+    }
+}
 
 function formatCheckDuration(ms: number | null | undefined): string {
     if (ms == null || Number.isNaN(ms)) {
@@ -591,6 +611,27 @@ export const MonitoringDashboard: React.FC = () => {
         const saved = localStorage.getItem('linknest_monitor_fullscreen');
         return saved === 'true';
     });
+    const [fullscreenShowAllTabs, setFullscreenShowAllTabs] = useState<boolean>(() => {
+        const saved = localStorage.getItem('linknest_monitor_fullscreen_all_tabs');
+        return saved !== 'false'; // default: show all tabs in kiosk
+    });
+    const [fullscreenAllTabsLayout, setFullscreenAllTabsLayout] = useState<'stack' | 'columns'>(() => {
+        const saved = localStorage.getItem('linknest_monitor_fullscreen_all_layout');
+        return saved === 'columns' ? 'columns' : 'stack';
+    });
+    const [sectionBoxBgLight, setSectionBoxBgLight] = useState(() =>
+        readMonitorSectionColor(MONITOR_SECTION_BG_LIGHT_KEY, DEFAULT_MONITOR_SECTION_BG_LIGHT)
+    );
+    const [sectionBoxBgDark, setSectionBoxBgDark] = useState(() =>
+        readMonitorSectionColor(MONITOR_SECTION_BG_DARK_KEY, DEFAULT_MONITOR_SECTION_BG_DARK)
+    );
+    const [sectionBoxTextLight, setSectionBoxTextLight] = useState(() =>
+        readMonitorSectionColor(MONITOR_SECTION_TEXT_LIGHT_KEY, DEFAULT_MONITOR_SECTION_TEXT_LIGHT)
+    );
+    const [sectionBoxTextDark, setSectionBoxTextDark] = useState(() =>
+        readMonitorSectionColor(MONITOR_SECTION_TEXT_DARK_KEY, DEFAULT_MONITOR_SECTION_TEXT_DARK)
+    );
+    const [darkMode, setDarkMode] = useState(() => resolveDarkMode());
     const ownsBrowserFullscreenRef = useRef(false);
     const [notificationsPaused, setNotificationsPaused] = useState<boolean>(false);
     const [checkStatus, setCheckStatus] = useState<{ count: number; total: number; up: number; down: number; error: number } | null>(null);
@@ -1174,6 +1215,32 @@ export const MonitoringDashboard: React.FC = () => {
     useEffect(() => {
         localStorage.setItem('linknest_monitor_fullscreen', isFullscreen.toString());
     }, [isFullscreen]);
+
+    useEffect(() => {
+        localStorage.setItem('linknest_monitor_fullscreen_all_tabs', fullscreenShowAllTabs.toString());
+    }, [fullscreenShowAllTabs]);
+
+    useEffect(() => {
+        localStorage.setItem('linknest_monitor_fullscreen_all_layout', fullscreenAllTabsLayout);
+    }, [fullscreenAllTabsLayout]);
+
+    useEffect(() => {
+        localStorage.setItem(MONITOR_SECTION_BG_LIGHT_KEY, sectionBoxBgLight);
+    }, [sectionBoxBgLight]);
+
+    useEffect(() => {
+        localStorage.setItem(MONITOR_SECTION_BG_DARK_KEY, sectionBoxBgDark);
+    }, [sectionBoxBgDark]);
+
+    useEffect(() => {
+        localStorage.setItem(MONITOR_SECTION_TEXT_LIGHT_KEY, sectionBoxTextLight);
+    }, [sectionBoxTextLight]);
+
+    useEffect(() => {
+        localStorage.setItem(MONITOR_SECTION_TEXT_DARK_KEY, sectionBoxTextDark);
+    }, [sectionBoxTextDark]);
+
+    useEffect(() => subscribeThemePreference(() => setDarkMode(resolveDarkMode())), []);
 
     // Load notification status on mount
     useEffect(() => {
@@ -2303,23 +2370,66 @@ export const MonitoringDashboard: React.FC = () => {
         localStorage.setItem('linknest_monitor_active_tab', activeTab);
     }, [activeTab]);
 
-    const monitorsInActiveTab = useMemo(() => groupedByTabs[activeTab] || [], [groupedByTabs, activeTab]);
-
-    const groupedByGroups = useMemo<Record<string, Monitor[]>>(() => {
-        const groups: { [key: string]: Monitor[] } = {};
-        monitorsInActiveTab.forEach(m => {
+    const groupMonitorsByGroupName = useCallback((list: Monitor[]) => {
+        const groups: Record<string, Monitor[]> = {};
+        list.forEach((m) => {
             const group = m.group_name || 'Other';
             if (!groups[group]) groups[group] = [];
             groups[group].push(m);
         });
         return groups;
-    }, [monitorsInActiveTab]);
+    }, []);
 
-    const sortedGroups = useMemo(() => Object.keys(groupedByGroups).sort((a, b) => {
-        if (a === 'Other') return 1;
-        if (b === 'Other') return -1;
-        return a.localeCompare(b);
-    }), [groupedByGroups]);
+    const sortGroupNames = useCallback((groups: Record<string, Monitor[]>) => {
+        return Object.keys(groups).sort((a, b) => {
+            if (a === 'Other') return 1;
+            if (b === 'Other') return -1;
+            return a.localeCompare(b);
+        });
+    }, []);
+
+    const displayTabSections = useMemo(() => {
+        const tabs = (isFullscreen && fullscreenShowAllTabs) ? tabNames : [activeTab];
+        return tabs
+            .map((tab) => {
+                const list = groupedByTabs[tab] || [];
+                const groups = groupMonitorsByGroupName(list);
+                return {
+                    tab,
+                    groups,
+                    sortedGroupNames: sortGroupNames(groups),
+                    count: list.length,
+                };
+            })
+            .filter((section) => !(isFullscreen && fullscreenShowAllTabs) || section.count > 0);
+    }, [
+        isFullscreen,
+        fullscreenShowAllTabs,
+        tabNames,
+        activeTab,
+        groupedByTabs,
+        groupMonitorsByGroupName,
+        sortGroupNames,
+    ]);
+
+    const displayMonitorCount = useMemo(
+        () => displayTabSections.reduce((sum, s) => sum + s.count, 0),
+        [displayTabSections]
+    );
+
+    const isAllTabsColumns = isFullscreen && fullscreenShowAllTabs && fullscreenAllTabsLayout === 'columns';
+    const isAllTabsStacked = isFullscreen && fullscreenShowAllTabs && fullscreenAllTabsLayout === 'stack';
+    const sectionBoxBg = darkMode ? sectionBoxBgDark : sectionBoxBgLight;
+    const sectionBoxText = darkMode ? sectionBoxTextDark : sectionBoxTextLight;
+    const tileGridClass = viewMode === 'tiles'
+        ? (isAllTabsColumns
+            ? 'grid gap-2 grid-cols-1 xl:grid-cols-2'
+            : 'grid gap-4 grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4')
+        : viewMode === 'compact'
+            ? (isAllTabsColumns
+                ? 'grid gap-2 grid-cols-1 sm:grid-cols-2'
+                : 'grid gap-4 grid-cols-1 md:grid-cols-3 lg:grid-cols-4 xl:grid-cols-6')
+            : '';
 
     const handleTileClick = (e: React.MouseEvent, monitor: Monitor) => {
         const target = e.target as HTMLElement;
@@ -2678,14 +2788,107 @@ export const MonitoringDashboard: React.FC = () => {
 
                     {tabNames.length > 0 && (
                         <div className="flex flex-wrap items-center gap-1 max-w-full">
+                            <button
+                                type="button"
+                                onClick={() => setFullscreenShowAllTabs(true)}
+                                className={`inline-flex items-center gap-1 px-2.5 py-1 rounded-lg text-xs font-bold transition-all ${
+                                    fullscreenShowAllTabs
+                                        ? 'bg-indigo-600 text-white'
+                                        : 'bg-slate-100 text-slate-600 dark:bg-[#252525] dark:text-slate-400'
+                                }`}
+                                title="Show monitors from every tab"
+                            >
+                                All
+                                <span className={`px-1 rounded text-[9px] ${fullscreenShowAllTabs ? 'bg-white/20' : 'bg-black/5 dark:bg-white/10'}`}>
+                                    {monitors.length}
+                                </span>
+                            </button>
+                            {fullscreenShowAllTabs && (
+                                <div className="flex items-center gap-0.5 bg-slate-100 dark:bg-[#252525] p-0.5 rounded-lg" title="All-tabs layout">
+                                    <button
+                                        type="button"
+                                        onClick={() => setFullscreenAllTabsLayout('stack')}
+                                        className={`p-1.5 rounded-md transition-all ${fullscreenAllTabsLayout === 'stack' ? 'bg-white dark:bg-[#333] text-indigo-600 shadow-sm' : 'text-slate-400 hover:text-slate-600'}`}
+                                        title="Stack tabs vertically"
+                                        aria-label="Stack tabs vertically"
+                                        aria-pressed={fullscreenAllTabsLayout === 'stack'}
+                                    >
+                                        <FaStream size={12} />
+                                    </button>
+                                    <button
+                                        type="button"
+                                        onClick={() => setFullscreenAllTabsLayout('columns')}
+                                        className={`p-1.5 rounded-md transition-all ${fullscreenAllTabsLayout === 'columns' ? 'bg-white dark:bg-[#333] text-indigo-600 shadow-sm' : 'text-slate-400 hover:text-slate-600'}`}
+                                        title="Side-by-side tab columns"
+                                        aria-label="Side-by-side tab columns"
+                                        aria-pressed={fullscreenAllTabsLayout === 'columns'}
+                                    >
+                                        <FaColumns size={12} />
+                                    </button>
+                                </div>
+                            )}
+                            {fullscreenShowAllTabs && (
+                                <div
+                                    className="inline-flex items-center gap-1.5 px-1.5 py-0.5 rounded-lg bg-slate-100 dark:bg-[#252525]"
+                                    title={`Tab group colors (${darkMode ? 'night' : 'day'} mode)`}
+                                >
+                                    <label className="inline-flex items-center gap-1 cursor-pointer" title="Group box background">
+                                        <span className="text-[9px] font-bold uppercase tracking-wide text-slate-400">Bg</span>
+                                        <input
+                                            type="color"
+                                            value={sectionBoxBg}
+                                            onChange={(e) => {
+                                                const next = e.target.value;
+                                                if (darkMode) setSectionBoxBgDark(next);
+                                                else setSectionBoxBgLight(next);
+                                            }}
+                                            className="w-6 h-6 p-0 border-0 bg-transparent cursor-pointer rounded overflow-hidden"
+                                            aria-label="Tab group box background color"
+                                        />
+                                    </label>
+                                    <label className="inline-flex items-center gap-1 cursor-pointer" title="Group box text">
+                                        <span className="text-[9px] font-bold uppercase tracking-wide text-slate-400">Tx</span>
+                                        <input
+                                            type="color"
+                                            value={sectionBoxText}
+                                            onChange={(e) => {
+                                                const next = e.target.value;
+                                                if (darkMode) setSectionBoxTextDark(next);
+                                                else setSectionBoxTextLight(next);
+                                            }}
+                                            className="w-6 h-6 p-0 border-0 bg-transparent cursor-pointer rounded overflow-hidden"
+                                            aria-label="Tab group box text color"
+                                        />
+                                    </label>
+                                    <button
+                                        type="button"
+                                        className="px-1 text-[9px] font-bold uppercase tracking-wide text-slate-400 hover:text-slate-600 dark:hover:text-slate-200"
+                                        title="Reset group box colors for this mode"
+                                        onClick={() => {
+                                            if (darkMode) {
+                                                setSectionBoxBgDark(DEFAULT_MONITOR_SECTION_BG_DARK);
+                                                setSectionBoxTextDark(DEFAULT_MONITOR_SECTION_TEXT_DARK);
+                                            } else {
+                                                setSectionBoxBgLight(DEFAULT_MONITOR_SECTION_BG_LIGHT);
+                                                setSectionBoxTextLight(DEFAULT_MONITOR_SECTION_TEXT_LIGHT);
+                                            }
+                                        }}
+                                    >
+                                        Reset
+                                    </button>
+                                </div>
+                            )}
                             {tabNames.map(tab => {
                                 const sslTab = isSslCertsTab(tab);
-                                const isActive = activeTab === tab;
+                                const isActive = !fullscreenShowAllTabs && activeTab === tab;
                                 return (
                                     <button
                                         key={tab}
                                         type="button"
-                                        onClick={() => setActiveTab(tab)}
+                                        onClick={() => {
+                                            setFullscreenShowAllTabs(false);
+                                            setActiveTab(tab);
+                                        }}
                                         className={`inline-flex items-center gap-1 px-2.5 py-1 rounded-lg text-xs font-bold transition-all ${
                                             isActive
                                                 ? sslTab
@@ -2708,6 +2911,7 @@ export const MonitoringDashboard: React.FC = () => {
                     )}
 
                     <div className="flex items-center gap-1.5 ml-auto">
+                        <ThemeModeMenu darkMode={darkMode} compact />
                         <button
                             type="button"
                             onClick={() => refreshAll(false)}
@@ -3267,22 +3471,28 @@ export const MonitoringDashboard: React.FC = () => {
                     </div>
                     )}
 
-                    {monitorsInActiveTab.length === 0 ? (
-                        <div className={`text-center py-20 bg-white dark:bg-[#1e1e1e] rounded-3xl border border-dashed shadow-sm ${isSslCertsTab(activeTab) ? 'border-amber-200 dark:border-amber-900/40' : 'border-slate-200 dark:border-[#333]'}`}>
-                            <div className={`inline-flex w-20 h-20 items-center justify-center rounded-full mb-6 text-4xl ${isSslCertsTab(activeTab) ? 'bg-amber-50 dark:bg-amber-950/30' : 'bg-slate-50 dark:bg-[#252525]'}`}>
-                                {isSslCertsTab(activeTab) ? '🔒' : '📊'}
+                    {displayMonitorCount === 0 ? (
+                        <div className={`text-center py-20 bg-white dark:bg-[#1e1e1e] rounded-3xl border border-dashed shadow-sm ${!fullscreenShowAllTabs && isSslCertsTab(activeTab) ? 'border-amber-200 dark:border-amber-900/40' : 'border-slate-200 dark:border-[#333]'}`}>
+                            <div className={`inline-flex w-20 h-20 items-center justify-center rounded-full mb-6 text-4xl ${!fullscreenShowAllTabs && isSslCertsTab(activeTab) ? 'bg-amber-50 dark:bg-amber-950/30' : 'bg-slate-50 dark:bg-[#252525]'}`}>
+                                {!fullscreenShowAllTabs && isSslCertsTab(activeTab) ? '🔒' : '📊'}
                             </div>
                             <h2 className="text-xl font-bold text-slate-900 dark:text-white mb-2">
-                                {isSslCertsTab(activeTab) ? 'No SSL certificate checks yet' : 'No monitors in this tab'}
+                                {isFullscreen && fullscreenShowAllTabs
+                                    ? 'No monitors configured'
+                                    : isSslCertsTab(activeTab)
+                                        ? 'No SSL certificate checks yet'
+                                        : 'No monitors in this tab'}
                             </h2>
                             <p className="text-slate-500 dark:text-gray-400 mb-6 max-w-md mx-auto">
-                                {isSslCertsTab(activeTab)
-                                    ? 'Paste a list of hostnames to bulk-add expiry checks. These stay on this tab and are not mixed with uptime monitors.'
-                                    : 'Track the uptime and performance of your websites, APIs, and servers.'}
+                                {isFullscreen && fullscreenShowAllTabs
+                                    ? 'Track the uptime and performance of your websites, APIs, and servers.'
+                                    : isSslCertsTab(activeTab)
+                                        ? 'Paste a list of hostnames to bulk-add expiry checks. These stay on this tab and are not mixed with uptime monitors.'
+                                        : 'Track the uptime and performance of your websites, APIs, and servers.'}
                             </p>
                             {isAdmin ? (
                                 <div className="flex flex-wrap items-center justify-center gap-3">
-                                    {isSslCertsTab(activeTab) && (
+                                    {!fullscreenShowAllTabs && isSslCertsTab(activeTab) && (
                                         <button
                                             onClick={() => setShowSslBulkImport(true)}
                                             className="px-6 py-2.5 bg-amber-600 text-white rounded-xl font-bold hover:bg-amber-700 transition-colors"
@@ -3291,10 +3501,10 @@ export const MonitoringDashboard: React.FC = () => {
                                         </button>
                                     )}
                                     <button
-                                        onClick={() => openAddMonitor(isSslCertsTab(activeTab) ? 'ssl' : undefined)}
+                                        onClick={() => openAddMonitor(!fullscreenShowAllTabs && isSslCertsTab(activeTab) ? 'ssl' : undefined)}
                                         className="px-6 py-2.5 bg-blue-600 text-white rounded-xl font-bold hover:bg-blue-700 transition-colors"
                                     >
-                                        {isSslCertsTab(activeTab) ? 'Add SSL check' : 'Create a monitor'}
+                                        {!fullscreenShowAllTabs && isSslCertsTab(activeTab) ? 'Add SSL check' : 'Create a monitor'}
                                     </button>
                                 </div>
                             ) : (
@@ -3306,8 +3516,69 @@ export const MonitoringDashboard: React.FC = () => {
                     ) : (
                     <>
 
-                    {sortedGroups.map((groupName) => (
-                        <div key={groupName} className={isFullscreen ? 'space-y-2' : 'space-y-4'}>
+                    <div
+                        className={
+                            isAllTabsColumns
+                                ? `grid gap-2 items-start ${
+                                    displayTabSections.length <= 2
+                                        ? 'grid-cols-1 lg:grid-cols-2'
+                                        : displayTabSections.length === 3
+                                            ? 'grid-cols-1 md:grid-cols-2 xl:grid-cols-3'
+                                            : 'grid-cols-1 sm:grid-cols-2 xl:grid-cols-3 2xl:grid-cols-4'
+                                }`
+                                : isAllTabsStacked
+                                    ? 'space-y-4'
+                                    : undefined
+                        }
+                    >
+                    {displayTabSections.map(({ tab: sectionTab, groups, sortedGroupNames }) => (
+                    <div
+                        key={sectionTab}
+                        className={
+                            isFullscreen && fullscreenShowAllTabs
+                                ? `space-y-3 rounded-2xl border border-slate-200/80 dark:border-[#333] p-3 shadow-sm ${
+                                    isAllTabsColumns ? 'min-h-0 max-h-[calc(100vh-5.5rem)] overflow-y-auto' : ''
+                                }`
+                                : undefined
+                        }
+                        style={
+                            isFullscreen && fullscreenShowAllTabs
+                                ? { backgroundColor: sectionBoxBg, color: sectionBoxText }
+                                : undefined
+                        }
+                    >
+                    {isFullscreen && fullscreenShowAllTabs && (
+                        <div
+                            className={`sticky ${isAllTabsColumns ? 'top-0' : 'top-14'} z-[5] flex items-center gap-2 px-3 py-2 rounded-xl border shadow-sm ${
+                                isSslCertsTab(sectionTab)
+                                    ? 'bg-amber-50/95 dark:bg-amber-950/50 border-amber-200 dark:border-amber-800/50'
+                                    : 'bg-slate-100/95 dark:bg-[#252525]/95 border-slate-200 dark:border-[#333]'
+                            }`}
+                            style={{ color: sectionBoxText }}
+                        >
+                            {isSslCertsTab(sectionTab) && <FaLock size={12} style={{ color: sectionBoxText }} />}
+                            <h2
+                                className="text-sm font-black uppercase tracking-[0.15em]"
+                                style={{ color: sectionBoxText }}
+                            >
+                                {sectionTab}
+                            </h2>
+                            <span
+                                className={`px-1.5 py-0.5 rounded-md text-[10px] font-bold ${
+                                    isSslCertsTab(sectionTab)
+                                        ? 'bg-amber-200/80 dark:bg-amber-900/60'
+                                        : 'bg-slate-200 dark:bg-[#333]'
+                                }`}
+                                style={{ color: sectionBoxText }}
+                            >
+                                {groups ? Object.values(groups).reduce((n, g) => n + g.length, 0) : 0}
+                            </span>
+                            <div className="h-px flex-1 bg-current opacity-20" />
+                        </div>
+                    )}
+
+                    {sortedGroupNames.map((groupName) => (
+                        <div key={`${sectionTab}::${groupName}`} className={isFullscreen ? 'space-y-2' : 'space-y-4'}>
                             <div className={`flex items-center gap-4 ${isFullscreen ? '' : 'group/header'}`}>
                                 {editingGroupName === groupName && !isFullscreen ? (
                                     <input
@@ -3322,7 +3593,16 @@ export const MonitoringDashboard: React.FC = () => {
                                 ) : (
                                     <div className="flex items-center gap-2">
                                         <h3
-                                            className={`text-sm font-black uppercase tracking-[0.2em] text-slate-400 dark:text-slate-500 whitespace-nowrap ${isFullscreen ? '' : 'cursor-pointer hover:text-blue-500 transition-colors'}`}
+                                            className={`text-sm font-black uppercase tracking-[0.2em] whitespace-nowrap ${
+                                                isFullscreen && fullscreenShowAllTabs
+                                                    ? ''
+                                                    : `text-slate-400 dark:text-slate-500 ${isFullscreen ? '' : 'cursor-pointer hover:text-blue-500 transition-colors'}`
+                                            }`}
+                                            style={
+                                                isFullscreen && fullscreenShowAllTabs
+                                                    ? { color: sectionBoxText }
+                                                    : undefined
+                                            }
                                             onDoubleClick={() => {
                                                 if (isFullscreen) return;
                                                 setEditingGroupName(groupName);
@@ -3351,7 +3631,7 @@ export const MonitoringDashboard: React.FC = () => {
 
                             {viewMode === 'capsule' ? (
                                 <div className="flex flex-wrap gap-2">
-                                    {groupedByGroups[groupName].map((monitor, index) => (
+                                    {groups[groupName].map((monitor, index) => (
                                         <div
                                             key={monitor.id}
                                             data-monitor-id={monitor.id}
@@ -3398,8 +3678,8 @@ export const MonitoringDashboard: React.FC = () => {
                                     ))}
                                 </div>
                             ) : (viewMode === 'tiles' || viewMode === 'compact') ? (
-                                <div className={`grid gap-4 ${viewMode === 'tiles' ? 'grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4' : 'grid-cols-1 md:grid-cols-3 lg:grid-cols-4 xl:grid-cols-6'}`}>
-                                    {groupedByGroups[groupName].map((monitor, index) => (
+                                <div className={tileGridClass}>
+                                    {groups[groupName].map((monitor, index) => (
                                         <div
                                             key={monitor.id}
                                             data-monitor-id={monitor.id}
@@ -3573,7 +3853,7 @@ export const MonitoringDashboard: React.FC = () => {
                                 </div>
                             ) : viewMode === 'status-bar' ? (
                                 <div className="space-y-2">
-                                    {groupedByGroups[groupName].map((monitor, index) => (
+                                    {groups[groupName].map((monitor, index) => (
                                         <div
                                             key={monitor.id}
                                             data-monitor-id={monitor.id}
@@ -3629,7 +3909,7 @@ export const MonitoringDashboard: React.FC = () => {
                             ) : viewMode === 'kanban' ? (
                                 <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
                                     {['up', 'down', 'warning'].map((status) => {
-                                        const statusMonitors = groupedByGroups[groupName].filter(m => m.last_status === status || (status === 'warning' && !m.last_status));
+                                        const statusMonitors = groups[groupName].filter(m => m.last_status === status || (status === 'warning' && !m.last_status));
                                         return (
                                             <div key={status} className="space-y-3">
                                                 <div className={`flex items-center gap-2 px-4 py-2 rounded-xl font-bold text-sm uppercase ${status === 'up' ? 'bg-emerald-100 dark:bg-emerald-900/20 text-emerald-600 dark:text-emerald-400' : status === 'down' ? 'bg-red-100 dark:bg-red-900/20 text-red-600 dark:text-red-400' : 'bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-400'}`}>
@@ -3669,7 +3949,7 @@ export const MonitoringDashboard: React.FC = () => {
                                 </div>
                             ) : viewMode === 'timeline' ? (
                                 <div className="space-y-1">
-                                    {groupedByGroups[groupName].map((monitor) => (
+                                    {groups[groupName].map((monitor) => (
                                         <div
                                             key={monitor.id}
                                             data-monitor-id={monitor.id}
@@ -3748,12 +4028,12 @@ export const MonitoringDashboard: React.FC = () => {
                                                 <th className="px-6 py-4">Target</th>
                                                 <th className="px-6 py-4">Response Time</th>
                                                 <th className="px-6 py-4">Last Checked</th>
-                                                <th className="px-6 py-4">{isSslCertsTab(activeTab) ? 'Expiry' : 'Interval'}</th>
+                                                <th className="px-6 py-4">{isSslCertsTab(sectionTab) ? 'Expiry' : 'Interval'}</th>
                                                 <th className="px-6 py-4 text-right">Actions</th>
                                             </tr>
                                         </thead>
                                         <tbody className="divide-y divide-slate-100 dark:divide-[#333]">
-                                            {groupedByGroups[groupName].map((monitor, index) => (
+                                            {groups[groupName].map((monitor, index) => (
                                                 <tr
                                                     key={monitor.id}
                                                     data-monitor-id={monitor.id}
@@ -3890,6 +4170,9 @@ export const MonitoringDashboard: React.FC = () => {
                             )}
                         </div>
                     ))}
+                    </div>
+                    ))}
+                    </div>
                     </>
                     )}
                 </div>
