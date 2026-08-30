@@ -13,6 +13,8 @@ import {
   type BoxFontSize,
   type BoxImportance,
 } from './RichTextBoxOptionsFields';
+import { MediaPickerModal } from './MediaPickerModal';
+import { resolveApiBase } from '../services/apiHelpers';
 
 export type { RichTextBoxMeta };
 
@@ -103,6 +105,7 @@ export const RichTextContentItem = forwardRef<RichTextContentItemHandle, RichTex
   const [localImportance, setLocalImportance] = useState<BoxImportance>(normalizeImportance(content.boxImportance));
   const fileInputRef = useRef<HTMLInputElement>(null);
   const [uploading, setUploading] = useState(false);
+  const [showMediaPicker, setShowMediaPicker] = useState(false);
 
   const syncFromContent = () => {
     setLocalContent(content.content);
@@ -175,10 +178,11 @@ export const RichTextContentItem = forwardRef<RichTextContentItemHandle, RichTex
     formData.append('section_id', sectionId);
 
     try {
-      const API_BASE = import.meta.env.VITE_API_BASE || '/api';
+      const API_BASE = resolveApiBase();
       const response = await fetch(`${API_BASE}/uploads/rich-text-image`, {
         method: 'POST',
         body: formData,
+        credentials: 'include',
       });
 
       if (!response.ok) {
@@ -222,6 +226,13 @@ export const RichTextContentItem = forwardRef<RichTextContentItemHandle, RichTex
             >
               {uploading ? 'Uploading...' : '📷 Add Image'}
             </button>
+            <button
+              type="button"
+              onClick={() => setShowMediaPicker(true)}
+              className="px-3 py-1.5 text-xs font-medium bg-sky-100 dark:bg-sky-900/40 hover:bg-sky-200 dark:hover:bg-sky-900/60 text-sky-800 dark:text-sky-200 rounded-lg transition-colors"
+            >
+              📁 From library
+            </button>
             <input ref={fileInputRef} type="file" accept="image/*" onChange={handleImageUpload} className="hidden" />
             <button
               onClick={handleCancel}
@@ -235,6 +246,11 @@ export const RichTextContentItem = forwardRef<RichTextContentItemHandle, RichTex
           </div>
         </div>
         <SelectableRichTextEditor value={localContent} onChange={setLocalContent} placeholder="Enter rich text content..." startOpen />
+        <MediaPickerModal
+          open={showMediaPicker}
+          onClose={() => setShowMediaPicker(false)}
+          onInsertHtml={(html) => setLocalContent((prev) => prev + html)}
+        />
         <RichTextBoxOptionsFields
           boxed={localBoxed}
           onBoxedChange={setLocalBoxed}

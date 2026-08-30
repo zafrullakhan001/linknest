@@ -93,7 +93,8 @@ function handleGetAllAvailableWidgets() {
         ['id' => 'snake-game', 'label' => 'Snake Game', 'description' => 'Snake game widget', 'isCustom' => false],
         ['id' => 'vnc-viewer', 'label' => 'VNC Viewer', 'description' => 'noVNC remote desktop viewer (websockify URL)', 'isCustom' => false],
         ['id' => 'ssh-terminal', 'label' => 'SSH Terminal', 'description' => 'xterm.js web SSH terminal (ttyd WebSocket URL)', 'isCustom' => false],
-        ['id' => 'internet-speed-tester', 'label' => 'Internet Speed Tester', 'description' => 'Ping, download, and upload speed test (requires authentication)', 'isCustom' => false]
+        ['id' => 'internet-speed-tester', 'label' => 'Internet Speed Tester', 'description' => 'Ping, download, and upload speed test (requires authentication)', 'isCustom' => false],
+        ['id' => 'media', 'label' => 'Media Library', 'description' => 'Shared media library for images, PDFs, audio, and video (admin)', 'isCustom' => false]
     ];
     
     $db = getDB();
@@ -159,7 +160,7 @@ function handleGetAllowedWidgets() {
 
     // Guests must never receive auth-only widgets even if mis-assigned on the guest role
     if (!$user) {
-        $authOnlyWidgets = ['notes', 'chat', 'fav-organizer', 'internet-speed-tester'];
+        $authOnlyWidgets = ['notes', 'chat', 'fav-organizer', 'internet-speed-tester', 'media'];
         $allowedWidgetIds = array_values(array_filter(
             $allowedWidgetIds,
             function ($widgetId) use ($authOnlyWidgets) {
@@ -183,7 +184,8 @@ function handleGetAllowedWidgets() {
         ['id' => 'snake-game', 'label' => 'Snake Game', 'description' => 'Snake game widget', 'isCustom' => false],
         ['id' => 'vnc-viewer', 'label' => 'VNC Viewer', 'description' => 'noVNC remote desktop viewer (websockify URL)', 'isCustom' => false],
         ['id' => 'ssh-terminal', 'label' => 'SSH Terminal', 'description' => 'xterm.js web SSH terminal (ttyd WebSocket URL)', 'isCustom' => false],
-        ['id' => 'internet-speed-tester', 'label' => 'Internet Speed Tester', 'description' => 'Ping, download, and upload speed test (requires authentication)', 'isCustom' => false]
+        ['id' => 'internet-speed-tester', 'label' => 'Internet Speed Tester', 'description' => 'Ping, download, and upload speed test (requires authentication)', 'isCustom' => false],
+        ['id' => 'media', 'label' => 'Media Library', 'description' => 'Shared media library for images, PDFs, audio, and video (admin)', 'isCustom' => false]
     ];
     
     $customWidgets = [];

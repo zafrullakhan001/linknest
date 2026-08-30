@@ -380,6 +380,7 @@ export const HelpAboutDialog: React.FC<HelpAboutDialogProps> = ({
                       <li>Create, edit, and delete tiles/spaces</li>
                       <li>Manage links, tabs, sections, and rich text (including boxed content)</li>
                       <li>Preview links on phone, tablet, or watch sizes via the hover phone action</li>
+                      <li>Bookmark a Quick Link into this browser via the hover bookmark ribbon (Bookmark Sync / Browser Launcher with Read-write On; otherwise open the page and press Ctrl+D / Cmd+D)</li>
                       <li>Customize tiles with header/emoji images and display options</li>
                       <li>Organize tiles into categories and favorite them</li>
                       <li>Share spaces with other users and accept shared-tile invitations</li>
@@ -669,7 +670,7 @@ export const HelpAboutDialog: React.FC<HelpAboutDialogProps> = ({
                   <div className="bg-slate-50 dark:bg-slate-900/50 rounded-lg p-4">
                     <h4 className="font-semibold text-slate-900 dark:text-white mb-2">Floating Widgets</h4>
                     <p className="text-sm text-slate-700 dark:text-slate-300">
-                      Clock (timezones), Weather, Calculator, Password Generator, Phonetic Alphabet, Page Zoom, Theme, Notes, Favorites Organizer, Chat, Snake Game, <strong>VNC Viewer</strong>, and <strong>SSH Terminal</strong>. Toggle from the nav bar or press Ctrl+Shift+Y. Install required gateways first — see Help → Remote Widgets — SSH / VNC Manual Deployment, or Guides → SSH / VNC Manual Deployment.
+                      Clock (timezones), Weather, Calculator, Password Generator, Phonetic Alphabet, Page Zoom, Theme, Notes, Favorites Organizer, Chat, Snake Game, <strong>Media Library</strong> (admins), <strong>VNC Viewer</strong>, and <strong>SSH Terminal</strong>. Toggle from the nav bar or press Ctrl+Shift+Y. Install required gateways first — see Help → Remote Widgets — SSH / VNC Manual Deployment, or Guides → SSH / VNC Manual Deployment.
                     </p>
                   </div>
                   <div className="bg-slate-50 dark:bg-slate-900/50 rounded-lg p-4">
@@ -749,6 +750,7 @@ export const HelpAboutDialog: React.FC<HelpAboutDialogProps> = ({
                     <p className="font-medium text-amber-950 dark:text-amber-100">1. Favorite Links</p>
                     <ul className="list-disc list-inside space-y-1 ml-2 text-sm">
                       <li>Star links from spaces so they appear in the Favorite Links strip</li>
+                      <li>Hover a Quick Link and use the <strong>bookmark ribbon</strong> (not the star) to save that URL into this browser via Bookmark Sync / Browser Launcher with <strong>Read-write On</strong>; if the extension cannot write, open the page and press <strong>Ctrl+D</strong> / <strong>Cmd+D</strong></li>
                       <li><strong>View: Compact / Cards</strong> — compact shows <em>title only</em> with star + drag (arrows hidden); cards show URL, space, and health</li>
                       <li>Sort A–Z or manual drag; place the strip above or below spaces</li>
                       <li>Guests: bookmark icon next to Export/Import copies Favorite Links into a <strong>named folder</strong> and each favorite space as a <strong>subfolder inside that folder</strong> (then OutSync to this browser)</li>
@@ -903,7 +905,7 @@ export const HelpAboutDialog: React.FC<HelpAboutDialogProps> = ({
                     <p className="font-medium text-brand-900 dark:text-brand-100">How to use it:</p>
                     <ol className="list-decimal list-inside space-y-1 ml-2 text-sm">
                       <li>Open a space and hover a link that has a URL</li>
-                      <li>Click the phone icon in the hover action toolbar (next to copy / QR)</li>
+                      <li>Click the phone icon in the hover action toolbar (next to copy / bookmark / QR)</li>
                       <li>Choose a device preset: Responsive, iPhone, Android, Tablet, Watch, or Enterprise (admins can add more under Admin → Device Presets)</li>
                       <li>Rotate the viewport, adjust zoom, or pick a quick preset chip</li>
                       <li>Use <strong>In-app</strong> for a framed mockup preview, or <strong>Device emulation</strong> to open a sized popup window</li>
@@ -1880,6 +1882,7 @@ docker\\docker-sync-database.bat -Direction Out -HostBasePath "/ArchLinks"`}</pr
                     <li>Set browser preferences per tile or link for testing workflows</li>
                     <li>Hold Ctrl/Cmd while clicking links to override browser settings</li>
                     <li>Hover a Quick Link and click the phone icon to preview the URL on phone, tablet, or watch sizes (use Device emulation when a site blocks the in-app frame)</li>
+                    <li>Hover a Quick Link and click the bookmark ribbon to save that URL in this browser (Bookmark Sync / Browser Launcher Read-write), or open the page and press Ctrl+D / Cmd+D when the extension cannot write</li>
                     <li>Share the app or a space via branded QR codes</li>
                     <li>Share a private/authenticated space with another user and manage shares from the Share dialog</li>
                     <li>Block unwanted sharers; review Blocked Users when needed</li>
@@ -1908,7 +1911,7 @@ docker\\docker-sync-database.bat -Direction Out -HostBasePath "/ArchLinks"`}</pr
                     <li>Customize tile animations from 200+ options for a personalized experience</li>
                     <li>Add seasonal decorations to tiles for holidays and special occasions</li>
                     <li>Toggle floating widgets from the navigation bar or press <strong>Ctrl+Shift+Y</strong> for the Widget Quick Access menu</li>
-                    <li>Use the Notes and Chat widgets when signed in; Password Generator and Zoom Control are available from the widgets pill</li>
+                    <li>Use the Notes and Chat widgets when signed in; admins can open the <strong>Media Library</strong> widget; Password Generator and Zoom Control are available from the widgets pill</li>
                     <li>For SSH/VNC: follow Help → Remote Widgets — SSH / VNC Manual Deployment (or Guides → SSH / VNC Manual Deployment) before first Connect</li>
                     <li>SSH page refresh: sessions can stay alive in a browser SharedWorker — close the widget to disconnect (Guides → SSH Session Shared Worker)</li>
                     <li>Monitor system health with URL, keyword, port, ping, SSL, DNS, and JSON checks — Python workers run outside Apache so checks do not freeze PHP</li>
@@ -2064,6 +2067,7 @@ php scripts/reset_admin_password.php admin 'NewStrongPass1!'`}</pre>
                       <li><strong>Sync Tooltips:</strong> Scan hover tooltips that do not match the link name, then update selected links or all shown results</li>
                       <li><strong>Tab Visibility:</strong> Control which tabs are visible in the application</li>
                       <li><strong>Custom Widgets:</strong> Create, enable/disable, and manage custom widgets</li>
+                      <li><strong>Media Library:</strong> Shared repository for images, PDFs, audio, and video; insert from the rich text editor</li>
                       <li><strong>Broadcast Messages:</strong> Display scrolling messages across the application</li>
                       <li><strong>Monitoring Management:</strong> Create, edit, and manage system monitors. Scheduled checks run in Python (<code className="text-xs bg-white dark:bg-slate-800 px-1 rounded">monitor_runner.py</code> + <code className="text-xs bg-white dark:bg-slate-800 px-1 rounded">email_sender.py</code>) outside Apache — Help → System Monitoring Dashboard / Guides → Python Workers (Monitoring + Email)</li>
                       <li><strong>SMTP Configuration:</strong> Configure multiple SMTP servers for email notifications</li>
@@ -2099,6 +2103,7 @@ php scripts/reset_admin_password.php admin 'NewStrongPass1!'`}</pre>
                     <li><strong>Sign-in methods &amp; lockout recovery:</strong> Toggle Local / LDAP / SAML under Admin → Settings → Access → Sign-in (at least one stays on). If Local auth is off or the admin password is lost, <code className="text-xs bg-slate-200 dark:bg-slate-800 px-1 rounded">scripts/reset_admin_password.php</code> re-enables Local auth and resets the password — Help → Admin password &amp; lockout recovery / Guides → Admin Password &amp; Lockout Recovery</li>
                     <li><strong>MCP / AI:</strong> Admin tokens let Cursor, Claude Desktop, and other MCP clients list spaces, search links, create or edit bookmarks, and (with admin scope) manage users, roles, LDAP/SAML, Device Presets, and database export/import. Copy-ready statements: Admin → MCP / AI → Example prompts — Help → MCP / AI / Guides → MCP / AI</li>
                     <li><strong>Mobile Link Preview:</strong> Phone action on Quick Links opens an in-app device mockup (phone / tablet / watch) or a device-sized window for DevTools testing</li>
+                    <li><strong>Bookmark in browser:</strong> Hover-bar bookmark ribbon saves a Quick Link URL into Other Bookmarks → LinkNest when Bookmark Sync / Browser Launcher Read-write is On; otherwise shows a Ctrl+D / Cmd+D hint (role-gated in Access Manager)</li>
                     <li><strong>In-app App Updates:</strong> Check GitHub commits/releases, preview changes, apply with DB backup, and roll back from Admin (XAMPP installs). Office tip: publish a <strong>portable Release</strong> (default relative base) and apply the same Release on ArchLinks and ERP3 — see Help → In-app App Updates</li>
                     <li><strong>XAMPP PHP upgrade:</strong> PowerShell script to move to PHP 8.5+ with LDAP verification — see Guides → Upgrade PHP in XAMPP</li>
                     <li><strong>Vanilla Apache + PHP 8.5 (Windows):</strong> Post-install <code className="text-xs bg-slate-200 dark:bg-slate-800 px-1 rounded">httpd.conf</code> / <code className="text-xs bg-slate-200 dark:bg-slate-800 px-1 rounded">php.ini</code> for stock Apache at <code className="text-xs bg-slate-200 dark:bg-slate-800 px-1 rounded">D:\Apache</code> and PHP at <code className="text-xs bg-slate-200 dark:bg-slate-800 px-1 rounded">D:\php</code> — Help → Vanilla Apache + PHP 8.5 (Windows) / Guides. Pre-configured runtime + app ZIPs: <code className="text-xs bg-slate-200 dark:bg-slate-800 px-1 rounded">publish-windows-bootstrap-bundles.bat</code> — Guides → Windows Bootstrap Bundles</li>

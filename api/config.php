@@ -138,7 +138,7 @@ if (!defined('SYSTEM_TOKEN')) {
 
 // Bump when schema/migrations in initDatabase() change. Enables fast-path getDB().
 if (!defined('LINKNEST_SCHEMA_VERSION')) {
-    define('LINKNEST_SCHEMA_VERSION', 101);
+    define('LINKNEST_SCHEMA_VERSION', 103);
 }
 
 function getSchemaPatchFlagPath(): string {
@@ -1884,6 +1884,8 @@ function initDatabase() {
             backfillVisitAnalyticsIfNeeded($db);
             require_once __DIR__ . '/speedtest_schedules_lib.php';
             speedtestEnsureSchema($db);
+            require_once __DIR__ . '/media_lib.php';
+            ensureMediaLibrarySchema($db);
             if (!schemaPatchesAlreadyApplied()) {
                 ensureTilesHeaderImageColumns($db);
                 ensureTilesSearchTagsColumn($db);
@@ -1891,6 +1893,7 @@ function initDatabase() {
                 ensureTabSectionEmojiColumns($db);
                 ensurePublicGuestRole($db);
                 ensureRoleLinkActionDefaults($db);
+                ensureRoleLinkActionBookmarkGrant($db);
                 ensureUserAuditLogTable($db);
                 ensureClonesPresetColumn($db);
                 markSchemaPatchesApplied();
@@ -1925,6 +1928,8 @@ function initDatabase() {
             backfillVisitAnalyticsIfNeeded($db);
             require_once __DIR__ . '/speedtest_schedules_lib.php';
             speedtestEnsureSchema($db);
+            require_once __DIR__ . '/media_lib.php';
+            ensureMediaLibrarySchema($db);
             if (!schemaPatchesAlreadyApplied()) {
                 ensureTilesHeaderImageColumns($db);
                 ensureTilesSearchTagsColumn($db);
@@ -1932,6 +1937,7 @@ function initDatabase() {
                 ensureTabSectionEmojiColumns($db);
                 ensurePublicGuestRole($db);
                 ensureRoleLinkActionDefaults($db);
+                ensureRoleLinkActionBookmarkGrant($db);
                 ensureUserAuditLogTable($db);
                 ensureClonesPresetColumn($db);
                 markSchemaPatchesApplied();
@@ -4121,7 +4127,7 @@ function initDatabase() {
             FOREIGN KEY (role_id) REFERENCES roles(id) ON DELETE CASCADE
         )');
 
-        // Role-based link hover action bar permissions (notes, favorite, health, copy, mobile, qr, browser)
+        // Role-based link hover action bar permissions (notes, favorite, health, copy, bookmark, mobile, qr, browser)
         $db->exec('CREATE TABLE IF NOT EXISTS role_link_action_permissions (
             role_id INTEGER NOT NULL,
             action_id TEXT NOT NULL,
@@ -4224,12 +4230,15 @@ function initDatabase() {
         backfillVisitAnalyticsIfNeeded($db);
         require_once __DIR__ . '/speedtest_schedules_lib.php';
         speedtestEnsureSchema($db);
+        require_once __DIR__ . '/media_lib.php';
+        ensureMediaLibrarySchema($db);
         
         // Create indexes for optimal performance
         createDatabaseIndexes($db);
 
         // Seed default link-action allowlists for existing roles (backward-compatible UX)
         ensureRoleLinkActionDefaults($db);
+        ensureRoleLinkActionBookmarkGrant($db);
 
         // Stamp schema version so subsequent connections take the fast path
         $db->exec('PRAGMA user_version = ' . (int)LINKNEST_SCHEMA_VERSION);
@@ -4808,7 +4817,40 @@ function ensurePublicGuestRole($db): void {
  * Valid link hover action bar IDs controllable via Access Manager roles.
  */
 function getValidLinkActionIds(): array {
-    return ['notes', 'favorite', 'health', 'copy', 'mobile', 'qr', 'browser'];
+    return ['notes', 'favorite', 'health', 'copy', 'bookmark', 'mobile', 'qr', 'browser'];
+}
+
+/**
+ * One-time grant of the "bookmark" link action to every role (INSERT OR IGNORE).
+ * Safe when roles already have an allowlist; does not re-enable actions admins removed later
+ * once the schema patch flag for this version exists.
+ */
+function ensureRoleLinkActionBookmarkGrant($db): void {
+    try {
+        $db->exec('CREATE TABLE IF NOT EXISTS role_link_action_permissions (
+            role_id INTEGER NOT NULL,
+            action_id TEXT NOT NULL,
+            can_view INTEGER DEFAULT 1,
+            created_at INTEGER NOT NULL,
+            updated_at INTEGER NOT NULL,
+            PRIMARY KEY (role_id, action_id),
+            FOREIGN KEY (role_id) REFERENCES roles(id) ON DELETE CASCADE
+        )');
+        $now = time();
+        $rolesStmt = $db->query('SELECT id FROM roles');
+        if (!$rolesStmt) {
+            return;
+        }
+        $insert = $db->prepare('
+            INSERT OR IGNORE INTO role_link_action_permissions (role_id, action_id, can_view, created_at, updated_at)
+            VALUES (?, ?, 1, ?, ?)
+        ');
+        while ($row = $rolesStmt->fetch(PDO::FETCH_ASSOC)) {
+            $insert->execute([(int)$row['id'], 'bookmark', $now, $now]);
+        }
+    } catch (PDOException $e) {
+        error_log('ensureRoleLinkActionBookmarkGrant failed: ' . $e->getMessage());
+    }
 }
 
 /**

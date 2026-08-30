@@ -3,6 +3,7 @@ import { createPortal } from 'react-dom';
 import { useEscapeToClose } from '../hooks/useEscapeToClose';
 import { ensureRichTextFontsLoaded } from '../utils/richTextFonts';
 import { prepareViewerHtml } from '../utils/richTextDisplay';
+import { MediaPickerModal } from './MediaPickerModal';
 
 interface TinyMceRichTextEditorProps {
   value: string;
@@ -29,6 +30,7 @@ export const TinyMceRichTextEditor: React.FC<TinyMceRichTextEditorProps> = ({
   startOpen = false,
 }) => {
   const [open, setOpen] = useState(startOpen);
+  const [showMediaPicker, setShowMediaPicker] = useState(false);
   const iframeRef = useRef<HTMLIFrameElement>(null);
 
   useEffect(() => {
@@ -42,7 +44,7 @@ export const TinyMceRichTextEditor: React.FC<TinyMceRichTextEditorProps> = ({
   const iframeSrc = useMemo(() => {
     const base = (import.meta.env.BASE_URL || '/').replace(/\/?$/, '/');
     const dark = typeof document !== 'undefined' && document.documentElement.classList.contains('dark');
-    return `${base}tinymce-editor.html?v=toolsmax1&dark=${dark ? '1' : '0'}`;
+    return `${base}tinymce-editor.html?v=medialib1&dark=${dark ? '1' : '0'}`;
   }, []);
 
   const postToEditor = useCallback((payload: Record<string, unknown>) => {
@@ -66,6 +68,9 @@ export const TinyMceRichTextEditor: React.FC<TinyMceRichTextEditorProps> = ({
         const html = typeof e.data.html === 'string' ? e.data.html : '';
         htmlRef.current = html;
         onChange(html);
+      }
+      if (e.data.type === 'openMediaManager') {
+        setShowMediaPicker(true);
       }
     };
     window.addEventListener('message', onMessage);
@@ -147,6 +152,14 @@ export const TinyMceRichTextEditor: React.FC<TinyMceRichTextEditorProps> = ({
           </div>,
           document.body
         )}
+      <MediaPickerModal
+        open={showMediaPicker}
+        onClose={() => setShowMediaPicker(false)}
+        onInsertHtml={(html) => {
+          postToEditor({ type: 'insertHtml', html });
+          setShowMediaPicker(false);
+        }}
+      />
     </div>
   );
 };

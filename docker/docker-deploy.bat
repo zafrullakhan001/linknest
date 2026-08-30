@@ -59,8 +59,8 @@ if not exist "uploads\.htaccess" (
         echo     Deny from all
         echo ^</FilesMatch^>
         echo.
-        echo # Allow only image files
-        echo ^<FilesMatch "\.(jpg^|jpeg^|png^|gif^|svg^|webp)$"^>
+        echo # Allow media library file types ^(images, PDF, audio, video^)
+        echo ^<FilesMatch "\.(jpg^|jpeg^|png^|gif^|svg^|webp^|ico^|pdf^|mp3^|wav^|ogg^|m4a^|mp4^|webm^|ogv^|mov)$"^>
         echo     Order Allow,Deny
         echo     Allow from all
         echo ^</FilesMatch^>

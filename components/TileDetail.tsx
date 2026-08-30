@@ -115,6 +115,7 @@ import {
 } from '../services/linkCheckExceptionsService';
 import { printQrView } from '../utils/printQrView';
 import { rolesService, LINK_ACTION_IDS, type LinkActionId } from '../services/rolesService';
+import { requestBookmarkUrlInBrowser } from '../services/bookmarkImportService';
 import {
     ViewModeDragHandle,
     ViewModeSectionDropZone,
@@ -1024,6 +1025,8 @@ export const TileDetail: React.FC<TileDetailProps> = ({
     // View State
     const [searchTerm, setSearchTerm] = useState('');
     const [copiedId, setCopiedId] = useState<string | null>(null);
+    const [bookmarkedId, setBookmarkedId] = useState<string | null>(null);
+    const [bookmarkHintById, setBookmarkHintById] = useState<Record<string, string>>({});
     // Initialize selectedTabId from the URL (shareable) then localStorage, keyed by tile ID
     const [selectedTabId, setSelectedTabId] = useState<string | null>(() => {
         const fromUrl = getTabParamFromHash();
@@ -5977,6 +5980,44 @@ export const TileDetail: React.FC<TileDetailProps> = ({
         }
     };
 
+    const handleBookmarkInBrowser = async (
+        e: React.MouseEvent,
+        link: { id: string; url?: string; label?: string }
+    ) => {
+        e.preventDefault();
+        e.stopPropagation();
+        const url = (link.url || '').trim();
+        if (!url || (!url.startsWith('http://') && !url.startsWith('https://'))) return;
+
+        const tempDiv = document.createElement('div');
+        tempDiv.innerHTML = link.label || '';
+        const plainLabel = (tempDiv.textContent || tempDiv.innerText || link.label || url).trim();
+
+        setBookmarkHintById((prev) => {
+            if (!prev[link.id]) return prev;
+            const next = { ...prev };
+            delete next[link.id];
+            return next;
+        });
+
+        const result = await requestBookmarkUrlInBrowser(plainLabel, url);
+        if (result.ok) {
+            setBookmarkedId(link.id);
+            setTimeout(() => setBookmarkedId(null), 2000);
+            return;
+        }
+        const hint = result.shortcutHint;
+        setBookmarkHintById((prev) => ({ ...prev, [link.id]: hint }));
+        setTimeout(() => {
+            setBookmarkHintById((prev) => {
+                if (!prev[link.id]) return prev;
+                const next = { ...prev };
+                delete next[link.id];
+                return next;
+            });
+        }, 5000);
+    };
+
     // Health Check Handlers
     const handleCheckTileHealth = async (e?: React.MouseEvent) => {
         if (e) {
@@ -9334,6 +9375,12 @@ export const TileDetail: React.FC<TileDetailProps> = ({
                                                         const showFavoriteAction = isLinkActionAllowed('favorite');
                                                         const showHealthAction = isLinkActionAllowed('health') && !skipHealth;
                                                         const showCopyAction = isLinkActionAllowed('copy');
+                                                        const showBookmarkAction =
+                                                            isLinkActionAllowed('bookmark') &&
+                                                            !!link.url &&
+                                                            (link.url.startsWith('http://') || link.url.startsWith('https://')) &&
+                                                            !isSshLinkUrl(link.url) &&
+                                                            !isVncLinkUrl(link.url);
                                                         const showMobileAction = isLinkActionAllowed('mobile') && !!link.url;
                                                         const showQrAction = isLinkActionAllowed('qr');
                                                         const showEditAction = canQuickEditLinks;
@@ -9354,6 +9401,7 @@ export const TileDetail: React.FC<TileDetailProps> = ({
                                                             showFavoriteAction ||
                                                             showHealthAction ||
                                                             showCopyAction ||
+                                                            showBookmarkAction ||
                                                             showMobileAction ||
                                                             showQrAction ||
                                                             showBrowserAction ||
@@ -9361,9 +9409,80 @@ export const TileDetail: React.FC<TileDetailProps> = ({
                                                         const viewerHref = linkViewerHref(link, effectiveShowShortUrls(showShortUrls, activeViewTab, section, link));
                                                         const labelHtml = rewriteHtmlAnchorHrefs(link.label || '', viewerHref);
                                                         const linkShowShortUrls = effectiveShowShortUrls(showShortUrls, activeViewTab, section, link);
+                                                        const plainLinkLabel = stripHtmlTags(link.label || '');
+                                                        const handleOpenAssociatedLink = async (e: React.MouseEvent<HTMLAnchorElement>) => {
+                                                            if (tryHandleSshLinkClick(link.url, e)) return;
+                                                            if (tryHandleVncLinkClick(link.url, e)) return;
+                                                            e.preventDefault();
+                                                            e.stopPropagation();
+                                                            // Must open popup synchronously before any await, or browsers open a tab instead.
+                                                            const pendingWindow = prepareSeparateWindowIfNeeded(link.openTarget);
+                                                            const closePending = () => {
+                                                                try { pendingWindow?.close(); } catch { /* ignore */ }
+                                                            };
+                                                            const allowed = await assertCanOpen('link', link.id, {
+                                                                rules: [tile.accessRestrictions, activeViewTab?.accessRestrictions, link.accessRestrictions],
+                                                            });
+                                                            if (!allowed) {
+                                                                closePending();
+                                                                return;
+                                                            }
+                                                            if (isLinkInMaintenance(link)) {
+                                                                closePending();
+                                                                setLinkMaintenanceDialog({ link });
+                                                                return;
+                                                            }
+
+                                                            // If Ctrl/Cmd key is held, always open in default browser (override configured browser)
+                                                            if (e.ctrlKey || e.metaKey) {
+                                                                closePending();
+                                                                // If rich text content exists, still show dialog on Ctrl/Cmd
+                                                                if (shouldOpenInfoDialog(link)) {
+                                                                    setLinkInfoDialog({ link });
+                                                                    return;
+                                                                }
+                                                                const newWindow = openLinkUrl(link.url, 'tab', { focus: true });
+                                                                if (newWindow) {
+                                                                    newWindow.focus();
+                                                                }
+                                                                return;
+                                                            }
+
+                                                            // If link has rich text content, show dialog instead of opening URL
+                                                            if (shouldOpenInfoDialog(link)) {
+                                                                closePending();
+                                                                setLinkInfoDialog({ link });
+                                                                return;
+                                                            }
+
+                                                            // If browser extension is enabled, check for browser configuration
+                                                            if (settings.browser_specific_links_enabled === '1') {
+                                                                // Priority: link-specific browser > tile default browser > default browser
+                                                                const browserToUse = link.browser && link.browser !== 'default'
+                                                                    ? link.browser
+                                                                    : (tile.browser && tile.browser !== 'default' ? tile.browser : null);
+
+                                                                if (browserToUse && typeof window !== 'undefined' && (window as any).BrowserLauncher) {
+                                                                    closePending();
+                                                                    openLinkInBrowser(link.url, browserToUse, {
+                                                                        inPrivate: normalizeLinkOpenTarget(link.openTarget) === 'private',
+                                                                    });
+                                                                    return;
+                                                                }
+                                                            }
+                                                            if (pendingWindow) {
+                                                                assignUrlToWindow(pendingWindow, link.url);
+                                                                return;
+                                                            }
+                                                            openLinkUrl(link.url, link.openTarget, {
+                                                                browserId: (link.browser && link.browser !== 'default')
+                                                                    ? link.browser
+                                                                    : (tile.browser && tile.browser !== 'default' ? tile.browser : null),
+                                                                extensionId: settings.browser_extension_id,
+                                                            });
+                                                        };
 
                                                         if (isQrView) {
-                                                            const plainQrLabel = stripHtmlTags(link.label || '');
                                                             return (
                                                                 <ViewModeSortable
                                                                     key={link.id}
@@ -9374,7 +9493,7 @@ export const TileDetail: React.FC<TileDetailProps> = ({
                                                                     style={{ animationDelay: `${animationDelay}ms` }}
                                                                 >
                                                                     {({ attributes: itemDragAttrs, listeners: itemDragListeners }) => (
-                                                                <LinkHoverTooltip link={link} fallbackTitle={plainQrLabel}>
+                                                                <LinkHoverTooltip link={link} fallbackTitle={plainLinkLabel}>
                                                                 <div
                                                                     className="linknest-qr-card flex flex-col items-center text-center gap-3 p-4 rounded-2xl bg-white dark:bg-slate-800/80 border border-slate-200 dark:border-slate-700/60 shadow-sm w-full min-w-0 max-w-full overflow-hidden relative"
                                                                     style={{ opacity: 1, position: 'relative', zIndex: 0 }}
@@ -9391,18 +9510,28 @@ export const TileDetail: React.FC<TileDetailProps> = ({
                                                                         <BrandedQRCode
                                                                             value={viewerHref || ''}
                                                                             size={isMobile ? 220 : 200}
-                                                                            title={`QR code for ${plainQrLabel}`}
+                                                                            title={`QR code for ${plainLinkLabel}`}
                                                                             className="w-full flex justify-center [&_svg]:max-w-full [&_svg]:h-auto"
                                                                         />
                                                                     </div>
                                                                     <div className="min-w-0 w-full space-y-1 px-1">
                                                                         <div className="flex items-center justify-center gap-1.5">
                                                                             {link.icon ? (
-                                                                                <span className="text-base leading-none shrink-0" aria-hidden>{link.icon}</span>
+                                                                                <a
+                                                                                    href={viewerHref}
+                                                                                    target={normalizeLinkOpenTarget(link.openTarget) === 'same' ? '_self' : '_blank'}
+                                                                                    rel="noopener noreferrer"
+                                                                                    className="text-base leading-none shrink-0 hover:scale-110 transition-transform"
+                                                                                    onClick={handleOpenAssociatedLink}
+                                                                                    title={plainLinkLabel ? `Open ${plainLinkLabel}` : 'Open link'}
+                                                                                    aria-label={plainLinkLabel ? `Open ${plainLinkLabel}` : 'Open link'}
+                                                                                >
+                                                                                    {link.icon}
+                                                                                </a>
                                                                             ) : null}
                                                                             <p
                                                                                 className="font-semibold text-sm sm:text-base text-slate-900 dark:text-white truncate [&_a]:pointer-events-none"
-                                                                                title={plainQrLabel}
+                                                                                title={plainLinkLabel}
                                                                                 dangerouslySetInnerHTML={{ __html: labelHtml }}
                                                                             />
                                                                             <InvalidUrlMark url={link.url} />
@@ -9586,15 +9715,23 @@ export const TileDetail: React.FC<TileDetailProps> = ({
                                                                         <InvalidUrlMark url={link.url} />
                                                                     </div>
 
-                                                                    <div className={`linknest-content-link-icon rounded-xl ${styles.iconBg} flex items-center justify-center select-none shadow-sm border border-white/20 ${
-                                                                        isGridCards
-                                                                            ? 'w-14 h-14 text-2xl rounded-2xl'
-                                                                            : isCompact
-                                                                                ? 'w-7 h-7 text-sm rounded-lg'
-                                                                                : 'w-11 h-11 text-lg'
-                                                                    }`}>
+                                                                    <a
+                                                                        href={viewerHref}
+                                                                        target={normalizeLinkOpenTarget(link.openTarget) === 'same' ? '_self' : '_blank'}
+                                                                        rel="noopener noreferrer"
+                                                                        className={`linknest-content-link-icon relative z-30 rounded-xl ${styles.iconBg} flex items-center justify-center select-none shadow-sm border border-white/20 cursor-pointer hover:ring-2 hover:ring-brand-400/50 hover:shadow-md transition-all ${
+                                                                            isGridCards
+                                                                                ? 'w-14 h-14 text-2xl rounded-2xl'
+                                                                                : isCompact
+                                                                                    ? 'w-7 h-7 text-sm rounded-lg'
+                                                                                    : 'w-11 h-11 text-lg'
+                                                                        }`}
+                                                                        onClick={handleOpenAssociatedLink}
+                                                                        title={plainLinkLabel ? `Open ${plainLinkLabel}` : 'Open link'}
+                                                                        aria-label={plainLinkLabel ? `Open ${plainLinkLabel}` : 'Open link'}
+                                                                    >
                                                                         {link.icon || '🔗'}
-                                                                    </div>
+                                                                    </a>
                                                                 </div>
 
                                                                 <a
@@ -9608,77 +9745,7 @@ export const TileDetail: React.FC<TileDetailProps> = ({
                                                                                 ? 'flex-1 pr-20'
                                                                                 : 'flex-1 pr-32'
                                                                     }`}
-                                                                    onClick={async (e) => {
-                                                                        if (tryHandleSshLinkClick(link.url, e)) return;
-                                                                        if (tryHandleVncLinkClick(link.url, e)) return;
-                                                                        e.preventDefault();
-                                                                        e.stopPropagation();
-                                                                        // Must open popup synchronously before any await, or browsers open a tab instead.
-                                                                        const pendingWindow = prepareSeparateWindowIfNeeded(link.openTarget);
-                                                                        const closePending = () => {
-                                                                            try { pendingWindow?.close(); } catch { /* ignore */ }
-                                                                        };
-                                                                        const allowed = await assertCanOpen('link', link.id, {
-                                                                            rules: [tile.accessRestrictions, activeViewTab?.accessRestrictions, link.accessRestrictions],
-                                                                        });
-                                                                        if (!allowed) {
-                                                                            closePending();
-                                                                            return;
-                                                                        }
-                                                                        if (isLinkInMaintenance(link)) {
-                                                                            closePending();
-                                                                            setLinkMaintenanceDialog({ link });
-                                                                            return;
-                                                                        }
-
-                                                                        // If Ctrl/Cmd key is held, always open in default browser (override configured browser)
-                                                                        if (e.ctrlKey || e.metaKey) {
-                                                                            closePending();
-                                                                            // If rich text content exists, still show dialog on Ctrl/Cmd
-                                                                            if (shouldOpenInfoDialog(link)) {
-                                                                                setLinkInfoDialog({ link });
-                                                                                return;
-                                                                            }
-                                                                            const newWindow = openLinkUrl(link.url, 'tab', { focus: true });
-                                                                            if (newWindow) {
-                                                                                newWindow.focus();
-                                                                            }
-                                                                            return;
-                                                                        }
-
-                                                                        // If link has rich text content, show dialog instead of opening URL
-                                                                        if (shouldOpenInfoDialog(link)) {
-                                                                            closePending();
-                                                                            setLinkInfoDialog({ link });
-                                                                            return;
-                                                                        }
-
-                                                                        // If browser extension is enabled, check for browser configuration
-                                                                        if (settings.browser_specific_links_enabled === '1') {
-                                                                            // Priority: link-specific browser > tile default browser > default browser
-                                                                            const browserToUse = link.browser && link.browser !== 'default'
-                                                                                ? link.browser
-                                                                                : (tile.browser && tile.browser !== 'default' ? tile.browser : null);
-
-                                                                            if (browserToUse && typeof window !== 'undefined' && (window as any).BrowserLauncher) {
-                                                                                closePending();
-                                                                                openLinkInBrowser(link.url, browserToUse, {
-                                                                                    inPrivate: normalizeLinkOpenTarget(link.openTarget) === 'private',
-                                                                                });
-                                                                                return;
-                                                                            }
-                                                                        }
-                                                                        if (pendingWindow) {
-                                                                            assignUrlToWindow(pendingWindow, link.url);
-                                                                            return;
-                                                                        }
-                                                                        openLinkUrl(link.url, link.openTarget, {
-                                                                            browserId: (link.browser && link.browser !== 'default')
-                                                                                ? link.browser
-                                                                                : (tile.browser && tile.browser !== 'default' ? tile.browser : null),
-                                                                            extensionId: settings.browser_extension_id,
-                                                                        });
-                                                                    }}
+                                                                    onClick={handleOpenAssociatedLink}
                                                                 >
                                                                     <div className={`flex items-center gap-2 ${isGridCards ? 'justify-center' : ''}`}>
                                                                         <h4
@@ -10090,6 +10157,37 @@ export const TileDetail: React.FC<TileDetailProps> = ({
                                                                             <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor" className="w-4 h-4">
                                                                                 <path d="M7 3.5A1.5 1.5 0 018.5 2h3.879a1.5 1.5 0 011.06.44l3.122 3.12A1.5 1.5 0 0117 6.622V12.5a1.5 1.5 0 01-1.5 1.5h-1v-3.379a3 3 0 00-.879-2.121L10.5 5.379A3 3 0 008.379 4.5H7v-1z" />
                                                                                 <path d="M4.5 6A1.5 1.5 0 003 7.5v9A1.5 1.5 0 004.5 18h7a1.5 1.5 0 001.5-1.5v-5.879a1.5 1.5 0 00-.44-1.06L9.44 6.44A1.5 1.5 0 008.378 6H4.5z" />
+                                                                            </svg>
+                                                                        )}
+                                                                    </button>
+                                                                    )}
+
+                                                                    {/* Bookmark in browser (Bookmark Sync Read-write, else Ctrl+D / Cmd+D hint) */}
+                                                                    {showBookmarkAction && (
+                                                                    <button
+                                                                        type="button"
+                                                                        onClick={(e) => void handleBookmarkInBrowser(e, link)}
+                                                                        className="p-1 rounded-md hover:bg-slate-100 dark:hover:bg-slate-700 text-slate-400 hover:text-sky-600 dark:hover:text-sky-400 transition-all"
+                                                                        title={
+                                                                            bookmarkHintById[link.id]
+                                                                                ? bookmarkHintById[link.id]
+                                                                                : bookmarkedId === link.id
+                                                                                    ? 'Bookmarked'
+                                                                                    : 'Bookmark in browser'
+                                                                        }
+                                                                        aria-label={
+                                                                            bookmarkedId === link.id
+                                                                                ? 'Bookmarked'
+                                                                                : 'Bookmark in browser'
+                                                                        }
+                                                                    >
+                                                                        {bookmarkedId === link.id ? (
+                                                                            <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor" className="w-4 h-4 text-emerald-500" aria-hidden>
+                                                                                <path fillRule="evenodd" d="M16.704 4.153a.75.75 0 01.143 1.052l-8 10.5a.75.75 0 01-1.127.075l-4.5-4.5a.75.75 0 011.06-1.06l3.894 3.893 7.48-9.817a.75.75 0 011.05-.143z" clipRule="evenodd" />
+                                                                            </svg>
+                                                                        ) : (
+                                                                            <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" strokeWidth={1.75} stroke="currentColor" className="w-4 h-4" aria-hidden>
+                                                                                <path strokeLinecap="round" strokeLinejoin="round" d="M17.593 3.322c1.1.128 1.907 1.077 1.907 2.185V21L12 17.25 4.5 21V5.507c0-1.108.806-2.057 1.907-2.185a48.507 48.507 0 0 1 11.186 0Z" />
                                                                             </svg>
                                                                         )}
                                                                     </button>

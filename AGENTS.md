@@ -10,7 +10,7 @@ LinkNest is a **link and space organization platform** built with a React fronte
 - Link health monitoring and analytics
 - User authentication (Local, LDAP, SAML)
 - Role-based access control and user groups
-- Floating widgets (clock, weather, calculator, notes, etc.)
+- Floating widgets (clock, weather, calculator, notes, media library, etc.)
 - AI-powered content generation via Google Gemini
 - MCP interface so LLMs can list, search, and edit spaces and links (admin-scoped tokens can also manage users, roles, LDAP/SAML, Device Presets, and database export/import)
 - Email notifications and broadcast messaging
@@ -359,6 +359,7 @@ Default credentials:
 - `docs/BOOKMARK_SYNC_EXTENSION.md` - LinkNest Bookmark Sync extension (handshake, origin allowlist, per-profile sync, mass deploy)
 - `docs/MCP.md` - MCP / AI: LLMs (Cursor, Claude Desktop) list spaces, search links, create or edit bookmarks, and (admin tokens) manage users, roles, Device Presets, and database export/import
 - `docs/ADMIN_LOCKOUT_RECOVERY.md` - Re-enable Local auth and reset local admin password (`scripts/reset_admin_password.php`); unlock Fingerprint-only access (`scripts/unlock_fingerprint_lock.php`) when locked out
+- `docs/MEDIA_LIBRARY.md` - Shared media library (images, PDF, audio, video; Admin + floating widget + RTE picker)
 - `docs/APP_UPDATES.md` - In-app App Updates (portable Releases for ArchLinks / ERP3)
 - `docs/PYTHON_WORKERS.md` - Monitoring + email Python workers; Windows Task Scheduler (`scripts/schedule-monitor-workers.bat`) and Docker entrypoint loop; also documents **scheduled worker speed tests** (host path vs browser path)
 - `docs/SETUP.md` - Detailed setup instructions

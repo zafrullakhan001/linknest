@@ -548,7 +548,7 @@
             insert: {
               title: 'Insert',
               items:
-                'image link media codesample inserttable | charmap emoticons hr | ' +
+                'image link media mediamanager codesample inserttable | charmap emoticons hr | ' +
                 'pagebreak nonbreaking anchor | insertdatetime | accordion accordiontoggle accordionremove'
             },
             view: {
@@ -577,7 +577,7 @@
             'bold italic underline strikethrough | superscript subscript | forecolor backcolor | removeformat',
             'alignleft aligncenter alignright alignjustify alignnone | lineheight | ltr rtl | outdent indent',
             'styles blocks fontfamily fontsize fontsizeinput | h1 h2 h3 h4 h5 h6 | blockquote hr',
-            'bullist numlist listitemspace | accordion accordiontoggle accordionremove | link unlink openlink anchor image media table',
+            'bullist numlist listitemspace | accordion accordiontoggle accordionremove | link unlink openlink anchor image media mediamanager table',
             'charmap emoticons codesample insertdatetime nonbreaking pagebreak | code fullscreen preview visualblocks visualchars wordcount help'
           ];
           initConfig.quickbars_selection_toolbar =
@@ -587,6 +587,19 @@
           initConfig.statusbar = true;
         }
         initConfig.setup = function (editor) {
+            editor.ui.registry.addButton('mediamanager', {
+              text: 'Media',
+              tooltip: 'Insert from Media Library',
+              onAction: function () {
+                postToParent('openMediaManager');
+              }
+            });
+            editor.ui.registry.addMenuItem('mediamanager', {
+              text: 'Media Library…',
+              onAction: function () {
+                postToParent('openMediaManager');
+              }
+            });
             var emit = function () {
               if (viewMode) return;
               postToParent('change', { html: editor.getContent() });
@@ -717,6 +730,11 @@
         }
         if (e.data.type === 'get') {
           postToParent('content', { html: ed.getContent() });
+        }
+        if (e.data.type === 'insertHtml' && typeof e.data.html === 'string') {
+          ed.focus();
+          ed.insertContent(e.data.html);
+          postToParent('change', { html: ed.getContent() });
         }
       });
     })();

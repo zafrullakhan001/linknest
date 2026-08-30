@@ -64,7 +64,11 @@ $mimeTypes = [
     'mp4' => 'video/mp4',
     'ogv' => 'video/ogg',
     'ogg' => 'video/ogg',
-    'mov' => 'video/quicktime'
+    'mov' => 'video/quicktime',
+    'pdf' => 'application/pdf',
+    'mp3' => 'audio/mpeg',
+    'wav' => 'audio/wav',
+    'm4a' => 'audio/mp4',
 ];
 
 $mimeType = $mimeTypes[$extension] ?? 'application/octet-stream';

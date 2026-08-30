@@ -150,6 +150,7 @@ export const LINK_ACTION_IDS = [
   'favorite',
   'health',
   'copy',
+  'bookmark',
   'mobile',
   'qr',
   'browser',
@@ -162,6 +163,12 @@ export const LINK_ACTION_OPTIONS: Array<{ id: LinkActionId; label: string; descr
   { id: 'favorite', label: 'Favorite', description: 'Allow marking or unmarking a link as a favorite' },
   { id: 'health', label: 'Check link health', description: 'Allow re-checking HTTP(S) link health status' },
   { id: 'copy', label: 'Copy URL', description: 'Allow copying the link URL to the clipboard' },
+  {
+    id: 'bookmark',
+    label: 'Bookmark in browser',
+    description:
+      'Allow saving a link URL to browser bookmarks (Bookmark Sync / Browser Launcher Read-write, or Ctrl+D / Cmd+D hint)',
+  },
   { id: 'mobile', label: 'Mobile preview', description: 'Allow opening the mobile/tablet preview for a link' },
   { id: 'qr', label: 'Show QR code', description: 'Allow displaying a QR code for a link' },
   { id: 'browser', label: 'Open in browser', description: 'Allow choosing a browser when browser-specific links are enabled' },

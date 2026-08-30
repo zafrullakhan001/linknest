@@ -175,6 +175,69 @@ export interface RichTextContent {
   boxImportance?: 'notes' | 'info' | 'tip' | 'important' | 'warning' | 'critical';
 }
 
+/** Media library file kinds */
+export type MediaKind = 'image' | 'pdf' | 'audio' | 'video' | 'other';
+export type MediaStatus = 'active' | 'archived' | 'trash';
+
+export interface MediaFolder {
+  id: number;
+  parentId: number | null;
+  name: string;
+  sortOrder: number;
+  createdBy: number | null;
+  createdAt: number;
+  updatedAt: number;
+}
+
+export interface MediaTag {
+  id: number;
+  name: string;
+}
+
+export interface MediaFile {
+  id: number;
+  folderId: number | null;
+  uuid: string;
+  originalName: string;
+  storedName: string;
+  thumbName: string | null;
+  mime: string;
+  kind: MediaKind;
+  sizeBytes: number;
+  width: number | null;
+  height: number | null;
+  title: string | null;
+  altText: string | null;
+  description: string | null;
+  status: MediaStatus;
+  uploadedBy: number | null;
+  createdAt: number;
+  updatedAt: number;
+  trashedAt: number | null;
+  url: string | null;
+  thumbUrl: string | null;
+  tags?: string[];
+}
+
+export interface MediaListResponse {
+  data: MediaFile[];
+  total: number;
+  page: number;
+  perPage: number;
+}
+
+export interface MediaTransformOptions {
+  width?: number;
+  height?: number;
+  crop?: { x: number; y: number; w: number; h: number };
+  quality?: number;
+  format?: 'png' | 'jpg' | 'webp';
+  removeBackground?: boolean;
+  bgColor?: string;
+  /** When true, overwrite the existing file; default saves as a new file */
+  replace?: boolean;
+}
+
 export interface LinkSection {
   id: string;
   title: string;

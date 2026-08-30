@@ -40,8 +40,8 @@ if [ ! -f uploads/.htaccess ]; then
     Deny from all
 </FilesMatch>
 
-# Allow only image files
-<FilesMatch "\.(jpg|jpeg|png|gif|svg|webp)$">
+# Allow media library file types (images, PDF, audio, video)
+<FilesMatch "\.(jpg|jpeg|png|gif|svg|webp|ico|pdf|mp3|wav|ogg|m4a|mp4|webm|ogv|mov)$">
     Order Allow,Deny
     Allow from all
 </FilesMatch>

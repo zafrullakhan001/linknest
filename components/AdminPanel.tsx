@@ -57,6 +57,7 @@ import {
 import { SelectableRichTextEditor } from './SelectableRichTextEditor';
 import { MobileRichTextEditor } from './MobileRichTextEditor';
 import { linkifyHtml } from '../utils/richTextDisplay';
+import { MediaLibrary } from './MediaLibrary';
 
 // Resolve API base dynamically based on current location
 // This ensures API calls work in both dev mode and runtime mode with any base path
@@ -166,6 +167,7 @@ type AdminNavTabId =
   | 'maintenanceScripts'
   | 'maintenance'
   | 'widgets'
+  | 'media'
   | 'addons'
   | 'appUpdates'
   | 'loadTest'
@@ -222,6 +224,7 @@ const ADMIN_NAV_SECTIONS: Array<{
       { id: 'maintenanceScripts', label: 'Maintenance Scripts', emoji: '🧰' },
       { id: 'maintenance', label: 'Maintenance', emoji: '🚧' },
       { id: 'widgets', label: 'Custom Widgets', emoji: '🧩' },
+      { id: 'media', label: 'Media Library', emoji: '📁' },
       { id: 'addons', label: 'Add-ons', emoji: '🔌' },
       { id: 'appUpdates', label: 'App Updates', emoji: '🔔' },
       { id: 'loadTest', label: 'Load Test', emoji: '📈' },
@@ -289,7 +292,7 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({ onUserApproved }) => {
     const validTabs: Array<AdminNavTabId | 'footer'> = [
       'pending', 'all', 'userAudit', 'settings', 'database', 'spaces', 'visitCounter', 'ldap', 'saml', 'footer',
       'tabVisibility', 'devicePresets', 'categoryPresets', 'linkCheckExceptions', 'urlScanFix', 'tooltipSync', 'iframeBlockDomains', 'access', 'clone', 'browser', 'mcp', 'broadcast',
-      'maintenanceScripts', 'maintenance', 'widgets', 'addons', 'appUpdates', 'loadTest',
+      'maintenanceScripts', 'maintenance', 'widgets', 'media', 'addons', 'appUpdates', 'loadTest',
     ];
     return (savedTab && validTabs.includes(savedTab as AdminNavTabId | 'footer'))
       ? (savedTab as AdminNavTabId | 'footer')
@@ -16100,6 +16103,23 @@ php scripts/reset_admin_password.php admin 'NewStrongPass1!'`}</pre>
                   </div>
                 </div>
                   </div>
+              )}
+
+              {/* Media Library Tab */}
+              {activeTab === 'media' && (
+                <div className="mt-6">
+                  <div className={ADMIN_SECTION_CARD}>
+                    <div className={ADMIN_SECTION_HEADER}>
+                      <h3 className={ADMIN_SECTION_TITLE}><span aria-hidden>📁</span> Media Library</h3>
+                      <p className={ADMIN_SECTION_SUBTITLE}>
+                        Central repository for images, PDFs, audio, and video. Insert into rich text via the editor Media button.
+                      </p>
+                    </div>
+                    <div className="p-4">
+                      <MediaLibrary mode="manage" />
+                    </div>
+                  </div>
+                </div>
               )}
 
               {/* Custom Widgets Tab */}

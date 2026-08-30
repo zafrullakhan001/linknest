@@ -60,6 +60,8 @@ const FloatingPhoneticAlphabet = lazy(() => import('./components/FloatingPhoneti
 const PhoneticAlphabet = lazy(() => import('./components/PhoneticAlphabet').then(m => ({ default: m.PhoneticAlphabet })));
 const FloatingNotesWidget = lazy(() => import('./components/FloatingNotesWidget').then(m => ({ default: m.FloatingNotesWidget })));
 const NotesWidget = lazy(() => import('./components/NotesWidget').then(m => ({ default: m.NotesWidget })));
+const FloatingMediaWidget = lazy(() => import('./components/FloatingMediaWidget').then(m => ({ default: m.FloatingMediaWidget })));
+const MediaWidget = lazy(() => import('./components/MediaWidget').then(m => ({ default: m.MediaWidget })));
 const FloatingWeatherWidget = lazy(() => import('./components/FloatingWeatherWidget').then(m => ({ default: m.FloatingWeatherWidget })));
 const WeatherWidget = lazy(() => import('./components/WeatherWidget').then(m => ({ default: m.WeatherWidget })));
 const FloatingCalculatorWidget = lazy(() => import('./components/FloatingCalculatorWidget').then(m => ({ default: m.FloatingCalculatorWidget })));
@@ -233,6 +235,16 @@ const AppContent: React.FC = () => {
   useEffect(() => {
     localStorage.setItem('linknest_show_notes_widget', showNotes.toString());
   }, [showNotes]);
+
+  // Media Library Widget Visibility State (admins only)
+  const [showMedia, setShowMedia] = useState(() => {
+    const saved = localStorage.getItem('linknest_show_media_widget');
+    return saved !== null ? saved === 'true' : false;
+  });
+
+  useEffect(() => {
+    localStorage.setItem('linknest_show_media_widget', showMedia.toString());
+  }, [showMedia]);
 
   // Weather Widget Visibility State
   const [showWeather, setShowWeather] = useState(() => {
@@ -547,7 +559,7 @@ const AppContent: React.FC = () => {
         setAllowedWidgetIds(new Set([
           'clock', 'weather', 'calculator', 'notes', 'password-generator',
           'phonetic-alphabet', 'zoom-control', 'theme', 'fav-organizer',
-          'chat', 'snake-game', 'vnc-viewer', 'ssh-terminal', 'internet-speed-tester'
+          'chat', 'snake-game', 'vnc-viewer', 'ssh-terminal', 'internet-speed-tester', 'media'
         ]));
         setWidgetsLoading(false);
         return;
@@ -575,7 +587,11 @@ const AppContent: React.FC = () => {
   // Helper function to check if a widget is allowed
   const isWidgetAllowed = useCallback((widgetId: string): boolean => {
     // Auth-only widgets are never available to guests
-    if ((!isAuthenticated || !user) && ['notes', 'chat', 'fav-organizer', 'internet-speed-tester'].includes(widgetId)) {
+    if ((!isAuthenticated || !user) && ['notes', 'chat', 'fav-organizer', 'internet-speed-tester', 'media'].includes(widgetId)) {
+      return false;
+    }
+    // Media library floating widget is admin-only
+    if (widgetId === 'media' && !user?.is_admin) {
       return false;
     }
 
@@ -787,6 +803,10 @@ const AppContent: React.FC = () => {
 
   const toggleNotes = () => {
     setShowNotes(!showNotes);
+  };
+
+  const toggleMedia = () => {
+    setShowMedia(!showMedia);
   };
 
   const toggleWeather = () => {
@@ -1287,6 +1307,8 @@ const AppContent: React.FC = () => {
             togglePhoneticAlphabet={togglePhoneticAlphabet}
             showNotes={showNotes}
             toggleNotes={toggleNotes}
+            showMedia={showMedia}
+            toggleMedia={toggleMedia}
             showWeather={showWeather}
             toggleWeather={toggleWeather}
             showCalculator={showCalculator}
@@ -1600,6 +1622,8 @@ const AppContent: React.FC = () => {
           togglePhoneticAlphabet={togglePhoneticAlphabet}
           showNotes={showNotes}
           toggleNotes={toggleNotes}
+          showMedia={showMedia}
+          toggleMedia={toggleMedia}
           showWeather={showWeather}
           toggleWeather={toggleWeather}
           showCalculator={showCalculator}
@@ -1874,6 +1898,11 @@ const AppContent: React.FC = () => {
               <NotesWidget onClose={toggleNotes} />
             </FloatingNotesWidget>
           )}
+          {user?.is_admin && showMedia && isWidgetAllowed('media') && (
+            <FloatingMediaWidget>
+              <MediaWidget onClose={toggleMedia} />
+            </FloatingMediaWidget>
+          )}
           {showWeather && isWidgetAllowed('weather') && (
             <FloatingWeatherWidget>
               <WeatherWidget onClose={toggleWeather} />
@@ -2070,6 +2099,20 @@ const AppContent: React.FC = () => {
                 ),
                 isVisible: showNotes,
                 onToggle: toggleNotes,
+                requiresAuth: true,
+              },
+              {
+                id: 'media',
+                name: 'Media Library',
+                icon: (
+                  <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="w-5 h-5">
+                    <rect x="3" y="3" width="18" height="18" rx="2"></rect>
+                    <circle cx="8.5" cy="8.5" r="1.5"></circle>
+                    <polyline points="21 15 16 10 5 21"></polyline>
+                  </svg>
+                ),
+                isVisible: showMedia,
+                onToggle: toggleMedia,
                 requiresAuth: true,
               },
               {

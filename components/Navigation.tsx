@@ -19,6 +19,8 @@ interface NavigationProps {
   togglePhoneticAlphabet: () => void;
   showNotes: boolean;
   toggleNotes: () => void;
+  showMedia: boolean;
+  toggleMedia: () => void;
   showWeather: boolean;
   toggleWeather: () => void;
   showCalculator: boolean;
@@ -48,7 +50,7 @@ interface NavigationProps {
   isWidgetAllowed: (widgetId: string) => boolean;
 }
 
-export const Navigation: React.FC<NavigationProps> = ({ darkMode, showClock, toggleClock, showPhoneticAlphabet, togglePhoneticAlphabet, showNotes, toggleNotes, showWeather, toggleWeather, showCalculator, toggleCalculator, showPasswordGenerator, togglePasswordGenerator, showZoomControl, toggleZoomControl, showTheme, toggleThemeWidget, showFavOrganizer, toggleFavOrganizer, showChat, toggleChat, showSnakeGame, toggleSnakeGame, showVncViewer, toggleVncViewer, showSshTerminal, toggleSshTerminal, showInternetSpeedTester, toggleInternetSpeedTester, hasUnreadChatMessages = false, user, onLoginClick, onHelpClick, isWidgetAllowed }) => {
+export const Navigation: React.FC<NavigationProps> = ({ darkMode, showClock, toggleClock, showPhoneticAlphabet, togglePhoneticAlphabet, showNotes, toggleNotes, showMedia, toggleMedia, showWeather, toggleWeather, showCalculator, toggleCalculator, showPasswordGenerator, togglePasswordGenerator, showZoomControl, toggleZoomControl, showTheme, toggleThemeWidget, showFavOrganizer, toggleFavOrganizer, showChat, toggleChat, showSnakeGame, toggleSnakeGame, showVncViewer, toggleVncViewer, showSshTerminal, toggleSshTerminal, showInternetSpeedTester, toggleInternetSpeedTester, hasUnreadChatMessages = false, user, onLoginClick, onHelpClick, isWidgetAllowed }) => {
   const { logout } = useAuth();
   const { settings, loading: settingsLoading } = useSettings();
   const disabledTabs = getDisabledTabsFromSettings(settings);
@@ -295,6 +297,19 @@ export const Navigation: React.FC<NavigationProps> = ({ darkMode, showClock, tog
                   <line x1="16" y1="13" x2="8" y2="13"></line>
                   <line x1="16" y1="17" x2="8" y2="17"></line>
                   <polyline points="10 9 9 9 8 9"></polyline>
+                </svg>
+              </button>
+            )}
+            {user?.is_admin && isWidgetAllowed('media') && (
+              <button
+                onClick={toggleMedia}
+                className={`p-2 rounded-full transition-all linknest-nav-icon ${showMedia ? 'bg-white dark:bg-slate-700 text-brand-500 shadow-sm' : 'hover:bg-slate-200 dark:hover:bg-slate-700 text-slate-500 dark:text-slate-400'}`}
+                title={showMedia ? "Hide Media Library" : "Show Media Library"}
+              >
+                <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="w-4 h-4 sm:w-5 sm:h-5">
+                  <rect x="3" y="3" width="18" height="18" rx="2"></rect>
+                  <circle cx="8.5" cy="8.5" r="1.5"></circle>
+                  <polyline points="21 15 16 10 5 21"></polyline>
                 </svg>
               </button>
             )}

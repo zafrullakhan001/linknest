@@ -836,6 +836,65 @@ export const requestPushBookmarksToBrowserExtension = (
   });
 };
 
+/** Ctrl+D / Cmd+D hint when the browser extension cannot write bookmarks. */
+export const browserBookmarkShortcutHint = (): string => {
+  const isMac =
+    typeof navigator !== 'undefined' &&
+    (/Mac|iPhone|iPad|iPod/i.test(navigator.platform || '') ||
+      /Mac OS/i.test(navigator.userAgent || ''));
+  return isMac
+    ? 'Open the link, then press Cmd+D on that page to bookmark it.'
+    : 'Open the link, then press Ctrl+D on that page to bookmark it.';
+};
+
+export type BookmarkUrlInBrowserResult =
+  | { ok: true; alreadyExisted?: boolean }
+  | {
+      ok: false;
+      reason: 'timeout' | 'error' | 'empty' | 'invalid';
+      message: string;
+      shortcutHint: string;
+    };
+
+/**
+ * Bookmark a single http(s) URL into this browser profile via Bookmark Sync /
+ * Browser Launcher (Read-write). Falls back with a Ctrl+D / Cmd+D hint when
+ * the extension is missing or cannot write.
+ */
+export const requestBookmarkUrlInBrowser = async (
+  title: string,
+  url: string,
+  opts?: { timeoutMs?: number }
+): Promise<BookmarkUrlInBrowserResult> => {
+  const trimmed = (url || '').trim();
+  const shortcutHint = browserBookmarkShortcutHint();
+  if (!trimmed || (!trimmed.startsWith('http://') && !trimmed.startsWith('https://'))) {
+    return {
+      ok: false,
+      reason: 'invalid',
+      message: 'Only http(s) links can be bookmarked in the browser.',
+      shortcutHint
+    };
+  }
+  const label = (title || '').trim() || trimmed;
+  const result = await requestPushBookmarksToBrowserExtension(
+    [{ title: label, url: trimmed, folder: '' }],
+    { timeoutMs: opts?.timeoutMs ?? 8000, rootFolder: 'LinkNest' }
+  );
+  if (result.ok) {
+    return {
+      ok: true,
+      alreadyExisted: result.added === 0 && result.skipped > 0
+    };
+  }
+  return {
+    ok: false,
+    reason: result.reason,
+    message: result.message,
+    shortcutHint
+  };
+};
+
 export type BrowserBookmarkBackupResult =
   | {
       ok: true;
