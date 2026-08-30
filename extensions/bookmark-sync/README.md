@@ -1,10 +1,10 @@
 # LinkNest Bookmark Sync
 
-A **minimal** Chrome / Edge extension that does what LinkNest **Sync** and **OutSync** need: read **this browser profile’s** bookmarks into Your Bookmarks, and push app links back into Chrome (new URLs in each LinkNest folder; URLs already in that folder are skipped).
+A **minimal** Chrome / Edge extension that does what LinkNest **Sync** and **OutSync** need: read **this browser profile’s** bookmarks into Your Bookmarks, and push app links back into Chrome (new names in each LinkNest folder; the same URL with a new name is added as a copy; existing Chrome names are never overwritten).
 
 It is a stripped-down stand-in for **Browser Launcher Pro**. It does **not** launch other browsers, talk to a native host, or require a license. From **1.8.5** it can open http(s) links in a **full browser window** (tabs, toolbar, menus) or **Incognito / InPrivate** in **this** browser when LinkNest requests those modes (allowlisted origin; Incognito also needs **Allow in Incognito**).
 
-Version **1.8.5** adds full browser window open (`BROWSER_LAUNCHER_OPEN` with `newWindow`). Version **1.8.4** adds Incognito / InPrivate open (`BROWSER_LAUNCHER_OPEN` with `inPrivate`). Version **1.8.3** OutSyncs nested folders (`LinkNest → named folder → space`) and only skips a URL if it already exists in that destination folder. Version **1.8.2** can export a Netscape HTML + JSON backup of this profile’s bookmarks before OutSync Apply. Version **1.8.0** splits **Read-only** (Sync) and **Read-write** (OutSync) into separate toggles and stats. OutSync (app → browser) remains from 1.7. Security from 1.6 remains: origin allowlist, both modes **Off** by default, same-origin `postMessage`, and per-profile bookmark isolation.
+Version **1.8.6** treats each bookmark as **name + URL**: Sync keeps your Chrome title (a rename like `XLM` is added even if the URL already exists), and OutSync **never overwrites** an existing Chrome name — it adds a copy instead. Version **1.8.5** adds full browser window open (`BROWSER_LAUNCHER_OPEN` with `newWindow`). Version **1.8.4** adds Incognito / InPrivate open (`BROWSER_LAUNCHER_OPEN` with `inPrivate`). Version **1.8.3** OutSyncs nested folders (`LinkNest → named folder → space`) and only skips a URL if it already exists in that destination folder. Version **1.8.2** can export a Netscape HTML + JSON backup of this profile’s bookmarks before OutSync Apply. Version **1.8.0** splits **Read-only** (Sync) and **Read-write** (OutSync) into separate toggles and stats. OutSync (app → browser) remains from 1.7. Security from 1.6 remains: origin allowlist, both modes **Off** by default, same-origin `postMessage`, and per-profile bookmark isolation.
 
 ## What it does
 
@@ -32,10 +32,10 @@ Only `http://` and `https://` bookmarks are returned. Folders are flattened.
 **OutSync (app → browser)**
 
 1. LinkNest posts `{ type: 'BROWSER_LAUNCHER_PREVIEW_PUSH_BOOKMARKS', ... }` for a dry-run (no writes)
-2. The page shows adds and title updates; **Download JSON** saves the changelog
+2. The page shows adds (and title updates only on older packs); **Download JSON** saves the changelog
 3. Optional **backup** (default on) posts `{ type: 'BROWSER_LAUNCHER_BACKUP_BOOKMARKS', timestamp }` and downloads Netscape HTML + JSON. Apply is blocked if backup fails.
 4. **Apply** posts `{ type: 'BROWSER_LAUNCHER_PUSH_BOOKMARKS', ... }`
-5. Matching URLs are skipped **only if they already exist in that LinkNest folder**; titles in that folder are updated in place if they differ. New URLs (including copies that exist elsewhere in Chrome) go under Other Bookmarks → `LinkNest` → named folder → space subfolder
+5. A bookmark is skipped **only if that URL and name already exist in that LinkNest folder**. A different name for the same URL is **added as a copy**. Existing Chrome names are never overwritten (v1.8.6+). New URLs (including copies that exist elsewhere in Chrome) go under Other Bookmarks → `LinkNest` → named folder → space subfolder
 6. The page receives `{ type: 'BROWSER_LAUNCHER_PUSH_BOOKMARKS_RESULT', success, added, skipped, updated, changes, timestamp }`
 
 OutSync never deletes Chrome bookmarks and never moves existing ones.

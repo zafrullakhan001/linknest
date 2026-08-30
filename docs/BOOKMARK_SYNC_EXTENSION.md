@@ -2,7 +2,7 @@
 
 This guide explains how **LinkNest Bookmark Sync** (v1.8) connects to **Sync** and **OutSync** in Your Bookmarks (and Fetch in Favorites Organizer), how IT mass-deploys it, and how each person can only sync **their own** browser bookmarks.
 
-The extension lives in `extensions/bookmark-sync`. Load it unpacked for testing, or **force-install a packed CRX** in production. It is a small stand-in for **Browser Launcher Pro**: bookmarks Sync/OutSync (and from **1.8.4**, Incognito / InPrivate open; from **1.8.5**, a full browser window with tabs/toolbar/menus) — no other-browser launching, native host, or license. **Browser Launcher Pro 3.1+** implements the same Sync / OutSync / backup protocol on its **Bookmark Sync** tab, so you do not need this extension if Pro is installed.
+The extension lives in `extensions/bookmark-sync`. Load it unpacked for testing, or **force-install a packed CRX** in production. It is a small stand-in for **Browser Launcher Pro**: bookmarks Sync/OutSync (and from **1.8.4**, Incognito / InPrivate open; from **1.8.5**, a full browser window with tabs/toolbar/menus; from **1.8.6**, renamed bookmarks stay as copies and OutSync never overwrites an existing Chrome name) — no other-browser launching, native host, or license. **Browser Launcher Pro 3.1+** implements the same Sync / OutSync / backup protocol on its **Bookmark Sync** tab, so you do not need this extension if Pro is installed.
 
 Full in-app copy: **Help → Guides → Bookmark Sync Extension**. The extension popup also has a **Help** tab.
 
@@ -66,7 +66,7 @@ Sync is **not** a cloud share between employees.
 { type: "BROWSER_LAUNCHER_BOOKMARKS_LIST", success: true, bookmarks: [...], timestamp }
 ```
 
-5. LinkNest **merges** those URLs into Your Bookmarks (new URLs added; existing ones skipped). Guest data stays in **this browser only**.
+5. LinkNest **merges** those bookmarks into Your Bookmarks using the **browser bookmark name** (not the page’s SEO title). A new URL is added. The same URL with a **new name** (for example you renamed a CoinMarketCap page to `XLM`) is added as a **second link**. Only the same URL **and** the same name is skipped. Guest data stays in **this browser only**.
 
 If the extension is missing, sync is **Off**, the origin is not allowlisted, or the `bookmarks` permission is denied, Sync fails. Use **Import HTML** / **Merge** instead.
 
@@ -84,15 +84,15 @@ If the extension is missing, sync is **Off**, the origin is not allowlisted, or 
 3. The content script ignores the message unless `event.source === window`, `event.origin` matches the page, and that origin is on the allowlist. **Browser Launcher Pro 3.1+** implements the same preview / apply / backup messages on its Bookmark Sync tab. Older Bookmark Sync 1.8.0 packs time out on preview instead of writing.
 4. If **Read-write** is **On**, the background script indexes this profile’s Other Bookmarks tree by folder path + normalized URL (dry-run), then:
 
-| Browser has this URL in that LinkNest folder? | Action |
+| Browser has this URL + name in that LinkNest folder? | Action |
 |----------------------|--------|
-| No | **Add** under Other Bookmarks → `LinkNest` → named folder → space (nested copy) or space title |
-| Yes, same title | **Skip** (already in that folder) |
-| Yes, different title | **Update title in place** in that folder (do not move the bookmark) |
+| No matching URL | **Add** under Other Bookmarks → `LinkNest` → named folder → space (nested copy) or space title |
+| Same URL and same title | **Skip** (already in that folder) |
+| Same URL, different title (Bookmark Sync **1.8.6+**) | **Add a copy** with the app name. The existing browser name (for example `XLM`) is **never overwritten** |
 
 A URL that exists on the bookmarks bar or in another folder is still **added** under the LinkNest destination. Bookmark Sync **1.8.3+** is required for nested named folders (`zaf22` → `PeopleSoft ERP`). Older 1.8.2 packs skip any URL that exists anywhere in Chrome, so those folders never appear.
 
-5. The page shows the preview only when there are adds or title updates, and can **Download JSON** changelog. **Backup this browser’s bookmarks before applying** (default **on**, Bookmark Sync **1.8.2+**) posts `BROWSER_LAUNCHER_BACKUP_BOOKMARKS` (Read-only **or** Read-write). The extension replies with Netscape **HTML** plus a JSON tree, which the app saves to **this PC’s Downloads folder** (`linknest-browser-bookmarks-backup-….html` / `.json`) — not inside LinkNest. If backup fails, Apply does not write. **Apply** then posts `BROWSER_LAUNCHER_PUSH_BOOKMARKS` (same payload, writes). The result is `{ type: "BROWSER_LAUNCHER_PUSH_BOOKMARKS_RESULT", success, added, skipped, updated, changes, timestamp }`.
+5. The page shows the preview only when there are adds (or title updates from an older extension), and can **Download JSON** changelog. **Backup this browser’s bookmarks before applying** (default **on**, Bookmark Sync **1.8.2+**) posts `BROWSER_LAUNCHER_BACKUP_BOOKMARKS` (Read-only **or** Read-write). The extension replies with Netscape **HTML** plus a JSON tree, which the app saves to **this PC’s Downloads folder** (`linknest-browser-bookmarks-backup-….html` / `.json`) — not inside LinkNest. If backup fails, Apply does not write. **Apply** then posts `BROWSER_LAUNCHER_PUSH_BOOKMARKS` (same payload, writes). The result is `{ type: "BROWSER_LAUNCHER_PUSH_BOOKMARKS_RESULT", success, added, skipped, updated, changes, timestamp }`. Bookmark Sync **1.8.6+** leaves `updated` at 0 — it adds copies instead of renaming existing Chrome bookmarks.
 
 Chrome Bookmark manager **Import** of the HTML **merges**; it does not delete newer bookmarks. Delete **Other Bookmarks → LinkNest** to drop OutSync adds. Title restores use the changelog `previousTitle`.
 
@@ -124,7 +124,7 @@ On the popup **Sync** tab, use the **Read-only** and **Read-write** switches. St
 | **Read-only Off** (default) | The extension refuses `GET_BOOKMARKS` (app **Sync**) |
 | **Read-only On** | The app Sync button can read **this profile’s** bookmarks, only on allowlisted sites |
 | **Read-write Off** (default) | The extension refuses `PUSH_BOOKMARKS` (app **OutSync**) |
-| **Read-write On** | The app OutSync button can add new bookmarks and update titles, only on allowlisted sites |
+| **Read-write On** | The app OutSync button can add new bookmarks (and copies with a new name), only on allowlisted sites. Existing Chrome names are not overwritten (1.8.6+) |
 | **Both Off** | Toolbar badge: **OFF** |
 
 Turning a switch off does **not** uninstall the extension. **Refresh count** in the popup still shows how many http(s) bookmarks exist; it does not count as a Sync.
@@ -188,6 +188,8 @@ Reload the extension after editing the JSON. Chrome’s **extensions** page stil
 | Sync times out / “install extension” | Load/reload the extension, **refresh the app**, turn **Read-only** **On**, confirm this origin is in `allowedOrigins` (scheme + host + port). Docker: `https://localhost:8443` and `http://localhost:8090` — `http://localhost` alone is not enough |
 | OutSync times out / “reload Bookmark Sync 1.8+” | You still have an older pack. Reload the unpacked folder (or install 1.8.3+), turn **Read-write** On, then **refresh the app** |
 | Nested Favorites folder missing in Chrome after OutSync | Reload Bookmark Sync **1.8.3+**, refresh the app, OutSync again. 1.8.2 skipped any URL already in Chrome, so `zaf22` / space subfolders were never created |
+| Sync still shows the long page title after I renamed the Chrome bookmark | Reload Bookmark Sync **1.8.6+**, refresh the app, then Sync again. Older app builds skipped any URL that already existed, so a rename like `XLM` never landed. The new name is added as a second link; you can delete the old long-titled card if you do not want both |
+| OutSync wants to overwrite my short name (`XLM`) | Reload Bookmark Sync **1.8.6+**, refresh the app, OutSync again. 1.8.5 and older updated the Chrome title in place when the URL already existed |
 | Backup times out / empty | Reload Bookmark Sync **1.8.2+**, refresh the app, turn **Read-only or Read-write** On. Uncheck backup on the preview to Apply without a backup |
 | InPrivate / Incognito open fails | Reload Bookmark Sync **1.8.4+** (or Pro with updated `land/` scripts), refresh the app, allowlist the site, and turn **Allow in Incognito** On for the extension in chrome://extensions / edge://extensions |
 | Full browser window still looks like a popup | Choose **Full browser** (not **New window**). Reload Bookmark Sync **1.8.5+**, refresh the app, and allowlist the site. **New window** is a compact popup by design |

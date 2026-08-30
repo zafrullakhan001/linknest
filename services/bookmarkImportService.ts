@@ -36,6 +36,14 @@ export const normalizeBookmarkUrl = (url: string): string =>
     .split('#')[0]
     .trim();
 
+/** Collapse whitespace and case so "XLM" and "xlm" match. */
+export const normalizeBookmarkTitle = (title: string): string =>
+  title.replace(/\s+/g, ' ').trim().toLowerCase();
+
+/** Identity for one bookmark: same URL with a different name is a separate entry. */
+export const bookmarkTitleUrlKey = (title: string, url: string): string =>
+  `${normalizeBookmarkUrl(url)}\n${normalizeBookmarkTitle(title)}`;
+
 /**
  * Deduplicate bookmarks by normalized URL.
  * When duplicates exist, keep the entry with the more descriptive title.
@@ -64,6 +72,30 @@ export const deduplicateBookmarks = (
         }
       }
     }
+  }
+
+  return { unique, duplicateCount: duplicates };
+};
+
+/**
+ * Keep every distinct browser name for the same URL (e.g. "XLM" and the page title).
+ * Only collapse exact title + URL matches.
+ */
+export const deduplicateBookmarksByTitleAndUrl = (
+  bookmarks: ImportedBookmark[]
+): { unique: ImportedBookmark[]; duplicateCount: number } => {
+  const seen = new Set<string>();
+  const unique: ImportedBookmark[] = [];
+  let duplicates = 0;
+
+  for (const bookmark of bookmarks) {
+    const key = bookmarkTitleUrlKey(bookmark.title, bookmark.url);
+    if (seen.has(key)) {
+      duplicates++;
+      continue;
+    }
+    seen.add(key);
+    unique.push(bookmark);
   }
 
   return { unique, duplicateCount: duplicates };
@@ -644,11 +676,11 @@ export const flattenPublicBookmarksForOutSync = (
       if (!url || (!url.startsWith('http://') && !url.startsWith('https://'))) continue;
       const urlKey = normalizeBookmarkUrl(url);
       if (!urlKey) continue;
-      const dedupeKey = `${folder.toLowerCase()}\n${urlKey}`;
-      if (seen.has(dedupeKey)) continue;
-      seen.add(dedupeKey);
       const title =
         (typeof link?.title === 'string' && link.title.trim()) || url;
+      const dedupeKey = `${folder.toLowerCase()}\n${bookmarkTitleUrlKey(title, url)}`;
+      if (seen.has(dedupeKey)) continue;
+      seen.add(dedupeKey);
       out.push({ title, url, folder });
     }
   }
@@ -720,6 +752,54 @@ const parseOutSyncChanges = (raw: unknown): OutSyncChange[] => {
   return out;
 };
 
+/**
+ * Older Bookmark Sync packs and Browser Launcher Pro still report title
+ * overwrites when a URL already exists. Never apply those — keep the Chrome name.
+ */
+export const sanitizeOutSyncKeepBrowserNames = (
+  result: Extract<BrowserExtensionPushResult, { ok: true }>
+): Extract<BrowserExtensionPushResult, { ok: true }> => {
+  const kept = Math.max(0, result.updated);
+  if (kept === 0 && result.changes.every((change) => change.action !== 'update')) {
+    return result;
+  }
+  const changes = result.changes.map((change) =>
+    change.action === 'update'
+      ? {
+          ...change,
+          action: 'skip' as const,
+          reason: 'keep-browser-title',
+          title: change.previousTitle || change.title
+        }
+      : change
+  );
+  return {
+    ...result,
+    updated: 0,
+    skipped: result.skipped + kept,
+    changes
+  };
+};
+
+export const outSyncOverwriteUrlKeys = (changes: OutSyncChange[]): string[] => {
+  const keys = new Set<string>();
+  for (const change of changes) {
+    if (change.action !== 'update' && change.reason !== 'keep-browser-title') continue;
+    const key = normalizeBookmarkUrl(change.url);
+    if (key) keys.add(key);
+  }
+  return [...keys];
+};
+
+export const omitOutSyncOverwriteUrls = (
+  bookmarks: OutSyncBookmark[],
+  overwriteUrlKeys: string[]
+): OutSyncBookmark[] => {
+  if (!overwriteUrlKeys.length) return bookmarks;
+  const blocked = new Set(overwriteUrlKeys);
+  return bookmarks.filter((bookmark) => !blocked.has(normalizeBookmarkUrl(bookmark.url)));
+};
+
 export const downloadOutSyncChangelogJson = (
   changelog: OutSyncChangelog,
   filename?: string
@@ -769,13 +849,21 @@ export const requestPushBookmarksToBrowserExtension = (
     const timestamp = Date.now();
     let settled = false;
     const targetOrigin = window.location.origin;
+    const okReplies: Array<Extract<BrowserExtensionPushResult, { ok: true }>> = [];
+    let firstError: BrowserExtensionPushResult | null = null;
+    let pickTimer: number | null = null;
 
     const finish = (result: BrowserExtensionPushResult) => {
       if (settled) return;
       settled = true;
       window.clearTimeout(timer);
+      if (pickTimer != null) window.clearTimeout(pickTimer);
       window.removeEventListener('message', onMessage);
-      resolve(result);
+      resolve(result.ok ? sanitizeOutSyncKeepBrowserNames(result) : result);
+    };
+
+    const pickBestOk = (): Extract<BrowserExtensionPushResult, { ok: true }> => {
+      return okReplies.reduce((best, row) => (row.updated < best.updated ? row : best));
     };
 
     const onMessage = (event: MessageEvent) => {
@@ -790,17 +878,23 @@ export const requestPushBookmarksToBrowserExtension = (
       }
 
       if (!data.success) {
-        finish({
+        firstError = {
           ok: false,
           reason: 'error',
           message: friendlyExtensionOutSyncError(
             typeof data.error === 'string' ? data.error : undefined
           )
-        });
+        };
+        if (pickTimer == null) {
+          pickTimer = window.setTimeout(() => {
+            if (okReplies.length) finish(pickBestOk());
+            else if (firstError) finish(firstError);
+          }, 180);
+        }
         return;
       }
 
-      finish({
+      okReplies.push({
         ok: true,
         added: Math.max(0, Number(data.added) || 0),
         skipped: Math.max(0, Number(data.skipped) || 0),
@@ -810,9 +904,22 @@ export const requestPushBookmarksToBrowserExtension = (
         rootFolder:
           (typeof data.rootFolder === 'string' && data.rootFolder.trim()) || rootFolder
       });
+      if (pickTimer == null) {
+        pickTimer = window.setTimeout(() => {
+          finish(pickBestOk());
+        }, 180);
+      }
     };
 
     const timer = window.setTimeout(() => {
+      if (okReplies.length) {
+        finish(pickBestOk());
+        return;
+      }
+      if (firstError) {
+        finish(firstError);
+        return;
+      }
       finish({
         ok: false,
         reason: 'timeout',

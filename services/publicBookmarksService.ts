@@ -3,8 +3,10 @@ import { generateUuid } from './idService';
 import {
   parseHTMLBookmarks,
   deduplicateBookmarks,
+  deduplicateBookmarksByTitleAndUrl,
   groupBookmarksByDomain,
   normalizeBookmarkUrl,
+  bookmarkTitleUrlKey,
   getBookmarkBaseDomain
 } from './bookmarkImportService';
 import type { Tile, ThemeColor } from '../types';
@@ -632,7 +634,8 @@ export const importPublicBookmarksFromHtml = async (
 };
 
 /**
- * Merge HTML bookmarks into existing spaces (dedupe by URL). Preserves pins/renames.
+ * Merge HTML bookmarks into existing spaces (dedupe by title + URL).
+ * A renamed browser bookmark is added as a new link even if the URL already exists.
  */
 export const mergePublicBookmarksFromHtml = async (
   file: File
@@ -703,7 +706,7 @@ export const mergePublicBookmarksFromList = (
     })
     .filter((b): b is { title: string; url: string } => !!b);
 
-  const { unique, duplicateCount } = deduplicateBookmarks(normalized);
+  const { unique, duplicateCount } = deduplicateBookmarksByTitleAndUrl(normalized);
   const sourceLabel = opts?.sourceLabel || 'list';
 
   if (unique.length === 0) {
@@ -722,21 +725,21 @@ export const mergePublicBookmarksFromList = (
   }
 
   const current = getPublicBookmarks();
-  const existingUrls = new Set(
+  const existingKeys = new Set(
     current.categories.flatMap((c) =>
-      c.links.map((l) => normalizeBookmarkUrl(l.url))
+      c.links.map((l) => bookmarkTitleUrlKey(l.title, l.url))
     )
   );
 
   const toAdd = unique.filter(
-    (b) => !existingUrls.has(normalizeBookmarkUrl(b.url))
+    (b) => !existingKeys.has(bookmarkTitleUrlKey(b.title, b.url))
   );
   const skippedExisting = unique.length - toAdd.length;
 
   if (toAdd.length === 0) {
     return {
       success: true,
-      message: `No new links to add (${skippedExisting} already saved${duplicateCount > 0 ? `, ${duplicateCount} duplicates skipped` : ''}).`,
+      message: `No new links to add (${skippedExisting} already saved with the same name${duplicateCount > 0 ? `, ${duplicateCount} duplicates skipped` : ''}).`,
       linkCount: countPublicBookmarkLinks(current),
       categoryCount: current.categories.length,
       duplicateCount,
@@ -782,7 +785,7 @@ export const mergePublicBookmarksFromList = (
       : 'Merged';
   return {
     success: true,
-    message: `${head}: ${toAdd.length} new link${toAdd.length === 1 ? '' : 's'} (${skippedExisting} already present${duplicateCount > 0 ? `, ${duplicateCount} duplicates skipped` : ''}).`,
+    message: `${head}: ${toAdd.length} new link${toAdd.length === 1 ? '' : 's'} (${skippedExisting} already present with the same name${duplicateCount > 0 ? `, ${duplicateCount} exact duplicates skipped` : ''}).`,
     linkCount: countPublicBookmarkLinks(next),
     categoryCount: next.categories.length,
     duplicateCount,

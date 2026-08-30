@@ -271,7 +271,7 @@
       <div class="switch-row">
         <div>
           <label for="sync-write-enabled" style="margin:0">Read-write</label>
-          <p class="muted" id="write-toggle-hint">Off — OutSync cannot add or update bookmarks in this profile.</p>
+          <p class="muted" id="write-toggle-hint">Off — OutSync cannot add bookmarks in this profile.</p>
         </div>
         <label class="switch" title="Enable or disable read-write OutSync">
           <input id="sync-write-enabled" type="checkbox">
@@ -283,7 +283,7 @@
       Read-only starts off. Turn it on so <strong>Sync</strong> can pull <strong>this browser profile’s</strong> bookmarks into LinkNest. The app cannot read your tree while this is off.
     </p>
     <p class="off-note" id="write-off-note">
-      Read-write starts off. Turn it on so <strong>OutSync</strong> can add new bookmarks (and update titles) in this profile. The app cannot write Chrome bookmarks while this is off. Nothing is deleted.
+      Read-write starts off. Turn it on so <strong>OutSync</strong> can add new bookmarks in this profile. A renamed bookmark (same URL, new name) is added as a copy. Existing names are never overwritten. The app cannot write Chrome bookmarks while this is off. Nothing is deleted.
     </p>
     <p class="muted" id="allowlist-hint" style="margin: 0 14px 10px;"></p>
     <div class="card">
@@ -410,7 +410,7 @@
       <p>
         The page posts a window message <code>BROWSER_LAUNCHER_GET_BOOKMARKS</code> to its own origin.
         This extension replies with <code>BROWSER_LAUNCHER_BOOKMARKS_LIST</code> only if the site is allowlisted and <strong>Read-only</strong> is on.
-        OutSync posts <code>BROWSER_LAUNCHER_PREVIEW_PUSH_BOOKMARKS</code> first (preview, no writes), then optionally <code>BROWSER_LAUNCHER_BACKUP_BOOKMARKS</code> (v1.8.2+, Read-only or Read-write) before <code>BROWSER_LAUNCHER_PUSH_BOOKMARKS</code> when you Apply — only if <strong>Read-write</strong> is on. Nested folders (v1.8.3+) are created under Other Bookmarks → LinkNest → named folder → space. A URL is skipped only if it already exists in that destination folder.
+        OutSync posts <code>BROWSER_LAUNCHER_PREVIEW_PUSH_BOOKMARKS</code> first (preview, no writes), then optionally <code>BROWSER_LAUNCHER_BACKUP_BOOKMARKS</code> (v1.8.2+, Read-only or Read-write) before <code>BROWSER_LAUNCHER_PUSH_BOOKMARKS</code> when you Apply — only if <strong>Read-write</strong> is on. Nested folders (v1.8.3+) are created under Other Bookmarks → LinkNest → named folder → space. A bookmark is skipped only if that destination folder already has the same URL <em>and</em> the same name (v1.8.6+). A new name for an existing URL is added as a copy; existing names are never overwritten.
       </p>
       <h2>Mass deploy (IT)</h2>
       <ul>
@@ -420,7 +420,7 @@
       </ul>
       <h2>If Sync or OutSync fails</h2>
       <ul>
-        <li>Reload this extension, then <strong>refresh the app page</strong>. Nested folder OutSync (named folder + space subfolders) needs v1.8.3+. OutSync preview needs v1.8.1+; bookmark backup before Apply needs v1.8.2+. Incognito / InPrivate open needs v1.8.4+ and <strong>Allow in Incognito</strong> enabled for this extension. Full browser window (tabs, toolbar, menus) needs v1.8.5+.</li>
+        <li>Reload this extension, then <strong>refresh the app page</strong>. Renamed bookmarks (same URL, new name) need v1.8.6+ so Sync keeps your name and OutSync does not overwrite it. Nested folder OutSync (named folder + space subfolders) needs v1.8.3+. OutSync preview needs v1.8.1+; bookmark backup before Apply needs v1.8.2+. Incognito / InPrivate open needs v1.8.4+ and <strong>Allow in Incognito</strong> enabled for this extension. Full browser window (tabs, toolbar, menus) needs v1.8.5+.</li>
         <li>Turn Read-only on for Sync, and Read-write on for OutSync. Confirm the site origin is in <code>allowedOrigins</code>.</li>
         <li>Or use Import HTML / Merge / Export HTML in Your Bookmarks.</li>
       </ul>

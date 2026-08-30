@@ -2,7 +2,7 @@
   "manifest_version": 3,
   "name": "LinkNest Bookmark Sync",
   "short_name": "LN Sync",
-  "version": "1.8.5",
+  "version": "1.8.6",
   "description": "Minimal Browser Launcher Pro–compatible extension. Syncs this Chrome/Edge profile’s bookmarks with LinkNest Your Bookmarks (in and out), and can open http(s) links in a full browser window or Incognito / InPrivate — no launcher, license, or native host.",
   "author": "LinkNest",
   "permissions": ["bookmarks", "storage", "windows"],

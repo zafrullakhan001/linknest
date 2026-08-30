@@ -174,8 +174,8 @@ function updateSyncToggleUi(modes) {
   }
   if (writeHint) {
     writeHint.textContent = write
-      ? 'On — OutSync can add new bookmarks (and update titles) in this profile from allowlisted LinkNest sites.'
-      : 'Off — OutSync cannot add or update bookmarks in this profile.';
+      ? 'On — OutSync can add new bookmarks in this profile from allowlisted LinkNest sites. Existing names are never overwritten.'
+      : 'Off — OutSync cannot add bookmarks in this profile.';
   }
   if (readNote) readNote.hidden = read;
   if (writeNote) writeNote.hidden = write;

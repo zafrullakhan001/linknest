@@ -1,4 +1,4 @@
-const EXTENSION_VERSION = '1.8.5';
+const EXTENSION_VERSION = '1.8.6';
 const BRAND_DEFAULT_NAME = 'LinkNest Bookmark Sync';
 const BRAND_DEFAULT_APP = 'LinkNest';
 const BRAND_NAME_MAX = 48;

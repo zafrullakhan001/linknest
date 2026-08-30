@@ -9,6 +9,7 @@ import {
   ImportedBookmark,
   parseHTMLBookmarks,
   deduplicateBookmarks,
+  deduplicateBookmarksByTitleAndUrl,
   groupBookmarksByDomain,
   isTrustedPageExtensionMessage,
   requestBookmarksFromBrowserExtension
@@ -286,7 +287,7 @@ export const FavOrganizerWidget: React.FC<FavOrganizerWidgetProps> = ({ onClose 
         return;
       }
 
-      const { unique, duplicateCount } = deduplicateBookmarks(result.bookmarks);
+      const { unique, duplicateCount } = deduplicateBookmarksByTitleAndUrl(result.bookmarks);
       setBookmarks(unique);
       setUniqueBookmarks(unique);
       setDuplicateCount(duplicateCount);

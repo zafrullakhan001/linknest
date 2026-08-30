@@ -1,6 +1,7 @@
 /**
  * LinkNest Bookmark Sync — service worker (MV3).
- * Flatten (Sync) and upsert (OutSync) for this Chrome/Edge profile only.
+ * Flatten (Sync) and add-only OutSync for this Chrome/Edge profile only.
+ * Same URL with a different title is a new bookmark; existing names are never overwritten.
  */
 importScripts('branding.js');
 
@@ -107,12 +108,13 @@ function indexBookmarksByFolderPath(otherNode, map) {
       if (url.startsWith('http://') || url.startsWith('https://')) {
         const urlKey = normalizeBookmarkUrl(url);
         if (!urlKey) continue;
+        const title = (node.title && String(node.title).trim()) || url;
         const pathKey = pathTitles.map((t) => String(t || '').toLowerCase()).join('\0');
         const mapKey = pathKey + '\n' + urlKey;
         if (!map.has(mapKey)) {
           map.set(mapKey, {
             id: node.id,
-            title: (node.title && String(node.title).trim()) || url
+            title: title
           });
         }
       } else if (node.children && node.children.length) {
@@ -249,45 +251,15 @@ async function pushBookmarks(payload) {
     seen.add(seenKey);
     const existing = byPathUrl.get(seenKey);
     if (existing) {
-      if (existing.title !== item.title && item.title && existing.id) {
-        const previousTitle = existing.title;
-        if (!dryRun) {
-          try {
-            await bookmarkCall('update', [existing.id, { title: item.title }]);
-            existing.title = item.title;
-          } catch (_err) {
-            skipped++;
-            changes.push({
-              action: 'skip',
-              title: item.title,
-              url: item.url,
-              folder: item.folder,
-              previousTitle: previousTitle,
-              reason: 'update-failed'
-            });
-            continue;
-          }
-        }
-        updated++;
-        changes.push({
-          action: 'update',
-          title: item.title,
-          url: item.url,
-          folder: item.folder,
-          previousTitle: previousTitle,
-          path: 'existing Chrome folder (not moved)'
-        });
-      } else {
-        skipped++;
-        changes.push({
-          action: 'skip',
-          title: item.title,
-          url: item.url,
-          folder: item.folder,
-          previousTitle: existing.title,
-          reason: 'already-exists'
-        });
-      }
+      skipped++;
+      changes.push({
+        action: 'skip',
+        title: item.title,
+        url: item.url,
+        folder: item.folder,
+        previousTitle: existing.title,
+        reason: 'already-exists'
+      });
       continue;
     }
     if (!dryRun) {

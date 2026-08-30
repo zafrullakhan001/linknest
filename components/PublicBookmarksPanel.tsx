@@ -83,6 +83,8 @@ import {
   downloadBrowserBookmarkBackup,
   probeBrowserBookmarkExtension,
   sameExtensionPresence,
+  outSyncOverwriteUrlKeys,
+  omitOutSyncOverwriteUrls,
   type OutSyncChange,
   type BrowserExtensionPresence
 } from '../services/bookmarkImportService';
@@ -285,6 +287,7 @@ export const PublicBookmarksPanel: React.FC<PublicBookmarksPanelProps> = ({
     skipped: number;
     rootFolder: string;
     changes: OutSyncChange[];
+    protectUrlKeys: string[];
   } | null>(null);
   const [outSyncBackupBeforeApply, setOutSyncBackupBeforeApply] = useState(true);
   const [extPresence, setExtPresence] = useState<BrowserExtensionPresence | null>(null);
@@ -581,13 +584,18 @@ export const PublicBookmarksPanel: React.FC<PublicBookmarksPanelProps> = ({
         setMessage(result.message);
         return;
       }
+      const protectUrlKeys = outSyncOverwriteUrlKeys(result.changes);
       const changing = result.added + result.updated;
       if (changing === 0) {
         setOutSyncPreview(null);
         setMessage(
-          `Nothing new to OutSync — all ${result.skipped} URL${
-            result.skipped === 1 ? '' : 's'
-          } are already in this browser with matching titles.`
+          protectUrlKeys.length > 0
+            ? `Nothing new to OutSync — left ${protectUrlKeys.length} Chrome name${
+                protectUrlKeys.length === 1 ? '' : 's'
+              } as-is (your short names are not overwritten).`
+            : `Nothing new to OutSync — all ${result.skipped} bookmark${
+                result.skipped === 1 ? '' : 's'
+              } already exist in this browser with the same name.`
         );
         return;
       }
@@ -596,12 +604,11 @@ export const PublicBookmarksPanel: React.FC<PublicBookmarksPanelProps> = ({
         updated: result.updated,
         skipped: result.skipped,
         rootFolder: result.rootFolder,
-        changes: result.changes
+        changes: result.changes,
+        protectUrlKeys
       });
       setMessage(
-        `Preview: ${result.added} new, ${result.updated} title${
-          result.updated === 1 ? '' : 's'
-        } to update, ${result.skipped} already in the browser.`
+        `Preview: ${result.added} new, ${result.skipped} already in the browser with the same name.`
       );
     } catch (err) {
       setOutSyncPreview(null);
@@ -632,7 +639,15 @@ export const PublicBookmarksPanel: React.FC<PublicBookmarksPanelProps> = ({
         setMessage(await downloadBrowserBookmarkBackup(backup));
       }
       setMessage('Pushing bookmarks to this browser…');
-      const payload = flattenPublicBookmarksForOutSync(data);
+      const payload = omitOutSyncOverwriteUrls(
+        flattenPublicBookmarksForOutSync(data),
+        outSyncPreview.protectUrlKeys || []
+      );
+      if (payload.length === 0) {
+        setOutSyncPreview(null);
+        setMessage('Nothing to push — existing Chrome names were left as-is.');
+        return;
+      }
       const result = await requestPushBookmarksToBrowserExtension(payload, {
         timeoutMs: 60000
       });
@@ -642,9 +657,9 @@ export const PublicBookmarksPanel: React.FC<PublicBookmarksPanelProps> = ({
       }
       setOutSyncPreview(null);
       setMessage(
-        `${outSyncBackupBeforeApply ? 'Backup saved to Downloads. ' : ''}Pushed ${result.added} new, updated ${
-          result.updated
-        } title${result.updated === 1 ? '' : 's'}, ${result.skipped} already in the browser.`
+        `${outSyncBackupBeforeApply ? 'Backup saved to Downloads. ' : ''}Pushed ${result.added} new, ${
+          result.skipped
+        } already in the browser. Existing Chrome names were not overwritten.`
       );
     } catch (err) {
       setMessage(
@@ -2374,10 +2389,9 @@ export const PublicBookmarksPanel: React.FC<PublicBookmarksPanelProps> = ({
                 OutSync preview
               </h3>
               <p className="text-xs text-slate-600 dark:text-slate-300 mt-0.5">
-                {outSyncPreview.added} new · {outSyncPreview.updated} title
-                {outSyncPreview.updated === 1 ? '' : 's'} to update · {outSyncPreview.skipped} already
-                in the browser. Nothing is written until you Apply. New links go under Other Bookmarks
-                → {outSyncPreview.rootFolder}.
+                {outSyncPreview.added} new · {outSyncPreview.skipped} already in the browser.
+                Existing Chrome names are not overwritten. Nothing is written until you Apply. New
+                links go under Other Bookmarks → {outSyncPreview.rootFolder}.
               </p>
             </div>
             <button
@@ -2445,7 +2459,7 @@ export const PublicBookmarksPanel: React.FC<PublicBookmarksPanelProps> = ({
               </ul>
             ) : (
               <p className="text-xs text-slate-500 dark:text-slate-400">
-                No adds or title updates. Every URL is already in this browser with a matching title.
+                No adds or title updates. Every bookmark name is already in this browser.
               </p>
             );
           })()}
@@ -2464,8 +2478,9 @@ export const PublicBookmarksPanel: React.FC<PublicBookmarksPanelProps> = ({
                 <code className="text-[10px]">linknest-browser-bookmarks-backup-….html</code> and{' '}
                 <code className="text-[10px]">.json</code>. They are not stored in LinkNest. Import
                 the HTML in Chrome Bookmark manager to merge the saved tree. Import does not delete
-                newer links — remove Other Bookmarks → LinkNest to drop OutSync adds. Title restores:
-                OutSync changelog <code className="text-[10px]">previousTitle</code>.
+                newer links — remove Other Bookmarks → LinkNest to drop OutSync adds. Bookmark Sync
+                1.8.6+ does not rename existing Chrome bookmarks; older packs may still list title
+                restores in the changelog <code className="text-[10px]">previousTitle</code>.
               </span>
             </span>
           </label>
