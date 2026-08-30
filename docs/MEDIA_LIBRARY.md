@@ -41,12 +41,18 @@ If PHP `upload_max_filesize` / `post_max_size` are lower, raise them (videos nee
 - **Trash** — soft-delete; file moved off the public path.  
 - **Purge / Empty trash** — permanent delete (disk + DB row).
 
+## Image quality and viewing
+
+- Uploads **keep the original file bytes** by default (no GD re-encode). Check **Optimize** on the upload bar only when you want a 2560px cap + re-encode.
+- Grid tiles use a **480px** thumbnail (sharp on retina). The detail pane and **View full size** / double-click open a lightbox with the **original** image (fit or actual size, prev/next, download).
+- Phone JPEGs: EXIF orientation is applied to thumbnails and recorded width/height; the original file is unchanged.
+
 ## Image editing
 
 Admins can resize, crop, **rotate** (90° steps), compress (quality/format), and **remove background color** (chroma-key via PHP GD — same path as logo/favicon helpers).
 
-- Single-file editor: **Save as new** by default (keeps existing rich-text embeds working); optional **Replace original**.
-- Bulk toolbar (selected images): rotate L/R, compress (max 1920px / quality 72), convert to JPG, remove BG — these **replace** the selected files in place.
+- Single-file editor: format defaults to the original (JPEG stays JPEG); size presets; live size estimate; **Fit** vs **Exact** resize; crop overlay tracks the image. **Save as new** by default (keeps existing rich-text embeds working); optional **Replace original**.
+- Bulk toolbar (selected images): rotate L/R, **Compress…** (choose max edge, quality, format), convert to JPG, remove BG — these **replace** the selected files in place.
 - Also: **Select all** / **Select images** in the current folder view, and **Trash selected**.
 
 Requires PHP **ext-gd**. Enable `extension=gd` in `php.ini` if transforms fail.

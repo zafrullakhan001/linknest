@@ -106,6 +106,8 @@ export async function uploadMediaFiles(
     tags?: string[];
     removeBackground?: boolean;
     bgColor?: string;
+    /** Opt-in: cap long edge at 2560px and re-encode (default preserves the original bytes) */
+    optimize?: boolean;
   } = {}
 ): Promise<{ data: MediaFile[]; errors: Array<{ name: string; error: string }> }> {
   const form = new FormData();
@@ -114,6 +116,7 @@ export async function uploadMediaFiles(
   if (options.tags?.length) form.append('tags', JSON.stringify(options.tags));
   if (options.removeBackground) form.append('remove_background', '1');
   if (options.bgColor) form.append('bg_color', options.bgColor);
+  if (options.optimize) form.append('optimize', '1');
 
   const res = await fetch(`${getApiBase()}/media`, {
     method: 'POST',

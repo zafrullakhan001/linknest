@@ -234,6 +234,8 @@ export interface MediaTransformOptions {
   rotate?: 90 | 180 | 270;
   quality?: number;
   format?: 'png' | 'jpg' | 'webp';
+  /** fit = contain inside box (default). exact = stretch to width×height */
+  resizeMode?: 'fit' | 'exact';
   removeBackground?: boolean;
   bgColor?: string;
   /** When true, overwrite the existing file; default saves as a new file */

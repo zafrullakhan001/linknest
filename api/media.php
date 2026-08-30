@@ -117,6 +117,7 @@ function mediaHandleList(PDO $db): void {
     }
 
     $sqlWhere = $where ? ('WHERE ' . implode(' AND ', $where)) : '';
+    $t0 = microtime(true);
     $countStmt = $db->prepare("SELECT COUNT(*) FROM media_files f $sqlWhere");
     $countStmt->execute($params);
     $total = (int)$countStmt->fetchColumn();
@@ -124,10 +125,27 @@ function mediaHandleList(PDO $db): void {
     $listSql = "SELECT f.* FROM media_files f $sqlWhere ORDER BY f.created_at DESC LIMIT " . (int)$perPage . ' OFFSET ' . (int)$offset;
     $stmt = $db->prepare($listSql);
     $stmt->execute($params);
-    $files = [];
+    $rows = [];
     while ($row = $stmt->fetch(PDO::FETCH_ASSOC)) {
-        $files[] = mediaMapFileRow($db, $row);
+        $rows[] = $row;
     }
+    $ids = array_map(static fn($r) => (int)$r['id'], $rows);
+    $tagMap = mediaTagsForFileIds($db, $ids);
+    $files = [];
+    foreach ($rows as $row) {
+        $fid = (int)$row['id'];
+        $files[] = mediaMapFileRow($db, $row, true, $tagMap[$fid] ?? []);
+    }
+
+    // #region agent log
+    mediaAgentDebugLog('media.php:mediaHandleList', 'list complete', [
+        'count' => count($files),
+        'total' => $total,
+        'ms' => (int) round((microtime(true) - $t0) * 1000),
+        'page' => $page,
+        'batchedTags' => true,
+    ], 'E');
+    // #endregion
 
     sendJSON([
         'data' => $files,
@@ -173,6 +191,7 @@ function mediaHandleUpload(PDO $db): void {
     $userId = (int)$user['id'];
     $folderId = isset($_POST['folder_id']) && $_POST['folder_id'] !== '' ? (int)$_POST['folder_id'] : null;
     $removeBackground = !empty($_POST['remove_background']) && $_POST['remove_background'] !== '0';
+    $optimize = !empty($_POST['optimize']) && $_POST['optimize'] !== '0';
     $bgColor = isset($_POST['bg_color']) ? trim((string)$_POST['bg_color']) : null;
     $tags = null;
     if (isset($_POST['tags'])) {
@@ -219,7 +238,7 @@ function mediaHandleUpload(PDO $db): void {
 
     foreach ($fileList as $file) {
         try {
-            $uploaded[] = mediaSaveUploadedFile($db, $file, $folderId, $userId, $tags, $removeBackground, $bgColor);
+            $uploaded[] = mediaSaveUploadedFile($db, $file, $folderId, $userId, $tags, $removeBackground, $bgColor, $optimize);
         } catch (Throwable $e) {
             $errors[] = [
                 'name' => $file['name'] ?? 'file',

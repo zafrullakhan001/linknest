@@ -1,12 +1,29 @@
 import React, { useEffect, useMemo, useRef, useState } from 'react';
 import type { MediaFile, MediaTransformOptions } from '../types';
-import { transformMediaFile } from '../services/mediaService';
+import { formatMediaSize, transformMediaFile } from '../services/mediaService';
+import { useEscapeToClose } from '../hooks/useEscapeToClose';
 
 interface MediaImageEditorProps {
   file: MediaFile;
   onClose: () => void;
   onSaved: (file: MediaFile) => void;
 }
+
+function formatFromFile(file: MediaFile): 'png' | 'jpg' | 'webp' {
+  const mime = (file.mime || '').toLowerCase();
+  const name = (file.originalName || file.storedName || '').toLowerCase();
+  if (mime.includes('jpeg') || mime.includes('jpg') || name.endsWith('.jpg') || name.endsWith('.jpeg')) return 'jpg';
+  if (mime.includes('webp') || name.endsWith('.webp')) return 'webp';
+  return 'png';
+}
+
+const PRESETS = [
+  { label: 'Original', edge: 0 },
+  { label: '2560', edge: 2560 },
+  { label: '1920', edge: 1920 },
+  { label: '1280', edge: 1280 },
+  { label: '800', edge: 800 },
+];
 
 export const MediaImageEditor: React.FC<MediaImageEditorProps> = ({ file, onClose, onSaved }) => {
   const imgRef = useRef<HTMLImageElement>(null);
@@ -15,8 +32,9 @@ export const MediaImageEditor: React.FC<MediaImageEditorProps> = ({ file, onClos
   const [width, setWidth] = useState(file.width || 0);
   const [height, setHeight] = useState(file.height || 0);
   const [lockAspect, setLockAspect] = useState(true);
-  const [quality, setQuality] = useState(85);
-  const [format, setFormat] = useState<'png' | 'jpg' | 'webp'>('png');
+  const [quality, setQuality] = useState(formatFromFile(file) === 'png' ? 90 : 82);
+  const [format, setFormat] = useState<'png' | 'jpg' | 'webp'>(formatFromFile(file));
+  const [resizeMode, setResizeMode] = useState<'fit' | 'exact'>('fit');
   const [rotate, setRotate] = useState<0 | 90 | 180 | 270>(0);
   const [removeBackground, setRemoveBackground] = useState(false);
   const [bgColor, setBgColor] = useState('');
@@ -26,22 +44,15 @@ export const MediaImageEditor: React.FC<MediaImageEditorProps> = ({ file, onClos
   const [dragStart, setDragStart] = useState<{ x: number; y: number } | null>(null);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [estimateBytes, setEstimateBytes] = useState<number | null>(null);
+  const [estimateBusy, setEstimateBusy] = useState(false);
 
   const aspect = useMemo(() => {
     if (!naturalW || !naturalH) return 1;
     return naturalW / naturalH;
   }, [naturalW, naturalH]);
 
-  useEffect(() => {
-    const onKey = (e: KeyboardEvent) => {
-      if (e.key === 'Escape') {
-        e.preventDefault();
-        onClose();
-      }
-    };
-    window.addEventListener('keydown', onKey);
-    return () => window.removeEventListener('keydown', onKey);
-  }, [onClose]);
+  useEscapeToClose(true, onClose);
 
   const onWidthChange = (w: number) => {
     setWidth(w);
@@ -55,6 +66,18 @@ export const MediaImageEditor: React.FC<MediaImageEditorProps> = ({ file, onClos
     if (lockAspect && aspect > 0) {
       setWidth(Math.max(1, Math.round(h * aspect)));
     }
+  };
+
+  const applyPreset = (edge: number) => {
+    if (!naturalW || !naturalH) return;
+    if (edge <= 0) {
+      setWidth(naturalW);
+      setHeight(naturalH);
+      return;
+    }
+    const scale = Math.min(edge / naturalW, edge / naturalH, 1);
+    setWidth(Math.max(1, Math.round(naturalW * scale)));
+    setHeight(Math.max(1, Math.round(naturalH * scale)));
   };
 
   const toImageCoords = (clientX: number, clientY: number) => {
@@ -89,25 +112,90 @@ export const MediaImageEditor: React.FC<MediaImageEditorProps> = ({ file, onClos
 
   const onPointerUp = () => setDragStart(null);
 
+  useEffect(() => {
+    const img = imgRef.current;
+    if (!img || !img.complete || !width || !height) {
+      setEstimateBytes(null);
+      return;
+    }
+    let cancelled = false;
+    const t = window.setTimeout(async () => {
+      setEstimateBusy(true);
+      try {
+        const canvas = document.createElement('canvas');
+        const cw = Math.max(1, Math.min(width, 4096));
+        const ch = Math.max(1, Math.min(height, 4096));
+        canvas.width = cw;
+        canvas.height = ch;
+        const ctx = canvas.getContext('2d');
+        if (!ctx) return;
+        if (format === 'jpg') {
+          ctx.fillStyle = '#ffffff';
+          ctx.fillRect(0, 0, cw, ch);
+        }
+        ctx.drawImage(img, 0, 0, cw, ch);
+        const mime = format === 'jpg' ? 'image/jpeg' : format === 'webp' ? 'image/webp' : 'image/png';
+        const blob = await new Promise<Blob | null>((resolve) => {
+          canvas.toBlob(resolve, mime, format === 'png' ? undefined : quality / 100);
+        });
+        if (!cancelled) setEstimateBytes(blob?.size ?? null);
+      } catch {
+        if (!cancelled) setEstimateBytes(null);
+      } finally {
+        if (!cancelled) setEstimateBusy(false);
+      }
+    }, 280);
+    return () => {
+      cancelled = true;
+      window.clearTimeout(t);
+    };
+  }, [width, height, quality, format, file.url]);
+
   const handleSave = async () => {
     setSaving(true);
     setError(null);
     try {
+      const dimsChanged = width > 0 && height > 0 && (width !== naturalW || height !== naturalH);
       const opts: MediaTransformOptions = {
-        width: width || undefined,
-        height: height || undefined,
         quality,
         format,
+        resizeMode,
         removeBackground,
         bgColor: bgColor || undefined,
         replace,
       };
+      if (dimsChanged) {
+        opts.width = width;
+        opts.height = height;
+      }
       if (rotate) {
         opts.rotate = rotate;
       }
       if (crop && crop.w > 1 && crop.h > 1) {
         opts.crop = crop;
       }
+      // #region agent log
+      fetch('http://127.0.0.1:7808/ingest/ac6d79aa-db1a-4b9b-b803-66cfddabd40c', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', 'X-Debug-Session-Id': 'cee2c4' },
+        body: JSON.stringify({
+          sessionId: 'cee2c4',
+          location: 'MediaImageEditor.tsx:handleSave',
+          message: 'transform options',
+          data: {
+            ...opts,
+            naturalW,
+            naturalH,
+            dimsChanged,
+            originalFormat: formatFromFile(file),
+            originalBytes: file.sizeBytes,
+          },
+          timestamp: Date.now(),
+          hypothesisId: 'D',
+          runId: 'uplift-1',
+        }),
+      }).catch(() => {});
+      // #endregion
       const saved = await transformMediaFile(file.id, opts);
       onSaved(saved);
       onClose();
@@ -122,9 +210,8 @@ export const MediaImageEditor: React.FC<MediaImageEditorProps> = ({ file, onClos
     return null;
   }
 
-  const img = imgRef.current;
   const displayCrop =
-    crop && img && naturalW
+    crop && naturalW
       ? {
           left: `${(crop.x / naturalW) * 100}%`,
           top: `${(crop.y / naturalH) * 100}%`,
@@ -147,33 +234,53 @@ export const MediaImageEditor: React.FC<MediaImageEditorProps> = ({ file, onClos
         </div>
 
         <div className="grid md:grid-cols-2 gap-4 p-4">
-          <div className="relative bg-slate-100 dark:bg-slate-900 rounded-lg overflow-hidden min-h-[200px] flex items-center justify-center">
-            <img
-              ref={imgRef}
-              src={file.url}
-              alt={file.altText || file.originalName}
-              className={`max-w-full max-h-[360px] object-contain ${cropMode ? 'cursor-crosshair' : ''}`}
-              onLoad={(e) => {
-                const el = e.currentTarget;
-                setNaturalW(el.naturalWidth);
-                setNaturalH(el.naturalHeight);
-                if (!width) setWidth(el.naturalWidth);
-                if (!height) setHeight(el.naturalHeight);
-              }}
-              onPointerDown={onPointerDown}
-              onPointerMove={onPointerMove}
-              onPointerUp={onPointerUp}
-              draggable={false}
-            />
-            {displayCrop && (
-              <div
-                className="absolute border-2 border-sky-400 bg-sky-400/20 pointer-events-none"
-                style={displayCrop}
+          <div className="bg-slate-100 dark:bg-slate-900 rounded-lg overflow-hidden min-h-[200px] flex items-center justify-center p-2">
+            <div className="relative inline-block max-w-full">
+              <img
+                ref={imgRef}
+                src={file.url}
+                alt={file.altText || file.originalName}
+                className={`max-w-full max-h-[360px] object-contain ${cropMode ? 'cursor-crosshair' : ''}`}
+                onLoad={(e) => {
+                  const el = e.currentTarget;
+                  setNaturalW(el.naturalWidth);
+                  setNaturalH(el.naturalHeight);
+                  setWidth((w) => w || el.naturalWidth);
+                  setHeight((h) => h || el.naturalHeight);
+                }}
+                onPointerDown={onPointerDown}
+                onPointerMove={onPointerMove}
+                onPointerUp={onPointerUp}
+                draggable={false}
+                crossOrigin="anonymous"
               />
-            )}
+              {displayCrop && (
+                <div
+                  className="absolute border-2 border-sky-400 bg-sky-400/20 pointer-events-none"
+                  style={displayCrop}
+                />
+              )}
+            </div>
           </div>
 
           <div className="space-y-3 text-sm">
+            <p className="text-xs text-slate-500">
+              Original: {naturalW || '—'}×{naturalH || '—'} · {formatMediaSize(file.sizeBytes)}
+            </p>
+
+            <div className="flex flex-wrap gap-1">
+              {PRESETS.map((p) => (
+                <button
+                  key={p.label}
+                  type="button"
+                  onClick={() => applyPreset(p.edge)}
+                  className="px-2 py-0.5 rounded border border-slate-300 dark:border-slate-600 text-xs hover:bg-slate-100 dark:hover:bg-slate-700"
+                >
+                  {p.label}
+                </button>
+              ))}
+            </div>
+
             <div className="flex gap-2 items-end">
               <label className="flex-1">
                 <span className="text-slate-600 dark:text-slate-300">Width</span>
@@ -203,7 +310,21 @@ export const MediaImageEditor: React.FC<MediaImageEditorProps> = ({ file, onClos
             </label>
 
             <label className="block">
-              <span className="text-slate-600 dark:text-slate-300">Quality ({quality})</span>
+              <span className="text-slate-600 dark:text-slate-300">Resize mode</span>
+              <select
+                value={resizeMode}
+                onChange={(e) => setResizeMode(e.target.value as 'fit' | 'exact')}
+                className="mt-1 w-full rounded-lg border border-slate-300 dark:border-slate-600 bg-white dark:bg-slate-900 px-2 py-1.5"
+              >
+                <option value="fit">Fit inside (keep proportions)</option>
+                <option value="exact">Exact width × height (may stretch)</option>
+              </select>
+            </label>
+
+            <label className="block">
+              <span className="text-slate-600 dark:text-slate-300">
+                Quality ({quality}){format === 'png' ? ' — PNG compression' : ''}
+              </span>
               <input
                 type="range"
                 min={40}
@@ -221,11 +342,19 @@ export const MediaImageEditor: React.FC<MediaImageEditorProps> = ({ file, onClos
                 onChange={(e) => setFormat(e.target.value as 'png' | 'jpg' | 'webp')}
                 className="mt-1 w-full rounded-lg border border-slate-300 dark:border-slate-600 bg-white dark:bg-slate-900 px-2 py-1.5"
               >
-                <option value="png">PNG</option>
-                <option value="jpg">JPEG</option>
-                <option value="webp">WebP</option>
+                <option value="jpg">JPEG — best for photos</option>
+                <option value="webp">WebP — small, keeps transparency</option>
+                <option value="png">PNG — lossless (larger)</option>
               </select>
             </label>
+
+            <p className="text-xs text-slate-500">
+              {estimateBusy
+                ? 'Estimating size…'
+                : estimateBytes != null
+                  ? `Estimated new size ≈ ${formatMediaSize(estimateBytes)} (was ${formatMediaSize(file.sizeBytes)})`
+                  : 'Size estimate appears after the image loads'}
+            </p>
 
             <label className="flex items-center gap-2">
               <input type="checkbox" checked={cropMode} onChange={(e) => setCropMode(e.target.checked)} />

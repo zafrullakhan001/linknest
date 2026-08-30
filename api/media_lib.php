@@ -7,6 +7,24 @@
 require_once __DIR__ . '/image_helpers.php';
 
 /**
+ * Debug-mode NDJSON logger (session cee2c4). Do not log secrets.
+ */
+function mediaAgentDebugLog(string $location, string $message, array $data, string $hypothesisId, string $runId = 'uplift-1'): void {
+    // #region agent log
+    $payload = [
+        'sessionId' => 'cee2c4',
+        'timestamp' => (int) round(microtime(true) * 1000),
+        'location' => $location,
+        'message' => $message,
+        'data' => $data,
+        'hypothesisId' => $hypothesisId,
+        'runId' => $runId,
+    ];
+    @file_put_contents(dirname(__DIR__) . DIRECTORY_SEPARATOR . 'debug-cee2c4.log', json_encode($payload, JSON_UNESCAPED_SLASHES) . "\n", FILE_APPEND | LOCK_EX);
+    // #endregion
+}
+
+/**
  * Ensure media_* tables exist and seed the root Library folder.
  */
 function ensureMediaLibrarySchema($db): void {
@@ -214,6 +232,34 @@ function mediaTagsForFile(PDO $db, int $fileId): array {
 }
 
 /**
+ * @param list<int> $fileIds
+ * @return array<int, list<string>>
+ */
+function mediaTagsForFileIds(PDO $db, array $fileIds): array {
+    $ids = array_values(array_unique(array_filter(array_map('intval', $fileIds), static fn($id) => $id > 0)));
+    if ($ids === []) {
+        return [];
+    }
+    $placeholders = implode(',', array_fill(0, count($ids), '?'));
+    $stmt = $db->prepare(
+        "SELECT ft.file_id, t.name FROM media_tags t
+         INNER JOIN media_file_tags ft ON ft.tag_id = t.id
+         WHERE ft.file_id IN ($placeholders)
+         ORDER BY t.name COLLATE NOCASE"
+    );
+    $stmt->execute($ids);
+    $map = [];
+    while ($row = $stmt->fetch(PDO::FETCH_ASSOC)) {
+        $fid = (int)$row['file_id'];
+        if (!isset($map[$fid])) {
+            $map[$fid] = [];
+        }
+        $map[$fid][] = (string)$row['name'];
+    }
+    return $map;
+}
+
+/**
  * @param list<string>|null $tags
  */
 function mediaSetFileTags(PDO $db, int $fileId, ?array $tags): void {
@@ -246,7 +292,7 @@ function mediaSetFileTags(PDO $db, int $fileId, ?array $tags): void {
  * @param array<string,mixed> $row
  * @return array<string,mixed>
  */
-function mediaMapFileRow(PDO $db, array $row, bool $includeTags = true): array {
+function mediaMapFileRow(PDO $db, array $row, bool $includeTags = true, ?array $preloadedTags = null): array {
     $stored = (string)$row['stored_name'];
     $status = (string)$row['status'];
     $url = null;
@@ -283,7 +329,7 @@ function mediaMapFileRow(PDO $db, array $row, bool $includeTags = true): array {
         'thumbUrl' => $thumbUrl,
     ];
     if ($includeTags) {
-        $out['tags'] = mediaTagsForFile($db, (int)$row['id']);
+        $out['tags'] = $preloadedTags !== null ? $preloadedTags : mediaTagsForFile($db, (int)$row['id']);
     }
     return $out;
 }
@@ -364,7 +410,7 @@ function mediaPurgeTrashFile(string $storedName): bool {
 }
 
 /**
- * Create a ~240px thumbnail next to the original. Returns thumb filename or null.
+ * Create a ~480px thumbnail (sharp on 2× displays). Returns thumb filename or null.
  */
 function mediaGenerateThumb(string $diskPath, string $uuid): ?string {
     if (!extension_loaded('gd') || !is_file($diskPath)) {
@@ -380,17 +426,18 @@ function mediaGenerateThumb(string $diskPath, string $uuid): ?string {
     if ($src === false) {
         return null;
     }
-    $resized = resizeGdImageFit($src, 240, 240);
+    $src = applyGdExifOrientation($src, $diskPath);
+    $resized = resizeGdImageFit($src, 480, 480);
     $thumbName = 'media_' . $uuid . '_thumb.webp';
     $thumbPath = mediaUploadsDir() . DIRECTORY_SEPARATOR . $thumbName;
     $ok = false;
     if (function_exists('imagewebp')) {
-        $ok = @imagewebp($resized, $thumbPath, 80);
+        $ok = @imagewebp($resized, $thumbPath, 84);
     }
     if (!$ok) {
         $thumbName = 'media_' . $uuid . '_thumb.jpg';
         $thumbPath = mediaUploadsDir() . DIRECTORY_SEPARATOR . $thumbName;
-        $ok = @imagejpeg($resized, $thumbPath, 80);
+        $ok = @imagejpeg($resized, $thumbPath, 84);
     }
     imagedestroy($resized);
     return $ok ? $thumbName : null;
@@ -400,7 +447,7 @@ function mediaGenerateThumb(string $diskPath, string $uuid): ?string {
  * @param array<string,mixed> $file $_FILES entry
  * @return array<string,mixed>
  */
-function mediaSaveUploadedFile(PDO $db, array $file, ?int $folderId, int $userId, ?array $tags = null, bool $removeBackground = false, ?string $bgColorHex = null): array {
+function mediaSaveUploadedFile(PDO $db, array $file, ?int $folderId, int $userId, ?array $tags = null, bool $removeBackground = false, ?string $bgColorHex = null, bool $optimize = false): array {
     if (($file['error'] ?? UPLOAD_ERR_NO_FILE) !== UPLOAD_ERR_OK) {
         $err = (int)($file['error'] ?? UPLOAD_ERR_NO_FILE);
         if (in_array($err, [UPLOAD_ERR_INI_SIZE, UPLOAD_ERR_FORM_SIZE], true)) {
@@ -440,79 +487,102 @@ function mediaSaveUploadedFile(PDO $db, array $file, ?int $folderId, int $userId
     $width = null;
     $height = null;
     $thumbName = null;
+    $reencoded = false;
 
-    if ($allowed['kind'] === 'image' && $allowed['ext'] !== 'svg' && ($removeBackground || extension_loaded('gd'))) {
-        if ($removeBackground && !extension_loaded('gd')) {
-            throw new RuntimeException('PHP GD extension is required for background removal. Enable extension=gd in php.ini.');
-        }
-        if (extension_loaded('gd')) {
-            $src = loadGdImageFromFile($tmp, $allowed['mime'], $allowed['ext']);
-            if ($src !== false) {
-                if ($removeBackground) {
-                    $rgb = $bgColorHex ? parseHexColorToRgb($bgColorHex) : null;
-                    if ($rgb === null) {
-                        $rgb = sampleCornerBackgroundColor($src);
-                    }
-                    if ($rgb !== null) {
-                        $src = removeGdImageBackgroundColor($src, $rgb[0], $rgb[1], $rgb[2]);
-                        $allowed['ext'] = 'png';
-                        $allowed['mime'] = 'image/png';
-                        $storedName = 'media_' . $uuid . '.png';
-                        $dest = mediaUploadsDir() . DIRECTORY_SEPARATOR . $storedName;
-                    }
-                }
-                $width = imagesx($src);
-                $height = imagesy($src);
-                imagealphablending($src, false);
-                imagesavealpha($src, true);
-                $saved = false;
-                if ($allowed['ext'] === 'png') {
-                    $saved = imagepng($src, $dest, 6);
-                } elseif ($allowed['ext'] === 'jpg' || $allowed['ext'] === 'jpeg') {
-                    $saved = imagejpeg($src, $dest, 90);
-                } elseif ($allowed['ext'] === 'webp' && function_exists('imagewebp')) {
-                    $saved = imagewebp($src, $dest, 90);
-                } elseif ($allowed['ext'] === 'gif') {
-                    $saved = imagegif($src, $dest);
-                }
-                imagedestroy($src);
-                if ($saved) {
-                    if (is_uploaded_file($tmp)) {
-                        @unlink($tmp);
-                    }
-                    $thumbName = mediaGenerateThumb($dest, $uuid);
-                } else {
-                    // fall through to raw move
-                    if (!move_uploaded_file($tmp, $dest) && !@rename($tmp, $dest) && !@copy($tmp, $dest)) {
-                        throw new RuntimeException('Failed to save uploaded file');
-                    }
-                }
-            } else {
-                if (!move_uploaded_file($tmp, $dest)) {
-                    throw new RuntimeException('Failed to save uploaded file');
-                }
+    $needsGdWrite = $removeBackground || ($optimize && $allowed['kind'] === 'image' && $allowed['ext'] !== 'svg' && $allowed['ext'] !== 'gif');
+    if ($needsGdWrite && !extension_loaded('gd')) {
+        throw new RuntimeException('PHP GD extension is required for image processing. Enable extension=gd in php.ini.');
+    }
+
+    if ($needsGdWrite) {
+        $src = loadGdImageFromFile($tmp, $allowed['mime'], $allowed['ext']);
+        if ($src === false) {
+            if (!move_uploaded_file($tmp, $dest) && !@rename($tmp, $dest) && !@copy($tmp, $dest)) {
+                throw new RuntimeException('Failed to save uploaded file');
             }
         } else {
-            if (!move_uploaded_file($tmp, $dest)) {
-                throw new RuntimeException('Failed to save uploaded file');
+            $src = applyGdExifOrientation($src, $tmp);
+            if ($removeBackground) {
+                $rgb = $bgColorHex ? parseHexColorToRgb($bgColorHex) : null;
+                if ($rgb === null) {
+                    $rgb = sampleCornerBackgroundColor($src);
+                }
+                if ($rgb !== null) {
+                    $src = removeGdImageBackgroundColor($src, $rgb[0], $rgb[1], $rgb[2]);
+                    $allowed['ext'] = 'png';
+                    $allowed['mime'] = 'image/png';
+                    $storedName = 'media_' . $uuid . '.png';
+                    $dest = mediaUploadsDir() . DIRECTORY_SEPARATOR . $storedName;
+                }
+            }
+            if ($optimize && !$removeBackground) {
+                $src = resizeGdImageFit($src, 2560, 2560);
+            }
+            $width = imagesx($src);
+            $height = imagesy($src);
+            imagealphablending($src, false);
+            imagesavealpha($src, true);
+            $saved = false;
+            if ($allowed['ext'] === 'png') {
+                $saved = imagepng($src, $dest, 6);
+            } elseif ($allowed['ext'] === 'jpg' || $allowed['ext'] === 'jpeg') {
+                $saved = imagejpeg($src, $dest, $optimize ? 88 : 92);
+            } elseif ($allowed['ext'] === 'webp' && function_exists('imagewebp')) {
+                $saved = imagewebp($src, $dest, $optimize ? 86 : 90);
+            } elseif ($allowed['ext'] === 'gif') {
+                $saved = imagegif($src, $dest);
+            }
+            imagedestroy($src);
+            if (!$saved) {
+                if (!move_uploaded_file($tmp, $dest) && !@rename($tmp, $dest) && !@copy($tmp, $dest)) {
+                    throw new RuntimeException('Failed to save uploaded file');
+                }
+            } else {
+                $reencoded = true;
+                if (is_uploaded_file($tmp)) {
+                    @unlink($tmp);
+                }
             }
         }
     } else {
-        if (!move_uploaded_file($tmp, $dest)) {
+        if (!move_uploaded_file($tmp, $dest) && !@rename($tmp, $dest) && !@copy($tmp, $dest)) {
             throw new RuntimeException('Failed to save uploaded file');
         }
-        if ($allowed['kind'] === 'image' && $allowed['ext'] !== 'svg') {
-            $info = @getimagesize($dest);
-            if ($info) {
-                $width = (int)$info[0];
-                $height = (int)$info[1];
+    }
+
+    if ($allowed['kind'] === 'image' && $allowed['ext'] !== 'svg' && is_file($dest)) {
+        $info = @getimagesize($dest);
+        if ($info) {
+            $width = $width ?? (int)$info[0];
+            $height = $height ?? (int)$info[1];
+            $orient = mediaReadExifOrientation($dest);
+            if (in_array($orient, [5, 6, 7, 8], true)) {
+                $tmpW = $width;
+                $width = $height;
+                $height = $tmpW;
             }
-            $thumbName = mediaGenerateThumb($dest, $uuid);
         }
+        $thumbName = mediaGenerateThumb($dest, $uuid);
     }
 
     $now = time();
     $title = pathinfo($originalName, PATHINFO_FILENAME);
+    $savedBytes = is_file($dest) ? (int)filesize($dest) : $size;
+    // #region agent log
+    mediaAgentDebugLog('media_lib.php:mediaSaveUploadedFile', 'upload saved', [
+        'originalName' => $originalName,
+        'kind' => $allowed['kind'],
+        'ext' => $allowed['ext'],
+        'incomingBytes' => $size,
+        'savedBytes' => $savedBytes,
+        'width' => $width,
+        'height' => $height,
+        'reencoded' => $reencoded,
+        'optimize' => $optimize,
+        'removeBackground' => $removeBackground,
+        'hasThumb' => $thumbName !== null,
+    ], 'A');
+    // #endregion
     $stmt = $db->prepare(
         'INSERT INTO media_files (
             folder_id, uuid, original_name, stored_name, thumb_name, mime, kind, size_bytes,
@@ -527,7 +597,7 @@ function mediaSaveUploadedFile(PDO $db, array $file, ?int $folderId, int $userId
         $thumbName,
         $allowed['mime'],
         $allowed['kind'],
-        filesize($dest) ?: $size,
+        $savedBytes,
         $width,
         $height,
         $title,
@@ -596,6 +666,7 @@ function mediaTransformFile(PDO $db, int $fileId, array $opts, int $userId): arr
     $stmt = null;
     $row = null;
 
+    $srcBytes = is_file($srcPath) ? (int)filesize($srcPath) : 0;
     $src = loadGdImageFromFile($srcPath, $oldMime, $ext);
     if ($src === false) {
         throw new RuntimeException('Could not decode image');
@@ -655,10 +726,20 @@ function mediaTransformFile(PDO $db, int $fileId, array $opts, int $userId): arr
         }
     }
 
-    $maxW = isset($opts['width']) ? max(1, (int)$opts['width']) : imagesx($src);
-    $maxH = isset($opts['height']) ? max(1, (int)$opts['height']) : imagesy($src);
-    if ($maxW < imagesx($src) || $maxH < imagesy($src)) {
-        $src = resizeGdImageFit($src, $maxW, $maxH);
+    $beforeW = imagesx($src);
+    $beforeH = imagesy($src);
+    $hasW = isset($opts['width']) && (int)$opts['width'] > 0;
+    $hasH = isset($opts['height']) && (int)$opts['height'] > 0;
+    $targetW = $hasW ? max(1, (int)$opts['width']) : $beforeW;
+    $targetH = $hasH ? max(1, (int)$opts['height']) : $beforeH;
+    $resizeMode = isset($opts['resizeMode']) && (string)$opts['resizeMode'] === 'exact' ? 'exact' : 'fit';
+    if ($hasW || $hasH) {
+        if ($resizeMode === 'exact' && $hasW && $hasH) {
+            $src = resizeGdImageExact($src, $targetW, $targetH);
+        } else {
+            $allowUpscale = $resizeMode === 'exact';
+            $src = resizeGdImageFit($src, $targetW, $targetH, $allowUpscale);
+        }
     }
 
     // Preserve original format when not explicitly converting
@@ -811,5 +892,23 @@ function mediaTransformFile(PDO $db, int $fileId, array $opts, int $userId): arr
 
     $fresh = $db->prepare('SELECT * FROM media_files WHERE id = ?');
     $fresh->execute([$id]);
-    return mediaMapFileRow($db, $fresh->fetch(PDO::FETCH_ASSOC));
+    $mapped = mediaMapFileRow($db, $fresh->fetch(PDO::FETCH_ASSOC));
+    // #region agent log
+    mediaAgentDebugLog('media_lib.php:mediaTransformFile', 'transform done', [
+        'fileId' => $fileId,
+        'replace' => $replace,
+        'format' => $format,
+        'quality' => $quality,
+        'resizeMode' => $resizeMode,
+        'requestedW' => $hasW ? $targetW : null,
+        'requestedH' => $hasH ? $targetH : null,
+        'beforeBytes' => $srcBytes,
+        'afterBytes' => $sizeBytes,
+        'afterW' => $width,
+        'afterH' => $height,
+        'hadCrop' => !empty($opts['crop']),
+        'rotate' => $rotateCw,
+    ], 'D');
+    // #endregion
+    return $mapped;
 }

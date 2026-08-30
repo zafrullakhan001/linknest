@@ -19,6 +19,8 @@ import {
 } from '../services/mediaService';
 import type { MediaTransformOptions } from '../types';
 import { MediaImageEditor } from './MediaImageEditor';
+import { MediaLightbox } from './MediaLightbox';
+import { MediaCompressDialog } from './MediaCompressDialog';
 
 export type MediaLibraryMode = 'manage' | 'picker';
 
@@ -77,7 +79,9 @@ export const MediaLibrary: React.FC<MediaLibraryProps> = ({
   const [files, setFiles] = useState<MediaFile[]>([]);
   const [total, setTotal] = useState(0);
   const [view, setView] = useState<ViewFilter>('all');
+  const [qInput, setQInput] = useState('');
   const [q, setQ] = useState('');
+  const [page, setPage] = useState(1);
   const [tagFilter, setTagFilter] = useState('');
   const [tags, setTags] = useState<string[]>([]);
   const [grid, setGrid] = useState(true);
@@ -86,8 +90,12 @@ export const MediaLibrary: React.FC<MediaLibraryProps> = ({
   const [selected, setSelected] = useState<MediaFile | null>(null);
   const [selectedIds, setSelectedIds] = useState<Set<number>>(new Set());
   const [editingImage, setEditingImage] = useState<MediaFile | null>(null);
+  const [lightboxFile, setLightboxFile] = useState<MediaFile | null>(null);
+  const [compressOpen, setCompressOpen] = useState(false);
   const [newFolderName, setNewFolderName] = useState('');
   const [uploading, setUploading] = useState(false);
+  const [uploadLabel, setUploadLabel] = useState('');
+  const [optimizeOnUpload, setOptimizeOnUpload] = useState(false);
   const [bulkBusy, setBulkBusy] = useState(false);
   const [detailTitle, setDetailTitle] = useState('');
   const [detailAlt, setDetailAlt] = useState('');
@@ -130,15 +138,37 @@ export const MediaLibrary: React.FC<MediaLibraryProps> = ({
         status: statusForView,
         tag: tagFilter || undefined,
         perPage: 96,
+        page,
       });
       setFiles(res.data);
       setTotal(res.total);
+      // #region agent log
+      fetch('http://127.0.0.1:7808/ingest/ac6d79aa-db1a-4b9b-b803-66cfddabd40c', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', 'X-Debug-Session-Id': 'cee2c4' },
+        body: JSON.stringify({
+          sessionId: 'cee2c4',
+          location: 'MediaLibrary.tsx:loadFiles',
+          message: 'files loaded',
+          data: {
+            count: res.data.length,
+            total: res.total,
+            page,
+            imageThumbs: res.data.filter((f) => f.kind === 'image' && f.thumbUrl).length,
+            imageOriginals: res.data.filter((f) => f.kind === 'image' && f.url).length,
+          },
+          timestamp: Date.now(),
+          hypothesisId: 'B',
+          runId: 'uplift-1',
+        }),
+      }).catch(() => {});
+      // #endregion
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Failed to load media');
     } finally {
       setLoading(false);
     }
-  }, [q, folderId, kindForView, statusForView, tagFilter]);
+  }, [q, folderId, kindForView, statusForView, tagFilter, page]);
 
   const loadTags = useCallback(async () => {
     try {
@@ -148,6 +178,15 @@ export const MediaLibrary: React.FC<MediaLibraryProps> = ({
       // ignore
     }
   }, []);
+
+  useEffect(() => {
+    const t = window.setTimeout(() => setQ(qInput.trim()), 300);
+    return () => window.clearTimeout(t);
+  }, [qInput]);
+
+  useEffect(() => {
+    setPage(1);
+  }, [q, folderId, view, tagFilter]);
 
   useEffect(() => {
     loadFolders();
@@ -177,10 +216,25 @@ export const MediaLibrary: React.FC<MediaLibraryProps> = ({
     if (!arr.length) return;
     setUploading(true);
     setError(null);
+    const allErrors: Array<{ name: string; error: string }> = [];
     try {
-      const result = await uploadMediaFiles(arr, { folderId });
-      if (result.errors?.length) {
-        setError(result.errors.map((e) => `${e.name}: ${e.error}`).join('; '));
+      for (let i = 0; i < arr.length; i++) {
+        setUploadLabel(`Uploading ${i + 1}/${arr.length}…`);
+        const result = await uploadMediaFiles([arr[i]], { folderId, optimize: optimizeOnUpload });
+        if (result.errors?.length) {
+          allErrors.push(...result.errors);
+        }
+        if (result.data?.length) {
+          setFiles((prev) => {
+            const ids = new Set(prev.map((f) => f.id));
+            const extra = result.data.filter((f) => !ids.has(f.id));
+            return extra.length ? [...extra, ...prev] : prev;
+          });
+          setTotal((t) => t + result.data.length);
+        }
+      }
+      if (allErrors.length) {
+        setError(allErrors.map((e) => `${e.name}: ${e.error}`).join('; '));
       }
       await loadFiles();
       await loadTags();
@@ -188,6 +242,7 @@ export const MediaLibrary: React.FC<MediaLibraryProps> = ({
       setError(err instanceof Error ? err.message : 'Upload failed');
     } finally {
       setUploading(false);
+      setUploadLabel('');
       if (fileInputRef.current) fileInputRef.current.value = '';
     }
   };
@@ -383,10 +438,38 @@ export const MediaLibrary: React.FC<MediaLibraryProps> = ({
     }
   };
 
+  const openLightbox = (file: MediaFile) => {
+    if (file.kind !== 'image' || !file.url) return;
+    // #region agent log
+    fetch('http://127.0.0.1:7808/ingest/ac6d79aa-db1a-4b9b-b803-66cfddabd40c', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', 'X-Debug-Session-Id': 'cee2c4' },
+      body: JSON.stringify({
+        sessionId: 'cee2c4',
+        location: 'MediaLibrary.tsx:openLightbox',
+        message: 'open full size',
+        data: {
+          id: file.id,
+          hasOriginalUrl: !!file.url,
+          hasThumb: !!file.thumbUrl,
+          usingThumbForPreview: false,
+          width: file.width,
+          height: file.height,
+        },
+        timestamp: Date.now(),
+        hypothesisId: 'C',
+        runId: 'uplift-1',
+      }),
+    }).catch(() => {});
+    // #endregion
+    setLightboxFile(file);
+  };
+
   const currentFolder = folders.find((f) => f.id === folderId);
   const parentFolder = currentFolder?.parentId != null ? folders.find((f) => f.id === currentFolder.parentId) : null;
+  const totalPages = Math.max(1, Math.ceil(total / 96));
 
-  const heightClass = compact ? 'h-full min-h-[360px]' : 'min-h-[520px] h-[min(70vh,720px)]';
+  const heightClass = compact ? 'h-full min-h-[360px]' : 'min-h-[560px] h-[min(80vh,860px)]';
 
   return (
     <div className={`flex flex-col bg-white dark:bg-slate-800 rounded-xl border border-sky-200/70 dark:border-sky-800/40 overflow-hidden ${heightClass} ${className}`}>
@@ -408,13 +491,21 @@ export const MediaLibrary: React.FC<MediaLibraryProps> = ({
                 className="hidden"
                 onChange={(e) => e.target.files && handleUpload(e.target.files)}
               />
+              <label className="hidden sm:flex items-center gap-1 text-[11px] text-slate-600 dark:text-slate-300" title="Re-encode and cap at 2560px. Off = keep the original file.">
+                <input
+                  type="checkbox"
+                  checked={optimizeOnUpload}
+                  onChange={(e) => setOptimizeOnUpload(e.target.checked)}
+                />
+                Optimize
+              </label>
               <button
                 type="button"
                 disabled={uploading}
                 onClick={() => fileInputRef.current?.click()}
                 className="px-2.5 py-1 text-xs font-semibold rounded-lg bg-sky-600 text-white hover:bg-sky-500 disabled:opacity-50"
               >
-                {uploading ? 'Uploading…' : 'Upload'}
+                {uploading ? uploadLabel || 'Uploading…' : 'Upload'}
               </button>
             </>
           )}
@@ -445,8 +536,8 @@ export const MediaLibrary: React.FC<MediaLibraryProps> = ({
         <input
           type="search"
           placeholder="Search…"
-          value={q}
-          onChange={(e) => setQ(e.target.value)}
+          value={qInput}
+          onChange={(e) => setQInput(e.target.value)}
           className="ml-auto flex-1 min-w-[120px] max-w-[220px] text-xs rounded-lg border border-slate-300 dark:border-slate-600 bg-slate-50 dark:bg-slate-900 px-2 py-1"
         />
         <select
@@ -533,16 +624,11 @@ export const MediaLibrary: React.FC<MediaLibraryProps> = ({
                   <button
                     type="button"
                     disabled={bulkBusy}
-                    onClick={() =>
-                      runBulkTransform(
-                        { format: 'jpg', quality: 72, width: 1920, height: 1920, replace: true },
-                        'Compress'
-                      )
-                    }
+                    onClick={() => setCompressOpen(true)}
                     className="px-2 py-0.5 rounded border border-slate-300 dark:border-slate-600 disabled:opacity-50"
-                    title="Compress: max 1920px, JPEG quality 72 (replaces file)"
+                    title="Compress selected images (choose size, quality, format)"
                   >
-                    Compress
+                    Compress…
                   </button>
                   <button
                     type="button"
@@ -673,14 +759,10 @@ export const MediaLibrary: React.FC<MediaLibraryProps> = ({
                 <button
                   key={file.id}
                   type="button"
-                  onClick={() => {
-                    setSelected(file);
-                    if (mode === 'picker' && onSelect && file.status === 'active') {
-                      // single-click selects for detail; double-click inserts — use Insert button
-                    }
-                  }}
+                  onClick={() => setSelected(file)}
                   onDoubleClick={() => {
                     if (mode === 'picker' && onSelect && file.status === 'active') onSelect(file);
+                    else if (file.kind === 'image' && file.url) openLightbox(file);
                   }}
                   className={`relative text-left rounded-lg border p-1.5 hover:border-sky-400 transition-colors ${
                     selected?.id === file.id
@@ -708,7 +790,13 @@ export const MediaLibrary: React.FC<MediaLibraryProps> = ({
                   )}
                   <div className="aspect-square bg-slate-100 dark:bg-slate-900 rounded flex items-center justify-center overflow-hidden mb-1">
                     {file.kind === 'image' && (file.thumbUrl || file.url) ? (
-                      <img src={file.thumbUrl || file.url || ''} alt="" className="w-full h-full object-cover" />
+                      <img
+                        src={file.thumbUrl || file.url || ''}
+                        alt=""
+                        loading="lazy"
+                        decoding="async"
+                        className="w-full h-full object-contain"
+                      />
                     ) : (
                       <span className="text-2xl">{kindIcon(file.kind)}</span>
                     )}
@@ -716,7 +804,10 @@ export const MediaLibrary: React.FC<MediaLibraryProps> = ({
                   <div className="text-[11px] truncate text-slate-800 dark:text-slate-200" title={file.originalName}>
                     {file.title || file.originalName}
                   </div>
-                  <div className="text-[10px] text-slate-500">{formatMediaSize(file.sizeBytes)}</div>
+                  <div className="text-[10px] text-slate-500">
+                    {formatMediaSize(file.sizeBytes)}
+                    {file.width && file.height ? ` · ${file.width}×${file.height}` : ''}
+                  </div>
                 </button>
               ))}
             </div>
@@ -740,6 +831,7 @@ export const MediaLibrary: React.FC<MediaLibraryProps> = ({
                     onClick={() => setSelected(file)}
                     onDoubleClick={() => {
                       if (mode === 'picker' && onSelect && file.status === 'active') onSelect(file);
+                      else if (file.kind === 'image' && file.url) openLightbox(file);
                     }}
                   >
                     {canManage && (
@@ -767,14 +859,48 @@ export const MediaLibrary: React.FC<MediaLibraryProps> = ({
               </tbody>
             </table>
           )}
+          {totalPages > 1 && (
+            <div className="flex items-center justify-center gap-2 mt-2 text-xs">
+              <button
+                type="button"
+                disabled={page <= 1}
+                onClick={() => setPage((p) => Math.max(1, p - 1))}
+                className="px-2 py-0.5 rounded border border-slate-300 dark:border-slate-600 disabled:opacity-40"
+              >
+                Prev
+              </button>
+              <span className="text-slate-500">
+                Page {page} / {totalPages}
+              </span>
+              <button
+                type="button"
+                disabled={page >= totalPages}
+                onClick={() => setPage((p) => Math.min(totalPages, p + 1))}
+                className="px-2 py-0.5 rounded border border-slate-300 dark:border-slate-600 disabled:opacity-40"
+              >
+                Next
+              </button>
+            </div>
+          )}
         </div>
 
         {/* Detail */}
         {selected && (
           <aside className="w-52 shrink-0 border-l border-slate-200 dark:border-slate-700 overflow-y-auto p-2 text-xs space-y-2">
-            <div className="bg-slate-100 dark:bg-slate-900 rounded-lg p-2 flex items-center justify-center min-h-[100px]">
+            <div className="bg-slate-100 dark:bg-slate-900 rounded-lg p-2 flex items-center justify-center min-h-[120px]">
               {selected.kind === 'image' && selected.url ? (
-                <img src={selected.thumbUrl || selected.url} alt="" className="max-h-28 max-w-full object-contain" />
+                <button
+                  type="button"
+                  className="block w-full"
+                  title="View original size"
+                  onClick={() => openLightbox(selected)}
+                >
+                  <img
+                    src={selected.url}
+                    alt={selected.altText || selected.originalName}
+                    className="max-h-36 max-w-full object-contain mx-auto cursor-zoom-in"
+                  />
+                </button>
               ) : selected.kind === 'video' && selected.url ? (
                 <video src={selected.url} className="max-h-28 max-w-full" controls />
               ) : selected.kind === 'audio' && selected.url ? (
@@ -831,10 +957,28 @@ export const MediaLibrary: React.FC<MediaLibraryProps> = ({
                   Insert
                 </button>
               )}
+              {selected.url && selected.kind === 'image' && (
+                <button
+                  type="button"
+                  onClick={() => openLightbox(selected)}
+                  className="w-full py-1 rounded border border-sky-400 text-sky-700 dark:text-sky-300 font-semibold"
+                >
+                  View full size
+                </button>
+              )}
               {selected.url && (
                 <button type="button" onClick={() => copyUrl(selected)} className="w-full py-1 rounded border border-slate-300 dark:border-slate-600">
                   Copy URL
                 </button>
+              )}
+              {selected.url && (
+                <a
+                  href={selected.url}
+                  download={selected.originalName}
+                  className="w-full py-1 rounded border border-slate-300 dark:border-slate-600 text-center"
+                >
+                  Download
+                </a>
               )}
               {canManage && selected.kind === 'image' && selected.status === 'active' && (
                 <button
@@ -897,6 +1041,27 @@ export const MediaLibrary: React.FC<MediaLibraryProps> = ({
             setEditingImage(null);
             setSelected(f);
             loadFiles();
+          }}
+        />
+      )}
+      {lightboxFile && (
+        <MediaLightbox
+          file={lightboxFile}
+          files={files}
+          onClose={() => setLightboxFile(null)}
+          onChange={(f) => {
+            setLightboxFile(f);
+            setSelected(f);
+          }}
+        />
+      )}
+      {compressOpen && (
+        <MediaCompressDialog
+          count={selectedImageIds.length}
+          onClose={() => setCompressOpen(false)}
+          onConfirm={(opts, label) => {
+            setCompressOpen(false);
+            runBulkTransform(opts, label);
           }}
         />
       )}

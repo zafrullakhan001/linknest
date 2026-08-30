@@ -60,14 +60,17 @@ function loadGdImageFromFile($tmpPath, $mimeType, $extension = '') {
  * @param \GdImage|resource $src
  * @return \GdImage|resource
  */
-function resizeGdImageFit($src, $maxW, $maxH) {
+function resizeGdImageFit($src, $maxW, $maxH, $allowUpscale = false) {
     $srcW = imagesx($src);
     $srcH = imagesy($src);
     if ($srcW <= 0 || $srcH <= 0) {
         return $src;
     }
 
-    $scale = min($maxW / $srcW, $maxH / $srcH, 1.0);
+    $scale = min($maxW / $srcW, $maxH / $srcH);
+    if (!$allowUpscale) {
+        $scale = min($scale, 1.0);
+    }
     $dstW = max(1, (int) round($srcW * $scale));
     $dstH = max(1, (int) round($srcH * $scale));
 
@@ -84,6 +87,95 @@ function resizeGdImageFit($src, $maxW, $maxH) {
     imagecopyresampled($dst, $src, 0, 0, 0, 0, $dstW, $dstH, $srcW, $srcH);
     imagedestroy($src);
     return $dst;
+}
+
+/**
+ * Stretch/resample to an exact width×height (may upscale).
+ * @param \GdImage|resource $src
+ * @return \GdImage|resource
+ */
+function resizeGdImageExact($src, $dstW, $dstH) {
+    $srcW = imagesx($src);
+    $srcH = imagesy($src);
+    $dstW = max(1, (int) $dstW);
+    $dstH = max(1, (int) $dstH);
+    if ($srcW === $dstW && $srcH === $dstH) {
+        return $src;
+    }
+    $dst = imagecreatetruecolor($dstW, $dstH);
+    imagealphablending($dst, false);
+    imagesavealpha($dst, true);
+    $transparent = imagecolorallocatealpha($dst, 0, 0, 0, 127);
+    imagefilledrectangle($dst, 0, 0, $dstW, $dstH, $transparent);
+    imagealphablending($dst, true);
+    imagecopyresampled($dst, $src, 0, 0, 0, 0, $dstW, $dstH, $srcW, $srcH);
+    imagedestroy($src);
+    return $dst;
+}
+
+/**
+ * Apply JPEG EXIF Orientation so pixels match how browsers display the file.
+ * @param \GdImage|resource $src
+ * @return \GdImage|resource
+ */
+function applyGdExifOrientation($src, $path) {
+    $orientation = mediaReadExifOrientation($path);
+    if ($orientation <= 1) {
+        return $src;
+    }
+    if ($orientation === 2 && function_exists('imageflip')) {
+        imageflip($src, IMG_FLIP_HORIZONTAL);
+        return $src;
+    }
+    if ($orientation === 4 && function_exists('imageflip')) {
+        imageflip($src, IMG_FLIP_VERTICAL);
+        return $src;
+    }
+    if (!function_exists('imagerotate')) {
+        return $src;
+    }
+    $rotated = null;
+    switch ($orientation) {
+        case 3:
+            $rotated = imagerotate($src, 180, 0);
+            break;
+        case 5:
+            if (function_exists('imageflip')) {
+                imageflip($src, IMG_FLIP_VERTICAL);
+            }
+            $rotated = imagerotate($src, -90, 0);
+            break;
+        case 6:
+            $rotated = imagerotate($src, -90, 0);
+            break;
+        case 7:
+            if (function_exists('imageflip')) {
+                imageflip($src, IMG_FLIP_HORIZONTAL);
+            }
+            $rotated = imagerotate($src, -90, 0);
+            break;
+        case 8:
+            $rotated = imagerotate($src, 90, 0);
+            break;
+    }
+    if ($rotated) {
+        imagedestroy($src);
+        return $rotated;
+    }
+    return $src;
+}
+
+function mediaReadExifOrientation($path): int {
+    if (!function_exists('exif_read_data') || !is_file($path)) {
+        return 1;
+    }
+    $ext = strtolower(pathinfo($path, PATHINFO_EXTENSION));
+    if (!in_array($ext, ['jpg', 'jpeg'], true)) {
+        return 1;
+    }
+    $exif = @exif_read_data($path);
+    $orientation = (int)($exif['Orientation'] ?? 1);
+    return $orientation >= 1 && $orientation <= 8 ? $orientation : 1;
 }
 
 /**
