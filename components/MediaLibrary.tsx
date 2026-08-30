@@ -1,4 +1,33 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import {
+  FaArchive,
+  FaArrowLeft,
+  FaCheck,
+  FaCompress,
+  FaCopy,
+  FaDownload,
+  FaEdit,
+  FaEraser,
+  FaExpand,
+  FaFile,
+  FaFilePdf,
+  FaFolder,
+  FaFolderOpen,
+  FaFolderPlus,
+  FaImage,
+  FaImages,
+  FaList,
+  FaMusic,
+  FaPhotoVideo,
+  FaRedo,
+  FaSearch,
+  FaTh,
+  FaTimes,
+  FaTrash,
+  FaUndo,
+  FaUpload,
+  FaVideo,
+} from 'react-icons/fa';
 import { useAuth } from '../contexts/AuthContext';
 import type { MediaFile, MediaFolder, MediaKind, MediaStatus } from '../types';
 import {
@@ -22,6 +51,22 @@ import { MediaImageEditor } from './MediaImageEditor';
 import { MediaLightbox } from './MediaLightbox';
 import { MediaCompressDialog } from './MediaCompressDialog';
 
+const SHELL =
+  'flex flex-col overflow-hidden rounded-3xl border border-slate-200 dark:border-[#333] bg-gradient-to-b from-slate-50 to-white dark:from-[#151a22] dark:to-[#111] shadow-2xl';
+const SEG = 'inline-flex flex-wrap rounded-xl bg-slate-100 dark:bg-[#252525] p-0.5';
+const SEG_BTN = 'inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-bold transition-all';
+const SEG_ON = 'bg-white dark:bg-[#333] text-cyan-600 dark:text-cyan-400 shadow-sm';
+const SEG_OFF = 'text-slate-500 hover:text-slate-700 dark:hover:text-slate-300';
+const BTN =
+  'inline-flex items-center justify-center gap-1.5 px-3 py-1.5 rounded-xl text-xs font-bold transition-all disabled:opacity-50 disabled:pointer-events-none active:scale-95';
+const BTN_GHOST = `${BTN} bg-slate-100 dark:bg-[#252525] text-slate-700 dark:text-slate-200 hover:bg-slate-200 dark:hover:bg-[#333]`;
+const BTN_PRIMARY = `${BTN} bg-gradient-to-r from-cyan-500 to-blue-600 hover:from-cyan-400 hover:to-blue-500 text-white shadow-lg shadow-cyan-500/25`;
+const BTN_DANGER = `${BTN} bg-red-600 hover:bg-red-700 text-white shadow-lg shadow-red-600/20`;
+const BTN_DANGER_GHOST = `${BTN} border border-red-400/70 text-red-600 dark:text-red-300 hover:bg-red-50 dark:hover:bg-red-950/40`;
+const BTN_ACCENT = `${BTN} border border-cyan-400/50 text-cyan-700 dark:text-cyan-300 hover:bg-cyan-50 dark:hover:bg-cyan-950/40`;
+const BTN_SUCCESS = `${BTN} bg-emerald-600 hover:bg-emerald-500 text-white shadow-lg shadow-emerald-600/20`;
+const FIELD =
+  'rounded-xl border border-slate-200 dark:border-[#333] bg-white dark:bg-[#1a1a1a] px-2.5 py-1.5 text-xs text-slate-800 dark:text-slate-200 placeholder:text-slate-400 focus:outline-none focus:ring-2 focus:ring-cyan-500/30';
 export type MediaLibraryMode = 'manage' | 'picker';
 
 interface MediaLibraryProps {
@@ -36,6 +81,9 @@ interface MediaLibraryProps {
 
 type ViewFilter = 'all' | MediaKind | 'archived' | 'trash';
 
+const KIND_FILTERS: ViewFilter[] = ['all', 'image', 'pdf', 'audio', 'video'];
+const STATUS_FILTERS: ViewFilter[] = ['archived', 'trash'];
+
 const KIND_LABELS: Record<string, string> = {
   all: 'All',
   image: 'Images',
@@ -46,18 +94,18 @@ const KIND_LABELS: Record<string, string> = {
   trash: 'Trash',
 };
 
-function kindIcon(kind: MediaKind): string {
+function KindGlyph({ kind, className = 'text-slate-400' }: { kind: MediaKind; className?: string }) {
   switch (kind) {
     case 'image':
-      return '🖼️';
+      return <FaImage className={className} />;
     case 'pdf':
-      return '📄';
+      return <FaFilePdf className={className} />;
     case 'audio':
-      return '🎵';
+      return <FaMusic className={className} />;
     case 'video':
-      return '🎬';
+      return <FaVideo className={className} />;
     default:
-      return '📎';
+      return <FaFile className={className} />;
   }
 }
 
@@ -97,11 +145,16 @@ export const MediaLibrary: React.FC<MediaLibraryProps> = ({
   const [uploadLabel, setUploadLabel] = useState('');
   const [optimizeOnUpload, setOptimizeOnUpload] = useState(false);
   const [bulkBusy, setBulkBusy] = useState(false);
+  /** Live CSS preview degrees while bulk-rotating (keyed by file id). */
+  const [previewRotate, setPreviewRotate] = useState<Record<number, number>>({});
+  /** When false, preview angle resets instantly (no reverse spin after server save). */
+  const [rotateTransitionOn, setRotateTransitionOn] = useState(true);
   const [detailTitle, setDetailTitle] = useState('');
   const [detailAlt, setDetailAlt] = useState('');
   const [detailTags, setDetailTags] = useState('');
   const fileInputRef = useRef<HTMLInputElement>(null);
   const dropRef = useRef<HTMLDivElement>(null);
+  const rotateAnimTimerRef = useRef<number | null>(null);
 
   const statusForView = useMemo((): MediaStatus | 'all' => {
     if (view === 'archived') return 'archived';
@@ -406,8 +459,142 @@ export const MediaLibrary: React.FC<MediaLibraryProps> = ({
     } catch (err) {
       setError(err instanceof Error ? err.message : `${label} failed`);
     } finally {
+      setPreviewRotate({});
       setBulkBusy(false);
     }
+  };
+
+  const bustMediaUrl = (url: string | null | undefined, stamp: number): string | undefined => {
+    if (!url) return undefined;
+    const base = url.split('?')[0];
+    return `${base}?r=${stamp}`;
+  };
+
+  const handleBulkRotate = async (direction: 'left' | 'right') => {
+    if (!canManage || selectedImageIds.length === 0 || bulkBusy) return;
+    const apiDeg: 90 | 270 = direction === 'left' ? 270 : 90;
+    const visualDelta = direction === 'left' ? -90 : 90;
+    const ids = selectedImageIds;
+    const idSet = new Set(ids);
+
+    setBulkBusy(true);
+    setError(null);
+    setRotateTransitionOn(true);
+    setPreviewRotate((prev) => {
+      const next = { ...prev };
+      for (const id of ids) {
+        next[id] = (next[id] || 0) + visualDelta;
+      }
+      return next;
+    });
+
+    await new Promise<void>((resolve) => {
+      if (rotateAnimTimerRef.current != null) {
+        window.clearTimeout(rotateAnimTimerRef.current);
+      }
+      rotateAnimTimerRef.current = window.setTimeout(() => {
+        rotateAnimTimerRef.current = null;
+        resolve();
+      }, 450);
+    });
+
+    try {
+      const result = await batchTransformMediaFiles(ids, { rotate: apiDeg, replace: true });
+      const label = direction === 'left' ? 'Rotate left' : 'Rotate right';
+      if (result.errors?.length) {
+        setError(
+          `${label}: ${result.transformed} ok, ${result.errors.length} failed — ` +
+            result.errors.map((e) => `#${e.id}: ${e.error}`).join('; ')
+        );
+      } else if (!result.transformed) {
+        setError(`${label} did not change any files`);
+        setRotateTransitionOn(true);
+        setPreviewRotate((prev) => {
+          const next = { ...prev };
+          for (const id of ids) {
+            next[id] = (next[id] || 0) - visualDelta;
+          }
+          return next;
+        });
+        return;
+      }
+
+      if (result.transformed > 0) {
+        const stamp = Date.now();
+        const byId = new Map(result.data.map((f) => [f.id, f]));
+        // Drop CSS angle instantly while swapping in the already-rotated bitmap (no reverse spin).
+        setRotateTransitionOn(false);
+        setPreviewRotate({});
+        setFiles((prev) =>
+          prev.map((f) => {
+            if (!idSet.has(f.id)) return f;
+            const updated = byId.get(f.id);
+            if (!updated) {
+              return {
+                ...f,
+                url: bustMediaUrl(f.url, stamp) ?? f.url,
+                thumbUrl: bustMediaUrl(f.thumbUrl, stamp) ?? f.thumbUrl,
+              };
+            }
+            return {
+              ...updated,
+              url: bustMediaUrl(updated.url, stamp) ?? updated.url,
+              thumbUrl: bustMediaUrl(updated.thumbUrl, stamp) ?? updated.thumbUrl,
+            };
+          })
+        );
+        setSelected((cur) => {
+          if (!cur || !idSet.has(cur.id)) return cur;
+          const updated = byId.get(cur.id);
+          if (!updated) {
+            return {
+              ...cur,
+              url: bustMediaUrl(cur.url, stamp) ?? cur.url,
+              thumbUrl: bustMediaUrl(cur.thumbUrl, stamp) ?? cur.thumbUrl,
+            };
+          }
+          return {
+            ...updated,
+            url: bustMediaUrl(updated.url, stamp) ?? updated.url,
+            thumbUrl: bustMediaUrl(updated.thumbUrl, stamp) ?? updated.thumbUrl,
+          };
+        });
+        // Re-enable smooth transitions for the next rotate click.
+        requestAnimationFrame(() => {
+          requestAnimationFrame(() => setRotateTransitionOn(true));
+        });
+      }
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Rotate failed');
+      setRotateTransitionOn(true);
+      setPreviewRotate((prev) => {
+        const next = { ...prev };
+        for (const id of ids) {
+          next[id] = (next[id] || 0) - visualDelta;
+        }
+        return next;
+      });
+    } finally {
+      setBulkBusy(false);
+    }
+  };
+
+  useEffect(() => {
+    return () => {
+      if (rotateAnimTimerRef.current != null) {
+        window.clearTimeout(rotateAnimTimerRef.current);
+      }
+    };
+  }, []);
+
+  const thumbRotateStyle = (fileId: number): React.CSSProperties => {
+    const deg = previewRotate[fileId] || 0;
+    const quarter = Math.abs(deg) % 180 === 90;
+    return {
+      transform: `rotate(${deg}deg) scale(${quarter ? 0.86 : 1})`,
+      transition: rotateTransitionOn ? 'transform 0.45s cubic-bezier(0.22, 1, 0.36, 1)' : 'none',
+      transformOrigin: 'center center',
+    };
   };
 
   const handleTrashSelected = async () => {
@@ -472,15 +659,27 @@ export const MediaLibrary: React.FC<MediaLibraryProps> = ({
   const heightClass = compact ? 'h-full min-h-[360px]' : 'min-h-[560px] h-[min(80vh,860px)]';
 
   return (
-    <div className={`flex flex-col bg-white dark:bg-slate-800 rounded-xl border border-sky-200/70 dark:border-sky-800/40 overflow-hidden ${heightClass} ${className}`}>
-      {/* Header */}
-      <div className="flex items-center justify-between gap-2 px-3 py-2 bg-gradient-to-r from-sky-50 via-teal-50/80 to-cyan-50/60 dark:from-sky-950/40 dark:via-teal-950/30 dark:to-cyan-950/20 border-b border-sky-100 dark:border-sky-800/40">
-        <div className="flex items-center gap-2 min-w-0">
-          <span className="text-lg">📁</span>
-          <h2 className="font-bold text-slate-900 dark:text-white truncate">Media Library</h2>
-          <span className="text-xs text-slate-500 dark:text-slate-400">{total} files</span>
+    <div className={`${SHELL} ${heightClass} ${className}`}>
+      <div className="flex items-start justify-between gap-3 px-4 sm:px-5 py-3.5 border-b border-slate-200 dark:border-[#333] bg-white/70 dark:bg-[#1a1a1a]/80 shrink-0">
+        <div className="flex items-center gap-3 min-w-0">
+          <div className="w-11 h-11 rounded-2xl bg-gradient-to-br from-cyan-500 to-blue-600 text-white flex items-center justify-center shadow-lg shadow-cyan-500/30 shrink-0">
+            <FaPhotoVideo size={18} />
+          </div>
+          <div className="min-w-0">
+            <div className="flex items-center gap-2 min-w-0">
+              <h2 className="text-lg font-bold text-slate-900 dark:text-white leading-tight truncate">
+                {mode === 'picker' ? 'Choose media' : 'Media Library'}
+              </h2>
+              <span className="shrink-0 px-2 py-0.5 rounded-lg text-[10px] font-bold uppercase tracking-wide bg-slate-100 dark:bg-[#252525] text-slate-500 dark:text-slate-400">
+                {total} {total === 1 ? 'file' : 'files'}
+              </span>
+            </div>
+            <p className="text-xs text-slate-500 dark:text-slate-400 truncate">
+              Images, documents, audio, and video — shared site library.
+            </p>
+          </div>
         </div>
-        <div className="flex items-center gap-1 shrink-0">
+        <div className="flex items-center gap-1.5 shrink-0">
           {canUpload && (
             <>
               <input
@@ -491,59 +690,89 @@ export const MediaLibrary: React.FC<MediaLibraryProps> = ({
                 className="hidden"
                 onChange={(e) => e.target.files && handleUpload(e.target.files)}
               />
-              <label className="hidden sm:flex items-center gap-1 text-[11px] text-slate-600 dark:text-slate-300" title="Re-encode and cap at 2560px. Off = keep the original file.">
-                <input
-                  type="checkbox"
-                  checked={optimizeOnUpload}
-                  onChange={(e) => setOptimizeOnUpload(e.target.checked)}
-                />
+              <button
+                type="button"
+                title="Re-encode and cap at 2560px. Off = keep the original file."
+                onClick={() => setOptimizeOnUpload((v) => !v)}
+                className={`${SEG_BTN} ${optimizeOnUpload ? SEG_ON : `${SEG_OFF} bg-slate-100 dark:bg-[#252525]`}`}
+              >
+                {optimizeOnUpload ? <FaCheck size={10} /> : null}
                 Optimize
-              </label>
+              </button>
               <button
                 type="button"
                 disabled={uploading}
                 onClick={() => fileInputRef.current?.click()}
-                className="px-2.5 py-1 text-xs font-semibold rounded-lg bg-sky-600 text-white hover:bg-sky-500 disabled:opacity-50"
+                className={BTN_PRIMARY}
               >
+                <FaUpload size={11} />
                 {uploading ? uploadLabel || 'Uploading…' : 'Upload'}
               </button>
             </>
           )}
           {onClose && (
-            <button type="button" onClick={onClose} className="px-2 py-1 text-slate-500 hover:text-slate-800 dark:hover:text-white text-lg leading-none" title="Close">
-              ×
+            <button
+              type="button"
+              onClick={onClose}
+              className="p-2 rounded-xl text-slate-500 hover:bg-slate-100 dark:hover:bg-[#333] transition-colors"
+              title="Close"
+            >
+              <FaTimes size={16} />
             </button>
           )}
         </div>
       </div>
 
-      {/* Filters */}
-      <div className="flex flex-wrap items-center gap-2 px-3 py-2 border-b border-slate-200 dark:border-slate-700">
-        {(Object.keys(KIND_LABELS) as ViewFilter[]).map((key) => (
-          <button
-            key={key}
-            type="button"
-            onClick={() => setView(key)}
-            className={`px-2 py-0.5 rounded-full text-xs font-medium ${
-              view === key
-                ? 'bg-sky-600 text-white'
-                : 'bg-slate-100 dark:bg-slate-700 text-slate-600 dark:text-slate-300 hover:bg-slate-200 dark:hover:bg-slate-600'
-            }`}
-          >
-            {KIND_LABELS[key]}
-          </button>
-        ))}
-        <input
-          type="search"
-          placeholder="Search…"
-          value={qInput}
-          onChange={(e) => setQInput(e.target.value)}
-          className="ml-auto flex-1 min-w-[120px] max-w-[220px] text-xs rounded-lg border border-slate-300 dark:border-slate-600 bg-slate-50 dark:bg-slate-900 px-2 py-1"
-        />
+      <div className="flex flex-wrap items-center gap-2 px-4 sm:px-5 py-2.5 border-b border-slate-200 dark:border-[#333]">
+        <div className={SEG}>
+          {KIND_FILTERS.map((key) => (
+            <button
+              key={key}
+              type="button"
+              onClick={() => setView(key)}
+              className={`${SEG_BTN} ${view === key ? SEG_ON : SEG_OFF}`}
+            >
+              {key === 'image' ? <FaImage size={10} /> : null}
+              {key === 'pdf' ? <FaFilePdf size={10} /> : null}
+              {key === 'audio' ? <FaMusic size={10} /> : null}
+              {key === 'video' ? <FaVideo size={10} /> : null}
+              {KIND_LABELS[key]}
+            </button>
+          ))}
+        </div>
+        <div className={SEG}>
+          {STATUS_FILTERS.map((key) => (
+            <button
+              key={key}
+              type="button"
+              onClick={() => setView(key)}
+              className={`${SEG_BTN} ${
+                view === key
+                  ? key === 'trash'
+                    ? 'bg-white dark:bg-[#333] text-red-600 dark:text-red-300 shadow-sm'
+                    : SEG_ON
+                  : SEG_OFF
+              }`}
+            >
+              {key === 'archived' ? <FaArchive size={10} /> : <FaTrash size={10} />}
+              {KIND_LABELS[key]}
+            </button>
+          ))}
+        </div>
+        <div className="relative ml-auto flex-1 min-w-[140px] max-w-[240px]">
+          <FaSearch className="absolute left-2.5 top-1/2 -translate-y-1/2 text-slate-400" size={11} />
+          <input
+            type="search"
+            placeholder="Search…"
+            value={qInput}
+            onChange={(e) => setQInput(e.target.value)}
+            className={`${FIELD} w-full pl-7`}
+          />
+        </div>
         <select
           value={tagFilter}
           onChange={(e) => setTagFilter(e.target.value)}
-          className="text-xs rounded-lg border border-slate-300 dark:border-slate-600 bg-slate-50 dark:bg-slate-900 px-2 py-1"
+          className={FIELD}
         >
           <option value="">All tags</option>
           {tags.map((t) => (
@@ -552,92 +781,82 @@ export const MediaLibrary: React.FC<MediaLibraryProps> = ({
             </option>
           ))}
         </select>
-        <button
-          type="button"
-          onClick={() => setGrid((g) => !g)}
-          className="text-xs px-2 py-1 rounded-lg border border-slate-300 dark:border-slate-600"
-          title={grid ? 'List view' : 'Grid view'}
-        >
-          {grid ? '☰' : '▦'}
-        </button>
-      </div>
-
-      {/* Bulk actions */}
-      {canManage && (
-        <div className="flex flex-wrap items-center gap-1.5 px-3 py-1.5 border-b border-slate-200 dark:border-slate-700 bg-slate-50/80 dark:bg-slate-900/40 text-xs">
+        <div className={SEG}>
           <button
             type="button"
-            onClick={selectAllInView}
-            className="px-2 py-0.5 rounded border border-slate-300 dark:border-slate-600 hover:bg-white dark:hover:bg-slate-800"
-            title="Select all files in this folder/view"
+            onClick={() => setGrid(true)}
+            className={`${SEG_BTN} ${grid ? SEG_ON : SEG_OFF}`}
+            title="Grid view"
           >
-            Select all
+            <FaTh size={11} />
           </button>
           <button
             type="button"
-            onClick={selectAllImagesInView}
-            className="px-2 py-0.5 rounded border border-slate-300 dark:border-slate-600 hover:bg-white dark:hover:bg-slate-800"
-            title="Select all images in this folder/view"
+            onClick={() => setGrid(false)}
+            className={`${SEG_BTN} ${!grid ? SEG_ON : SEG_OFF}`}
+            title="List view"
           >
-            Select images
+            <FaList size={11} />
+          </button>
+        </div>
+      </div>
+
+      {canManage && (
+        <div className="flex flex-wrap items-center gap-1.5 px-4 sm:px-5 py-2 border-b border-slate-200 dark:border-[#333] bg-white/50 dark:bg-[#1a1a1a]/50">
+          <button type="button" onClick={selectAllInView} className={BTN_GHOST} title="Select all files in this folder/view">
+            <FaCheck size={10} /> Select all
+          </button>
+          <button type="button" onClick={selectAllImagesInView} className={BTN_GHOST} title="Select all images in this folder/view">
+            <FaImages size={10} /> Select images
           </button>
           {selectedIds.size > 0 && (
             <>
-              <button
-                type="button"
-                onClick={clearSelection}
-                className="px-2 py-0.5 rounded border border-slate-300 dark:border-slate-600 hover:bg-white dark:hover:bg-slate-800"
-              >
-                Clear ({selectedIds.size})
+              <button type="button" onClick={clearSelection} className={BTN_GHOST}>
+                <FaTimes size={10} /> Clear ({selectedIds.size})
               </button>
               {view !== 'trash' && (
-                <button
-                  type="button"
-                  disabled={bulkBusy}
-                  onClick={handleTrashSelected}
-                  className="px-2 py-0.5 rounded border border-red-400 text-red-600 hover:bg-red-50 dark:hover:bg-red-950/40 disabled:opacity-50"
-                >
-                  Trash selected
+                <button type="button" disabled={bulkBusy} onClick={handleTrashSelected} className={BTN_DANGER_GHOST}>
+                  <FaTrash size={10} /> Trash selected
                 </button>
               )}
               {selectedImageIds.length > 0 && view !== 'trash' && (
                 <>
-                  <span className="text-slate-400 mx-0.5">|</span>
+                  <span className="w-px h-5 bg-slate-200 dark:bg-[#333] mx-0.5" />
                   <button
                     type="button"
                     disabled={bulkBusy}
-                    onClick={() => runBulkTransform({ rotate: 270, replace: true }, 'Rotate left')}
-                    className="px-2 py-0.5 rounded border border-slate-300 dark:border-slate-600 disabled:opacity-50"
+                    onClick={() => handleBulkRotate('left')}
+                    className={BTN_GHOST}
                     title="Rotate selected images 90° left"
                   >
-                    ↺ Rotate L
+                    <FaUndo size={10} /> Rotate L
                   </button>
                   <button
                     type="button"
                     disabled={bulkBusy}
-                    onClick={() => runBulkTransform({ rotate: 90, replace: true }, 'Rotate right')}
-                    className="px-2 py-0.5 rounded border border-slate-300 dark:border-slate-600 disabled:opacity-50"
+                    onClick={() => handleBulkRotate('right')}
+                    className={BTN_GHOST}
                     title="Rotate selected images 90° right"
                   >
-                    ↻ Rotate R
+                    <FaRedo size={10} /> Rotate R
                   </button>
                   <button
                     type="button"
                     disabled={bulkBusy}
                     onClick={() => setCompressOpen(true)}
-                    className="px-2 py-0.5 rounded border border-slate-300 dark:border-slate-600 disabled:opacity-50"
+                    className={BTN_GHOST}
                     title="Compress selected images (choose size, quality, format)"
                   >
-                    Compress…
+                    <FaCompress size={10} /> Compress
                   </button>
                   <button
                     type="button"
                     disabled={bulkBusy}
                     onClick={() => runBulkTransform({ format: 'jpg', quality: 82, replace: true }, 'Convert JPG')}
-                    className="px-2 py-0.5 rounded border border-slate-300 dark:border-slate-600 disabled:opacity-50"
+                    className={BTN_GHOST}
                     title="Convert selected images to JPEG"
                   >
-                    To JPG
+                    <FaImage size={10} /> To JPG
                   </button>
                   <button
                     type="button"
@@ -645,62 +864,68 @@ export const MediaLibrary: React.FC<MediaLibraryProps> = ({
                     onClick={() =>
                       runBulkTransform({ removeBackground: true, format: 'png', replace: true }, 'Remove background')
                     }
-                    className="px-2 py-0.5 rounded border border-slate-300 dark:border-slate-600 disabled:opacity-50"
+                    className={BTN_GHOST}
                     title="Remove background color (corner sample → transparent PNG)"
                   >
-                    Remove BG
+                    <FaEraser size={10} /> Remove BG
                   </button>
                 </>
               )}
-              {bulkBusy && <span className="text-sky-600 dark:text-sky-400 ml-1">Working…</span>}
+              {bulkBusy && (
+                <span className="text-xs font-bold text-cyan-600 dark:text-cyan-400 ml-1">Working…</span>
+              )}
             </>
           )}
         </div>
       )}
 
       {error && (
-        <div className="px-3 py-1.5 text-xs text-red-700 dark:text-red-300 bg-red-50 dark:bg-red-950/40 border-b border-red-200 dark:border-red-900">
+        <div className="mx-4 sm:mx-5 mt-2 rounded-xl border border-red-200 dark:border-red-900/50 bg-red-50 dark:bg-red-950/30 px-3 py-2 text-xs text-red-700 dark:text-red-300">
           {error}
-          <button type="button" className="ml-2 underline" onClick={() => setError(null)}>
-            dismiss
+          <button type="button" className="ml-2 font-bold underline" onClick={() => setError(null)}>
+            Dismiss
           </button>
         </div>
       )}
 
       <div className="flex flex-1 min-h-0">
-        {/* Folders */}
         {view !== 'trash' && view !== 'archived' && (
-          <aside className="w-40 shrink-0 border-r border-slate-200 dark:border-slate-700 overflow-y-auto p-2 text-xs">
+          <aside className="w-44 shrink-0 border-r border-slate-200 dark:border-[#333] overflow-y-auto p-2.5 text-xs">
             {parentFolder && (
               <button
                 type="button"
-                className="w-full text-left px-2 py-1 rounded hover:bg-slate-100 dark:hover:bg-slate-700 text-slate-600 dark:text-slate-300 mb-1"
+                className={`${BTN_GHOST} w-full justify-start mb-2`}
                 onClick={() => setFolderId(parentFolder.id)}
               >
-                ← Up
+                <FaArrowLeft size={10} /> Up
               </button>
             )}
-            <div className="font-semibold text-slate-700 dark:text-slate-200 px-2 py-1 truncate" title={currentFolder?.name}>
-              {currentFolder?.name || 'Library'}
+            <div
+              className="flex items-center gap-1.5 font-bold text-slate-800 dark:text-white px-2 py-1.5 truncate"
+              title={currentFolder?.name}
+            >
+              <FaFolderOpen className="text-cyan-500 shrink-0" size={12} />
+              <span className="truncate">{currentFolder?.name || 'Library'}</span>
             </div>
             {childFolders.map((f) => (
               <div key={f.id} className="group flex items-center gap-0.5">
                 <button
                   type="button"
-                  className="flex-1 text-left px-2 py-1 rounded hover:bg-sky-50 dark:hover:bg-sky-950/40 truncate"
+                  className="flex-1 flex items-center gap-1.5 text-left px-2 py-1.5 rounded-xl hover:bg-slate-100 dark:hover:bg-[#252525] text-slate-700 dark:text-slate-200 truncate transition-colors"
                   onClick={() => setFolderId(f.id)}
                   onDoubleClick={() => canManage && handleRenameFolder(f)}
                 >
-                  📂 {f.name}
+                  <FaFolder className="text-cyan-500/80 shrink-0" size={11} />
+                  <span className="truncate">{f.name}</span>
                 </button>
                 {canManage && (
                   <button
                     type="button"
-                    className="opacity-0 group-hover:opacity-100 text-red-500 px-1"
+                    className="opacity-0 group-hover:opacity-100 p-1.5 rounded-lg text-red-500 hover:bg-red-50 dark:hover:bg-red-950/40"
                     title="Delete folder"
                     onClick={() => handleDeleteFolder(f)}
                   >
-                    ×
+                    <FaTimes size={10} />
                   </button>
                 )}
               </div>
@@ -711,11 +936,11 @@ export const MediaLibrary: React.FC<MediaLibraryProps> = ({
                   value={newFolderName}
                   onChange={(e) => setNewFolderName(e.target.value)}
                   placeholder="New folder"
-                  className="flex-1 min-w-0 rounded border border-slate-300 dark:border-slate-600 bg-white dark:bg-slate-900 px-1 py-0.5"
+                  className={`${FIELD} flex-1 min-w-0`}
                   onKeyDown={(e) => e.key === 'Enter' && handleCreateFolder()}
                 />
-                <button type="button" onClick={handleCreateFolder} className="text-sky-600 font-bold px-1">
-                  +
+                <button type="button" onClick={handleCreateFolder} className={`${BTN_PRIMARY} px-2`} title="Create folder">
+                  <FaFolderPlus size={11} />
                 </button>
               </div>
             )}
@@ -725,36 +950,37 @@ export const MediaLibrary: React.FC<MediaLibraryProps> = ({
         {/* Files */}
         <div
           ref={dropRef}
-          className="flex-1 overflow-y-auto p-2"
+          className="flex-1 overflow-y-auto p-3"
           onDragOver={(e) => {
             if (canUpload) e.preventDefault();
           }}
           onDrop={onDrop}
         >
           {view === 'trash' && canManage && (
-            <div className="flex gap-2 mb-2">
-              <button
-                type="button"
-                onClick={handlePurgeSelected}
-                disabled={!selectedIds.size}
-                className="text-xs px-2 py-1 rounded bg-red-600 text-white disabled:opacity-40"
-              >
-                Purge selected
+            <div className="flex flex-wrap gap-2 mb-3">
+              <button type="button" onClick={handlePurgeSelected} disabled={!selectedIds.size} className={BTN_DANGER}>
+                <FaTrash size={10} /> Purge selected
               </button>
-              <button type="button" onClick={handleEmptyTrash} className="text-xs px-2 py-1 rounded border border-red-400 text-red-600">
-                Empty trash
+              <button type="button" onClick={handleEmptyTrash} className={BTN_DANGER_GHOST}>
+                <FaTrash size={10} /> Empty trash
               </button>
             </div>
           )}
 
           {loading ? (
-            <p className="text-sm text-slate-500 p-4">Loading…</p>
+            <p className="text-sm text-slate-500 p-6 text-center font-medium">Loading…</p>
           ) : files.length === 0 ? (
-            <p className="text-sm text-slate-500 p-4 text-center">
-              {canUpload ? 'No files yet. Upload or drag files here.' : 'No files in this view.'}
-            </p>
+            <div className="m-2 rounded-2xl border border-dashed border-slate-300 dark:border-[#333] bg-white/50 dark:bg-[#1a1a1a]/40 px-4 py-10 text-center">
+              <FaPhotoVideo className="mx-auto mb-2 text-slate-400" size={22} />
+              <p className="text-sm font-semibold text-slate-600 dark:text-slate-300">
+                {canUpload ? 'No files yet' : 'No files in this view'}
+              </p>
+              {canUpload && (
+                <p className="text-xs text-slate-500 mt-1">Upload or drag files here to add them to the library.</p>
+              )}
+            </div>
           ) : grid ? (
-            <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 gap-2">
+            <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 gap-2.5">
               {files.map((file) => (
                 <button
                   key={file.id}
@@ -764,10 +990,10 @@ export const MediaLibrary: React.FC<MediaLibraryProps> = ({
                     if (mode === 'picker' && onSelect && file.status === 'active') onSelect(file);
                     else if (file.kind === 'image' && file.url) openLightbox(file);
                   }}
-                  className={`relative text-left rounded-lg border p-1.5 hover:border-sky-400 transition-colors ${
+                  className={`relative text-left rounded-2xl border p-1.5 transition-all ${
                     selected?.id === file.id
-                      ? 'border-sky-500 ring-1 ring-sky-400'
-                      : 'border-slate-200 dark:border-slate-600'
+                      ? 'border-cyan-400 ring-2 ring-cyan-400/30 bg-white dark:bg-[#1a1a1a] shadow-sm'
+                      : 'border-slate-200 dark:border-[#333] bg-white/70 dark:bg-[#1a1a1a]/70 hover:border-cyan-300 dark:hover:border-cyan-700'
                   }`}
                 >
                   {canManage && (
@@ -784,27 +1010,28 @@ export const MediaLibrary: React.FC<MediaLibraryProps> = ({
                         });
                       }}
                       onClick={(e) => e.stopPropagation()}
-                      className="absolute top-1 left-1 z-10"
+                      className="absolute top-2 left-2 z-10 accent-cyan-500"
                       aria-label={`Select ${file.title || file.originalName}`}
                     />
                   )}
-                  <div className="aspect-square bg-slate-100 dark:bg-slate-900 rounded flex items-center justify-center overflow-hidden mb-1">
+                  <div className="aspect-square bg-slate-100 dark:bg-[#111] rounded-xl flex items-center justify-center overflow-hidden mb-1.5">
                     {file.kind === 'image' && (file.thumbUrl || file.url) ? (
                       <img
                         src={file.thumbUrl || file.url || ''}
                         alt=""
                         loading="lazy"
                         decoding="async"
-                        className="w-full h-full object-contain"
+                        className="w-full h-full object-contain will-change-transform"
+                        style={thumbRotateStyle(file.id)}
                       />
                     ) : (
-                      <span className="text-2xl">{kindIcon(file.kind)}</span>
+                      <KindGlyph kind={file.kind} className="text-2xl text-slate-400" />
                     )}
                   </div>
-                  <div className="text-[11px] truncate text-slate-800 dark:text-slate-200" title={file.originalName}>
+                  <div className="text-[11px] font-semibold truncate text-slate-800 dark:text-slate-200 px-0.5" title={file.originalName}>
                     {file.title || file.originalName}
                   </div>
-                  <div className="text-[10px] text-slate-500">
+                  <div className="text-[10px] text-slate-500 px-0.5 pb-0.5">
                     {formatMediaSize(file.sizeBytes)}
                     {file.width && file.height ? ` · ${file.width}×${file.height}` : ''}
                   </div>
@@ -814,19 +1041,21 @@ export const MediaLibrary: React.FC<MediaLibraryProps> = ({
           ) : (
             <table className="w-full text-xs">
               <thead>
-                <tr className="text-left text-slate-500 border-b border-slate-200 dark:border-slate-700">
-                  {canManage && <th className="w-6" />}
-                  <th className="py-1">Name</th>
-                  <th>Kind</th>
-                  <th>Size</th>
+                <tr className="text-left text-slate-500 border-b border-slate-200 dark:border-[#333]">
+                  {canManage && <th className="w-8" />}
+                  <th className="py-2 font-bold">Name</th>
+                  <th className="font-bold">Kind</th>
+                  <th className="font-bold">Size</th>
                 </tr>
               </thead>
               <tbody>
                 {files.map((file) => (
                   <tr
                     key={file.id}
-                    className={`cursor-pointer hover:bg-sky-50 dark:hover:bg-sky-950/30 ${
-                      selected?.id === file.id ? 'bg-sky-50 dark:bg-sky-950/40' : ''
+                    className={`cursor-pointer transition-colors ${
+                      selected?.id === file.id
+                        ? 'bg-cyan-50 dark:bg-cyan-950/30'
+                        : 'hover:bg-slate-50 dark:hover:bg-[#1a1a1a]'
                     }`}
                     onClick={() => setSelected(file)}
                     onDoubleClick={() => {
@@ -847,36 +1076,39 @@ export const MediaLibrary: React.FC<MediaLibraryProps> = ({
                               return next;
                             });
                           }}
+                          className="accent-cyan-500"
                           aria-label={`Select ${file.title || file.originalName}`}
                         />
                       </td>
                     )}
-                    <td className="py-1.5 truncate max-w-[180px]">{file.title || file.originalName}</td>
-                    <td>{file.kind}</td>
-                    <td>{formatMediaSize(file.sizeBytes)}</td>
+                    <td className="py-2 truncate max-w-[180px] font-semibold text-slate-800 dark:text-slate-200">
+                      {file.title || file.originalName}
+                    </td>
+                    <td className="capitalize text-slate-500">{file.kind}</td>
+                    <td className="text-slate-500">{formatMediaSize(file.sizeBytes)}</td>
                   </tr>
                 ))}
               </tbody>
             </table>
           )}
           {totalPages > 1 && (
-            <div className="flex items-center justify-center gap-2 mt-2 text-xs">
+            <div className="flex items-center justify-center gap-2 mt-3">
               <button
                 type="button"
                 disabled={page <= 1}
                 onClick={() => setPage((p) => Math.max(1, p - 1))}
-                className="px-2 py-0.5 rounded border border-slate-300 dark:border-slate-600 disabled:opacity-40"
+                className={BTN_GHOST}
               >
                 Prev
               </button>
-              <span className="text-slate-500">
+              <span className="text-xs font-bold text-slate-500">
                 Page {page} / {totalPages}
               </span>
               <button
                 type="button"
                 disabled={page >= totalPages}
                 onClick={() => setPage((p) => Math.min(totalPages, p + 1))}
-                className="px-2 py-0.5 rounded border border-slate-300 dark:border-slate-600 disabled:opacity-40"
+                className={BTN_GHOST}
               >
                 Next
               </button>
@@ -886,19 +1118,20 @@ export const MediaLibrary: React.FC<MediaLibraryProps> = ({
 
         {/* Detail */}
         {selected && (
-          <aside className="w-52 shrink-0 border-l border-slate-200 dark:border-slate-700 overflow-y-auto p-2 text-xs space-y-2">
-            <div className="bg-slate-100 dark:bg-slate-900 rounded-lg p-2 flex items-center justify-center min-h-[120px]">
+          <aside className="w-56 shrink-0 border-l border-slate-200 dark:border-[#333] overflow-y-auto p-3 text-xs space-y-2.5 bg-white/40 dark:bg-[#1a1a1a]/40">
+            <div className="bg-slate-100 dark:bg-[#111] rounded-2xl p-2 flex items-center justify-center min-h-[120px] border border-slate-200/70 dark:border-[#333]">
               {selected.kind === 'image' && selected.url ? (
                 <button
                   type="button"
-                  className="block w-full"
+                  className="block w-full overflow-hidden"
                   title="View original size"
                   onClick={() => openLightbox(selected)}
                 >
                   <img
                     src={selected.url}
                     alt={selected.altText || selected.originalName}
-                    className="max-h-36 max-w-full object-contain mx-auto cursor-zoom-in"
+                    className="max-h-36 max-w-full object-contain mx-auto cursor-zoom-in will-change-transform"
+                    style={thumbRotateStyle(selected.id)}
                   />
                 </button>
               ) : selected.kind === 'video' && selected.url ? (
@@ -906,113 +1139,97 @@ export const MediaLibrary: React.FC<MediaLibraryProps> = ({
               ) : selected.kind === 'audio' && selected.url ? (
                 <audio src={selected.url} controls className="w-full" />
               ) : (
-                <span className="text-3xl">{kindIcon(selected.kind)}</span>
+                <KindGlyph kind={selected.kind} className="text-3xl text-slate-400" />
               )}
             </div>
-            <div className="font-semibold text-slate-800 dark:text-slate-100 break-words">{selected.originalName}</div>
-            <div className="text-slate-500">
+            <div className="font-bold text-slate-800 dark:text-white break-words leading-snug">{selected.originalName}</div>
+            <div className="text-slate-500 capitalize">
               {selected.kind} · {formatMediaSize(selected.sizeBytes)}
               {selected.width && selected.height ? ` · ${selected.width}×${selected.height}` : ''}
             </div>
 
             {canManage && selected.status !== 'trash' && (
               <>
-                <label className="block">
+                <label className="block font-semibold text-slate-600 dark:text-slate-300">
                   Title
                   <input
                     value={detailTitle}
                     onChange={(e) => setDetailTitle(e.target.value)}
-                    className="mt-0.5 w-full rounded border border-slate-300 dark:border-slate-600 bg-white dark:bg-slate-900 px-1.5 py-1"
+                    className={`${FIELD} mt-1 w-full`}
                   />
                 </label>
-                <label className="block">
+                <label className="block font-semibold text-slate-600 dark:text-slate-300">
                   Alt text
                   <input
                     value={detailAlt}
                     onChange={(e) => setDetailAlt(e.target.value)}
-                    className="mt-0.5 w-full rounded border border-slate-300 dark:border-slate-600 bg-white dark:bg-slate-900 px-1.5 py-1"
+                    className={`${FIELD} mt-1 w-full`}
                   />
                 </label>
-                <label className="block">
+                <label className="block font-semibold text-slate-600 dark:text-slate-300">
                   Tags (comma-separated)
                   <input
                     value={detailTags}
                     onChange={(e) => setDetailTags(e.target.value)}
-                    className="mt-0.5 w-full rounded border border-slate-300 dark:border-slate-600 bg-white dark:bg-slate-900 px-1.5 py-1"
+                    className={`${FIELD} mt-1 w-full`}
                   />
                 </label>
-                <button type="button" onClick={saveDetail} className="w-full py-1 rounded bg-sky-600 text-white font-semibold">
+                <button type="button" onClick={saveDetail} className={`${BTN_PRIMARY} w-full`}>
                   Save details
                 </button>
               </>
             )}
 
-            <div className="flex flex-col gap-1 pt-1">
+            <div className="flex flex-col gap-1.5 pt-1">
               {mode === 'picker' && selected.status === 'active' && onSelect && (
-                <button
-                  type="button"
-                  onClick={() => onSelect(selected)}
-                  className="w-full py-1.5 rounded bg-emerald-600 text-white font-semibold"
-                >
+                <button type="button" onClick={() => onSelect(selected)} className={`${BTN_SUCCESS} w-full`}>
                   Insert
                 </button>
               )}
               {selected.url && selected.kind === 'image' && (
-                <button
-                  type="button"
-                  onClick={() => openLightbox(selected)}
-                  className="w-full py-1 rounded border border-sky-400 text-sky-700 dark:text-sky-300 font-semibold"
-                >
-                  View full size
+                <button type="button" onClick={() => openLightbox(selected)} className={`${BTN_ACCENT} w-full`}>
+                  <FaExpand size={10} /> View full size
                 </button>
               )}
               {selected.url && (
-                <button type="button" onClick={() => copyUrl(selected)} className="w-full py-1 rounded border border-slate-300 dark:border-slate-600">
-                  Copy URL
+                <button type="button" onClick={() => copyUrl(selected)} className={`${BTN_GHOST} w-full`}>
+                  <FaCopy size={10} /> Copy URL
                 </button>
               )}
               {selected.url && (
-                <a
-                  href={selected.url}
-                  download={selected.originalName}
-                  className="w-full py-1 rounded border border-slate-300 dark:border-slate-600 text-center"
-                >
-                  Download
+                <a href={selected.url} download={selected.originalName} className={`${BTN_GHOST} w-full`}>
+                  <FaDownload size={10} /> Download
                 </a>
               )}
               {canManage && selected.kind === 'image' && selected.status === 'active' && (
-                <button
-                  type="button"
-                  onClick={() => setEditingImage(selected)}
-                  className="w-full py-1 rounded border border-sky-400 text-sky-700 dark:text-sky-300"
-                >
-                  Edit image
+                <button type="button" onClick={() => setEditingImage(selected)} className={`${BTN_ACCENT} w-full`}>
+                  <FaEdit size={10} /> Edit image
                 </button>
               )}
               {canManage && selected.status === 'active' && (
                 <>
-                  <button type="button" onClick={() => setStatus(selected, 'archived')} className="w-full py-1 rounded border border-slate-300 dark:border-slate-600">
-                    Archive
+                  <button type="button" onClick={() => setStatus(selected, 'archived')} className={`${BTN_GHOST} w-full`}>
+                    <FaArchive size={10} /> Archive
                   </button>
-                  <button type="button" onClick={() => handleTrash(selected)} className="w-full py-1 rounded border border-red-400 text-red-600">
-                    Trash
+                  <button type="button" onClick={() => handleTrash(selected)} className={`${BTN_DANGER_GHOST} w-full`}>
+                    <FaTrash size={10} /> Trash
                   </button>
                 </>
               )}
               {canManage && selected.status === 'archived' && (
                 <>
-                  <button type="button" onClick={() => setStatus(selected, 'active')} className="w-full py-1 rounded border border-slate-300 dark:border-slate-600">
-                    Restore to library
+                  <button type="button" onClick={() => setStatus(selected, 'active')} className={`${BTN_GHOST} w-full`}>
+                    <FaUndo size={10} /> Restore to library
                   </button>
-                  <button type="button" onClick={() => handleTrash(selected)} className="w-full py-1 rounded border border-red-400 text-red-600">
-                    Trash
+                  <button type="button" onClick={() => handleTrash(selected)} className={`${BTN_DANGER_GHOST} w-full`}>
+                    <FaTrash size={10} /> Trash
                   </button>
                 </>
               )}
               {canManage && selected.status === 'trash' && (
                 <>
-                  <button type="button" onClick={() => setStatus(selected, 'active')} className="w-full py-1 rounded border border-slate-300 dark:border-slate-600">
-                    Restore
+                  <button type="button" onClick={() => setStatus(selected, 'active')} className={`${BTN_GHOST} w-full`}>
+                    <FaUndo size={10} /> Restore
                   </button>
                   <button
                     type="button"
@@ -1022,9 +1239,9 @@ export const MediaLibrary: React.FC<MediaLibraryProps> = ({
                       setSelected(null);
                       await loadFiles();
                     }}
-                    className="w-full py-1 rounded bg-red-600 text-white"
+                    className={`${BTN_DANGER} w-full`}
                   >
-                    Purge
+                    <FaTrash size={10} /> Purge
                   </button>
                 </>
               )}

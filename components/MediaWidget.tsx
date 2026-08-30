@@ -19,7 +19,7 @@ export const MediaWidget: React.FC<MediaWidgetProps> = ({ onClose }) => {
   }, [onClose]);
 
   return (
-    <div className="h-full rounded-xl shadow-2xl overflow-hidden border border-slate-200 dark:border-slate-700">
+    <div className="h-full overflow-hidden">
       <MediaLibrary mode="manage" compact onClose={onClose} />
     </div>
   );

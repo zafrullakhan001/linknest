@@ -1,4 +1,5 @@
 import React, { useState } from 'react';
+import { FaCompress, FaTimes } from 'react-icons/fa';
 import type { MediaTransformOptions } from '../types';
 import { useEscapeToClose } from '../hooks/useEscapeToClose';
 
@@ -32,25 +33,43 @@ export const MediaCompressDialog: React.FC<MediaCompressDialogProps> = ({ count,
     onConfirm(opts, `Compress (${edgeLabel}, q${quality}, ${fmtLabel})`);
   };
 
+  const field =
+    'mt-1 w-full rounded-xl border border-slate-200 dark:border-[#333] bg-white dark:bg-[#1a1a1a] px-3 py-2 text-sm text-slate-800 dark:text-slate-200 focus:outline-none focus:ring-2 focus:ring-cyan-500/30';
+
   return (
-    <div className="fixed inset-0 z-[2147483646] flex items-center justify-center bg-black/50 p-4" onClick={onClose}>
+    <div className="fixed inset-0 z-[2147483646] flex items-center justify-center bg-slate-950/60 backdrop-blur-[2px] p-4" onClick={onClose}>
       <div
-        className="bg-white dark:bg-slate-800 rounded-xl shadow-2xl w-full max-w-md border border-slate-200 dark:border-slate-700"
+        className="w-full max-w-md rounded-3xl border border-slate-200 dark:border-[#333] bg-gradient-to-b from-slate-50 to-white dark:from-[#151a22] dark:to-[#111] shadow-2xl overflow-hidden"
         onClick={(e) => e.stopPropagation()}
       >
-        <div className="flex items-center justify-between px-4 py-3 border-b border-slate-200 dark:border-slate-700">
-          <h3 className="font-semibold text-slate-900 dark:text-white">Compress {count} image{count === 1 ? '' : 's'}</h3>
-          <button type="button" onClick={onClose} className="text-slate-500 hover:text-slate-800 dark:hover:text-white text-xl leading-none px-2">
-            ×
+        <div className="flex items-start justify-between gap-3 px-5 py-3.5 border-b border-slate-200 dark:border-[#333] bg-white/70 dark:bg-[#1a1a1a]/80">
+          <div className="flex items-center gap-3 min-w-0">
+            <div className="w-11 h-11 rounded-2xl bg-gradient-to-br from-cyan-500 to-blue-600 text-white flex items-center justify-center shadow-lg shadow-cyan-500/30 shrink-0">
+              <FaCompress size={16} />
+            </div>
+            <div className="min-w-0">
+              <h3 className="text-lg font-bold text-slate-900 dark:text-white leading-tight">
+                Compress {count} image{count === 1 ? '' : 's'}
+              </h3>
+              <p className="text-xs text-slate-500 dark:text-slate-400">Choose size, quality, and format.</p>
+            </div>
+          </div>
+          <button
+            type="button"
+            onClick={onClose}
+            className="p-2 rounded-xl text-slate-500 hover:bg-slate-100 dark:hover:bg-[#333] transition-colors"
+            title="Close"
+          >
+            <FaTimes size={16} />
           </button>
         </div>
-        <div className="p-4 space-y-3 text-sm">
-          <label className="block">
-            <span className="text-slate-600 dark:text-slate-300">Max long edge</span>
+        <div className="p-5 space-y-3.5 text-sm">
+          <label className="block font-semibold text-slate-600 dark:text-slate-300">
+            Max long edge
             <select
               value={maxEdge}
               onChange={(e) => setMaxEdge(parseInt(e.target.value, 10))}
-              className="mt-1 w-full rounded-lg border border-slate-300 dark:border-slate-600 bg-white dark:bg-slate-900 px-2 py-1.5"
+              className={field}
             >
               <option value={2560}>2560px (large)</option>
               <option value={1920}>1920px (recommended)</option>
@@ -59,45 +78,45 @@ export const MediaCompressDialog: React.FC<MediaCompressDialogProps> = ({ count,
               <option value={0}>Keep original dimensions</option>
             </select>
           </label>
-          <label className="block">
-            <span className="text-slate-600 dark:text-slate-300">Quality ({quality})</span>
+          <label className="block font-semibold text-slate-600 dark:text-slate-300">
+            Quality ({quality})
             <input
               type="range"
               min={40}
               max={95}
               value={quality}
               onChange={(e) => setQuality(parseInt(e.target.value, 10))}
-              className="w-full"
+              className="w-full mt-2 accent-cyan-500"
             />
-            <p className="text-[11px] text-slate-500">Lower = smaller file. 72–82 is a good balance.</p>
+            <p className="text-[11px] font-medium text-slate-500 mt-1">Lower = smaller file. 72–82 is a good balance.</p>
           </label>
-          <label className="block">
-            <span className="text-slate-600 dark:text-slate-300">Format</span>
+          <label className="block font-semibold text-slate-600 dark:text-slate-300">
+            Format
             <select
               value={format}
               onChange={(e) => setFormat(e.target.value as 'jpg' | 'webp' | 'keep')}
-              className="mt-1 w-full rounded-lg border border-slate-300 dark:border-slate-600 bg-white dark:bg-slate-900 px-2 py-1.5"
+              className={field}
             >
               <option value="jpg">JPEG (smallest, no transparency)</option>
               <option value="webp">WebP (small, keeps transparency)</option>
               <option value="keep">Keep original format</option>
             </select>
           </label>
-          <p className="text-[11px] text-amber-700 dark:text-amber-300">
+          <p className="text-[11px] font-medium text-amber-700 dark:text-amber-300">
             This replaces the selected files in place. Existing embeds keep the same URL.
           </p>
           <div className="flex gap-2 pt-1">
             <button
               type="button"
               onClick={handleConfirm}
-              className="flex-1 bg-sky-600 hover:bg-sky-500 text-white rounded-lg py-2 font-semibold"
+              className="flex-1 inline-flex items-center justify-center gap-1.5 rounded-2xl bg-gradient-to-r from-cyan-500 to-blue-600 hover:from-cyan-400 hover:to-blue-500 text-white py-2.5 font-bold shadow-lg shadow-cyan-500/25 active:scale-95 transition-all"
             >
-              Compress
+              <FaCompress size={12} /> Compress
             </button>
             <button
               type="button"
               onClick={onClose}
-              className="px-4 py-2 rounded-lg border border-slate-300 dark:border-slate-600 text-slate-700 dark:text-slate-200"
+              className="px-4 py-2.5 rounded-2xl text-sm font-bold bg-slate-100 dark:bg-[#252525] text-slate-700 dark:text-slate-200 hover:bg-slate-200 dark:hover:bg-[#333] transition-all"
             >
               Cancel
             </button>

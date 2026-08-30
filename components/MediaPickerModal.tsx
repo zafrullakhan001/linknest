@@ -39,9 +39,9 @@ export const MediaPickerModal: React.FC<MediaPickerModalProps> = ({
   };
 
   return (
-    <div className="fixed inset-0 z-[2147483645] flex items-center justify-center bg-black/50 p-4" onClick={onClose}>
+    <div className="fixed inset-0 z-[2147483645] flex items-center justify-center bg-slate-950/60 backdrop-blur-[2px] p-4" onClick={onClose}>
       <div
-        className="w-full max-w-5xl h-[min(80vh,700px)] shadow-2xl"
+        className="w-full max-w-5xl h-[min(80vh,700px)]"
         onClick={(e) => e.stopPropagation()}
       >
         <MediaLibrary mode="picker" compact onClose={onClose} onSelect={handleSelect} />

@@ -1,4 +1,5 @@
 import React, { useEffect, useMemo, useRef, useState } from 'react';
+import { FaCrop, FaExpand, FaImage, FaTimes } from 'react-icons/fa';
 import type { MediaFile, MediaTransformOptions } from '../types';
 import { formatMediaSize, transformMediaFile } from '../services/mediaService';
 import { useEscapeToClose } from '../hooks/useEscapeToClose';
@@ -273,22 +274,44 @@ export const MediaImageEditor: React.FC<MediaImageEditorProps> = ({ file, onClos
   const previewBoxW = quarterTurn ? previewImgH : previewImgW;
   const previewBoxH = quarterTurn ? previewImgW : previewImgH;
 
+  const field =
+    'mt-1 w-full rounded-xl border border-slate-200 dark:border-[#333] bg-white dark:bg-[#1a1a1a] px-2.5 py-1.5 text-sm text-slate-800 dark:text-slate-200 focus:outline-none focus:ring-2 focus:ring-cyan-500/30';
+  const seg = 'inline-flex flex-wrap rounded-xl bg-slate-100 dark:bg-[#252525] p-0.5';
+  const segBtn = 'px-3 py-1.5 rounded-lg text-xs font-bold transition-all';
+  const ghostBtn =
+    'inline-flex items-center justify-center gap-1.5 px-3 py-1.5 rounded-xl text-xs font-bold bg-slate-100 dark:bg-[#252525] text-slate-700 dark:text-slate-200 hover:bg-slate-200 dark:hover:bg-[#333] transition-all';
+
   return (
-    <div className="fixed inset-0 z-[2147483646] flex items-center justify-center bg-black/50 p-4" onClick={onClose}>
+    <div className="fixed inset-0 z-[2147483646] flex items-center justify-center bg-slate-950/60 backdrop-blur-[2px] p-4" onClick={onClose}>
       <div
-        className="bg-white dark:bg-slate-800 rounded-xl shadow-2xl max-w-4xl w-full max-h-[90vh] overflow-auto border border-slate-200 dark:border-slate-700"
+        className="max-w-4xl w-full max-h-[90vh] overflow-auto rounded-3xl border border-slate-200 dark:border-[#333] bg-gradient-to-b from-slate-50 to-white dark:from-[#151a22] dark:to-[#111] shadow-2xl"
         onClick={(e) => e.stopPropagation()}
       >
-        <div className="flex items-center justify-between px-4 py-3 border-b border-slate-200 dark:border-slate-700">
-          <h3 className="font-semibold text-slate-900 dark:text-white">Edit image — {file.title || file.originalName}</h3>
-          <button type="button" onClick={onClose} className="text-slate-500 hover:text-slate-800 dark:hover:text-white text-xl leading-none px-2">
-            ×
+        <div className="flex items-start justify-between gap-3 px-5 py-3.5 border-b border-slate-200 dark:border-[#333] bg-white/70 dark:bg-[#1a1a1a]/80 sticky top-0 z-10">
+          <div className="flex items-center gap-3 min-w-0">
+            <div className="w-11 h-11 rounded-2xl bg-gradient-to-br from-cyan-500 to-blue-600 text-white flex items-center justify-center shadow-lg shadow-cyan-500/30 shrink-0">
+              <FaImage size={18} />
+            </div>
+            <div className="min-w-0">
+              <h3 className="text-lg font-bold text-slate-900 dark:text-white leading-tight truncate">
+                Edit image
+              </h3>
+              <p className="text-xs text-slate-500 dark:text-slate-400 truncate">{file.title || file.originalName}</p>
+            </div>
+          </div>
+          <button
+            type="button"
+            onClick={onClose}
+            className="p-2 rounded-xl text-slate-500 hover:bg-slate-100 dark:hover:bg-[#333] transition-colors"
+            title="Close"
+          >
+            <FaTimes size={16} />
           </button>
         </div>
 
-        <div className="grid md:grid-cols-2 gap-4 p-4">
+        <div className="grid md:grid-cols-2 gap-4 p-5">
           <div className="flex flex-col gap-2">
-            <div className="bg-slate-100 dark:bg-slate-900 rounded-lg overflow-hidden min-h-[220px] flex items-center justify-center p-3">
+            <div className="bg-slate-100 dark:bg-[#111] rounded-2xl overflow-hidden min-h-[220px] flex items-center justify-center p-3 border border-slate-200 dark:border-[#333]">
               <div
                 className="relative"
                 style={{
@@ -338,12 +361,8 @@ export const MediaImageEditor: React.FC<MediaImageEditorProps> = ({ file, onClos
               {cropMode ? 'Drag on the image to crop' : 'Click the image to view original size'}
               {rotate ? ` · Preview rotated ${rotate}°` : ''}
             </p>
-            <button
-              type="button"
-              onClick={() => openOriginal(true)}
-              className="text-xs py-1 rounded border border-sky-400 text-sky-700 dark:text-sky-300"
-            >
-              View original size
+            <button type="button" onClick={() => openOriginal(true)} className={ghostBtn}>
+              <FaExpand size={10} /> View original size
             </button>
           </div>
 
@@ -352,13 +371,13 @@ export const MediaImageEditor: React.FC<MediaImageEditorProps> = ({ file, onClos
               Original: {naturalW || '—'}×{naturalH || '—'} · {formatMediaSize(file.sizeBytes)}
             </p>
 
-            <div className="flex flex-wrap gap-1">
+            <div className={seg}>
               {PRESETS.map((p) => (
                 <button
                   key={p.label}
                   type="button"
                   onClick={() => applyPreset(p.edge)}
-                  className="px-2 py-0.5 rounded border border-slate-300 dark:border-slate-600 text-xs hover:bg-slate-100 dark:hover:bg-slate-700"
+                  className={`${segBtn} text-slate-500 hover:text-slate-800 dark:hover:text-white hover:bg-white dark:hover:bg-[#333]`}
                 >
                   {p.label}
                 </button>
@@ -366,65 +385,63 @@ export const MediaImageEditor: React.FC<MediaImageEditorProps> = ({ file, onClos
             </div>
 
             <div className="flex gap-2 items-end">
-              <label className="flex-1">
-                <span className="text-slate-600 dark:text-slate-300">Width</span>
+              <label className="flex-1 font-semibold text-slate-600 dark:text-slate-300">
+                Width
                 <input
                   type="number"
                   min={1}
                   value={width || ''}
                   onChange={(e) => onWidthChange(parseInt(e.target.value, 10) || 0)}
-                  className="mt-1 w-full rounded-lg border border-slate-300 dark:border-slate-600 bg-white dark:bg-slate-900 px-2 py-1.5"
+                  className={field}
                 />
               </label>
-              <label className="flex-1">
-                <span className="text-slate-600 dark:text-slate-300">Height</span>
+              <label className="flex-1 font-semibold text-slate-600 dark:text-slate-300">
+                Height
                 <input
                   type="number"
                   min={1}
                   value={height || ''}
                   onChange={(e) => onHeightChange(parseInt(e.target.value, 10) || 0)}
-                  className="mt-1 w-full rounded-lg border border-slate-300 dark:border-slate-600 bg-white dark:bg-slate-900 px-2 py-1.5"
+                  className={field}
                 />
               </label>
             </div>
 
-            <label className="flex items-center gap-2">
-              <input type="checkbox" checked={lockAspect} onChange={(e) => setLockAspect(e.target.checked)} />
+            <label className="flex items-center gap-2 font-semibold text-slate-600 dark:text-slate-300">
+              <input type="checkbox" checked={lockAspect} onChange={(e) => setLockAspect(e.target.checked)} className="accent-cyan-500" />
               <span>Lock aspect ratio</span>
             </label>
 
-            <label className="block">
-              <span className="text-slate-600 dark:text-slate-300">Resize mode</span>
+            <label className="block font-semibold text-slate-600 dark:text-slate-300">
+              Resize mode
               <select
                 value={resizeMode}
                 onChange={(e) => setResizeMode(e.target.value as 'fit' | 'exact')}
-                className="mt-1 w-full rounded-lg border border-slate-300 dark:border-slate-600 bg-white dark:bg-slate-900 px-2 py-1.5"
+                className={field}
               >
                 <option value="fit">Fit inside (keep proportions)</option>
                 <option value="exact">Exact width × height (may stretch)</option>
               </select>
             </label>
 
-            <label className="block">
-              <span className="text-slate-600 dark:text-slate-300">
-                Quality ({quality}){format === 'png' ? ' — PNG compression' : ''}
-              </span>
+            <label className="block font-semibold text-slate-600 dark:text-slate-300">
+              Quality ({quality}){format === 'png' ? ' — PNG compression' : ''}
               <input
                 type="range"
                 min={40}
                 max={100}
                 value={quality}
                 onChange={(e) => setQuality(parseInt(e.target.value, 10))}
-                className="w-full"
+                className="w-full mt-2 accent-cyan-500"
               />
             </label>
 
-            <label className="block">
-              <span className="text-slate-600 dark:text-slate-300">Format</span>
+            <label className="block font-semibold text-slate-600 dark:text-slate-300">
+              Format
               <select
                 value={format}
                 onChange={(e) => setFormat(e.target.value as 'png' | 'jpg' | 'webp')}
-                className="mt-1 w-full rounded-lg border border-slate-300 dark:border-slate-600 bg-white dark:bg-slate-900 px-2 py-1.5"
+                className={field}
               >
                 <option value="jpg">JPEG — best for photos</option>
                 <option value="webp">WebP — small, keeps transparency</option>
@@ -440,31 +457,32 @@ export const MediaImageEditor: React.FC<MediaImageEditorProps> = ({ file, onClos
                   : 'Size estimate appears after the image loads'}
             </p>
 
-            <label className="flex items-center gap-2">
-              <input type="checkbox" checked={cropMode} onChange={(e) => setCropMode(e.target.checked)} />
+            <label className="flex items-center gap-2 font-semibold text-slate-600 dark:text-slate-300">
+              <input type="checkbox" checked={cropMode} onChange={(e) => setCropMode(e.target.checked)} className="accent-cyan-500" />
+              <FaCrop size={11} className="text-cyan-500" />
               <span>Crop mode (drag on image)</span>
             </label>
             {crop && (
               <p className="text-xs text-slate-500">
                 Crop: {crop.x},{crop.y} — {crop.w}×{crop.h}
-                <button type="button" className="ml-2 text-sky-600" onClick={() => setCrop(null)}>
+                <button type="button" className="ml-2 font-bold text-cyan-600 dark:text-cyan-400" onClick={() => setCrop(null)}>
                   Clear
                 </button>
               </p>
             )}
 
             <div>
-              <span className="text-slate-600 dark:text-slate-300">Rotate</span>
-              <div className="mt-1 flex flex-wrap gap-1">
+              <span className="font-semibold text-slate-600 dark:text-slate-300">Rotate</span>
+              <div className={`${seg} mt-1`}>
                 {([0, 90, 180, 270] as const).map((deg) => (
                   <button
                     key={deg}
                     type="button"
                     onClick={() => applyRotate(deg)}
-                    className={`px-2 py-1 rounded border text-xs ${
+                    className={`${segBtn} ${
                       rotate === deg
-                        ? 'bg-sky-600 text-white border-sky-600'
-                        : 'border-slate-300 dark:border-slate-600'
+                        ? 'bg-white dark:bg-[#333] text-cyan-600 dark:text-cyan-400 shadow-sm'
+                        : 'text-slate-500 hover:text-slate-700 dark:hover:text-slate-300'
                     }`}
                   >
                     {deg === 0 ? 'None' : `${deg}°`}
@@ -473,44 +491,48 @@ export const MediaImageEditor: React.FC<MediaImageEditorProps> = ({ file, onClos
               </div>
             </div>
 
-            <label className="flex items-center gap-2">
-              <input type="checkbox" checked={removeBackground} onChange={(e) => setRemoveBackground(e.target.checked)} />
+            <label className="flex items-center gap-2 font-semibold text-slate-600 dark:text-slate-300">
+              <input type="checkbox" checked={removeBackground} onChange={(e) => setRemoveBackground(e.target.checked)} className="accent-cyan-500" />
               <span>Remove background color</span>
             </label>
             {removeBackground && (
-              <label className="block">
-                <span className="text-slate-600 dark:text-slate-300">BG color (optional hex)</span>
+              <label className="block font-semibold text-slate-600 dark:text-slate-300">
+                BG color (optional hex)
                 <input
                   type="text"
                   placeholder="#ffffff (or leave empty for auto)"
                   value={bgColor}
                   onChange={(e) => setBgColor(e.target.value)}
-                  className="mt-1 w-full rounded-lg border border-slate-300 dark:border-slate-600 bg-white dark:bg-slate-900 px-2 py-1.5"
+                  className={field}
                 />
               </label>
             )}
 
-            <label className="flex items-center gap-2">
-              <input type="checkbox" checked={replace} onChange={(e) => setReplace(e.target.checked)} />
+            <label className="flex items-center gap-2 font-semibold text-slate-600 dark:text-slate-300">
+              <input type="checkbox" checked={replace} onChange={(e) => setReplace(e.target.checked)} className="accent-cyan-500" />
               <span>Replace original (breaks existing embeds)</span>
             </label>
             <p className="text-xs text-slate-500">Default saves as a new file so existing rich-text embeds keep working.</p>
 
-            {error && <p className="text-sm text-red-600 dark:text-red-400">{error}</p>}
+            {error && (
+              <div className="rounded-xl border border-red-200 dark:border-red-900/50 bg-red-50 dark:bg-red-950/30 px-3 py-2 text-sm text-red-700 dark:text-red-300">
+                {error}
+              </div>
+            )}
 
             <div className="flex gap-2 pt-2">
               <button
                 type="button"
                 disabled={saving}
                 onClick={handleSave}
-                className="flex-1 bg-sky-600 hover:bg-sky-500 disabled:opacity-50 text-white rounded-lg py-2 font-semibold"
+                className="flex-1 inline-flex items-center justify-center gap-1.5 rounded-2xl bg-gradient-to-r from-cyan-500 to-blue-600 hover:from-cyan-400 hover:to-blue-500 disabled:opacity-50 text-white py-2.5 font-bold shadow-lg shadow-cyan-500/25 active:scale-95 transition-all"
               >
                 {saving ? 'Saving…' : replace ? 'Replace' : 'Save as new'}
               </button>
               <button
                 type="button"
                 onClick={onClose}
-                className="px-4 py-2 rounded-lg border border-slate-300 dark:border-slate-600 text-slate-700 dark:text-slate-200"
+                className="px-4 py-2.5 rounded-2xl text-sm font-bold bg-slate-100 dark:bg-[#252525] text-slate-700 dark:text-slate-200 hover:bg-slate-200 dark:hover:bg-[#333] transition-all"
               >
                 Cancel
               </button>
