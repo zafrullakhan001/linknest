@@ -32,6 +32,10 @@ export function shouldOpenInfoDialog(link: {
   return isInfoContentEnabled(link) && hasVisibleRichText(link.richTextContent);
 }
 
+export function isInfoOpenLinkShown(link: { infoShowOpenLink?: boolean }): boolean {
+  return link.infoShowOpenLink !== false;
+}
+
 export function linkHoverTitle(link: { notesEnabled?: boolean; notes?: string; tooltip?: string }, fallback: string): string {
   if (!isNotesTooltipEnabled(link)) return fallback;
   return stripHtmlToPlainText(link.tooltip || '') || fallback;

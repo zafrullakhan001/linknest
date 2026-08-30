@@ -54,6 +54,9 @@ import {
   ACCESS_SUB_TAB_STORAGE_KEY,
   migrateAccessSubTab,
 } from './AccessManager';
+import { SelectableRichTextEditor } from './SelectableRichTextEditor';
+import { MobileRichTextEditor } from './MobileRichTextEditor';
+import { linkifyHtml } from '../utils/richTextDisplay';
 
 // Resolve API base dynamically based on current location
 // This ensures API calls work in both dev mode and runtime mode with any base path
@@ -12462,15 +12465,21 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({ onUserApproved }) => {
                                 <label className="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-2">
                                   Footer Text
                                 </label>
-                                <textarea
-                                  value={settings.footer_text || '© 2025 Adventhealth - Designed and developed by AIT Architecture team'}
-                                  onChange={(e) => updateBranding({ footer_text: e.target.value })}
-                                  className="w-full bg-white dark:bg-slate-900/50 border border-slate-200 dark:border-slate-700 rounded-lg px-3 py-2 text-sm text-slate-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-sky-400/50 focus:border-sky-400"
-                                  placeholder="© 2025 Adventhealth - Designed and developed by AIT Architecture team"
-                                  rows={3}
-                                />
+                                {isMobile ? (
+                                  <MobileRichTextEditor
+                                    value={settings.footer_text || '© 2025 Adventhealth - Designed and developed by AIT Architecture team'}
+                                    onChange={(html) => updateBranding({ footer_text: html })}
+                                    placeholder="© 2025 Adventhealth - Designed and developed by AIT Architecture team"
+                                  />
+                                ) : (
+                                  <SelectableRichTextEditor
+                                    value={settings.footer_text || '© 2025 Adventhealth - Designed and developed by AIT Architecture team'}
+                                    onChange={(html) => updateBranding({ footer_text: html })}
+                                    placeholder="© 2025 Adventhealth - Designed and developed by AIT Architecture team"
+                                  />
+                                )}
                                 <p className="text-xs text-slate-500 dark:text-slate-400 mt-1">
-                                  This text will be displayed in the footer of all pages. You can use HTML tags for formatting.
+                                  Shown at the bottom of every page. Use the link button for web or email (mailto:) links. Bare URLs and email addresses also become clickable hyperlinks automatically.
                                 </p>
                               </div>
 
@@ -12583,7 +12592,7 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({ onUserApproved }) => {
                                 <h4 className="text-sm font-semibold text-slate-900 dark:text-white mb-2">Preview</h4>
                                 <div className="bg-white dark:bg-slate-900/50 border border-slate-200 dark:border-slate-700 rounded-lg p-4">
                                   <footer className="linknest-footer py-6 text-center text-slate-400 dark:text-slate-500">
-                                    <p
+                                    <div
                                       className="linknest-footer-text"
                                       style={{
                                         fontSize: `${parseInt(settings.footer_font_size || '14', 10) || 14}px`,
@@ -12592,8 +12601,10 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({ onUserApproved }) => {
                                         fontStyle: (settings.footer_font_style || 'normal') as React.CSSProperties['fontStyle'],
                                         color: settings.footer_font_color || undefined,
                                       }}
-                                      dangerouslySetInnerHTML={{ __html: settings.footer_text || '© 2025 Adventhealth - Designed and developed by AIT Architecture team' }}
-                                    ></p>
+                                      dangerouslySetInnerHTML={{
+                                        __html: linkifyHtml(settings.footer_text || '© 2025 Adventhealth - Designed and developed by AIT Architecture team'),
+                                      }}
+                                    />
                                   </footer>
                                 </div>
                               </div>

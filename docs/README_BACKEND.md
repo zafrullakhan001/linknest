@@ -21,17 +21,13 @@ chmod 755 data
 
 ### 2. PHP Built-in Server (Development)
 
-For development, you can use PHP's built-in server:
+`npm run dev` starts PHP on port 8000 for you. To run the backend alone:
 
 ```bash
-# Terminal 1: Start PHP server
 php -S localhost:8000 -t .
-
-# Terminal 2: Start Vite dev server (for frontend)
-npm run dev
 ```
 
-Then access the application at `http://localhost:3000` (Vite will proxy API requests).
+Then access the application at `http://localhost:3000` (Vite proxies `/api` and `/uploads` to PHP).
 
 ### 3. Apache Configuration
 

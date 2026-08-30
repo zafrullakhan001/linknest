@@ -31,6 +31,11 @@ import { LinkHoverTooltip } from './LinkHoverTooltip';
 import { InvalidUrlMark } from './UrlFormDiagnostics';
 import { useSettings } from '../contexts/SettingsContext';
 import { isUrlExcludedFromLinkCheck, parseExceptionsSetting } from '../services/linkCheckExceptionsService';
+import {
+  getBrokenBadgeTitle,
+  getBrokenStatusTone,
+  shouldShowBrokenStatusBadge,
+} from '../utils/brokenStatusDisplay';
 
 const stripHtml = (value: string): string =>
   String(value || '').replace(/<[^>]*>/g, '').trim();
@@ -163,6 +168,11 @@ const SortableFavoriteLinkCard: React.FC<{
   const healthStatus = skipHealth ? 'unknown' : healthResult?.health?.status || 'unknown';
   const latency = healthResult?.latency;
   const httpCode = healthResult?.health?.httpCode;
+  const showBrokenBadge = shouldShowBrokenStatusBadge(link, healthStatus);
+  const brokenTone = getBrokenStatusTone(link);
+  const healthStatusTitle = showBrokenBadge
+    ? getBrokenBadgeTitle(link, healthResult?.health?.error ? `${healthResult.health.error}${httpCode ? ` (HTTP ${httpCode})` : ''}` : (httpCode ? `HTTP ${httpCode}` : null))
+    : `Health Status: ${healthStatus.toUpperCase()}${httpCode ? ` (HTTP ${httpCode})` : ''}`;
 
   const style: React.CSSProperties = {
     animationDelay: `${animationDelay}ms`,
@@ -255,28 +265,31 @@ const SortableFavoriteLinkCard: React.FC<{
         }`}
         onClick={openLink}
       >
-        {healthResult && !skipHealth && (
+        {(healthResult && !skipHealth) || showBrokenBadge ? (
           <div
             className="absolute -top-[1px] -left-[1px] w-3.5 h-3.5 z-20 pointer-events-none overflow-hidden"
-            title={`Health Status: ${healthStatus.toUpperCase()}${httpCode ? ` (HTTP ${httpCode})` : ''}`}
+            title={healthStatusTitle}
           >
             <div
               className="absolute -top-2 -left-2 w-4 h-4 rotate-45"
               style={{
-                backgroundColor:
-                  healthStatus === 'healthy' ||
-                  healthStatus === 'accessible' ||
-                  healthStatus === 'restricted'
+                backgroundColor: showBrokenBadge
+                  ? brokenTone === 'amber'
+                    ? '#f59e0b'
+                    : brokenTone === 'slate'
+                      ? '#94a3b8'
+                      : '#ef4444'
+                  : healthStatus === 'healthy' ||
+                      healthStatus === 'accessible' ||
+                      healthStatus === 'restricted'
                     ? '#10b981'
-                    : healthStatus === 'broken'
-                      ? '#ef4444'
-                      : healthStatus === 'network'
-                        ? '#94a3b8'
-                        : '#f59e0b',
+                    : healthStatus === 'network'
+                      ? '#94a3b8'
+                      : '#f59e0b',
               }}
             />
           </div>
-        )}
+        ) : null}
         <div className="flex-1 min-w-0">
           <div className="flex items-center gap-1.5 min-w-0">
             <div className="text-[13px] leading-tight font-semibold text-slate-900 dark:text-white truncate group-hover:text-amber-600 dark:group-hover:text-amber-400 transition-colors">
@@ -350,22 +363,25 @@ const SortableFavoriteLinkCard: React.FC<{
       }`}
       onClick={openLink}
     >
-      {healthResult && (
+      {(healthResult || showBrokenBadge) && (
         <div
           className="absolute -top-[1px] -left-[1px] w-4 h-4 z-20 pointer-events-none overflow-hidden"
-          title={`Health Status: ${healthStatus.toUpperCase()}${httpCode ? ` (HTTP ${httpCode})` : ''}`}
+          title={healthStatusTitle}
         >
           <div
             className="absolute -top-2 -left-2 w-5 h-5 rotate-45"
             style={{
-              backgroundColor:
-                healthStatus === 'healthy' || healthStatus === 'accessible' || healthStatus === 'restricted'
+              backgroundColor: showBrokenBadge
+                ? brokenTone === 'amber'
+                  ? '#f59e0b'
+                  : brokenTone === 'slate'
+                    ? '#94a3b8'
+                    : '#ef4444'
+                : healthStatus === 'healthy' || healthStatus === 'accessible' || healthStatus === 'restricted'
                   ? '#10b981'
-                  : healthStatus === 'broken'
-                    ? '#ef4444'
-                    : healthStatus === 'network'
-                      ? '#94a3b8'
-                      : '#f59e0b',
+                  : healthStatus === 'network'
+                    ? '#94a3b8'
+                    : '#f59e0b',
             }}
           />
         </div>
@@ -416,7 +432,11 @@ const SortableFavoriteLinkCard: React.FC<{
       {healthResult && (healthResult.serverLatency || latency || httpCode) && (
         <div
           className="absolute bottom-1.5 left-3 text-[10px] text-slate-400 dark:text-slate-500 opacity-70 font-mono cursor-help z-10"
-          title={`Status: ${healthStatus.toUpperCase()}`}
+          title={
+            showBrokenBadge
+              ? getBrokenBadgeTitle(link)
+              : `Status: ${healthStatus.toUpperCase()}`
+          }
         >
           {healthResult.serverLatency !== undefined ? (
             <span>

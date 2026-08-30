@@ -117,6 +117,7 @@ export const SpaceVideoField: React.FC<SpaceVideoFieldProps> = ({
             placeholder="https://www.youtube.com/watch?v=… or https://youtu.be/…"
             className="w-full bg-white/80 dark:bg-slate-900/50 border border-slate-200 dark:border-slate-700 rounded-lg px-3 py-2.5 text-sm text-slate-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-rose-500/50 focus:border-rose-500 placeholder-slate-400 transition-all"
           />
+          <p className="mt-1.5 text-xs text-slate-500 dark:text-slate-400">Desktop opens the in-app player. Phones and small screens launch YouTube.</p>
           {url.trim() && !youtubeOk && (
             <p className="mt-1.5 text-xs text-amber-600 dark:text-amber-400">Enter a valid YouTube watch, share, or Shorts URL.</p>
           )}

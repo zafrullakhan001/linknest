@@ -42,6 +42,7 @@ import {
   getFingerprintHash,
 } from './services/fingerprintService';
 import { recordAndGetPageVisits } from './services/pageVisitService';
+import { linkifyHtml } from './utils/richTextDisplay';
 
 // Lazy load heavy components for better initial load performance
 const TileGrid = lazy(() => import('./components/TileGrid').then(m => ({ default: m.TileGrid })));
@@ -145,6 +146,10 @@ const AppContent: React.FC = () => {
   const { updateStyles, styles } = useStyles();
   const { settings, loading: settingsLoading } = useSettings();
   const disabledTabs = useMemo(() => getDisabledTabsFromSettings(settings), [settings?.disabled_tabs]);
+  const footerHtml = useMemo(
+    () => linkifyHtml(settings.footer_text || '© 2025 Adventhealth - Designed and developed by AIT Architecture team'),
+    [settings.footer_text]
+  );
   const isMobile = useMobile(768); // Hide widgets on mobile devices (below 768px width)
   const fingerprintLockEnabled = settings.fingerprint_lock_enabled === '1';
   
@@ -1819,10 +1824,10 @@ const AppContent: React.FC = () => {
               {(showFooterDetails || isMobile) && (
                 <div className="w-full flex flex-col items-center gap-2.5 sm:gap-3 animate-in fade-in slide-in-from-top-2 duration-300 px-1">
                   <div className="w-full text-center text-slate-500 dark:text-slate-400">
-                    <p
-                      className="linknest-footer-text font-medium leading-relaxed [&_a]:underline [&_a]:text-brand-600 dark:[&_a]:text-brand-400"
-                      dangerouslySetInnerHTML={{ __html: settings.footer_text || '© 2025 Adventhealth - Designed and developed by AIT Architecture team' }}
-                    ></p>
+                    <div
+                      className="linknest-footer-text font-medium leading-relaxed"
+                      dangerouslySetInnerHTML={{ __html: footerHtml }}
+                    />
                   </div>
                   {((user?.is_admin && databasePathAbsolute) || (databasePath && settings.show_database_path_in_footer !== '0')) && (
                     <div className="w-full max-w-xl text-center text-[10px] sm:text-xs text-slate-400 dark:text-slate-500">

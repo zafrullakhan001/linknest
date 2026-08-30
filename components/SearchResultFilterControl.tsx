@@ -24,6 +24,11 @@ export type SearchMatchingLink = {
   tooltipStyle?: 'rich' | 'classic';
   shortUrl?: string;
   forceShortUrl?: boolean;
+  brokenStatusLabel?: string | null;
+  brokenStatusNote?: string | null;
+  brokenStatusTone?: 'red' | 'amber' | 'slate' | null;
+  brokenStatusExpected?: boolean | null;
+  brokenStatusManual?: boolean | null;
   match?: SearchMatchScore;
   tile: {
     id: string;
@@ -229,6 +234,11 @@ export function collectMatchingSearchLinks(
         tooltipStyle?: 'rich' | 'classic';
         shortUrl?: string;
         forceShortUrl?: boolean;
+        brokenStatusLabel?: string | null;
+        brokenStatusNote?: string | null;
+        brokenStatusTone?: 'red' | 'amber' | 'slate' | null;
+        brokenStatusExpected?: boolean | null;
+        brokenStatusManual?: boolean | null;
       }) => {
         const uniqueKey = `${(link.label || '').toLowerCase()}|${(link.url || '').toLowerCase()}`;
         if (uniqueLinksMap.has(uniqueKey)) return;
@@ -259,6 +269,11 @@ export function collectMatchingSearchLinks(
           tooltipStyle: link.tooltipStyle,
           shortUrl: link.shortUrl,
           forceShortUrl: link.forceShortUrl === true,
+          brokenStatusLabel: (link as { brokenStatusLabel?: string | null }).brokenStatusLabel?.trim() || undefined,
+          brokenStatusNote: (link as { brokenStatusNote?: string | null }).brokenStatusNote?.trim() || undefined,
+          brokenStatusTone: (link as { brokenStatusTone?: string | null }).brokenStatusTone || undefined,
+          brokenStatusExpected: (link as { brokenStatusExpected?: boolean }).brokenStatusExpected === true || undefined,
+          brokenStatusManual: (link as { brokenStatusManual?: boolean }).brokenStatusManual === true || undefined,
           tile: {
             id: tile.id,
             title: tile.title,

@@ -11,7 +11,7 @@ import { HierarchyExpandControls } from './TileHierarchyViews';
 import { AccessRestrictionsEditor } from './AccessRestrictionsEditor';
 import { SectionEditActionToolbar, TabEditActionToolbar, type HierarchyToolbarHandlers } from './EditHierarchyToolbar';
 import { hasVisibleRichText } from '../utils/richTextDisplay';
-import { isInfoContentEnabled, isNotesTooltipEnabled } from '../utils/linkFeatureToggles';
+import { isInfoContentEnabled, isInfoOpenLinkShown, isNotesTooltipEnabled } from '../utils/linkFeatureToggles';
 import { LinkTooltipStyleToggle } from './LinkTooltipStyleToggle';
 import { HoverTooltipEditor } from './HoverTooltipEditor';
 import { normalizeLinkTooltipStyle, type LinkTooltipStyle } from '../utils/linkTooltipPreference';
@@ -119,6 +119,7 @@ export const MobileTileEdit: React.FC<MobileTileEditProps> = ({
         openTarget: LinkOpenTarget;
         richTextContent: string;
         richTextEnabled: boolean;
+        infoShowOpenLink: boolean;
         maintenanceEnabled: boolean;
         maintenanceMessage: string;
         maintenanceVideoUrl: string;
@@ -139,6 +140,7 @@ export const MobileTileEdit: React.FC<MobileTileEditProps> = ({
         openTarget: LinkOpenTarget;
         richTextContent: string;
         richTextEnabled: boolean;
+        infoShowOpenLink: boolean;
         maintenanceEnabled: boolean;
         maintenanceMessage: string;
         maintenanceVideoUrl: string;
@@ -257,6 +259,7 @@ export const MobileTileEdit: React.FC<MobileTileEditProps> = ({
             openTarget: normalizeLinkOpenTarget(state.openTarget),
             richTextContent: state.richTextContent || undefined,
             richTextEnabled: state.richTextEnabled === true,
+            infoShowOpenLink: state.infoShowOpenLink !== false,
             maintenanceEnabled: state.maintenanceEnabled === true,
             maintenanceMessage: state.maintenanceMessage || undefined,
             maintenanceVideoUrl: state.maintenanceVideoUrl || undefined
@@ -292,6 +295,7 @@ export const MobileTileEdit: React.FC<MobileTileEditProps> = ({
                 openTarget: 'tab' as LinkOpenTarget,
                 richTextContent: '',
                 richTextEnabled: false,
+                infoShowOpenLink: true,
                 maintenanceEnabled: false,
                 maintenanceMessage: '',
                 maintenanceVideoUrl: ''
@@ -323,6 +327,7 @@ export const MobileTileEdit: React.FC<MobileTileEditProps> = ({
                     openTarget: normalizeLinkOpenTarget(link.openTarget),
                     richTextContent: link.richTextContent || '',
                     richTextEnabled: isInfoContentEnabled(link),
+                    infoShowOpenLink: isInfoOpenLinkShown(link),
                     maintenanceEnabled: link.maintenanceEnabled === true,
                     maintenanceMessage: link.maintenanceMessage || '',
                     maintenanceVideoUrl: link.maintenanceVideoUrl || ''
@@ -366,6 +371,7 @@ export const MobileTileEdit: React.FC<MobileTileEditProps> = ({
                                             openTarget: normalizeLinkOpenTarget(state.openTarget),
                                             richTextContent: state.richTextContent || undefined,
                                             richTextEnabled: state.richTextEnabled === true,
+                                            infoShowOpenLink: state.infoShowOpenLink !== false,
                                             maintenanceEnabled: state.maintenanceEnabled === true,
                                             maintenanceMessage: state.maintenanceMessage || undefined,
                                             maintenanceVideoUrl: state.maintenanceVideoUrl || undefined
@@ -438,6 +444,7 @@ export const MobileTileEdit: React.FC<MobileTileEditProps> = ({
         openTarget: normalizeLinkOpenTarget(state.openTarget),
         richTextContent: state.richTextContent || undefined,
         richTextEnabled: state.richTextEnabled === true,
+        infoShowOpenLink: state.infoShowOpenLink !== false,
         maintenanceEnabled: state.maintenanceEnabled === true,
         maintenanceMessage: state.maintenanceMessage || undefined,
         maintenanceVideoUrl: state.maintenanceVideoUrl || undefined
@@ -492,6 +499,7 @@ export const MobileTileEdit: React.FC<MobileTileEditProps> = ({
                 openTarget: normalizeLinkOpenTarget(state.openTarget),
                 richTextContent: state.richTextContent || undefined,
                 richTextEnabled: state.richTextEnabled === true,
+                infoShowOpenLink: state.infoShowOpenLink !== false,
                 maintenanceEnabled: state.maintenanceEnabled === true,
                 maintenanceMessage: state.maintenanceMessage || undefined,
                 maintenanceVideoUrl: state.maintenanceVideoUrl || undefined

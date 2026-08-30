@@ -9,7 +9,7 @@ import { SelectableRichTextEditor } from './SelectableRichTextEditor';
 import { LinkLabelField } from './LinkLabelField';
 import { LinkMaintenanceVideoField } from './LinkMaintenanceVideoField';
 import { hasVisibleRichText } from '../utils/richTextDisplay';
-import { isInfoContentEnabled, isNotesTooltipEnabled } from '../utils/linkFeatureToggles';
+import { isInfoContentEnabled, isInfoOpenLinkShown, isNotesTooltipEnabled } from '../utils/linkFeatureToggles';
 import { LinkTooltipStyleToggle } from './LinkTooltipStyleToggle';
 import { HoverTooltipEditor } from './HoverTooltipEditor';
 import { normalizeLinkTooltipStyle, type LinkTooltipStyle } from '../utils/linkTooltipPreference';
@@ -113,6 +113,15 @@ export type EditLinkDraft = {
   published: boolean;
   inheritShortUrls: boolean;
   forceShortUrl: boolean;
+  brokenStatusLabel: string;
+  brokenStatusNote: string;
+  brokenStatusTone: '' | 'red' | 'amber' | 'slate';
+  brokenStatusExpected: boolean;
+  brokenStatusManual: boolean;
+  brokenStatusFontColor: string;
+  brokenStatusFontWeight: '' | 'normal' | 'bold';
+  brokenStatusFontStyle: '' | 'normal' | 'italic';
+  brokenStatusFontFamily: string;
   allowedUsers: number[];
   allowedGroups: number[];
   notes: string;
@@ -123,6 +132,7 @@ export type EditLinkDraft = {
   openTarget: LinkOpenTarget;
   richTextContent: string;
   richTextEnabled: boolean;
+  infoShowOpenLink: boolean;
   animation: string;
   accessRestrictions?: AccessRestrictions;
   maintenanceEnabled: boolean;
@@ -133,8 +143,10 @@ export type EditLinkDraft = {
 type EditLinkField =
   | 'label' | 'url' | 'icon' | 'textColor' | 'visibility' | 'allowedUsers' | 'allowedGroups'
   | 'notes' | 'tooltip' | 'tooltipStyle' | 'notesEnabled' | 'browser' | 'openTarget' | 'richTextContent'
-  | 'richTextEnabled' | 'animation' | 'published' | 'inheritShortUrls' | 'forceShortUrl' | 'maintenanceEnabled'
-  | 'maintenanceMessage' | 'maintenanceVideoUrl';
+  | 'richTextEnabled' | 'infoShowOpenLink' | 'animation' | 'published' | 'inheritShortUrls' | 'forceShortUrl' | 'brokenStatusLabel'
+  | 'brokenStatusNote' | 'brokenStatusTone' | 'brokenStatusExpected' | 'brokenStatusManual'
+  | 'brokenStatusFontColor' | 'brokenStatusFontWeight' | 'brokenStatusFontStyle' | 'brokenStatusFontFamily'
+  | 'maintenanceEnabled' | 'maintenanceMessage' | 'maintenanceVideoUrl';
 
 const LINK_EDIT_NEUTRAL_CARD = 'border-slate-300 dark:border-slate-600 bg-slate-50 dark:bg-slate-900/50';
 
@@ -522,6 +534,7 @@ export const EditLinkForm: React.FC<EditLinkFormProps> = (props) => {
 
   const notesOn = !!(draft.notesEnabled ?? isNotesTooltipEnabled(link));
   const infoOn = !!(draft.richTextEnabled ?? isInfoContentEnabled(link));
+  const infoOpenLinkOn = draft.infoShowOpenLink ?? isInfoOpenLinkShown(link);
   const maintenanceOn = !!draft.maintenanceEnabled;
   const restrictionsOn = hasAccessRestrictions(draft.accessRestrictions);
 
@@ -1079,6 +1092,27 @@ export const EditLinkForm: React.FC<EditLinkFormProps> = (props) => {
         placeholder="Enter rich text content that will be displayed in a dialog when the link is clicked..."
         className="min-h-[200px]"
       />
+      <div className={`flex items-center justify-between gap-3 p-3.5 rounded-xl border-2 ${
+        plain
+          ? LINK_EDIT_NEUTRAL_CARD
+          : infoOpenLinkOn
+            ? 'border-violet-200 dark:border-violet-800/50 bg-violet-50/50 dark:bg-violet-950/30'
+            : 'border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-900/50'
+      }`}>
+        <div>
+          <div className="text-xs font-semibold uppercase tracking-wider text-slate-600 dark:text-slate-400">Open Link button</div>
+          <div className="text-sm font-medium text-slate-800 dark:text-slate-200">
+            {infoOpenLinkOn ? 'Shown in the info dialog footer' : 'Hidden — viewers only see the content'}
+          </div>
+        </div>
+        <LinkEditHeaderSwitch
+          enabled={infoOpenLinkOn}
+          onToggle={() => onUpdateField('infoShowOpenLink', !infoOpenLinkOn)}
+          onClassName={plain ? 'bg-slate-600' : 'bg-violet-500'}
+          labelOn="Hide Open Link button in info dialog"
+          labelOff="Show Open Link button in info dialog"
+        />
+      </div>
     </div>
   );
 

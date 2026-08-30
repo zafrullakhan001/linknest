@@ -98,6 +98,7 @@ function normalizeImportedLink(raw: unknown): Link | null {
     notesEnabled: link.notesEnabled === true,
     richTextContent: typeof link.richTextContent === 'string' ? link.richTextContent : undefined,
     richTextEnabled: link.richTextEnabled === true,
+    infoShowOpenLink: link.infoShowOpenLink !== false,
     maintenanceEnabled: link.maintenanceEnabled === true,
     maintenanceMessage: typeof link.maintenanceMessage === 'string' ? link.maintenanceMessage : undefined,
     maintenanceVideoUrl: typeof link.maintenanceVideoUrl === 'string' ? link.maintenanceVideoUrl : undefined,

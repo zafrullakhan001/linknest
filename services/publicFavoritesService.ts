@@ -137,9 +137,15 @@ export interface PublicFavoriteLinkDetail {
   browser?: string;
   richTextContent?: string;
   richTextEnabled?: boolean;
+  infoShowOpenLink?: boolean;
   maintenanceEnabled?: boolean;
   maintenanceMessage?: string;
   maintenanceVideoUrl?: string;
+  brokenStatusLabel?: string | null;
+  brokenStatusNote?: string | null;
+  brokenStatusTone?: 'red' | 'amber' | 'slate' | null;
+  brokenStatusExpected?: boolean | null;
+  brokenStatusManual?: boolean | null;
   health?: {
     status: 'unknown' | 'healthy' | 'broken' | 'timeout' | 'checking' | 'restricted' | 'accessible' | 'redirected' | 'network';
     httpCode?: number | null;
@@ -551,9 +557,22 @@ const normalizeLinkFavoriteDetails = (
       browser: typeof detail.browser === 'string' ? detail.browser : undefined,
       richTextContent: typeof detail.richTextContent === 'string' ? detail.richTextContent : undefined,
       richTextEnabled: detail.richTextEnabled === true,
+      infoShowOpenLink: detail.infoShowOpenLink !== false,
       maintenanceEnabled: detail.maintenanceEnabled === true,
       maintenanceMessage: typeof detail.maintenanceMessage === 'string' ? detail.maintenanceMessage : undefined,
       maintenanceVideoUrl: typeof detail.maintenanceVideoUrl === 'string' ? detail.maintenanceVideoUrl : undefined,
+      brokenStatusLabel: typeof detail.brokenStatusLabel === 'string' && detail.brokenStatusLabel.trim() !== ''
+        ? detail.brokenStatusLabel.trim()
+        : undefined,
+      brokenStatusNote: typeof detail.brokenStatusNote === 'string' && detail.brokenStatusNote.trim() !== ''
+        ? detail.brokenStatusNote.trim()
+        : undefined,
+      brokenStatusTone:
+        detail.brokenStatusTone === 'red' || detail.brokenStatusTone === 'amber' || detail.brokenStatusTone === 'slate'
+          ? detail.brokenStatusTone
+          : undefined,
+      brokenStatusExpected: detail.brokenStatusExpected === true || undefined,
+      brokenStatusManual: detail.brokenStatusManual === true || undefined,
       health:
         detail.health && typeof detail.health === 'object'
           ? (detail.health as PublicFavoriteLinkDetail['health'])
@@ -631,9 +650,15 @@ export const buildPublicFavoritesExportData = (
         browser: link.browser,
         richTextContent: link.richTextContent,
         richTextEnabled: link.richTextEnabled,
+        infoShowOpenLink: link.infoShowOpenLink,
         maintenanceEnabled: link.maintenanceEnabled,
         maintenanceMessage: link.maintenanceMessage,
         maintenanceVideoUrl: link.maintenanceVideoUrl,
+        brokenStatusLabel: link.brokenStatusLabel,
+        brokenStatusNote: link.brokenStatusNote,
+        brokenStatusTone: link.brokenStatusTone,
+        brokenStatusExpected: link.brokenStatusExpected,
+        brokenStatusManual: link.brokenStatusManual,
         health: link.health,
         tile: {
           id: link.tile?.id || '',

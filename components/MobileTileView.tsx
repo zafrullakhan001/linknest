@@ -70,6 +70,7 @@ function buildGuestFavoriteLinksFromTiles(allTiles: Tile[], favoriteLinkIds: str
         browser: link.browser,
         richTextContent: link.richTextContent,
         richTextEnabled: link.richTextEnabled,
+        infoShowOpenLink: link.infoShowOpenLink,
         maintenanceEnabled: link.maintenanceEnabled,
         maintenanceMessage: link.maintenanceMessage,
         maintenanceVideoUrl: link.maintenanceVideoUrl,

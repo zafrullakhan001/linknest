@@ -1,6 +1,6 @@
 import React, { useEffect, useState, lazy, Suspense } from 'react';
 import { useAuth } from '../contexts/AuthContext';
-import { useSettings } from '../contexts/SettingsContext';
+import { useSettings, resolveBrandedAssetHref } from '../contexts/SettingsContext';
 import { useMobile } from '../hooks/useMobile';
 import { getDisabledTabsFromSettings } from '../services/tabVisibilityService';
 import { getUpdaterStatus } from '../services/updaterService';
@@ -130,7 +130,7 @@ export const Navigation: React.FC<NavigationProps> = ({ darkMode, showClock, tog
             title="Home"
           >
             <img
-              src={settings.header_logo_image}
+              src={resolveBrandedAssetHref(settings.header_logo_image)}
               alt=""
               className="object-contain w-auto h-auto max-w-full"
               style={{ height: headerLogoSize, maxWidth: Math.min(headerLogoSize * 4, 180) }}
@@ -154,7 +154,7 @@ export const Navigation: React.FC<NavigationProps> = ({ darkMode, showClock, tog
             <>
               {settings.logo_type === 'image' && settings.logo_image ? (
                 <img
-                  src={settings.logo_image}
+                  src={resolveBrandedAssetHref(settings.logo_image)}
                   alt={settings.app_name}
                   className="rounded-lg object-contain group-hover:scale-105 transition-transform flex-shrink-0"
                   style={{ height: logoSize, width: logoSize }}

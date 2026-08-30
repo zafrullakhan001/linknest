@@ -472,7 +472,7 @@ sequenceDiagram
 | Mode | Notes |
 |------|--------|
 | XAMPP / Apache | Common local/prod path; PHP serves API + built `dist/` |
-| Vite dev | `npm run dev` + `php -S` with API proxy |
+| Vite dev | `npm run dev` (Vite :3000 + PHP :8000 API proxy) |
 | Docker | Multi-stage image: Apache + PHP + SQLite |
 
 ---

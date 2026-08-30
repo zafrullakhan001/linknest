@@ -112,27 +112,24 @@ linknest/
    npm install
    ```
 
-2. **Start PHP backend** (Terminal 1):
-   ```bash
-   php -S localhost:8000 -t .
-   ```
-
-3. **Start Vite dev server** (Terminal 2):
+2. **Start the app** (Vite + PHP API):
    ```bash
    npm run dev
    ```
 
-4. **Access the app:**
+3. **Access the app:**
    Open http://localhost:3000
+
+   `npm run dev` starts Vite on port 3000 and PHP's built-in server on port 8000. Apache is not required. Production `.env` values like `VITE_BASE_PATH=/linknest` apply to `npm run build`, not to local Vite.
 
 ### Environment Variables
 
 Create `.env.local` for local development:
 ```env
 GEMINI_API_KEY=your_gemini_api_key_here  # Optional, for AI features
-VITE_BASE_PATH=/linknest                 # Optional, for subpath deployment
-VITE_API_BASE=/linknest/api              # Optional, API base path
 ```
+
+`VITE_BASE_PATH` / `VITE_API_BASE` are for **production builds** (XAMPP subfolder). `npm run dev` ignores them and always serves `http://localhost:3000/` with `/api` proxied to PHP on port 8000.
 
 ---
 
@@ -140,7 +137,7 @@ VITE_API_BASE=/linknest/api              # Optional, API base path
 
 | Command | Description |
 |---------|-------------|
-| `npm run dev` | Start development server (port 3000) |
+| `npm run dev` | Start Vite (port 3000) and the PHP API (port 8000) |
 | `npm run build` | Build for production (outputs to `dist/`) |
 | `npm run build:prod` | Production build with production mode |
 | `npm run preview` | Preview production build locally |
@@ -261,7 +258,7 @@ Tiles are the primary data entity. Key fields:
 **Note:** The project does not currently have automated test suites. Testing is done manually:
 
 1. **Development Testing:**
-   - Run `npm run dev` and `php -S localhost:8000`
+   - Run `npm run dev` (starts Vite and the PHP API)
    - Test both authenticated and guest modes
    - Verify drag-and-drop functionality
    - Test mobile responsiveness (use mobile device or devtools)

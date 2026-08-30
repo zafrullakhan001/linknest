@@ -17,6 +17,15 @@ import {
 } from '@dnd-kit/sortable';
 import { Tile, Link, LinkSection, Tab, LinkVisibility, LinkOpenTarget, TileVisibility, COLOR_STYLES, THEME_COLORS, ThemeColor, TileMessage, AccessRestrictions, LinkRedirectHop } from '../types';
 import { linkHealthService, LinkHealthMap, isLikelyClientNetworkError, isNetworkHealthStatus, networkHealthResult } from '../services/linkHealthService';
+import {
+    getBrokenBadgeClassNames,
+    getBrokenBadgeTextClassNames,
+    getBrokenBadgeTextStyle,
+    getBrokenBadgeTitle,
+    getBrokenDisplayLabel,
+    getBrokenStatusTone,
+    shouldShowBrokenStatusBadge,
+} from '../utils/brokenStatusDisplay';
 import { performanceAnalyticsService, type AnalyticsMetric } from '../services/performanceAnalyticsService';
 import { authService, UserListItem, User } from '../services/authService';
 import { exportTileToFileAsync } from '../services/spaceTransferService';
@@ -60,7 +69,7 @@ import { LinkMaintenanceVideoField } from './LinkMaintenanceVideoField';
 import { LinkMaintenanceBadge } from './LinkMaintenanceBadge';
 import { isLinkInMaintenance } from '../utils/linkMaintenance';
 import { hasVisibleRichText, looksLikeHtml, plainNotesToHtml, prepareViewerHtml } from '../utils/richTextDisplay';
-import { isInfoContentEnabled, isNotesTooltipEnabled, shouldOpenInfoDialog, shouldShowLinkNotes } from '../utils/linkFeatureToggles';
+import { isInfoContentEnabled, isInfoOpenLinkShown, isNotesTooltipEnabled, shouldOpenInfoDialog, shouldShowLinkNotes } from '../utils/linkFeatureToggles';
 import { LinkNotesDialog } from './LinkNotesDialog';
 import { LinkHoverTooltip } from './LinkHoverTooltip';
 import { LinkTooltipStyleToggle } from './LinkTooltipStyleToggle';
@@ -628,6 +637,7 @@ const cloneLinkItem = (link: Link, opts?: { appendCopyLabel?: boolean }): Link =
     tooltipStyle: link.tooltipStyle,
     richTextContent: link.richTextContent,
     richTextEnabled: link.richTextEnabled,
+    infoShowOpenLink: link.infoShowOpenLink,
     maintenanceEnabled: link.maintenanceEnabled,
     maintenanceMessage: link.maintenanceMessage,
     maintenanceVideoUrl: link.maintenanceVideoUrl,
@@ -643,6 +653,15 @@ const cloneLinkItem = (link: Link, opts?: { appendCopyLabel?: boolean }): Link =
     animation: link.animation,
     inheritShortUrls: link.inheritShortUrls,
     forceShortUrl: link.forceShortUrl,
+    brokenStatusLabel: link.brokenStatusLabel,
+    brokenStatusNote: link.brokenStatusNote,
+    brokenStatusTone: link.brokenStatusTone,
+    brokenStatusExpected: link.brokenStatusExpected,
+    brokenStatusManual: link.brokenStatusManual,
+    brokenStatusFontColor: link.brokenStatusFontColor,
+    brokenStatusFontWeight: link.brokenStatusFontWeight,
+    brokenStatusFontStyle: link.brokenStatusFontStyle,
+    brokenStatusFontFamily: link.brokenStatusFontFamily,
 });
 
 /** Deep-clone a rich text block with a fresh id (all box/meta fields preserved). */
@@ -948,7 +967,7 @@ export const TileDetail: React.FC<TileDetailProps> = ({
     const [editSections, setEditSections] = useState<LinkSection[]>(tile.sections || []);
 
     // Temporary State for Adding Links (keyed by section ID)
-    const [newLinkState, setNewLinkState] = useState<Record<string, { label: string, url: string, icon: string, textColor: string, visibility: LinkVisibility, published: boolean, inheritShortUrls: boolean, forceShortUrl: boolean, allowedUsers: number[], allowedGroups: number[], notes: string, tooltip: string, tooltipStyle: LinkTooltipStyle, notesEnabled: boolean, browser: string, openTarget: LinkOpenTarget, richTextContent: string, richTextEnabled: boolean, animation: string, accessRestrictions?: AccessRestrictions, maintenanceEnabled: boolean, maintenanceMessage: string, maintenanceVideoUrl: string }>>({});
+    const [newLinkState, setNewLinkState] = useState<Record<string, { label: string, url: string, icon: string, textColor: string, visibility: LinkVisibility, published: boolean, inheritShortUrls: boolean, forceShortUrl: boolean, brokenStatusLabel: string, brokenStatusNote: string, brokenStatusTone: '' | 'red' | 'amber' | 'slate', brokenStatusExpected: boolean, brokenStatusManual: boolean, brokenStatusFontColor: string, brokenStatusFontWeight: '' | 'normal' | 'bold', brokenStatusFontStyle: '' | 'normal' | 'italic', brokenStatusFontFamily: string, allowedUsers: number[], allowedGroups: number[], notes: string, tooltip: string, tooltipStyle: LinkTooltipStyle, notesEnabled: boolean, browser: string, openTarget: LinkOpenTarget, richTextContent: string, richTextEnabled: boolean, infoShowOpenLink: boolean, animation: string, accessRestrictions?: AccessRestrictions, maintenanceEnabled: boolean, maintenanceMessage: string, maintenanceVideoUrl: string }>>({});
 
     // Selection State for Bulk Actions
     const [selectedLinkIds, setSelectedLinkIds] = useState<string[]>([]);
@@ -981,7 +1000,7 @@ export const TileDetail: React.FC<TileDetailProps> = ({
         | null
     >(null);
     const [convertingTabSectionToSpace, setConvertingTabSectionToSpace] = useState(false);
-    const [editLinkState, setEditLinkState] = useState<Record<string, { label: string, url: string, icon: string, textColor: string, visibility: LinkVisibility, published: boolean, inheritShortUrls: boolean, forceShortUrl: boolean, allowedUsers: number[], allowedGroups: number[], notes: string, tooltip: string, tooltipStyle: LinkTooltipStyle, notesEnabled: boolean, browser: string, openTarget: LinkOpenTarget, richTextContent: string, richTextEnabled: boolean, animation: string, accessRestrictions?: AccessRestrictions, maintenanceEnabled: boolean, maintenanceMessage: string, maintenanceVideoUrl: string }>>({});
+    const [editLinkState, setEditLinkState] = useState<Record<string, { label: string, url: string, icon: string, textColor: string, visibility: LinkVisibility, published: boolean, inheritShortUrls: boolean, forceShortUrl: boolean, brokenStatusLabel: string, brokenStatusNote: string, brokenStatusTone: '' | 'red' | 'amber' | 'slate', brokenStatusExpected: boolean, brokenStatusManual: boolean, brokenStatusFontColor: string, brokenStatusFontWeight: '' | 'normal' | 'bold', brokenStatusFontStyle: '' | 'normal' | 'italic', brokenStatusFontFamily: string, allowedUsers: number[], allowedGroups: number[], notes: string, tooltip: string, tooltipStyle: LinkTooltipStyle, notesEnabled: boolean, browser: string, openTarget: LinkOpenTarget, richTextContent: string, richTextEnabled: boolean, infoShowOpenLink: boolean, animation: string, accessRestrictions?: AccessRestrictions, maintenanceEnabled: boolean, maintenanceMessage: string, maintenanceVideoUrl: string }>>({});
 
     // Available browsers from BrowserLauncher API
     const [availableBrowsers, setAvailableBrowsers] = useState<string[]>([]);
@@ -2731,13 +2750,23 @@ export const TileDetail: React.FC<TileDetailProps> = ({
         openTarget: normalizeLinkOpenTarget(state.openTarget),
         richTextContent: state.richTextContent?.trim() || undefined,
         richTextEnabled: state.richTextEnabled === true,
+        infoShowOpenLink: state.infoShowOpenLink !== false,
         maintenanceEnabled: state.maintenanceEnabled === true,
         maintenanceMessage: state.maintenanceMessage?.trim() || undefined,
         maintenanceVideoUrl: state.maintenanceVideoUrl?.trim() || undefined,
         animation: linkAnimationForSave(state.animation),
         accessRestrictions: state.accessRestrictions,
         inheritShortUrls: state.inheritShortUrls !== false,
-        forceShortUrl: state.forceShortUrl === true
+        forceShortUrl: state.forceShortUrl === true,
+        brokenStatusLabel: state.brokenStatusLabel?.trim() || undefined,
+        brokenStatusNote: state.brokenStatusNote?.trim() || undefined,
+        brokenStatusTone: (state.brokenStatusTone === 'red' || state.brokenStatusTone === 'amber' || state.brokenStatusTone === 'slate') ? state.brokenStatusTone : undefined,
+        brokenStatusExpected: state.brokenStatusExpected === true || undefined,
+        brokenStatusManual: state.brokenStatusManual === true || undefined,
+        brokenStatusFontColor: state.brokenStatusFontColor?.trim() || undefined,
+        brokenStatusFontWeight: (state.brokenStatusFontWeight === 'normal' || state.brokenStatusFontWeight === 'bold') ? state.brokenStatusFontWeight : undefined,
+        brokenStatusFontStyle: (state.brokenStatusFontStyle === 'normal' || state.brokenStatusFontStyle === 'italic') ? state.brokenStatusFontStyle : undefined,
+        brokenStatusFontFamily: state.brokenStatusFontFamily?.trim() || undefined
     });
 
     const buildLinkFromNewLinkState = (state: NonNullable<(typeof newLinkState)[string]>): Link => ({
@@ -2758,6 +2787,7 @@ export const TileDetail: React.FC<TileDetailProps> = ({
         openTarget: normalizeLinkOpenTarget(state.openTarget),
         richTextContent: state.richTextContent?.trim() || undefined,
         richTextEnabled: state.richTextEnabled === true,
+        infoShowOpenLink: state.infoShowOpenLink !== false,
         maintenanceEnabled: state.maintenanceEnabled === true,
         maintenanceMessage: state.maintenanceMessage?.trim() || undefined,
         maintenanceVideoUrl: state.maintenanceVideoUrl?.trim() || undefined,
@@ -2766,6 +2796,15 @@ export const TileDetail: React.FC<TileDetailProps> = ({
         accessRestrictions: state.accessRestrictions,
         inheritShortUrls: state.inheritShortUrls !== false,
         forceShortUrl: state.forceShortUrl === true,
+        brokenStatusLabel: state.brokenStatusLabel?.trim() || undefined,
+        brokenStatusNote: state.brokenStatusNote?.trim() || undefined,
+        brokenStatusTone: (state.brokenStatusTone === 'red' || state.brokenStatusTone === 'amber' || state.brokenStatusTone === 'slate') ? state.brokenStatusTone : undefined,
+        brokenStatusExpected: state.brokenStatusExpected === true || undefined,
+        brokenStatusManual: state.brokenStatusManual === true || undefined,
+        brokenStatusFontColor: state.brokenStatusFontColor?.trim() || undefined,
+        brokenStatusFontWeight: (state.brokenStatusFontWeight === 'normal' || state.brokenStatusFontWeight === 'bold') ? state.brokenStatusFontWeight : undefined,
+        brokenStatusFontStyle: (state.brokenStatusFontStyle === 'normal' || state.brokenStatusFontStyle === 'italic') ? state.brokenStatusFontStyle : undefined,
+        brokenStatusFontFamily: state.brokenStatusFontFamily?.trim() || undefined,
     });
 
     const emptyNewLinkFormState = (): NonNullable<(typeof newLinkState)[string]> => ({
@@ -2777,6 +2816,15 @@ export const TileDetail: React.FC<TileDetailProps> = ({
         published: true,
         inheritShortUrls: true,
         forceShortUrl: false,
+        brokenStatusLabel: '',
+        brokenStatusNote: '',
+        brokenStatusTone: '',
+        brokenStatusExpected: false,
+        brokenStatusManual: false,
+        brokenStatusFontColor: '',
+        brokenStatusFontWeight: '',
+        brokenStatusFontStyle: '',
+        brokenStatusFontFamily: '',
         allowedUsers: [],
         allowedGroups: [],
         notes: '',
@@ -2787,6 +2835,7 @@ export const TileDetail: React.FC<TileDetailProps> = ({
         openTarget: 'tab',
         richTextContent: '',
         richTextEnabled: false,
+        infoShowOpenLink: true,
         animation: 'inherit',
         accessRestrictions: undefined,
         maintenanceEnabled: false,
@@ -3894,11 +3943,11 @@ export const TileDetail: React.FC<TileDetailProps> = ({
     };
 
     // Link Management
-    const updateNewLinkState = (sectionId: string, field: 'label' | 'url' | 'icon' | 'textColor' | 'visibility' | 'allowedUsers' | 'allowedGroups' | 'notes' | 'tooltip' | 'tooltipStyle' | 'notesEnabled' | 'browser' | 'openTarget' | 'richTextContent' | 'richTextEnabled' | 'animation' | 'published' | 'inheritShortUrls' | 'forceShortUrl' | 'maintenanceEnabled' | 'maintenanceMessage' | 'maintenanceVideoUrl', value: string | LinkVisibility | number[] | boolean) => {
+    const updateNewLinkState = (sectionId: string, field: 'label' | 'url' | 'icon' | 'textColor' | 'visibility' | 'allowedUsers' | 'allowedGroups' | 'notes' | 'tooltip' | 'tooltipStyle' | 'notesEnabled' | 'browser' | 'openTarget' | 'richTextContent' | 'richTextEnabled' | 'infoShowOpenLink' | 'animation' | 'published' | 'inheritShortUrls' | 'forceShortUrl' | 'brokenStatusLabel' | 'brokenStatusNote' | 'brokenStatusTone' | 'brokenStatusExpected' | 'brokenStatusManual' | 'brokenStatusFontColor' | 'brokenStatusFontWeight' | 'brokenStatusFontStyle' | 'brokenStatusFontFamily' | 'maintenanceEnabled' | 'maintenanceMessage' | 'maintenanceVideoUrl', value: string | LinkVisibility | number[] | boolean) => {
         setNewLinkState(prev => ({
             ...prev,
             [sectionId]: {
-                ...(prev[sectionId] || { label: '', url: '', icon: '', textColor: '', visibility: 'public' as LinkVisibility, published: true, inheritShortUrls: true, forceShortUrl: false, allowedUsers: [], allowedGroups: [], notes: '', tooltip: '', tooltipStyle: 'classic' as LinkTooltipStyle, notesEnabled: false, browser: 'default', openTarget: 'tab' as LinkOpenTarget, richTextContent: '', richTextEnabled: false, animation: 'inherit', maintenanceEnabled: false, maintenanceMessage: '', maintenanceVideoUrl: '' }),
+                ...(prev[sectionId] || { label: '', url: '', icon: '', textColor: '', visibility: 'public' as LinkVisibility, published: true, inheritShortUrls: true, forceShortUrl: false, brokenStatusLabel: '', brokenStatusNote: '', brokenStatusTone: '' as const, brokenStatusExpected: false, brokenStatusManual: false, brokenStatusFontColor: '', brokenStatusFontWeight: '' as const, brokenStatusFontStyle: '' as const, brokenStatusFontFamily: '', allowedUsers: [], allowedGroups: [], notes: '', tooltip: '', tooltipStyle: 'classic' as LinkTooltipStyle, notesEnabled: false, browser: 'default', openTarget: 'tab' as LinkOpenTarget, richTextContent: '', richTextEnabled: false, infoShowOpenLink: true, animation: 'inherit', maintenanceEnabled: false, maintenanceMessage: '', maintenanceVideoUrl: '' }),
                 [field]: value
             }
         }));
@@ -3940,6 +3989,7 @@ export const TileDetail: React.FC<TileDetailProps> = ({
             browser: state.browser && state.browser !== 'default' ? state.browser : undefined,
             richTextContent: state.richTextContent?.trim() || undefined,
             richTextEnabled: state.richTextEnabled === true,
+            infoShowOpenLink: state.infoShowOpenLink !== false,
             maintenanceEnabled: state.maintenanceEnabled === true,
             maintenanceMessage: state.maintenanceMessage?.trim() || undefined,
             maintenanceVideoUrl: state.maintenanceVideoUrl?.trim() || undefined,
@@ -3949,6 +3999,15 @@ export const TileDetail: React.FC<TileDetailProps> = ({
             accessRestrictions: state.accessRestrictions,
             inheritShortUrls: state.inheritShortUrls !== false,
             forceShortUrl: state.forceShortUrl === true,
+            brokenStatusLabel: state.brokenStatusLabel?.trim() || undefined,
+            brokenStatusNote: state.brokenStatusNote?.trim() || undefined,
+            brokenStatusTone: (state.brokenStatusTone === 'red' || state.brokenStatusTone === 'amber' || state.brokenStatusTone === 'slate') ? state.brokenStatusTone : undefined,
+            brokenStatusExpected: state.brokenStatusExpected === true || undefined,
+            brokenStatusManual: state.brokenStatusManual === true || undefined,
+            brokenStatusFontColor: state.brokenStatusFontColor?.trim() || undefined,
+            brokenStatusFontWeight: (state.brokenStatusFontWeight === 'normal' || state.brokenStatusFontWeight === 'bold') ? state.brokenStatusFontWeight : undefined,
+            brokenStatusFontStyle: (state.brokenStatusFontStyle === 'normal' || state.brokenStatusFontStyle === 'italic') ? state.brokenStatusFontStyle : undefined,
+            brokenStatusFontFamily: state.brokenStatusFontFamily?.trim() || undefined,
         };
 
         if (editTabs.length > 0) {
@@ -4233,10 +4292,20 @@ export const TileDetail: React.FC<TileDetailProps> = ({
                 openTarget: normalizeLinkOpenTarget(link.openTarget),
                 richTextContent: link.richTextContent || '',
                 richTextEnabled: isInfoContentEnabled(link),
+                infoShowOpenLink: isInfoOpenLinkShown(link),
                 animation: linkAnimationForEdit(link.animation),
                 accessRestrictions: link.accessRestrictions,
                 inheritShortUrls: link.inheritShortUrls !== false,
                 forceShortUrl: link.forceShortUrl === true,
+                brokenStatusLabel: link.brokenStatusLabel || '',
+                brokenStatusNote: link.brokenStatusNote || '',
+                brokenStatusTone: (link.brokenStatusTone === 'red' || link.brokenStatusTone === 'amber' || link.brokenStatusTone === 'slate') ? link.brokenStatusTone : '',
+                brokenStatusExpected: link.brokenStatusExpected === true,
+                brokenStatusManual: link.brokenStatusManual === true,
+                brokenStatusFontColor: link.brokenStatusFontColor || '',
+                brokenStatusFontWeight: (link.brokenStatusFontWeight === 'normal' || link.brokenStatusFontWeight === 'bold') ? link.brokenStatusFontWeight : '',
+                brokenStatusFontStyle: (link.brokenStatusFontStyle === 'normal' || link.brokenStatusFontStyle === 'italic') ? link.brokenStatusFontStyle : '',
+                brokenStatusFontFamily: link.brokenStatusFontFamily || '',
                 maintenanceEnabled: link.maintenanceEnabled === true,
                 maintenanceMessage: link.maintenanceMessage || '',
                 maintenanceVideoUrl: link.maintenanceVideoUrl || ''
@@ -4366,12 +4435,22 @@ export const TileDetail: React.FC<TileDetailProps> = ({
             richTextContent: linkToClone.richTextContent,
             notesEnabled: linkToClone.notesEnabled,
             richTextEnabled: linkToClone.richTextEnabled,
+            infoShowOpenLink: linkToClone.infoShowOpenLink,
             maintenanceEnabled: linkToClone.maintenanceEnabled,
             maintenanceMessage: linkToClone.maintenanceMessage,
             maintenanceVideoUrl: linkToClone.maintenanceVideoUrl,
             accessRestrictions: linkToClone.accessRestrictions,
             inheritShortUrls: linkToClone.inheritShortUrls,
             forceShortUrl: linkToClone.forceShortUrl,
+            brokenStatusLabel: linkToClone.brokenStatusLabel,
+            brokenStatusNote: linkToClone.brokenStatusNote,
+            brokenStatusTone: linkToClone.brokenStatusTone,
+            brokenStatusExpected: linkToClone.brokenStatusExpected,
+            brokenStatusManual: linkToClone.brokenStatusManual,
+            brokenStatusFontColor: linkToClone.brokenStatusFontColor,
+            brokenStatusFontWeight: linkToClone.brokenStatusFontWeight,
+            brokenStatusFontStyle: linkToClone.brokenStatusFontStyle,
+            brokenStatusFontFamily: linkToClone.brokenStatusFontFamily,
         };
 
         const updatedItems = [
@@ -4787,7 +4866,7 @@ export const TileDetail: React.FC<TileDetailProps> = ({
         setLinkGroupSearch(prev => ({ ...prev, [linkId]: '' }));
     };
 
-    const updateEditLinkState = (linkId: string, field: 'label' | 'url' | 'icon' | 'textColor' | 'visibility' | 'allowedUsers' | 'allowedGroups' | 'notes' | 'tooltip' | 'tooltipStyle' | 'notesEnabled' | 'browser' | 'openTarget' | 'richTextContent' | 'richTextEnabled' | 'animation' | 'published' | 'inheritShortUrls' | 'forceShortUrl' | 'maintenanceEnabled' | 'maintenanceMessage' | 'maintenanceVideoUrl', value: string | LinkVisibility | number[] | boolean) => {
+    const updateEditLinkState = (linkId: string, field: 'label' | 'url' | 'icon' | 'textColor' | 'visibility' | 'allowedUsers' | 'allowedGroups' | 'notes' | 'tooltip' | 'tooltipStyle' | 'notesEnabled' | 'browser' | 'openTarget' | 'richTextContent' | 'richTextEnabled' | 'infoShowOpenLink' | 'animation' | 'published' | 'inheritShortUrls' | 'forceShortUrl' | 'brokenStatusLabel' | 'brokenStatusNote' | 'brokenStatusTone' | 'brokenStatusExpected' | 'brokenStatusManual' | 'brokenStatusFontColor' | 'brokenStatusFontWeight' | 'brokenStatusFontStyle' | 'brokenStatusFontFamily' | 'maintenanceEnabled' | 'maintenanceMessage' | 'maintenanceVideoUrl', value: string | LinkVisibility | number[] | boolean) => {
         setEditLinkState(prev => ({
             ...prev,
             [linkId]: { ...prev[linkId], [field]: value }
@@ -5244,9 +5323,21 @@ export const TileDetail: React.FC<TileDetailProps> = ({
                         richTextContent: linkToClone.richTextContent,
                         notesEnabled: linkToClone.notesEnabled,
                         richTextEnabled: linkToClone.richTextEnabled,
+                        infoShowOpenLink: linkToClone.infoShowOpenLink,
                         maintenanceEnabled: linkToClone.maintenanceEnabled,
                         maintenanceMessage: linkToClone.maintenanceMessage,
                         maintenanceVideoUrl: linkToClone.maintenanceVideoUrl,
+                        inheritShortUrls: linkToClone.inheritShortUrls,
+                        forceShortUrl: linkToClone.forceShortUrl,
+                        brokenStatusLabel: linkToClone.brokenStatusLabel,
+                        brokenStatusNote: linkToClone.brokenStatusNote,
+                        brokenStatusTone: linkToClone.brokenStatusTone,
+                        brokenStatusExpected: linkToClone.brokenStatusExpected,
+                        brokenStatusManual: linkToClone.brokenStatusManual,
+                        brokenStatusFontColor: linkToClone.brokenStatusFontColor,
+                        brokenStatusFontWeight: linkToClone.brokenStatusFontWeight,
+                        brokenStatusFontStyle: linkToClone.brokenStatusFontStyle,
+                        brokenStatusFontFamily: linkToClone.brokenStatusFontFamily,
                     };
 
                     // Insert cloned link after the original in the sorted list
@@ -6043,17 +6134,24 @@ export const TileDetail: React.FC<TileDetailProps> = ({
     };
 
     // Helper to get health indicator
-    const getHealthIndicator = (linkId: string) => {
-        const health = linkHealth[linkId];
+    const getHealthIndicator = (link: Link) => {
+        const health = linkHealth[link.id];
         const status = health?.status || 'unknown';
-        const colorClass = linkHealthService.getHealthColor(status);
-        const label = linkHealthService.getHealthLabel(status);
-        const errorText = health?.error ? `: ${health.error}` : '';
+        const showBroken = shouldShowBrokenStatusBadge(link, status);
+        const tone = getBrokenStatusTone(link);
+        const colorClass = showBroken
+            ? getBrokenBadgeClassNames(tone).dot
+            : linkHealthService.getHealthColor(status);
+        const label = showBroken
+            ? getBrokenBadgeTitle(link, health?.error)
+            : `${linkHealthService.getHealthLabel(status, link.brokenStatusLabel, {
+                  expected: link.brokenStatusExpected === true,
+              })}${health?.error ? `: ${health.error}` : ''}`;
 
         return (
             <div
                 className={`w-2 h-2 rounded-full ${colorClass} shrink-0`}
-                title={`${label}${errorText}`}
+                title={label}
             />
         );
     };
@@ -9223,7 +9321,11 @@ export const TileDetail: React.FC<TileDetailProps> = ({
                                                             isVncLinkUrl(link.url || '') ||
                                                             isUrlExcludedFromLinkCheck(link.url || '', linkCheckExceptions);
                                                         const health = skipHealth ? undefined : linkHealth[link.id];
-                                                        const isBroken = !skipHealth && health?.status === 'broken';
+                                                        const isBroken =
+                                                            (!skipHealth && shouldShowBrokenStatusBadge(link, health?.status)) ||
+                                                            (link.brokenStatusManual === true && !!(link.brokenStatusLabel || '').trim());
+                                                        const brokenTone = getBrokenStatusTone(link);
+                                                        const brokenStyles = getBrokenBadgeClassNames(brokenTone);
                                                         const isNetwork = !skipHealth && isNetworkHealthStatus(health?.status);
                                                         const isGridCards = sectionLinkLayout === 'grid';
                                                         const isCompact = sectionLinkLayout === 'compact';
@@ -9440,7 +9542,7 @@ export const TileDetail: React.FC<TileDetailProps> = ({
                                                                 className={`
                                                     linknest-content-link group relative rounded-xl bg-white dark:bg-slate-800/80 border border-slate-200 dark:border-slate-700/60
                                                     hover:border-brand-300 dark:hover:border-brand-500/50 transition-all duration-300 shadow-sm
-                                                    ${isBroken ? 'border-red-300 dark:border-red-500/50 bg-red-50/50 dark:bg-red-900/10' : ''}
+                                                    ${isBroken ? `${brokenStyles.rowBorder} ${brokenStyles.rowBg}` : ''}
                                                     ${isNetwork ? 'border-slate-300 dark:border-slate-500/50 bg-slate-50/50 dark:bg-slate-900/20' : ''}
                                                     ${isGridCards
                                                         ? 'flex flex-col items-center text-center gap-2 p-4 pt-5'
@@ -9480,7 +9582,7 @@ export const TileDetail: React.FC<TileDetailProps> = ({
                                                                             ? 'absolute bottom-full left-1/2 -translate-x-1/2 mb-[5px] z-10'
                                                                             : ''
                                                                     }`}>
-                                                                        {!skipHealth && !hasBlockingUrlIssues(diagnoseLinkUrl(link.url || '')) && getHealthIndicator(link.id)}
+                                                                        {!skipHealth && !hasBlockingUrlIssues(diagnoseLinkUrl(link.url || '')) && getHealthIndicator(link)}
                                                                         <InvalidUrlMark url={link.url} />
                                                                     </div>
 
@@ -9622,9 +9724,13 @@ export const TileDetail: React.FC<TileDetailProps> = ({
                                                                                 </span>
                                                                             )}
                                                                             {isBroken && (
-                                                                                <span className="text-red-500 text-xs font-medium flex items-center gap-1 shrink-0">
-                                                                                    <span className="w-1.5 h-1.5 rounded-full bg-red-500"></span>
-                                                                                    Broken
+                                                                                <span
+                                                                                    className={getBrokenBadgeTextClassNames(brokenTone, link)}
+                                                                                    style={getBrokenBadgeTextStyle(link)}
+                                                                                    title={getBrokenBadgeTitle(link, health?.error)}
+                                                                                >
+                                                                                    <span className={`w-1.5 h-1.5 rounded-full ${brokenStyles.dot}`}></span>
+                                                                                    {getBrokenDisplayLabel(link)}
                                                                                 </span>
                                                                             )}
                                                                             {isNetwork && (
@@ -9888,9 +9994,19 @@ export const TileDetail: React.FC<TileDetailProps> = ({
                                                                                         browser: link.browser,
                                                                                         richTextContent: link.richTextContent,
                                                                                         richTextEnabled: link.richTextEnabled,
+                                                                                        infoShowOpenLink: link.infoShowOpenLink,
                                                                                         maintenanceEnabled: link.maintenanceEnabled,
                                                                                         maintenanceMessage: link.maintenanceMessage,
                                                                                         maintenanceVideoUrl: link.maintenanceVideoUrl,
+                                                                                        brokenStatusLabel: link.brokenStatusLabel,
+                                                                                        brokenStatusNote: link.brokenStatusNote,
+                                                                                        brokenStatusTone: link.brokenStatusTone,
+                                                                                        brokenStatusExpected: link.brokenStatusExpected,
+                                                                                        brokenStatusManual: link.brokenStatusManual,
+                                                                                        brokenStatusFontColor: link.brokenStatusFontColor,
+                                                                                        brokenStatusFontWeight: link.brokenStatusFontWeight,
+                                                                                        brokenStatusFontStyle: link.brokenStatusFontStyle,
+                                                                                        brokenStatusFontFamily: link.brokenStatusFontFamily,
                                                                                         health: link.health,
                                                                                         tile: {
                                                                                             id: tile.id,
@@ -10185,6 +10301,25 @@ export const TileDetail: React.FC<TileDetailProps> = ({
                                     showForceShortUrl
                                     forceShortUrl={draft.forceShortUrl === true}
                                     onForceShortUrlChange={(next) => updateEditLinkState(linkId, 'forceShortUrl', next)}
+                                    showBrokenStatusLabel
+                                    brokenStatusLabel={draft.brokenStatusLabel || ''}
+                                    onBrokenStatusLabelChange={(next) => updateEditLinkState(linkId, 'brokenStatusLabel', next)}
+                                    brokenStatusNote={draft.brokenStatusNote || ''}
+                                    onBrokenStatusNoteChange={(next) => updateEditLinkState(linkId, 'brokenStatusNote', next)}
+                                    brokenStatusTone={draft.brokenStatusTone || ''}
+                                    onBrokenStatusToneChange={(next) => updateEditLinkState(linkId, 'brokenStatusTone', next)}
+                                    brokenStatusExpected={draft.brokenStatusExpected === true}
+                                    onBrokenStatusExpectedChange={(next) => updateEditLinkState(linkId, 'brokenStatusExpected', next)}
+                                    brokenStatusManual={draft.brokenStatusManual === true}
+                                    onBrokenStatusManualChange={(next) => updateEditLinkState(linkId, 'brokenStatusManual', next)}
+                                    brokenStatusFontColor={draft.brokenStatusFontColor || ''}
+                                    onBrokenStatusFontColorChange={(next) => updateEditLinkState(linkId, 'brokenStatusFontColor', next)}
+                                    brokenStatusFontWeight={draft.brokenStatusFontWeight || ''}
+                                    onBrokenStatusFontWeightChange={(next) => updateEditLinkState(linkId, 'brokenStatusFontWeight', next)}
+                                    brokenStatusFontStyle={draft.brokenStatusFontStyle || ''}
+                                    onBrokenStatusFontStyleChange={(next) => updateEditLinkState(linkId, 'brokenStatusFontStyle', next)}
+                                    brokenStatusFontFamily={draft.brokenStatusFontFamily || ''}
+                                    onBrokenStatusFontFamilyChange={(next) => updateEditLinkState(linkId, 'brokenStatusFontFamily', next)}
                                 />
                             }
                             isAdmin={!!user?.is_admin}
@@ -10220,6 +10355,7 @@ export const TileDetail: React.FC<TileDetailProps> = ({
                         linkIcon={linkInfoDialog.link.icon}
                         richTextContent={linkInfoDialog.link.richTextContent || ''}
                         linkUrl={viewerLinkUrl({ ...linkInfoDialog.link, shortUrl: shortOf('link', linkInfoDialog.link.id, linkInfoDialog.link.shortUrl) }, effectiveShowShortUrls(showShortUrls, activeViewTab, linkInfoDialog.link)) || linkInfoDialog.link.url}
+                        showOpenLink={isInfoOpenLinkShown(linkInfoDialog.link)}
                         browser={linkInfoDialog.link.browser}
                         openTarget={linkInfoDialog.link.openTarget}
                     />
@@ -12219,6 +12355,25 @@ export const TileDetail: React.FC<TileDetailProps> = ({
                                                                                                     showForceShortUrl
                                                                                                     forceShortUrl={editLinkState[link.id]?.forceShortUrl === true}
                                                                                                     onForceShortUrlChange={(next) => updateEditLinkState(link.id, 'forceShortUrl', next)}
+                                                                                                    showBrokenStatusLabel
+                                                                                                    brokenStatusLabel={editLinkState[link.id]?.brokenStatusLabel || ''}
+                                                                                                    onBrokenStatusLabelChange={(next) => updateEditLinkState(link.id, 'brokenStatusLabel', next)}
+                                                                                                    brokenStatusNote={editLinkState[link.id]?.brokenStatusNote || ''}
+                                                                                                    onBrokenStatusNoteChange={(next) => updateEditLinkState(link.id, 'brokenStatusNote', next)}
+                                                                                                    brokenStatusTone={editLinkState[link.id]?.brokenStatusTone || ''}
+                                                                                                    onBrokenStatusToneChange={(next) => updateEditLinkState(link.id, 'brokenStatusTone', next)}
+                                                                                                    brokenStatusExpected={editLinkState[link.id]?.brokenStatusExpected === true}
+                                                                                                    onBrokenStatusExpectedChange={(next) => updateEditLinkState(link.id, 'brokenStatusExpected', next)}
+                                                                                                    brokenStatusManual={editLinkState[link.id]?.brokenStatusManual === true}
+                                                                                                    onBrokenStatusManualChange={(next) => updateEditLinkState(link.id, 'brokenStatusManual', next)}
+                                                                                                    brokenStatusFontColor={editLinkState[link.id]?.brokenStatusFontColor || ''}
+                                                                                                    onBrokenStatusFontColorChange={(next) => updateEditLinkState(link.id, 'brokenStatusFontColor', next)}
+                                                                                                    brokenStatusFontWeight={editLinkState[link.id]?.brokenStatusFontWeight || ''}
+                                                                                                    onBrokenStatusFontWeightChange={(next) => updateEditLinkState(link.id, 'brokenStatusFontWeight', next)}
+                                                                                                    brokenStatusFontStyle={editLinkState[link.id]?.brokenStatusFontStyle || ''}
+                                                                                                    onBrokenStatusFontStyleChange={(next) => updateEditLinkState(link.id, 'brokenStatusFontStyle', next)}
+                                                                                                    brokenStatusFontFamily={editLinkState[link.id]?.brokenStatusFontFamily || ''}
+                                                                                                    onBrokenStatusFontFamilyChange={(next) => updateEditLinkState(link.id, 'brokenStatusFontFamily', next)}
                                                                                                 />
                                                                                             }
                                                                                             isAdmin={!!user?.is_admin}
@@ -12460,6 +12615,25 @@ export const TileDetail: React.FC<TileDetailProps> = ({
                                                                                     showForceShortUrl
                                                                                     forceShortUrl={newLinkState[section.id]?.forceShortUrl === true}
                                                                                     onForceShortUrlChange={(next) => updateNewLinkState(section.id, 'forceShortUrl', next)}
+                                                                                    showBrokenStatusLabel
+                                                                                    brokenStatusLabel={newLinkState[section.id]?.brokenStatusLabel || ''}
+                                                                                    onBrokenStatusLabelChange={(next) => updateNewLinkState(section.id, 'brokenStatusLabel', next)}
+                                                                                    brokenStatusNote={newLinkState[section.id]?.brokenStatusNote || ''}
+                                                                                    onBrokenStatusNoteChange={(next) => updateNewLinkState(section.id, 'brokenStatusNote', next)}
+                                                                                    brokenStatusTone={newLinkState[section.id]?.brokenStatusTone || ''}
+                                                                                    onBrokenStatusToneChange={(next) => updateNewLinkState(section.id, 'brokenStatusTone', next)}
+                                                                                    brokenStatusExpected={newLinkState[section.id]?.brokenStatusExpected === true}
+                                                                                    onBrokenStatusExpectedChange={(next) => updateNewLinkState(section.id, 'brokenStatusExpected', next)}
+                                                                                    brokenStatusManual={newLinkState[section.id]?.brokenStatusManual === true}
+                                                                                    onBrokenStatusManualChange={(next) => updateNewLinkState(section.id, 'brokenStatusManual', next)}
+                                                                                    brokenStatusFontColor={newLinkState[section.id]?.brokenStatusFontColor || ''}
+                                                                                    onBrokenStatusFontColorChange={(next) => updateNewLinkState(section.id, 'brokenStatusFontColor', next)}
+                                                                                    brokenStatusFontWeight={newLinkState[section.id]?.brokenStatusFontWeight || ''}
+                                                                                    onBrokenStatusFontWeightChange={(next) => updateNewLinkState(section.id, 'brokenStatusFontWeight', next)}
+                                                                                    brokenStatusFontStyle={newLinkState[section.id]?.brokenStatusFontStyle || ''}
+                                                                                    onBrokenStatusFontStyleChange={(next) => updateNewLinkState(section.id, 'brokenStatusFontStyle', next)}
+                                                                                    brokenStatusFontFamily={newLinkState[section.id]?.brokenStatusFontFamily || ''}
+                                                                                    onBrokenStatusFontFamilyChange={(next) => updateNewLinkState(section.id, 'brokenStatusFontFamily', next)}
                                                                                 />
                                                                                 <div>
                                                                                     <label className="block text-xs font-semibold uppercase tracking-wider text-slate-600 dark:text-slate-400 mb-1.5">

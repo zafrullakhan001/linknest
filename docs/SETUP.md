@@ -8,19 +8,13 @@
 npm install
 ```
 
-### 2. Start Development Servers
+### 2. Start the app
 
-You need to run two servers:
-
-**Terminal 1 - PHP Backend:**
-```bash
-php -S localhost:8000 -t .
-```
-
-**Terminal 2 - Frontend (Vite):**
 ```bash
 npm run dev
 ```
+
+This starts Vite on port 3000 and PHP's built-in server on port 8000 (API + uploads). Apache is not required.
 
 ### 3. Access the Application
 
@@ -75,8 +69,8 @@ chmod 644 data/*.db
 Make sure the `data/` directory is writable for session storage.
 
 ### API Not Working
-- Check that PHP server is running on port 8000
-- Check browser console for CORS errors
+- `npm run dev` starts PHP on port 8000 automatically — check the terminal for `[linknest-php]`
+- Check browser console for CORS or 404 errors
 - Verify `.htaccess` is being read (Apache) or configure Nginx properly
 
 ## Production Deployment

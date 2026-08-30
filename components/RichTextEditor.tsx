@@ -554,10 +554,15 @@ export const RichTextEditor: React.FC<RichTextEditorProps> = ({
             }
         }
 
-        const finalUrl = linkUrl.startsWith('http://') || linkUrl.startsWith('https://') || linkUrl.startsWith('mailto:') || linkUrl.startsWith('#') 
-            ? linkUrl 
-            : `https://${linkUrl}`;
-        const finalText = linkText.trim() || selectedText || finalUrl;
+        const trimmedUrl = linkUrl.trim();
+        const looksLikeEmail = /^[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}$/.test(trimmedUrl);
+        const finalUrl = looksLikeEmail
+            ? `mailto:${trimmedUrl}`
+            : (trimmedUrl.startsWith('http://') || trimmedUrl.startsWith('https://') || trimmedUrl.startsWith('mailto:') || trimmedUrl.startsWith('tel:') || trimmedUrl.startsWith('#'))
+                ? trimmedUrl
+                : `https://${trimmedUrl}`;
+        const finalText = linkText.trim() || selectedText || (looksLikeEmail ? trimmedUrl : finalUrl);
+        const openNewTab = linkOpenNewTab && !/^(mailto|tel):/i.test(finalUrl);
 
         const range = getCurrentRange();
         if (range) {
@@ -565,7 +570,7 @@ export const RichTextEditor: React.FC<RichTextEditorProps> = ({
                 // Update existing link
                 existingLink.href = finalUrl;
                 existingLink.textContent = finalText;
-                if (linkOpenNewTab) {
+                if (openNewTab) {
                     existingLink.target = '_blank';
                     existingLink.rel = 'noopener noreferrer';
                 } else {
@@ -579,7 +584,7 @@ export const RichTextEditor: React.FC<RichTextEditorProps> = ({
                     const link = document.createElement('a');
                     link.href = finalUrl;
                     link.textContent = finalText;
-                    if (linkOpenNewTab) {
+                    if (openNewTab) {
                         link.target = '_blank';
                         link.rel = 'noopener noreferrer';
                     }
@@ -590,7 +595,7 @@ export const RichTextEditor: React.FC<RichTextEditorProps> = ({
                     const link = document.createElement('a');
                     link.href = finalUrl;
                     link.textContent = finalText;
-                    if (linkOpenNewTab) {
+                    if (openNewTab) {
                         link.target = '_blank';
                         link.rel = 'noopener noreferrer';
                     }
@@ -1564,7 +1569,7 @@ export const RichTextEditor: React.FC<RichTextEditorProps> = ({
                                             type="text"
                                             value={linkUrl}
                                             onChange={(e) => setLinkUrl(e.target.value)}
-                                            placeholder="https://example.com"
+                                            placeholder="https://example.com or name@example.com"
                                             className="w-full px-2 py-1.5 text-sm bg-slate-50 dark:bg-slate-900 border border-slate-300 dark:border-slate-600 rounded focus:outline-none focus:ring-2 focus:ring-brand-500"
                                             autoFocus
                                         />

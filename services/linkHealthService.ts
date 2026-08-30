@@ -336,16 +336,32 @@ export const linkHealthService = {
   },
 
   /**
+   * Badge text for a broken link (custom override or default "Broken").
+   */
+  getBrokenDisplayLabel(link?: { brokenStatusLabel?: string | null } | null): string {
+    const custom = typeof link?.brokenStatusLabel === 'string' ? link.brokenStatusLabel.trim() : '';
+    return custom || 'Broken';
+  },
+
+  /**
    * Get health status label
    */
-  getHealthLabel(status: string): string {
+  getHealthLabel(
+    status: string,
+    customBrokenLabel?: string | null,
+    options?: { expected?: boolean; manual?: boolean; note?: string | null }
+  ): string {
     switch (status) {
       case 'healthy':
         return 'Link is working';
       case 'accessible':
         return 'Link is online (may require authentication)';
-      case 'broken':
-        return 'Link is broken';
+      case 'broken': {
+        const custom = typeof customBrokenLabel === 'string' ? customBrokenLabel.trim() : '';
+        const base = custom || 'Link is broken';
+        if (options?.expected) return `${base} (expected)`;
+        return base;
+      }
       case 'network':
         return 'Network not reachable — this is not a broken link';
       case 'timeout':

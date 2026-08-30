@@ -117,7 +117,7 @@ const extractSearchLinks = (tile: Tile): Tile['searchLinks'] => {
   }
   const links: NonNullable<Tile['searchLinks']> = [];
   const seen = new Set<string>();
-  const addLinks = (sectionLinks?: { id: string; label: string; url: string; icon?: string; browser?: string; openTarget?: string; notes?: string; tooltip?: string; notesEnabled?: boolean; tooltipStyle?: 'rich' | 'classic'; richTextContent?: string; richTextEnabled?: boolean; maintenanceEnabled?: boolean; maintenanceMessage?: string; maintenanceVideoUrl?: string; health?: any }[]) => {
+  const addLinks = (sectionLinks?: { id: string; label: string; url: string; icon?: string; browser?: string; openTarget?: string; notes?: string; tooltip?: string; notesEnabled?: boolean; tooltipStyle?: 'rich' | 'classic'; richTextContent?: string; richTextEnabled?: boolean; infoShowOpenLink?: boolean; maintenanceEnabled?: boolean; maintenanceMessage?: string; maintenanceVideoUrl?: string; health?: any; brokenStatusLabel?: string | null }[]) => {
     sectionLinks?.forEach((link) => {
       const key = `${(link.label || '').toLowerCase()}|${(link.url || '').toLowerCase()}`;
       if (seen.has(key)) return;
@@ -135,12 +135,18 @@ const extractSearchLinks = (tile: Tile): Tile['searchLinks'] => {
         tooltipStyle: link.tooltipStyle,
         richTextContent: link.richTextContent,
         richTextEnabled: link.richTextEnabled,
+        infoShowOpenLink: link.infoShowOpenLink,
         maintenanceEnabled: link.maintenanceEnabled,
         maintenanceMessage: link.maintenanceMessage,
         maintenanceVideoUrl: link.maintenanceVideoUrl,
         health: link.health,
         shortUrl: (link as { shortUrl?: string }).shortUrl,
         forceShortUrl: (link as { forceShortUrl?: boolean }).forceShortUrl === true || undefined,
+        brokenStatusLabel: (link as { brokenStatusLabel?: string | null }).brokenStatusLabel?.trim() || undefined,
+        brokenStatusNote: (link as { brokenStatusNote?: string | null }).brokenStatusNote?.trim() || undefined,
+        brokenStatusTone: (link as { brokenStatusTone?: string | null }).brokenStatusTone || undefined,
+        brokenStatusExpected: (link as { brokenStatusExpected?: boolean }).brokenStatusExpected === true || undefined,
+        brokenStatusManual: (link as { brokenStatusManual?: boolean }).brokenStatusManual === true || undefined,
       });
     });
   };
@@ -685,9 +691,15 @@ export interface FavoriteLink {
   openTarget?: 'same' | 'tab' | 'window' | 'browser' | 'private';
   richTextContent?: string;
   richTextEnabled?: boolean;
+  infoShowOpenLink?: boolean;
   maintenanceEnabled?: boolean;
   maintenanceMessage?: string;
   maintenanceVideoUrl?: string;
+  brokenStatusLabel?: string | null;
+  brokenStatusNote?: string | null;
+  brokenStatusTone?: 'red' | 'amber' | 'slate' | null;
+  brokenStatusExpected?: boolean | null;
+  brokenStatusManual?: boolean | null;
   isFavorite: boolean;
   health?: {
     status: 'unknown' | 'healthy' | 'broken' | 'timeout' | 'checking' | 'restricted' | 'accessible' | 'redirected' | 'network';

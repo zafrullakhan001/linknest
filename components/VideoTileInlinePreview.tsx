@@ -1,4 +1,5 @@
 import React, { useEffect, useRef, useState } from 'react';
+import { useMobile } from '../hooks/useMobile';
 import { toYouTubeEmbedUrl, toYouTubeThumbnailUrl } from '../utils/youtube';
 
 const PREVIEW_DELAY_MS = 5000;
@@ -30,6 +31,7 @@ export const VideoTileInlinePreview: React.FC<VideoTileInlinePreviewProps> = ({
   isYouTube,
   fill = false,
 }) => {
+  const isMobile = useMobile(768);
   const shellRef = useRef<HTMLDivElement>(null);
   const fileVideoRef = useRef<HTMLVideoElement>(null);
   const [inView, setInView] = useState(false);
@@ -62,14 +64,15 @@ export const VideoTileInlinePreview: React.FC<VideoTileInlinePreviewProps> = ({
   }, []);
 
   useEffect(() => {
-    if (!inView || previewPhase !== 'idle') return;
+    // Phones / small screens skip the auto-embed preview so a tap can launch YouTube.
+    if (isMobile || !inView || previewPhase !== 'idle') return;
 
     const startTimer = setTimeout(() => {
       setPreviewPhase('playing');
     }, msUntilPreviewStart());
 
     return () => clearTimeout(startTimer);
-  }, [inView, previewPhase]);
+  }, [isMobile, inView, previewPhase]);
 
   useEffect(() => {
     if (previewPhase !== 'playing') return;
@@ -165,7 +168,7 @@ export const VideoTileInlinePreview: React.FC<VideoTileInlinePreviewProps> = ({
 
       {isYouTube && (
         <span className="absolute bottom-1.5 right-1.5 rounded bg-black/75 px-1.5 py-0.5 text-[9px] font-semibold uppercase tracking-wide text-white pointer-events-none group-hover:opacity-0 transition-opacity">
-          {showPlaying ? 'Preview' : 'YouTube'}
+          {isMobile ? 'YouTube' : showPlaying ? 'Preview' : 'YouTube'}
         </span>
       )}
       {!isYouTube && showPlaying && (

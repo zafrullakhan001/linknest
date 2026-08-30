@@ -799,6 +799,9 @@ function ensureLinkFeatureToggleColumns(PDO $db): void {
         if (!in_array('rich_text_enabled', $names, true)) {
             $db->exec('ALTER TABLE links ADD COLUMN rich_text_enabled INTEGER');
         }
+        if (!in_array('info_show_open_link', $names, true)) {
+            $db->exec('ALTER TABLE links ADD COLUMN info_show_open_link INTEGER DEFAULT 1');
+        }
         if (!in_array('tooltip_style', $names, true)) {
             $db->exec("ALTER TABLE links ADD COLUMN tooltip_style TEXT DEFAULT 'classic'");
         }
@@ -826,10 +829,25 @@ function linkToggleFlagFromRow(array $row, string $column, array $contentKeys): 
     return false;
 }
 
+function infoShowOpenLinkFromRow(array $row): bool {
+    if (!array_key_exists('info_show_open_link', $row) || $row['info_show_open_link'] === null || $row['info_show_open_link'] === '') {
+        return true;
+    }
+    return !empty($row['info_show_open_link']);
+}
+
+function infoShowOpenLinkFromInput($link): int {
+    if (is_array($link) && array_key_exists('infoShowOpenLink', $link)) {
+        return $link['infoShowOpenLink'] === false ? 0 : 1;
+    }
+    return 1;
+}
+
 function mapLinkFeatureTogglesFromRow(array $row): array {
     return [
         'notesEnabled' => linkToggleFlagFromRow($row, 'notes_enabled', ['notes', 'tooltip']),
         'richTextEnabled' => linkToggleFlagFromRow($row, 'rich_text_enabled', ['rich_text_content']),
+        'infoShowOpenLink' => infoShowOpenLinkFromRow($row),
     ];
 }
 
@@ -937,6 +955,339 @@ function ensureLinkForceShortUrlColumn(PDO $db): void {
     }
 }
 
+/** Max length for per-link custom "Broken" badge text. */
+if (!defined('LINK_BROKEN_STATUS_LABEL_MAX_LEN')) {
+    define('LINK_BROKEN_STATUS_LABEL_MAX_LEN', 48);
+}
+/** Max length for optional hover note on custom broken badge. */
+if (!defined('LINK_BROKEN_STATUS_NOTE_MAX_LEN')) {
+    define('LINK_BROKEN_STATUS_NOTE_MAX_LEN', 160);
+}
+
+/**
+ * Per-link custom broken badge meta:
+ * - broken_status_label: display text instead of "Broken"
+ * - broken_status_expected: intentional/expected downtime (excluded from surprise broken stats)
+ * - broken_status_tone: red|amber|slate badge color
+ * - broken_status_note: optional hover note
+ * - broken_status_manual: show badge even when health is not broken
+ */
+function ensureLinkBrokenStatusLabelColumn(PDO $db): void {
+    static $ensured = false;
+    if ($ensured) {
+        return;
+    }
+    try {
+        $exists = $db->query("SELECT name FROM sqlite_master WHERE type='table' AND name='links'")->fetchColumn();
+        if (!$exists) {
+            return;
+        }
+        $columns = $db->query('PRAGMA table_info(links)')->fetchAll(PDO::FETCH_ASSOC);
+        $names = array_column($columns, 'name');
+        if (!in_array('broken_status_label', $names, true)) {
+            $db->exec('ALTER TABLE links ADD COLUMN broken_status_label TEXT');
+        }
+        if (!in_array('broken_status_expected', $names, true)) {
+            $db->exec('ALTER TABLE links ADD COLUMN broken_status_expected INTEGER DEFAULT 0');
+        }
+        if (!in_array('broken_status_tone', $names, true)) {
+            $db->exec('ALTER TABLE links ADD COLUMN broken_status_tone TEXT');
+        }
+        if (!in_array('broken_status_note', $names, true)) {
+            $db->exec('ALTER TABLE links ADD COLUMN broken_status_note TEXT');
+        }
+        if (!in_array('broken_status_manual', $names, true)) {
+            $db->exec('ALTER TABLE links ADD COLUMN broken_status_manual INTEGER DEFAULT 0');
+        }
+        if (!in_array('broken_status_font_color', $names, true)) {
+            $db->exec('ALTER TABLE links ADD COLUMN broken_status_font_color TEXT');
+        }
+        if (!in_array('broken_status_font_weight', $names, true)) {
+            $db->exec('ALTER TABLE links ADD COLUMN broken_status_font_weight TEXT');
+        }
+        if (!in_array('broken_status_font_style', $names, true)) {
+            $db->exec('ALTER TABLE links ADD COLUMN broken_status_font_style TEXT');
+        }
+        if (!in_array('broken_status_font_family', $names, true)) {
+            $db->exec('ALTER TABLE links ADD COLUMN broken_status_font_family TEXT');
+        }
+        $ensured = true;
+    } catch (PDOException $e) {
+        error_log('ensureLinkBrokenStatusLabelColumn warning: ' . $e->getMessage());
+    }
+}
+
+function normalizeBrokenStatusLabel($value): ?string {
+    if (!is_string($value)) {
+        return null;
+    }
+    $trimmed = trim($value);
+    if ($trimmed === '') {
+        return null;
+    }
+    if (function_exists('mb_substr')) {
+        $trimmed = mb_substr($trimmed, 0, LINK_BROKEN_STATUS_LABEL_MAX_LEN);
+    } else {
+        $trimmed = substr($trimmed, 0, LINK_BROKEN_STATUS_LABEL_MAX_LEN);
+    }
+    $trimmed = trim($trimmed);
+    return $trimmed === '' ? null : $trimmed;
+}
+
+function normalizeBrokenStatusNote($value): ?string {
+    if (!is_string($value)) {
+        return null;
+    }
+    $trimmed = trim($value);
+    if ($trimmed === '') {
+        return null;
+    }
+    if (function_exists('mb_substr')) {
+        $trimmed = mb_substr($trimmed, 0, LINK_BROKEN_STATUS_NOTE_MAX_LEN);
+    } else {
+        $trimmed = substr($trimmed, 0, LINK_BROKEN_STATUS_NOTE_MAX_LEN);
+    }
+    $trimmed = trim($trimmed);
+    return $trimmed === '' ? null : $trimmed;
+}
+
+function normalizeBrokenStatusTone($value): ?string {
+    if (!is_string($value)) {
+        return null;
+    }
+    $tone = strtolower(trim($value));
+    return in_array($tone, ['red', 'amber', 'slate'], true) ? $tone : null;
+}
+
+function normalizeBrokenStatusFontColor($value): ?string {
+    if (!is_string($value)) {
+        return null;
+    }
+    $color = trim($value);
+    if ($color === '') {
+        return null;
+    }
+    if (preg_match('/^#([0-9a-fA-F]{3}|[0-9a-fA-F]{6})$/', $color)) {
+        return strtolower($color);
+    }
+    return null;
+}
+
+function normalizeBrokenStatusFontWeight($value): ?string {
+    if (!is_string($value)) {
+        return null;
+    }
+    $weight = strtolower(trim($value));
+    return in_array($weight, ['normal', 'bold'], true) ? $weight : null;
+}
+
+function normalizeBrokenStatusFontStyle($value): ?string {
+    if (!is_string($value)) {
+        return null;
+    }
+    $style = strtolower(trim($value));
+    return in_array($style, ['normal', 'italic'], true) ? $style : null;
+}
+
+function normalizeBrokenStatusFontFamily($value): ?string {
+    if (!is_string($value)) {
+        return null;
+    }
+    $family = trim($value);
+    if ($family === '' || strtolower($family) === 'inherit') {
+        return null;
+    }
+    // Allow CSS font-family stacks: letters, digits, spaces, quotes, commas, hyphens.
+    if (!preg_match("/^[a-zA-Z0-9\\s,'\"\\-_]+$/", $family)) {
+        return null;
+    }
+    if (function_exists('mb_substr')) {
+        $family = mb_substr($family, 0, 120);
+    } else {
+        $family = substr($family, 0, 120);
+    }
+    $family = trim($family);
+    return $family === '' ? null : $family;
+}
+
+function linkBrokenStatusMetaStringFromInput($link, string $jsKey, string $dbKey, callable $normalizer): ?string {
+    if (!is_array($link)) {
+        return null;
+    }
+    if (array_key_exists($jsKey, $link)) {
+        return $normalizer($link[$jsKey]);
+    }
+    if (array_key_exists($dbKey, $link)) {
+        return $normalizer($link[$dbKey]);
+    }
+    return null;
+}
+
+function linkBrokenStatusLabelFromInput($link): ?string {
+    if (!is_array($link)) {
+        return null;
+    }
+    if (array_key_exists('brokenStatusLabel', $link)) {
+        return normalizeBrokenStatusLabel($link['brokenStatusLabel']);
+    }
+    if (array_key_exists('broken_status_label', $link)) {
+        return normalizeBrokenStatusLabel($link['broken_status_label']);
+    }
+    return null;
+}
+
+function linkBrokenStatusNoteFromInput($link): ?string {
+    if (!is_array($link)) {
+        return null;
+    }
+    if (array_key_exists('brokenStatusNote', $link)) {
+        return normalizeBrokenStatusNote($link['brokenStatusNote']);
+    }
+    if (array_key_exists('broken_status_note', $link)) {
+        return normalizeBrokenStatusNote($link['broken_status_note']);
+    }
+    return null;
+}
+
+function linkBrokenStatusToneFromInput($link): ?string {
+    if (!is_array($link)) {
+        return null;
+    }
+    if (array_key_exists('brokenStatusTone', $link)) {
+        return normalizeBrokenStatusTone($link['brokenStatusTone']);
+    }
+    if (array_key_exists('broken_status_tone', $link)) {
+        return normalizeBrokenStatusTone($link['broken_status_tone']);
+    }
+    return null;
+}
+
+function linkBrokenStatusFlagFromInput($link, string $jsKey, string $dbKey): int {
+    if (!is_array($link)) {
+        return 0;
+    }
+    if (array_key_exists($jsKey, $link)) {
+        $raw = $link[$jsKey];
+        return ($raw === true || $raw === 1 || $raw === '1') ? 1 : 0;
+    }
+    if (array_key_exists($dbKey, $link)) {
+        $raw = $link[$dbKey];
+        return ($raw === true || $raw === 1 || $raw === '1') ? 1 : 0;
+    }
+    return 0;
+}
+
+function mapBrokenStatusMetaFromRow(array $row): array {
+    $label = normalizeBrokenStatusLabel(
+        isset($row['broken_status_label']) && is_string($row['broken_status_label'])
+            ? $row['broken_status_label']
+            : (isset($row['brokenStatusLabel']) && is_string($row['brokenStatusLabel']) ? $row['brokenStatusLabel'] : null)
+    );
+    $note = normalizeBrokenStatusNote(
+        isset($row['broken_status_note']) && is_string($row['broken_status_note'])
+            ? $row['broken_status_note']
+            : (isset($row['brokenStatusNote']) && is_string($row['brokenStatusNote']) ? $row['brokenStatusNote'] : null)
+    );
+    $tone = normalizeBrokenStatusTone(
+        isset($row['broken_status_tone']) && is_string($row['broken_status_tone'])
+            ? $row['broken_status_tone']
+            : (isset($row['brokenStatusTone']) && is_string($row['brokenStatusTone']) ? $row['brokenStatusTone'] : null)
+    );
+    $fontColor = normalizeBrokenStatusFontColor(
+        isset($row['broken_status_font_color']) && is_string($row['broken_status_font_color'])
+            ? $row['broken_status_font_color']
+            : (isset($row['brokenStatusFontColor']) && is_string($row['brokenStatusFontColor']) ? $row['brokenStatusFontColor'] : null)
+    );
+    $fontWeight = normalizeBrokenStatusFontWeight(
+        isset($row['broken_status_font_weight']) && is_string($row['broken_status_font_weight'])
+            ? $row['broken_status_font_weight']
+            : (isset($row['brokenStatusFontWeight']) && is_string($row['brokenStatusFontWeight']) ? $row['brokenStatusFontWeight'] : null)
+    );
+    $fontStyle = normalizeBrokenStatusFontStyle(
+        isset($row['broken_status_font_style']) && is_string($row['broken_status_font_style'])
+            ? $row['broken_status_font_style']
+            : (isset($row['brokenStatusFontStyle']) && is_string($row['brokenStatusFontStyle']) ? $row['brokenStatusFontStyle'] : null)
+    );
+    $fontFamily = normalizeBrokenStatusFontFamily(
+        isset($row['broken_status_font_family']) && is_string($row['broken_status_font_family'])
+            ? $row['broken_status_font_family']
+            : (isset($row['brokenStatusFontFamily']) && is_string($row['brokenStatusFontFamily']) ? $row['brokenStatusFontFamily'] : null)
+    );
+    $expectedRaw = $row['broken_status_expected'] ?? $row['brokenStatusExpected'] ?? 0;
+    $manualRaw = $row['broken_status_manual'] ?? $row['brokenStatusManual'] ?? 0;
+    return [
+        'brokenStatusLabel' => $label,
+        'brokenStatusNote' => $note,
+        'brokenStatusTone' => $tone,
+        'brokenStatusFontColor' => $fontColor,
+        'brokenStatusFontWeight' => $fontWeight,
+        'brokenStatusFontStyle' => $fontStyle,
+        'brokenStatusFontFamily' => $fontFamily,
+        'brokenStatusExpected' => !empty($expectedRaw) && $expectedRaw !== '0' && $expectedRaw !== false && $expectedRaw !== 'false',
+        'brokenStatusManual' => !empty($manualRaw) && $manualRaw !== '0' && $manualRaw !== false && $manualRaw !== 'false',
+    ];
+}
+
+function applyLinkBrokenStatusLabelToApi(array &$link, array $row): void {
+    $meta = mapBrokenStatusMetaFromRow($row);
+    foreach ([
+        'brokenStatusLabel',
+        'brokenStatusNote',
+        'brokenStatusTone',
+        'brokenStatusFontColor',
+        'brokenStatusFontWeight',
+        'brokenStatusFontStyle',
+        'brokenStatusFontFamily',
+    ] as $key) {
+        if ($meta[$key] !== null) {
+            $link[$key] = $meta[$key];
+        } else {
+            unset($link[$key]);
+        }
+    }
+    if ($meta['brokenStatusExpected']) {
+        $link['brokenStatusExpected'] = true;
+    } else {
+        unset($link['brokenStatusExpected']);
+    }
+    if ($meta['brokenStatusManual']) {
+        $link['brokenStatusManual'] = true;
+    } else {
+        unset($link['brokenStatusManual']);
+    }
+}
+
+function persistLinkBrokenStatusLabel(PDO $db, string $linkId, $source): void {
+    if ($linkId === '') {
+        return;
+    }
+    ensureLinkBrokenStatusLabelColumn($db);
+    try {
+        $stmt = $db->prepare(
+            'UPDATE links SET broken_status_label = ?, broken_status_expected = ?, broken_status_tone = ?, broken_status_note = ?, broken_status_manual = ?, broken_status_font_color = ?, broken_status_font_weight = ?, broken_status_font_style = ?, broken_status_font_family = ? WHERE id = ?'
+        );
+        $stmt->execute([
+            linkBrokenStatusLabelFromInput($source),
+            linkBrokenStatusFlagFromInput($source, 'brokenStatusExpected', 'broken_status_expected'),
+            linkBrokenStatusToneFromInput($source),
+            linkBrokenStatusNoteFromInput($source),
+            linkBrokenStatusFlagFromInput($source, 'brokenStatusManual', 'broken_status_manual'),
+            linkBrokenStatusMetaStringFromInput($source, 'brokenStatusFontColor', 'broken_status_font_color', 'normalizeBrokenStatusFontColor'),
+            linkBrokenStatusMetaStringFromInput($source, 'brokenStatusFontWeight', 'broken_status_font_weight', 'normalizeBrokenStatusFontWeight'),
+            linkBrokenStatusMetaStringFromInput($source, 'brokenStatusFontStyle', 'broken_status_font_style', 'normalizeBrokenStatusFontStyle'),
+            linkBrokenStatusMetaStringFromInput($source, 'brokenStatusFontFamily', 'broken_status_font_family', 'normalizeBrokenStatusFontFamily'),
+            $linkId,
+        ]);
+    } catch (PDOException $e) {
+        error_log('persistLinkBrokenStatusLabel: ' . $e->getMessage());
+    }
+}
+
+/** @deprecated Use mapBrokenStatusMetaFromRow */
+function mapBrokenStatusLabelFromRow(array $row): ?string {
+    return mapBrokenStatusMetaFromRow($row)['brokenStatusLabel'];
+}
+
 function linkToggleFromInput($link, string $jsKey, array $contentKeys): int {
     if (is_array($link) && array_key_exists($jsKey, $link)) {
         return !empty($link[$jsKey]) ? 1 : 0;
@@ -956,6 +1307,7 @@ function linkFeatureToggleInsertValuesFromInput($link): array {
     return [
         linkToggleFromInput($link, 'notesEnabled', ['notes', 'tooltip']),
         linkToggleFromInput($link, 'richTextEnabled', ['richTextContent']),
+        infoShowOpenLinkFromInput($link),
     ];
 }
 
@@ -964,6 +1316,7 @@ function linkFeatureToggleInsertValuesFromRow(array $row): array {
     return [
         !empty($mapped['notesEnabled']) ? 1 : 0,
         !empty($mapped['richTextEnabled']) ? 1 : 0,
+        !empty($mapped['infoShowOpenLink']) ? 1 : 0,
     ];
 }
 
@@ -5064,14 +5417,22 @@ function sendJSON($data, $statusCode = 200) {
     if (headers_sent($file, $line)) {
         error_log("Warning: Headers already sent in $file on line $line - output may be corrupted");
     }
+    $json = json_encode($data, JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES);
+    if ($json === false) {
+        $statusCode = 500;
+        $json = '{"error":"Failed to encode JSON"}';
+    }
     if (!headers_sent()) {
         http_response_code($statusCode);
         header('Content-Type: application/json; charset=utf-8');
         header('Cache-Control: no-store, no-cache, must-revalidate, max-age=0');
         header('Pragma: no-cache');
         header('Expires: 0');
+        // PHP's built-in server (npm run dev) resets the socket on large JSON
+        // unless Content-Length is set — the home-grid tiles payload is ~240KB.
+        header('Content-Length: ' . strlen($json));
     }
-    echo json_encode($data, JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES);
+    echo $json;
     exit;
 }
 
@@ -5788,11 +6149,14 @@ function getAppBasePath(): string {
     }
 
     // Last resort for CLI / clone folders: this install's directory name.
-    $diskFolder = basename(dirname(__DIR__));
-    if ($diskFolder !== '' && !in_array(strtolower($diskFolder), ['html', 'htdocs', 'www', 'public'], true)) {
-        $fromDisk = $normalize('/' . $diskFolder);
-        if ($fromDisk !== '') {
-            return $cached = $fromDisk;
+    // php -S (Vite `npm run dev`) serves at / — do not prefix /linknest from the disk folder.
+    if (PHP_SAPI !== 'cli-server') {
+        $diskFolder = basename(dirname(__DIR__));
+        if ($diskFolder !== '' && !in_array(strtolower($diskFolder), ['html', 'htdocs', 'www', 'public'], true)) {
+            $fromDisk = $normalize('/' . $diskFolder);
+            if ($fromDisk !== '') {
+                return $cached = $fromDisk;
+            }
         }
     }
 

@@ -20,6 +20,7 @@ interface LinkInfoDialogProps {
   linkIcon?: string;
   richTextContent: string;
   linkUrl?: string;
+  showOpenLink?: boolean;
   browser?: string;
   openTarget?: string;
 }
@@ -91,6 +92,7 @@ export const LinkInfoDialog: React.FC<LinkInfoDialogProps> = ({
   linkIcon,
   richTextContent,
   linkUrl,
+  showOpenLink = true,
   browser,
   openTarget,
 }) => {
@@ -370,7 +372,7 @@ export const LinkInfoDialog: React.FC<LinkInfoDialogProps> = ({
           onMouseDown={handleDragStart}
         >
           <div className="flex items-center gap-3 min-w-0">
-            {linkUrl && (
+            {linkUrl && showOpenLink && (
               <>
                 <button
                   type="button"

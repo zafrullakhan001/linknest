@@ -22,6 +22,12 @@ import { userPreferencesService } from '../services/userPreferencesService';
 import { categoryPresetService, groupDbCategoryPresets, groupBuiltinCategoryPresets, flattenCategoryPresetsForSync, mergeCategoryPresetsForTab, isBuiltinPresetId, downloadCategoryPresetsJson, parseCategoryPresetsImportFile, mergeImportedUserPresets } from '../services/categoryPresetService';
 import { getPublicFavorites, togglePublicFavorite, isPublicFavorite, getPublicActiveTab, setPublicActiveTab, exportPublicFavorites, importPublicFavorites, clearPublicFavorites, getPublicLinkFavorites, togglePublicLinkFavorite, clearPublicLinkFavorites, getPublicLinkFavoriteDetails, syncPublicLinkFavoriteDetails, upsertPublicLinkFavoriteDetail, removePublicLinkFavoriteDetail, getPublicFavoritesInstanceLabel, setPublicFavorites as writePublicFavorites, setPublicLinkFavorites as writePublicLinkFavorites, swapPublicFavoriteIds, getPublicFavoritesLayout, setPublicFavoritesLayout } from '../services/publicFavoritesService';
 import { linkHealthService } from '../services/linkHealthService';
+import {
+  getBrokenBadgeClassNames,
+  getBrokenBadgeTitle,
+  getBrokenStatusTone,
+  shouldShowBrokenStatusBadge,
+} from '../utils/brokenStatusDisplay';
 import { favoriteLinkHealthService, LinkHealthCheckResult } from '../services/favoriteLinkHealthService';
 import { generateUuid } from '../services/idService';
 import { TileAnimationSelector, useTileAnimation, getTileAnimationClass, getTileDecorationClass, TileAnimation, TileDecoration } from './TileAnimationSelector';
@@ -65,7 +71,7 @@ import { SearchTagsInput } from './SearchTagsInput';
 import { SpaceVideoField, type SpaceVideoSource } from './SpaceVideoField';
 import { VideoSpacePlayerDialog } from './VideoSpacePlayerDialog';
 import { VideoTileInlinePreview } from './VideoTileInlinePreview';
-import { isYouTubeUrl } from '../utils/youtube';
+import { isYouTubeUrl, toYouTubeWatchUrl } from '../utils/youtube';
 import { EmojiPickerPopover } from './EmojiPickerPanel';
 import { TileFireworks } from './TileFireworks';
 import { TileConfetti } from './TileConfetti';
@@ -6560,6 +6566,18 @@ You may also wrap the array in an object: { "messages": [ ... ] }.
       }
     } else if (tile?.isVideo && tile.videoUrl) {
       void recordTileVisit(tile.id);
+      const isYouTubeVideo =
+        tile.videoSource === 'youtube' ||
+        (tile.videoSource !== 'file' && isYouTubeUrl(tile.videoUrl));
+      // Small screens: open YouTube (app / mobile site) instead of the desktop player chrome.
+      if (isMobile && isYouTubeVideo) {
+        const watchUrl = toYouTubeWatchUrl(tile.videoUrl) || tile.videoUrl;
+        const opened = window.open(watchUrl, '_blank', 'noopener,noreferrer');
+        if (!opened) {
+          window.location.href = watchUrl;
+        }
+        return;
+      }
       setVideoPlayerTile(tile);
     } else {
       // Include the active tab in the URL hash so TileDetail knows the source context
@@ -8429,6 +8447,11 @@ You may also wrap the array in an object: { "messages": [ ... ] }.
         maintenanceEnabled: link.maintenanceEnabled,
         maintenanceMessage: link.maintenanceMessage,
         maintenanceVideoUrl: link.maintenanceVideoUrl,
+        brokenStatusLabel: link.brokenStatusLabel,
+        brokenStatusNote: link.brokenStatusNote,
+        brokenStatusTone: link.brokenStatusTone,
+        brokenStatusExpected: link.brokenStatusExpected,
+        brokenStatusManual: link.brokenStatusManual,
         health: link.health,
         tile: {
           id: link.tile.id,
@@ -10059,14 +10082,29 @@ You may also wrap the array in an object: { "messages": [ ... ] }.
                         <div className="shrink-0">
                           <InvalidUrlMark url={link.url} />
                         </div>
-                      ) : link.health && !isSshLinkUrl(link.url) && !isVncLinkUrl(link.url) && !isUrlExcludedFromLinkCheck(link.url, linkCheckExceptions) ? (
-                        <div className="shrink-0">
-                          <div
-                            className={`w-2 h-2 rounded-full ${linkHealthService.getHealthColor(link.health.status)}`}
-                            title={`${linkHealthService.getHealthLabel(link.health.status)}${link.health.error ? `: ${link.health.error}` : ''}`}
-                          />
-                        </div>
-                      ) : null}
+                      ) : (() => {
+                        const skipHealth =
+                          isSshLinkUrl(link.url) ||
+                          isVncLinkUrl(link.url) ||
+                          isUrlExcludedFromLinkCheck(link.url, linkCheckExceptions);
+                        const healthStatus = skipHealth ? undefined : link.health?.status;
+                        const showBroken = shouldShowBrokenStatusBadge(link, healthStatus);
+                        if (!showBroken && (skipHealth || !link.health)) return null;
+                        const tone = getBrokenStatusTone(link);
+                        const colorClass = showBroken
+                          ? getBrokenBadgeClassNames(tone).dot
+                          : linkHealthService.getHealthColor(link.health!.status);
+                        const title = showBroken
+                          ? getBrokenBadgeTitle(link, link.health?.error)
+                          : `${linkHealthService.getHealthLabel(link.health!.status, link.brokenStatusLabel, {
+                              expected: link.brokenStatusExpected === true,
+                            })}${link.health?.error ? `: ${link.health.error}` : ''}`;
+                        return (
+                          <div className="shrink-0">
+                            <div className={`w-2 h-2 rounded-full ${colorClass}`} title={title} />
+                          </div>
+                        );
+                      })()}
 
                       {/* Link Icon */}
                       <div className="w-10 h-10 rounded-lg bg-gradient-to-br from-slate-50 to-slate-100 dark:from-slate-900 dark:to-slate-800 flex items-center justify-center shrink-0 text-lg border border-slate-200 dark:border-slate-700">
@@ -10124,9 +10162,15 @@ You may also wrap the array in an object: { "messages": [ ... ] }.
                                 browser: link.browser,
                                 richTextContent: link.richTextContent,
                                 richTextEnabled: link.richTextEnabled,
+                                infoShowOpenLink: link.infoShowOpenLink,
         maintenanceEnabled: link.maintenanceEnabled,
         maintenanceMessage: link.maintenanceMessage,
         maintenanceVideoUrl: link.maintenanceVideoUrl,
+                                brokenStatusLabel: link.brokenStatusLabel,
+                                brokenStatusNote: link.brokenStatusNote,
+                                brokenStatusTone: link.brokenStatusTone,
+                                brokenStatusExpected: link.brokenStatusExpected,
+                                brokenStatusManual: link.brokenStatusManual,
                                 health: link.health,
                                 tile: {
                                   id: link.tile.id,
@@ -14554,6 +14598,7 @@ You may also wrap the array in an object: { "messages": [ ... ] }.
             linkIcon={linkInfoDialog.link.icon}
             richTextContent={linkInfoDialog.link.richTextContent || ''}
             linkUrl={linkInfoDialog.link.url}
+            showOpenLink={linkInfoDialog.link.infoShowOpenLink !== false}
             browser={linkInfoDialog.link.browser}
             openTarget={linkInfoDialog.link.openTarget}
           />

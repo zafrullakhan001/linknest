@@ -2021,6 +2021,34 @@ body.has-broadcast-banner .ln-edit-tab-anchor {
   z-index: 0 !important;
 }
 
+/* Footer rich text: links and mailto stay visible as hyperlinks */
+.linknest-footer .linknest-footer-text a,
+.linknest-footer-text a {
+  color: #2563eb !important;
+  text-decoration: underline !important;
+  text-underline-offset: 2px;
+}
+.dark .linknest-footer .linknest-footer-text a,
+.dark .linknest-footer-text a {
+  color: #60a5fa !important;
+}
+.linknest-footer .linknest-footer-text a:hover,
+.linknest-footer-text a:hover {
+  color: #1d4ed8 !important;
+}
+.dark .linknest-footer .linknest-footer-text a:hover,
+.dark .linknest-footer-text a:hover {
+  color: #93c5fd !important;
+}
+.linknest-footer .linknest-footer-text p,
+.linknest-footer-text p {
+  margin: 0;
+}
+.linknest-footer .linknest-footer-text p + p,
+.linknest-footer-text p + p {
+  margin-top: 0.35em;
+}
+
 /* Smooth fade-in for page content */
 @keyframes fadeInUp {
   from {

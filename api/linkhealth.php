@@ -1217,12 +1217,16 @@ function handleGetHealthStatus() {
 function handleGetHealthStats() {
     try {
         $db = getDB();
-        
+        if (function_exists('ensureLinkBrokenStatusLabelColumn')) {
+            ensureLinkBrokenStatusLabelColumn($db);
+        }
+
         $stmt = $db->prepare('
             SELECT 
                 COUNT(*) as total,
                 SUM(CASE WHEN health_status = "healthy" THEN 1 ELSE 0 END) as healthy,
-                SUM(CASE WHEN health_status = "broken" THEN 1 ELSE 0 END) as broken,
+                SUM(CASE WHEN health_status = "broken" AND IFNULL(broken_status_expected, 0) = 0 THEN 1 ELSE 0 END) as broken,
+                SUM(CASE WHEN health_status = "broken" AND IFNULL(broken_status_expected, 0) = 1 THEN 1 ELSE 0 END) as expectedBroken,
                 SUM(CASE WHEN health_status = "timeout" THEN 1 ELSE 0 END) as timeout,
                 SUM(CASE WHEN health_status = "restricted" OR health_status = "accessible" THEN 1 ELSE 0 END) as accessible,
                 SUM(CASE WHEN health_status = "network" THEN 1 ELSE 0 END) as network,
@@ -1237,6 +1241,7 @@ function handleGetHealthStats() {
                 'total' => 0,
                 'healthy' => 0,
                 'broken' => 0,
+                'expectedBroken' => 0,
                 'timeout' => 0,
                 'accessible' => 0,
                 'network' => 0,
@@ -1249,6 +1254,7 @@ function handleGetHealthStats() {
                 'total' => (int)($stats['total'] ?? 0),
                 'healthy' => (int)($stats['healthy'] ?? 0),
                 'broken' => (int)($stats['broken'] ?? 0),
+                'expectedBroken' => (int)($stats['expectedBroken'] ?? 0),
                 'timeout' => (int)($stats['timeout'] ?? 0),
                 'accessible' => (int)($stats['accessible'] ?? 0),
                 'network' => (int)($stats['network'] ?? 0),

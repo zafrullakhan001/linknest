@@ -92,6 +92,8 @@ export interface Link {
   richTextContent?: string; // Optional rich text HTML content - if present, shows dialog instead of opening URL
   /** When false, clicking opens the URL even if richTextContent is stored. Unspecified infers from content. */
   richTextEnabled?: boolean;
+  /** When false, the info dialog hides the footer Open Link button. Defaults to shown. */
+  infoShowOpenLink?: boolean;
   visibleFrom?: string; // ISO date string - link becomes visible from this date/time
   expiresAt?: string; // ISO date string - link expires at this date/time
   browser?: string; // Browser to open link in (e.g., 'chrome-stable', 'edge-stable', 'default')
@@ -119,6 +121,27 @@ export interface Link {
    * even if the space/tab/section uses original URLs.
    */
   forceShortUrl?: boolean | null;
+  /**
+   * When set, replaces the default "Broken" badge text when health.status === 'broken'
+   * (or when brokenStatusManual is true).
+   */
+  brokenStatusLabel?: string | null;
+  /** Optional hover note shown with the custom broken / lifecycle badge. */
+  brokenStatusNote?: string | null;
+  /** Badge color: red (default alarm), amber (lifecycle), slate (neutral). */
+  brokenStatusTone?: 'red' | 'amber' | 'slate' | null;
+  /** When true, downtime is expected — excluded from surprise broken stats. */
+  brokenStatusExpected?: boolean | null;
+  /** When true, show the custom label badge even if health is not broken. */
+  brokenStatusManual?: boolean | null;
+  /** Optional hex color for the badge label text. */
+  brokenStatusFontColor?: string | null;
+  /** Badge label weight: normal or bold. */
+  brokenStatusFontWeight?: 'normal' | 'bold' | null;
+  /** Badge label style: normal or italic. */
+  brokenStatusFontStyle?: 'normal' | 'italic' | null;
+  /** CSS font-family stack for the badge label (includes cursive/script options). */
+  brokenStatusFontFamily?: string | null;
   /** When true, clicking the link shows the maintenance dialog instead of opening the URL. */
   maintenanceEnabled?: boolean;
   /** HTML maintenance message shown in the dialog. Kept when the toggle is off. */
