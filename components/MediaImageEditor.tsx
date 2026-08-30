@@ -2,6 +2,7 @@ import React, { useEffect, useMemo, useRef, useState } from 'react';
 import type { MediaFile, MediaTransformOptions } from '../types';
 import { formatMediaSize, transformMediaFile } from '../services/mediaService';
 import { useEscapeToClose } from '../hooks/useEscapeToClose';
+import { MediaLightbox } from './MediaLightbox';
 
 interface MediaImageEditorProps {
   file: MediaFile;
@@ -46,6 +47,7 @@ export const MediaImageEditor: React.FC<MediaImageEditorProps> = ({ file, onClos
   const [error, setError] = useState<string | null>(null);
   const [estimateBytes, setEstimateBytes] = useState<number | null>(null);
   const [estimateBusy, setEstimateBusy] = useState(false);
+  const [showOriginal, setShowOriginal] = useState(false);
 
   const aspect = useMemo(() => {
     if (!naturalW || !naturalH) return 1;
@@ -90,6 +92,49 @@ export const MediaImageEditor: React.FC<MediaImageEditorProps> = ({ file, onClos
       x: Math.max(0, Math.min(naturalW, Math.round(x))),
       y: Math.max(0, Math.min(naturalH, Math.round(y))),
     };
+  };
+
+  const applyRotate = (deg: 0 | 90 | 180 | 270) => {
+    setRotate(deg);
+    if (deg !== 0) {
+      setCropMode(false);
+      setCrop(null);
+    }
+    // #region agent log
+    fetch('http://127.0.0.1:7808/ingest/ac6d79aa-db1a-4b9b-b803-66cfddabd40c', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', 'X-Debug-Session-Id': 'cee2c4' },
+      body: JSON.stringify({
+        sessionId: 'cee2c4',
+        location: 'MediaImageEditor.tsx:applyRotate',
+        message: 'preview rotate',
+        data: { deg, naturalW, naturalH },
+        timestamp: Date.now(),
+        hypothesisId: 'F',
+        runId: 'uplift-1',
+      }),
+    }).catch(() => {});
+    // #endregion
+  };
+
+  const openOriginal = (force = false) => {
+    if (cropMode && !force) return;
+    // #region agent log
+    fetch('http://127.0.0.1:7808/ingest/ac6d79aa-db1a-4b9b-b803-66cfddabd40c', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', 'X-Debug-Session-Id': 'cee2c4' },
+      body: JSON.stringify({
+        sessionId: 'cee2c4',
+        location: 'MediaImageEditor.tsx:openOriginal',
+        message: 'editor original lightbox',
+        data: { id: file.id, rotate, width: file.width, height: file.height, usingOriginalUrl: !!file.url },
+        timestamp: Date.now(),
+        hypothesisId: 'C',
+        runId: 'uplift-1',
+      }),
+    }).catch(() => {});
+    // #endregion
+    setShowOriginal(true);
   };
 
   const onPointerDown = (e: React.PointerEvent) => {
@@ -220,6 +265,14 @@ export const MediaImageEditor: React.FC<MediaImageEditorProps> = ({ file, onClos
         }
       : null;
 
+  const quarterTurn = rotate === 90 || rotate === 270;
+  const previewScale =
+    naturalW > 0 && naturalH > 0 ? Math.min(360 / naturalW, 360 / naturalH, 1) : 1;
+  const previewImgW = Math.max(1, Math.round((naturalW || 360) * previewScale));
+  const previewImgH = Math.max(1, Math.round((naturalH || 360) * previewScale));
+  const previewBoxW = quarterTurn ? previewImgH : previewImgW;
+  const previewBoxH = quarterTurn ? previewImgW : previewImgH;
+
   return (
     <div className="fixed inset-0 z-[2147483646] flex items-center justify-center bg-black/50 p-4" onClick={onClose}>
       <div
@@ -234,33 +287,64 @@ export const MediaImageEditor: React.FC<MediaImageEditorProps> = ({ file, onClos
         </div>
 
         <div className="grid md:grid-cols-2 gap-4 p-4">
-          <div className="bg-slate-100 dark:bg-slate-900 rounded-lg overflow-hidden min-h-[200px] flex items-center justify-center p-2">
-            <div className="relative inline-block max-w-full">
-              <img
-                ref={imgRef}
-                src={file.url}
-                alt={file.altText || file.originalName}
-                className={`max-w-full max-h-[360px] object-contain ${cropMode ? 'cursor-crosshair' : ''}`}
-                onLoad={(e) => {
-                  const el = e.currentTarget;
-                  setNaturalW(el.naturalWidth);
-                  setNaturalH(el.naturalHeight);
-                  setWidth((w) => w || el.naturalWidth);
-                  setHeight((h) => h || el.naturalHeight);
+          <div className="flex flex-col gap-2">
+            <div className="bg-slate-100 dark:bg-slate-900 rounded-lg overflow-hidden min-h-[220px] flex items-center justify-center p-3">
+              <div
+                className="relative"
+                style={{
+                  width: previewBoxW,
+                  height: previewBoxH,
+                  transition: 'width 0.4s cubic-bezier(0.4, 0, 0.2, 1), height 0.4s cubic-bezier(0.4, 0, 0.2, 1)',
                 }}
-                onPointerDown={onPointerDown}
-                onPointerMove={onPointerMove}
-                onPointerUp={onPointerUp}
-                draggable={false}
-                crossOrigin="anonymous"
-              />
-              {displayCrop && (
+              >
                 <div
-                  className="absolute border-2 border-sky-400 bg-sky-400/20 pointer-events-none"
-                  style={displayCrop}
-                />
-              )}
+                  className="absolute left-1/2 top-1/2"
+                  style={{
+                    width: previewImgW,
+                    height: previewImgH,
+                    transform: `translate(-50%, -50%) rotate(${rotate}deg)`,
+                    transition: 'transform 0.4s cubic-bezier(0.4, 0, 0.2, 1)',
+                  }}
+                >
+                  <img
+                    ref={imgRef}
+                    src={file.url}
+                    alt={file.altText || file.originalName}
+                    className={`w-full h-full object-contain ${cropMode ? 'cursor-crosshair' : 'cursor-zoom-in'}`}
+                    onLoad={(e) => {
+                      const el = e.currentTarget;
+                      setNaturalW(el.naturalWidth);
+                      setNaturalH(el.naturalHeight);
+                      setWidth((w) => w || el.naturalWidth);
+                      setHeight((h) => h || el.naturalHeight);
+                    }}
+                    onClick={() => openOriginal()}
+                    onPointerDown={onPointerDown}
+                    onPointerMove={onPointerMove}
+                    onPointerUp={onPointerUp}
+                    draggable={false}
+                    crossOrigin="anonymous"
+                  />
+                  {displayCrop && (
+                    <div
+                      className="absolute border-2 border-sky-400 bg-sky-400/20 pointer-events-none"
+                      style={displayCrop}
+                    />
+                  )}
+                </div>
+              </div>
             </div>
+            <p className="text-[11px] text-slate-500 text-center">
+              {cropMode ? 'Drag on the image to crop' : 'Click the image to view original size'}
+              {rotate ? ` · Preview rotated ${rotate}°` : ''}
+            </p>
+            <button
+              type="button"
+              onClick={() => openOriginal(true)}
+              className="text-xs py-1 rounded border border-sky-400 text-sky-700 dark:text-sky-300"
+            >
+              View original size
+            </button>
           </div>
 
           <div className="space-y-3 text-sm">
@@ -376,7 +460,7 @@ export const MediaImageEditor: React.FC<MediaImageEditorProps> = ({ file, onClos
                   <button
                     key={deg}
                     type="button"
-                    onClick={() => setRotate(deg)}
+                    onClick={() => applyRotate(deg)}
                     className={`px-2 py-1 rounded border text-xs ${
                       rotate === deg
                         ? 'bg-sky-600 text-white border-sky-600'
@@ -434,6 +518,9 @@ export const MediaImageEditor: React.FC<MediaImageEditorProps> = ({ file, onClos
           </div>
         </div>
       </div>
+      {showOriginal && file.url && (
+        <MediaLightbox file={file} rotate={rotate} onClose={() => setShowOriginal(false)} />
+      )}
     </div>
   );
 };

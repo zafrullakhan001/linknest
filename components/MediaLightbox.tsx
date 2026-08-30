@@ -8,9 +8,11 @@ interface MediaLightboxProps {
   files?: MediaFile[];
   onClose: () => void;
   onChange?: (file: MediaFile) => void;
+  /** Live preview rotation (editor) — CSS only, does not alter the file */
+  rotate?: 0 | 90 | 180 | 270;
 }
 
-export const MediaLightbox: React.FC<MediaLightboxProps> = ({ file, files, onClose, onChange }) => {
+export const MediaLightbox: React.FC<MediaLightboxProps> = ({ file, files, onClose, onChange, rotate = 0 }) => {
   const [actualSize, setActualSize] = useState(false);
   const images = useMemo(
     () => (files || []).filter((f) => f.kind === 'image' && f.url && f.status !== 'trash'),
@@ -135,6 +137,10 @@ export const MediaLightbox: React.FC<MediaLightboxProps> = ({ file, files, onClo
               ? 'max-w-none cursor-zoom-out'
               : 'max-w-full max-h-full object-contain cursor-zoom-in'
           }
+          style={{
+            transform: rotate ? `rotate(${rotate}deg)` : undefined,
+            transition: 'transform 0.4s cubic-bezier(0.4, 0, 0.2, 1)',
+          }}
         />
       </div>
     </div>
