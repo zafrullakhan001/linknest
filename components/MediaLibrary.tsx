@@ -14,7 +14,10 @@ import {
   updateMediaFile,
   updateMediaFolder,
   uploadMediaFiles,
+  batchTransformMediaFiles,
+  batchTrashMediaFiles,
 } from '../services/mediaService';
+import type { MediaTransformOptions } from '../types';
 import { MediaImageEditor } from './MediaImageEditor';
 
 export type MediaLibraryMode = 'manage' | 'picker';
@@ -64,9 +67,10 @@ export const MediaLibrary: React.FC<MediaLibraryProps> = ({
   className = '',
 }) => {
   const { user } = useAuth();
-  const isAdmin = !!user?.is_admin;
-  const canManage = isAdmin && mode === 'manage';
-  const canUpload = isAdmin; // admins can upload even in picker
+  const isAdmin = !!(user?.is_admin);
+  // Admins manage in admin tab / floating widget; picker stays read-only for non-admins
+  const canManage = isAdmin && mode !== 'picker';
+  const canUpload = isAdmin;
 
   const [folders, setFolders] = useState<MediaFolder[]>([]);
   const [folderId, setFolderId] = useState<number | null>(null);
@@ -84,6 +88,7 @@ export const MediaLibrary: React.FC<MediaLibraryProps> = ({
   const [editingImage, setEditingImage] = useState<MediaFile | null>(null);
   const [newFolderName, setNewFolderName] = useState('');
   const [uploading, setUploading] = useState(false);
+  const [bulkBusy, setBulkBusy] = useState(false);
   const [detailTitle, setDetailTitle] = useState('');
   const [detailAlt, setDetailAlt] = useState('');
   const [detailTags, setDetailTags] = useState('');
@@ -309,14 +314,64 @@ export const MediaLibrary: React.FC<MediaLibraryProps> = ({
     }
   };
 
-  const toggleSelectId = (id: number, e: React.MouseEvent) => {
-    e.stopPropagation();
-    setSelectedIds((prev) => {
-      const next = new Set(prev);
-      if (next.has(id)) next.delete(id);
-      else next.add(id);
-      return next;
-    });
+  const selectAllInView = () => {
+    setSelectedIds(new Set(files.map((f) => f.id)));
+  };
+
+  const selectAllImagesInView = () => {
+    setSelectedIds(new Set(files.filter((f) => f.kind === 'image').map((f) => f.id)));
+  };
+
+  const clearSelection = () => setSelectedIds(new Set());
+
+  const selectedImageIds = useMemo(
+    () => files.filter((f) => selectedIds.has(f.id) && f.kind === 'image').map((f) => f.id),
+    [files, selectedIds]
+  );
+
+  const runBulkTransform = async (options: MediaTransformOptions, label: string) => {
+    if (!canManage || selectedImageIds.length === 0) return;
+    setBulkBusy(true);
+    setError(null);
+    try {
+      const result = await batchTransformMediaFiles(selectedImageIds, options);
+      if (result.errors?.length) {
+        setError(
+          `${label}: ${result.transformed} ok, ${result.errors.length} failed — ` +
+            result.errors.map((e) => `#${e.id}: ${e.error}`).join('; ')
+        );
+      } else if (!result.transformed) {
+        setError(`${label} did not change any files`);
+      }
+      if (result.transformed > 0) {
+        clearSelection();
+        setSelected(null);
+        await loadFiles();
+      }
+    } catch (err) {
+      setError(err instanceof Error ? err.message : `${label} failed`);
+    } finally {
+      setBulkBusy(false);
+    }
+  };
+
+  const handleTrashSelected = async () => {
+    if (!canManage) return;
+    const ids = [...selectedIds];
+    if (!ids.length) return;
+    if (!window.confirm(`Move ${ids.length} selected file(s) to trash?`)) return;
+    setBulkBusy(true);
+    setError(null);
+    try {
+      await batchTrashMediaFiles(ids);
+      clearSelection();
+      setSelected(null);
+      await loadFiles();
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Trash selected failed');
+    } finally {
+      setBulkBusy(false);
+    }
   };
 
   const copyUrl = async (file: MediaFile) => {
@@ -415,6 +470,107 @@ export const MediaLibrary: React.FC<MediaLibraryProps> = ({
           {grid ? '☰' : '▦'}
         </button>
       </div>
+
+      {/* Bulk actions */}
+      {canManage && (
+        <div className="flex flex-wrap items-center gap-1.5 px-3 py-1.5 border-b border-slate-200 dark:border-slate-700 bg-slate-50/80 dark:bg-slate-900/40 text-xs">
+          <button
+            type="button"
+            onClick={selectAllInView}
+            className="px-2 py-0.5 rounded border border-slate-300 dark:border-slate-600 hover:bg-white dark:hover:bg-slate-800"
+            title="Select all files in this folder/view"
+          >
+            Select all
+          </button>
+          <button
+            type="button"
+            onClick={selectAllImagesInView}
+            className="px-2 py-0.5 rounded border border-slate-300 dark:border-slate-600 hover:bg-white dark:hover:bg-slate-800"
+            title="Select all images in this folder/view"
+          >
+            Select images
+          </button>
+          {selectedIds.size > 0 && (
+            <>
+              <button
+                type="button"
+                onClick={clearSelection}
+                className="px-2 py-0.5 rounded border border-slate-300 dark:border-slate-600 hover:bg-white dark:hover:bg-slate-800"
+              >
+                Clear ({selectedIds.size})
+              </button>
+              {view !== 'trash' && (
+                <button
+                  type="button"
+                  disabled={bulkBusy}
+                  onClick={handleTrashSelected}
+                  className="px-2 py-0.5 rounded border border-red-400 text-red-600 hover:bg-red-50 dark:hover:bg-red-950/40 disabled:opacity-50"
+                >
+                  Trash selected
+                </button>
+              )}
+              {selectedImageIds.length > 0 && view !== 'trash' && (
+                <>
+                  <span className="text-slate-400 mx-0.5">|</span>
+                  <button
+                    type="button"
+                    disabled={bulkBusy}
+                    onClick={() => runBulkTransform({ rotate: 270, replace: true }, 'Rotate left')}
+                    className="px-2 py-0.5 rounded border border-slate-300 dark:border-slate-600 disabled:opacity-50"
+                    title="Rotate selected images 90° left"
+                  >
+                    ↺ Rotate L
+                  </button>
+                  <button
+                    type="button"
+                    disabled={bulkBusy}
+                    onClick={() => runBulkTransform({ rotate: 90, replace: true }, 'Rotate right')}
+                    className="px-2 py-0.5 rounded border border-slate-300 dark:border-slate-600 disabled:opacity-50"
+                    title="Rotate selected images 90° right"
+                  >
+                    ↻ Rotate R
+                  </button>
+                  <button
+                    type="button"
+                    disabled={bulkBusy}
+                    onClick={() =>
+                      runBulkTransform(
+                        { format: 'jpg', quality: 72, width: 1920, height: 1920, replace: true },
+                        'Compress'
+                      )
+                    }
+                    className="px-2 py-0.5 rounded border border-slate-300 dark:border-slate-600 disabled:opacity-50"
+                    title="Compress: max 1920px, JPEG quality 72 (replaces file)"
+                  >
+                    Compress
+                  </button>
+                  <button
+                    type="button"
+                    disabled={bulkBusy}
+                    onClick={() => runBulkTransform({ format: 'jpg', quality: 82, replace: true }, 'Convert JPG')}
+                    className="px-2 py-0.5 rounded border border-slate-300 dark:border-slate-600 disabled:opacity-50"
+                    title="Convert selected images to JPEG"
+                  >
+                    To JPG
+                  </button>
+                  <button
+                    type="button"
+                    disabled={bulkBusy}
+                    onClick={() =>
+                      runBulkTransform({ removeBackground: true, format: 'png', replace: true }, 'Remove background')
+                    }
+                    className="px-2 py-0.5 rounded border border-slate-300 dark:border-slate-600 disabled:opacity-50"
+                    title="Remove background color (corner sample → transparent PNG)"
+                  >
+                    Remove BG
+                  </button>
+                </>
+              )}
+              {bulkBusy && <span className="text-sky-600 dark:text-sky-400 ml-1">Working…</span>}
+            </>
+          )}
+        </div>
+      )}
 
       {error && (
         <div className="px-3 py-1.5 text-xs text-red-700 dark:text-red-300 bg-red-50 dark:bg-red-950/40 border-b border-red-200 dark:border-red-900">
@@ -536,9 +692,18 @@ export const MediaLibrary: React.FC<MediaLibraryProps> = ({
                     <input
                       type="checkbox"
                       checked={selectedIds.has(file.id)}
-                      onChange={() => {}}
-                      onClick={(e) => toggleSelectId(file.id, e)}
+                      onChange={(e) => {
+                        e.stopPropagation();
+                        setSelectedIds((prev) => {
+                          const next = new Set(prev);
+                          if (e.target.checked) next.add(file.id);
+                          else next.delete(file.id);
+                          return next;
+                        });
+                      }}
+                      onClick={(e) => e.stopPropagation()}
                       className="absolute top-1 left-1 z-10"
+                      aria-label={`Select ${file.title || file.originalName}`}
                     />
                   )}
                   <div className="aspect-square bg-slate-100 dark:bg-slate-900 rounded flex items-center justify-center overflow-hidden mb-1">
@@ -578,12 +743,19 @@ export const MediaLibrary: React.FC<MediaLibraryProps> = ({
                     }}
                   >
                     {canManage && (
-                      <td>
+                      <td onClick={(e) => e.stopPropagation()}>
                         <input
                           type="checkbox"
                           checked={selectedIds.has(file.id)}
-                          onChange={() => {}}
-                          onClick={(e) => toggleSelectId(file.id, e)}
+                          onChange={(e) => {
+                            setSelectedIds((prev) => {
+                              const next = new Set(prev);
+                              if (e.target.checked) next.add(file.id);
+                              else next.delete(file.id);
+                              return next;
+                            });
+                          }}
+                          aria-label={`Select ${file.title || file.originalName}`}
                         />
                       </td>
                     )}

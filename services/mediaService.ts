@@ -185,6 +185,44 @@ export async function transformMediaFile(id: number, options: MediaTransformOpti
   return data.data;
 }
 
+export async function batchTransformMediaFiles(
+  ids: number[],
+  options: MediaTransformOptions
+): Promise<{ data: MediaFile[]; errors: Array<{ id: number; error: string }>; transformed: number }> {
+  const res = await fetch(`${getApiBase()}/media/batch-transform`, {
+    method: 'POST',
+    credentials: 'include',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ ids, replace: true, ...options }),
+  });
+  const data = await parseJson<{
+    data?: MediaFile[];
+    errors?: Array<{ id: number; error: string }>;
+    transformed?: number;
+    error?: string;
+    success?: boolean;
+  }>(res);
+  if (!res.ok && data.error && !(data.errors && data.errors.length)) {
+    throw new Error(data.error);
+  }
+  return {
+    data: data.data || [],
+    errors: data.errors || [],
+    transformed: data.transformed ?? (data.data?.length || 0),
+  };
+}
+
+export async function batchTrashMediaFiles(ids: number[]): Promise<number> {
+  const res = await fetch(`${getApiBase()}/media/batch-trash`, {
+    method: 'POST',
+    credentials: 'include',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ ids }),
+  });
+  const data = await parseJson<{ trashed: number }>(res);
+  return data.trashed;
+}
+
 /** Build HTML snippet for inserting a media file into rich text. */
 export function mediaFileToInsertHtml(file: MediaFile): string {
   const url = file.url || '';

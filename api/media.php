@@ -39,6 +39,10 @@ try {
             mediaHandlePurge($db);
         } elseif ($path === '/purge-all') {
             mediaHandlePurgeAll($db);
+        } elseif ($path === '/batch-transform') {
+            mediaHandleBatchTransform($db);
+        } elseif ($path === '/batch-trash') {
+            mediaHandleBatchTrash($db);
         } elseif (preg_match('#^/(\d+)/transform$#', $path, $m)) {
             mediaHandleTransform($db, (int)$m[1]);
         } else {
@@ -466,4 +470,80 @@ function mediaHandleTransform(PDO $db, int $id): void {
         $code = str_contains($e->getMessage(), 'not found') ? 404 : 400;
         sendJSON(['error' => $e->getMessage()], $code);
     }
+}
+
+function mediaHandleBatchTransform(PDO $db): void {
+    $user = requireAdmin();
+    $input = json_decode(file_get_contents('php://input') ?: '{}', true) ?: [];
+    $ids = $input['ids'] ?? [];
+    if (!is_array($ids) || empty($ids)) {
+        sendJSON(['error' => 'ids array is required'], 400);
+    }
+    unset($input['ids']);
+    // Batch ops replace in place by default
+    if (!array_key_exists('replace', $input)) {
+        $input['replace'] = true;
+    }
+    try {
+        $db->exec('PRAGMA busy_timeout = 30000');
+    } catch (Throwable $e) {
+        // ignore
+    }
+    $results = [];
+    $errors = [];
+    foreach ($ids as $id) {
+        $id = (int)$id;
+        try {
+            // Short pause between files to reduce SQLite lock contention under Apache ZTS
+            if (!empty($results) || !empty($errors)) {
+                usleep(50000);
+            }
+            $results[] = mediaTransformFile($db, $id, $input, (int)$user['id']);
+        } catch (Throwable $e) {
+            $errors[] = ['id' => $id, 'error' => $e->getMessage()];
+        }
+    }
+    if (empty($results) && !empty($errors)) {
+        sendJSON([
+            'success' => false,
+            'error' => $errors[0]['error'],
+            'data' => [],
+            'errors' => $errors,
+            'transformed' => 0,
+        ], 500);
+    }
+    sendJSON([
+        'success' => empty($errors) || !empty($results),
+        'data' => $results,
+        'errors' => $errors,
+        'transformed' => count($results),
+    ]);
+}
+
+function mediaHandleBatchTrash(PDO $db): void {
+    requireAdmin();
+    $input = json_decode(file_get_contents('php://input') ?: '{}', true) ?: [];
+    $ids = $input['ids'] ?? [];
+    if (!is_array($ids) || empty($ids)) {
+        sendJSON(['error' => 'ids array is required'], 400);
+    }
+    $trashed = 0;
+    $now = time();
+    foreach ($ids as $id) {
+        $id = (int)$id;
+        $stmt = $db->prepare('SELECT * FROM media_files WHERE id = ?');
+        $stmt->execute([$id]);
+        $row = $stmt->fetch(PDO::FETCH_ASSOC);
+        if (!$row || (string)$row['status'] === 'trash') {
+            continue;
+        }
+        mediaMoveToTrash((string)$row['stored_name']);
+        if (!empty($row['thumb_name'])) {
+            mediaMoveToTrash((string)$row['thumb_name']);
+        }
+        $db->prepare('UPDATE media_files SET status = \'trash\', trashed_at = ?, updated_at = ? WHERE id = ?')
+            ->execute([$now, $now, $id]);
+        $trashed++;
+    }
+    sendJSON(['success' => true, 'trashed' => $trashed]);
 }

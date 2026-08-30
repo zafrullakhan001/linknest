@@ -17,6 +17,7 @@ export const MediaImageEditor: React.FC<MediaImageEditorProps> = ({ file, onClos
   const [lockAspect, setLockAspect] = useState(true);
   const [quality, setQuality] = useState(85);
   const [format, setFormat] = useState<'png' | 'jpg' | 'webp'>('png');
+  const [rotate, setRotate] = useState<0 | 90 | 180 | 270>(0);
   const [removeBackground, setRemoveBackground] = useState(false);
   const [bgColor, setBgColor] = useState('');
   const [replace, setReplace] = useState(false);
@@ -101,6 +102,9 @@ export const MediaImageEditor: React.FC<MediaImageEditorProps> = ({ file, onClos
         bgColor: bgColor || undefined,
         replace,
       };
+      if (rotate) {
+        opts.rotate = rotate;
+      }
       if (crop && crop.w > 1 && crop.h > 1) {
         opts.crop = crop;
       }
@@ -235,6 +239,26 @@ export const MediaImageEditor: React.FC<MediaImageEditorProps> = ({ file, onClos
                 </button>
               </p>
             )}
+
+            <div>
+              <span className="text-slate-600 dark:text-slate-300">Rotate</span>
+              <div className="mt-1 flex flex-wrap gap-1">
+                {([0, 90, 180, 270] as const).map((deg) => (
+                  <button
+                    key={deg}
+                    type="button"
+                    onClick={() => setRotate(deg)}
+                    className={`px-2 py-1 rounded border text-xs ${
+                      rotate === deg
+                        ? 'bg-sky-600 text-white border-sky-600'
+                        : 'border-slate-300 dark:border-slate-600'
+                    }`}
+                  >
+                    {deg === 0 ? 'None' : `${deg}°`}
+                  </button>
+                ))}
+              </div>
+            </div>
 
             <label className="flex items-center gap-2">
               <input type="checkbox" checked={removeBackground} onChange={(e) => setRemoveBackground(e.target.checked)} />

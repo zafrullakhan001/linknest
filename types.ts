@@ -230,6 +230,8 @@ export interface MediaTransformOptions {
   width?: number;
   height?: number;
   crop?: { x: number; y: number; w: number; h: number };
+  /** Clockwise rotation in degrees: 90, 180, or 270 */
+  rotate?: 90 | 180 | 270;
   quality?: number;
   format?: 'png' | 'jpg' | 'webp';
   removeBackground?: boolean;

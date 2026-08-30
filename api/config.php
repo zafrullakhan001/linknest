@@ -271,8 +271,9 @@ function applySqlitePerformancePragmas(PDO $db, bool $heavy = false): array {
     $applied = [];
 
     // Concurrent access under Apache multi-worker
-    $db->exec('PRAGMA busy_timeout = 5000');
-    $applied['busy_timeout'] = 5000;
+    // 30s: GD/media transforms and concurrent Apache ZTS workers need more than 5s
+    $db->exec('PRAGMA busy_timeout = 30000');
+    $applied['busy_timeout'] = 30000;
 
     // Project convention: FK enforcement off at engine level
     $db->exec('PRAGMA foreign_keys = OFF');

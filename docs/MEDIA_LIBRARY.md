@@ -43,10 +43,11 @@ If PHP `upload_max_filesize` / `post_max_size` are lower, raise them (videos nee
 
 ## Image editing
 
-Admins can resize, crop, compress (quality/format), and **remove background color** (chroma-key via PHP GD — same path as logo/favicon helpers).
+Admins can resize, crop, **rotate** (90° steps), compress (quality/format), and **remove background color** (chroma-key via PHP GD — same path as logo/favicon helpers).
 
-- Default: **Save as new** (keeps existing rich-text embeds working).  
-- Optional: **Replace original** (old URLs may 404).
+- Single-file editor: **Save as new** by default (keeps existing rich-text embeds working); optional **Replace original**.
+- Bulk toolbar (selected images): rotate L/R, compress (max 1920px / quality 72), convert to JPG, remove BG — these **replace** the selected files in place.
+- Also: **Select all** / **Select images** in the current folder view, and **Trash selected**.
 
 Requires PHP **ext-gd**. Enable `extension=gd` in `php.ini` if transforms fail.
 
@@ -59,7 +60,9 @@ Base: `/api/media` (session auth).
 - `POST /` — multipart upload (admin)  
 - `POST /folders`, `PATCH /folders/{id}`, `DELETE /folders/{id}`  
 - `PATCH /{id}` — metadata / status  
-- `POST /{id}/transform` — image edit  
+- `POST /{id}/transform` — image edit (resize, crop, rotate, compress, remove BG)  
+- `POST /batch-transform` — same options for multiple image ids (admin; replaces in place by default)  
+- `POST /batch-trash` — soft-delete multiple ids  
 - `DELETE /{id}` — trash (or purge if already trash)  
 - `POST /purge`, `POST /purge-all`
 

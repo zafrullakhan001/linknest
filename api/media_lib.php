@@ -110,8 +110,12 @@ function mediaBasePath(): string {
     return '';
 }
 
-function mediaPublicUrl(string $storedName): string {
-    return mediaBasePath() . '/uploads/' . $storedName;
+function mediaPublicUrl(string $storedName, ?int $cacheBust = null): string {
+    $url = mediaBasePath() . '/uploads/' . $storedName;
+    if ($cacheBust !== null && $cacheBust > 0) {
+        $url .= '?v=' . $cacheBust;
+    }
+    return $url;
 }
 
 /**
@@ -247,10 +251,11 @@ function mediaMapFileRow(PDO $db, array $row, bool $includeTags = true): array {
     $status = (string)$row['status'];
     $url = null;
     $thumbUrl = null;
+    $bust = isset($row['updated_at']) ? (int)$row['updated_at'] : null;
     if ($status !== 'trash' && $stored !== '') {
-        $url = mediaPublicUrl($stored);
+        $url = mediaPublicUrl($stored, $bust);
         if (!empty($row['thumb_name'])) {
-            $thumbUrl = mediaPublicUrl((string)$row['thumb_name']);
+            $thumbUrl = mediaPublicUrl((string)$row['thumb_name'], $bust);
         }
     }
 
@@ -549,6 +554,12 @@ function mediaTransformFile(PDO $db, int $fileId, array $opts, int $userId): arr
         throw new RuntimeException('PHP GD extension is required for image transforms. Enable extension=gd in php.ini.');
     }
 
+    try {
+        $db->exec('PRAGMA busy_timeout = 30000');
+    } catch (Throwable $e) {
+        // ignore
+    }
+
     $stmt = $db->prepare('SELECT * FROM media_files WHERE id = ?');
     $stmt->execute([$fileId]);
     $row = $stmt->fetch(PDO::FETCH_ASSOC);
@@ -573,7 +584,19 @@ function mediaTransformFile(PDO $db, int $fileId, array $opts, int $userId): arr
         throw new RuntimeException('SVG transforms are not supported');
     }
 
-    $src = loadGdImageFromFile($srcPath, (string)$row['mime'], $ext);
+    // Snapshot row fields then release the statement so GD work does not hold locks as long
+    $folderId = $row['folder_id'];
+    $oldThumb = $row['thumb_name'] !== null ? (string)$row['thumb_name'] : null;
+    $oldTitle = $row['title'];
+    $oldAlt = $row['alt_text'];
+    $oldDesc = $row['description'];
+    $oldUuid = (string)$row['uuid'];
+    $oldOriginal = (string)$row['original_name'];
+    $oldMime = (string)$row['mime'];
+    $stmt = null;
+    $row = null;
+
+    $src = loadGdImageFromFile($srcPath, $oldMime, $ext);
     if ($src === false) {
         throw new RuntimeException('Could not decode image');
     }
@@ -599,6 +622,28 @@ function mediaTransformFile(PDO $db, int $fileId, array $opts, int $userId): arr
         }
     }
 
+    // Rotate: UI sends clockwise degrees (90 / 180 / 270). GD imagerotate is counter-clockwise.
+    $rotateCw = isset($opts['rotate']) ? (int)$opts['rotate'] : 0;
+    if (in_array($rotateCw, [90, 180, 270], true)) {
+        if (!function_exists('imagerotate')) {
+            imagedestroy($src);
+            throw new RuntimeException('imagerotate() is not available in this PHP GD build');
+        }
+        $ccw = (360 - $rotateCw) % 360;
+        imagealphablending($src, true);
+        imagesavealpha($src, true);
+        $bg = imagecolorallocatealpha($src, 0, 0, 0, 127);
+        $rotated = imagerotate($src, $ccw, $bg);
+        if ($rotated === false) {
+            imagedestroy($src);
+            throw new RuntimeException('Image rotation failed');
+        }
+        imagedestroy($src);
+        $src = $rotated;
+        imagealphablending($src, false);
+        imagesavealpha($src, true);
+    }
+
     if (!empty($opts['removeBackground'])) {
         $bgHex = isset($opts['bgColor']) ? (string)$opts['bgColor'] : null;
         $rgb = $bgHex ? parseHexColorToRgb($bgHex) : null;
@@ -616,7 +661,13 @@ function mediaTransformFile(PDO $db, int $fileId, array $opts, int $userId): arr
         $src = resizeGdImageFit($src, $maxW, $maxH);
     }
 
-    $format = strtolower((string)($opts['format'] ?? 'png'));
+    // Preserve original format when not explicitly converting
+    $origExt = $ext === 'jpeg' ? 'jpg' : $ext;
+    if (isset($opts['format']) && $opts['format'] !== '') {
+        $format = strtolower((string)$opts['format']);
+    } else {
+        $format = in_array($origExt, ['png', 'jpg', 'webp', 'gif'], true) ? ($origExt === 'gif' ? 'png' : $origExt) : 'png';
+    }
     if (!in_array($format, ['png', 'jpg', 'jpeg', 'webp'], true)) {
         $format = 'png';
     }
@@ -630,53 +681,103 @@ function mediaTransformFile(PDO $db, int $fileId, array $opts, int $userId): arr
 
     $quality = isset($opts['quality']) ? max(1, min(100, (int)$opts['quality'])) : 85;
     $replace = !empty($opts['replace']);
-    $uuid = $replace ? (string)$row['uuid'] : mediaGenerateUuid();
+    $uuid = $replace ? $oldUuid : mediaGenerateUuid();
     $newStored = 'media_' . $uuid . '.' . $format;
     $dest = mediaUploadsDir() . DIRECTORY_SEPARATOR . $newStored;
+    $tmpDest = $dest . '.tmp.' . getmypid() . '.' . bin2hex(random_bytes(4));
 
-    imagealphablending($src, false);
-    imagesavealpha($src, true);
     $ok = false;
-    if ($format === 'png') {
-        $ok = imagepng($src, $dest, (int)round((100 - $quality) / 10));
-    } elseif ($format === 'jpg') {
-        $ok = imagejpeg($src, $dest, $quality);
+    if ($format === 'jpg') {
+        // Flatten onto white — imagejpeg does not support alpha
+        $w = imagesx($src);
+        $h = imagesy($src);
+        $flat = imagecreatetruecolor($w, $h);
+        $white = imagecolorallocate($flat, 255, 255, 255);
+        imagefilledrectangle($flat, 0, 0, $w, $h, $white);
+        imagealphablending($flat, true);
+        imagecopy($flat, $src, 0, 0, 0, 0, $w, $h);
+        imagedestroy($src);
+        $src = $flat;
+        $ok = imagejpeg($src, $tmpDest, $quality);
     } elseif ($format === 'webp' && function_exists('imagewebp')) {
-        $ok = imagewebp($src, $dest, $quality);
+        imagealphablending($src, false);
+        imagesavealpha($src, true);
+        $ok = imagewebp($src, $tmpDest, $quality);
+    } else {
+        // png (default)
+        $format = 'png';
+        $newStored = 'media_' . $uuid . '.png';
+        $dest = mediaUploadsDir() . DIRECTORY_SEPARATOR . $newStored;
+        $tmpDest = $dest . '.tmp.' . getmypid() . '.' . bin2hex(random_bytes(4));
+        imagealphablending($src, false);
+        imagesavealpha($src, true);
+        $ok = imagepng($src, $tmpDest, (int)round((100 - $quality) / 10));
     }
     $width = imagesx($src);
     $height = imagesy($src);
     imagedestroy($src);
 
-    if (!$ok) {
+    if (!$ok || !is_file($tmpDest)) {
+        @unlink($tmpDest);
         throw new RuntimeException('Failed to write transformed image');
+    }
+
+    // Atomic replace into final path
+    if (is_file($dest) && !@unlink($dest)) {
+        // Windows may lock briefly — try rename over
+    }
+    if (!@rename($tmpDest, $dest)) {
+        if (!@copy($tmpDest, $dest)) {
+            @unlink($tmpDest);
+            throw new RuntimeException('Failed to finalize transformed image');
+        }
+        @unlink($tmpDest);
     }
 
     $thumbName = mediaGenerateThumb($dest, $uuid);
     $mimeMap = ['png' => 'image/png', 'jpg' => 'image/jpeg', 'webp' => 'image/webp'];
     $now = time();
+    $sizeBytes = filesize($dest) ?: 0;
+
+    // Brief pause before DB write under Apache ZTS contention
+    try {
+        $db->exec('PRAGMA busy_timeout = 30000');
+    } catch (Throwable $e) {
+        // ignore
+    }
 
     if ($replace) {
-        // Remove old public file if name changed
         if ($stored !== $newStored) {
             mediaSafeUnlinkUnderUploads($stored);
         }
-        if (!empty($row['thumb_name']) && $row['thumb_name'] !== $thumbName) {
-            mediaSafeUnlinkUnderUploads((string)$row['thumb_name']);
+        if ($oldThumb && $oldThumb !== $thumbName) {
+            mediaSafeUnlinkUnderUploads($oldThumb);
         }
         $upd = $db->prepare(
             'UPDATE media_files SET stored_name = ?, thumb_name = ?, mime = ?, size_bytes = ?, width = ?, height = ?, updated_at = ? WHERE id = ?'
         );
-        $upd->execute([
-            $newStored,
-            $thumbName,
-            $mimeMap[$format],
-            filesize($dest) ?: 0,
-            $width,
-            $height,
-            $now,
-            $fileId,
-        ]);
+        $attempts = 0;
+        while (true) {
+            try {
+                $upd->execute([
+                    $newStored,
+                    $thumbName,
+                    $mimeMap[$format],
+                    $sizeBytes,
+                    $width,
+                    $height,
+                    $now,
+                    $fileId,
+                ]);
+                break;
+            } catch (PDOException $e) {
+                if (++$attempts < 8 && str_contains($e->getMessage(), 'database is locked')) {
+                    usleep(100000 * $attempts);
+                    continue;
+                }
+                throw $e;
+            }
+        }
         $id = $fileId;
     } else {
         $ins = $db->prepare(
@@ -685,26 +786,25 @@ function mediaTransformFile(PDO $db, int $fileId, array $opts, int $userId): arr
                 width, height, title, alt_text, description, status, uploaded_by, created_at, updated_at, trashed_at
             ) VALUES (?, ?, ?, ?, ?, ?, \'image\', ?, ?, ?, ?, ?, ?, \'active\', ?, ?, ?, NULL)'
         );
-        $baseTitle = (string)($row['title'] ?: pathinfo((string)$row['original_name'], PATHINFO_FILENAME));
+        $baseTitle = (string)($oldTitle ?: pathinfo($oldOriginal, PATHINFO_FILENAME));
         $ins->execute([
-            $row['folder_id'],
+            $folderId,
             $uuid,
             $baseTitle . '_edited.' . $format,
             $newStored,
             $thumbName,
             $mimeMap[$format],
-            filesize($dest) ?: 0,
+            $sizeBytes,
             $width,
             $height,
             $baseTitle . ' (edited)',
-            $row['alt_text'],
-            $row['description'],
+            $oldAlt,
+            $oldDesc,
             $userId,
             $now,
             $now,
         ]);
         $id = (int)$db->lastInsertId();
-        // Copy tags
         $tags = mediaTagsForFile($db, $fileId);
         mediaSetFileTags($db, $id, $tags);
     }
