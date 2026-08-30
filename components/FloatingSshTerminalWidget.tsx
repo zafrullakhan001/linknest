@@ -336,8 +336,8 @@ export const FloatingSshTerminalWidget: React.FC<{
           zIndex: 2147483647,
         }}
       >
-        <div className="relative w-full h-full flex flex-col rounded-xl overflow-hidden shadow-2xl">
-          {/* Top drag handle */}
+        <div className="relative w-full h-full">
+          {/* Top drag handle — sibling of overflow-hidden so the pill is not clipped */}
           <button
             type="button"
             className={`absolute -top-3 left-1/2 -translate-x-1/2 z-20 w-16 h-7 rounded-full shadow-md border border-sky-300/70 dark:border-sky-600/60 bg-sky-500/95 dark:bg-sky-600/95 backdrop-blur flex items-center justify-center text-white ${grabClass}`}
@@ -348,6 +348,7 @@ export const FloatingSshTerminalWidget: React.FC<{
             <span className="text-[16px] leading-none tracking-widest flex items-center">⋮⋮⋮</span>
           </button>
 
+          <div className="relative w-full h-full flex flex-col rounded-xl overflow-hidden shadow-2xl">
           <div className="flex-1 min-h-0 overflow-hidden">{children}</div>
 
           {/* Footer drag bar — always reachable even if the top handle is off-screen */}
@@ -397,6 +398,7 @@ export const FloatingSshTerminalWidget: React.FC<{
             onPointerDown={(e) => startResize(e, 'nw')}
             style={{ background: 'linear-gradient(-135deg, transparent 50%, rgba(14, 165, 233, 0.55) 50%)' }}
           />
+          </div>
         </div>
       </div>
     </SshFloatWindowDragContext.Provider>

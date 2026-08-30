@@ -642,6 +642,7 @@ const cloneLinkItem = (link: Link, opts?: { appendCopyLabel?: boolean }): Link =
     position: link.position,
     animation: link.animation,
     inheritShortUrls: link.inheritShortUrls,
+    forceShortUrl: link.forceShortUrl,
 });
 
 /** Deep-clone a rich text block with a fresh id (all box/meta fields preserved). */
@@ -947,7 +948,7 @@ export const TileDetail: React.FC<TileDetailProps> = ({
     const [editSections, setEditSections] = useState<LinkSection[]>(tile.sections || []);
 
     // Temporary State for Adding Links (keyed by section ID)
-    const [newLinkState, setNewLinkState] = useState<Record<string, { label: string, url: string, icon: string, textColor: string, visibility: LinkVisibility, published: boolean, inheritShortUrls: boolean, allowedUsers: number[], allowedGroups: number[], notes: string, tooltip: string, tooltipStyle: LinkTooltipStyle, notesEnabled: boolean, browser: string, openTarget: LinkOpenTarget, richTextContent: string, richTextEnabled: boolean, animation: string, accessRestrictions?: AccessRestrictions, maintenanceEnabled: boolean, maintenanceMessage: string, maintenanceVideoUrl: string }>>({});
+    const [newLinkState, setNewLinkState] = useState<Record<string, { label: string, url: string, icon: string, textColor: string, visibility: LinkVisibility, published: boolean, inheritShortUrls: boolean, forceShortUrl: boolean, allowedUsers: number[], allowedGroups: number[], notes: string, tooltip: string, tooltipStyle: LinkTooltipStyle, notesEnabled: boolean, browser: string, openTarget: LinkOpenTarget, richTextContent: string, richTextEnabled: boolean, animation: string, accessRestrictions?: AccessRestrictions, maintenanceEnabled: boolean, maintenanceMessage: string, maintenanceVideoUrl: string }>>({});
 
     // Selection State for Bulk Actions
     const [selectedLinkIds, setSelectedLinkIds] = useState<string[]>([]);
@@ -980,7 +981,7 @@ export const TileDetail: React.FC<TileDetailProps> = ({
         | null
     >(null);
     const [convertingTabSectionToSpace, setConvertingTabSectionToSpace] = useState(false);
-    const [editLinkState, setEditLinkState] = useState<Record<string, { label: string, url: string, icon: string, textColor: string, visibility: LinkVisibility, published: boolean, inheritShortUrls: boolean, allowedUsers: number[], allowedGroups: number[], notes: string, tooltip: string, tooltipStyle: LinkTooltipStyle, notesEnabled: boolean, browser: string, openTarget: LinkOpenTarget, richTextContent: string, richTextEnabled: boolean, animation: string, accessRestrictions?: AccessRestrictions, maintenanceEnabled: boolean, maintenanceMessage: string, maintenanceVideoUrl: string }>>({});
+    const [editLinkState, setEditLinkState] = useState<Record<string, { label: string, url: string, icon: string, textColor: string, visibility: LinkVisibility, published: boolean, inheritShortUrls: boolean, forceShortUrl: boolean, allowedUsers: number[], allowedGroups: number[], notes: string, tooltip: string, tooltipStyle: LinkTooltipStyle, notesEnabled: boolean, browser: string, openTarget: LinkOpenTarget, richTextContent: string, richTextEnabled: boolean, animation: string, accessRestrictions?: AccessRestrictions, maintenanceEnabled: boolean, maintenanceMessage: string, maintenanceVideoUrl: string }>>({});
 
     // Available browsers from BrowserLauncher API
     const [availableBrowsers, setAvailableBrowsers] = useState<string[]>([]);
@@ -2735,7 +2736,8 @@ export const TileDetail: React.FC<TileDetailProps> = ({
         maintenanceVideoUrl: state.maintenanceVideoUrl?.trim() || undefined,
         animation: linkAnimationForSave(state.animation),
         accessRestrictions: state.accessRestrictions,
-        inheritShortUrls: state.inheritShortUrls !== false
+        inheritShortUrls: state.inheritShortUrls !== false,
+        forceShortUrl: state.forceShortUrl === true
     });
 
     const buildLinkFromNewLinkState = (state: NonNullable<(typeof newLinkState)[string]>): Link => ({
@@ -2763,6 +2765,7 @@ export const TileDetail: React.FC<TileDetailProps> = ({
         hasRoleAccess: tile.hasRoleAccess === true || undefined,
         accessRestrictions: state.accessRestrictions,
         inheritShortUrls: state.inheritShortUrls !== false,
+        forceShortUrl: state.forceShortUrl === true,
     });
 
     const emptyNewLinkFormState = (): NonNullable<(typeof newLinkState)[string]> => ({
@@ -2773,6 +2776,7 @@ export const TileDetail: React.FC<TileDetailProps> = ({
         visibility: 'public',
         published: true,
         inheritShortUrls: true,
+        forceShortUrl: false,
         allowedUsers: [],
         allowedGroups: [],
         notes: '',
@@ -3890,11 +3894,11 @@ export const TileDetail: React.FC<TileDetailProps> = ({
     };
 
     // Link Management
-    const updateNewLinkState = (sectionId: string, field: 'label' | 'url' | 'icon' | 'textColor' | 'visibility' | 'allowedUsers' | 'allowedGroups' | 'notes' | 'tooltip' | 'tooltipStyle' | 'notesEnabled' | 'browser' | 'openTarget' | 'richTextContent' | 'richTextEnabled' | 'animation' | 'published' | 'inheritShortUrls' | 'maintenanceEnabled' | 'maintenanceMessage' | 'maintenanceVideoUrl', value: string | LinkVisibility | number[] | boolean) => {
+    const updateNewLinkState = (sectionId: string, field: 'label' | 'url' | 'icon' | 'textColor' | 'visibility' | 'allowedUsers' | 'allowedGroups' | 'notes' | 'tooltip' | 'tooltipStyle' | 'notesEnabled' | 'browser' | 'openTarget' | 'richTextContent' | 'richTextEnabled' | 'animation' | 'published' | 'inheritShortUrls' | 'forceShortUrl' | 'maintenanceEnabled' | 'maintenanceMessage' | 'maintenanceVideoUrl', value: string | LinkVisibility | number[] | boolean) => {
         setNewLinkState(prev => ({
             ...prev,
             [sectionId]: {
-                ...(prev[sectionId] || { label: '', url: '', icon: '', textColor: '', visibility: 'public' as LinkVisibility, published: true, inheritShortUrls: true, allowedUsers: [], allowedGroups: [], notes: '', tooltip: '', tooltipStyle: 'classic' as LinkTooltipStyle, notesEnabled: false, browser: 'default', openTarget: 'tab' as LinkOpenTarget, richTextContent: '', richTextEnabled: false, animation: 'inherit', maintenanceEnabled: false, maintenanceMessage: '', maintenanceVideoUrl: '' }),
+                ...(prev[sectionId] || { label: '', url: '', icon: '', textColor: '', visibility: 'public' as LinkVisibility, published: true, inheritShortUrls: true, forceShortUrl: false, allowedUsers: [], allowedGroups: [], notes: '', tooltip: '', tooltipStyle: 'classic' as LinkTooltipStyle, notesEnabled: false, browser: 'default', openTarget: 'tab' as LinkOpenTarget, richTextContent: '', richTextEnabled: false, animation: 'inherit', maintenanceEnabled: false, maintenanceMessage: '', maintenanceVideoUrl: '' }),
                 [field]: value
             }
         }));
@@ -3944,6 +3948,7 @@ export const TileDetail: React.FC<TileDetailProps> = ({
             hasRoleAccess: tile.hasRoleAccess === true || undefined,
             accessRestrictions: state.accessRestrictions,
             inheritShortUrls: state.inheritShortUrls !== false,
+            forceShortUrl: state.forceShortUrl === true,
         };
 
         if (editTabs.length > 0) {
@@ -4231,6 +4236,7 @@ export const TileDetail: React.FC<TileDetailProps> = ({
                 animation: linkAnimationForEdit(link.animation),
                 accessRestrictions: link.accessRestrictions,
                 inheritShortUrls: link.inheritShortUrls !== false,
+                forceShortUrl: link.forceShortUrl === true,
                 maintenanceEnabled: link.maintenanceEnabled === true,
                 maintenanceMessage: link.maintenanceMessage || '',
                 maintenanceVideoUrl: link.maintenanceVideoUrl || ''
@@ -4365,6 +4371,7 @@ export const TileDetail: React.FC<TileDetailProps> = ({
             maintenanceVideoUrl: linkToClone.maintenanceVideoUrl,
             accessRestrictions: linkToClone.accessRestrictions,
             inheritShortUrls: linkToClone.inheritShortUrls,
+            forceShortUrl: linkToClone.forceShortUrl,
         };
 
         const updatedItems = [
@@ -4780,7 +4787,7 @@ export const TileDetail: React.FC<TileDetailProps> = ({
         setLinkGroupSearch(prev => ({ ...prev, [linkId]: '' }));
     };
 
-    const updateEditLinkState = (linkId: string, field: 'label' | 'url' | 'icon' | 'textColor' | 'visibility' | 'allowedUsers' | 'allowedGroups' | 'notes' | 'tooltip' | 'tooltipStyle' | 'notesEnabled' | 'browser' | 'openTarget' | 'richTextContent' | 'richTextEnabled' | 'animation' | 'published' | 'inheritShortUrls' | 'maintenanceEnabled' | 'maintenanceMessage' | 'maintenanceVideoUrl', value: string | LinkVisibility | number[] | boolean) => {
+    const updateEditLinkState = (linkId: string, field: 'label' | 'url' | 'icon' | 'textColor' | 'visibility' | 'allowedUsers' | 'allowedGroups' | 'notes' | 'tooltip' | 'tooltipStyle' | 'notesEnabled' | 'browser' | 'openTarget' | 'richTextContent' | 'richTextEnabled' | 'animation' | 'published' | 'inheritShortUrls' | 'forceShortUrl' | 'maintenanceEnabled' | 'maintenanceMessage' | 'maintenanceVideoUrl', value: string | LinkVisibility | number[] | boolean) => {
         setEditLinkState(prev => ({
             ...prev,
             [linkId]: { ...prev[linkId], [field]: value }
@@ -10175,6 +10182,9 @@ export const TileDetail: React.FC<TileDetailProps> = ({
                                 <LinkUrlField
                                     value={draft.url || ''}
                                     onChange={(value) => updateEditLinkState(linkId, 'url', value)}
+                                    showForceShortUrl
+                                    forceShortUrl={draft.forceShortUrl === true}
+                                    onForceShortUrlChange={(next) => updateEditLinkState(linkId, 'forceShortUrl', next)}
                                 />
                             }
                             isAdmin={!!user?.is_admin}
@@ -12206,6 +12216,9 @@ export const TileDetail: React.FC<TileDetailProps> = ({
                                                                                                 <LinkUrlField
                                                                                                     value={editLinkState[link.id]?.url || ''}
                                                                                                     onChange={(value) => updateEditLinkState(link.id, 'url', value)}
+                                                                                                    showForceShortUrl
+                                                                                                    forceShortUrl={editLinkState[link.id]?.forceShortUrl === true}
+                                                                                                    onForceShortUrlChange={(next) => updateEditLinkState(link.id, 'forceShortUrl', next)}
                                                                                                 />
                                                                                             }
                                                                                             isAdmin={!!user?.is_admin}
@@ -12444,6 +12457,9 @@ export const TileDetail: React.FC<TileDetailProps> = ({
                                                                                 <LinkUrlField
                                                                                     value={newLinkState[section.id]?.url || ''}
                                                                                     onChange={(value) => updateNewLinkState(section.id, 'url', value)}
+                                                                                    showForceShortUrl
+                                                                                    forceShortUrl={newLinkState[section.id]?.forceShortUrl === true}
+                                                                                    onForceShortUrlChange={(next) => updateNewLinkState(section.id, 'forceShortUrl', next)}
                                                                                 />
                                                                                 <div>
                                                                                     <label className="block text-xs font-semibold uppercase tracking-wider text-slate-600 dark:text-slate-400 mb-1.5">
@@ -12717,25 +12733,32 @@ export const TileDetail: React.FC<TileDetailProps> = ({
                                                                             )}
 
                                                                             <div className={`flex items-center justify-between gap-3 p-3 rounded-lg border-2 ${
-                                                                                (newLinkState[section.id]?.inheritShortUrls !== false)
+                                                                                newLinkState[section.id]?.forceShortUrl
+                                                                                    ? 'border-orange-300 dark:border-orange-800 bg-orange-50 dark:bg-orange-950/30'
+                                                                                    : (newLinkState[section.id]?.inheritShortUrls !== false)
                                                                                     ? 'border-orange-300 dark:border-orange-800 bg-orange-50 dark:bg-orange-950/30'
                                                                                     : 'border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-900/50'
                                                                             }`}>
                                                                                 <div>
                                                                                     <div className="text-xs font-semibold uppercase tracking-wider text-slate-600 dark:text-slate-400">Short URLs</div>
                                                                                     <div className="text-sm font-medium text-slate-800 dark:text-slate-200">
-                                                                                        {(newLinkState[section.id]?.inheritShortUrls !== false) ? 'Inherit from parent' : 'Override — original URL'}
+                                                                                        {newLinkState[section.id]?.forceShortUrl
+                                                                                            ? 'Forced — short URL only'
+                                                                                            : (newLinkState[section.id]?.inheritShortUrls !== false) ? 'Inherit from parent' : 'Override — original URL'}
                                                                                     </div>
                                                                                 </div>
                                                                                 <button
                                                                                     type="button"
                                                                                     role="switch"
-                                                                                    aria-checked={newLinkState[section.id]?.inheritShortUrls !== false}
+                                                                                    aria-checked={newLinkState[section.id]?.forceShortUrl ? true : newLinkState[section.id]?.inheritShortUrls !== false}
+                                                                                    disabled={newLinkState[section.id]?.forceShortUrl === true}
                                                                                     onClick={() => updateNewLinkState(section.id, 'inheritShortUrls', newLinkState[section.id]?.inheritShortUrls === false)}
-                                                                                    className={`relative inline-flex h-7 w-12 shrink-0 items-center rounded-full transition-colors ${(newLinkState[section.id]?.inheritShortUrls !== false) ? 'bg-orange-500' : 'bg-slate-400 dark:bg-slate-600'}`}
-                                                                                    title="On: inherit short URLs from the section/tab/space. Off: show the original URL."
+                                                                                    className={`relative inline-flex h-7 w-12 shrink-0 items-center rounded-full transition-colors disabled:opacity-50 disabled:cursor-not-allowed ${(newLinkState[section.id]?.forceShortUrl || newLinkState[section.id]?.inheritShortUrls !== false) ? 'bg-orange-500' : 'bg-slate-400 dark:bg-slate-600'}`}
+                                                                                    title={newLinkState[section.id]?.forceShortUrl
+                                                                                        ? 'Short URL is forced on above. Turn that off to inherit or show the original URL.'
+                                                                                        : 'On: inherit short URLs from the section/tab/space. Off: show the original URL.'}
                                                                                 >
-                                                                                    <span className={`inline-block h-5 w-5 transform rounded-full bg-white shadow transition-transform ${(newLinkState[section.id]?.inheritShortUrls !== false) ? 'translate-x-6' : 'translate-x-1'}`} />
+                                                                                    <span className={`inline-block h-5 w-5 transform rounded-full bg-white shadow transition-transform ${(newLinkState[section.id]?.forceShortUrl || newLinkState[section.id]?.inheritShortUrls !== false) ? 'translate-x-6' : 'translate-x-1'}`} />
                                                                                 </button>
                                                                             </div>
 

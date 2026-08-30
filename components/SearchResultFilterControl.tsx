@@ -23,6 +23,7 @@ export type SearchMatchingLink = {
   notesEnabled?: boolean;
   tooltipStyle?: 'rich' | 'classic';
   shortUrl?: string;
+  forceShortUrl?: boolean;
   match?: SearchMatchScore;
   tile: {
     id: string;
@@ -227,6 +228,7 @@ export function collectMatchingSearchLinks(
         notesEnabled?: boolean;
         tooltipStyle?: 'rich' | 'classic';
         shortUrl?: string;
+        forceShortUrl?: boolean;
       }) => {
         const uniqueKey = `${(link.label || '').toLowerCase()}|${(link.url || '').toLowerCase()}`;
         if (uniqueLinksMap.has(uniqueKey)) return;
@@ -256,6 +258,7 @@ export function collectMatchingSearchLinks(
           notesEnabled: link.notesEnabled,
           tooltipStyle: link.tooltipStyle,
           shortUrl: link.shortUrl,
+          forceShortUrl: link.forceShortUrl === true,
           tile: {
             id: tile.id,
             title: tile.title,

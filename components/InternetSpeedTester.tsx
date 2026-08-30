@@ -145,7 +145,7 @@ function clampDialogPos(p: DialogPoint, size: DialogSize): DialogPoint {
     const { width: layoutW, height: layoutH } = getLayoutViewport();
     return {
         x: clampNum(p.x, -size.width + DIALOG_MIN_VISIBLE, layoutW - DIALOG_MIN_VISIBLE),
-        y: clampNum(p.y, 8, layoutH - DIALOG_MIN_VISIBLE),
+        y: clampNum(p.y, 16, layoutH - DIALOG_MIN_VISIBLE),
     };
 }
 
@@ -404,9 +404,8 @@ export const InternetSpeedTester: React.FC<InternetSpeedTesterProps> = ({ isOpen
         };
     }, [isOpen, size.width, applyPos, applySize]);
 
-    const onDragStart = useCallback((e: React.PointerEvent) => {
+    const beginDragFromPointer = useCallback((e: React.PointerEvent) => {
         if (e.button !== 0) return;
-        if ((e.target as HTMLElement).closest('button, a, input, select, textarea, label')) return;
         e.preventDefault();
         e.stopPropagation();
         dragCleanupRef.current?.();
@@ -458,6 +457,11 @@ export const InternetSpeedTester: React.FC<InternetSpeedTesterProps> = ({ isOpen
             window.removeEventListener('pointercancel', onUp, { capture: true });
         };
     }, [applyPos]);
+
+    const onDragStart = useCallback((e: React.PointerEvent) => {
+        if ((e.target as HTMLElement).closest('button, a, input, select, textarea, label')) return;
+        beginDragFromPointer(e);
+    }, [beginDragFromPointer]);
 
     const onResizeStart = useCallback((e: React.PointerEvent) => {
         if (e.button !== 0) return;
@@ -711,12 +715,7 @@ export const InternetSpeedTester: React.FC<InternetSpeedTesterProps> = ({ isOpen
             />
             <div
                 ref={dialogRef}
-                role="dialog"
-                aria-modal="true"
-                aria-labelledby="ln-speedtest-title"
-                className={`z-10 rounded-3xl border border-slate-200 dark:border-[#333] bg-gradient-to-b from-slate-50 to-white dark:from-[#151a22] dark:to-[#111] shadow-2xl flex flex-col overflow-hidden ${
-                    dragging || resizing ? 'will-change-left will-change-top' : ''
-                }`}
+                className={`z-10 ${dragging || resizing ? 'will-change-left will-change-top' : ''}`}
                 style={{
                     position: 'fixed',
                     left: pos.x,
@@ -732,6 +731,25 @@ export const InternetSpeedTester: React.FC<InternetSpeedTesterProps> = ({ isOpen
                 }}
                 onClick={(e) => e.stopPropagation()}
             >
+                <div className="relative w-full h-full">
+                    <button
+                        type="button"
+                        className={`absolute -top-3 left-1/2 -translate-x-1/2 z-20 w-16 h-7 rounded-full shadow-md border border-blue-300/70 dark:border-blue-600/60 bg-blue-500/90 dark:bg-blue-600/90 backdrop-blur flex items-center justify-center text-white ${
+                            dragging ? 'cursor-grabbing' : 'cursor-grab'
+                        }`}
+                        onPointerDown={beginDragFromPointer}
+                        title="Drag speed tester (grab here)"
+                        aria-label="Drag speed tester"
+                    >
+                        <span className="text-[16px] leading-none tracking-widest flex items-center">⋮⋮⋮</span>
+                    </button>
+
+                    <div
+                        role="dialog"
+                        aria-modal="true"
+                        aria-labelledby="ln-speedtest-title"
+                        className="relative w-full h-full rounded-3xl border border-slate-200 dark:border-[#333] bg-gradient-to-b from-slate-50 to-white dark:from-[#151a22] dark:to-[#111] shadow-2xl flex flex-col overflow-hidden"
+                    >
                 <div
                     onPointerDown={onDragStart}
                     className={`flex items-start justify-between gap-3 px-4 sm:px-6 py-3.5 border-b border-slate-200 dark:border-[#333] bg-white/70 dark:bg-[#1a1a1a]/80 shrink-0 select-none touch-none cursor-grab ${
@@ -1279,6 +1297,8 @@ export const InternetSpeedTester: React.FC<InternetSpeedTesterProps> = ({ isOpen
                     <svg width="12" height="12" viewBox="0 0 12 12" className="text-slate-400 dark:text-slate-500" aria-hidden>
                         <path d="M10 2L2 10M10 6L6 10M10 10L10 10" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" fill="none" />
                     </svg>
+                </div>
+                    </div>
                 </div>
             </div>
         </div>,

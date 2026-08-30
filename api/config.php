@@ -138,7 +138,7 @@ if (!defined('SYSTEM_TOKEN')) {
 
 // Bump when schema/migrations in initDatabase() change. Enables fast-path getDB().
 if (!defined('LINKNEST_SCHEMA_VERSION')) {
-    define('LINKNEST_SCHEMA_VERSION', 100);
+    define('LINKNEST_SCHEMA_VERSION', 101);
 }
 
 function getSchemaPatchFlagPath(): string {
@@ -915,6 +915,28 @@ function persistLinkOpenTarget(PDO $db, string $linkId, $source): void {
     $stmt->execute([linkOpenTargetFromSource($source), $linkId]);
 }
 
+/** Per-link: always show/open the short URL even if the space uses original URLs. */
+function ensureLinkForceShortUrlColumn(PDO $db): void {
+    static $ensured = false;
+    if ($ensured) {
+        return;
+    }
+    try {
+        $exists = $db->query("SELECT name FROM sqlite_master WHERE type='table' AND name='links'")->fetchColumn();
+        if (!$exists) {
+            return;
+        }
+        $columns = $db->query('PRAGMA table_info(links)')->fetchAll(PDO::FETCH_ASSOC);
+        $names = array_column($columns, 'name');
+        if (!in_array('force_short_url', $names, true)) {
+            $db->exec('ALTER TABLE links ADD COLUMN force_short_url INTEGER DEFAULT 0');
+        }
+        $ensured = true;
+    } catch (PDOException $e) {
+        error_log('ensureLinkForceShortUrlColumn warning: ' . $e->getMessage());
+    }
+}
+
 function linkToggleFromInput($link, string $jsKey, array $contentKeys): int {
     if (is_array($link) && array_key_exists($jsKey, $link)) {
         return !empty($link[$jsKey]) ? 1 : 0;
@@ -1499,6 +1521,7 @@ function initDatabase() {
             ensureLinkMaintenanceColumns($db);
             ensureLinkFeatureToggleColumns($db);
             ensureLinkOpenTargetColumn($db);
+            ensureLinkForceShortUrlColumn($db);
             ensureMcpTokensTable($db);
             ensureCategoryVisibilityPresetsTable($db);
             ensureTilesVideoColumns($db);
@@ -1539,6 +1562,7 @@ function initDatabase() {
             ensureLinkMaintenanceColumns($db);
             ensureLinkFeatureToggleColumns($db);
             ensureLinkOpenTargetColumn($db);
+            ensureLinkForceShortUrlColumn($db);
             ensureMcpTokensTable($db);
             ensureCategoryVisibilityPresetsTable($db);
             ensureTilesVideoColumns($db);
@@ -2539,6 +2563,7 @@ function initDatabase() {
         ensureLinkMaintenanceColumns($db);
         ensureLinkFeatureToggleColumns($db);
         ensureLinkOpenTargetColumn($db);
+        ensureLinkForceShortUrlColumn($db);
         
         // Create rich_text_content table
         $db->exec('CREATE TABLE IF NOT EXISTS rich_text_content (

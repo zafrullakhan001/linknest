@@ -114,6 +114,11 @@ export interface Link {
    * Off: show the original URL even if the space has short URLs on.
    */
   inheritShortUrls?: boolean | null;
+  /**
+   * When true, always display and open this link as its short URL,
+   * even if the space/tab/section uses original URLs.
+   */
+  forceShortUrl?: boolean | null;
   /** When true, clicking the link shows the maintenance dialog instead of opening the URL. */
   maintenanceEnabled?: boolean;
   /** HTML maintenance message shown in the dialog. Kept when the toggle is off. */

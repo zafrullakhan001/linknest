@@ -27,6 +27,10 @@ export interface LinkUrlFieldProps {
     required?: boolean;
     /** Space link editor shows ignore-from-check-links; monitor form hides it. */
     showIgnoreCheckbox?: boolean;
+    /** Per-link: always show/open the short URL even if the space uses original URLs. */
+    showForceShortUrl?: boolean;
+    forceShortUrl?: boolean;
+    onForceShortUrlChange?: (next: boolean) => void;
     showCopyButton?: boolean;
     inputClassName?: string;
 }
@@ -40,6 +44,9 @@ export const LinkUrlField: React.FC<LinkUrlFieldProps> = ({
     inputType = 'text',
     required = false,
     showIgnoreCheckbox = true,
+    showForceShortUrl = false,
+    forceShortUrl = false,
+    onForceShortUrlChange,
     showCopyButton = false,
     inputClassName,
 }) => {
@@ -139,9 +146,11 @@ export const LinkUrlField: React.FC<LinkUrlFieldProps> = ({
                 ) : null}
             </div>
             {helpText ? <p className="text-xs text-gray-600 mt-1">{helpText}</p> : null}
+            {((showIgnoreCheckbox && isHttpUrl && (isAdmin || excluded)) || showForceShortUrl) && (
+                <div className="mt-2 flex flex-wrap items-start gap-x-6 gap-y-2">
             {showIgnoreCheckbox && isHttpUrl && (isAdmin || excluded) && (
                 <label
-                    className={`mt-2 flex items-start gap-2 select-none ${canToggle ? 'cursor-pointer' : 'cursor-default'}`}
+                    className={`flex items-start gap-2 select-none min-w-[12rem] flex-1 ${canToggle ? 'cursor-pointer' : 'cursor-default'}`}
                     title={
                         !isAdmin
                             ? 'This URL is on Link Check Exceptions. Ask an admin to change it.'
@@ -168,6 +177,27 @@ export const LinkUrlField: React.FC<LinkUrlFieldProps> = ({
                         </span>
                     </span>
                 </label>
+            )}
+            {showForceShortUrl && (
+                <label
+                    className="flex items-start gap-2 select-none min-w-[12rem] flex-1 cursor-pointer"
+                    title="Always display and open this link as its short URL, even if the space uses original URLs."
+                >
+                    <input
+                        type="checkbox"
+                        className="mt-0.5 w-4 h-4 rounded border-slate-300 text-orange-600 focus:ring-orange-500 dark:bg-slate-800 dark:border-slate-600"
+                        checked={forceShortUrl === true}
+                        onChange={(e) => onForceShortUrlChange?.(e.target.checked)}
+                    />
+                    <span className="text-xs text-slate-600 dark:text-slate-400 leading-snug">
+                        Show short URL only
+                        <span className="block text-[11px] text-slate-500 dark:text-slate-500">
+                            Force this link to display and open as its short URL.
+                        </span>
+                    </span>
+                </label>
+            )}
+                </div>
             )}
             {exceptionError && (
                 <p className="mt-1 text-[11px] text-red-600 dark:text-red-400">{exceptionError}</p>

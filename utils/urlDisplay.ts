@@ -24,34 +24,42 @@ export function isHttpOrHttpsUrl(url: string): boolean {
   return /^https?:\/\//i.test(String(url || '').trim());
 }
 
-type ShortUrlInheritItem = { inheritShortUrls?: boolean | null } | null | undefined;
+type ShortUrlInheritItem = {
+  inheritShortUrls?: boolean | null;
+  forceShortUrl?: boolean | null;
+} | null | undefined;
 
 /** On/omitted inherits the parent. Off overrides to original URLs. */
 export function inheritsShortUrls(item?: ShortUrlInheritItem): boolean {
   return item?.inheritShortUrls !== false;
 }
 
+export function forcesShortUrl(item?: ShortUrlInheritItem): boolean {
+  return item?.forceShortUrl === true;
+}
+
 export function effectiveShowShortUrls(
   spaceOn: boolean,
   ...items: ShortUrlInheritItem[]
 ): boolean {
+  if (items.some((item) => forcesShortUrl(item))) return true;
   if (!spaceOn) return false;
   return items.every((item) => inheritsShortUrls(item));
 }
 
-/** Prefer the recyclable short URL when a space is set to show short URLs. */
+/** Prefer the recyclable short URL when a space is set to show short URLs, or this link forces it. */
 export function viewerLinkUrl(
-  link: { url?: string; shortUrl?: string } | null | undefined,
+  link: { url?: string; shortUrl?: string; forceShortUrl?: boolean | null } | null | undefined,
   showShortUrls?: boolean | null
 ): string {
-  if (showShortUrls && link?.shortUrl) {
+  if ((showShortUrls || forcesShortUrl(link)) && link?.shortUrl) {
     return link.shortUrl;
   }
   return String(link?.url || '');
 }
 
 export function viewerLinkDisplay(
-  link: { url?: string; shortUrl?: string } | null | undefined,
+  link: { url?: string; shortUrl?: string; forceShortUrl?: boolean | null } | null | undefined,
   showShortUrls?: boolean | null,
   maxLength = 48
 ): string {

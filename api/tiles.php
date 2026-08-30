@@ -671,6 +671,7 @@ function handleGetTiles() {
                 applyLinkMaintenanceToApi($searchLink, $linkRow);
                 applyLinkFeatureTogglesToApi($searchLink, $linkRow);
                 applyLinkOpenTargetToApi($searchLink, $linkRow);
+                applyLinkForceShortUrlToApi($searchLink, $linkRow);
                 if (isset($linkRow['health_status']) && !isNonHttpLinkHealthUrl($linkRow['url'] ?? '')) {
                     $searchLink['health'] = [
                         'status' => $linkRow['health_status'] ?? 'unknown',
@@ -1013,6 +1014,7 @@ function handleGetTiles() {
                                     applyLinkMaintenanceToApi($link, $linkRow);
                                     applyLinkFeatureTogglesToApi($link, $linkRow);
                 applyLinkOpenTargetToApi($link, $linkRow);
+                applyLinkForceShortUrlToApi($link, $linkRow);
                                     $section['links'][] = $link;
                                 }
                             }
@@ -1124,6 +1126,7 @@ function handleGetTiles() {
                             applyLinkMaintenanceToApi($link, $linkRow);
                             applyLinkFeatureTogglesToApi($link, $linkRow);
                 applyLinkOpenTargetToApi($link, $linkRow);
+                applyLinkForceShortUrlToApi($link, $linkRow);
                             $section['links'][] = $link;
                         }
                     }
@@ -1584,6 +1587,7 @@ function handleGetTile($tileId) {
                 applyLinkMaintenanceToApi($link, $linkRow);
                 applyLinkFeatureTogglesToApi($link, $linkRow);
                 applyLinkOpenTargetToApi($link, $linkRow);
+                applyLinkForceShortUrlToApi($link, $linkRow);
                 $section['links'][] = $link;
             }
             
@@ -1707,6 +1711,7 @@ function handleGetTile($tileId) {
                     applyLinkMaintenanceToApi($link, $linkRow);
                     applyLinkFeatureTogglesToApi($link, $linkRow);
                 applyLinkOpenTargetToApi($link, $linkRow);
+                applyLinkForceShortUrlToApi($link, $linkRow);
                     $section['links'][] = $link;
                 }
 
@@ -2092,6 +2097,7 @@ function handleCreateTile() {
                                 persistInheritShortUrls($db, 'links', $linkId, $link);
                                 persistLinkTooltipStyle($db, $linkId, $link);
                                 persistLinkOpenTarget($db, $linkId, $link);
+                                persistLinkForceShortUrl($db, $linkId, $link);
                             } catch (PDOException $e) {
                                 error_log('Error inserting link: ' . $e->getMessage());
                                 error_log('Link data: ' . json_encode($link));
@@ -2115,6 +2121,7 @@ function handleCreateTile() {
                                     ]);
                                     persistLinkTooltipStyle($db, $linkId, $link);
                                 persistLinkOpenTarget($db, $linkId, $link);
+                                persistLinkForceShortUrl($db, $linkId, $link);
                                 } catch (PDOException $e2) {
                                     error_log('Error inserting link (fallback): ' . $e2->getMessage());
                                     throw $e2;
@@ -2746,6 +2753,7 @@ function handleCloneTile($tileId) {
                     ]);
                     persistLinkTooltipStyle($db, $newLinkId, $link);
                                 persistLinkOpenTarget($db, $newLinkId, $link);
+                                persistLinkForceShortUrl($db, $newLinkId, $link);
                 }
                 
                 // Clone rich text content for legacy sections
@@ -2852,6 +2860,7 @@ function handleCloneTile($tileId) {
                     persistInheritShortUrls($db, 'links', $newLinkId, $link);
                     persistLinkTooltipStyle($db, $newLinkId, $link);
                                 persistLinkOpenTarget($db, $newLinkId, $link);
+                                persistLinkForceShortUrl($db, $newLinkId, $link);
                 }
                 
                 // Clone rich text content for sections
@@ -3263,6 +3272,7 @@ function handleCloneCategory($categoryName) {
                             ]);
                             persistLinkTooltipStyle($db, $newLinkId, $link);
                                 persistLinkOpenTarget($db, $newLinkId, $link);
+                                persistLinkForceShortUrl($db, $newLinkId, $link);
                         }
                     }
                 }
@@ -3336,6 +3346,7 @@ function handleCloneCategory($categoryName) {
                             ]);
                             persistLinkTooltipStyle($db, $newLinkId, $link);
                                 persistLinkOpenTarget($db, $newLinkId, $link);
+                                persistLinkForceShortUrl($db, $newLinkId, $link);
                         }
                     }
                 }
@@ -4351,6 +4362,7 @@ function mapFavoriteLinkRow(array $row): array {
     ];
     applyLinkFeatureTogglesToApi($mapped, $row);
                 applyLinkOpenTargetToApi($mapped, $row);
+                applyLinkForceShortUrlToApi($mapped, $row);
     return $mapped;
 }
 
@@ -4422,6 +4434,17 @@ function handleGetFavoriteLinks() {
             $codes = $ensure
                 ? ensureShortUrlsForTargets($db, $tid, $targets, $user['id'] ?? null)
                 : lookupActiveShortUrlCodes($db, $targets);
+            if (!$ensure) {
+                $forceTargets = [];
+                foreach ($indexes as $idx) {
+                    if (!empty($favoriteLinks[$idx]['forceShortUrl'])) {
+                        $forceTargets[] = ['type' => 'link', 'id' => (string)$favoriteLinks[$idx]['id']];
+                    }
+                }
+                if ($forceTargets !== []) {
+                    $codes = array_merge($codes, ensureShortUrlsForTargets($db, $tid, $forceTargets, $user['id'] ?? null));
+                }
+            }
             if (isset($codes['tile:' . $tid])) {
                 foreach ($indexes as $idx) {
                     $favoriteLinks[$idx]['tile']['shortUrl'] = shortUrlForCode($codes['tile:' . $tid]);
@@ -4810,6 +4833,7 @@ function handleGetRecycleBin() {
                     applyLinkMaintenanceToApi($link, $linkRow);
                     applyLinkFeatureTogglesToApi($link, $linkRow);
                 applyLinkOpenTargetToApi($link, $linkRow);
+                applyLinkForceShortUrlToApi($link, $linkRow);
                     $section['links'][] = $link;
                 }
                 
@@ -5197,6 +5221,7 @@ function handleGetArchive() {
                     applyLinkMaintenanceToApi($link, $linkRow);
                     applyLinkFeatureTogglesToApi($link, $linkRow);
                 applyLinkOpenTargetToApi($link, $linkRow);
+                applyLinkForceShortUrlToApi($link, $linkRow);
                     $section['links'][] = $link;
                 }
                 
@@ -5741,6 +5766,7 @@ function getTileForVersion($tileId, $db) {
                 applyLinkMaintenanceToApi($link, $linkRow);
                 applyLinkFeatureTogglesToApi($link, $linkRow);
                 applyLinkOpenTargetToApi($link, $linkRow);
+                applyLinkForceShortUrlToApi($link, $linkRow);
                 $section['links'][] = $link;
             }
 
@@ -6652,6 +6678,7 @@ function updateTileInternal($tileId, $data, $db, $user, $isRestore = false, $isF
                                 persistInheritShortUrls($db, 'links', $linkId, $link);
                                 persistLinkTooltipStyle($db, $linkId, $link);
                                 persistLinkOpenTarget($db, $linkId, $link);
+                                persistLinkForceShortUrl($db, $linkId, $link);
                             }
                         }
                         
@@ -6718,6 +6745,7 @@ function updateTileInternal($tileId, $data, $db, $user, $isRestore = false, $isF
                         ]);
                         persistLinkTooltipStyle($db, $linkId, $link);
                                 persistLinkOpenTarget($db, $linkId, $link);
+                                persistLinkForceShortUrl($db, $linkId, $link);
                     }
                     if (isset($section['richTextContent']) && is_array($section['richTextContent'])) {
                         foreach ($section['richTextContent'] as $richText) {

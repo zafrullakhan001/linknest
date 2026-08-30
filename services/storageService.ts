@@ -140,6 +140,7 @@ const extractSearchLinks = (tile: Tile): Tile['searchLinks'] => {
         maintenanceVideoUrl: link.maintenanceVideoUrl,
         health: link.health,
         shortUrl: (link as { shortUrl?: string }).shortUrl,
+        forceShortUrl: (link as { forceShortUrl?: boolean }).forceShortUrl === true || undefined,
       });
     });
   };

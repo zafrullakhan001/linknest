@@ -112,6 +112,7 @@ export type EditLinkDraft = {
   visibility: LinkVisibility;
   published: boolean;
   inheritShortUrls: boolean;
+  forceShortUrl: boolean;
   allowedUsers: number[];
   allowedGroups: number[];
   notes: string;
@@ -132,7 +133,7 @@ export type EditLinkDraft = {
 type EditLinkField =
   | 'label' | 'url' | 'icon' | 'textColor' | 'visibility' | 'allowedUsers' | 'allowedGroups'
   | 'notes' | 'tooltip' | 'tooltipStyle' | 'notesEnabled' | 'browser' | 'openTarget' | 'richTextContent'
-  | 'richTextEnabled' | 'animation' | 'published' | 'inheritShortUrls' | 'maintenanceEnabled'
+  | 'richTextEnabled' | 'animation' | 'published' | 'inheritShortUrls' | 'forceShortUrl' | 'maintenanceEnabled'
   | 'maintenanceMessage' | 'maintenanceVideoUrl';
 
 const LINK_EDIT_NEUTRAL_CARD = 'border-slate-300 dark:border-slate-600 bg-slate-50 dark:bg-slate-900/50';
@@ -850,25 +851,38 @@ export const EditLinkForm: React.FC<EditLinkFormProps> = (props) => {
       <div className={`flex items-center justify-between gap-3 p-3.5 rounded-xl border-2 ${
         plain
           ? LINK_EDIT_NEUTRAL_CARD
-          : (draft.inheritShortUrls !== false)
+          : draft.forceShortUrl
             ? 'border-orange-300 dark:border-orange-800 bg-orange-50 dark:bg-orange-950/30'
-            : 'border-slate-300 dark:border-slate-600 bg-slate-100 dark:bg-slate-900/60'
+            : (draft.inheritShortUrls !== false)
+              ? 'border-orange-300 dark:border-orange-800 bg-orange-50 dark:bg-orange-950/30'
+              : 'border-slate-300 dark:border-slate-600 bg-slate-100 dark:bg-slate-900/60'
       }`}>
         <div className="min-w-0">
           <div className="text-[10px] font-semibold uppercase tracking-wider text-slate-500 dark:text-slate-400">Short URLs</div>
           <div className="text-sm font-semibold text-slate-800 dark:text-slate-200">
-            {(draft.inheritShortUrls !== false) ? 'Inherit from parent' : 'Override — original URL'}
+            {draft.forceShortUrl
+              ? 'Forced — short URL only'
+              : (draft.inheritShortUrls !== false) ? 'Inherit from parent' : 'Override — original URL'}
           </div>
         </div>
         <button
           type="button"
           role="switch"
-          aria-checked={draft.inheritShortUrls !== false}
+          aria-checked={draft.forceShortUrl ? true : draft.inheritShortUrls !== false}
+          disabled={draft.forceShortUrl === true}
           onClick={() => onUpdateField('inheritShortUrls', draft.inheritShortUrls === false)}
-          className={`relative inline-flex h-7 w-12 shrink-0 items-center rounded-full transition-colors ${(draft.inheritShortUrls !== false) ? (plain ? 'bg-slate-600' : 'bg-orange-500') : 'bg-slate-400 dark:bg-slate-600'}`}
-          title="On: inherit short URLs from the section/tab/space. Off: show the original URL."
+          className={`relative inline-flex h-7 w-12 shrink-0 items-center rounded-full transition-colors disabled:opacity-50 disabled:cursor-not-allowed ${
+            draft.forceShortUrl || draft.inheritShortUrls !== false
+              ? (plain ? 'bg-slate-600' : 'bg-orange-500')
+              : 'bg-slate-400 dark:bg-slate-600'
+          }`}
+          title={
+            draft.forceShortUrl
+              ? 'Short URL is forced on in Basics. Turn that off to inherit or show the original URL.'
+              : 'On: inherit short URLs from the section/tab/space. Off: show the original URL.'
+          }
         >
-          <span className={`inline-block h-5 w-5 transform rounded-full bg-white shadow transition-transform ${(draft.inheritShortUrls !== false) ? 'translate-x-6' : 'translate-x-1'}`} />
+          <span className={`inline-block h-5 w-5 transform rounded-full bg-white shadow transition-transform ${(draft.forceShortUrl || draft.inheritShortUrls !== false) ? 'translate-x-6' : 'translate-x-1'}`} />
         </button>
       </div>
     </div>

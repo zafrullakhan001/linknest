@@ -55,6 +55,54 @@ function persistInheritShortUrls(PDO $db, string $table, string $id, $source): v
     }
 }
 
+function mapForceShortUrlFromRow(array $row): bool {
+    $raw = $row['force_short_url'] ?? $row['forceShortUrl'] ?? 0;
+    return !empty($raw) && $raw !== '0' && $raw !== false && $raw !== 'false';
+}
+
+function forceShortUrlDbValue($item): int {
+    if (!is_array($item)) {
+        return 0;
+    }
+    if (array_key_exists('forceShortUrl', $item)) {
+        $raw = $item['forceShortUrl'];
+        return ($raw === true || $raw === 1 || $raw === '1') ? 1 : 0;
+    }
+    if (array_key_exists('force_short_url', $item)) {
+        return ((int)$item['force_short_url'] === 1) ? 1 : 0;
+    }
+    return 0;
+}
+
+function applyLinkForceShortUrlToApi(array &$link, array $row): void {
+    $link['forceShortUrl'] = mapForceShortUrlFromRow($row);
+}
+
+function persistLinkForceShortUrl(PDO $db, string $linkId, $source): void {
+    if ($linkId === '') {
+        return;
+    }
+    if (function_exists('ensureLinkForceShortUrlColumn')) {
+        ensureLinkForceShortUrlColumn($db);
+    }
+    try {
+        $value = forceShortUrlDbValue($source);
+        $stmt = $db->prepare('UPDATE links SET force_short_url = ? WHERE id = ?');
+        $stmt->execute([$value, $linkId]);
+        if ($value !== 1) {
+            return;
+        }
+        $q = $db->prepare('SELECT s.tile_id FROM links l INNER JOIN sections s ON l.section_id = s.id WHERE l.id = ? LIMIT 1');
+        $q->execute([$linkId]);
+        $tileId = $q->fetchColumn();
+        if ($tileId) {
+            ensureActiveShortUrl($db, 'link', $linkId, (string)$tileId, null);
+        }
+    } catch (PDOException $e) {
+        error_log('persistLinkForceShortUrl: ' . $e->getMessage());
+    }
+}
+
 function persistTileShowShortUrls(PDO $db, string $tileId, $data, ?array $fallbackRow = null): void {
     $value = null;
     if (is_array($data) && array_key_exists('showShortUrls', $data)) {
@@ -348,6 +396,35 @@ function attachShortUrlsToTilePayload(PDO $db, array &$tile, bool $ensure = true
     $codes = $ensure
         ? ensureShortUrlsForTargets($db, $tileId, $targets, $createdBy)
         : lookupActiveShortUrlCodes($db, $targets);
+    if (!$ensure) {
+        $forceTargets = [];
+        foreach ($tile['tabs'] ?? [] as $tab) {
+            if (!is_array($tab)) {
+                continue;
+            }
+            foreach ($tab['sections'] ?? [] as $section) {
+                if (!is_array($section)) {
+                    continue;
+                }
+                foreach ($section['links'] ?? [] as $link) {
+                    if (!is_array($link) || empty($link['id']) || empty($link['forceShortUrl'])) {
+                        continue;
+                    }
+                    $forceTargets[] = ['type' => 'link', 'id' => (string)$link['id']];
+                }
+            }
+        }
+        foreach ($tile['searchLinks'] ?? [] as $link) {
+            if (!is_array($link) || empty($link['id']) || empty($link['forceShortUrl'])) {
+                continue;
+            }
+            $forceTargets[] = ['type' => 'link', 'id' => (string)$link['id']];
+        }
+        if ($forceTargets !== []) {
+            $forced = ensureShortUrlsForTargets($db, $tileId, $forceTargets, $createdBy);
+            $codes = array_merge($codes, $forced);
+        }
+    }
     applyShortUrlCodesToTilePayload($tile, $codes);
 }
 
