@@ -5,7 +5,61 @@
 
 import { ensureRichTextFontsLoaded } from './richTextFonts';
 
-const SKIP_TAGS = new Set(['A', 'SCRIPT', 'STYLE', 'TEXTAREA', 'CODE', 'PRE']);
+const SKIP_TAGS = new Set(['A', 'SCRIPT', 'STYLE', 'TEXTAREA', 'CODE', 'PRE', 'VIDEO', 'AUDIO']);
+
+function mediaKindFromHref(href: string): 'video' | 'audio' | 'image' | null {
+  const path = (href.split('?')[0] || '').split('#')[0].toLowerCase();
+  if (/\.(mp4|webm|ogv|mov)$/.test(path)) return 'video';
+  if (/\.(mp3|wav|ogg|m4a)$/.test(path)) return 'audio';
+  if (/\.(jpg|jpeg|png|gif|webp|svg)$/.test(path)) return 'image';
+  return null;
+}
+
+function createMediaElement(doc: Document, href: string, kind: 'video' | 'audio' | 'image'): HTMLElement {
+  if (kind === 'image') {
+    const img = doc.createElement('img');
+    img.src = href;
+    img.alt = '';
+    img.setAttribute('style', 'max-width:100%;height:auto;');
+    return img;
+  }
+  if (kind === 'audio') {
+    const audio = doc.createElement('audio');
+    audio.controls = true;
+    audio.preload = 'metadata';
+    audio.setAttribute('style', 'width:100%;display:block;');
+    const source = doc.createElement('source');
+    source.src = href;
+    audio.appendChild(source);
+    return audio;
+  }
+  const video = doc.createElement('video');
+  video.controls = true;
+  video.setAttribute('playsinline', '');
+  video.preload = 'metadata';
+  video.setAttribute('width', '640');
+  video.setAttribute('height', '360');
+  video.setAttribute('style', 'max-width:100%;height:auto;display:block;background:#0f172a;');
+  const source = doc.createElement('source');
+  source.src = href;
+  video.appendChild(source);
+  return video;
+}
+
+/** Turn pasted media-library / upload links into playable tags. */
+function embedBareMediaLinks(root: Element, doc: Document): void {
+  root.querySelectorAll('a[href]').forEach((anchor) => {
+    const href = anchor.getAttribute('href') || '';
+    const kind = mediaKindFromHref(href);
+    if (!kind) return;
+    if (anchor.closest('video, audio')) return;
+    const text = (anchor.textContent || '').trim();
+    const isRawUrl = !text || text === href || text.replace(/&amp;/g, '&') === href;
+    const isUpload = /\/uploads\/media_[a-z0-9]/i.test(href);
+    if (!isRawUrl && !isUpload) return;
+    anchor.replaceWith(createMediaElement(doc, href, kind));
+  });
+}
 
 const URL_OR_EMAIL_RE =
   /((https?:\/\/|www\.)[^\s<>"']+[^\s<>"'.,;:!?)\]}])|([a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,})/g;
@@ -138,6 +192,7 @@ export function linkifyHtml(html: string): string {
   }
 
   promoteEditorFonts(root);
+  embedBareMediaLinks(root, doc);
 
   return root.innerHTML;
 }
@@ -151,6 +206,7 @@ export function prepareViewerHtml(html: string): string {
   const root = doc.getElementById('__rt_root');
   if (!root) return html;
   promoteEditorFonts(root);
+  embedBareMediaLinks(root, doc);
   return root.innerHTML;
 }
 
@@ -171,7 +227,9 @@ export function stripHtmlToPlainText(content: string): string {
 
 /** False for empty editors that still emit `<p></p>` or `<p><br></p>`. */
 export function hasVisibleRichText(content?: string | null): boolean {
-  return !!stripHtmlToPlainText(content || '');
+  if (!content) return false;
+  if (stripHtmlToPlainText(content)) return true;
+  return /<(img|video|audio|iframe|embed|object|source)\b/i.test(content);
 }
 
 export function escapeHtmlText(text: string): string {

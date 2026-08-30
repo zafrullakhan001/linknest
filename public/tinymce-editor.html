@@ -465,7 +465,11 @@
           content_css: dark ? 'dark' : 'default',
           font_css: googleFontsHref,
           font_family_formats: fontFamilyFormats,
-          content_style: contentStyle,
+          content_style:
+            contentStyle +
+            ' video,audio{display:block;max-width:100%;margin:0.75em 0;} ' +
+            ' video{width:100%;height:auto;min-height:180px;background:#0f172a;} ' +
+            ' audio{width:100%;}',
           convert_urls: false,
           relative_urls: false,
           browser_spellcheck: !viewMode,
@@ -522,7 +526,11 @@
           autosave_retention: '30m',
           visualblocks_default_state: false,
           visualchars_default_state: false,
-          extended_valid_elements: '+li[data-ln-space|class|style]',
+          extended_valid_elements:
+            '+li[data-ln-space|class|style],' +
+            'video[src|controls|controlslist|width|height|poster|preload|playsinline|style|class|muted|autoplay|loop],' +
+            'audio[src|controls|preload|style|class],' +
+            'source[src|type]',
           highlight_on_focus: !viewMode,
           object_resizing: !viewMode
         };

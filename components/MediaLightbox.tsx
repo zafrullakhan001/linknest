@@ -15,7 +15,7 @@ interface MediaLightboxProps {
 export const MediaLightbox: React.FC<MediaLightboxProps> = ({ file, files, onClose, onChange, rotate = 0 }) => {
   const [actualSize, setActualSize] = useState(false);
   const images = useMemo(
-    () => (files || []).filter((f) => f.kind === 'image' && f.url && f.status !== 'trash'),
+    () => (files || []).filter((f) => f.kind === 'image' && !!f.url),
     [files]
   );
   const index = images.findIndex((f) => f.id === file.id);

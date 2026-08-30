@@ -2605,6 +2605,8 @@ export const RichTextEditor: React.FC<RichTextEditorProps> = ({
                 .rich-text-editor h5 { font-size: 0.83em; font-weight: bold; margin: 1.5em 0; }
                 .rich-text-editor h6 { font-size: 0.75em; font-weight: bold; margin: 1.67em 0; }
                 .rich-text-editor img { max-width: 100%; height: auto; display: block; margin: 0.5em 0; }
+                .rich-text-editor video { max-width: 100%; width: 100%; height: auto; min-height: 180px; display: block; margin: 0.75em 0; background: #0f172a; }
+                .rich-text-editor audio { width: 100%; display: block; margin: 0.75em 0; }
                 .rich-text-editor ul, .rich-text-editor ol { margin: 1em 0; padding-left: 2em; }
                 .rich-text-editor ul { list-style-type: disc; }
                 .rich-text-editor ol { list-style-type: decimal; }

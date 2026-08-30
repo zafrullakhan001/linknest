@@ -38,7 +38,7 @@ If PHP `upload_max_filesize` / `post_max_size` are lower, raise them (videos nee
 ## Archive vs trash vs purge
 
 - **Archive** — hides from the default library; file remains on the public URL path.  
-- **Trash** — soft-delete; file moved off the public path.  
+- **Trash** — soft-delete; file moved off the public path. Admins still see thumbnails via session-authenticated `GET /api/media/{id}/thumb` and `/file`.  
 - **Purge / Empty trash** — permanent delete (disk + DB row).
 
 ## Image quality and viewing

@@ -226,22 +226,65 @@ export async function batchTrashMediaFiles(ids: number[]): Promise<number> {
   return data.trashed;
 }
 
+function escapeAttr(value: string): string {
+  return value.replace(/&/g, '&amp;').replace(/"/g, '&quot;').replace(/</g, '&lt;');
+}
+
+/** MIME from a media URL, ignoring ?v= cache-bust so editors still recognize the type. */
+export function mediaMimeFromUrl(url: string, fallback = ''): string {
+  const path = (url.split('?')[0] || '').split('#')[0].toLowerCase();
+  const ext = path.includes('.') ? path.slice(path.lastIndexOf('.') + 1) : '';
+  const map: Record<string, string> = {
+    jpg: 'image/jpeg',
+    jpeg: 'image/jpeg',
+    png: 'image/png',
+    gif: 'image/gif',
+    webp: 'image/webp',
+    svg: 'image/svg+xml',
+    mp4: 'video/mp4',
+    webm: 'video/webm',
+    ogv: 'video/ogg',
+    mov: 'video/quicktime',
+    mp3: 'audio/mpeg',
+    wav: 'audio/wav',
+    ogg: 'audio/ogg',
+    m4a: 'audio/mp4',
+    pdf: 'application/pdf',
+  };
+  return map[ext] || fallback;
+}
+
 /** Build HTML snippet for inserting a media file into rich text. */
 export function mediaFileToInsertHtml(file: MediaFile): string {
   const url = file.url || '';
-  const title = (file.title || file.originalName || 'Media').replace(/"/g, '&quot;');
-  const alt = (file.altText || title).replace(/"/g, '&quot;');
+  const title = escapeAttr(file.title || file.originalName || 'Media');
+  const alt = escapeAttr(file.altText || file.title || file.originalName || 'Media');
+  const mime = mediaMimeFromUrl(url, file.mime || '');
   switch (file.kind) {
     case 'image':
-      return `<img src="${url}" alt="${alt}" style="max-width:100%;height:auto;" />`;
+      return `<img src="${escapeAttr(url)}" alt="${alt}" style="max-width:100%;height:auto;" />`;
     case 'pdf':
-      return `<a href="${url}" target="_blank" rel="noopener noreferrer">${title}</a>`;
-    case 'video':
-      return `<video controls src="${url}" style="max-width:100%;height:auto;"></video>`;
-    case 'audio':
-      return `<audio controls src="${url}"></audio>`;
+      return `<a href="${escapeAttr(url)}" target="_blank" rel="noopener noreferrer">${title}</a>`;
+    case 'video': {
+      const poster = file.thumbUrl ? ` poster="${escapeAttr(file.thumbUrl)}"` : '';
+      const typeAttr = mime ? ` type="${escapeAttr(mime)}"` : '';
+      return (
+        `<video controls="controls" playsinline="playsinline" preload="metadata" width="640" height="360"` +
+        `${poster} style="max-width:100%;height:auto;display:block;background:#0f172a;">` +
+        `<source src="${escapeAttr(url)}"${typeAttr} />` +
+        `</video>`
+      );
+    }
+    case 'audio': {
+      const typeAttr = mime ? ` type="${escapeAttr(mime)}"` : '';
+      return (
+        `<audio controls="controls" preload="metadata" style="width:100%;display:block;">` +
+        `<source src="${escapeAttr(url)}"${typeAttr} />` +
+        `</audio>`
+      );
+    }
     default:
-      return `<a href="${url}" target="_blank" rel="noopener noreferrer">${title}</a>`;
+      return `<a href="${escapeAttr(url)}" target="_blank" rel="noopener noreferrer">${title}</a>`;
   }
 }
 

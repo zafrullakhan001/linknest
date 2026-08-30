@@ -8250,9 +8250,22 @@ input[type="search"]::-ms-clear {
 
 .ln-tinymce-content img,
 .ln-tinymce-content video,
-.ln-tinymce-content iframe {
+.ln-tinymce-content iframe,
+.ln-tinymce-content audio {
   max-width: 100%;
   height: auto;
+}
+
+.ln-tinymce-content video,
+.ln-tinymce-content audio {
+  display: block;
+  margin: 0.75em 0;
+}
+
+.ln-tinymce-content video {
+  width: 100%;
+  min-height: 180px;
+  background: #0f172a;
 }
 
 .ln-tinymce-content img {

@@ -206,7 +206,7 @@ AddDefaultCharset UTF-8
     Header always set Content-Security-Policy "default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; font-src 'self' data: https://fonts.gstatic.com; img-src 'self' data: blob: https: http:; connect-src 'self' https: http: ws: wss: blob:; frame-src 'self' https: http: blob:; worker-src 'self' blob:; media-src 'self' blob: https: http:; object-src 'none'; base-uri 'self'; form-action 'self'; frame-ancestors 'self'"
     <Files "tinymce-editor.html">
         Header always unset Content-Security-Policy
-        Header always set Content-Security-Policy "default-src 'self'; script-src 'self' 'unsafe-inline' 'unsafe-eval'; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; font-src 'self' data: https://fonts.gstatic.com; img-src 'self' data: https: blob:; connect-src 'self'; frame-ancestors 'self'"
+        Header always set Content-Security-Policy "default-src 'self'; script-src 'self' 'unsafe-inline' 'unsafe-eval'; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; font-src 'self' data: https://fonts.gstatic.com; img-src 'self' data: https: http: blob:; media-src 'self' blob: https: http:; connect-src 'self' https: http:; frame-src 'self' https: http: blob:; frame-ancestors 'self'"
     </Files>
     <Files "health.php">
         Header always unset Content-Security-Policy

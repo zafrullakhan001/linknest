@@ -136,6 +136,62 @@ function mediaPublicUrl(string $storedName, ?int $cacheBust = null): string {
     return $url;
 }
 
+/** Authenticated preview (used for trash — files are not on the public /uploads/ path). */
+function mediaAuthPreviewUrl(int $id, string $variant = 'file', ?int $cacheBust = null): string {
+    $suffix = $variant === 'thumb' ? 'thumb' : 'file';
+    $url = mediaBasePath() . '/api/media/' . $id . '/' . $suffix;
+    if ($cacheBust !== null && $cacheBust > 0) {
+        $url .= '?v=' . $cacheBust;
+    }
+    return $url;
+}
+
+function mediaSafeStoredName(string $filename): ?string {
+    $filename = basename($filename);
+    if ($filename === '' || !preg_match('/^media_[a-zA-Z0-9._-]+$/', $filename)) {
+        return null;
+    }
+    return $filename;
+}
+
+/**
+ * Resolve a stored media filename on disk (public uploads or trash).
+ */
+function mediaResolveDiskFile(string $storedName, bool $preferTrash): ?string {
+    $storedName = mediaSafeStoredName($storedName);
+    if ($storedName === null) {
+        return null;
+    }
+    $primary = ($preferTrash ? mediaTrashDir() : mediaUploadsDir()) . DIRECTORY_SEPARATOR . $storedName;
+    if (is_file($primary)) {
+        return $primary;
+    }
+    $fallback = ($preferTrash ? mediaUploadsDir() : mediaTrashDir()) . DIRECTORY_SEPARATOR . $storedName;
+    return is_file($fallback) ? $fallback : null;
+}
+
+function mediaMimeForFilename(string $filename, string $fallback = 'application/octet-stream'): string {
+    $ext = strtolower(pathinfo($filename, PATHINFO_EXTENSION));
+    $map = [
+        'jpg' => 'image/jpeg',
+        'jpeg' => 'image/jpeg',
+        'png' => 'image/png',
+        'gif' => 'image/gif',
+        'webp' => 'image/webp',
+        'svg' => 'image/svg+xml',
+        'pdf' => 'application/pdf',
+        'mp3' => 'audio/mpeg',
+        'wav' => 'audio/wav',
+        'ogg' => 'audio/ogg',
+        'm4a' => 'audio/mp4',
+        'mp4' => 'video/mp4',
+        'webm' => 'video/webm',
+        'ogv' => 'video/ogg',
+        'mov' => 'video/quicktime',
+    ];
+    return $map[$ext] ?? $fallback;
+}
+
 /**
  * @return array{ext:string,mime:string,kind:string,max:int}|null
  */
@@ -298,10 +354,20 @@ function mediaMapFileRow(PDO $db, array $row, bool $includeTags = true, ?array $
     $url = null;
     $thumbUrl = null;
     $bust = isset($row['updated_at']) ? (int)$row['updated_at'] : null;
-    if ($status !== 'trash' && $stored !== '') {
-        $url = mediaPublicUrl($stored, $bust);
-        if (!empty($row['thumb_name'])) {
-            $thumbUrl = mediaPublicUrl((string)$row['thumb_name'], $bust);
+    $id = (int)$row['id'];
+    if ($stored !== '') {
+        if ($status === 'trash') {
+            $url = mediaAuthPreviewUrl($id, 'file', $bust);
+            if (!empty($row['thumb_name'])) {
+                $thumbUrl = mediaAuthPreviewUrl($id, 'thumb', $bust);
+            } else {
+                $thumbUrl = $url;
+            }
+        } else {
+            $url = mediaPublicUrl($stored, $bust);
+            if (!empty($row['thumb_name'])) {
+                $thumbUrl = mediaPublicUrl((string)$row['thumb_name'], $bust);
+            }
         }
     }
 

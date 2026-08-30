@@ -25,6 +25,8 @@ try {
             mediaHandleListFolders($db);
         } elseif ($path === '/tags') {
             mediaHandleListTags($db);
+        } elseif (preg_match('#^/(\d+)/(file|thumb)$#', $path, $m)) {
+            mediaHandleServe($db, (int)$m[1], $m[2] === 'thumb');
         } elseif (preg_match('#^/(\d+)$#', $path, $m)) {
             mediaHandleGet($db, (int)$m[1]);
         } else {
@@ -184,6 +186,35 @@ function mediaHandleGet(PDO $db, int $id): void {
         sendJSON(['error' => 'File not found'], 404);
     }
     sendJSON(['data' => mediaMapFileRow($db, $row)]);
+}
+
+function mediaHandleServe(PDO $db, int $id, bool $thumb): void {
+    requireAuth();
+    $stmt = $db->prepare('SELECT * FROM media_files WHERE id = ?');
+    $stmt->execute([$id]);
+    $row = $stmt->fetch(PDO::FETCH_ASSOC);
+    if (!$row) {
+        sendJSON(['error' => 'File not found'], 404);
+    }
+    if ((string)$row['status'] === 'trash') {
+        requireAdmin();
+    }
+    $name = $thumb && !empty($row['thumb_name']) ? (string)$row['thumb_name'] : (string)$row['stored_name'];
+    $path = mediaResolveDiskFile($name, (string)$row['status'] === 'trash');
+    if ($path === null && $thumb && !empty($row['stored_name'])) {
+        $path = mediaResolveDiskFile((string)$row['stored_name'], (string)$row['status'] === 'trash');
+        $name = (string)$row['stored_name'];
+    }
+    if ($path === null) {
+        sendJSON(['error' => 'File missing on disk'], 404);
+    }
+    $mime = mediaMimeForFilename($name, (string)($row['mime'] ?: 'application/octet-stream'));
+    header('Content-Type: ' . $mime);
+    header('Content-Length: ' . (string)filesize($path));
+    header('Cache-Control: private, max-age=120');
+    header('X-Content-Type-Options: nosniff');
+    readfile($path);
+    exit;
 }
 
 function mediaHandleUpload(PDO $db): void {
