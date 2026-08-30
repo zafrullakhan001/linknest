@@ -11,12 +11,12 @@ chrome.runtime.onMessage.addListener(function (request, sender, sendResponse) {
     window.BrowserLauncherProExtension = {
       available: true,
       version: '3.2',
-      features: ['launch', 'incognito', 'bookmarks']
+      features: ['launch', 'incognito', 'newWindow', 'bookmarks']
     };
 
     // Also dispatch a custom event
     window.dispatchEvent(new CustomEvent('BrowserLauncherProReady', {
-      detail: { version: '3.2', features: ['launch', 'incognito', 'bookmarks'] }
+      detail: { version: '3.2', features: ['launch', 'incognito', 'newWindow', 'bookmarks'] }
     }));
   }
 })();
@@ -53,7 +53,8 @@ window.addEventListener('message', function (event) {
       action: 'openLinkInBrowser',
       url: url,
       browserId: browserId,
-      inPrivate: !!(options && (options.inPrivate || options.incognito || options.private))
+      inPrivate: !!(options && (options.inPrivate || options.incognito || options.private)),
+      newWindow: !!(options && (options.newWindow || options.fullWindow || options.windowType === 'normal'))
     }, (response) => {
       // Log the result but don't send another response to page
       // (we already sent an immediate response above)
@@ -76,7 +77,7 @@ window.addEventListener('message', function (event) {
       available: true,
       version: '3.2',
       name: 'Browser Launcher Pro',
-      features: ['launch', 'incognito', 'bookmarks', 'bookmarksWrite', 'browsers'],
+      features: ['launch', 'incognito', 'newWindow', 'bookmarks', 'bookmarksWrite', 'browsers'],
       timestamp: event.data.timestamp
     }, '*');
   }

@@ -1,7 +1,7 @@
 import React, { useCallback, useEffect, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
 import type { AccessRestrictions, Link, LinkOpenTarget, LinkVisibility } from '../types';
-import { normalizeLinkOpenTarget } from '../utils/openLinkUrl';
+import { LINK_OPEN_TARGET_OPTIONS, normalizeLinkOpenTarget } from '../utils/openLinkUrl';
 import type { UserListItem } from '../services/authService';
 import { hasAccessRestrictions } from '../services/accessRestrictionService';
 import { AccessRestrictionsEditor, AccessRestrictionsBadge } from './AccessRestrictionsEditor';
@@ -887,12 +887,7 @@ export const EditLinkForm: React.FC<EditLinkFormProps> = (props) => {
           Open URL in
         </label>
         <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
-          {([
-            { value: 'same' as const, label: 'Same window' },
-            { value: 'tab' as const, label: 'New tab' },
-            { value: 'window' as const, label: 'New window' },
-            { value: 'private' as const, label: 'InPrivate / Incognito' },
-          ]).map((opt) => {
+          {LINK_OPEN_TARGET_OPTIONS.map((opt) => {
             const selected = normalizeLinkOpenTarget(draft.openTarget) === opt.value;
             return (
               <label
@@ -911,13 +906,20 @@ export const EditLinkForm: React.FC<EditLinkFormProps> = (props) => {
                   onChange={() => onUpdateField('openTarget', opt.value)}
                   className="w-4 h-4 text-brand-600 focus:ring-brand-500 focus:ring-2"
                 />
-                <span className="text-sm font-medium">{opt.label}</span>
+                <span className="min-w-0">
+                  <span className="text-sm font-medium">{opt.label}</span>
+                  {opt.hint ? (
+                    <span className="block text-[10px] font-normal text-slate-500 dark:text-slate-400 leading-tight">
+                      {opt.hint}
+                    </span>
+                  ) : null}
+                </span>
               </label>
             );
           })}
         </div>
         <p className="text-[10px] text-slate-500 dark:text-slate-400 mt-1">
-          InPrivate / Incognito needs the Browser Launcher extension. Browser-launcher overrides still open an external browser.
+          New window is a compact popup. Full browser (tabs, toolbar, menus) uses Bookmark Sync 1.8.5+: reload the extension, then refresh this page. InPrivate / Incognito needs the extension too.
         </p>
       </div>
       <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">

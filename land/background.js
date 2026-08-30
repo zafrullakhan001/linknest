@@ -1451,6 +1451,7 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
   if (request.action === 'openLinkInBrowser') {
     const { url, browserId } = request;
     const inPrivate = !!(request.inPrivate || request.incognito || (request.options && (request.options.inPrivate || request.options.incognito)));
+    const newWindow = !!(request.newWindow || request.fullWindow || (request.options && (request.options.newWindow || request.options.fullWindow || request.options.windowType === 'normal')));
 
     const privateFlagForBrowser = (id) => {
       const key = String(id || '').toLowerCase();
@@ -1485,6 +1486,26 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
       });
     };
 
+    const openCurrentBrowserWindow = (targetUrl, done) => {
+      try {
+        const parsed = new URL(targetUrl);
+        if (parsed.protocol !== 'http:' && parsed.protocol !== 'https:') {
+          done({ success: false, error: 'Only http(s) URLs can open in a full browser window' });
+          return;
+        }
+      } catch (_err) {
+        done({ success: false, error: 'Invalid URL' });
+        return;
+      }
+      chrome.windows.create({ url: targetUrl, type: 'normal', focused: true }, (win) => {
+        if (chrome.runtime.lastError) {
+          done({ success: false, error: chrome.runtime.lastError.message || 'Failed to open browser window' });
+          return;
+        }
+        done({ success: true, message: 'Opened in a full browser window', windowId: win && win.id });
+      });
+    };
+
     const idKey = String(browserId || '').toLowerCase().trim();
     const useCurrentIncognito =
       inPrivate &&
@@ -1496,6 +1517,20 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
 
     if (useCurrentIncognito) {
       openCurrentBrowserIncognito(url, sendResponse);
+      return true;
+    }
+
+    const useCurrentFullWindow =
+      newWindow &&
+      !inPrivate &&
+      (!idKey ||
+        idKey === 'default' ||
+        idKey === 'current' ||
+        idKey === 'this' ||
+        idKey === 'same');
+
+    if (useCurrentFullWindow) {
+      openCurrentBrowserWindow(url, sendResponse);
       return true;
     }
 
@@ -1528,6 +1563,10 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
       if (!command || command === 'NA') {
         if (inPrivate) {
           openCurrentBrowserIncognito(url, sendResponse);
+          return;
+        }
+        if (newWindow) {
+          openCurrentBrowserWindow(url, sendResponse);
           return;
         }
         sendResponse({
@@ -1599,6 +1638,8 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
           executeOpen(customBrowser.path, isWsl);
         } else if (inPrivate) {
           openCurrentBrowserIncognito(url, sendResponse);
+        } else if (newWindow) {
+          openCurrentBrowserWindow(url, sendResponse);
         } else {
           sendResponse({
             success: false,

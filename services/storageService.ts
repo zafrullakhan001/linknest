@@ -681,7 +681,7 @@ export interface FavoriteLink {
   notesEnabled?: boolean;
   tooltipStyle?: 'rich' | 'classic';
   browser?: string;
-  openTarget?: 'same' | 'tab' | 'window' | 'private';
+  openTarget?: 'same' | 'tab' | 'window' | 'browser' | 'private';
   richTextContent?: string;
   richTextEnabled?: boolean;
   maintenanceEnabled?: boolean;

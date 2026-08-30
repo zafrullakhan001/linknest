@@ -1,9 +1,21 @@
 import type { LinkOpenTarget } from '../types';
 
 export function normalizeLinkOpenTarget(value: unknown): LinkOpenTarget {
-  if (value === 'same' || value === 'window' || value === 'private') return value;
+  if (value === 'same' || value === 'window' || value === 'browser' || value === 'private') return value;
   return 'tab';
 }
+
+export const LINK_OPEN_TARGET_OPTIONS: Array<{
+  value: LinkOpenTarget;
+  label: string;
+  hint?: string;
+}> = [
+  { value: 'same', label: 'Same window' },
+  { value: 'tab', label: 'New tab' },
+  { value: 'window', label: 'New window', hint: 'Compact popup' },
+  { value: 'browser', label: 'Full browser', hint: 'Tabs, toolbar, menus' },
+  { value: 'private', label: 'InPrivate / Incognito' },
+];
 
 type BrowserLauncherApi = {
   open: (
@@ -38,7 +50,7 @@ export type OpenLinkUrlOptions = {
 };
 
 /**
- * Features that request a real separate window (not a tab).
+ * Features that request a compact popup window (not a tab, not full browser chrome).
  * Do not include noopener/noreferrer here — those alone open as a tab in Chromium.
  * Null `opener` after open instead.
  */
@@ -61,6 +73,68 @@ function focusWindow(win: Window | null): void {
   } catch {
     /* ignore */
   }
+}
+
+function httpUrlOrNull(url: string): string | null {
+  try {
+    const parsed = new URL(url, typeof window !== 'undefined' ? window.location.href : undefined);
+    if (parsed.protocol !== 'http:' && parsed.protocol !== 'https:') return null;
+    return parsed.href;
+  } catch {
+    return null;
+  }
+}
+
+function openAsTab(url: string, focus = false): Window | null {
+  const tab = window.open(url, '_blank', 'noopener,noreferrer');
+  if (focus) focusWindow(tab);
+  return tab;
+}
+
+/**
+ * Ask Bookmark Sync / Browser Launcher to open a real OS window (tabs, toolbar, menus).
+ * Edge blocks microsoft-edge: from web pages, so that protocol is not used.
+ */
+function requestFullBrowserWindow(
+  absUrl: string,
+  onResult: (ok: boolean) => void
+): void {
+  if (typeof window === 'undefined') {
+    onResult(false);
+    return;
+  }
+  const timestamp = Date.now();
+  const origin = window.location.origin;
+  let settled = false;
+  const finish = (ok: boolean) => {
+    if (settled) return;
+    settled = true;
+    window.removeEventListener('message', onMessage);
+    onResult(ok);
+  };
+  const onMessage = (event: MessageEvent) => {
+    if (event.origin !== origin) return;
+    const data = event.data as { type?: string; timestamp?: number; success?: boolean };
+    if (!data || data.type !== 'BROWSER_LAUNCHER_RESPONSE' || data.timestamp !== timestamp) return;
+    finish(data.success !== false);
+  };
+  window.addEventListener('message', onMessage);
+  try {
+    window.postMessage(
+      {
+        type: 'BROWSER_LAUNCHER_OPEN',
+        url: absUrl,
+        browserId: 'default',
+        timestamp,
+        options: { newWindow: true, fallback: false },
+      },
+      origin
+    );
+  } catch {
+    finish(false);
+    return;
+  }
+  window.setTimeout(() => finish(false), 2000);
 }
 
 /** Open an empty popup immediately (must run in the click handler before any await). */
@@ -103,19 +177,28 @@ function openViaBrowserLauncher(
   url: string,
   browserId: string,
   options: Record<string, unknown>,
-  extensionId?: string | null
+  extensionId?: string | null,
+  onFail?: () => void
 ): boolean {
   const launcher = getBrowserLauncher();
   if (!launcher) return false;
   if (extensionId && typeof launcher.setExtensionId === 'function') {
     launcher.setExtensionId(extensionId);
   }
+  let failed = false;
+  const failOnce = () => {
+    if (failed) return;
+    failed = true;
+    onFail?.();
+  };
   launcher.open(url, browserId, options, (response) => {
     if (response && response.success === false) {
       console.warn('[openLinkUrl] Browser launcher failed:', response.error);
+      failOnce();
     }
   }).catch((err) => {
     console.warn('[openLinkUrl] Browser launcher error:', err);
+    failOnce();
   });
   return true;
 }
@@ -127,11 +210,17 @@ function openSeparateBrowserWindow(url: string, focus = true): Window | null {
   return win;
 }
 
+function launcherBrowserId(opts?: OpenLinkUrlOptions): string {
+  return (opts?.browserId && opts.browserId !== 'default') ? opts.browserId : 'default';
+}
+
 /**
  * Open a link URL according to the per-link open target.
  * Missing / invalid values behave like `tab` (new tab) to match prior behavior.
  * `private` uses the Browser Launcher extension (InPrivate / Incognito); without it,
  * falls back to a separate window.
+ * `browser` opens a full browser window (tabs, toolbar, menus) via Bookmark Sync
+ * (`chrome.windows.create` type=normal). Edge blocks microsoft-edge: from web pages.
  *
  * For `window`, prefer prepareSeparateWindowIfNeeded() before any await, then
  * assignUrlToWindow() — otherwise browsers demote the open to a tab.
@@ -142,6 +231,7 @@ export function openLinkUrl(
   opts?: OpenLinkUrlOptions
 ): Window | null {
   const target = normalizeLinkOpenTarget(openTarget);
+  const focus = opts?.focus !== false;
 
   if (target === 'same') {
     window.location.assign(url);
@@ -149,12 +239,9 @@ export function openLinkUrl(
   }
 
   if (target === 'private') {
-    const browserId = (opts?.browserId && opts.browserId !== 'default')
-      ? opts.browserId
-      : 'default';
     const launched = openViaBrowserLauncher(
       url,
-      browserId,
+      launcherBrowserId(opts),
       { fallback: false, inPrivate: true },
       opts?.extensionId
     );
@@ -162,14 +249,37 @@ export function openLinkUrl(
     console.warn(
       '[openLinkUrl] InPrivate / Incognito requires the Browser Launcher extension; opening a separate window instead.'
     );
-    return openSeparateBrowserWindow(url, opts?.focus !== false);
+    return openSeparateBrowserWindow(url, focus);
+  }
+
+  if (target === 'browser') {
+    const href = httpUrlOrNull(url);
+    if (!href) {
+      console.warn('[openLinkUrl] Full browser window needs an http(s) URL.');
+      return null;
+    }
+    requestFullBrowserWindow(href, (ok) => {
+      if (ok) return;
+      const launched = openViaBrowserLauncher(
+        href,
+        launcherBrowserId(opts) === 'default' ? defaultPrivateBrowserId() : launcherBrowserId(opts),
+        { fallback: false, newWindow: true },
+        opts?.extensionId,
+        () => {
+          console.warn(
+            '[openLinkUrl] Full browser window needs Bookmark Sync 1.8.5+. Reload the extension, then refresh this page.'
+          );
+          openAsTab(href, true);
+        }
+      );
+      if (!launched) openAsTab(href, true);
+    });
+    return null;
   }
 
   if (target === 'window') {
-    return openSeparateBrowserWindow(url, opts?.focus !== false);
+    return openSeparateBrowserWindow(url, focus);
   }
 
-  const tab = window.open(url, '_blank', 'noopener,noreferrer');
-  if (opts?.focus) focusWindow(tab);
-  return tab;
+  return openAsTab(url, !!opts?.focus);
 }

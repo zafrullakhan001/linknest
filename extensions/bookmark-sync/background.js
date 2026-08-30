@@ -562,44 +562,41 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
     return true;
   }
 
-  if (request.action === 'openInIncognito' || request.action === 'openLinkInBrowser') {
+  if (request.action === 'openInIncognito' || request.action === 'openInBrowserWindow' || request.action === 'openLinkInBrowser') {
     const origin = senderPageOrigin(sender);
-    const url = String((request && request.url) || '').trim();
     const inPrivate =
       request.action === 'openInIncognito' ||
       !!(request.inPrivate || request.incognito || (request.options && (request.options.inPrivate || request.options.incognito)));
+    const newWindow =
+      request.action === 'openInBrowserWindow' ||
+      !!(request.newWindow || request.fullWindow || (request.options && (request.options.newWindow || request.options.fullWindow)));
 
     isOriginAllowed(origin).then((allowed) => {
       if (!allowed) {
         sendResponse({ success: false, error: 'Origin is not allowlisted for this extension.' });
         return;
       }
-      if (!inPrivate) {
+      if (!inPrivate && !newWindow) {
         sendResponse({
           success: false,
           error:
-            'LinkNest Bookmark Sync opens links in Incognito / InPrivate only. Install Browser Launcher Pro to open in other browsers.'
+            'LinkNest Bookmark Sync opens links in Incognito / InPrivate or a full browser window only. Install Browser Launcher Pro to open in other browsers.'
         });
         return;
       }
-      try {
-        const parsed = new URL(url);
-        if (parsed.protocol !== 'http:' && parsed.protocol !== 'https:') {
-          sendResponse({
-            success: false,
-            error: 'Only http(s) URLs can open in Incognito / InPrivate'
-          });
-          return;
-        }
-      } catch (_err) {
-        sendResponse({ success: false, error: 'Invalid URL' });
+      const url = sanitizeHttpUrl(String((request && request.url) || '').trim());
+      if (!url) {
+        sendResponse({ success: false, error: 'Only http(s) URLs can be opened this way' });
         return;
       }
-      chrome.windows.create({ url: url, incognito: true }, (win) => {
+      const createOpts = inPrivate
+        ? { url: url, incognito: true }
+        : { url: url, type: 'normal', focused: true };
+      chrome.windows.create(createOpts, (win) => {
         if (chrome.runtime.lastError) {
-          const msg = chrome.runtime.lastError.message || 'Failed to open Incognito window';
+          const msg = chrome.runtime.lastError.message || (inPrivate ? 'Failed to open Incognito window' : 'Failed to open browser window');
           const hint =
-            /incognito/i.test(msg)
+            inPrivate && /incognito/i.test(msg)
               ? ' Enable “Allow in Incognito” for LinkNest Bookmark Sync in chrome://extensions (or edge://extensions), then try again.'
               : '';
           sendResponse({ success: false, error: msg + hint });
@@ -607,7 +604,7 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
         }
         sendResponse({
           success: true,
-          message: 'Opened in Incognito / InPrivate window',
+          message: inPrivate ? 'Opened in Incognito / InPrivate window' : 'Opened in a full browser window',
           windowId: win && win.id
         });
       });

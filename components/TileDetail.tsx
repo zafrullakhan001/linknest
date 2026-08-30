@@ -96,7 +96,7 @@ import { LinkUrlField } from './LinkUrlField';
 import { UrlProbeBadges } from './UrlProbeBadges';
 import { tryHandleSshLinkClick, isSshLinkUrl } from '../utils/sshLink';
 import { tryHandleVncLinkClick, isVncLinkUrl } from '../utils/vncLink';
-import { normalizeLinkOpenTarget, openLinkUrl, prepareSeparateWindowIfNeeded, assignUrlToWindow } from '../utils/openLinkUrl';
+import { LINK_OPEN_TARGET_OPTIONS, normalizeLinkOpenTarget, openLinkUrl, prepareSeparateWindowIfNeeded, assignUrlToWindow } from '../utils/openLinkUrl';
 import {
     coveringLinkCheckException,
     isUrlExcludedFromLinkCheck,
@@ -12450,12 +12450,7 @@ export const TileDetail: React.FC<TileDetailProps> = ({
                                                                                         Open URL in
                                                                                     </label>
                                                                                     <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
-                                                                                        {([
-                                                                                            { value: 'same' as const, label: 'Same window' },
-                                                                                            { value: 'tab' as const, label: 'New tab' },
-                                                                                            { value: 'window' as const, label: 'New window' },
-                                                                                            { value: 'private' as const, label: 'InPrivate / Incognito' },
-                                                                                        ]).map((opt) => {
+                                                                                        {LINK_OPEN_TARGET_OPTIONS.map((opt) => {
                                                                                             const selected = normalizeLinkOpenTarget(newLinkState[section.id]?.openTarget) === opt.value;
                                                                                             return (
                                                                                                 <label
@@ -12474,7 +12469,14 @@ export const TileDetail: React.FC<TileDetailProps> = ({
                                                                                                         onChange={() => updateNewLinkState(section.id, 'openTarget', opt.value)}
                                                                                                         className="w-4 h-4 text-brand-600 focus:ring-brand-500 focus:ring-2"
                                                                                                     />
-                                                                                                    <span className="text-sm font-medium">{opt.label}</span>
+                                                                                                    <span className="min-w-0">
+                                                                                                        <span className="text-sm font-medium">{opt.label}</span>
+                                                                                                        {opt.hint ? (
+                                                                                                            <span className="block text-[10px] font-normal text-slate-500 dark:text-slate-400 leading-tight">
+                                                                                                                {opt.hint}
+                                                                                                            </span>
+                                                                                                        ) : null}
+                                                                                                    </span>
                                                                                                 </label>
                                                                                             );
                                                                                         })}

@@ -15,7 +15,7 @@ import { isInfoContentEnabled, isNotesTooltipEnabled } from '../utils/linkFeatur
 import { LinkTooltipStyleToggle } from './LinkTooltipStyleToggle';
 import { HoverTooltipEditor } from './HoverTooltipEditor';
 import { normalizeLinkTooltipStyle, type LinkTooltipStyle } from '../utils/linkTooltipPreference';
-import { normalizeLinkOpenTarget } from '../utils/openLinkUrl';
+import { LINK_OPEN_TARGET_OPTIONS, normalizeLinkOpenTarget } from '../utils/openLinkUrl';
 
 interface MobileTileEditProps {
     tile: Tile;
@@ -1190,10 +1190,11 @@ export const MobileTileEdit: React.FC<MobileTileEditProps> = ({
                                                                         className="w-full bg-white dark:bg-slate-900 border-2 border-slate-200 dark:border-slate-700 rounded-lg px-3 py-2.5 text-sm text-slate-900 dark:text-white focus:border-brand-500 focus:outline-none focus:ring-2 focus:ring-brand-500/50"
                                                                         style={{ minHeight: '44px' }}
                                                                     >
-                                                                        <option value="same">Same window</option>
-                                                                        <option value="tab">New tab</option>
-                                                                        <option value="window">New window</option>
-                                                                        <option value="private">InPrivate / Incognito</option>
+                                                                        {LINK_OPEN_TARGET_OPTIONS.map((opt) => (
+                                                                            <option key={opt.value} value={opt.value}>
+                                                                                {opt.hint ? `${opt.label} (${opt.hint})` : opt.label}
+                                                                            </option>
+                                                                        ))}
                                                                     </select>
                                                                 </div>
                                                                 <div>
@@ -1509,10 +1510,11 @@ export const MobileTileEdit: React.FC<MobileTileEditProps> = ({
                                                                                             className="w-full bg-white dark:bg-slate-900 border-2 border-slate-200 dark:border-slate-700 rounded-lg px-3 py-2.5 text-sm text-slate-900 dark:text-white focus:border-brand-500 focus:outline-none focus:ring-2 focus:ring-brand-500/50"
                                                                                             style={{ minHeight: '44px' }}
                                                                                         >
-                                                                                            <option value="same">Same window</option>
-                                                                                            <option value="tab">New tab</option>
-                                                                                            <option value="window">New window</option>
-                                                                                            <option value="private">InPrivate / Incognito</option>
+                                                                                            {LINK_OPEN_TARGET_OPTIONS.map((opt) => (
+                                                                                                <option key={opt.value} value={opt.value}>
+                                                                                                    {opt.hint ? `${opt.label} (${opt.hint})` : opt.label}
+                                                                                                </option>
+                                                                                            ))}
                                                                                         </select>
                                                                                     </div>
                                                                                     <div>

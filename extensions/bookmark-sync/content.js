@@ -5,8 +5,8 @@
  * Only allowlisted origins receive replies; postMessage uses this page's origin (not *).
  */
 (function () {
-  const VERSION = '1.8.4';
-  const FEATURES = ['bookmarks', 'bookmarksWrite', 'bookmarksPreview', 'bookmarksBackup', 'incognito'];
+  const VERSION = '1.8.5';
+  const FEATURES = ['bookmarks', 'bookmarksWrite', 'bookmarksPreview', 'bookmarksBackup', 'incognito', 'newWindow'];
   const RELOAD_MSG =
     'Extension was reloaded. Refresh this page, then try Sync or OutSync again.';
   const MAX_PUSH_BOOKMARKS = 5000;
@@ -15,6 +15,16 @@
   const DEFAULT_ROOT_FOLDER = 'LinkNest';
   const OPEN_INCOGNITO_HINT =
     'Enable “Allow in Incognito” for LinkNest Bookmark Sync in chrome://extensions (or edge://extensions), then try again.';
+
+  try {
+    window.LinkNestBookmarkSyncExtension = {
+      available: true,
+      version: VERSION,
+      features: FEATURES
+    };
+  } catch (_err) {
+    /* ignore */
+  }
 
   function isContextValid() {
     try {
@@ -190,12 +200,19 @@
         if (type === 'BROWSER_LAUNCHER_OPEN') {
           const options = event.data.options || {};
           const inPrivate = !!(options.inPrivate || options.incognito || options.private);
+          const newWindow = !!(options.newWindow || options.fullWindow || options.windowType === 'normal');
           const rawUrl = String(event.data.url || '').trim();
-          if (!inPrivate) {
+          let absUrl = rawUrl;
+          try {
+            absUrl = new URL(rawUrl, pageOrigin() || undefined).href;
+          } catch (_err) {
+            /* keep rawUrl */
+          }
+          if (!inPrivate && !newWindow) {
             replyOpen(
               timestamp,
               false,
-              'LinkNest Bookmark Sync opens links in Incognito / InPrivate only. Install Browser Launcher Pro to open in other browsers.'
+              'LinkNest Bookmark Sync opens links in Incognito / InPrivate or a full browser window only. Install Browser Launcher Pro to open in other browsers.'
             );
             return;
           }
@@ -204,33 +221,44 @@
             return;
           }
           try {
-            const parsed = new URL(rawUrl);
+            const parsed = new URL(absUrl);
             if (parsed.protocol !== 'http:' && parsed.protocol !== 'https:') {
-              replyOpen(timestamp, false, 'Only http(s) URLs can open in Incognito / InPrivate');
+              replyOpen(timestamp, false, 'Only http(s) URLs can open this way');
               return;
             }
+            absUrl = parsed.href;
           } catch (_err) {
             replyOpen(timestamp, false, 'Invalid URL');
             return;
           }
+          const action = inPrivate ? 'openInIncognito' : 'openInBrowserWindow';
           chrome.runtime.sendMessage(
-            { action: 'openInIncognito', url: rawUrl },
+            { action: action, url: absUrl, inPrivate: inPrivate, newWindow: newWindow },
             function (response) {
               if (!isContextValid()) {
                 replyOpen(timestamp, false, RELOAD_MSG);
                 return;
               }
               if (chrome.runtime.lastError) {
-                replyOpen(timestamp, false, chrome.runtime.lastError.message || OPEN_INCOGNITO_HINT);
+                replyOpen(
+                  timestamp,
+                  false,
+                  chrome.runtime.lastError.message || (inPrivate ? OPEN_INCOGNITO_HINT : 'Failed to open browser window')
+                );
                 return;
               }
               if (response && response.success) {
-                replyOpen(timestamp, true, undefined, response.message || 'Opened in Incognito / InPrivate');
+                replyOpen(
+                  timestamp,
+                  true,
+                  undefined,
+                  response.message || (inPrivate ? 'Opened in Incognito / InPrivate' : 'Opened in a full browser window')
+                );
               } else {
                 replyOpen(
                   timestamp,
                   false,
-                  (response && response.error) || OPEN_INCOGNITO_HINT
+                  (response && response.error) || (inPrivate ? OPEN_INCOGNITO_HINT : 'Failed to open a full browser window')
                 );
               }
             }

@@ -126,7 +126,7 @@
  * 
  * @param {string} url - The URL to open
  * @param {string} browserId - Browser ID (e.g., 'chrome-stable', 'edge-beta')
- * @param {Object} options - Optional settings (fallback, inPrivate / incognito)
+ * @param {Object} options - Optional settings (fallback, inPrivate / incognito, newWindow)
  * @param {function} callback - Optional callback function
  * @returns {Promise} Promise that resolves when the operation completes
  */

@@ -39,7 +39,9 @@ try {
     $includedPaths = [];
 }
 
-// Bust service-worker caches on every packaged deploy.
+// Bust service-worker caches on every packaged deploy and every local frontend
+// rebuild. BUILD_INFO can remain unchanged during `npm run build`, so include
+// the generated entry HTML hash to prevent stale JavaScript from surviving.
 $cacheVersion = 'v2';
 $buildInfoPath = __DIR__ . '/BUILD_INFO.json';
 if (is_file($buildInfoPath)) {
@@ -49,6 +51,14 @@ if (is_file($buildInfoPath)) {
     }
 } elseif (is_file($script)) {
     $cacheVersion = 'src-' . (string) filemtime($script);
+}
+
+$distIndexPath = __DIR__ . '/dist/index.html';
+if (is_file($distIndexPath)) {
+    $distHash = substr((string) hash_file('sha256', $distIndexPath), 0, 12);
+    if ($distHash !== '') {
+        $cacheVersion .= '-' . $distHash;
+    }
 }
 
 $js = file_get_contents($script);

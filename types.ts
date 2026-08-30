@@ -22,7 +22,7 @@ export interface LinkHealth {
 export type LinkVisibility = 'public' | 'authenticated' | 'private';
 
 /** How a link opens when clicked. Default (missing) is `tab` (current behavior). */
-export type LinkOpenTarget = 'same' | 'tab' | 'window' | 'private';
+export type LinkOpenTarget = 'same' | 'tab' | 'window' | 'browser' | 'private';
 export type TileVisibility = 'public' | 'authenticated' | 'private';
 
 export type AccessRestrictionMode = 'allow' | 'deny';
@@ -95,7 +95,7 @@ export interface Link {
   visibleFrom?: string; // ISO date string - link becomes visible from this date/time
   expiresAt?: string; // ISO date string - link expires at this date/time
   browser?: string; // Browser to open link in (e.g., 'chrome-stable', 'edge-stable', 'default')
-  /** Where to open the URL: same window, new tab (default), separate window, or InPrivate/Incognito. */
+  /** Where to open the URL: same window, new tab (default), compact popup, full browser window, or InPrivate/Incognito. */
   openTarget?: LinkOpenTarget;
   isFavorite?: boolean; // Whether this link is favorited by the current user
   hasRoleAccess?: boolean; // Whether this link is accessible via user roles

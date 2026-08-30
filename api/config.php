@@ -863,7 +863,7 @@ function persistLinkTooltipStyle(PDO $db, string $linkId, $source): void {
     $stmt->execute([linkTooltipStyleFromSource($source), $linkId]);
 }
 
-/** Per-link open target: same window, new tab (default), or separate browser window. */
+/** Per-link open target: same window, new tab (default), compact popup, full browser window, or InPrivate. */
 function ensureLinkOpenTargetColumn(PDO $db): void {
     static $ensured = false;
     if ($ensured) {
@@ -886,7 +886,7 @@ function ensureLinkOpenTargetColumn(PDO $db): void {
 }
 
 function normalizeLinkOpenTarget($value): string {
-    if ($value === 'same' || $value === 'window' || $value === 'private') {
+    if ($value === 'same' || $value === 'window' || $value === 'browser' || $value === 'private') {
         return $value;
     }
     return 'tab';
