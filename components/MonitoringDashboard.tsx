@@ -566,6 +566,8 @@ export const MonitoringDashboard: React.FC = () => {
         to: new Date().toISOString().slice(0, 16)
     });
     const [isLogsLoading, setIsLogsLoading] = useState(false);
+    const [purgeKeepDays, setPurgeKeepDays] = useState<0 | 1 | 7 | 30 | 365>(30);
+    const [isPurgingLogs, setIsPurgingLogs] = useState(false);
     const [checkingId, setCheckingId] = useState<number | null>(null);
     const [viewMode, setViewMode] = useState<'tiles' | 'grid' | 'compact' | 'capsule' | 'status-bar' | 'status-board' | 'kanban' | 'timeline'>(() => {
         const saved = localStorage.getItem('linknest_monitor_view_mode');
@@ -2470,6 +2472,38 @@ export const MonitoringDashboard: React.FC = () => {
         link.click();
         document.body.removeChild(link);
         URL.revokeObjectURL(url);
+    };
+
+    const handlePurgeHistory = async () => {
+        if (!viewingLogsMonitor || !isAdmin) return;
+        const keepLabels: Record<number, string> = {
+            0: 'ALL history',
+            1: 'last 1 day',
+            7: 'last 1 week',
+            30: 'last 1 month',
+            365: 'last 1 year',
+        };
+        const scopeLabel =
+            purgeKeepDays === 0
+                ? `Purge ALL history for "${viewingLogsMonitor.name}"`
+                : `Keep ${keepLabels[purgeKeepDays]} and permanently delete older checks for "${viewingLogsMonitor.name}"`;
+        if (!confirm(`${scopeLabel}?\n\nThis cannot be undone.`)) {
+            return;
+        }
+        try {
+            setIsPurgingLogs(true);
+            const result = await monitoringService.purgeMonitorLogs(viewingLogsMonitor.id, purgeKeepDays);
+            alert(
+                `Purged ${result.deleted_count} check${result.deleted_count === 1 ? '' : 's'}.`
+            );
+            setDetailDayKey(null);
+            await fetchLogs(viewingLogsMonitor.id, logFilter);
+        } catch (error) {
+            console.error('Failed to purge monitor logs', error);
+            alert(error instanceof Error ? error.message : 'Failed to purge monitor logs');
+        } finally {
+            setIsPurgingLogs(false);
+        }
     };
 
     const handleMoveMonitor = async (id: number, updates: { tab_name?: string, group_name?: string }) => {
@@ -4867,6 +4901,34 @@ export const MonitoringDashboard: React.FC = () => {
                                 </div>
                             </div>
                             <div className="flex items-center gap-3">
+                                {isAdmin && (
+                                    <>
+                                        <select
+                                            value={purgeKeepDays}
+                                            onChange={(e) => setPurgeKeepDays(Number(e.target.value) as 0 | 1 | 7 | 30 | 365)}
+                                            disabled={isPurgingLogs || isLogsLoading}
+                                            className="bg-slate-100 dark:bg-[#252525] border border-slate-200 dark:border-[#333] rounded-xl px-3 py-1.5 text-xs font-bold text-slate-700 dark:text-slate-200 disabled:opacity-50 focus:outline-none focus:ring-2 focus:ring-rose-400/50"
+                                            title="Purge retention"
+                                        >
+                                            <option value={1}>Keep last 1 day</option>
+                                            <option value={7}>Keep last 1 week</option>
+                                            <option value={30}>Keep last 1 month</option>
+                                            <option value={365}>Keep last 1 year</option>
+                                            <option value={0}>Purge all</option>
+                                        </select>
+                                        <button
+                                            type="button"
+                                            onClick={() => void handlePurgeHistory()}
+                                            disabled={isPurgingLogs || isLogsLoading}
+                                            className="inline-flex items-center gap-2 px-3 py-1.5 rounded-xl text-xs font-bold text-white bg-rose-600 hover:bg-rose-500 disabled:opacity-50 transition-all shadow-sm"
+                                            title="Permanently delete uptime history for this monitor"
+                                        >
+                                            <FaTrash size={11} />
+                                            {isPurgingLogs ? 'Purging…' : 'Purge'}
+                                        </button>
+                                        <div className="h-6 w-px bg-slate-200 dark:bg-slate-700 mx-1"></div>
+                                    </>
+                                )}
                                 <button
                                     onClick={() => viewingLogsMonitor && fetchLogs(viewingLogsMonitor.id, logFilter)}
                                     className="p-2 bg-slate-100 dark:bg-[#252525] hover:bg-slate-200 dark:hover:bg-[#333] rounded-xl transition-all text-slate-500 hover:text-blue-500"

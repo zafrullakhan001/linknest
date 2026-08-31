@@ -1,7 +1,33 @@
-import React, { useState, useEffect, useRef } from 'react';
+import React, { useState, useEffect, useLayoutEffect, useRef, useCallback } from 'react';
 import { Monitorv2, Monitorv2NotificationRule, monitorv2Service } from '../services/monitorv2Service';
 import { FaPlus, FaTrash, FaClock, FaEnvelope, FaTimes, FaSave } from 'react-icons/fa';
 import { MonitorQuickToggles } from './MonitorTogglePill';
+
+/** App applies `html { zoom }`; dialog geometry must use layout coords (Task Scheduler / float-panel fix). */
+function getCssZoom(): number {
+    const raw = getComputedStyle(document.documentElement).zoom;
+    const z = raw && raw !== 'normal' ? Number.parseFloat(raw) : 1;
+    return Number.isFinite(z) && z > 0 ? z : 1;
+}
+
+function getLayoutViewport() {
+    const vv = window.visualViewport;
+    const zoom = getCssZoom();
+    return {
+        width: (vv?.width ?? window.innerWidth) / zoom,
+        height: (vv?.height ?? window.innerHeight) / zoom,
+    };
+}
+
+const VIEWPORT_EDGE_PAD = 48;
+
+function clampModalPos(x: number, y: number, width: number, height: number): { x: number; y: number } {
+    const { width: vw, height: vh } = getLayoutViewport();
+    return {
+        x: Math.min(vw - VIEWPORT_EDGE_PAD, Math.max(VIEWPORT_EDGE_PAD - width, x)),
+        y: Math.min(vh - VIEWPORT_EDGE_PAD, Math.max(8, y)),
+    };
+}
 
 interface Monitorv2FormProps {
     monitor?: Monitorv2 | null;
@@ -40,24 +66,42 @@ export const Monitorv2Form: React.FC<Monitorv2FormProps> = ({ monitor, onSave, o
     const [users, setUsers] = useState<{id: number, username: string, email: string}[]>([]);
     const [loadingUsers, setLoadingUsers] = useState(false);
 
-    // Draggable modal (match Monitoring tab)
+    // Draggable modal — zoom-aware pointer delta (same as Task Scheduler float panels)
     const [position, setPosition] = useState({ x: 0, y: 0 });
     const [isDragging, setIsDragging] = useState(false);
-    const dragOffset = useRef({ x: 0, y: 0 });
     const modalRef = useRef<HTMLDivElement>(null);
+    const posRef = useRef({ x: 0, y: 0 });
+    const dragStartRef = useRef<{ x: number; y: number; posX: number; posY: number } | null>(null);
+    const dragCleanupRef = useRef<(() => void) | null>(null);
     const isInitialized = useRef(false);
     const monitorFormRef = useRef<HTMLFormElement>(null);
 
-    // Initialize position on mount
+    useLayoutEffect(() => {
+        if (isInitialized.current || !modalRef.current) return;
+        const el = modalRef.current;
+        const { width: vw, height: vh } = getLayoutViewport();
+        const w = el.offsetWidth || Math.min(672, vw - 40);
+        const h = el.offsetHeight || Math.min(vh * 0.9, vh - 40);
+        const next = clampModalPos((vw - w) / 2, (vh - h) / 2, w, h);
+        posRef.current = next;
+        setPosition(next);
+        isInitialized.current = true;
+    }, []);
+
     useEffect(() => {
-        if (!isInitialized.current && modalRef.current) {
-            const rect = modalRef.current.getBoundingClientRect();
-            setPosition({
-                x: (window.innerWidth - rect.width) / 2,
-                y: (window.innerHeight - rect.height) / 2
-            });
-            isInitialized.current = true;
-        }
+        const reclamp = () => {
+            const el = modalRef.current;
+            if (!el || !isInitialized.current) return;
+            const next = clampModalPos(posRef.current.x, posRef.current.y, el.offsetWidth, el.offsetHeight);
+            posRef.current = next;
+            setPosition(next);
+        };
+        window.addEventListener('resize', reclamp);
+        window.visualViewport?.addEventListener('resize', reclamp);
+        return () => {
+            window.removeEventListener('resize', reclamp);
+            window.visualViewport?.removeEventListener('resize', reclamp);
+        };
     }, []);
 
     // Close on ESC
@@ -72,42 +116,61 @@ export const Monitorv2Form: React.FC<Monitorv2FormProps> = ({ monitor, onSave, o
         return () => window.removeEventListener('keydown', onKeyDown);
     }, [onCancel]);
 
-    // Handle drag start
-    const handleMouseDown = (e: React.MouseEvent) => {
-        if ((e.target as HTMLElement).closest('button')) return;
-        if (modalRef.current && (e.target as HTMLElement).closest('[data-drag-handle]')) {
-            e.preventDefault();
-            e.stopPropagation();
-            const rect = modalRef.current.getBoundingClientRect();
-            dragOffset.current = { x: e.clientX - rect.left, y: e.clientY - rect.top };
-            setPosition({ x: rect.left, y: rect.top });
-            setIsDragging(true);
-        }
-    };
+    const beginDragFromPointer = useCallback((e: React.PointerEvent) => {
+        if (e.button !== 0) return;
+        if ((e.target as HTMLElement).closest('button, a, input, select, textarea, label')) return;
+        e.preventDefault();
+        e.stopPropagation();
 
-    useEffect(() => {
-        const handleMouseMove = (e: MouseEvent) => {
-            if (isDragging) {
-                setPosition({
-                    x: e.clientX - dragOffset.current.x,
-                    y: e.clientY - dragOffset.current.y
-                });
-            }
-        };
-        const handleMouseUp = () => setIsDragging(false);
-        if (isDragging) {
-            document.addEventListener('mousemove', handleMouseMove);
-            document.addEventListener('mouseup', handleMouseUp);
-            document.body.style.cursor = 'grabbing';
-            document.body.style.userSelect = 'none';
-            return () => {
-                document.removeEventListener('mousemove', handleMouseMove);
-                document.removeEventListener('mouseup', handleMouseUp);
-                document.body.style.cursor = '';
-                document.body.style.userSelect = '';
-            };
+        dragCleanupRef.current?.();
+        dragCleanupRef.current = null;
+
+        const current = posRef.current;
+        dragStartRef.current = { x: e.clientX, y: e.clientY, posX: current.x, posY: current.y };
+        setIsDragging(true);
+        try {
+            e.currentTarget.setPointerCapture(e.pointerId);
+        } catch {
+            /* ignore */
         }
-    }, [isDragging]);
+
+        const onMove = (ev: PointerEvent) => {
+            const start = dragStartRef.current;
+            if (!start) return;
+            const z = getCssZoom();
+            if (ev.cancelable) ev.preventDefault();
+            const el = modalRef.current;
+            const w = el?.offsetWidth || 672;
+            const h = el?.offsetHeight || 400;
+            const next = clampModalPos(
+                start.posX + (ev.clientX - start.x) / z,
+                start.posY + (ev.clientY - start.y) / z,
+                w,
+                h,
+            );
+            posRef.current = next;
+            setPosition(next);
+        };
+        const onUp = () => {
+            dragCleanupRef.current?.();
+            dragCleanupRef.current = null;
+            dragStartRef.current = null;
+            setIsDragging(false);
+        };
+
+        window.addEventListener('pointermove', onMove, { capture: true, passive: false });
+        window.addEventListener('pointerup', onUp, { capture: true });
+        window.addEventListener('pointercancel', onUp, { capture: true });
+        dragCleanupRef.current = () => {
+            window.removeEventListener('pointermove', onMove, { capture: true });
+            window.removeEventListener('pointerup', onUp, { capture: true });
+            window.removeEventListener('pointercancel', onUp, { capture: true });
+        };
+    }, []);
+
+    useEffect(() => () => {
+        dragCleanupRef.current?.();
+    }, []);
 
     useEffect(() => {
         if (monitor) {
@@ -221,8 +284,9 @@ export const Monitorv2Form: React.FC<Monitorv2FormProps> = ({ monitor, onSave, o
                 {/* Draggable Header - match Monitoring tab */}
                 <div
                     data-drag-handle
-                    className={`px-6 py-4 border-b border-gray-200 flex items-center justify-between bg-gray-50 ${isDragging ? 'cursor-grabbing' : 'cursor-grab'}`}
-                    onMouseDown={handleMouseDown}
+                    className={`px-6 py-4 border-b border-gray-200 flex items-center justify-between bg-gray-50 select-none touch-none ${isDragging ? 'cursor-grabbing' : 'cursor-grab'}`}
+                    onPointerDown={beginDragFromPointer}
+                    title="Drag to move"
                 >
                     <h2 className="text-xl font-semibold text-gray-800">
                         {(monitor?.id && !isAddingNew) ? 'Edit Monitor' : 'Add New Monitor'}
@@ -764,6 +828,24 @@ export const Monitorv2Form: React.FC<Monitorv2FormProps> = ({ monitor, onSave, o
                         )}
                     </div>
                 )}
+
+                {/* Bottom drag strip — reachable if the header is off-screen */}
+                <div
+                    onPointerDown={beginDragFromPointer}
+                    className={`shrink-0 h-7 cursor-grab active:cursor-grabbing select-none touch-none flex items-center justify-center gap-1.5 border-t border-gray-200 ${
+                        isDragging
+                            ? 'bg-sky-100/90'
+                            : 'bg-slate-50/95 hover:bg-slate-100'
+                    }`}
+                    title="Drag to move"
+                    role="presentation"
+                >
+                    <span className="w-8 h-1 rounded-full bg-slate-300" aria-hidden />
+                    <span className="text-[10px] font-medium text-slate-400 uppercase tracking-wide">
+                        Drag
+                    </span>
+                    <span className="w-8 h-1 rounded-full bg-slate-300" aria-hidden />
+                </div>
             </div>
         </div>
     );

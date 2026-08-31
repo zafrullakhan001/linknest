@@ -102,6 +102,8 @@ switch ($method) {
             handleCheckAllMonitors();
         } elseif (preg_match('/^\/(\d+)\/check$/', $path, $matches)) {
             handleCheckMonitor($matches[1]);
+        } elseif (preg_match('/^\/(\d+)\/logs\/purge$/', $path, $matches)) {
+            handlePurgeMonitorLogs($matches[1]);
         } elseif (preg_match('/^\/(\d+)\/duplicate$/', $path, $matches)) {
             handleDuplicateMonitor($matches[1]);
         } elseif ($path === '/suggest') {
@@ -1739,6 +1741,49 @@ function handleDeleteMonitor($id) {
     }
 }
 
+function handlePurgeMonitorLogs($id) {
+    requireAdmin();
+    $db = getDB();
+    $id = (int)$id;
+
+    $stmt = $db->prepare('SELECT id, name FROM monitors WHERE id = ?');
+    $stmt->execute([$id]);
+    $monitor = $stmt->fetch(PDO::FETCH_ASSOC);
+    if (!$monitor) {
+        sendJSON(['error' => 'Monitor not found'], 404);
+        return;
+    }
+
+    $data = json_decode(file_get_contents('php://input'), true);
+    if (!is_array($data)) {
+        $data = [];
+    }
+    $keepDays = isset($data['keep_days']) ? (int)$data['keep_days'] : -1;
+    $allowed = [0, 1, 7, 30, 365];
+    if (!in_array($keepDays, $allowed, true)) {
+        sendJSON(['error' => 'keep_days must be one of: 0, 1, 7, 30, 365'], 400);
+        return;
+    }
+
+    try {
+        if ($keepDays === 0) {
+            $del = $db->prepare('DELETE FROM monitor_logs WHERE monitor_id = ?');
+            $del->execute([$id]);
+        } else {
+            $cutoff = time() - ($keepDays * 24 * 60 * 60);
+            $del = $db->prepare('DELETE FROM monitor_logs WHERE monitor_id = ? AND checked_at < ?');
+            $del->execute([$id, $cutoff]);
+        }
+        $deletedCount = (int)$del->rowCount();
+        sendJSON([
+            'deleted_count' => $deletedCount,
+            'keep_days' => $keepDays,
+        ]);
+    } catch (PDOException $e) {
+        sendJSON(['error' => 'Database error: ' . $e->getMessage()], 500);
+    }
+}
+
 function handleGetMonitorLogs($id) {
     $db = getDB();
     $user = getAuthUserFromGlobals();
@@ -1748,12 +1793,6 @@ function handleGetMonitorLogs($id) {
     if (!$monitor) {
         sendJSON(['error' => 'Monitor not found'], 404);
         return;
-    }
-    
-    // Clean up old logs (keep last 30 days)
-    $thirtyDaysAgo = time() - (30 * 24 * 60 * 60);
-    if (rand(1, 100) <= 5) {
-        $db->exec("DELETE FROM monitor_logs WHERE checked_at < $thirtyDaysAgo");
     }
     
     $days = isset($_GET['days']) ? (int)$_GET['days'] : null;

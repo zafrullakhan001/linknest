@@ -147,6 +147,8 @@ switch ($method) {
             handleCreateMonitor();
         } elseif (preg_match('/^\/(\d+)\/check$/', $path, $matches)) {
             handleCheckMonitor((int)$matches[1]);
+        } elseif (preg_match('/^\/(\d+)\/logs\/purge$/', $path, $matches)) {
+            handlePurgeMonitorLogs((int)$matches[1]);
         } elseif ($path === '/check-all') {
             handleCheckAllMonitors();
         } elseif (preg_match('/^\/(\d+)\/duplicate$/', $path, $matches)) {
@@ -603,6 +605,60 @@ function handleDeleteAllMonitors() {
         
     } catch (PDOException $e) {
         error_log("Monitorv2 delete all error: " . $e->getMessage());
+        sendJSON(['error' => 'Database error: ' . $e->getMessage()], 500);
+    }
+}
+
+function handlePurgeMonitorLogs($id) {
+    if (!isMonitorv2Admin()) {
+        sendJSON(['error' => 'Admin access required'], 403);
+        return;
+    }
+    $db = requireMonitorv2DB();
+    $id = (int)$id;
+
+    try {
+        $stmt = $db->prepare('SELECT id, name FROM zmonitoring.monitors WHERE id = :id');
+        $stmt->execute([':id' => $id]);
+        $monitor = $stmt->fetch(PDO::FETCH_ASSOC);
+        if (!$monitor) {
+            sendJSON(['error' => 'Monitor not found'], 404);
+            return;
+        }
+
+        $data = json_decode(file_get_contents('php://input'), true);
+        if (!is_array($data)) {
+            $data = [];
+        }
+        $keepDays = isset($data['keep_days']) ? (int)$data['keep_days'] : -1;
+        $allowed = [0, 1, 7, 30, 365];
+        if (!in_array($keepDays, $allowed, true)) {
+            sendJSON(['error' => 'keep_days must be one of: 0, 1, 7, 30, 365'], 400);
+            return;
+        }
+
+        if ($keepDays === 0) {
+            $del = $db->prepare('DELETE FROM zmonitoring.monitor_checks WHERE monitor_id = :monitor_id');
+            $del->execute([':monitor_id' => $id]);
+        } else {
+            $cutoff = time() - ($keepDays * 24 * 60 * 60);
+            $del = $db->prepare('
+                DELETE FROM zmonitoring.monitor_checks
+                WHERE monitor_id = :monitor_id
+                  AND checked_at < to_timestamp(:cutoff)
+            ');
+            $del->execute([
+                ':monitor_id' => $id,
+                ':cutoff' => $cutoff,
+            ]);
+        }
+        $deletedCount = (int)$del->rowCount();
+        sendJSON([
+            'deleted_count' => $deletedCount,
+            'keep_days' => $keepDays,
+        ]);
+    } catch (PDOException $e) {
+        error_log("Monitorv2 purge logs error: " . $e->getMessage());
         sendJSON(['error' => 'Database error: ' . $e->getMessage()], 500);
     }
 }
