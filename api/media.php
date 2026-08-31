@@ -45,8 +45,12 @@ try {
             mediaHandleBatchTransform($db);
         } elseif ($path === '/batch-trash') {
             mediaHandleBatchTrash($db);
+        } elseif ($path === '/undo-remove-bg') {
+            mediaHandleUndoRemoveBg($db);
         } elseif (preg_match('#^/(\d+)/transform$#', $path, $m)) {
             mediaHandleTransform($db, (int)$m[1]);
+        } elseif (preg_match('#^/(\d+)/undo-remove-bg$#', $path, $m)) {
+            mediaHandleUndoRemoveBgOne($db, (int)$m[1]);
         } else {
             sendJSON(['error' => 'Not found'], 404);
         }
@@ -572,6 +576,54 @@ function mediaHandleBatchTransform(PDO $db): void {
         'data' => $results,
         'errors' => $errors,
         'transformed' => count($results),
+        'undoRemoveBg' => !empty($input['removeBackground']),
+    ]);
+}
+
+function mediaHandleUndoRemoveBgOne(PDO $db, int $id): void {
+    requireAdmin();
+    try {
+        $result = mediaRestoreRemoveBgUndo($db, $id);
+        sendJSON(['data' => $result]);
+    } catch (Throwable $e) {
+        $code = str_contains($e->getMessage(), 'not found') || str_contains($e->getMessage(), 'No remove-background')
+            ? 404
+            : 400;
+        sendJSON(['error' => $e->getMessage()], $code);
+    }
+}
+
+function mediaHandleUndoRemoveBg(PDO $db): void {
+    requireAdmin();
+    $input = json_decode(file_get_contents('php://input') ?: '{}', true) ?: [];
+    $ids = $input['ids'] ?? [];
+    if (!is_array($ids) || empty($ids)) {
+        sendJSON(['error' => 'ids array is required'], 400);
+    }
+    $results = [];
+    $errors = [];
+    foreach ($ids as $id) {
+        $id = (int)$id;
+        try {
+            $results[] = mediaRestoreRemoveBgUndo($db, $id);
+        } catch (Throwable $e) {
+            $errors[] = ['id' => $id, 'error' => $e->getMessage()];
+        }
+    }
+    if (empty($results) && !empty($errors)) {
+        sendJSON([
+            'success' => false,
+            'error' => $errors[0]['error'],
+            'data' => [],
+            'errors' => $errors,
+            'restored' => 0,
+        ], 400);
+    }
+    sendJSON([
+        'success' => empty($errors) || !empty($results),
+        'data' => $results,
+        'errors' => $errors,
+        'restored' => count($results),
     ]);
 }
 

@@ -8,7 +8,7 @@ import { MediaLightbox } from './MediaLightbox';
 interface MediaImageEditorProps {
   file: MediaFile;
   onClose: () => void;
-  onSaved: (file: MediaFile) => void;
+  onSaved: (file: MediaFile, meta?: { undoRemoveBg?: boolean }) => void;
 }
 
 function formatFromFile(file: MediaFile): 'png' | 'jpg' | 'webp' {
@@ -243,7 +243,7 @@ export const MediaImageEditor: React.FC<MediaImageEditorProps> = ({ file, onClos
       }).catch(() => {});
       // #endregion
       const saved = await transformMediaFile(file.id, opts);
-      onSaved(saved);
+      onSaved(saved, { undoRemoveBg: !!(removeBackground && replace) });
       onClose();
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Transform failed');

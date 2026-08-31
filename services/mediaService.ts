@@ -193,7 +193,12 @@ export async function transformMediaFile(id: number, options: MediaTransformOpti
 export async function batchTransformMediaFiles(
   ids: number[],
   options: MediaTransformOptions
-): Promise<{ data: MediaFile[]; errors: Array<{ id: number; error: string }>; transformed: number }> {
+): Promise<{
+  data: MediaFile[];
+  errors: Array<{ id: number; error: string }>;
+  transformed: number;
+  undoRemoveBg?: boolean;
+}> {
   const res = await fetch(`${getApiBase()}/media/batch-transform`, {
     method: 'POST',
     credentials: 'include',
@@ -206,6 +211,7 @@ export async function batchTransformMediaFiles(
     transformed?: number;
     error?: string;
     success?: boolean;
+    undoRemoveBg?: boolean;
   }>(res);
   if (!res.ok && data.error && !(data.errors && data.errors.length)) {
     throw new Error(data.error);
@@ -214,6 +220,33 @@ export async function batchTransformMediaFiles(
     data: data.data || [],
     errors: data.errors || [],
     transformed: data.transformed ?? (data.data?.length || 0),
+    undoRemoveBg: !!data.undoRemoveBg,
+  };
+}
+
+/** Restore pre-remove-background backups for the given media file ids. */
+export async function undoRemoveBackgroundMedia(
+  ids: number[]
+): Promise<{ data: MediaFile[]; errors: Array<{ id: number; error: string }>; restored: number }> {
+  const res = await fetch(`${getApiBase()}/media/undo-remove-bg`, {
+    method: 'POST',
+    credentials: 'include',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ ids }),
+  });
+  const data = await parseJson<{
+    data?: MediaFile[];
+    errors?: Array<{ id: number; error: string }>;
+    restored?: number;
+    error?: string;
+  }>(res);
+  if (!res.ok && data.error && !(data.errors && data.errors.length)) {
+    throw new Error(data.error);
+  }
+  return {
+    data: data.data || [],
+    errors: data.errors || [],
+    restored: data.restored ?? (data.data?.length || 0),
   };
 }
 

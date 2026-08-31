@@ -116,6 +116,144 @@ function mediaTrashDir(): string {
     return $dir;
 }
 
+/** Sidecar backups for undo-after-remove-background (not publicly listed). */
+function mediaUndoDir(): string {
+    $dir = mediaUploadsDir() . DIRECTORY_SEPARATOR . '.media_undo';
+    if (!is_dir($dir)) {
+        @mkdir($dir, 0755, true);
+    }
+    return $dir;
+}
+
+/**
+ * Snapshot the pre-remove-background file so replace can be undone.
+ *
+ * @param array<string,mixed> $meta
+ */
+function mediaSaveRemoveBgUndo(int $fileId, string $srcPath, array $meta): void {
+    if ($fileId <= 0 || !is_file($srcPath)) {
+        return;
+    }
+    $dir = mediaUndoDir();
+    $bin = $dir . DIRECTORY_SEPARATOR . $fileId . '.bin';
+    $json = $dir . DIRECTORY_SEPARATOR . $fileId . '.json';
+    if (!@copy($srcPath, $bin)) {
+        return;
+    }
+    $meta['fileId'] = $fileId;
+    $meta['savedAt'] = time();
+    @file_put_contents($json, json_encode($meta, JSON_UNESCAPED_SLASHES));
+}
+
+function mediaClearRemoveBgUndo(int $fileId): void {
+    $dir = mediaUndoDir();
+    @unlink($dir . DIRECTORY_SEPARATOR . $fileId . '.bin');
+    @unlink($dir . DIRECTORY_SEPARATOR . $fileId . '.json');
+}
+
+function mediaHasRemoveBgUndo(int $fileId): bool {
+    $dir = mediaUndoDir();
+    return is_file($dir . DIRECTORY_SEPARATOR . $fileId . '.bin')
+        && is_file($dir . DIRECTORY_SEPARATOR . $fileId . '.json');
+}
+
+/**
+ * Restore the file bytes + DB row from the last remove-background backup.
+ *
+ * @return array<string,mixed> Mapped media file row
+ */
+function mediaRestoreRemoveBgUndo(PDO $db, int $fileId): array {
+    $dir = mediaUndoDir();
+    $bin = $dir . DIRECTORY_SEPARATOR . $fileId . '.bin';
+    $jsonPath = $dir . DIRECTORY_SEPARATOR . $fileId . '.json';
+    if (!is_file($bin) || !is_file($jsonPath)) {
+        throw new RuntimeException('No remove-background undo available for this file');
+    }
+    $meta = json_decode((string)file_get_contents($jsonPath), true);
+    if (!is_array($meta) || empty($meta['storedName'])) {
+        throw new RuntimeException('Invalid remove-background undo data');
+    }
+
+    $stmt = $db->prepare('SELECT * FROM media_files WHERE id = ?');
+    $stmt->execute([$fileId]);
+    $row = $stmt->fetch(PDO::FETCH_ASSOC);
+    if (!$row) {
+        throw new RuntimeException('File not found');
+    }
+    if ((string)$row['status'] === 'trash') {
+        throw new RuntimeException('Cannot undo a trashed file');
+    }
+
+    $restoreName = basename((string)$meta['storedName']);
+    if (!preg_match('/^media_[a-zA-Z0-9._-]+$/', $restoreName)) {
+        throw new RuntimeException('Invalid undo filename');
+    }
+
+    $dest = mediaUploadsDir() . DIRECTORY_SEPARATOR . $restoreName;
+    $currentStored = (string)$row['stored_name'];
+    $currentThumb = $row['thumb_name'] !== null ? (string)$row['thumb_name'] : null;
+
+    $tmp = $dest . '.undo.' . getmypid() . '.' . bin2hex(random_bytes(4));
+    if (!@copy($bin, $tmp)) {
+        throw new RuntimeException('Failed to restore image from undo backup');
+    }
+    if (is_file($dest) && $dest !== $tmp) {
+        @unlink($dest);
+    }
+    if (!@rename($tmp, $dest)) {
+        if (!@copy($tmp, $dest)) {
+            @unlink($tmp);
+            throw new RuntimeException('Failed to finalize restored image');
+        }
+        @unlink($tmp);
+    }
+
+    if ($currentStored !== $restoreName) {
+        mediaSafeUnlinkUnderUploads($currentStored);
+    }
+
+    $uuid = (string)$row['uuid'];
+    // Prefer uuid from restored name: media_{uuid}.ext
+    if (preg_match('/^media_([a-f0-9-]+)\./i', $restoreName, $m)) {
+        $uuid = $m[1];
+    }
+    if ($currentThumb) {
+        mediaSafeUnlinkUnderUploads($currentThumb);
+    }
+    $thumbName = mediaGenerateThumb($dest, $uuid);
+
+    $mime = isset($meta['mime']) ? (string)$meta['mime'] : mediaMimeForFilename($restoreName, (string)$row['mime']);
+    $sizeBytes = isset($meta['sizeBytes']) ? (int)$meta['sizeBytes'] : (is_file($dest) ? (int)filesize($dest) : 0);
+    $width = array_key_exists('width', $meta) ? ($meta['width'] !== null ? (int)$meta['width'] : null) : null;
+    $height = array_key_exists('height', $meta) ? ($meta['height'] !== null ? (int)$meta['height'] : null) : null;
+    if (($width === null || $height === null) && is_file($dest)) {
+        $info = @getimagesize($dest);
+        if ($info) {
+            $width = (int)$info[0];
+            $height = (int)$info[1];
+        }
+    }
+
+    $db->prepare(
+        'UPDATE media_files SET stored_name = ?, thumb_name = ?, mime = ?, size_bytes = ?, width = ?, height = ?, updated_at = ? WHERE id = ?'
+    )->execute([
+        $restoreName,
+        $thumbName,
+        $mime,
+        $sizeBytes,
+        $width,
+        $height,
+        time(),
+        $fileId,
+    ]);
+
+    mediaClearRemoveBgUndo($fileId);
+
+    $fresh = $db->prepare('SELECT * FROM media_files WHERE id = ?');
+    $fresh->execute([$fileId]);
+    return mediaMapFileRow($db, $fresh->fetch(PDO::FETCH_ASSOC));
+}
+
 function mediaBasePath(): string {
     $requestUri = $_SERVER['REQUEST_URI'] ?? '';
     if (($pos = strpos($requestUri, '?')) !== false) {
@@ -799,8 +937,24 @@ function mediaTransformFile(PDO $db, int $fileId, array $opts, int $userId): arr
     $oldUuid = (string)$row['uuid'];
     $oldOriginal = (string)$row['original_name'];
     $oldMime = (string)$row['mime'];
+    $oldWidth = $row['width'] !== null ? (int)$row['width'] : null;
+    $oldHeight = $row['height'] !== null ? (int)$row['height'] : null;
+    $oldSizeBytes = (int)$row['size_bytes'];
     $stmt = null;
     $row = null;
+
+    // Backup original before in-place remove-background so the UI can Undo
+    if (!empty($opts['removeBackground']) && !empty($opts['replace'])) {
+        mediaSaveRemoveBgUndo($fileId, $srcPath, [
+            'storedName' => $stored,
+            'thumbName' => $oldThumb,
+            'mime' => $oldMime,
+            'width' => $oldWidth,
+            'height' => $oldHeight,
+            'sizeBytes' => $oldSizeBytes,
+            'originalName' => $oldOriginal,
+        ]);
+    }
 
     $srcBytes = is_file($srcPath) ? (int)filesize($srcPath) : 0;
     $src = loadGdImageFromFile($srcPath, $oldMime, $ext);

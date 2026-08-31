@@ -72,6 +72,7 @@ Admins can resize, crop, **rotate** (90° steps), compress (quality/format), and
 
 - Single-file editor: format defaults to the original (JPEG stays JPEG); size presets; live size estimate; **Fit** vs **Exact** resize; crop overlay tracks the image. **Save as new** by default (keeps existing rich-text embeds working); optional **Replace original**.
 - Bulk toolbar (selected images): rotate L/R, **Compress…** (choose max edge, quality, format), convert to JPG, remove BG — these **replace** the selected files in place.
+- **Undo Remove BG**: after Remove BG (bulk or Edit image with “Replace original”), an **Undo** banner restores the previous image from a local backup under `uploads/.media_undo/`.
 - Also: **Select all** / **Select images** in the current folder view, and **Trash selected**.
 
 Requires PHP **ext-gd**. Enable `extension=gd` in `php.ini` if transforms fail.

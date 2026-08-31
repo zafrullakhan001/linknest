@@ -48,6 +48,7 @@ import {
   uploadMediaFiles,
   batchTransformMediaFiles,
   batchTrashMediaFiles,
+  undoRemoveBackgroundMedia,
 } from '../services/mediaService';
 import type { MediaTransformOptions } from '../types';
 import { isYouTubeUrl, toYouTubeThumbnailUrl, youtubeToInsertHtml } from '../utils/youtube';
@@ -306,6 +307,9 @@ export const MediaLibrary: React.FC<MediaLibraryProps> = ({
   const [uploadLabel, setUploadLabel] = useState('');
   const [optimizeOnUpload, setOptimizeOnUpload] = useState(false);
   const [bulkBusy, setBulkBusy] = useState(false);
+  /** File ids that can undo the last Remove BG (replace) action. */
+  const [removeBgUndoIds, setRemoveBgUndoIds] = useState<number[]>([]);
+  const [undoBusy, setUndoBusy] = useState(false);
   /** Live CSS preview degrees while bulk-rotating (keyed by file id). */
   const [previewRotate, setPreviewRotate] = useState<Record<number, number>>({});
   /** When false, preview angle resets instantly (no reverse spin after server save). */
@@ -688,6 +692,11 @@ export const MediaLibrary: React.FC<MediaLibraryProps> = ({
         setError(`${label} did not change any files`);
       }
       if (result.transformed > 0) {
+        if (options.removeBackground) {
+          setRemoveBgUndoIds(result.data.map((f) => f.id));
+        } else {
+          setRemoveBgUndoIds([]);
+        }
         clearSelection();
         setSelected(null);
         await loadFiles();
@@ -697,6 +706,27 @@ export const MediaLibrary: React.FC<MediaLibraryProps> = ({
     } finally {
       setPreviewRotate({});
       setBulkBusy(false);
+    }
+  };
+
+  const handleUndoRemoveBg = async () => {
+    if (!canManage || removeBgUndoIds.length === 0 || undoBusy) return;
+    setUndoBusy(true);
+    setError(null);
+    try {
+      const result = await undoRemoveBackgroundMedia(removeBgUndoIds);
+      if (result.errors?.length) {
+        setError(
+          `Undo: ${result.restored} restored, ${result.errors.length} failed — ` +
+            result.errors.map((e) => `#${e.id}: ${e.error}`).join('; ')
+        );
+      }
+      setRemoveBgUndoIds([]);
+      await loadFiles();
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Undo remove background failed');
+    } finally {
+      setUndoBusy(false);
     }
   };
 
@@ -1119,6 +1149,17 @@ export const MediaLibrary: React.FC<MediaLibraryProps> = ({
                   >
                     <FaEraser size={10} /> Remove BG
                   </button>
+                  {removeBgUndoIds.length > 0 && (
+                    <button
+                      type="button"
+                      disabled={undoBusy || bulkBusy}
+                      onClick={handleUndoRemoveBg}
+                      className={BTN_ACCENT}
+                      title="Restore images to how they looked before Remove BG"
+                    >
+                      <FaUndo size={10} /> Undo Remove BG ({removeBgUndoIds.length})
+                    </button>
+                  )}
                 </>
               )}
               {bulkBusy && (
@@ -1126,6 +1167,25 @@ export const MediaLibrary: React.FC<MediaLibraryProps> = ({
               )}
             </>
           )}
+        </div>
+      )}
+
+      {canManage && removeBgUndoIds.length > 0 && (
+        <div className="mx-4 sm:mx-5 mt-2 flex flex-wrap items-center gap-2 rounded-xl border border-cyan-200 dark:border-cyan-900/50 bg-cyan-50 dark:bg-cyan-950/30 px-3 py-2 text-xs text-cyan-800 dark:text-cyan-200">
+          <span className="font-semibold">
+            Background removed on {removeBgUndoIds.length} image{removeBgUndoIds.length === 1 ? '' : 's'}.
+          </span>
+          <button
+            type="button"
+            disabled={undoBusy}
+            onClick={handleUndoRemoveBg}
+            className={`${BTN_ACCENT} py-1`}
+          >
+            <FaUndo size={10} /> {undoBusy ? 'Restoring…' : 'Undo'}
+          </button>
+          <button type="button" className="font-bold underline opacity-70 hover:opacity-100" onClick={() => setRemoveBgUndoIds([])}>
+            Dismiss
+          </button>
         </div>
       )}
 
@@ -1551,9 +1611,12 @@ export const MediaLibrary: React.FC<MediaLibraryProps> = ({
         <MediaImageEditor
           file={editingImage}
           onClose={() => setEditingImage(null)}
-          onSaved={(f) => {
+          onSaved={(f, meta) => {
             setEditingImage(null);
             setSelected(f);
+            if (meta?.undoRemoveBg) {
+              setRemoveBgUndoIds([f.id]);
+            }
             loadFiles();
           }}
         />
