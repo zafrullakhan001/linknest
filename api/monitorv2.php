@@ -149,6 +149,8 @@ switch ($method) {
             handleCheckMonitor((int)$matches[1]);
         } elseif (preg_match('/^\/(\d+)\/logs\/purge$/', $path, $matches)) {
             handlePurgeMonitorLogs((int)$matches[1]);
+        } elseif ($path === '/logs/purge') {
+            handlePurgeAllMonitorLogs();
         } elseif ($path === '/check-all') {
             handleCheckAllMonitors();
         } elseif (preg_match('/^\/(\d+)\/duplicate$/', $path, $matches)) {
@@ -607,6 +609,165 @@ function handleDeleteAllMonitors() {
         error_log("Monitorv2 delete all error: " . $e->getMessage());
         sendJSON(['error' => 'Database error: ' . $e->getMessage()], 500);
     }
+}
+
+function handlePurgeAllMonitorLogs() {
+    if (!isMonitorv2Admin()) {
+        sendJSON(['error' => 'Admin access required'], 403);
+        return;
+    }
+    $db = requireMonitorv2DB();
+
+    $data = json_decode(file_get_contents('php://input'), true);
+    if (!is_array($data)) {
+        $data = [];
+    }
+    $keepDays = isset($data['keep_days']) ? (int)$data['keep_days'] : -1;
+    $allowed = [0, 1, 7, 30, 365];
+    if (!in_array($keepDays, $allowed, true)) {
+        sendJSON(['error' => 'keep_days must be one of: 0, 1, 7, 30, 365'], 400);
+        return;
+    }
+
+    $doReindex = !empty($data['reindex']);
+    $doRunChecks = !empty($data['run_checks']);
+    $doVacuum = !empty($data['vacuum']);
+    @set_time_limit(600);
+
+    try {
+        if ($keepDays === 0) {
+            $deletedCount = (int)$db->exec('DELETE FROM zmonitoring.monitor_checks');
+        } else {
+            $cutoff = time() - ($keepDays * 24 * 60 * 60);
+            $del = $db->prepare('DELETE FROM zmonitoring.monitor_checks WHERE checked_at < to_timestamp(:cutoff)');
+            $del->execute([':cutoff' => $cutoff]);
+            $deletedCount = (int)$del->rowCount();
+        }
+
+        $maintenance = monitorv2PurgeRunMaintenance($db, $doReindex, $doRunChecks, $doVacuum);
+
+        sendJSON([
+            'deleted_count' => $deletedCount,
+            'keep_days' => $keepDays,
+            'maintenance' => $maintenance,
+        ]);
+    } catch (PDOException $e) {
+        error_log("Monitorv2 purge all logs error: " . $e->getMessage());
+        sendJSON(['error' => 'Database error: ' . $e->getMessage()], 500);
+    }
+}
+
+/**
+ * Rebuild monitor_checks indexes, verify health, and optionally VACUUM to reclaim space.
+ *
+ * @return array{reindex:?array,checks:?array,vacuum:?array}
+ */
+function monitorv2PurgeRunMaintenance(PDO $db, bool $reindex, bool $runChecks, bool $vacuum = false): array {
+    $out = [
+        'reindex' => null,
+        'checks' => null,
+        'vacuum' => null,
+    ];
+
+    if ($reindex) {
+        $started = microtime(true);
+        $indexes = [];
+        $indexDefs = [
+            'idx_checks_monitor_id' => 'CREATE INDEX IF NOT EXISTS idx_checks_monitor_id ON zmonitoring.monitor_checks(monitor_id, checked_at DESC)',
+            'idx_checks_status' => 'CREATE INDEX IF NOT EXISTS idx_checks_status ON zmonitoring.monitor_checks(status, checked_at DESC)',
+            'idx_checks_monitor_status' => 'CREATE INDEX IF NOT EXISTS idx_checks_monitor_status ON zmonitoring.monitor_checks(monitor_id, status, checked_at DESC)',
+        ];
+        foreach ($indexDefs as $name => $createSql) {
+            try {
+                $db->exec("DROP INDEX IF EXISTS zmonitoring.{$name}");
+                $db->exec($createSql);
+                $indexes[] = $name;
+            } catch (PDOException $e) {
+                error_log("monitorv2PurgeRunMaintenance reindex {$name}: " . $e->getMessage());
+            }
+        }
+
+        $analyzed = [];
+        try {
+            $db->exec('ANALYZE zmonitoring.monitor_checks');
+            $analyzed[] = 'zmonitoring.monitor_checks';
+        } catch (PDOException $e) {
+            error_log('monitorv2PurgeRunMaintenance ANALYZE: ' . $e->getMessage());
+        }
+        try {
+            $db->exec('ANALYZE zmonitoring.monitors');
+            $analyzed[] = 'zmonitoring.monitors';
+        } catch (PDOException $e) {
+            // ignore
+        }
+
+        $out['reindex'] = [
+            'ok' => true,
+            'indexes' => $indexes,
+            'analyzed' => $analyzed,
+            'elapsed_ms' => round((microtime(true) - $started) * 1000, 1),
+        ];
+    }
+
+    if ($runChecks) {
+        $started = microtime(true);
+        $ok = true;
+        $messages = [];
+        try {
+            $count = (int)$db->query('SELECT COUNT(*) FROM zmonitoring.monitor_checks')->fetchColumn();
+            $messages[] = "monitor_checks readable (rows={$count})";
+            $idxStmt = $db->query("
+                SELECT indexname FROM pg_indexes
+                WHERE schemaname = 'zmonitoring' AND tablename = 'monitor_checks'
+                ORDER BY indexname
+            ");
+            $found = $idxStmt ? $idxStmt->fetchAll(PDO::FETCH_COLUMN) : [];
+            $messages[] = 'indexes: ' . (count($found) ? implode(', ', $found) : '(none)');
+            if (count($found) === 0) {
+                $ok = false;
+            }
+        } catch (PDOException $e) {
+            $ok = false;
+            $messages[] = 'error: ' . $e->getMessage();
+        }
+        $out['checks'] = [
+            'ok' => $ok,
+            'result' => $messages,
+            'elapsed_ms' => round((microtime(true) - $started) * 1000, 1),
+        ];
+    }
+
+    if ($vacuum) {
+        $started = microtime(true);
+        try {
+            // FULL reclaims disk from deleted rows; ANALYZE refreshes planner stats.
+            $db->exec('VACUUM FULL ANALYZE zmonitoring.monitor_checks');
+            $out['vacuum'] = [
+                'ok' => true,
+                'message' => 'VACUUM FULL ANALYZE completed on zmonitoring.monitor_checks. Disk space reclaimed.',
+                'elapsed_ms' => round((microtime(true) - $started) * 1000, 1),
+            ];
+        } catch (PDOException $e) {
+            // Some roles cannot VACUUM FULL; fall back to plain VACUUM ANALYZE.
+            try {
+                $db->exec('VACUUM ANALYZE zmonitoring.monitor_checks');
+                $out['vacuum'] = [
+                    'ok' => true,
+                    'message' => 'VACUUM ANALYZE completed on zmonitoring.monitor_checks (FULL not permitted for this role).',
+                    'elapsed_ms' => round((microtime(true) - $started) * 1000, 1),
+                ];
+            } catch (PDOException $e2) {
+                error_log('monitorv2PurgeRunMaintenance vacuum: ' . $e2->getMessage());
+                $out['vacuum'] = [
+                    'ok' => false,
+                    'message' => 'Vacuum failed: ' . $e2->getMessage(),
+                    'elapsed_ms' => round((microtime(true) - $started) * 1000, 1),
+                ];
+            }
+        }
+    }
+
+    return $out;
 }
 
 function handlePurgeMonitorLogs($id) {

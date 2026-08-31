@@ -6,6 +6,7 @@ import { MonitorForm } from './MonitorForm';
 import { MonitorBulkImportDialog } from './MonitorBulkImportDialog';
 import { MonitorSslBulkImportDialog } from './MonitorSslBulkImportDialog';
 import { MonitorAuditLogDialog } from './MonitorAuditLogDialog';
+import { MonitorGlobalHistoryPurgeDialog } from './MonitorGlobalHistoryPurgeDialog';
 import { MonitorTargetLabel } from './MonitorTargetLabel';
 import { MonitorUptimeCalendar, MonitorUptimeDayBanner } from './MonitorUptimeCalendar';
 import { FaServer, FaGlobe, FaSearch, FaCheck, FaTimes, FaQuestion, FaPlus, FaRedo, FaSyncAlt, FaTrash, FaEdit, FaClock, FaThLarge, FaList, FaCopy, FaBars, FaDownload, FaUpload, FaHistory, FaCalendarAlt, FaEnvelope, FaArrowsAlt, FaPalette, FaCircle, FaExpand, FaCompress, FaBell, FaBellSlash, FaFileExport, FaFileCsv, FaLock, FaCode, FaMagic, FaStream, FaClipboardList, FaStop, FaExclamationTriangle, FaThumbtack, FaVolumeUp, FaVolumeMute, FaColumns, FaSortAmountUp, FaSortAmountDown, FaTachometerAlt, FaDesktop } from 'react-icons/fa';
@@ -552,6 +553,7 @@ export const MonitoringDashboard: React.FC = () => {
     const [showBulkImport, setShowBulkImport] = useState(false);
     const [showSslBulkImport, setShowSslBulkImport] = useState(false);
     const [showAuditLog, setShowAuditLog] = useState(false);
+    const [showGlobalHistoryPurge, setShowGlobalHistoryPurge] = useState(false);
     const [showSpeedTester, setShowSpeedTester] = useState(false);
     const [addMonitorType, setAddMonitorType] = useState<Monitor['type'] | undefined>(undefined);
     const [selectedMonitor, setSelectedMonitor] = useState<Monitor | undefined>(undefined);
@@ -3527,6 +3529,13 @@ export const MonitoringDashboard: React.FC = () => {
                                     <FaClipboardList size={14} />
                                 </button>
                                 <button
+                                    onClick={() => setShowGlobalHistoryPurge(true)}
+                                    className="p-2 rounded-lg transition-all text-slate-400 hover:text-rose-500 hover:bg-white dark:hover:bg-[#333]"
+                                    title="Purge Uptime History (All Monitors)"
+                                >
+                                    <FaHistory size={14} />
+                                </button>
+                                <button
                                     onClick={handleDeleteAll}
                                     className="p-2 rounded-lg transition-all text-slate-400 hover:text-red-500 hover:bg-white dark:hover:bg-[#333]"
                                     title="Delete All Monitors"
@@ -4653,6 +4662,20 @@ export const MonitoringDashboard: React.FC = () => {
 
             {showAuditLog && isAdmin && (
                 <MonitorAuditLogDialog onClose={() => setShowAuditLog(false)} />
+            )}
+
+            {showGlobalHistoryPurge && isAdmin && (
+                <MonitorGlobalHistoryPurgeDialog
+                    onClose={() => setShowGlobalHistoryPurge(false)}
+                    onPurge={async (keepDays, options) => {
+                        const result = await monitoringService.purgeAllMonitorLogs(keepDays, options);
+                        if (viewingLogsMonitor) {
+                            setDetailDayKey(null);
+                            await fetchLogs(viewingLogsMonitor.id, logFilter);
+                        }
+                        return result;
+                    }}
+                />
             )}
 
             {showBulkImport && isAdmin && (

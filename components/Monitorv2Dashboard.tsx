@@ -4,6 +4,7 @@ import { Monitorv2 as Monitor, Monitorv2Log as MonitorLog, monitorv2Service as m
 import { Monitorv2Form as MonitorForm } from './Monitorv2Form';
 import { MonitorTargetLabel } from './MonitorTargetLabel';
 import { MonitorUptimeCalendar, MonitorUptimeDayBanner } from './MonitorUptimeCalendar';
+import { MonitorGlobalHistoryPurgeDialog } from './MonitorGlobalHistoryPurgeDialog';
 import { FaServer, FaGlobe, FaSearch, FaCheck, FaTimes, FaQuestion, FaPlus, FaRedo, FaSyncAlt, FaTrash, FaEdit, FaClock, FaThLarge, FaList, FaCopy, FaBars, FaDownload, FaUpload, FaHistory, FaCalendarAlt, FaEnvelope, FaArrowsAlt, FaPalette, FaCircle, FaExpand, FaCompress, FaBell, FaBellSlash, FaFileExport, FaFileCsv, FaStream, FaColumns, FaSortAmountUp, FaSortAmountDown, FaTachometerAlt, FaDesktop } from 'react-icons/fa';
 import { useTileAnimation, getTileAnimationClass, getTileDecorationClass } from './TileAnimationSelector';
 import { SMTPSettingsModal } from './SMTPSettingsModal';
@@ -128,6 +129,7 @@ export const Monitorv2Dashboard: React.FC = () => {
     });
     const [showSMTPSettings, setShowSMTPSettings] = useState(false);
     const [showCronModal, setShowCronModal] = useState(false);
+    const [showGlobalHistoryPurge, setShowGlobalHistoryPurge] = useState(false);
     const [showSpeedTester, setShowSpeedTester] = useState(false);
     useEscapeToClose(showCronModal, () => setShowCronModal(false));
     const [showTileStyleModal, setShowTileStyleModal] = useState(false);
@@ -1618,6 +1620,13 @@ export const Monitorv2Dashboard: React.FC = () => {
                                     title="Cron Setup"
                                 >
                                     <FaClock size={14} />
+                                </button>
+                                <button
+                                    onClick={() => setShowGlobalHistoryPurge(true)}
+                                    className="p-2 rounded-lg transition-all text-slate-400 hover:text-rose-500 hover:bg-white dark:hover:bg-[#333]"
+                                    title="Purge Uptime History (All Monitors)"
+                                >
+                                    <FaHistory size={14} />
                                 </button>
                                 <button
                                     onClick={handleDeleteAll}
@@ -3119,6 +3128,20 @@ export const Monitorv2Dashboard: React.FC = () => {
 
             {showSpeedTester && (
                 <InternetSpeedTester isOpen={showSpeedTester} onClose={() => setShowSpeedTester(false)} />
+            )}
+
+            {showGlobalHistoryPurge && isAdmin && (
+                <MonitorGlobalHistoryPurgeDialog
+                    onClose={() => setShowGlobalHistoryPurge(false)}
+                    onPurge={async (keepDays, options) => {
+                        const result = await monitoringService.purgeAllMonitorLogs(keepDays, options);
+                        if (viewingLogsMonitor) {
+                            setDetailDayKey(null);
+                            await fetchLogs(viewingLogsMonitor.id, logFilter);
+                        }
+                        return result;
+                    }}
+                />
             )}
 
             {showTileStyleModal && (

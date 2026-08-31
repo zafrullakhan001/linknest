@@ -6,6 +6,7 @@ require_once __DIR__ . '/monitor_worker_scheduler_lib.php';
 require_once __DIR__ . '/monitor_suggest.php';
 require_once __DIR__ . '/user_audit_helper.php';
 require_once __DIR__ . '/speedtest_schedules_lib.php';
+require_once __DIR__ . '/database_maintain_lib.php';
 
 if (!defined('MONITOR_EXPORT_LOG_LIMIT')) {
     define('MONITOR_EXPORT_LOG_LIMIT', 500);
@@ -104,6 +105,8 @@ switch ($method) {
             handleCheckMonitor($matches[1]);
         } elseif (preg_match('/^\/(\d+)\/logs\/purge$/', $path, $matches)) {
             handlePurgeMonitorLogs($matches[1]);
+        } elseif ($path === '/logs/purge') {
+            handlePurgeAllMonitorLogs();
         } elseif (preg_match('/^\/(\d+)\/duplicate$/', $path, $matches)) {
             handleDuplicateMonitor($matches[1]);
         } elseif ($path === '/suggest') {
@@ -1739,6 +1742,156 @@ function handleDeleteMonitor($id) {
     } catch (PDOException $e) {
         sendJSON(['error' => 'Database error: ' . $e->getMessage()], 500);
     }
+}
+
+function handlePurgeAllMonitorLogs() {
+    requireAdmin();
+    $db = getDB();
+
+    $data = json_decode(file_get_contents('php://input'), true);
+    if (!is_array($data)) {
+        $data = [];
+    }
+    $keepDays = isset($data['keep_days']) ? (int)$data['keep_days'] : -1;
+    $allowed = [0, 1, 7, 30, 365];
+    if (!in_array($keepDays, $allowed, true)) {
+        sendJSON(['error' => 'keep_days must be one of: 0, 1, 7, 30, 365'], 400);
+        return;
+    }
+
+    $doReindex = !empty($data['reindex']);
+    $doRunChecks = !empty($data['run_checks']);
+    $doVacuum = !empty($data['vacuum']);
+
+    // Maintenance after a large purge can take a while on big SQLite files.
+    @set_time_limit(600);
+
+    try {
+        if ($keepDays === 0) {
+            $deletedCount = (int)$db->exec('DELETE FROM monitor_logs');
+        } else {
+            $cutoff = time() - ($keepDays * 24 * 60 * 60);
+            $del = $db->prepare('DELETE FROM monitor_logs WHERE checked_at < ?');
+            $del->execute([$cutoff]);
+            $deletedCount = (int)$del->rowCount();
+        }
+
+        $maintenance = monitorPurgeRunMaintenance($db, $doReindex, $doRunChecks, $doVacuum);
+
+        sendJSON([
+            'deleted_count' => $deletedCount,
+            'keep_days' => $keepDays,
+            'maintenance' => $maintenance,
+        ]);
+    } catch (PDOException $e) {
+        sendJSON(['error' => 'Database error: ' . $e->getMessage()], 500);
+    }
+}
+
+/**
+ * Rebuild monitor_logs indexes, run integrity checks, and optionally VACUUM to reclaim space.
+ *
+ * @return array{reindex:?array,checks:?array,vacuum:?array}
+ */
+function monitorPurgeRunMaintenance(PDO $db, bool $reindex, bool $runChecks, bool $vacuum = false): array {
+    $out = [
+        'reindex' => null,
+        'checks' => null,
+        'vacuum' => null,
+    ];
+
+    if ($reindex) {
+        $started = microtime(true);
+        $indexes = [];
+        $indexDefs = [
+            'idx_monitor_logs_monitor_id' => 'CREATE INDEX IF NOT EXISTS idx_monitor_logs_monitor_id ON monitor_logs(monitor_id)',
+            'idx_monitor_logs_checked_at' => 'CREATE INDEX IF NOT EXISTS idx_monitor_logs_checked_at ON monitor_logs(checked_at)',
+            'idx_monitor_logs_monitor_checked' => 'CREATE INDEX IF NOT EXISTS idx_monitor_logs_monitor_checked ON monitor_logs(monitor_id, checked_at)',
+        ];
+        foreach ($indexDefs as $name => $createSql) {
+            try {
+                $db->exec("DROP INDEX IF EXISTS {$name}");
+                $db->exec($createSql);
+                $indexes[] = $name;
+            } catch (PDOException $e) {
+                error_log("monitorPurgeRunMaintenance reindex {$name}: " . $e->getMessage());
+            }
+        }
+
+        $analyzed = [];
+        foreach (['monitor_logs', 'monitors'] as $table) {
+            try {
+                $db->exec("ANALYZE {$table}");
+                $analyzed[] = $table;
+            } catch (PDOException $e) {
+                error_log("monitorPurgeRunMaintenance ANALYZE {$table}: " . $e->getMessage());
+            }
+        }
+
+        try {
+            $db->exec('PRAGMA optimize');
+        } catch (PDOException $e) {
+            // ignore
+        }
+
+        $checkpoint = null;
+        try {
+            $row = $db->query('PRAGMA wal_checkpoint(TRUNCATE)')->fetch(PDO::FETCH_NUM);
+            if (is_array($row)) {
+                $checkpoint = [
+                    'busy' => (int)($row[0] ?? 0),
+                    'log' => (int)($row[1] ?? 0),
+                    'checkpointed' => (int)($row[2] ?? 0),
+                ];
+            }
+        } catch (PDOException $e) {
+            // ignore
+        }
+
+        $out['reindex'] = [
+            'ok' => true,
+            'indexes' => $indexes,
+            'analyzed' => $analyzed,
+            'checkpoint' => $checkpoint,
+            'elapsed_ms' => round((microtime(true) - $started) * 1000, 1),
+        ];
+    }
+
+    if ($runChecks) {
+        $started = microtime(true);
+        // quick_check is enough after purge and much faster than full integrity_check
+        $integrity = linknestMaintainIntegrity($db, false);
+        $out['checks'] = [
+            'ok' => (bool)$integrity['ok'],
+            'quick_check' => $integrity['quick_check'] ?? 'unknown',
+            'result' => $integrity['result'] ?? [],
+            'elapsed_ms' => round((microtime(true) - $started) * 1000, 1),
+        ];
+    }
+
+    if ($vacuum) {
+        $started = microtime(true);
+        try {
+            $result = linknestMaintainRunVacuum($db);
+            $out['vacuum'] = [
+                'ok' => !empty($result['success']),
+                'message' => (string)($result['message'] ?? 'Vacuum completed.'),
+                'reclaimed' => $result['reclaimed'] ?? null,
+                'before' => $result['before'] ?? null,
+                'after' => $result['after'] ?? null,
+                'elapsed_ms' => round((microtime(true) - $started) * 1000, 1),
+            ];
+        } catch (Throwable $e) {
+            error_log('monitorPurgeRunMaintenance vacuum: ' . $e->getMessage());
+            $out['vacuum'] = [
+                'ok' => false,
+                'message' => 'Vacuum failed: ' . $e->getMessage(),
+                'elapsed_ms' => round((microtime(true) - $started) * 1000, 1),
+            ];
+        }
+    }
+
+    return $out;
 }
 
 function handlePurgeMonitorLogs($id) {

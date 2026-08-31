@@ -381,6 +381,36 @@ export const monitoringService = {
         return await response.json();
     },
 
+    async purgeAllMonitorLogs(
+        keepDays: 0 | 1 | 7 | 30 | 365,
+        options?: { reindex?: boolean; runChecks?: boolean; vacuum?: boolean }
+    ): Promise<{
+        deleted_count: number;
+        keep_days: number;
+        maintenance?: {
+            reindex?: unknown;
+            checks?: unknown;
+            vacuum?: unknown;
+        };
+    }> {
+        const response = await fetch('api/monitors.php/logs/purge', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            credentials: 'include',
+            body: JSON.stringify({
+                keep_days: keepDays,
+                reindex: !!options?.reindex,
+                run_checks: !!options?.runChecks,
+                vacuum: !!options?.vacuum,
+            }),
+        });
+        if (!response.ok) {
+            const err = await response.json().catch(() => ({}));
+            throw new Error((err as { error?: string }).error || 'Failed to purge all monitor logs');
+        }
+        return await response.json();
+    },
+
     async checkMonitor(id: number, options?: { forceNotifyRules?: boolean }): Promise<any> {
         const qs = options?.forceNotifyRules ? '?force_notify_rules=1' : '';
         const response = await fetch(`api/monitors.php/${id}/check${qs}`, {
