@@ -163,6 +163,10 @@ function handleGetTiles() {
     require_once __DIR__ . '/fingerprint_lock_lib.php';
     require_fingerprint_lock_access($user);
 
+    // SPA/k6 home batch shares one session cookie — release lock before SQLite work
+    // so /auth/me, /settings, and /tiles can run in parallel for the same user.
+    linknestReleaseSessionLock();
+
     // Ultra-fast path: guest public summary can be served from file cache without opening SQLite
     // (fingerprint lock is already enforced above so allowlisted guests still receive public spaces)
     if ($summaryMode && $sourceTab === 'public' && empty($_SESSION['user_id'])) {
@@ -1197,6 +1201,7 @@ function handleGetTile($tileId) {
 
     require_once __DIR__ . '/fingerprint_lock_lib.php';
     require_fingerprint_lock_access($user);
+    linknestReleaseSessionLock();
     
     // Check if guest access is enabled
     $stmt = $db->prepare("SELECT value FROM settings WHERE key = 'guest_access_enabled'");

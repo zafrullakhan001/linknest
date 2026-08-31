@@ -364,6 +364,7 @@ function handleGetSettings() {
 
     // Guest/home load: serve cached public settings without decrypt work
     if (!$hasSessionUser) {
+        linknestReleaseSessionLock();
         $cached = responseCacheGet('settings_public');
         if (is_array($cached)) {
             if (array_key_exists('fingerprint_lock_hashes', $cached)) {
@@ -382,6 +383,8 @@ function handleGetSettings() {
 
     $user = getAuthenticatedUser();
     $isAdmin = $user && !empty($user['is_admin']);
+    // Release before settings decrypt / DB work so parallel home requests are not blocked
+    linknestReleaseSessionLock();
 
     // Logged-in non-admins get the same public payload as guests
     if ($hasSessionUser && !$isAdmin) {

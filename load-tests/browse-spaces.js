@@ -276,9 +276,11 @@ export function setup() {
 }
 
 export default function () {
-  jar(); // per-VU cookie jar
+  jar(); // ensure VU cookie jar is active
 
-  if (DO_LOGIN) {
+  // Login once per VU (real users stay signed in). Re-login every iteration
+  // floods /auth/login writes and was amplifying authenticated load failures.
+  if (DO_LOGIN && __ITER === 0) {
     group('auth', () => {
       loginIfNeeded();
     });

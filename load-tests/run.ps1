@@ -1,7 +1,8 @@
 # LinkNest k6 load test runner (Windows / PowerShell)
 param(
     [string]$BaseUrl = "http://localhost/linknest",
-    [int]$Vus = 100,
+    # -1 = auto: 10 VUs for -Login (typical office concurrency), 100 for guest browse
+    [int]$Vus = -1,
     [string]$Duration = "5m",
     [string]$Ramp = "30s",
     [switch]$Login,
@@ -32,6 +33,10 @@ if (-not (Test-Path $script)) {
 }
 
 New-Item -ItemType Directory -Force -Path $resultsDir | Out-Null
+
+if ($Vus -lt 0) {
+    $Vus = if ($Login) { 10 } else { 100 }
+}
 
 if ($Smoke) {
     $Vus = 10

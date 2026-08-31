@@ -210,6 +210,19 @@ function linknestClearSessionCookie(): void
 }
 
 /**
+ * Release the PHP session file lock so parallel requests from the same browser
+ * (SPA home batch: /auth/me + /settings + /tiles + …) can run concurrently.
+ * Call after auth/session reads (and any session writes) on read-heavy endpoints.
+ * $_SESSION remains readable in-process after close; further writes will not persist.
+ */
+function linknestReleaseSessionLock(): void
+{
+    if (session_status() === PHP_SESSION_ACTIVE) {
+        session_write_close();
+    }
+}
+
+/**
  * Bind session name + cookie path to this install. Call before session_start().
  */
 function linknestConfigureSession(): void

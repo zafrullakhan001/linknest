@@ -1027,7 +1027,15 @@ function handleLogin() {
         }
         $_SESSION['user_id'] = $user['id'];
         $_SESSION['username'] = $user['username'];
-        
+
+        // Set session cookie expiration based on remember me
+        // Cookie path/name are instance-scoped (see session_bootstrap.php)
+        $cookieLifetime = $rememberMe
+            ? 30 * 24 * 60 * 60
+            : 24 * 60 * 60;
+        linknestWriteSessionCookie($cookieLifetime);
+        linknestReleaseSessionLock();
+
         // Track user login for performance analytics (if enabled)
         trackUserLogin($user['id'], $user['username']);
         logUserAudit('auth.login', [
@@ -1037,13 +1045,6 @@ function handleLogin() {
             'target_username' => (string)$user['username'],
             'details' => ['method' => 'ldap', 'remember_me' => (bool)$rememberMe],
         ]);
-        
-        // Set session cookie expiration based on remember me
-        // Cookie path/name are instance-scoped (see session_bootstrap.php)
-        $cookieLifetime = $rememberMe
-            ? 30 * 24 * 60 * 60
-            : 24 * 60 * 60;
-        linknestWriteSessionCookie($cookieLifetime);
         
         sendJSON([
             'success' => true,
@@ -1140,7 +1141,16 @@ function handleLogin() {
     }
     $_SESSION['user_id'] = $user['id'];
     $_SESSION['username'] = $user['username'];
-    
+
+    // Set session cookie expiration based on remember me
+    // Cookie path/name are instance-scoped (see session_bootstrap.php)
+    $cookieLifetime = $rememberMe
+        ? 30 * 24 * 60 * 60
+        : 24 * 60 * 60;
+    linknestWriteSessionCookie($cookieLifetime);
+    // Persist session before audit/analytics so parallel post-login requests are not blocked
+    linknestReleaseSessionLock();
+
     // Track user login for performance analytics (if enabled)
     trackUserLogin($user['id'], $user['username']);
     logUserAudit('auth.login', [
@@ -1150,13 +1160,6 @@ function handleLogin() {
         'target_username' => (string)$user['username'],
         'details' => ['method' => 'local', 'remember_me' => (bool)$rememberMe],
     ]);
-    
-    // Set session cookie expiration based on remember me
-    // Cookie path/name are instance-scoped (see session_bootstrap.php)
-    $cookieLifetime = $rememberMe
-        ? 30 * 24 * 60 * 60
-        : 24 * 60 * 60;
-    linknestWriteSessionCookie($cookieLifetime);
     
     sendJSON([
         'success' => true,
@@ -1197,6 +1200,8 @@ function handleLogin() {
 
 function handleGetMe() {
     $user = getAuthenticatedUser();
+    // Home load fires /auth/me in parallel with other APIs that share this session.
+    linknestReleaseSessionLock();
     if ($user) {
         sendJSON(['user' => $user]);
     } else {

@@ -56,10 +56,16 @@ Smoke (10 users, 1 minute):
 .\load-tests\run.ps1 -Vus 10 -Duration 1m
 ```
 
-Authenticated browse:
+Authenticated browse (defaults to **10 VUs** — typical office concurrency):
 
 ```powershell
 .\load-tests\run.ps1 -Login -Username admin -Password admin123
+```
+
+Or smoke + login (10 VUs, 1 minute):
+
+```powershell
+.\load-tests\run.ps1 -Smoke -Login -Username admin -Password admin123
 ```
 
 Against Docker (port 8090):
