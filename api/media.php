@@ -361,26 +361,31 @@ function mediaHandleDeleteFolder(PDO $db, int $id): void {
     if (!$row) {
         sendJSON(['error' => 'Folder not found'], 404);
     }
-    $cStmt = $db->prepare('SELECT COUNT(*) FROM media_folders WHERE parent_id = ?');
-    $cStmt->execute([$id]);
-    if ((int)$cStmt->fetchColumn() > 0) {
-        sendJSON(['error' => 'Folder has subfolders; move or delete them first'], 400);
-    }
-    $fStmt = $db->prepare('SELECT COUNT(*) FROM media_files WHERE folder_id = ? AND status != \'trash\'');
-    $fStmt->execute([$id]);
-    if ((int)$fStmt->fetchColumn() > 0) {
-        sendJSON(['error' => 'Folder is not empty; move or trash files first'], 400);
-    }
-    // Prevent deleting last root
+    // Prevent deleting last root Library folder
     if ($row['parent_id'] === null) {
         $roots = (int)$db->query('SELECT COUNT(*) FROM media_folders WHERE parent_id IS NULL')->fetchColumn();
         if ($roots <= 1) {
             sendJSON(['error' => 'Cannot delete the root Library folder'], 400);
         }
     }
-    $db->prepare('UPDATE media_files SET folder_id = NULL WHERE folder_id = ?')->execute([$id]);
-    $db->prepare('DELETE FROM media_folders WHERE id = ?')->execute([$id]);
-    sendJSON(['success' => true]);
+
+    $subtreeIds = mediaCollectFolderSubtreeIds($db, $id);
+    if ($subtreeIds === []) {
+        sendJSON(['error' => 'Folder not found'], 404);
+    }
+
+    $trashedFiles = mediaTrashFilesInFolders($db, $subtreeIds);
+
+    // Delete deepest folders first (children before parents) — FK may be off, still safe.
+    $placeholders = implode(',', array_fill(0, count($subtreeIds), '?'));
+    $del = $db->prepare("DELETE FROM media_folders WHERE id IN ($placeholders)");
+    $del->execute(array_values($subtreeIds));
+
+    sendJSON([
+        'success' => true,
+        'deletedFolders' => count($subtreeIds),
+        'trashedFiles' => $trashedFiles,
+    ]);
 }
 
 function mediaHandleUpdate(PDO $db, int $id): void {

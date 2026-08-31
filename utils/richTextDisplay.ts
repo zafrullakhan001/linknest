@@ -5,7 +5,7 @@
 
 import { ensureRichTextFontsLoaded } from './richTextFonts';
 
-const SKIP_TAGS = new Set(['A', 'SCRIPT', 'STYLE', 'TEXTAREA', 'CODE', 'PRE', 'VIDEO', 'AUDIO']);
+const SKIP_TAGS = new Set(['A', 'SCRIPT', 'STYLE', 'TEXTAREA', 'CODE', 'PRE', 'VIDEO', 'AUDIO', 'IFRAME']);
 
 function mediaKindFromHref(href: string): 'video' | 'audio' | 'image' | null {
   const path = (href.split('?')[0] || '').split('#')[0].toLowerCase();

@@ -91,12 +91,14 @@ export async function updateMediaFolder(
   return data.data;
 }
 
-export async function deleteMediaFolder(id: number): Promise<void> {
+export async function deleteMediaFolder(
+  id: number
+): Promise<{ success: boolean; deletedFolders?: number; trashedFiles?: number }> {
   const res = await fetch(`${getApiBase()}/media/folders/${id}`, {
     method: 'DELETE',
     credentials: 'include',
   });
-  await parseJson<{ success: boolean }>(res);
+  return parseJson<{ success: boolean; deletedFolders?: number; trashedFiles?: number }>(res);
 }
 
 export async function uploadMediaFiles(
@@ -261,15 +263,21 @@ export function mediaFileToInsertHtml(file: MediaFile): string {
   const alt = escapeAttr(file.altText || file.title || file.originalName || 'Media');
   const mime = mediaMimeFromUrl(url, file.mime || '');
   switch (file.kind) {
-    case 'image':
-      return `<img src="${escapeAttr(url)}" alt="${alt}" style="max-width:100%;height:auto;" />`;
+    case 'image': {
+      const w = file.width && file.width > 0 ? file.width : 800;
+      const h = file.height && file.height > 0 ? file.height : undefined;
+      const wh = ` width="${w}"${h != null ? ` height="${h}"` : ''}`;
+      return `<img src="${escapeAttr(url)}" alt="${alt}"${wh} style="max-width:100%;height:auto;" />`;
+    }
     case 'pdf':
       return `<a href="${escapeAttr(url)}" target="_blank" rel="noopener noreferrer">${title}</a>`;
     case 'video': {
       const poster = file.thumbUrl ? ` poster="${escapeAttr(file.thumbUrl)}"` : '';
       const typeAttr = mime ? ` type="${escapeAttr(mime)}"` : '';
+      const w = file.width && file.width > 0 ? file.width : 640;
+      const h = file.height && file.height > 0 ? file.height : 360;
       return (
-        `<video controls="controls" playsinline="playsinline" preload="metadata" width="640" height="360"` +
+        `<video controls="controls" playsinline="playsinline" preload="metadata" width="${w}" height="${h}"` +
         `${poster} style="max-width:100%;height:auto;display:block;background:#0f172a;">` +
         `<source src="${escapeAttr(url)}"${typeAttr} />` +
         `</video>`

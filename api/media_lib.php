@@ -416,6 +416,76 @@ function mediaMapFolderRow(array $row): array {
     ];
 }
 
+/**
+ * Folder id plus all descendant folder ids (breadth-first).
+ *
+ * @return list<int>
+ */
+function mediaCollectFolderSubtreeIds(PDO $db, int $rootId): array {
+    $rows = $db->query('SELECT id, parent_id FROM media_folders')->fetchAll(PDO::FETCH_ASSOC);
+    $byParent = [];
+    foreach ($rows as $row) {
+        $pid = $row['parent_id'] !== null ? (int)$row['parent_id'] : null;
+        if ($pid === null) {
+            continue;
+        }
+        $byParent[$pid][] = (int)$row['id'];
+    }
+    $ids = [];
+    $seen = [];
+    $queue = [$rootId];
+    while ($queue) {
+        $id = array_shift($queue);
+        if (isset($seen[$id])) {
+            continue;
+        }
+        $seen[$id] = true;
+        $ids[] = $id;
+        foreach ($byParent[$id] ?? [] as $childId) {
+            $queue[] = $childId;
+        }
+    }
+    return $ids;
+}
+
+/**
+ * Trash all non-trash files in the given folders (disk move + status).
+ *
+ * @param list<int> $folderIds
+ * @return int Number of files moved to trash
+ */
+function mediaTrashFilesInFolders(PDO $db, array $folderIds): int {
+    if ($folderIds === []) {
+        return 0;
+    }
+    $placeholders = implode(',', array_fill(0, count($folderIds), '?'));
+    $stmt = $db->prepare(
+        "SELECT id, stored_name, thumb_name, status FROM media_files
+         WHERE folder_id IN ($placeholders) AND status != 'trash'"
+    );
+    $stmt->execute(array_values($folderIds));
+    $rows = $stmt->fetchAll(PDO::FETCH_ASSOC);
+    $now = time();
+    $upd = $db->prepare(
+        'UPDATE media_files SET status = \'trash\', trashed_at = ?, updated_at = ?, folder_id = NULL WHERE id = ?'
+    );
+    $count = 0;
+    foreach ($rows as $row) {
+        mediaMoveToTrash((string)$row['stored_name']);
+        if (!empty($row['thumb_name'])) {
+            mediaMoveToTrash((string)$row['thumb_name']);
+        }
+        $upd->execute([$now, $now, (int)$row['id']]);
+        $count++;
+    }
+    // Detach already-trashed files so folders can be removed cleanly
+    $detach = $db->prepare(
+        "UPDATE media_files SET folder_id = NULL WHERE folder_id IN ($placeholders)"
+    );
+    $detach->execute(array_values($folderIds));
+    return $count;
+}
+
 function mediaSafeUnlinkUnderUploads(string $filename): bool {
     $filename = basename($filename);
     if ($filename === '' || !preg_match('/^media_[a-zA-Z0-9._-]+$/', $filename)) {

@@ -75,3 +75,29 @@ export function toYouTubeThumbnailUrl(input: string): string | null {
   if (!id) return null;
   return `https://img.youtube.com/vi/${id}/hqdefault.jpg`;
 }
+
+/** Escape for HTML attribute values. */
+function escapeAttr(s: string): string {
+  return s
+    .replace(/&/g, '&amp;')
+    .replace(/"/g, '&quot;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;');
+}
+
+/**
+ * Build a resizable YouTube iframe snippet for rich-text insert
+ * (width/height attrs so TinyMCE object handles can resize).
+ */
+export function youtubeToInsertHtml(input: string): string | null {
+  const embed = toYouTubeEmbedUrl(input);
+  if (!embed) return null;
+  const src = escapeAttr(embed);
+  return (
+    `<iframe src="${src}" width="560" height="315" title="YouTube video" ` +
+    `frameborder="0" allowfullscreen="allowfullscreen" ` +
+    `allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share" ` +
+    `referrerpolicy="strict-origin-when-cross-origin" ` +
+    `style="max-width:100%;height:auto;aspect-ratio:16/9;display:block;"></iframe>`
+  );
+}

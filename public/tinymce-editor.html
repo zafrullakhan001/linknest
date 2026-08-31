@@ -5,7 +5,7 @@
   <meta name="viewport" content="width=device-width, initial-scale=1" />
   <meta name="robots" content="noindex, nofollow, noarchive, nosnippet" />
   <title>TinyMCE Editor</title>
-  <meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self' 'unsafe-inline' 'unsafe-eval'; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; font-src 'self' data: https://fonts.gstatic.com; img-src 'self' data: https: blob:; connect-src 'self'; frame-ancestors 'self'" />
+  <meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self' 'unsafe-inline' 'unsafe-eval'; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; font-src 'self' data: https://fonts.gstatic.com; img-src 'self' data: https: blob:; media-src 'self' blob:; connect-src 'self'; frame-src 'self' https://www.youtube.com https://www.youtube-nocookie.com; child-src 'self' https://www.youtube.com https://www.youtube-nocookie.com; frame-ancestors 'self'" />
   <style>
     html, body { height: 100%; margin: 0; }
     body { background: #fff; }
@@ -467,8 +467,10 @@
           font_family_formats: fontFamilyFormats,
           content_style:
             contentStyle +
-            ' video,audio{display:block;max-width:100%;margin:0.75em 0;} ' +
-            ' video{width:100%;height:auto;min-height:180px;background:#0f172a;} ' +
+            ' img,video,iframe{max-width:100%;height:auto;} ' +
+            ' video,audio,iframe{display:block;margin:0.75em 0;} ' +
+            ' video{min-height:120px;background:#0f172a;} ' +
+            ' iframe{aspect-ratio:16/9;border:0;} ' +
             ' audio{width:100%;}',
           convert_urls: false,
           relative_urls: false,
@@ -530,7 +532,8 @@
             '+li[data-ln-space|class|style],' +
             'video[src|controls|controlslist|width|height|poster|preload|playsinline|style|class|muted|autoplay|loop],' +
             'audio[src|controls|preload|style|class],' +
-            'source[src|type]',
+            'source[src|type],' +
+            'iframe[src|width|height|title|frameborder|allow|allowfullscreen|referrerpolicy|style|class|scrolling|name|id]',
           highlight_on_focus: !viewMode,
           object_resizing: !viewMode
         };
@@ -596,8 +599,8 @@
         }
         initConfig.setup = function (editor) {
             editor.ui.registry.addButton('mediamanager', {
-              text: 'Media',
-              tooltip: 'Insert from Media Library',
+              text: 'Insert Media',
+              tooltip: 'Insert from Media Library (images, video, YouTube…)',
               onAction: function () {
                 postToParent('openMediaManager');
               }

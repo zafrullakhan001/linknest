@@ -6,7 +6,8 @@ LinkNest includes a Joomla-style **Media Library**: a shared site repository for
 
 | Action | Who |
 |--------|-----|
-| Upload, folders, tags, archive, trash, purge, image edit | **Admins only** |
+| Upload, tags, archive, trash, purge, image edit, rename/delete folders | **Admins only** (manage surfaces) |
+| Create **subfolders** | **Admins** (including from the rich-text picker) |
 | Browse / search / insert into rich text | Any **authenticated** user |
 | Floating Media widget + Admin → Media Library tab | **Admins only** |
 | Public file URLs (`/uploads/media_*`) | Readable without login (so guest-visible spaces keep working) |
@@ -15,12 +16,30 @@ LinkNest includes a Joomla-style **Media Library**: a shared site repository for
 
 1. **Admin → Tools → Media Library** — full management UI  
 2. **Floating widget** — nav icon (admins) or Ctrl+Shift+Y → Media Library  
-3. **Rich text editors** — Media Library button (Simple + TinyMCE “Media”) and section “From library”
+3. **Rich text editors** — **Insert Media** (TinyMCE) / Media Library (Simple) and section “From library”
+
+## Folders
+
+- Folders are a **virtual tree** in SQLite (`media_folders.parent_id`), not nested directories on disk.
+- The sidebar shows a **collapsible folder tree** with breadcrumb + Up.
+- Last opened folder is remembered in `localStorage` (`linknest.mediaLibrary.lastFolderId.v1`) across Admin, widget, and picker.
+- Create a **subfolder** under the current folder with the sidebar “New subfolder” field (admins).
+- **Delete folder** (manage UI): confirms first, then **cascades** — all nested subfolders are removed and every file in the subtree is moved to **Trash** (recoverable). The root `Library` folder cannot be deleted if it is the only root.
+
+## Rich text insert (Joomla-style)
+
+1. Open **Insert Media** from TinyMCE (toolbar or Insert menu), or the Media Library control in the Simple editor.
+2. Browse folders; **single-click** a file to preview it in the detail pane.
+3. Click **Insert into editor** (or **double-click** the file) to place HTML at the **caret**.
+4. After insert, drag TinyMCE’s **resize handles** on images, videos, and YouTube iframes to fit the layout.
+
+### YouTube
+
+In the picker, open **YouTube**, paste a watch / share / Shorts URL (or 11-char id), preview the thumbnail, then **Insert**. The editor stores a resizable iframe embed (CSP allows `youtube.com` / `youtube-nocookie.com` inside the TinyMCE iframe).
 
 ## File storage
 
 - Files are stored flat under `uploads/` as `media_{uuid}.{ext}` (and optional `media_{uuid}_thumb.webp|jpg`).
-- Folders are **virtual** (database tree), not nested directories on disk.
 - Trash moves files into `uploads/.media_trash/` (not publicly served).
 - Active/archived files are served like other uploads via Apache `/uploads/` or `GET /api/uploads/{filename}`.
 
@@ -76,5 +95,8 @@ Base: `/api/media` (session auth).
 
 - [`api/media.php`](../api/media.php), [`api/media_lib.php`](../api/media_lib.php)  
 - [`components/MediaLibrary.tsx`](../components/MediaLibrary.tsx)  
-- [`services/mediaService.ts`](../services/mediaService.ts)  
+- [`components/MediaPickerModal.tsx`](../components/MediaPickerModal.tsx)  
+- [`services/mediaService.ts`](../services/mediaService.ts) (`mediaFileToInsertHtml`)  
+- [`utils/youtube.ts`](../utils/youtube.ts) (`youtubeToInsertHtml`)  
+- [`public/tinymce-editor.html`](../public/tinymce-editor.html) (Insert Media, CSP, object resize)  
 - Schema version **103** (`media_*` tables)
