@@ -1,7 +1,12 @@
-import React, { useEffect } from 'react';
+import React from 'react';
+import { createPortal } from 'react-dom';
 import { MediaLibrary } from './MediaLibrary';
 import type { MediaFile } from '../types';
 import { mediaFileToInsertHtml } from '../services/mediaService';
+import { useEscapeToClose } from '../hooks/useEscapeToClose';
+
+/** Above TinyMCE fullscreen overlay (2147483000) and typical app dialogs. */
+const MEDIA_PICKER_Z = 2147483646;
 
 interface MediaPickerModalProps {
   open: boolean;
@@ -17,18 +22,8 @@ export const MediaPickerModal: React.FC<MediaPickerModalProps> = ({
   onInsertHtml,
   onInsertFile,
 }) => {
-  useEffect(() => {
-    if (!open) return;
-    const onKey = (e: KeyboardEvent) => {
-      if (e.key === 'Escape') {
-        e.preventDefault();
-        e.stopPropagation();
-        onClose();
-      }
-    };
-    window.addEventListener('keydown', onKey, true);
-    return () => window.removeEventListener('keydown', onKey, true);
-  }, [open, onClose]);
+  // Nested above TinyMCE fullscreen so Escape closes the picker first.
+  useEscapeToClose(open, onClose);
 
   if (!open) return null;
 
@@ -43,8 +38,17 @@ export const MediaPickerModal: React.FC<MediaPickerModalProps> = ({
     onClose();
   };
 
-  return (
-    <div className="fixed inset-0 z-[2147483645] flex items-center justify-center bg-slate-950/60 backdrop-blur-[2px] p-4" onClick={onClose}>
+  // Portal to body so the picker stacks above TinyMCE's fullscreen overlay
+  // (in-tree fixed + z-index loses when ancestors create a stacking context).
+  return createPortal(
+    <div
+      className="fixed inset-0 flex items-center justify-center bg-slate-950/60 backdrop-blur-[2px] p-4"
+      style={{ zIndex: MEDIA_PICKER_Z }}
+      onClick={onClose}
+      role="dialog"
+      aria-modal="true"
+      aria-label="Insert from Media Library"
+    >
       <div
         className="w-full max-w-5xl h-[min(80vh,700px)]"
         onClick={(e) => e.stopPropagation()}
@@ -57,6 +61,7 @@ export const MediaPickerModal: React.FC<MediaPickerModalProps> = ({
           onInsertHtml={handleInsertHtml}
         />
       </div>
-    </div>
+    </div>,
+    document.body
   );
 };
