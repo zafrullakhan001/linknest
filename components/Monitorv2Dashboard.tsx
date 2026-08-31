@@ -728,9 +728,22 @@ export const Monitorv2Dashboard: React.FC = () => {
         try {
             setIsPurgingLogs(true);
             const result = await monitoringService.purgeMonitorLogs(viewingLogsMonitor.id, purgeKeepDays);
-            alert(
-                `Purged ${result.deleted_count} check${result.deleted_count === 1 ? '' : 's'}.`
-            );
+            const n = result.deleted_count;
+            let message: string;
+            if (purgeKeepDays === 0) {
+                message =
+                    n === 0
+                        ? `No uptime checks found for "${viewingLogsMonitor.name}". History was already empty.`
+                        : `Purged all history for "${viewingLogsMonitor.name}": removed ${n} check${n === 1 ? '' : 's'}.`;
+            } else if (n === 0) {
+                message =
+                    `No checks removed for "${viewingLogsMonitor.name}".\n\n` +
+                    `Everything already falls within the ${keepLabels[purgeKeepDays]} retention window, so there was nothing older to delete.`;
+            } else {
+                message =
+                    `Kept ${keepLabels[purgeKeepDays]} for "${viewingLogsMonitor.name}" and removed ${n} older check${n === 1 ? '' : 's'}.`;
+            }
+            alert(message);
             setDetailDayKey(null);
             await fetchLogs(viewingLogsMonitor.id, logFilter);
         } catch (error) {
