@@ -13,6 +13,7 @@ if (session_status() === PHP_SESSION_NONE) {
 }
 
 $wantsMeta = isset($_GET['meta']) && ($_GET['meta'] === '1' || $_GET['meta'] === 'true');
+$asset = isset($_GET['asset']) ? basename((string)$_GET['asset']) : '';
 
 function loadTestReportDeny($wantsMeta, int $code, string $message, string $faviconUrl = ''): void {
     if ($wantsMeta) {
@@ -50,9 +51,29 @@ if (!$user || empty($user['is_admin'])) {
 }
 
 $resultsDir = dirname(__DIR__) . DIRECTORY_SEPARATOR . 'load-tests' . DIRECTORY_SEPARATOR . 'results';
+$vendorDir = dirname(__DIR__) . DIRECTORY_SEPARATOR . 'load-tests' . DIRECTORY_SEPARATOR . 'vendor';
 $reportFile = $resultsDir . DIRECTORY_SEPARATOR . 'report.html';
 $metaFile = $resultsDir . DIRECTORY_SEPARATOR . 'meta.json';
 $summaryFile = $resultsDir . DIRECTORY_SEPARATOR . 'last-summary.json';
+
+// Same-origin Chart.js assets (CSP script-src 'self' — CDN/inline were blocked)
+if ($asset !== '') {
+    $allowed = [
+        'chart.umd.min.js' => $vendorDir . DIRECTORY_SEPARATOR . 'chart.umd.min.js',
+        'report-charts.js' => $resultsDir . DIRECTORY_SEPARATOR . 'report-charts.js',
+    ];
+    if (!isset($allowed[$asset]) || !is_file($allowed[$asset])) {
+        http_response_code(404);
+        header('Content-Type: text/plain; charset=utf-8');
+        echo 'Asset not found';
+        exit;
+    }
+    header('Content-Type: application/javascript; charset=utf-8');
+    header('Cache-Control: no-store, no-cache, must-revalidate');
+    header('X-Content-Type-Options: nosniff');
+    readfile($allowed[$asset]);
+    exit;
+}
 
 $appName = 'Application';
 $favicon = '';
