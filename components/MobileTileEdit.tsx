@@ -23,6 +23,7 @@ interface MobileTileEditProps {
     editDesc: string;
     editHtml: string;
     editEmoji: string;
+    editEmojiImage?: string;
     editColor: ThemeColor;
     editVisibility: TileVisibility;
     editPublished: boolean;
@@ -33,6 +34,7 @@ interface MobileTileEditProps {
     onDescChange: (desc: string) => void;
     onHtmlChange: (html: string) => void;
     onEmojiChange: (emoji: string) => void;
+    onEmojiImageChange?: (url: string | null) => void;
     onColorChange: (color: ThemeColor) => void;
     onVisibilityChange: (visibility: TileVisibility) => void;
     onPublishedChange: (published: boolean) => void;
@@ -69,6 +71,7 @@ export const MobileTileEdit: React.FC<MobileTileEditProps> = ({
     editDesc,
     editHtml,
     editEmoji,
+    editEmojiImage = '',
     editColor,
     editVisibility,
     editPublished,
@@ -79,6 +82,7 @@ export const MobileTileEdit: React.FC<MobileTileEditProps> = ({
     onDescChange,
     onHtmlChange,
     onEmojiChange,
+    onEmojiImageChange,
     onColorChange,
     onVisibilityChange,
     onPublishedChange,
@@ -734,8 +738,10 @@ export const MobileTileEdit: React.FC<MobileTileEditProps> = ({
                                     <TitleEmojiPicker
                                         value={editEmoji}
                                         onChange={onEmojiChange}
+                                        imageUrl={editEmojiImage}
+                                        onImageChange={onEmojiImageChange}
                                         size="lg"
-                                        title="Choose page emoji"
+                                        title="Choose page icon"
                                     />
                                     <input
                                         type="text"

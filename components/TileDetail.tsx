@@ -914,6 +914,48 @@ export const TileDetail: React.FC<TileDetailProps> = ({
         }
     };
     const [editEmoji, setEditEmoji] = useState(tile.emoji);
+    const [editEmojiImage, setEditEmojiImage] = useState<string>(tile.emojiImage || '');
+    const [editEmojiImageOpacity, setEditEmojiImageOpacity] = useState<number>(
+        typeof tile.emojiImageOpacity === 'number' ? Math.max(0, Math.min(100, tile.emojiImageOpacity)) : 100
+    );
+    const [editEmojiImageOffsetX, setEditEmojiImageOffsetX] = useState<number>(
+        typeof tile.emojiImageOffsetX === 'number' ? Math.max(-50, Math.min(50, tile.emojiImageOffsetX)) : 0
+    );
+    const [editEmojiImageOffsetY, setEditEmojiImageOffsetY] = useState<number>(
+        typeof tile.emojiImageOffsetY === 'number' ? Math.max(-50, Math.min(50, tile.emojiImageOffsetY)) : 0
+    );
+    const [editEmojiImageZoom, setEditEmojiImageZoom] = useState<number>(
+        typeof tile.emojiImageZoom === 'number' ? Math.max(50, Math.min(300, tile.emojiImageZoom)) : 100
+    );
+    const handleEditEmojiImageChange = useCallback((url: string | null) => {
+        const next = (url || '').trim();
+        setEditEmojiImage(next);
+        if (!next || next !== (tile.emojiImage || '').trim()) {
+            setEditEmojiImageOpacity(100);
+            setEditEmojiImageOffsetX(0);
+            setEditEmojiImageOffsetY(0);
+            setEditEmojiImageZoom(100);
+        }
+    }, [tile.emojiImage]);
+    const editEmojiImageFields = useMemo(() => {
+        const trimmed = editEmojiImage.trim();
+        if (!trimmed) {
+            return {
+                emojiImage: null as string | null,
+                emojiImageOpacity: null as number | null,
+                emojiImageOffsetX: null as number | null,
+                emojiImageOffsetY: null as number | null,
+                emojiImageZoom: null as number | null,
+            };
+        }
+        return {
+            emojiImage: trimmed,
+            emojiImageOpacity: editEmojiImageOpacity,
+            emojiImageOffsetX: editEmojiImageOffsetX,
+            emojiImageOffsetY: editEmojiImageOffsetY,
+            emojiImageZoom: editEmojiImageZoom,
+        };
+    }, [editEmojiImage, editEmojiImageOpacity, editEmojiImageOffsetX, editEmojiImageOffsetY, editEmojiImageZoom]);
     const [editColor, setEditColor] = useState<ThemeColor>(tile.themeColor);
     const [editVisibility, setEditVisibility] = useState<TileVisibility>(tile.visibility || 'public');
     const [editAccessRestrictions, setEditAccessRestrictions] = useState<AccessRestrictions | null | undefined>(tile.accessRestrictions);
@@ -1476,6 +1518,19 @@ export const TileDetail: React.FC<TileDetailProps> = ({
         setExpandedTabs(new Set());
         setExpandedSections(new Set());
         setEditEmoji(tile.emoji);
+        setEditEmojiImage(tile.emojiImage || '');
+        setEditEmojiImageOpacity(
+            typeof tile.emojiImageOpacity === 'number' ? Math.max(0, Math.min(100, tile.emojiImageOpacity)) : 100
+        );
+        setEditEmojiImageOffsetX(
+            typeof tile.emojiImageOffsetX === 'number' ? Math.max(-50, Math.min(50, tile.emojiImageOffsetX)) : 0
+        );
+        setEditEmojiImageOffsetY(
+            typeof tile.emojiImageOffsetY === 'number' ? Math.max(-50, Math.min(50, tile.emojiImageOffsetY)) : 0
+        );
+        setEditEmojiImageZoom(
+            typeof tile.emojiImageZoom === 'number' ? Math.max(50, Math.min(300, tile.emojiImageZoom)) : 100
+        );
         setEditColor(tile.themeColor);
         setEditVisibility(tile.visibility || 'public');
         setEditAccessRestrictions(tile.accessRestrictions);
@@ -3214,6 +3269,7 @@ export const TileDetail: React.FC<TileDetailProps> = ({
             description: editDesc,
             htmlContent: editHtml,
             emoji: editEmoji,
+            ...editEmojiImageFields,
             themeColor: editColor,
             tabs: clonedTabs,
             sections: clonedSections, // Only include sections if no tabs
@@ -3390,6 +3446,7 @@ export const TileDetail: React.FC<TileDetailProps> = ({
                 description: editDesc,
                 htmlContent: editHtml,
                 emoji: editEmoji,
+                ...editEmojiImageFields,
                 themeColor: editColor,
                 tabs: reorderedTabs.length > 0 ? reorderedTabs : undefined,
                 sections: reorderedTabs.length > 0 ? undefined : editSections,
@@ -3792,6 +3849,7 @@ export const TileDetail: React.FC<TileDetailProps> = ({
                     description: editDesc,
                     htmlContent: editHtml,
                     emoji: editEmoji,
+                    ...editEmojiImageFields,
                     themeColor: editColor,
                     tabs: currentTabs.length > 0 ? currentTabs : undefined,
                     sections: currentTabs.length > 0 ? undefined : editSections,
@@ -5551,6 +5609,7 @@ export const TileDetail: React.FC<TileDetailProps> = ({
             description: editDesc,
             htmlContent: editHtml,
             emoji: editEmoji,
+            ...editEmojiImageFields,
             themeColor: editColor,
             tabs: nextTabs.length > 0 ? nextTabs : undefined,
             sections: nextTabs.length > 0 ? undefined : editSections,
@@ -7080,9 +7139,22 @@ export const TileDetail: React.FC<TileDetailProps> = ({
                             {/* Icon Box */}
                             <div className={`
                     linknest-content-link-icon w-16 h-16 rounded-2xl ${styles.base} shadow-xl shadow-black/10 dark:shadow-black/20 
-                    flex items-center justify-center text-3xl shrink-0 border-t border-white/20 text-white
+                    flex items-center justify-center text-3xl shrink-0 border-t border-white/20 text-white overflow-hidden
                 `}>
-                                {tile.emoji}
+                                {tile.emojiImage ? (
+                                    <img
+                                        src={tile.emojiImage}
+                                        alt=""
+                                        className="w-full h-full object-contain p-1.5"
+                                        style={{
+                                            opacity: Math.max(0, Math.min(100, tile.emojiImageOpacity ?? 100)) / 100,
+                                            transform: `translate(${Math.max(-50, Math.min(50, tile.emojiImageOffsetX ?? 0))}px, ${Math.max(-50, Math.min(50, tile.emojiImageOffsetY ?? 0))}px) scale(${Math.max(50, Math.min(300, tile.emojiImageZoom ?? 100)) / 100})`,
+                                        }}
+                                        draggable={false}
+                                    />
+                                ) : (
+                                    tile.emoji
+                                )}
                             </div>
 
                             {/* Title & Meta */}
@@ -7368,8 +7440,21 @@ export const TileDetail: React.FC<TileDetailProps> = ({
                                                 {/* Drawer header */}
                                                 <div className="px-4 py-4 border-b border-slate-200 dark:border-slate-800 flex items-center justify-between gap-3 shrink-0">
                                                     <div className="min-w-0 flex items-center gap-3">
-                                                        <div className={`w-10 h-10 rounded-xl ${styles.base} flex items-center justify-center text-xl text-white shrink-0`}>
-                                                            {tile.emoji}
+                                                        <div className={`w-10 h-10 rounded-xl ${styles.base} flex items-center justify-center text-xl text-white shrink-0 overflow-hidden`}>
+                                                            {tile.emojiImage ? (
+                                                                <img
+                                                                    src={tile.emojiImage}
+                                                                    alt=""
+                                                                    className="w-full h-full object-contain p-0.5"
+                                                                    style={{
+                                                                        opacity: Math.max(0, Math.min(100, tile.emojiImageOpacity ?? 100)) / 100,
+                                                                        transform: `translate(${Math.max(-50, Math.min(50, tile.emojiImageOffsetX ?? 0))}px, ${Math.max(-50, Math.min(50, tile.emojiImageOffsetY ?? 0))}px) scale(${Math.max(50, Math.min(300, tile.emojiImageZoom ?? 100)) / 100})`,
+                                                                    }}
+                                                                    draggable={false}
+                                                                />
+                                                            ) : (
+                                                                tile.emoji
+                                                            )}
                                                         </div>
                                                         <div className="min-w-0">
                                                             <h2 className="text-base font-bold text-slate-900 dark:text-white truncate">{tile.title}</h2>
@@ -10552,6 +10637,7 @@ export const TileDetail: React.FC<TileDetailProps> = ({
                         editDesc={editDesc}
                         editHtml={editHtml}
                         editEmoji={editEmoji}
+                        editEmojiImage={editEmojiImage}
                         editColor={editColor}
                         editVisibility={editVisibility}
                         editPublished={editPublished}
@@ -10562,6 +10648,7 @@ export const TileDetail: React.FC<TileDetailProps> = ({
                         onDescChange={setEditDesc}
                         onHtmlChange={setEditHtml}
                         onEmojiChange={setEditEmoji}
+                        onEmojiImageChange={handleEditEmojiImageChange}
                         onColorChange={setEditColor}
                         onVisibilityChange={setEditVisibility}
                         onPublishedChange={setEditPublished}
@@ -10596,7 +10683,20 @@ export const TileDetail: React.FC<TileDetailProps> = ({
                             <div>
                                 <h1 className="text-2xl font-bold text-slate-800 dark:text-white mb-1">Edit Page</h1>
                                 <p className="text-sm text-slate-500 dark:text-slate-400 flex items-center gap-2">
-                                    <span className="text-lg">{editEmoji || '✨'}</span>
+                                    {editEmojiImage ? (
+                                        <img
+                                            src={editEmojiImage}
+                                            alt=""
+                                            className="w-5 h-5 object-contain"
+                                            style={{
+                                                opacity: Math.max(0, Math.min(100, editEmojiImageOpacity)) / 100,
+                                                transform: `translate(${Math.max(-50, Math.min(50, editEmojiImageOffsetX))}px, ${Math.max(-50, Math.min(50, editEmojiImageOffsetY))}px) scale(${Math.max(50, Math.min(300, editEmojiImageZoom)) / 100})`,
+                                            }}
+                                            draggable={false}
+                                        />
+                                    ) : (
+                                        <span className="text-lg">{editEmoji || '✨'}</span>
+                                    )}
                                     <span className="font-medium">{editTitle || 'Untitled Page'}</span>
                                 </p>
                             </div>
@@ -10708,13 +10808,22 @@ export const TileDetail: React.FC<TileDetailProps> = ({
                                             General Settings
                                         </h3>
                                         {!generalSettingsExpanded && (
-                                            <p className="text-sm text-slate-500 dark:text-slate-400 truncate lg:hidden">
-                                                {editEmoji ? `${editEmoji} ` : ''}{editTitle || 'Untitled'}
+                                            <p className="text-sm text-slate-500 dark:text-slate-400 truncate lg:hidden flex items-center gap-1.5">
+                                                {editEmojiImage ? (
+                                                    <img src={editEmojiImage} alt="" className="w-4 h-4 object-contain shrink-0" draggable={false} />
+                                                ) : editEmoji ? (
+                                                    <span>{editEmoji}</span>
+                                                ) : null}
+                                                <span className="truncate">{editTitle || 'Untitled'}</span>
                                             </p>
                                         )}
                                     </div>
-                                    {!generalSettingsExpanded && editEmoji ? (
-                                        <span className="hidden lg:inline text-xl leading-none" aria-hidden>{editEmoji}</span>
+                                    {!generalSettingsExpanded && (editEmojiImage || editEmoji) ? (
+                                        editEmojiImage ? (
+                                            <img src={editEmojiImage} alt="" className="hidden lg:inline w-5 h-5 object-contain" aria-hidden draggable={false} />
+                                        ) : (
+                                            <span className="hidden lg:inline text-xl leading-none" aria-hidden>{editEmoji}</span>
+                                        )
                                     ) : null}
                                 </button>
 
@@ -10733,8 +10842,10 @@ export const TileDetail: React.FC<TileDetailProps> = ({
                                             <TitleEmojiPicker
                                                 value={editEmoji}
                                                 onChange={setEditEmoji}
+                                                imageUrl={editEmojiImage}
+                                                onImageChange={handleEditEmojiImageChange}
                                                 size="lg"
-                                                title="Choose page emoji"
+                                                title="Choose page icon"
                                             />
                                             <div className="flex-1">
                                                 <input
@@ -13466,6 +13577,7 @@ export const TileDetail: React.FC<TileDetailProps> = ({
                                                                     description: editDesc,
                                                                     htmlContent: editHtml,
                                                                     emoji: editEmoji,
+                                                                    ...editEmojiImageFields,
                                                                     themeColor: editColor,
                                                                     tabs: editTabs.length > 0 ? editTabs : undefined,
                                                                     sections: editTabs.length > 0 ? undefined : filteredSections,
