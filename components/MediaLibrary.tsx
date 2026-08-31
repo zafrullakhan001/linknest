@@ -630,35 +630,35 @@ export const MediaLibrary: React.FC<MediaLibraryProps> = ({
       if (selected?.id === file.id) setSelected(null);
       await loadFiles();
     } catch (err) {
-      setError(err instanceof Error ? err.message : 'Trash failed');
+      setError(err instanceof Error ? err.message : 'Delete failed');
     }
   };
 
-  const handlePurgeSelected = async () => {
+  /** Permanently delete: selected trash items, or the whole trash if nothing is selected. */
+  const handleDeleteFromTrash = async () => {
     if (!canManage) return;
     const ids: number[] = [...selectedIds];
-    if (!ids.length) return;
-    if (!window.confirm(`Permanently delete ${ids.length} file(s)?`)) return;
-    try {
-      await purgeMediaFiles(ids);
-      setSelectedIds(new Set());
-      setSelected(null);
-      await loadFiles();
-    } catch (err) {
-      setError(err instanceof Error ? err.message : 'Purge failed');
+    if (ids.length > 0) {
+      if (!window.confirm(`Permanently delete ${ids.length} selected file(s)? This cannot be undone.`)) return;
+      try {
+        await purgeMediaFiles(ids);
+        setSelectedIds(new Set());
+        setSelected(null);
+        await loadFiles();
+      } catch (err) {
+        setError(err instanceof Error ? err.message : 'Delete failed');
+      }
+      return;
     }
-  };
-
-  const handleEmptyTrash = async () => {
-    if (!canManage) return;
-    if (!window.confirm('Empty trash permanently?')) return;
+    if (total <= 0) return;
+    if (!window.confirm(`Permanently delete all ${total} file(s) in Trash? This cannot be undone.`)) return;
     try {
       await purgeAllMediaTrash();
       setSelected(null);
       setSelectedIds(new Set());
       await loadFiles();
     } catch (err) {
-      setError(err instanceof Error ? err.message : 'Empty trash failed');
+      setError(err instanceof Error ? err.message : 'Delete failed');
     }
   };
 
@@ -867,7 +867,7 @@ export const MediaLibrary: React.FC<MediaLibraryProps> = ({
     if (!canManage) return;
     const ids = [...selectedIds];
     if (!ids.length) return;
-    if (!window.confirm(`Move ${ids.length} selected file(s) to trash?`)) return;
+    if (!window.confirm(`Delete ${ids.length} selected file(s)? They will move to Trash.`)) return;
     setBulkBusy(true);
     setError(null);
     try {
@@ -876,7 +876,7 @@ export const MediaLibrary: React.FC<MediaLibraryProps> = ({
       setSelected(null);
       await loadFiles();
     } catch (err) {
-      setError(err instanceof Error ? err.message : 'Trash selected failed');
+      setError(err instanceof Error ? err.message : 'Delete failed');
     } finally {
       setBulkBusy(false);
     }
@@ -1096,7 +1096,7 @@ export const MediaLibrary: React.FC<MediaLibraryProps> = ({
               </button>
               {view !== 'trash' && (
                 <button type="button" disabled={bulkBusy} onClick={handleTrashSelected} className={BTN_DANGER_GHOST}>
-                  <FaTrash size={10} /> Trash selected
+                  <FaTrash size={10} /> Delete
                 </button>
               )}
               {selectedImageIds.length > 0 && view !== 'trash' && (
@@ -1315,11 +1315,19 @@ export const MediaLibrary: React.FC<MediaLibraryProps> = ({
         >
           {view === 'trash' && canManage && (
             <div className="flex flex-wrap gap-2 mb-3">
-              <button type="button" onClick={handlePurgeSelected} disabled={!selectedIds.size} className={BTN_DANGER}>
-                <FaTrash size={10} /> Purge selected
-              </button>
-              <button type="button" onClick={handleEmptyTrash} className={BTN_DANGER_GHOST}>
-                <FaTrash size={10} /> Empty trash
+              <button
+                type="button"
+                onClick={handleDeleteFromTrash}
+                disabled={selectedIds.size === 0 && total <= 0}
+                className={BTN_DANGER}
+                title={
+                  selectedIds.size > 0
+                    ? 'Permanently delete the selected files'
+                    : 'Permanently delete everything in Trash'
+                }
+              >
+                <FaTrash size={10} />
+                {selectedIds.size > 0 ? `Delete (${selectedIds.size})` : 'Delete all'}
               </button>
             </div>
           )}
@@ -1569,7 +1577,7 @@ export const MediaLibrary: React.FC<MediaLibraryProps> = ({
                     <FaArchive size={10} /> Archive
                   </button>
                   <button type="button" onClick={() => handleTrash(selected)} className={`${BTN_DANGER_GHOST} w-full`}>
-                    <FaTrash size={10} /> Trash
+                    <FaTrash size={10} /> Delete
                   </button>
                 </>
               )}
@@ -1579,7 +1587,7 @@ export const MediaLibrary: React.FC<MediaLibraryProps> = ({
                     <FaUndo size={10} /> Restore to library
                   </button>
                   <button type="button" onClick={() => handleTrash(selected)} className={`${BTN_DANGER_GHOST} w-full`}>
-                    <FaTrash size={10} /> Trash
+                    <FaTrash size={10} /> Delete
                   </button>
                 </>
               )}
@@ -1591,14 +1599,14 @@ export const MediaLibrary: React.FC<MediaLibraryProps> = ({
                   <button
                     type="button"
                     onClick={async () => {
-                      if (!window.confirm('Permanently delete this file?')) return;
+                      if (!window.confirm('Permanently delete this file? This cannot be undone.')) return;
                       await purgeMediaFiles([selected.id]);
                       setSelected(null);
                       await loadFiles();
                     }}
                     className={`${BTN_DANGER} w-full`}
                   >
-                    <FaTrash size={10} /> Purge
+                    <FaTrash size={10} /> Delete
                   </button>
                 </>
               )}

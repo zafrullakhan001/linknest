@@ -6,7 +6,7 @@ LinkNest includes a Joomla-style **Media Library**: a shared site repository for
 
 | Action | Who |
 |--------|-----|
-| Upload, tags, archive, trash, purge, image edit, rename/delete folders | **Admins only** (manage surfaces) |
+| Upload, tags, archive, trash, delete, image edit, rename/delete folders | **Admins only** (manage surfaces) |
 | Create **subfolders** | **Admins** (including from the rich-text picker) |
 | Browse / search / insert into rich text | Any **authenticated** user |
 | Floating Media widget + Admin → Media Library tab | **Admins only** |
@@ -54,11 +54,11 @@ In the picker, open **YouTube**, paste a watch / share / Shorts URL (or 11-char 
 
 If PHP `upload_max_filesize` / `post_max_size` are lower, raise them (videos need at least 50MB).
 
-## Archive vs trash vs purge
+## Archive vs trash vs delete
 
 - **Archive** — hides from the default library; file remains on the public URL path.  
-- **Trash** — soft-delete; file moved off the public path. Admins still see thumbnails via session-authenticated `GET /api/media/{id}/thumb` and `/file`.  
-- **Purge / Empty trash** — permanent delete (disk + DB row).
+- **Delete** (from library) — moves the file to **Trash** (soft-delete; recoverable).  
+- **Delete** (from Trash) — permanent delete (disk + DB row). One control: deletes the selection, or all of Trash if nothing is selected.
 
 ## Image quality and viewing
 
@@ -88,9 +88,9 @@ Base: `/api/media` (session auth).
 - `PATCH /{id}` — metadata / status  
 - `POST /{id}/transform` — image edit (resize, crop, rotate, compress, remove BG)  
 - `POST /batch-transform` — same options for multiple image ids (admin; replaces in place by default)  
-- `POST /batch-trash` — soft-delete multiple ids  
-- `DELETE /{id}` — trash (or purge if already trash)  
-- `POST /purge`, `POST /purge-all`
+- `POST /batch-trash` — soft-delete multiple ids (Move to Trash)  
+- `DELETE /{id}` — Trash, or permanent Delete if already in Trash  
+- `POST /purge`, `POST /purge-all` — permanent Delete from Trash
 
 ## Related code
 
