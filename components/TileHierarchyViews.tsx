@@ -2,6 +2,7 @@ import React, { useEffect, useRef, useState } from 'react';
 import { Tab, LinkSection, Link, RichTextContent } from '../types';
 import { exportSectionLinksToFile, exportTabToFile } from '../services/sectionTabTransferService';
 import { TitleEmojiPicker } from './TitleEmojiPicker';
+import { AddLinkMenu } from './AddLinkMenu';
 
 export type HierarchyViewMode = 'cards' | 'tree' | 'compact';
 
@@ -332,6 +333,8 @@ export interface TileHierarchyViewsProps {
   onDeleteRichText: (tabId: string, sectionId: string, richTextId: string) => void;
   onCloneRichText: (tabId: string, sectionId: string, richTextId: string) => void;
   onAddLink: (tabId: string, sectionId: string) => void;
+  /** Optional: open bulk-add dialog for this section. Falls back to onAddLink if omitted. */
+  onBulkAddLink?: (tabId: string, sectionId: string) => void;
   onAddRichText: (tabId: string, sectionId: string) => void;
   onToggleLinkSelection: (linkId: string) => void;
   onToggleRichTextSelection?: (richTextId: string) => void;
@@ -419,6 +422,7 @@ const TabNode: React.FC<
   onDeleteRichText,
   onCloneRichText,
   onAddLink,
+  onBulkAddLink,
   onAddRichText,
   onToggleLinkSelection,
   onToggleRichTextSelection,
@@ -552,6 +556,7 @@ const TabNode: React.FC<
               onDeleteRichText={onDeleteRichText}
               onCloneRichText={onCloneRichText}
               onAddLink={onAddLink}
+              onBulkAddLink={onBulkAddLink}
               onAddRichText={onAddRichText}
               onToggleLinkSelection={onToggleLinkSelection}
               onToggleRichTextSelection={onToggleRichTextSelection}
@@ -607,6 +612,7 @@ const SectionNode: React.FC<{
   onDeleteRichText: (tabId: string, sectionId: string, richTextId: string) => void;
   onCloneRichText: (tabId: string, sectionId: string, richTextId: string) => void;
   onAddLink: (tabId: string, sectionId: string) => void;
+  onBulkAddLink?: (tabId: string, sectionId: string) => void;
   onAddRichText: (tabId: string, sectionId: string) => void;
   onToggleLinkSelection: (linkId: string) => void;
   onToggleRichTextSelection?: (richTextId: string) => void;
@@ -642,6 +648,7 @@ const SectionNode: React.FC<{
   onDeleteRichText,
   onCloneRichText,
   onAddLink,
+  onBulkAddLink,
   onAddRichText,
   onToggleLinkSelection,
   onToggleRichTextSelection,
@@ -902,13 +909,11 @@ const SectionNode: React.FC<{
             );
           })}
           <div className={`flex flex-wrap gap-3 ${isCompact ? 'px-3 py-1.5 pl-10' : 'px-2 py-1'}`}>
-            <button
-              type="button"
-              onClick={() => onAddLink(tab.id, section.id)}
-              className="text-[11px] font-semibold text-brand-600 dark:text-brand-400 hover:underline"
-            >
-              + Add Link
-            </button>
+            <AddLinkMenu
+              variant="text"
+              onAddLink={() => onAddLink(tab.id, section.id)}
+              onBulkAdd={() => (onBulkAddLink || onAddLink)(tab.id, section.id)}
+            />
             <button
               type="button"
               onClick={() => onAddRichText(tab.id, section.id)}

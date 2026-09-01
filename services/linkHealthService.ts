@@ -312,6 +312,41 @@ export const linkHealthService = {
   },
 
   /**
+   * Fetch page titles for up to 20 HTTP(S) URLs (bulk-add preview).
+   */
+  async fetchTitles(
+    urls: string[],
+    signal?: AbortSignal
+  ): Promise<
+    Array<{
+      url: string;
+      skipped?: boolean;
+      title: string | null;
+      error?: string | null;
+    }>
+  > {
+    const response = await withTimeout(
+      fetch(healthApi('/linkhealth/fetch-titles'), {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        credentials: 'include',
+        body: JSON.stringify({ urls }),
+        signal
+      }),
+      65000,
+      'fetchTitles'
+    );
+
+    if (!response.ok) {
+      const err = await response.json().catch(() => ({}));
+      throw new Error(err.error || 'Failed to fetch titles');
+    }
+
+    const data = await response.json();
+    return Array.isArray(data.results) ? data.results : [];
+  },
+
+  /**
    * Get health indicator color class
    */
   getHealthColor(status: string): string {

@@ -98,6 +98,8 @@ import type { SpaceCompareCandidate } from './SpaceCompareDialog';
 import { TileAnimationSelector, getTileAnimationClass, TileAnimation, getAnimationOption, resolveLinkAnimation } from './TileAnimationSelector';
 import { AuthSourceBadge } from './AuthSourceBadge';
 import { EditLinkForm } from './EditLinkForm';
+import { AddLinkMenu } from './AddLinkMenu';
+import { BulkAddLinksDialog } from './BulkAddLinksDialog';
 import { getDisplayUrl, isHttpOrHttpsUrl, normalizeStoredLinkUrl, rewriteHtmlAnchorHrefs, viewerLinkDisplay, viewerLinkUrl, effectiveShowShortUrls } from '../utils/urlDisplay';
 import { diagnoseLinkUrl, hasBlockingUrlIssues } from '../utils/urlDiagnostics';
 import { UrlFormDiagnostics, UrlNeedsFixBadge, InvalidUrlMark } from './UrlFormDiagnostics';
@@ -1027,6 +1029,12 @@ export const TileDetail: React.FC<TileDetailProps> = ({
         linkId: string;
     } | null>(null);
     const [viewQuickEditSaving, setViewQuickEditSaving] = useState(false);
+    /** Bulk add links dialog target (view or edit mode). */
+    const [bulkAddTarget, setBulkAddTarget] = useState<{
+        tabId: string;
+        sectionId: string;
+        mode: 'view' | 'edit';
+    } | null>(null);
     /** Inline rename for tab/section titles in view mode */
     const [viewRename, setViewRename] = useState<
         | { kind: 'tab'; tabId: string; value: string }
@@ -4407,6 +4415,50 @@ export const TileDetail: React.FC<TileDetailProps> = ({
         setLinkUserSearch((prev) => ({ ...prev, [draftId]: '' }));
         setLinkGroupSearch((prev) => ({ ...prev, [draftId]: '' }));
         setShowLinkEmojiPicker((prev) => ({ ...prev, [draftId]: false }));
+    };
+
+    const handleStartBulkAdd = (tabId: string, sectionId: string, mode: 'view' | 'edit') => {
+        if (tile.canEdit !== true) return;
+        if (tile.canAddLinks === false) return;
+        setBulkAddTarget({ tabId, sectionId, mode });
+    };
+
+    const handleBulkAddCommit = async (newLinks: Link[]) => {
+        if (!bulkAddTarget || newLinks.length === 0) return;
+        const { tabId, sectionId, mode } = bulkAddTarget;
+        if (mode === 'edit') {
+            const withRole = newLinks.map((l) => ({
+                ...l,
+                hasRoleAccess: tile.hasRoleAccess === true || undefined,
+            }));
+            appendLinksToSection(tabId, sectionId, withRole);
+            return;
+        }
+        const nextTabs = (tile.tabs || []).map((tab) => {
+            if (tab.id !== tabId) return tab;
+            return {
+                ...tab,
+                sections: (tab.sections || []).map((s) => {
+                    if (s.id !== sectionId) return s;
+                    const items = [
+                        ...(s.links || []).map((l) => ({ ...l, itemType: 'link' as const })),
+                        ...(s.richTextContent || []).map((rt) => ({ ...rt, itemType: 'rich-text' as const })),
+                    ];
+                    const maxPosition = Math.max(...items.map((i) => i.position ?? 0), -1);
+                    const withPos = newLinks.map((link, i) => ({
+                        ...link,
+                        position: maxPosition + 1 + i,
+                        hasRoleAccess: tile.hasRoleAccess === true || undefined,
+                    }));
+                    return {
+                        ...s,
+                        links: [...(s.links || []), ...withPos],
+                        richTextContent: s.richTextContent || [],
+                    };
+                }),
+            };
+        });
+        await persistViewModeTile({ ...tile, tabs: nextTabs });
     };
 
     const handleSaveViewQuickEdit = async () => {
@@ -9214,21 +9266,12 @@ export const TileDetail: React.FC<TileDetailProps> = ({
                                                 </div>
                                                 <div className="flex items-center gap-1 shrink-0">
                                                 {canQuickAddLinks && activeViewTab && (
-                                                    <button
-                                                        type="button"
-                                                        onClick={(e) => {
-                                                            e.preventDefault();
-                                                            e.stopPropagation();
-                                                            handleStartViewQuickAdd(activeViewTab.id, section.id);
-                                                        }}
-                                                        className="p-1.5 rounded-md text-slate-500 dark:text-slate-400 hover:text-brand-600 dark:hover:text-brand-400 hover:bg-slate-100 dark:hover:bg-slate-700 transition-all"
+                                                    <AddLinkMenu
+                                                        variant="icon"
                                                         title="Add link to this section"
-                                                        aria-label="Add link to this section"
-                                                    >
-                                                        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor" className="w-4 h-4" aria-hidden>
-                                                            <path d="M10.75 4.75a.75.75 0 00-1.5 0v4.5h-4.5a.75.75 0 000 1.5h4.5v4.5a.75.75 0 001.5 0v-4.5h4.5a.75.75 0 000-1.5h-4.5v-4.5z" />
-                                                        </svg>
-                                                    </button>
+                                                        onAddLink={() => handleStartViewQuickAdd(activeViewTab.id, section.id)}
+                                                        onBulkAdd={() => handleStartBulkAdd(activeViewTab.id, section.id, 'view')}
+                                                    />
                                                 )}
                                                 {!shouldForceStacked && (
                                                     <div
@@ -10598,6 +10641,20 @@ export const TileDetail: React.FC<TileDetailProps> = ({
                     />,
                     document.body
                 )}
+
+                {bulkAddTarget && (
+                    <BulkAddLinksDialog
+                        sectionTitle={
+                            (bulkAddTarget.mode === 'view' ? tile.tabs : editTabs)
+                                ?.find((t) => t.id === bulkAddTarget.tabId)
+                                ?.sections?.find((s) => s.id === bulkAddTarget.sectionId)?.title
+                            || undefined
+                        }
+                        onClose={() => setBulkAddTarget(null)}
+                        onCommit={handleBulkAddCommit}
+                        generateId={generateId}
+                    />
+                )}
             </>
         );
     }
@@ -11883,6 +11940,10 @@ export const TileDetail: React.FC<TileDetailProps> = ({
                                                     expandTabAndSection(tabId, sectionId);
                                                     setShowAddLinkForm(prev => ({ ...prev, [sectionId]: true }));
                                                     openCardsForEditing(`tab-${tabId}`);
+                                                }}
+                                                onBulkAddLink={(tabId, sectionId) => {
+                                                    expandTabAndSection(tabId, sectionId);
+                                                    handleStartBulkAdd(tabId, sectionId, 'edit');
                                                 }}
                                                 onAddRichText={(tabId, sectionId) => {
                                                     expandTabAndSection(tabId, sectionId);
@@ -13454,17 +13515,13 @@ export const TileDetail: React.FC<TileDetailProps> = ({
                                                                                 </svg>
                                                                                 Add Rich Text
                                                                             </button>
-                                                                            <button
-                                                                                onClick={() => {
+                                                                            <AddLinkMenu
+                                                                                variant="button"
+                                                                                onAddLink={() => {
                                                                                     setShowAddLinkForm(prev => ({ ...prev, [section.id]: true }));
                                                                                 }}
-                                                                                className="bg-brand-600 hover:bg-brand-500 text-white px-4 py-2 rounded-lg text-sm font-semibold transition-all shadow-md hover:shadow-lg shadow-brand-500/30 hover:shadow-brand-500/40 flex items-center justify-center gap-2"
-                                                                            >
-                                                                                <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" strokeWidth={2.5} stroke="currentColor" className="w-4 h-4">
-                                                                                    <path strokeLinecap="round" strokeLinejoin="round" d="M12 4.5v15m7.5-7.5h-15" />
-                                                                                </svg>
-                                                                                Add Link
-                                                                            </button>
+                                                                                onBulkAdd={() => handleStartBulkAdd(tab.id, section.id, 'edit')}
+                                                                            />
                                                                         </div>
                                                                     )}
 
@@ -14925,6 +14982,20 @@ export const TileDetail: React.FC<TileDetailProps> = ({
                         }}
                     />,
                     document.body
+                )}
+
+                {bulkAddTarget && (
+                    <BulkAddLinksDialog
+                        sectionTitle={
+                            editTabs
+                                ?.find((t) => t.id === bulkAddTarget.tabId)
+                                ?.sections?.find((s) => s.id === bulkAddTarget.sectionId)?.title
+                            || undefined
+                        }
+                        onClose={() => setBulkAddTarget(null)}
+                        onCommit={handleBulkAddCommit}
+                        generateId={generateId}
+                    />
                 )}
             </>
         );

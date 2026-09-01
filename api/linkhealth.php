@@ -46,6 +46,8 @@ switch ($method) {
             handleCheckUrl();
         } elseif ($path === '/check-urls') {
             handleCheckUrls();
+        } elseif ($path === '/fetch-titles') {
+            handleFetchTitles();
         } elseif ($path === '/check-tile') {
             handleCheckTileLinks();
         } elseif ($path === '/check-all') {
@@ -1400,6 +1402,243 @@ function handleCheckUrls() {
     } catch (Exception $e) {
         error_log('URL batch probe failed: ' . $e->getMessage());
         sendJSON(['error' => 'Failed to check URLs: ' . $e->getMessage()], 500);
+    }
+}
+
+/**
+ * Private / reserved IP check for SSRF guards on title fetch.
+ */
+function linkhealthIsPrivateIp(string $ip): bool {
+    if (!filter_var($ip, FILTER_VALIDATE_IP)) {
+        return true;
+    }
+    if (filter_var($ip, FILTER_VALIDATE_IP, FILTER_FLAG_IPV4)) {
+        $long = ip2long($ip);
+        if ($long === false) {
+            return true;
+        }
+        $ranges = [
+            ['0.0.0.0', '0.255.255.255'],
+            ['10.0.0.0', '10.255.255.255'],
+            ['127.0.0.0', '127.255.255.255'],
+            ['169.254.0.0', '169.254.255.255'],
+            ['172.16.0.0', '172.31.255.255'],
+            ['192.168.0.0', '192.168.255.255'],
+            ['224.0.0.0', '239.255.255.255'],
+        ];
+        foreach ($ranges as [$start, $end]) {
+            if ($long >= ip2long($start) && $long <= ip2long($end)) {
+                return true;
+            }
+        }
+        return false;
+    }
+    $lower = strtolower($ip);
+    if ($lower === '::1' || str_starts_with($lower, 'fe80:') || str_starts_with($lower, 'fc') || str_starts_with($lower, 'fd')) {
+        return true;
+    }
+    if (str_starts_with($lower, '::ffff:')) {
+        $v4 = substr($lower, 7);
+        if (filter_var($v4, FILTER_VALIDATE_IP, FILTER_FLAG_IPV4)) {
+            return linkhealthIsPrivateIp($v4);
+        }
+    }
+    return false;
+}
+
+/**
+ * True when host is safe to fetch (not private/reserved after DNS).
+ */
+function linkhealthHostAllowed(string $host): bool {
+    $host = trim($host);
+    if ($host === '' || strcasecmp($host, 'localhost') === 0) {
+        return false;
+    }
+    if (filter_var($host, FILTER_VALIDATE_IP, FILTER_FLAG_IPV4 | FILTER_FLAG_IPV6)) {
+        return !linkhealthIsPrivateIp($host);
+    }
+    $records = @dns_get_record($host, DNS_A + DNS_AAAA);
+    if (!is_array($records) || count($records) === 0) {
+        // DNS failure — refuse title fetch (safer than probing unknown hosts)
+        return false;
+    }
+    foreach ($records as $rec) {
+        $ip = $rec['ip'] ?? $rec['ipv6'] ?? null;
+        if ($ip && linkhealthIsPrivateIp((string)$ip)) {
+            return false;
+        }
+    }
+    return true;
+}
+
+/**
+ * Extract page title from HTML: <title>, then og:title / twitter:title.
+ */
+function linkhealthExtractPageTitle(string $html): ?string {
+    $title = null;
+    if (preg_match('/<title[^>]*>([^<]+)<\/title>/i', $html, $m)) {
+        $title = trim(html_entity_decode($m[1], ENT_QUOTES | ENT_HTML5, 'UTF-8'));
+    }
+    if ($title === null || $title === '') {
+        if (preg_match('/<meta[^>]+property=["\']og:title["\'][^>]+content=["\']([^"\']+)["\']/i', $html, $m)
+            || preg_match('/<meta[^>]+content=["\']([^"\']+)["\'][^>]+property=["\']og:title["\']/i', $html, $m)
+            || preg_match('/<meta[^>]+name=["\']twitter:title["\'][^>]+content=["\']([^"\']+)["\']/i', $html, $m)
+            || preg_match('/<meta[^>]+content=["\']([^"\']+)["\'][^>]+name=["\']twitter:title["\']/i', $html, $m)
+        ) {
+            $title = trim(html_entity_decode($m[1], ENT_QUOTES | ENT_HTML5, 'UTF-8'));
+        }
+    }
+    if ($title === null || $title === '') {
+        return null;
+    }
+    // Collapse whitespace
+    $title = preg_replace('/\s+/u', ' ', $title) ?? $title;
+    $title = trim($title);
+    if ($title === '') {
+        return null;
+    }
+    if (function_exists('mb_substr')) {
+        $title = mb_substr($title, 0, 200, 'UTF-8');
+    } elseif (strlen($title) > 200) {
+        $title = substr($title, 0, 200);
+    }
+    return $title;
+}
+
+/**
+ * Fetch a single page title (GET, short timeout, body capped).
+ *
+ * @return array{title: ?string, skipped: bool, error: ?string}
+ */
+function linkhealthFetchOneTitle(string $url): array {
+    $parts = parse_url($url);
+    $scheme = strtolower((string)($parts['scheme'] ?? ''));
+    if ($scheme !== 'http' && $scheme !== 'https') {
+        return ['title' => null, 'skipped' => true, 'error' => null];
+    }
+    $host = (string)($parts['host'] ?? '');
+    if ($host === '' || !linkhealthHostAllowed($host)) {
+        return ['title' => null, 'skipped' => true, 'error' => 'Host not allowed'];
+    }
+
+    $maxBytes = 262144; // 256KB
+    $ch = curl_init();
+    curl_setopt_array($ch, [
+        CURLOPT_URL => $url,
+        CURLOPT_RETURNTRANSFER => true,
+        CURLOPT_FOLLOWLOCATION => true,
+        CURLOPT_MAXREDIRS => 5,
+        CURLOPT_TIMEOUT => 8,
+        CURLOPT_CONNECTTIMEOUT => 3,
+        CURLOPT_SSL_VERIFYPEER => false,
+        CURLOPT_SSL_VERIFYHOST => 0,
+        CURLOPT_USERAGENT => (getAppName() ?: 'LinkNest') . ' TitleFetch/1.0',
+        CURLOPT_HTTPHEADER => ['Accept: text/html,application/xhtml+xml;q=0.9,*/*;q=0.8', 'Connection: close'],
+        CURLOPT_PROTOCOLS => CURLPROTO_HTTP | CURLPROTO_HTTPS,
+        CURLOPT_REDIR_PROTOCOLS => CURLPROTO_HTTP | CURLPROTO_HTTPS,
+    ]);
+    $body = curl_exec($ch);
+    $errno = curl_errno($ch);
+    $error = $errno ? curl_error($ch) : null;
+    $info = curl_getinfo($ch);
+    curl_close($ch);
+
+    if ($body === false || $errno) {
+        return ['title' => null, 'skipped' => false, 'error' => $error ?: 'Fetch failed'];
+    }
+    if (strlen($body) > $maxBytes) {
+        $body = substr($body, 0, $maxBytes);
+    }
+    $httpCode = (int)($info['http_code'] ?? 0);
+    if ($httpCode >= 400 || $httpCode === 0) {
+        return ['title' => null, 'skipped' => false, 'error' => 'HTTP ' . $httpCode];
+    }
+    $title = linkhealthExtractPageTitle((string)$body);
+    return ['title' => $title, 'skipped' => false, 'error' => $title ? null : 'No title found'];
+}
+
+/**
+ * POST /api/linkhealth.php/fetch-titles — Fetch page titles for up to 20 HTTP(S) URLs.
+ */
+function handleFetchTitles() {
+    if (!enforceUrlProbeRateLimit(120)) {
+        return;
+    }
+    releaseSessionLock();
+    set_time_limit(60);
+
+    try {
+        $data = getJSONInput();
+        $rawUrls = isset($data['urls']) && is_array($data['urls']) ? $data['urls'] : [];
+        $urls = [];
+        foreach ($rawUrls as $u) {
+            if (!is_string($u)) {
+                continue;
+            }
+            $url = trim($u);
+            if ($url === '') {
+                continue;
+            }
+            if (!preg_match('#^https?://#i', $url)) {
+                // Only auto-prefix bare hosts for title fetch (same as check-urls)
+                if (preg_match('#^[a-z][a-z0-9+.-]*:#i', $url)) {
+                    // Non-http scheme — include as skipped later via probe
+                    $urls[] = $url;
+                } else {
+                    $url = 'https://' . $url;
+                    $urls[] = $url;
+                }
+            } else {
+                $urls[] = $url;
+            }
+            if (count($urls) >= 20) {
+                break;
+            }
+        }
+
+        if (empty($urls)) {
+            sendJSON(['error' => 'Provide a non-empty urls array.'], 400);
+            return;
+        }
+
+        $results = [];
+        foreach ($urls as $url) {
+            $parts = parse_url($url);
+            $scheme = strtolower((string)($parts['scheme'] ?? ''));
+            if ($scheme !== 'http' && $scheme !== 'https') {
+                $results[] = [
+                    'url' => $url,
+                    'skipped' => true,
+                    'title' => null,
+                    'error' => null,
+                ];
+                continue;
+            }
+            if (!filter_var($url, FILTER_VALIDATE_URL)) {
+                $results[] = [
+                    'url' => $url,
+                    'skipped' => true,
+                    'title' => null,
+                    'error' => 'Invalid URL',
+                ];
+                continue;
+            }
+            $fetched = linkhealthFetchOneTitle($url);
+            $results[] = [
+                'url' => $url,
+                'skipped' => !empty($fetched['skipped']),
+                'title' => $fetched['title'],
+                'error' => $fetched['error'],
+            ];
+        }
+
+        sendJSON([
+            'success' => true,
+            'results' => $results,
+        ]);
+    } catch (Exception $e) {
+        error_log('Title fetch failed: ' . $e->getMessage());
+        sendJSON(['error' => 'Failed to fetch titles: ' . $e->getMessage()], 500);
     }
 }
 
