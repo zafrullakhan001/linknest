@@ -3,6 +3,8 @@
  * Stored as JSON string array in settings key `link_check_exceptions`.
  */
 
+import { settingsService } from './settingsService';
+
 export const LINK_CHECK_EXCEPTIONS_SETTING_KEY = 'link_check_exceptions' as const;
 export const MAX_LINK_CHECK_EXCEPTIONS = 2000;
 
@@ -194,7 +196,6 @@ export async function persistUrlLinkCheckException(
   url: string,
   exclude: boolean
 ): Promise<string> {
-  const { settingsService } = await import('./settingsService');
   const current = parseExceptionsSetting(currentSetting);
   const pattern = normalizeExceptionPattern(url);
   if (!pattern) {

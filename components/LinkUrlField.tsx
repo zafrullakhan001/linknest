@@ -174,7 +174,7 @@ export const LinkUrlField: React.FC<LinkUrlFieldProps> = ({
                         URL
                     </label>
                 )}
-                {showProbeBadges ? <UrlProbeBadges url={value} excluded={excluded} /> : null}
+                {showProbeBadges ? <UrlProbeBadges url={value} excluded={excluded} onAdoptUrl={onChange} /> : null}
             </div>
             <div className="flex items-stretch gap-2 min-w-0">
                 <input

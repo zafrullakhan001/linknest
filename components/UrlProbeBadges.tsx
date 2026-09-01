@@ -1,10 +1,10 @@
 ﻿import React, { useState, useEffect, useRef, useMemo, lazy, Suspense, memo } from 'react';
-import { createPortal } from 'react-dom';
 import { LinkRedirectHop } from '../types';
 import { linkHealthService } from '../services/linkHealthService';
 import { isHttpOrHttpsUrl } from '../utils/urlDisplay';
 import { diagnoseLinkUrl, hasBlockingUrlIssues } from '../utils/urlDiagnostics';
 import { UrlNeedsFixBadge } from './UrlFormDiagnostics';
+import { RedirectChainDialog } from './RedirectChainDialog';
 
 const SslCheckerDialog = lazy(() => import('./ssl/SslCheckerDialog'));
 const WhoisDialog = lazy(() => import('./ssl/WhoisDialog'));
@@ -25,19 +25,6 @@ const formatProbeLatency = (ms?: number | null): string => {
     if (ms === undefined || ms === null) return '';
     if (ms < 1000) return `${ms}ms`;
     return `${(ms / 1000).toFixed(1)}s`;
-};
-
-const hopStatusColor = (code: number): string => {
-    if (code >= 200 && code < 300) {
-        return 'bg-emerald-100 text-emerald-800 dark:bg-emerald-900/50 dark:text-emerald-200 border-emerald-200 dark:border-emerald-700';
-    }
-    if (code >= 300 && code < 400) {
-        return 'bg-amber-100 text-amber-800 dark:bg-amber-900/50 dark:text-amber-200 border-amber-200 dark:border-amber-700';
-    }
-    if (code >= 400) {
-        return 'bg-rose-100 text-rose-800 dark:bg-rose-900/50 dark:text-rose-200 border-rose-200 dark:border-rose-700';
-    }
-    return 'bg-slate-100 text-slate-700 dark:bg-slate-800 dark:text-slate-300 border-slate-200 dark:border-slate-600';
 };
 
 const PROBE_DEBOUNCE_MS = 650;
@@ -84,10 +71,16 @@ function settleServerProbeError(
     };
 }
 
-const UrlProbeBadgesInner: React.FC<{ url: string; excluded?: boolean }> = ({ url, excluded }) => {
+const UrlProbeBadgesInner: React.FC<{ url: string; excluded?: boolean; onAdoptUrl?: (url: string) => void }> = ({
+    url,
+    excluded,
+    onAdoptUrl,
+}) => {
     const trimmedUrl = (url || '').trim();
     const diagnosis = useMemo(() => diagnoseLinkUrl(url), [url]);
     const blocking = hasBlockingUrlIssues(diagnosis);
+    const onAdoptUrlRef = useRef(onAdoptUrl);
+    onAdoptUrlRef.current = onAdoptUrl;
     const [phase, setPhase] = useState<'idle' | 'checking' | 'done' | 'error'>('idle');
     const [scheme, setScheme] = useState<string>('');
     const [httpCode, setHttpCode] = useState<number | null>(null);
@@ -98,6 +91,7 @@ const UrlProbeBadgesInner: React.FC<{ url: string; excluded?: boolean }> = ({ ur
     const [redirectChain, setRedirectChain] = useState<LinkRedirectHop[]>([]);
     const [chainOpen, setChainOpen] = useState(false);
     const [sslOpen, setSslOpen] = useState(false);
+    const [sslTargetUrl, setSslTargetUrl] = useState('');
     const [whoisOpen, setWhoisOpen] = useState(false);
     const [healthStatus, setHealthStatus] = useState<string>('');
     const [error, setError] = useState<string>('');
@@ -387,155 +381,24 @@ const UrlProbeBadgesInner: React.FC<{ url: string; excluded?: boolean }> = ({ ur
     const showRedirectBadge = redirectCount > 0 || redirectChain.length > 1;
     const hopCountLabel = redirectCount > 0 ? redirectCount : Math.max(0, redirectChain.length - 1);
 
-    const exportRedirectChainJson = () => {
-        if (redirectChain.length === 0) return;
-        const payload = {
-            url,
-            scheme: scheme || undefined,
-            status: healthStatus || undefined,
-            httpCode: httpCode ?? null,
-            redirectCount,
-            error: error || null,
-            serverLatencyMs: latency,
-            browserLatencyMs: browserLatency,
-            exportedAt: new Date().toISOString(),
-            hops: redirectChain.map((hop, idx) => ({
-                hop: idx + 1,
-                step: hop.step,
-                url: hop.url,
-                httpCode: hop.httpCode,
-                ...(hop.location ? { location: hop.location } : {}),
-                ...(hop.error ? { error: hop.error } : {}),
-                final: idx === redirectChain.length - 1
-            }))
-        };
-        const blob = new Blob([JSON.stringify(payload, null, 2)], { type: 'application/json' });
-        const objectUrl = URL.createObjectURL(blob);
-        const a = document.createElement('a');
-        const host = (() => {
-            try {
-                return new URL(url).hostname.replace(/[^\w.-]+/g, '_') || 'redirect-chain';
-            } catch {
-                return 'redirect-chain';
-            }
-        })();
-        a.href = objectUrl;
-        a.download = `redirect-chain-${host}-${Date.now()}.json`;
-        document.body.appendChild(a);
-        a.click();
-        a.remove();
-        URL.revokeObjectURL(objectUrl);
+    const openSslFor = (target: string) => {
+        setSslTargetUrl(target);
+        setSslOpen(true);
     };
 
     const chainDialog =
-        chainOpen &&
-        redirectChain.length > 0 &&
-        typeof document !== 'undefined' &&
-        createPortal(
-            <div
-                className="fixed inset-0 z-[100080] flex items-center justify-center p-4 bg-black/50 backdrop-blur-sm"
-                onClick={() => setChainOpen(false)}
-                role="presentation"
-            >
-                <div
-                    className="bg-white dark:bg-slate-800 rounded-2xl shadow-2xl border border-slate-200 dark:border-slate-700 w-full max-w-xl max-h-[85vh] flex flex-col"
-                    role="dialog"
-                    aria-modal="true"
-                    aria-labelledby="redirect-chain-dialog-title"
-                    onClick={(e) => e.stopPropagation()}
-                >
-                    <div className="px-5 py-4 border-b border-slate-200 dark:border-slate-700 flex items-start justify-between gap-3 shrink-0">
-                        <div className="min-w-0">
-                            <h3
-                                id="redirect-chain-dialog-title"
-                                className="text-base font-bold text-slate-900 dark:text-white"
-                            >
-                                Redirect chain
-                            </h3>
-                            <p className="text-xs text-slate-500 dark:text-slate-400 mt-0.5">
-                                {redirectChain.length} hop{redirectChain.length === 1 ? '' : 's'}
-                                {error ? ` Â· ${error}` : ''}
-                            </p>
-                        </div>
-                        <button
-                            type="button"
-                            onClick={() => setChainOpen(false)}
-                            className="p-1.5 rounded-lg hover:bg-slate-100 dark:hover:bg-slate-700 text-slate-400 hover:text-slate-600 dark:hover:text-slate-300 transition-colors shrink-0"
-                            aria-label="Close redirect chain"
-                        >
-                            <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" strokeWidth={2} stroke="currentColor" className="w-5 h-5">
-                                <path strokeLinecap="round" strokeLinejoin="round" d="M6 18L18 6M6 6l12 12" />
-                            </svg>
-                        </button>
-                    </div>
-                    <div className="px-5 py-4 overflow-y-auto flex-1 min-h-0">
-                        <ol className="space-y-2">
-                            {redirectChain.map((hop, idx) => {
-                                const isLast = idx === redirectChain.length - 1;
-                                return (
-                                    <li key={`${hop.step}-${hop.url}`} className="flex gap-3 items-start">
-                                        <div className="flex flex-col items-center pt-1 shrink-0 w-6">
-                                            <span className="text-[11px] font-bold text-slate-400 dark:text-slate-500 text-center leading-none">
-                                                {idx + 1}
-                                            </span>
-                                            {!isLast && (
-                                                <span className="mt-1 text-slate-300 dark:text-slate-600 text-sm leading-none" aria-hidden>
-                                                    ↓
-                                                </span>
-                                            )}
-                                        </div>
-                                        <div className="min-w-0 flex-1 rounded-lg border border-slate-200 dark:border-slate-600 bg-slate-50 dark:bg-slate-900/60 px-3 py-2.5">
-                                            <div className="flex flex-wrap items-center gap-2 mb-1">
-                                                <span
-                                                    className={`inline-flex items-center text-[11px] font-semibold px-2 py-0.5 rounded-full border ${hopStatusColor(hop.httpCode)}`}
-                                                >
-                                                    {hop.httpCode > 0 ? `HTTP ${hop.httpCode}` : 'No response'}
-                                                </span>
-                                                {isLast && (
-                                                    <span className="text-[10px] font-semibold uppercase tracking-wide text-slate-500 dark:text-slate-400">
-                                                        Final
-                                                    </span>
-                                                )}
-                                                {hop.error && (
-                                                    <span className="text-[11px] text-rose-600 dark:text-rose-400" title={hop.error}>
-                                                        {hop.error}
-                                                    </span>
-                                                )}
-                                            </div>
-                                            <p className="text-xs text-slate-800 dark:text-slate-100 break-all leading-relaxed" title={hop.url}>
-                                                {hop.url}
-                                            </p>
-                                            {hop.location && !isLast && (
-                                                <p className="mt-1 text-[11px] text-slate-500 dark:text-slate-400 break-all" title={hop.location}>
-                                                    → {hop.location}
-                                                </p>
-                                            )}
-                                        </div>
-                                    </li>
-                                );
-                            })}
-                        </ol>
-                    </div>
-                    <div className="px-5 py-3 border-t border-slate-200 dark:border-slate-700 flex flex-wrap items-center justify-end gap-2 shrink-0">
-                        <button
-                            type="button"
-                            onClick={exportRedirectChainJson}
-                            className="px-4 py-2 text-sm font-medium rounded-lg border border-slate-200 dark:border-slate-600 text-slate-700 dark:text-slate-200 hover:bg-slate-100 dark:hover:bg-slate-700 transition-colors"
-                        >
-                            Export as JSON
-                        </button>
-                        <button
-                            type="button"
-                            onClick={() => setChainOpen(false)}
-                            className="px-4 py-2 text-sm font-medium rounded-lg bg-slate-900 text-white hover:bg-slate-800 dark:bg-slate-100 dark:text-slate-900 dark:hover:bg-white transition-colors"
-                        >
-                            Close
-                        </button>
-                    </div>
-                </div>
-            </div>,
-            document.body
-        );
+        chainOpen && redirectChain.length > 0 ? (
+            <RedirectChainDialog
+                originalUrl={trimmedUrl}
+                hops={redirectChain}
+                error={error}
+                serverLatencyMs={latency}
+                browserLatencyMs={browserLatency}
+                onClose={() => setChainOpen(false)}
+                onAdoptUrl={onAdoptUrlRef.current ? (next) => onAdoptUrlRef.current?.(next) : undefined}
+                onCheckSsl={openSslFor}
+            />
+        ) : null;
 
     return (
         <div className="flex flex-wrap items-center gap-1.5">
@@ -604,7 +467,7 @@ const UrlProbeBadgesInner: React.FC<{ url: string; excluded?: boolean }> = ({ ur
                 <>
                     <button
                         type="button"
-                        onClick={() => setSslOpen(true)}
+                        onClick={() => openSslFor((url || '').trim())}
                         className="inline-flex items-center gap-1 text-[10px] font-semibold px-2 py-0.5 rounded-full border bg-violet-100 text-violet-800 dark:bg-violet-900/50 dark:text-violet-200 border-violet-200 dark:border-violet-700 hover:bg-violet-200/80 dark:hover:bg-violet-800/60 cursor-pointer"
                         title="Open SSL URL checker for this link (on demand)"
                         aria-haspopup="dialog"
@@ -630,7 +493,8 @@ const UrlProbeBadgesInner: React.FC<{ url: string; excluded?: boolean }> = ({ ur
                     <SslCheckerDialog
                         isOpen={sslOpen}
                         onClose={() => setSslOpen(false)}
-                        url={(url || '').trim()}
+                        url={sslTargetUrl || (url || '').trim()}
+                        overlayClassName="z-[100090]"
                     />
                 </Suspense>
             )}

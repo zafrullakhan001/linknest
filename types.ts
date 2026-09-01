@@ -2,8 +2,32 @@ export interface LinkRedirectHop {
   step: number;
   url: string;
   httpCode: number;
+  /** Location header as received (may be relative). */
   location?: string;
+  locationRaw?: string;
+  locationResolved?: string;
+  locationRelative?: boolean;
+  locationProtocolRelative?: boolean;
   error?: string;
+  requestMethod?: string;
+  /** 307/308 — browsers repeat the original method. Probe itself always uses HEAD. */
+  methodPreserving?: boolean;
+  timingMs?: number;
+  dnsMs?: number;
+  connectMs?: number;
+  tlsMs?: number;
+  ttfbMs?: number;
+  ip?: string;
+  port?: number;
+  httpVersion?: string;
+  server?: string;
+  contentType?: string;
+  contentLength?: number;
+  setCookieNames?: string[];
+  hsts?: boolean;
+  cacheControl?: string;
+  wwwAuthenticate?: string;
+  loop?: boolean;
 }
 
 export interface LinkHealth {

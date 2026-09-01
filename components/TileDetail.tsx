@@ -100,6 +100,7 @@ import { AuthSourceBadge } from './AuthSourceBadge';
 import { EditLinkForm } from './EditLinkForm';
 import { AddLinkMenu } from './AddLinkMenu';
 import { BulkAddLinksDialog } from './BulkAddLinksDialog';
+import { DeleteDuplicateLinksDialog } from './DeleteDuplicateLinksDialog';
 import { getDisplayUrl, isHttpOrHttpsUrl, normalizeStoredLinkUrl, rewriteHtmlAnchorHrefs, viewerLinkDisplay, viewerLinkUrl, effectiveShowShortUrls } from '../utils/urlDisplay';
 import { diagnoseLinkUrl, hasBlockingUrlIssues } from '../utils/urlDiagnostics';
 import { UrlFormDiagnostics, UrlNeedsFixBadge, InvalidUrlMark } from './UrlFormDiagnostics';
@@ -1031,6 +1032,12 @@ export const TileDetail: React.FC<TileDetailProps> = ({
     const [viewQuickEditSaving, setViewQuickEditSaving] = useState(false);
     /** Bulk add links dialog target (view or edit mode). */
     const [bulkAddTarget, setBulkAddTarget] = useState<{
+        tabId: string;
+        sectionId: string;
+        mode: 'view' | 'edit';
+    } | null>(null);
+    /** Delete duplicate links dialog target (view or edit mode). */
+    const [deleteDupTarget, setDeleteDupTarget] = useState<{
         tabId: string;
         sectionId: string;
         mode: 'view' | 'edit';
@@ -4421,6 +4428,67 @@ export const TileDetail: React.FC<TileDetailProps> = ({
         if (tile.canEdit !== true) return;
         if (tile.canAddLinks === false) return;
         setBulkAddTarget({ tabId, sectionId, mode });
+    };
+
+    const handleStartDeleteDuplicates = (tabId: string, sectionId: string, mode: 'view' | 'edit') => {
+        if (tile.canEdit !== true) return;
+        if (tile.canDeleteLinks === false) return;
+        setDeleteDupTarget({ tabId, sectionId, mode });
+    };
+
+    const handleDeleteDuplicateLinks = async (linkIds: string[]) => {
+        if (!deleteDupTarget || linkIds.length === 0) return;
+        const { tabId, sectionId, mode } = deleteDupTarget;
+        const idSet = new Set(linkIds);
+
+        if (mode === 'edit') {
+            if (editTabs.length > 0) {
+                setEditTabs((prev) =>
+                    prev.map((tab) => {
+                        if (tab.id !== tabId) return tab;
+                        return {
+                            ...tab,
+                            sections: tab.sections.map((s) => {
+                                if (s.id !== sectionId) return s;
+                                return {
+                                    ...s,
+                                    links: (s.links || []).filter((l) => !idSet.has(l.id)),
+                                    richTextContent: s.richTextContent || [],
+                                };
+                            }),
+                        };
+                    })
+                );
+            } else {
+                setEditSections((prev) =>
+                    prev.map((s) => {
+                        if (s.id !== sectionId) return s;
+                        return {
+                            ...s,
+                            links: (s.links || []).filter((l) => !idSet.has(l.id)),
+                            richTextContent: s.richTextContent || [],
+                        };
+                    })
+                );
+            }
+            return;
+        }
+
+        const nextTabs = (tile.tabs || []).map((tab) => {
+            if (tab.id !== tabId) return tab;
+            return {
+                ...tab,
+                sections: (tab.sections || []).map((s) => {
+                    if (s.id !== sectionId) return s;
+                    return {
+                        ...s,
+                        links: (s.links || []).filter((l) => !idSet.has(l.id)),
+                        richTextContent: s.richTextContent || [],
+                    };
+                }),
+            };
+        });
+        await persistViewModeTile({ ...tile, tabs: nextTabs });
     };
 
     const handleBulkAddCommit = async (newLinks: Link[]) => {
@@ -9265,12 +9333,25 @@ export const TileDetail: React.FC<TileDetailProps> = ({
                                                 )}
                                                 </div>
                                                 <div className="flex items-center gap-1 shrink-0">
-                                                {canQuickAddLinks && activeViewTab && (
+                                                {(canQuickAddLinks || canQuickDeleteLinks) && activeViewTab && (
                                                     <AddLinkMenu
                                                         variant="icon"
-                                                        title="Add link to this section"
-                                                        onAddLink={() => handleStartViewQuickAdd(activeViewTab.id, section.id)}
-                                                        onBulkAdd={() => handleStartBulkAdd(activeViewTab.id, section.id, 'view')}
+                                                        title="Add or manage links in this section"
+                                                        onAddLink={
+                                                            canQuickAddLinks
+                                                                ? () => handleStartViewQuickAdd(activeViewTab.id, section.id)
+                                                                : undefined
+                                                        }
+                                                        onBulkAdd={
+                                                            canQuickAddLinks
+                                                                ? () => handleStartBulkAdd(activeViewTab.id, section.id, 'view')
+                                                                : undefined
+                                                        }
+                                                        onDeleteDuplicates={
+                                                            canQuickDeleteLinks
+                                                                ? () => handleStartDeleteDuplicates(activeViewTab.id, section.id, 'view')
+                                                                : undefined
+                                                        }
                                                     />
                                                 )}
                                                 {!shouldForceStacked && (
@@ -10655,6 +10736,25 @@ export const TileDetail: React.FC<TileDetailProps> = ({
                         generateId={generateId}
                     />
                 )}
+
+                {deleteDupTarget && (
+                    <DeleteDuplicateLinksDialog
+                        sectionTitle={
+                            (deleteDupTarget.mode === 'view' ? tile.tabs : editTabs)
+                                ?.find((t) => t.id === deleteDupTarget.tabId)
+                                ?.sections?.find((s) => s.id === deleteDupTarget.sectionId)?.title
+                            || undefined
+                        }
+                        links={
+                            (deleteDupTarget.mode === 'view' ? tile.tabs : editTabs)
+                                ?.find((t) => t.id === deleteDupTarget.tabId)
+                                ?.sections?.find((s) => s.id === deleteDupTarget.sectionId)?.links
+                            || []
+                        }
+                        onClose={() => setDeleteDupTarget(null)}
+                        onDelete={handleDeleteDuplicateLinks}
+                    />
+                )}
             </>
         );
     }
@@ -11944,6 +12044,10 @@ export const TileDetail: React.FC<TileDetailProps> = ({
                                                 onBulkAddLink={(tabId, sectionId) => {
                                                     expandTabAndSection(tabId, sectionId);
                                                     handleStartBulkAdd(tabId, sectionId, 'edit');
+                                                }}
+                                                onDeleteDuplicateLinks={(tabId, sectionId) => {
+                                                    expandTabAndSection(tabId, sectionId);
+                                                    handleStartDeleteDuplicates(tabId, sectionId, 'edit');
                                                 }}
                                                 onAddRichText={(tabId, sectionId) => {
                                                     expandTabAndSection(tabId, sectionId);
@@ -13521,6 +13625,11 @@ export const TileDetail: React.FC<TileDetailProps> = ({
                                                                                     setShowAddLinkForm(prev => ({ ...prev, [section.id]: true }));
                                                                                 }}
                                                                                 onBulkAdd={() => handleStartBulkAdd(tab.id, section.id, 'edit')}
+                                                                                onDeleteDuplicates={
+                                                                                    tile.canDeleteLinks !== false
+                                                                                        ? () => handleStartDeleteDuplicates(tab.id, section.id, 'edit')
+                                                                                        : undefined
+                                                                                }
                                                                             />
                                                                         </div>
                                                                     )}
@@ -14995,6 +15104,26 @@ export const TileDetail: React.FC<TileDetailProps> = ({
                         onClose={() => setBulkAddTarget(null)}
                         onCommit={handleBulkAddCommit}
                         generateId={generateId}
+                    />
+                )}
+
+                {deleteDupTarget && (
+                    <DeleteDuplicateLinksDialog
+                        sectionTitle={
+                            editTabs
+                                ?.find((t) => t.id === deleteDupTarget.tabId)
+                                ?.sections?.find((s) => s.id === deleteDupTarget.sectionId)?.title
+                            || undefined
+                        }
+                        links={
+                            editTabs
+                                ?.find((t) => t.id === deleteDupTarget.tabId)
+                                ?.sections?.find((s) => s.id === deleteDupTarget.sectionId)?.links
+                            || editSections.find((s) => s.id === deleteDupTarget.sectionId)?.links
+                            || []
+                        }
+                        onClose={() => setDeleteDupTarget(null)}
+                        onDelete={handleDeleteDuplicateLinks}
                     />
                 )}
             </>

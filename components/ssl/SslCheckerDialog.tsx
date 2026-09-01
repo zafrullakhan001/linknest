@@ -12,6 +12,8 @@ export interface SslCheckerDialogProps {
   onClose: () => void;
   /** Full URL from the link editor (used to prefill host / port / path). */
   url: string;
+  /** Overlay z-index class. Raise when opened above the redirect-chain dialog. */
+  overlayClassName?: string;
 }
 
 function parseUrlParts(raw: string): { host: string; port: number; path: string } {
@@ -39,7 +41,12 @@ function parseUrlParts(raw: string): { host: string; port: number; path: string 
  * On-demand SSL URL checker dialog (ported from SSL Forge).
  * Does not auto-run — user must click Run check inside the checker.
  */
-export const SslCheckerDialog: React.FC<SslCheckerDialogProps> = ({ isOpen, onClose, url }) => {
+export const SslCheckerDialog: React.FC<SslCheckerDialogProps> = ({
+  isOpen,
+  onClose,
+  url,
+  overlayClassName = 'z-[100075]',
+}) => {
   const parts = useMemo(() => parseUrlParts(url), [url]);
   const [decoderRequest, setDecoderRequest] = useState<DecoderPopupRequest | null>(null);
 
@@ -50,7 +57,7 @@ export const SslCheckerDialog: React.FC<SslCheckerDialogProps> = ({ isOpen, onCl
   return createPortal(
     <>
       <div
-        className="fixed inset-0 z-[100075] flex items-center justify-center p-2 sm:p-4"
+        className={`fixed inset-0 ${overlayClassName} flex items-center justify-center p-2 sm:p-4`}
         role="presentation"
       >
         <button

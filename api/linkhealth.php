@@ -695,6 +695,278 @@ function extractHealthLocationHeader($rawHeaders) {
     return null;
 }
 
+function healthHopTrunc($value, $max = 200) {
+    $value = trim((string)$value);
+    if ($value === '') {
+        return '';
+    }
+    if (strlen($value) <= $max) {
+        return $value;
+    }
+    return substr($value, 0, $max) . '…';
+}
+
+function healthHopHeaderBlock($rawHeaders) {
+    $raw = str_replace("\r\n", "\n", (string)$rawHeaders);
+    if ($raw === '') {
+        return '';
+    }
+    $blocks = preg_split("/\n\n/", $raw) ?: [];
+    $headerBlock = '';
+    foreach ($blocks as $block) {
+        $trim = ltrim($block);
+        if ($trim !== '' && preg_match('/^HTTP\//i', $trim)) {
+            $headerBlock = $block;
+        }
+    }
+    return $headerBlock !== '' ? $headerBlock : $raw;
+}
+
+/**
+ * Parse hop response headers. Cookie values are never returned — names only.
+ */
+function parseHealthHopHeaders($rawHeaders) {
+    $out = [
+        'location' => null,
+        'server' => '',
+        'content_type' => '',
+        'set_cookie_names' => [],
+        'hsts' => false,
+        'cache_control' => '',
+        'www_authenticate' => '',
+        'content_length' => null
+    ];
+    $block = healthHopHeaderBlock($rawHeaders);
+    if ($block === '') {
+        return $out;
+    }
+    $names = [];
+    foreach (preg_split("/\n/", $block) ?: [] as $line) {
+        $line = trim($line);
+        if ($line === '' || !str_contains($line, ':')) {
+            continue;
+        }
+        $colon = strpos($line, ':');
+        $name = strtolower(trim(substr($line, 0, $colon)));
+        $value = trim(substr($line, $colon + 1));
+        if ($name === 'location' && $out['location'] === null && $value !== '') {
+            $out['location'] = $value;
+        } elseif ($name === 'server' && $out['server'] === '') {
+            $out['server'] = healthHopTrunc($value, 120);
+        } elseif ($name === 'content-type' && $out['content_type'] === '') {
+            $out['content_type'] = healthHopTrunc($value, 120);
+        } elseif ($name === 'cache-control' && $out['cache_control'] === '') {
+            $out['cache_control'] = healthHopTrunc($value, 160);
+        } elseif ($name === 'strict-transport-security') {
+            $out['hsts'] = true;
+        } elseif ($name === 'www-authenticate' && $out['www_authenticate'] === '') {
+            $scheme = preg_split('/[\s,=]/', $value, 2)[0] ?? '';
+            $out['www_authenticate'] = healthHopTrunc($scheme, 40);
+        } elseif ($name === 'content-length' && $out['content_length'] === null && ctype_digit($value)) {
+            $out['content_length'] = (int)$value;
+        } elseif ($name === 'set-cookie') {
+            $cookieName = strpos($value, '=') !== false ? trim(substr($value, 0, strpos($value, '='))) : '';
+            if ($cookieName !== '' && preg_match('/^[A-Za-z0-9_.-]{1,64}$/', $cookieName) && !in_array($cookieName, $names, true)) {
+                $names[] = $cookieName;
+            }
+        }
+    }
+    if (count($names) > 20) {
+        $names = array_slice($names, 0, 20);
+    }
+    $out['set_cookie_names'] = $names;
+    return $out;
+}
+
+function healthHopHttpVersion($ch) {
+    if (!defined('CURLINFO_HTTP_VERSION')) {
+        return '';
+    }
+    $v = (int)curl_getinfo($ch, CURLINFO_HTTP_VERSION);
+    return match ($v) {
+        1 => 'HTTP/1.0',
+        2 => 'HTTP/1.1',
+        3 => 'HTTP/2',
+        30 => 'HTTP/3',
+        default => ''
+    };
+}
+
+function msFromCurlTime($seconds) {
+    if (!is_numeric($seconds) || (float)$seconds < 0) {
+        return null;
+    }
+    return (int)round(((float)$seconds) * 1000);
+}
+
+/**
+ * Build one hop record from a cURL handle + optional header block.
+ */
+function buildHealthRedirectHop($ch, $url, $code, $rawHeaders, $error = '') {
+    $info = curl_getinfo($ch) ?: [];
+    $headers = parseHealthHopHeaders($rawHeaders);
+    $locationRaw = $headers['location'];
+    if (($locationRaw === null || $locationRaw === '') && $code >= 300 && $code < 400 && defined('CURLINFO_REDIRECT_URL')) {
+        $fallback = trim((string)curl_getinfo($ch, CURLINFO_REDIRECT_URL));
+        if ($fallback !== '') {
+            $locationRaw = $fallback;
+        }
+    }
+
+    $locationResolved = null;
+    $locationRelative = false;
+    $locationProtocolRelative = false;
+    if (is_string($locationRaw) && $locationRaw !== '') {
+        $locationProtocolRelative = str_starts_with($locationRaw, '//');
+        $locationRelative = !$locationProtocolRelative && !preg_match('#^https?://#i', $locationRaw);
+        $locationResolved = resolveHealthRedirectUrl($url, $locationRaw);
+    }
+
+    $contentType = $headers['content_type'];
+    if ($contentType === '' && !empty($info['content_type'])) {
+        $contentType = healthHopTrunc((string)$info['content_type'], 120);
+    }
+    $contentLength = $headers['content_length'];
+    if ($contentLength === null && isset($info['download_content_length']) && (float)$info['download_content_length'] >= 0) {
+        $len = (int)$info['download_content_length'];
+        if ($len >= 0 && $len < 2_000_000_000) {
+            $contentLength = $len;
+        }
+    }
+
+    $ip = trim((string)($info['primary_ip'] ?? ''));
+    $port = isset($info['primary_port']) ? (int)$info['primary_port'] : 0;
+    $httpVersion = healthHopHttpVersion($ch);
+
+    $entry = [
+        'step' => 0,
+        'url' => $url,
+        'httpCode' => (int)$code,
+        'requestMethod' => 'HEAD'
+    ];
+    if ($error !== '') {
+        $entry['error'] = healthHopTrunc($error, 240);
+    }
+    if ($code === 307 || $code === 308) {
+        $entry['methodPreserving'] = true;
+    }
+    if (is_string($locationRaw) && $locationRaw !== '') {
+        $entry['location'] = $locationRaw;
+        $entry['locationRaw'] = $locationRaw;
+        if ($locationRelative) {
+            $entry['locationRelative'] = true;
+        }
+        if ($locationProtocolRelative) {
+            $entry['locationProtocolRelative'] = true;
+        }
+        if (is_string($locationResolved) && $locationResolved !== '') {
+            $entry['locationResolved'] = $locationResolved;
+        }
+    }
+
+    $timingMs = msFromCurlTime($info['total_time'] ?? null);
+    $dnsMs = msFromCurlTime($info['namelookup_time'] ?? null);
+    $connectMs = msFromCurlTime($info['connect_time'] ?? null);
+    $appconnectMs = msFromCurlTime($info['appconnect_time'] ?? null);
+    if ($appconnectMs === null && defined('CURLINFO_APPCONNECT_TIME')) {
+        $appconnectMs = msFromCurlTime(curl_getinfo($ch, CURLINFO_APPCONNECT_TIME));
+    }
+    $ttfbMs = msFromCurlTime($info['starttransfer_time'] ?? null);
+    if ($timingMs !== null) {
+        $entry['timingMs'] = $timingMs;
+    }
+    if ($dnsMs !== null) {
+        $entry['dnsMs'] = $dnsMs;
+    }
+    if ($connectMs !== null) {
+        $entry['connectMs'] = $connectMs;
+    }
+    if ($appconnectMs !== null && $appconnectMs > 0) {
+        $entry['tlsMs'] = $appconnectMs;
+    }
+    if ($ttfbMs !== null) {
+        $entry['ttfbMs'] = $ttfbMs;
+    }
+    if ($ip !== '' && filter_var($ip, FILTER_VALIDATE_IP)) {
+        $entry['ip'] = $ip;
+    }
+    if ($port > 0 && $port < 65536) {
+        $entry['port'] = $port;
+    }
+    if ($httpVersion !== '') {
+        $entry['httpVersion'] = $httpVersion;
+    }
+    if ($contentType !== '') {
+        $entry['contentType'] = $contentType;
+    }
+    if ($contentLength !== null) {
+        $entry['contentLength'] = $contentLength;
+    }
+    if ($headers['server'] !== '') {
+        $entry['server'] = $headers['server'];
+    }
+    if (!empty($headers['set_cookie_names'])) {
+        $entry['setCookieNames'] = $headers['set_cookie_names'];
+    }
+    if (!empty($headers['hsts'])) {
+        $entry['hsts'] = true;
+    }
+    if ($headers['cache_control'] !== '') {
+        $entry['cacheControl'] = $headers['cache_control'];
+    }
+    if ($headers['www_authenticate'] !== '') {
+        $entry['wwwAuthenticate'] = $headers['www_authenticate'];
+    }
+    return $entry;
+}
+
+function sanitizeRedirectChainHop($hop, $stepFallback) {
+    if (!is_array($hop) || empty($hop['url'])) {
+        return null;
+    }
+    $item = [
+        'step' => isset($hop['step']) ? (int)$hop['step'] : $stepFallback,
+        'url' => (string)$hop['url'],
+        'httpCode' => isset($hop['httpCode']) ? (int)$hop['httpCode'] : 0
+    ];
+    $stringKeys = [
+        'location', 'locationRaw', 'locationResolved', 'error', 'requestMethod',
+        'httpVersion', 'ip', 'server', 'contentType', 'cacheControl', 'wwwAuthenticate'
+    ];
+    foreach ($stringKeys as $key) {
+        if (!empty($hop[$key]) && is_scalar($hop[$key])) {
+            $item[$key] = (string)$hop[$key];
+        }
+    }
+    $intKeys = ['timingMs', 'dnsMs', 'connectMs', 'tlsMs', 'ttfbMs', 'port', 'contentLength'];
+    foreach ($intKeys as $key) {
+        if (isset($hop[$key]) && is_numeric($hop[$key])) {
+            $item[$key] = (int)$hop[$key];
+        }
+    }
+    foreach (['locationRelative', 'locationProtocolRelative', 'methodPreserving', 'hsts', 'loop'] as $key) {
+        if (!empty($hop[$key])) {
+            $item[$key] = true;
+        }
+    }
+    if (!empty($hop['setCookieNames']) && is_array($hop['setCookieNames'])) {
+        $names = [];
+        foreach ($hop['setCookieNames'] as $name) {
+            if (!is_string($name) || !preg_match('/^[A-Za-z0-9_.-]{1,64}$/', $name)) {
+                continue;
+            }
+            $names[] = $name;
+            if (count($names) >= 20) {
+                break;
+            }
+        }
+        if ($names) {
+            $item['setCookieNames'] = $names;
+        }
+    }
+    return $item;
+}
+
 /**
  * Interactive probe: follow redirects hop-by-hop and return the full chain
  * (URL + status per hop) for the edit-form redirect badge.
@@ -746,56 +1018,64 @@ function checkUrlHealthWithRedirectChain($url, $timeoutSeconds = 5) {
         $code = (int)curl_getinfo($ch, CURLINFO_HTTP_CODE);
         $hopErrno = curl_errno($ch);
         $hopError = curl_error($ch);
-        curl_close($ch);
 
         if ($hopErrno !== 0 && $code === 0) {
             $errno = $hopErrno;
             $error = $hopError;
-            $chain[] = [
-                'step' => count($chain),
-                'url' => $currentUrl,
-                'httpCode' => 0,
-                'error' => $hopError !== '' ? $hopError : 'Request failed'
-            ];
+            $failHop = buildHealthRedirectHop($ch, $currentUrl, 0, is_string($raw) ? $raw : '', $hopError !== '' ? $hopError : 'Request failed');
+            curl_close($ch);
+            $failHop['step'] = count($chain);
+            $chain[] = $failHop;
             break;
         }
 
-        $location = null;
-        if ($code >= 300 && $code < 400) {
-            $location = extractHealthLocationHeader($raw);
-        }
+        $entry = buildHealthRedirectHop($ch, $currentUrl, $code, is_string($raw) ? $raw : '', '');
+        curl_close($ch);
+        $entry['step'] = count($chain);
 
-        $entry = [
-            'step' => count($chain),
-            'url' => $currentUrl,
-            'httpCode' => $code
-        ];
-        if ($location !== null && $location !== '') {
-            $entry['location'] = $location;
-        }
-        $chain[] = $entry;
         $httpCode = $code;
         $errno = 0;
         $error = '';
 
         if ($code < 300 || $code >= 400) {
-            // Final non-redirect response
+            $chain[] = $entry;
             break;
         }
 
-        // 3xx — follow if under the hop cap
         if ($redirectCount >= (int)HEALTH_MAX_REDIRS) {
             $errno = CURLE_TOO_MANY_REDIRECTS;
             $error = 'Maximum (' . (int)HEALTH_MAX_REDIRS . ') redirects followed';
+            $entry['error'] = $error;
+            $chain[] = $entry;
             break;
         }
 
-        $next = resolveHealthRedirectUrl($currentUrl, $location ?? '');
-        if ($next === null) {
-            // Redirect response without a usable Location
+        $next = $entry['locationResolved'] ?? resolveHealthRedirectUrl($currentUrl, $entry['location'] ?? '');
+        if ($next === null || $next === '') {
+            $chain[] = $entry;
             break;
         }
 
+        foreach ($chain as $prevHop) {
+            if (isset($prevHop['url']) && strcasecmp((string)$prevHop['url'], $next) === 0) {
+                $entry['loop'] = true;
+                $error = 'Redirect loop detected';
+                $entry['error'] = $error;
+                $chain[] = $entry;
+                $errno = CURLE_TOO_MANY_REDIRECTS;
+                break 2;
+            }
+        }
+        if (strcasecmp($currentUrl, $next) === 0) {
+            $entry['loop'] = true;
+            $error = 'Redirect loop detected';
+            $entry['error'] = $error;
+            $chain[] = $entry;
+            $errno = CURLE_TOO_MANY_REDIRECTS;
+            break;
+        }
+
+        $chain[] = $entry;
         $redirectCount++;
         $currentUrl = $next;
     }
@@ -1707,18 +1987,10 @@ function handleCheckUrl() {
                 if (!is_array($hop) || empty($hop['url'])) {
                     continue;
                 }
-                $item = [
-                    'step' => isset($hop['step']) ? (int)$hop['step'] : count($redirectChain),
-                    'url' => (string)$hop['url'],
-                    'httpCode' => isset($hop['httpCode']) ? (int)$hop['httpCode'] : 0
-                ];
-                if (!empty($hop['location'])) {
-                    $item['location'] = (string)$hop['location'];
+                $item = sanitizeRedirectChainHop($hop, count($redirectChain));
+                if ($item !== null) {
+                    $redirectChain[] = $item;
                 }
-                if (!empty($hop['error'])) {
-                    $item['error'] = (string)$hop['error'];
-                }
-                $redirectChain[] = $item;
             }
         }
 

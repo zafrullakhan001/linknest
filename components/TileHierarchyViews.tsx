@@ -335,6 +335,8 @@ export interface TileHierarchyViewsProps {
   onAddLink: (tabId: string, sectionId: string) => void;
   /** Optional: open bulk-add dialog for this section. Falls back to onAddLink if omitted. */
   onBulkAddLink?: (tabId: string, sectionId: string) => void;
+  /** Optional: open delete-duplicates dialog for this section. */
+  onDeleteDuplicateLinks?: (tabId: string, sectionId: string) => void;
   onAddRichText: (tabId: string, sectionId: string) => void;
   onToggleLinkSelection: (linkId: string) => void;
   onToggleRichTextSelection?: (richTextId: string) => void;
@@ -423,6 +425,7 @@ const TabNode: React.FC<
   onCloneRichText,
   onAddLink,
   onBulkAddLink,
+  onDeleteDuplicateLinks,
   onAddRichText,
   onToggleLinkSelection,
   onToggleRichTextSelection,
@@ -557,6 +560,7 @@ const TabNode: React.FC<
               onCloneRichText={onCloneRichText}
               onAddLink={onAddLink}
               onBulkAddLink={onBulkAddLink}
+              onDeleteDuplicateLinks={onDeleteDuplicateLinks}
               onAddRichText={onAddRichText}
               onToggleLinkSelection={onToggleLinkSelection}
               onToggleRichTextSelection={onToggleRichTextSelection}
@@ -613,6 +617,7 @@ const SectionNode: React.FC<{
   onCloneRichText: (tabId: string, sectionId: string, richTextId: string) => void;
   onAddLink: (tabId: string, sectionId: string) => void;
   onBulkAddLink?: (tabId: string, sectionId: string) => void;
+  onDeleteDuplicateLinks?: (tabId: string, sectionId: string) => void;
   onAddRichText: (tabId: string, sectionId: string) => void;
   onToggleLinkSelection: (linkId: string) => void;
   onToggleRichTextSelection?: (richTextId: string) => void;
@@ -649,6 +654,7 @@ const SectionNode: React.FC<{
   onCloneRichText,
   onAddLink,
   onBulkAddLink,
+  onDeleteDuplicateLinks,
   onAddRichText,
   onToggleLinkSelection,
   onToggleRichTextSelection,
@@ -913,6 +919,11 @@ const SectionNode: React.FC<{
               variant="text"
               onAddLink={() => onAddLink(tab.id, section.id)}
               onBulkAdd={() => (onBulkAddLink || onAddLink)(tab.id, section.id)}
+              onDeleteDuplicates={
+                onDeleteDuplicateLinks
+                  ? () => onDeleteDuplicateLinks(tab.id, section.id)
+                  : undefined
+              }
             />
             <button
               type="button"

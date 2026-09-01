@@ -4,8 +4,10 @@ import { createPortal } from 'react-dom';
 export type AddLinkMenuVariant = 'icon' | 'text' | 'button';
 
 interface AddLinkMenuProps {
-  onAddLink: () => void;
-  onBulkAdd: () => void;
+  onAddLink?: () => void;
+  onBulkAdd?: () => void;
+  /** Optional: open delete-duplicates dialog for this section */
+  onDeleteDuplicates?: () => void;
   disabled?: boolean;
   /** icon = section header +; text = hierarchy "+ Add Link"; button = edit-mode brand button */
   variant?: AddLinkMenuVariant;
@@ -14,12 +16,13 @@ interface AddLinkMenuProps {
 }
 
 /**
- * Compact menu: Add link | Bulk add links.
+ * Compact menu: Add link | Bulk add links | Delete duplicate links.
  * Used on section headers (view), edit Add Link, and hierarchy tree.
  */
 export const AddLinkMenu: React.FC<AddLinkMenuProps> = ({
   onAddLink,
   onBulkAdd,
+  onDeleteDuplicates,
   disabled = false,
   variant = 'icon',
   className = '',
@@ -33,7 +36,7 @@ export const AddLinkMenu: React.FC<AddLinkMenuProps> = ({
   const updatePosition = () => {
     if (!wrapRef.current) return;
     const rect = wrapRef.current.getBoundingClientRect();
-    const menuWidth = 180;
+    const menuWidth = 200;
     const margin = 8;
     let left = rect.left;
     if (left + menuWidth > window.innerWidth - margin) {
@@ -117,35 +120,54 @@ export const AddLinkMenu: React.FC<AddLinkMenuProps> = ({
           <div
             ref={menuRef}
             role="menu"
-            className="fixed z-[9999] min-w-[11rem] rounded-lg border border-slate-200 dark:border-slate-600 bg-white dark:bg-slate-800 shadow-lg py-1 text-sm"
+            className="fixed z-[9999] min-w-[12.5rem] rounded-lg border border-slate-200 dark:border-slate-600 bg-white dark:bg-slate-800 shadow-lg py-1 text-sm"
             style={{ top: pos.top, left: pos.left }}
           >
-            <button
-              type="button"
-              role="menuitem"
-              className="w-full text-left px-3 py-2 text-slate-700 dark:text-slate-200 hover:bg-slate-100 dark:hover:bg-slate-700"
-              onClick={(e) => {
-                e.preventDefault();
-                e.stopPropagation();
-                setOpen(false);
-                onAddLink();
-              }}
-            >
-              Add link
-            </button>
-            <button
-              type="button"
-              role="menuitem"
-              className="w-full text-left px-3 py-2 text-slate-700 dark:text-slate-200 hover:bg-slate-100 dark:hover:bg-slate-700"
-              onClick={(e) => {
-                e.preventDefault();
-                e.stopPropagation();
-                setOpen(false);
-                onBulkAdd();
-              }}
-            >
-              Bulk add links
-            </button>
+            {onAddLink && (
+              <button
+                type="button"
+                role="menuitem"
+                className="w-full text-left px-3 py-2 text-slate-700 dark:text-slate-200 hover:bg-slate-100 dark:hover:bg-slate-700"
+                onClick={(e) => {
+                  e.preventDefault();
+                  e.stopPropagation();
+                  setOpen(false);
+                  onAddLink();
+                }}
+              >
+                Add link
+              </button>
+            )}
+            {onBulkAdd && (
+              <button
+                type="button"
+                role="menuitem"
+                className="w-full text-left px-3 py-2 text-slate-700 dark:text-slate-200 hover:bg-slate-100 dark:hover:bg-slate-700"
+                onClick={(e) => {
+                  e.preventDefault();
+                  e.stopPropagation();
+                  setOpen(false);
+                  onBulkAdd();
+                }}
+              >
+                Bulk add links
+              </button>
+            )}
+            {onDeleteDuplicates && (
+              <button
+                type="button"
+                role="menuitem"
+                className="w-full text-left px-3 py-2 text-rose-700 dark:text-rose-300 hover:bg-rose-50 dark:hover:bg-rose-950/40"
+                onClick={(e) => {
+                  e.preventDefault();
+                  e.stopPropagation();
+                  setOpen(false);
+                  onDeleteDuplicates();
+                }}
+              >
+                Delete duplicate links
+              </button>
+            )}
           </div>,
           document.body
         )}
