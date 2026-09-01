@@ -129,6 +129,15 @@ export interface AppSettings {
   signin_button_enabled?: string;
   /** '0' or '1' - when '1', hide Unique Visitors in Space Info for guests (not signed in). */
   hide_unique_visitors_public?: string;
+  /**
+   * '0' or '1' - when '1', only users in login_allowed_user_ids or LDAP AD groups in
+   * login_allowed_ldap_groups may sign in (non-admins). Administrators always bypass.
+   */
+  login_allowlist_enabled?: string;
+  /** JSON array of user ids allowed to sign in (admin only; blanked for public GET). */
+  login_allowed_user_ids?: string;
+  /** Newline-separated LDAP/AD group DNs or CNs (admin only; blanked for public GET). */
+  login_allowed_ldap_groups?: string;
   /** '0' or '1' - SSH Gateway / Easy-mode add-on (default enabled when unset). */
   ssh_gateway_enabled?: string;
   /** '0' or '1' - VNC Gateway / Easy-mode add-on (default enabled when unset). */
@@ -382,6 +391,9 @@ export const settingsService = {
       local_registration_enabled: data.settings?.local_registration_enabled || '1', // Default to enabled
       signin_button_enabled: data.settings?.signin_button_enabled || '1', // Default to show Sign In
       hide_unique_visitors_public: data.settings?.hide_unique_visitors_public === '1' ? '1' : '0',
+      login_allowlist_enabled: data.settings?.login_allowlist_enabled === '1' ? '1' : '0',
+      login_allowed_user_ids: data.settings?.login_allowed_user_ids || '[]',
+      login_allowed_ldap_groups: data.settings?.login_allowed_ldap_groups || '',
       public_tile_animation: data.settings?.public_tile_animation || 'fade-in',
       show_database_path_in_footer: data.settings?.show_database_path_in_footer || '1', // Default to enabled
       disabled_tabs: data.settings?.disabled_tabs || '[]',

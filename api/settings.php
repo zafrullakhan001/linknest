@@ -370,6 +370,12 @@ function handleGetSettings() {
             if (array_key_exists('fingerprint_lock_hashes', $cached)) {
                 $cached['fingerprint_lock_hashes'] = '';
             }
+            if (array_key_exists('login_allowed_user_ids', $cached)) {
+                $cached['login_allowed_user_ids'] = '[]';
+            }
+            if (array_key_exists('login_allowed_ldap_groups', $cached)) {
+                $cached['login_allowed_ldap_groups'] = '';
+            }
             foreach (['favicon', 'logo_image', 'header_logo_image'] as $assetKey) {
                 if (!empty($cached[$assetKey])) {
                     $cached[$assetKey] = normalizeLogoUrl($cached[$assetKey]);
@@ -392,6 +398,12 @@ function handleGetSettings() {
         if (is_array($cached)) {
             if (array_key_exists('fingerprint_lock_hashes', $cached)) {
                 $cached['fingerprint_lock_hashes'] = '';
+            }
+            if (array_key_exists('login_allowed_user_ids', $cached)) {
+                $cached['login_allowed_user_ids'] = '[]';
+            }
+            if (array_key_exists('login_allowed_ldap_groups', $cached)) {
+                $cached['login_allowed_ldap_groups'] = '';
             }
             foreach (['favicon', 'logo_image', 'header_logo_image'] as $assetKey) {
                 if (!empty($cached[$assetKey])) {
@@ -535,6 +547,12 @@ function handleGetSettings() {
         // Do not expose the site fingerprint allowlist to guests / non-admins
         if (array_key_exists('fingerprint_lock_hashes', $settings)) {
             $settings['fingerprint_lock_hashes'] = '';
+        }
+        if (array_key_exists('login_allowed_user_ids', $settings)) {
+            $settings['login_allowed_user_ids'] = '[]';
+        }
+        if (array_key_exists('login_allowed_ldap_groups', $settings)) {
+            $settings['login_allowed_ldap_groups'] = '';
         }
         responseCacheSet('settings_public', $settings);
         responseCacheHitHeader(false);
@@ -854,6 +872,9 @@ function handleUpdateSettings() {
                 'local_registration_enabled',
                 'signin_button_enabled',
                 'hide_unique_visitors_public',
+                'login_allowlist_enabled',
+                'login_allowed_user_ids',
+                'login_allowed_ldap_groups',
                 'public_tile_animation',
                 'show_database_path_in_footer',
                 'disabled_tabs',
@@ -1233,6 +1254,20 @@ function handleUpdateSettings() {
 
             if ($key === 'fingerprint_lock_enabled') {
                 $value = ($value === '1' || $value === 1 || $value === true || $value === 'true') ? '1' : '0';
+            }
+
+            if ($key === 'login_allowlist_enabled') {
+                $value = ($value === '1' || $value === 1 || $value === true || $value === 'true') ? '1' : '0';
+            }
+
+            if ($key === 'login_allowed_user_ids') {
+                require_once __DIR__ . '/login_allowlist_lib.php';
+                $value = normalize_login_allowed_user_ids_setting($value);
+            }
+
+            if ($key === 'login_allowed_ldap_groups') {
+                require_once __DIR__ . '/login_allowlist_lib.php';
+                $value = normalize_login_allowed_ldap_groups_setting($value);
             }
             
             // Store setting in database

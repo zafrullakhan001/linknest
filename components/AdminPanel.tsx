@@ -58,6 +58,7 @@ import { SelectableRichTextEditor } from './SelectableRichTextEditor';
 import { MobileRichTextEditor } from './MobileRichTextEditor';
 import { linkifyHtml } from '../utils/richTextDisplay';
 import { MediaLibrary } from './MediaLibrary';
+import { AuthSourceBadge } from './AuthSourceBadge';
 
 // Resolve API base dynamically based on current location
 // This ensures API calls work in both dev mode and runtime mode with any base path
@@ -315,6 +316,7 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({ onUserApproved }) => {
   const [selectedUserIds, setSelectedUserIds] = useState<Set<number>>(new Set());
   const [bulkProcessing, setBulkProcessing] = useState(false);
   const [allUsersSearchTerm, setAllUsersSearchTerm] = useState('');
+  const [loginAllowlistUserSearch, setLoginAllowlistUserSearch] = useState('');
   const [allUsersPage, setAllUsersPage] = useState(1);
   const [allUsersPerPage, setAllUsersPerPage] = useState(25);
   const [resetPasswordModal, setResetPasswordModal] = useState<{ open: boolean; userId: number | null; username: string }>({ open: false, userId: null, username: '' });
@@ -422,6 +424,9 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({ onUserApproved }) => {
     guest_access_enabled: '1',
     fingerprint_lock_enabled: '0',
     fingerprint_lock_hashes: '',
+    login_allowlist_enabled: '0',
+    login_allowed_user_ids: '[]',
+    login_allowed_ldap_groups: '',
     local_registration_enabled: '1',
     signin_button_enabled: '1',
     hide_unique_visitors_public: '0',
@@ -12688,7 +12693,7 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({ onUserApproved }) => {
                         <div className={ADMIN_SECTION_CARD}>
                           <div className={ADMIN_SECTION_HEADER}>
                             <h3 className={ADMIN_SECTION_TITLE}><span aria-hidden>🔓</span> Guest Access</h3>
-                            <p className={ADMIN_SECTION_SUBTITLE}>Control guest visibility, fingerprint-only lock, Sign In button visibility, Unique Visitors on public Space Info, and local account creation.</p>
+                            <p className={ADMIN_SECTION_SUBTITLE}>Control guest visibility, fingerprint-only lock, login allowlist, Sign In button visibility, Unique Visitors on public Space Info, and local account creation.</p>
                           </div>
                           <div className="p-6">
                           <div className="space-y-4">
@@ -12802,6 +12807,174 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({ onUserApproved }) => {
                                   Optional: <code className="px-1 rounded bg-white/70 dark:bg-slate-900/40">--clear-hashes</code> also clears the allowlist. See Help → Guides → Admin Password &amp; Lockout Recovery.
                                 </p>
                               </div>
+                            </div>
+
+                            <div className="pt-4 border-t border-slate-200 dark:border-slate-700 space-y-3">
+                              <label className="flex items-center justify-between cursor-pointer">
+                                <div className="flex-1">
+                                  <span className="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-1">
+                                    Restrict login to authorized users
+                                  </span>
+                                  <span className="block text-xs text-slate-500 dark:text-slate-400">
+                                    When enabled, only selected users and LDAP users in the listed AD groups may sign in. Existing approval and disabled checks still apply. LDAP users not yet in LinkNest can be authorized by AD group only. Administrators can always sign in.
+                                  </span>
+                                </div>
+                                <div className="ml-4">
+                                  <button
+                                    type="button"
+                                    onClick={() => {
+                                      setSettings({
+                                        ...settings,
+                                        login_allowlist_enabled: settings.login_allowlist_enabled === '1' ? '0' : '1',
+                                      });
+                                    }}
+                                    className={`relative inline-flex h-6 w-11 items-center rounded-full transition-colors ${settings.login_allowlist_enabled === '1'
+                                      ? 'bg-sky-600'
+                                      : 'bg-slate-300 dark:bg-slate-600'
+                                      }`}
+                                  >
+                                    <span
+                                      className={`inline-block h-4 w-4 transform rounded-full bg-white transition-transform ${settings.login_allowlist_enabled === '1' ? 'translate-x-6' : 'translate-x-1'
+                                        }`}
+                                    />
+                                  </button>
+                                </div>
+                              </label>
+                              {((settings.login_allowlist_enabled === '1'
+                                || (settings.login_allowed_user_ids || '').trim() !== '[]'
+                                || (settings.login_allowed_ldap_groups || '').trim() !== '') && (
+                                <div className="space-y-4">
+                                  {(() => {
+                                    let selectedUserIds: number[] = [];
+                                    try {
+                                      const parsed = JSON.parse(settings.login_allowed_user_ids || '[]');
+                                      if (Array.isArray(parsed)) {
+                                        selectedUserIds = parsed.map((id) => Number(id)).filter((id) => id > 0);
+                                      }
+                                    } catch {
+                                      selectedUserIds = [];
+                                    }
+                                    const search = loginAllowlistUserSearch.trim().toLowerCase();
+                                    const filteredUsers = allUsers.filter((user) => {
+                                      if (!search) return true;
+                                      return (
+                                        user.username.toLowerCase().includes(search)
+                                        || (user.email || '').toLowerCase().includes(search)
+                                        || (user.auth_source || '').toLowerCase().includes(search)
+                                      );
+                                    });
+                                    const toggleLoginAllowedUser = (userId: number) => {
+                                      const next = selectedUserIds.includes(userId)
+                                        ? selectedUserIds.filter((id) => id !== userId)
+                                        : [...selectedUserIds, userId];
+                                      setSettings({
+                                        ...settings,
+                                        login_allowed_user_ids: JSON.stringify(next),
+                                      });
+                                    };
+                                    return (
+                                      <>
+                                        <div>
+                                          <label className="block text-xs font-medium text-slate-700 dark:text-slate-300 mb-2">
+                                            Authorized users (local, LDAP, SAML)
+                                          </label>
+                                          {selectedUserIds.length > 0 && (
+                                            <div className="flex flex-wrap gap-1.5 mb-2">
+                                              {selectedUserIds.map((userId) => {
+                                                const u = allUsers.find((x) => x.id === userId);
+                                                return (
+                                                  <span
+                                                    key={userId}
+                                                    className="inline-flex items-center gap-1 px-2 py-1 bg-brand-100 dark:bg-brand-900/40 text-brand-700 dark:text-brand-300 rounded text-xs font-medium"
+                                                  >
+                                                    {u?.username || `User ${userId}`}
+                                                    <AuthSourceBadge source={u?.auth_source} />
+                                                    <button
+                                                      type="button"
+                                                      onClick={() => toggleLoginAllowedUser(userId)}
+                                                      className="hover:text-red-600 dark:hover:text-red-400 transition-colors"
+                                                      title="Remove user"
+                                                    >
+                                                      ×
+                                                    </button>
+                                                  </span>
+                                                );
+                                              })}
+                                            </div>
+                                          )}
+                                          <input
+                                            type="search"
+                                            value={loginAllowlistUserSearch}
+                                            onChange={(e) => setLoginAllowlistUserSearch(e.target.value)}
+                                            placeholder="Search users by name, email, or auth source…"
+                                            className="mb-2 w-full rounded-lg border border-slate-300 dark:border-slate-600 bg-white dark:bg-slate-900 px-3 py-2 text-xs text-slate-800 dark:text-slate-200"
+                                          />
+                                          <div className="max-h-40 overflow-y-auto rounded-lg border border-slate-200 dark:border-slate-700 divide-y divide-slate-100 dark:divide-slate-800">
+                                            {filteredUsers.length === 0 ? (
+                                              <p className="p-3 text-xs text-slate-500 dark:text-slate-400">No users match your search.</p>
+                                            ) : (
+                                              filteredUsers.map((user) => (
+                                                <label
+                                                  key={user.id}
+                                                  className="flex items-center gap-2 px-3 py-2 text-xs cursor-pointer hover:bg-slate-50 dark:hover:bg-slate-800/60"
+                                                >
+                                                  <input
+                                                    type="checkbox"
+                                                    checked={selectedUserIds.includes(user.id)}
+                                                    onChange={() => toggleLoginAllowedUser(user.id)}
+                                                    className="rounded border-slate-300 dark:border-slate-600 text-sky-600 focus:ring-sky-500"
+                                                  />
+                                                  <span className="font-medium text-slate-800 dark:text-slate-200">{user.username}</span>
+                                                  <AuthSourceBadge source={user.auth_source} />
+                                                  {user.email && (
+                                                    <span className="text-slate-500 dark:text-slate-400 truncate">{user.email}</span>
+                                                  )}
+                                                </label>
+                                              ))
+                                            )}
+                                          </div>
+                                        </div>
+                                        <label className="block text-xs font-medium text-slate-700 dark:text-slate-300">
+                                          Allowed LDAP / AD groups (one per line)
+                                          <textarea
+                                            rows={4}
+                                            autoComplete="off"
+                                            spellCheck={false}
+                                            placeholder={'CN=LinkNest Users,OU=Groups,DC=example,DC=com\nIT-Admins'}
+                                            className="mt-1 w-full rounded-lg border border-slate-300 dark:border-slate-600 bg-white dark:bg-slate-900 px-3 py-2 text-xs font-mono text-slate-800 dark:text-slate-200"
+                                            value={settings.login_allowed_ldap_groups || ''}
+                                            onChange={(e) => {
+                                              setSettings({
+                                                ...settings,
+                                                login_allowed_ldap_groups: e.target.value,
+                                              });
+                                            }}
+                                          />
+                                          <span className="mt-1 block text-[11px] text-slate-500 dark:text-slate-400">
+                                            Full group DN or CN. Applies to LDAP sign-in only; directory users do not need a LinkNest account to match by group.
+                                          </span>
+                                        </label>
+                                        {settings.login_allowlist_enabled === '1'
+                                          && selectedUserIds.length === 0
+                                          && !(settings.login_allowed_ldap_groups || '').trim() && (
+                                          <span className="block text-xs text-amber-600 dark:text-amber-400">
+                                            Add at least one user or AD group before enabling, or everyone except admins will be unable to sign in.
+                                          </span>
+                                        )}
+                                      </>
+                                    );
+                                  })()}
+                                  <div className="rounded-xl border border-amber-200 dark:border-amber-800/50 bg-amber-50/80 dark:bg-amber-950/20 p-3 text-left">
+                                    <p className="text-xs font-semibold text-amber-900 dark:text-amber-200 mb-1">
+                                      Unlock if you cannot reach Admin
+                                    </p>
+                                    <p className="text-[11px] text-amber-900/90 dark:text-amber-300/90 leading-relaxed mb-2">
+                                      Administrators can always sign in with their credentials. From the server:
+                                    </p>
+                                    <pre className="text-[11px] font-mono bg-white/90 dark:bg-slate-950/50 border border-amber-200/70 dark:border-amber-800/40 rounded-lg px-2 py-1.5 overflow-x-auto text-slate-800 dark:text-slate-200">{`php scripts/unlock_login_allowlist.php --yes`}</pre>
+                                  </div>
+                                </div>
+                              ))}
                             </div>
 
                             <div className="pt-4 border-t border-slate-200 dark:border-slate-700">

@@ -176,6 +176,9 @@ function ensureLocalRegistrationSetting(PDO $db): void {
         $stmt->execute(['local_registration_enabled', '1', $now]);
         $stmt->execute(['signin_button_enabled', '1', $now]);
         $stmt->execute(['hide_unique_visitors_public', '0', $now]);
+        $stmt->execute(['login_allowlist_enabled', '0', $now]);
+        $stmt->execute(['login_allowed_user_ids', '[]', $now]);
+        $stmt->execute(['login_allowed_ldap_groups', '', $now]);
     } catch (PDOException $e) {
         // Table may not exist yet during first bootstrap
     }
@@ -4195,6 +4198,9 @@ function initDatabase() {
             ['local_registration_enabled', '1', time()], // Allow self-signup from login dialog
             ['signin_button_enabled', '1', time()], // Show Sign In button in the UI
             ['hide_unique_visitors_public', '0', time()], // Hide Unique Visitors from guests
+            ['login_allowlist_enabled', '0', time()],
+            ['login_allowed_user_ids', '[]', time()],
+            ['login_allowed_ldap_groups', '', time()],
         ];
         
         foreach ($defaultSettings as $setting) {

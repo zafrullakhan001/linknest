@@ -4,6 +4,8 @@ Use this when you cannot sign in to LinkNest as a local administrator — for ex
 
 Also use the fingerprint unlock script when **Fingerprint-only access** is on and the browser hash changed (or you cannot reach Admin to turn the lock off). Administrators can always sign in with their credentials even when the fingerprint hash does not match.
 
+Also use the login allowlist unlock script when **Restrict login to authorized users** is on and you cannot reach Admin to turn it off. Administrators can always sign in with their credentials even when not on the allowlist.
+
 Also in-app: **Help & About → Help → Admin password & lockout recovery**, and the same steps on **Admin → Settings → Access → Sign-in → Lockout recovery**.
 
 **Who:** Anyone with filesystem / SSH / RDP access to the server that hosts LinkNest.  
@@ -20,6 +22,7 @@ Also in-app: **Help & About → Help → Admin password & lockout recovery**, an
 | LDAP/SAML misconfigured and Local was disabled | No working sign-in method | Script re-enables Local + resets password so you can fix LDAP/SAML from Admin |
 | Only LDAP/SAML admin (no local account) | Script cannot reset IdP passwords | Fix credentials in AD / IdP, or create a local admin from DB/ops tooling |
 | Fingerprint-only access on; hash changed | Guests / non-admins see fingerprint lock page | **Admin signs in with credentials** (hash ignored for admins), or run `unlock_fingerprint_lock.php` |
+| Login allowlist on; admin not on list | Non-admins on the list can sign in; others cannot | **Admin signs in with credentials** (allowlist ignored for admins), or run `unlock_login_allowlist.php` |
 
 The app also refuses to disable the **last** enabled sign-in method (Local / LDAP / SAML) so a single toggle cannot wipe every login path from the UI. Server-side recovery still covers cases where Local was already off.
 
@@ -49,6 +52,33 @@ docker exec -it <container> php /var/www/html/scripts/unlock_fingerprint_lock.ph
 ```
 
 This turns `fingerprint_lock_enabled` off and clears the public settings cache. Restrict or remove the script on production after use.
+
+---
+
+## Login allowlist unlock
+
+**Prefer:** Sign in as an **administrator** with username/password. Admins bypass the login allowlist even when not selected and not in an AD group. Then open **Admin → Settings → Access → Guest & UI** to update the list or turn **Restrict login to authorized users** off.
+
+**Server script:** `scripts/unlock_login_allowlist.php`
+
+```bat
+cd C:\xampp\htdocs\linknest
+php scripts\unlock_login_allowlist.php --yes
+```
+
+```bash
+php scripts/unlock_login_allowlist.php --yes
+# Also clear authorized users and AD groups:
+php scripts/unlock_login_allowlist.php --clear-lists --yes
+```
+
+Inside Docker:
+
+```bash
+docker exec -it <container> php /var/www/html/scripts/unlock_login_allowlist.php --yes
+```
+
+This turns `login_allowlist_enabled` off and clears the public settings cache. Restrict or remove the script on production after use.
 
 ---
 
@@ -109,8 +139,9 @@ Prefer the CLI. In production, block public web access to `scripts/` and remove 
 1. Sign in with **Local authentication** and the new password (or as admin after fingerprint unlock).
 2. Open **Admin → Settings → Access → Sign-in** and confirm Local / LDAP / SAML are set the way you want (keep at least one method on).
 3. If you unlocked fingerprint lock, review **Access → Guest & UI → Fingerprint-only access** and update hashes before turning it back on.
-4. Change the temporary password from the admin profile or Users tools.
-5. Restrict or delete recovery scripts on production hosts when you no longer need them.
+4. If you unlocked login allowlist, review **Access → Guest & UI → Restrict login to authorized users** before turning it back on.
+5. Change the temporary password from the admin profile or Users tools.
+6. Restrict or delete recovery scripts on production hosts when you no longer need them.
 
 ---
 
@@ -124,6 +155,6 @@ Prefer the CLI. In production, block public web access to `scripts/` and remove 
 
 ## Related UI
 
-- **Admin → Settings → Access → Guest & UI** — guest access, fingerprint-only lock, Sign In button, local sign-up
+- **Admin → Settings → Access → Guest & UI** — guest access, fingerprint-only lock, login allowlist, Sign In button, local sign-up
 - **Admin → Settings → Access → Sign-in** — Local / LDAP / SAML toggles + lockout recovery card
 - **Help & About → Guides → Admin Password & Lockout Recovery** (this document)

@@ -543,6 +543,24 @@ class SamlAPI {
 
             $this->logAuth("ACS_USER_OK", "User found/created", ['user_id' => $userId]);
 
+            require_once __DIR__ . '/login_allowlist_lib.php';
+            $allowlistUserStmt = $this->conn->prepare('SELECT id, username, is_admin FROM users WHERE id = ? LIMIT 1');
+            $allowlistUserStmt->execute([$userId]);
+            $allowlistUser = $allowlistUserStmt->fetch(PDO::FETCH_ASSOC) ?: null;
+            $allowlistResult = login_allowlist_evaluate($allowlistUser, [], getDB());
+            if (empty($allowlistResult['allowed'])) {
+                logUserAudit('auth.login_failed', [
+                    'actor_id' => (int) $userId,
+                    'actor_username' => $username,
+                    'target_user_id' => (int) $userId,
+                    'target_username' => $username,
+                    'details' => ['method' => 'saml', 'reason' => 'login_allowlist', 'username' => $username],
+                ]);
+                $redirectUrl = $this->getDefaultBaseUrl() . '/?saml_error=not_authorized&username=' . urlencode($username);
+                header('Location: ' . $redirectUrl);
+                exit;
+            }
+
             // Create PHP session
             if (session_status() === PHP_SESSION_NONE) {
                 session_start();
@@ -666,6 +684,15 @@ class SamlAPI {
         }
 
         if (!$autoProvision) {
+            return null;
+        }
+
+        require_once __DIR__ . '/login_allowlist_lib.php';
+        if (login_allowlist_enabled($this->conn)) {
+            $this->logAuth("ACS_ALLOWLIST_BLOCK", "Login allowlist enabled — SAML auto-provision blocked for unknown user", [
+                'username' => $username,
+                'email' => $email,
+            ]);
             return null;
         }
 

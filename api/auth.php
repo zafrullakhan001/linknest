@@ -404,6 +404,8 @@ function handleLogin() {
     $isAutoAuth = ($authMethod === null); // Auto: LDAP first, then local — must fail LDAP fast
     
     $db = getDB();
+    require_once __DIR__ . '/login_allowlist_lib.php';
+    $loginAllowlistNeedsMemberOf = login_allowlist_needs_ldap_member_of($db);
     
     // Check maintenance mode first
     $stmt = $db->prepare("SELECT key, value FROM settings WHERE key IN ('maintenance_enabled', 'ldap_enabled') OR key LIKE 'ldap_%'");
@@ -668,7 +670,8 @@ function handleLogin() {
                         $attributesStr = $serverConfig['user_attributes'] ?? 'sAMAccountName,mail,displayName';
                         $attributes = array_map('trim', explode(',', $attributesStr));
                         $needGroups = (!empty($serverConfig['require_group_membership']) && $serverConfig['require_group_membership'] == '1')
-                            || !empty(trim($serverConfig['denied_groups'] ?? ''));
+                            || !empty(trim($serverConfig['denied_groups'] ?? ''))
+                            || $loginAllowlistNeedsMemberOf;
                         if ($needGroups && !in_array('memberOf', $attributes, true) && !in_array('memberof', array_map('strtolower', $attributes), true)) {
                             $attributes[] = 'memberOf';
                         }
@@ -706,7 +709,8 @@ function handleLogin() {
 
                 // Ensure memberOf is fetched when evaluating group allow/deny lists
                 $needGroups = (!empty($serverConfig['require_group_membership']) && $serverConfig['require_group_membership'] == '1')
-                    || !empty(trim($serverConfig['denied_groups'] ?? ''));
+                    || !empty(trim($serverConfig['denied_groups'] ?? ''))
+                    || $loginAllowlistNeedsMemberOf;
                 if ($needGroups && !in_array('memberOf', $attributes, true) && !in_array('memberof', array_map('strtolower', $attributes), true)) {
                     $attributes[] = 'memberOf';
                 }
@@ -851,12 +855,11 @@ function handleLogin() {
                 }
                 
                 // Group allow / deny checks
+                $userGroups = ldapCollectUserGroups($userEntry ?? []);
                 $requiredGroups = ldapParseGroupList($serverConfig['required_groups'] ?? '');
                 $deniedGroups = ldapParseGroupList($serverConfig['denied_groups'] ?? '');
                 $requireGroupMembership = !empty($serverConfig['require_group_membership']) && $serverConfig['require_group_membership'] == '1';
                 if (($requireGroupMembership && !empty($requiredGroups)) || !empty($deniedGroups)) {
-                    $userGroups = ldapCollectUserGroups($userEntry ?? []);
-                    
                     // Check nested groups if enabled
                     $nestedGroups = !empty($serverConfig['nested_groups']) && $serverConfig['nested_groups'] == '1';
                     if ($nestedGroups && !empty($serverConfig['group_search_base'])) {
@@ -891,7 +894,8 @@ function handleLogin() {
                     'username' => $username,
                     'email' => $ldapEmail,
                     'dn' => $userDn,
-                    'display_name' => $ldapDisplayName
+                    'display_name' => $ldapDisplayName,
+                    'groups' => $userGroups,
                 ];
             }
         } else {
@@ -954,6 +958,17 @@ function handleLogin() {
                 $stmt->execute($updateValues);
             }
         } else {
+            // User doesn't exist — only provision when login allowlist permits (AD group or open list)
+            $ldapGroups = $ldapUser['groups'] ?? [];
+            if (login_allowlist_enabled($db) && !login_allowlist_ldap_provision_allowed($ldapGroups, $db)) {
+                logUserAudit('auth.login_failed', [
+                    'actor_id' => null,
+                    'actor_username' => $username !== '' ? $username : null,
+                    'details' => ['method' => 'ldap', 'reason' => 'login_allowlist', 'username' => $username],
+                ]);
+                sendJSON(['error' => 'You are not authorized to sign in. Contact your administrator.'], 403);
+            }
+
             // User doesn't exist, create new pending user
             // Use a random password hash since they should login via LDAP
             $randomPass = bin2hex(random_bytes(16));
@@ -1020,6 +1035,8 @@ function handleLogin() {
             ]);
             sendJSON(['error' => 'The application is currently in maintenance mode. Only administrators can log in at this time.'], 503);
         }
+
+        require_login_allowlist_access($user, $ldapUser['groups'] ?? [], 'ldap');
         
         // Login success - set session with remember me support
         if (session_status() === PHP_SESSION_NONE) {
@@ -1065,7 +1082,7 @@ function handleLogin() {
     // 2. Fallback to Local Authentication
     // If auth_method was 'ldap' but LDAP failed, don't allow local fallback
     // Also, if LDAP bind succeeded but group membership failed, return error (don't fall back to local)
-    if (($authMethod === 'ldap' && !$ldapSuccess) || ($ldapError && strpos($ldapError, 'required groups') !== false)) {
+    if (($authMethod === 'ldap' && !$ldapSuccess) || ($ldapError && (strpos($ldapError, 'required groups') !== false || strpos($ldapError, 'not authorized') !== false))) {
         // Return specific error message if available, otherwise generic message
         $errorMessage = $ldapError ?? 'LDAP authentication failed. Please check your credentials.';
         logUserAudit('auth.login_failed', [
@@ -1134,6 +1151,8 @@ function handleLogin() {
         ]);
         sendJSON(['error' => 'The application is currently in maintenance mode. Only administrators can log in at this time.'], 503);
     }
+
+    require_login_allowlist_access($user, [], 'local');
     
     // Login success - set session with remember me support
     if (session_status() === PHP_SESSION_NONE) {
