@@ -109,12 +109,18 @@ tile → tabs[] → sections[] → links[] (and optional richTextContent[] on se
 Your job:
 1. Keep every existing URL unless it is a true duplicate of another link in this space (same destination URL, ignoring trailing slash and http vs https). Remove only those duplicates; keep the copy with the better label/icon/notes.
 2. Do not invent new URLs or placeholder links.
-3. Add a single fitting emoji:
+3. Add a single fitting emoji in the dedicated fields only:
    - tile.emoji for the space
    - tabs[].emoji for each tab
    - sections[].emoji for each section
    - links[].icon for each link (emoji character, not an image URL)
    Keep existing emojis if they already fit.
+   EMOJI FORMAT — CRITICAL:
+   - Each emoji field must be a plain Unicode emoji only (e.g. "📁", "🔗", "⚙️").
+   - Do NOT wrap emojis in markdown or HTML: no asterisks, underscores, italics, bold, backticks, or tags.
+   - Wrong: "_📁_", "*📁*", "__📁__", "<i>📁</i>", "📁 (folder)" in the emoji field.
+   - Right: "📁" in sections[].emoji (and the section title stays plain text in sections[].title).
+   - Never put italic/bold formatting on section emojis — they must render as normal emoji characters in JSON strings.
 4. Improve titles, descriptions, tab titles, section titles, and link labels so they are clear and consistent. Do not empty them.
 5. Preserve IDs (tile.id, tab.id, section.id, link.id, richTextContent.id) for items you keep so short URLs and history stay attached.
 6. Preserve all other fields you are given: visibility, published, notes, tooltip, richTextContent, maintenance*, shortUrl / inheritShortUrls / forceShortUrl, openTarget, browser, accessRestrictions, decorations, animations, messages, images, allowedUsers/Groups, schedule dates.
@@ -156,6 +162,48 @@ export const downloadTextFile = (contents: string, filename: string, mime: strin
   window.URL.revokeObjectURL(url);
 };
 
+/** Strip markdown emphasis wrappers LLMs sometimes add around emoji fields. */
+const normalizeEmojiField = (value: unknown): string | undefined => {
+  if (value == null) return undefined;
+  let text = String(value).trim();
+  if (!text) return undefined;
+  let prev = '';
+  while (prev !== text) {
+    prev = text;
+    text = text
+      .replace(/^(\*{1,3}|_{1,3})([\s\S]+?)\1$/u, '$2')
+      .replace(/^<(?:i|em|b|strong)>([\s\S]+?)<\/(?:i|em|b|strong)>$/iu, '$1')
+      .trim();
+  }
+  return text || undefined;
+};
+
+const sanitizeTileEmojiFields = (tile: Tile): Tile => {
+  const next: Tile = {
+    ...tile,
+    emoji: normalizeEmojiField(tile.emoji) ?? tile.emoji,
+    tabs: Array.isArray(tile.tabs)
+      ? tile.tabs.map((tab) => ({
+          ...tab,
+          emoji: normalizeEmojiField(tab.emoji) ?? tab.emoji,
+          sections: Array.isArray(tab.sections)
+            ? tab.sections.map((section) => ({
+                ...section,
+                emoji: normalizeEmojiField(section.emoji) ?? section.emoji,
+                links: Array.isArray(section.links)
+                  ? section.links.map((link) => ({
+                      ...link,
+                      icon: normalizeEmojiField(link.icon) ?? link.icon,
+                    }))
+                  : section.links,
+              }))
+            : tab.sections,
+        }))
+      : tile.tabs,
+  };
+  return next;
+};
+
 const extractJsonObject = (raw: string): unknown => {
   let text = raw.trim().replace(/^\uFEFF/, '');
   text = text.replace(/^```(?:json)?\s*/i, '').replace(/\s*```$/i, '');
@@ -189,7 +237,7 @@ export const parseLlmSpaceJson = (raw: string): Tile => {
     if (!parsed.tiles[0]) {
       throw new Error('JSON did not contain a space/tile.');
     }
-    return parsed.tiles[0];
+    return sanitizeTileEmojiFields(parsed.tiles[0]);
   }
 
   if (typeof data.title === 'string' && (Array.isArray(data.tabs) || Array.isArray(data.sections))) {
@@ -199,7 +247,7 @@ export const parseLlmSpaceJson = (raw: string): Tile => {
       exportedAt: Date.now(),
       tile: data,
     });
-    return parsed.tiles[0];
+    return sanitizeTileEmojiFields(parsed.tiles[0]);
   }
 
   throw new Error('JSON is not a LinkNest space export. Expected { version, type: "tile", tile }.');
