@@ -7331,9 +7331,9 @@ export const TileDetail: React.FC<TileDetailProps> = ({
 
                     {/* Search Bar - Now at the top */}
                     <div className="mb-6">
-                        <div className="bg-white dark:bg-slate-900/50 backdrop-blur border border-slate-200 dark:border-slate-800 p-4 rounded-xl shadow-sm">
-                            <div className="flex flex-col sm:flex-row gap-4 items-center">
-                                <div className="relative flex-1 w-full">
+                        <div className="bg-white dark:bg-slate-900/50 backdrop-blur border border-slate-200 dark:border-slate-800 p-3 sm:p-4 rounded-xl shadow-sm">
+                            <div className="flex flex-col lg:flex-row gap-3 lg:gap-4 items-stretch lg:items-center">
+                                <div className="relative flex-1 w-full min-w-0">
                                     <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor" className="w-5 h-5 absolute left-3 top-1/2 -translate-y-1/2 text-slate-400">
                                         <path fillRule="evenodd" d="M9 3.5a5.5 5.5 0 100 11 5.5 5.5 0 000-11zM2 9a7 7 0 1112.452 4.391l3.328 3.329a.75.75 0 11-1.06 1.06l-3.329-3.328A7 7 0 012 9z" clipRule="evenodd" />
                                     </svg>
@@ -7348,16 +7348,15 @@ export const TileDetail: React.FC<TileDetailProps> = ({
                                         className="w-full bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 hover:border-brand-300 dark:hover:border-slate-600 focus:border-brand-500 rounded-lg pl-10 pr-3 py-2.5 text-sm text-slate-900 dark:text-white focus:outline-none transition-all"
                                     />
                                 </div>
-                                <div className="flex items-center gap-3">
-                                    <div className="flex items-center gap-2 text-xs text-slate-500 font-medium uppercase tracking-wider">
-                                        <span>Total Links</span>
-                                        <span className="bg-slate-100 dark:bg-slate-800 px-3 py-1.5 rounded-lg text-slate-600 dark:text-slate-300 font-semibold">{totalLinks}</span>
-                                    </div>
+                                <div className="flex flex-col gap-2 w-full lg:w-auto lg:flex-row lg:items-center lg:gap-3 min-w-0">
+                                    <div className="flex items-center justify-between gap-2">
+                                        <div className="flex items-center gap-2 text-xs text-slate-500 font-medium uppercase tracking-wider shrink-0">
+                                            <span>Total Links</span>
+                                            <span className="bg-slate-100 dark:bg-slate-800 px-3 py-1.5 rounded-lg text-slate-600 dark:text-slate-300 font-semibold">{totalLinks}</span>
+                                        </div>
 
-                                    {/* View Layout Toggle */}
-                                    <div className="flex items-center gap-2 flex-wrap justify-end">
                                         {(canQuickAddTabs || canQuickAddSections) && (
-                                            <div className="flex items-center gap-1 bg-slate-100 dark:bg-slate-800 rounded-lg p-1">
+                                            <div className="flex items-center gap-1 bg-slate-100 dark:bg-slate-800 rounded-lg p-1 shrink-0">
                                                 {canQuickAddTabs && (
                                                     <button
                                                         type="button"
@@ -7392,12 +7391,16 @@ export const TileDetail: React.FC<TileDetailProps> = ({
                                                 )}
                                             </div>
                                         )}
-                                        <span className="text-xs font-medium text-slate-500 dark:text-slate-400">View:</span>
-                                        <div className="flex items-center gap-1 bg-slate-100 dark:bg-slate-800 rounded-lg p-1">
+                                    </div>
+
+                                    {/* View Layout Toggle */}
+                                    <div className="flex items-center gap-1.5 sm:gap-2 min-w-0 w-full lg:w-auto">
+                                        <span className="text-xs font-medium text-slate-500 dark:text-slate-400 shrink-0">View:</span>
+                                        <div className="flex items-center gap-0.5 sm:gap-1 bg-slate-100 dark:bg-slate-800 rounded-lg p-1 min-w-0 overflow-x-auto">
                                             <button
                                                 type="button"
                                                 onClick={() => setViewLayout('stacked')}
-                                                className={`px-3 py-1.5 text-xs font-medium rounded-md transition-all ${viewLayout === 'stacked'
+                                                className={`px-2 sm:px-3 py-1.5 text-xs font-medium rounded-md transition-all shrink-0 ${viewLayout === 'stacked'
                                                     ? 'bg-white dark:bg-slate-700 text-brand-600 dark:text-brand-400 shadow-sm'
                                                     : 'text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-slate-200'
                                                     }`}
@@ -7415,7 +7418,7 @@ export const TileDetail: React.FC<TileDetailProps> = ({
                                                     // Independent toggle: keep stacked/grid/compact/qr (or columns) link mode as-is
                                                     setSectionsSideBySide((prev) => !prev);
                                                 }}
-                                                className={`px-3 py-1.5 text-xs font-medium rounded-md transition-all ${sectionsSideBySide
+                                                className={`px-2 sm:px-3 py-1.5 text-xs font-medium rounded-md transition-all shrink-0 ${sectionsSideBySide
                                                     ? 'bg-orange-500 text-white shadow-sm ring-1 ring-orange-600/40 dark:bg-orange-500 dark:text-white dark:ring-orange-400/50'
                                                     : 'text-slate-600 dark:text-slate-400 hover:text-orange-600 dark:hover:text-orange-400'
                                                     }`}
@@ -7430,7 +7433,7 @@ export const TileDetail: React.FC<TileDetailProps> = ({
                                             <button
                                                 type="button"
                                                 onClick={() => setViewLayout('grid')}
-                                                className={`px-3 py-1.5 text-xs font-medium rounded-md transition-all ${viewLayout === 'grid'
+                                                className={`px-2 sm:px-3 py-1.5 text-xs font-medium rounded-md transition-all shrink-0 ${viewLayout === 'grid'
                                                     ? 'bg-white dark:bg-slate-700 text-brand-600 dark:text-brand-400 shadow-sm'
                                                     : 'text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-slate-200'
                                                     }`}
@@ -7445,7 +7448,7 @@ export const TileDetail: React.FC<TileDetailProps> = ({
                                             <button
                                                 type="button"
                                                 onClick={() => setViewLayout('compact')}
-                                                className={`px-3 py-1.5 text-xs font-medium rounded-md transition-all ${viewLayout === 'compact'
+                                                className={`px-2 sm:px-3 py-1.5 text-xs font-medium rounded-md transition-all shrink-0 ${viewLayout === 'compact'
                                                     ? 'bg-white dark:bg-slate-700 text-brand-600 dark:text-brand-400 shadow-sm'
                                                     : 'text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-slate-200'
                                                     }`}
@@ -7465,7 +7468,7 @@ export const TileDetail: React.FC<TileDetailProps> = ({
                                                     setSyncSectionViews(true);
                                                     setViewLayout('qr');
                                                 }}
-                                                className={`px-3 py-1.5 text-xs font-medium rounded-md transition-all ${viewLayout === 'qr'
+                                                className={`px-2 sm:px-3 py-1.5 text-xs font-medium rounded-md transition-all shrink-0 ${viewLayout === 'qr'
                                                     ? 'bg-white dark:bg-slate-700 text-brand-600 dark:text-brand-400 shadow-sm'
                                                     : 'text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-slate-200'
                                                     }`}
@@ -7496,7 +7499,7 @@ export const TileDetail: React.FC<TileDetailProps> = ({
                                         <button
                                             type="button"
                                             onClick={() => setSyncSectionViews((prev) => !prev)}
-                                            className={`inline-flex items-center gap-1.5 px-2.5 py-1.5 text-xs font-medium rounded-lg border transition-all ${
+                                            className={`inline-flex items-center justify-center gap-1.5 px-2 sm:px-2.5 py-1.5 text-xs font-medium rounded-lg border transition-all shrink-0 ${
                                                 syncSectionViews
                                                     ? 'bg-brand-50 dark:bg-brand-900/30 border-brand-300 dark:border-brand-700 text-brand-700 dark:text-brand-300'
                                                     : 'bg-white dark:bg-slate-800 border-slate-200 dark:border-slate-700 text-slate-600 dark:text-slate-400 hover:border-slate-300 dark:hover:border-slate-600'
