@@ -13,6 +13,7 @@ import {
   prepareBulkAddLines,
 } from '../utils/bulkAddLinks';
 import { useEscapeToClose } from '../hooks/useEscapeToClose';
+import { SpaceModalHeader, EditModalTabButton } from './SpaceFormChrome';
 
 export type BulkAddLinksDialogProps = {
   sectionTitle?: string;
@@ -99,7 +100,7 @@ export const BulkAddLinksDialog: React.FC<BulkAddLinksDialogProps> = ({
   });
 
   const inputClass =
-    'w-full rounded-lg border border-gray-200 bg-white/90 px-3 py-2 text-sm text-gray-900 outline-none focus:border-emerald-400 focus:ring-2 focus:ring-emerald-100 transition-colors dark:border-[#444] dark:bg-[#252525] dark:text-white';
+    'w-full rounded-lg border-2 border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900 px-3 py-2 text-sm text-slate-900 dark:text-white outline-none focus:border-brand-500 focus:ring-2 focus:ring-brand-500/50 transition-all';
 
   useEscapeToClose(true, onClose);
 
@@ -118,7 +119,7 @@ export const BulkAddLinksDialog: React.FC<BulkAddLinksDialogProps> = ({
 
   const handleDragStart = (e: React.MouseEvent) => {
     if ((e.target as HTMLElement).closest('button')) return;
-    if (!modalRef.current || !(e.target as HTMLElement).closest('[data-drag-handle]')) return;
+    if (!modalRef.current) return;
     e.preventDefault();
     e.stopPropagation();
     const rect = modalRef.current.getBoundingClientRect();
@@ -373,9 +374,10 @@ export const BulkAddLinksDialog: React.FC<BulkAddLinksDialogProps> = ({
   const fixableCount = rows.filter((r) => r.suggestedUrl && r.suggestedUrl !== r.url).length;
 
   return createPortal(
-    <div className="fixed inset-0 z-[10000]" style={{ backgroundColor: 'transparent' }}>
+    <div className="fixed inset-0 flex items-center justify-center p-4" style={{ zIndex: 100060 }}>
       <div
-        className="absolute inset-0 bg-black/40 backdrop-blur-[2px]"
+        className="absolute inset-0 bg-black/40 backdrop-blur-[1px]"
+        style={{ zIndex: 100059 }}
         onClick={onClose}
         aria-hidden="true"
       />
@@ -384,153 +386,108 @@ export const BulkAddLinksDialog: React.FC<BulkAddLinksDialogProps> = ({
         ref={modalRef}
         role="dialog"
         aria-modal="true"
-        aria-labelledby="bulk-add-links-title"
-        className="bg-white dark:bg-[#1e1e1e] rounded-2xl shadow-2xl border border-emerald-100 dark:border-[#333] overflow-hidden flex flex-col relative"
+        aria-label="Bulk add links"
+        className={`bg-white dark:bg-slate-800 border border-slate-200/80 dark:border-slate-700 rounded-2xl p-6 pb-8 relative shadow-2xl overflow-hidden flex flex-col ${isDragging ? 'cursor-move' : ''}`}
         style={{
+          zIndex: 100060,
           position: 'absolute',
           left: `${position.x}px`,
           top: `${position.y}px`,
           width: `${dialogSize.width}px`,
           height: `${dialogSize.height}px`,
-          maxWidth: '95vw',
-          maxHeight: '95vh',
+          maxWidth: '90vw',
+          maxHeight: '90vh',
           minWidth: `${MIN_SIZE.width}px`,
           minHeight: `${MIN_SIZE.height}px`,
           visibility: isPositionReady ? 'visible' : 'hidden',
         }}
         onClick={(e) => e.stopPropagation()}
       >
-        {/* Draggable header */}
-        <div
-          data-drag-handle
-          style={{ cursor: isDragging ? 'grabbing' : 'grab' }}
-          className="px-6 py-4 border-b border-emerald-200/80 dark:border-[#333] flex items-center justify-between bg-gradient-to-r from-emerald-100/90 via-teal-100/70 to-cyan-100/60 dark:from-emerald-950/40 dark:via-teal-950/30 dark:to-cyan-950/20 select-none [&_*:not(button):not(svg):not(path)]:cursor-[inherit]"
+        <SpaceModalHeader
+          emoji="🔗"
+          eyebrow="Bulk add"
+          title="Bulk add links"
+          subtitle={
+            sectionTitle
+              ? `Section: ${sectionTitle} — paste URLs, fetch titles, check latency`
+              : 'Paste URLs one per line — we suggest fixes, fetch titles, and show RTT'
+          }
+          onClose={onClose}
           onMouseDown={handleDragStart}
-        >
-          <div className="min-w-0 flex-1 pr-4">
-            <h2
-              id="bulk-add-links-title"
-              className="text-lg font-bold text-emerald-950 dark:text-emerald-100 flex items-center gap-2"
-            >
-              <span aria-hidden="true">🔗</span>
-              Bulk add links
-            </h2>
-            <p className="text-sm text-emerald-900/75 dark:text-emerald-200/70 mt-0.5">
-              {sectionTitle
-                ? `Section: ${sectionTitle} — paste URLs, we fetch titles and check latency.`
-                : 'Paste URLs one per line — we suggest fixes, fetch titles, and show RTT.'}
-            </p>
-          </div>
-          <div className="flex items-center gap-3 shrink-0">
-            <div className="text-emerald-900/70 dark:text-emerald-200/70 text-xs flex items-center gap-1.5 hidden sm:flex rounded-lg bg-white/50 dark:bg-black/20 px-2 py-1 border border-emerald-200/60 dark:border-emerald-800/40">
-              <svg className="w-4 h-4 shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 8h16M4 16h16" />
-              </svg>
-              Drag · Resize corner
-            </div>
-            <button
-              type="button"
-              onClick={onClose}
-              className="p-2 rounded-lg hover:bg-emerald-200/60 dark:hover:bg-[#333] text-emerald-900 dark:text-emerald-200 transition-colors cursor-pointer"
-              aria-label="Close"
-            >
-              <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
-              </svg>
-            </button>
-          </div>
+        />
+
+        <div className="flex gap-1.5 mb-4 border-b border-slate-200 dark:border-slate-700 overflow-x-auto shrink-0">
+          <EditModalTabButton
+            active={step === 'paste'}
+            emoji="📋"
+            label="Paste URLs"
+            onClick={() => {
+              abortRef.current?.abort();
+              setStep('paste');
+              setAnalyzing(false);
+            }}
+          />
+          <EditModalTabButton
+            active={step === 'review'}
+            emoji="✅"
+            label="Review & add"
+            onClick={() => rows.length > 0 && setStep('review')}
+          />
         </div>
 
-        {/* Step pills */}
-        <div className="px-6 py-2.5 border-b border-gray-100 dark:border-[#333] bg-gradient-to-r from-slate-50 to-white dark:from-[#252525] dark:to-[#1e1e1e] shrink-0">
-          <div className="inline-flex rounded-xl border border-gray-200 dark:border-[#444] bg-white/80 dark:bg-[#252525] p-1 gap-1 shadow-sm">
-            <button
-              type="button"
-              onClick={() => {
-                abortRef.current?.abort();
-                setStep('paste');
-                setAnalyzing(false);
-              }}
-              className={`px-4 py-1.5 text-sm font-medium rounded-lg transition-colors ${
-                step === 'paste'
-                  ? 'bg-emerald-100 text-emerald-800 dark:bg-emerald-900/40 dark:text-emerald-200'
-                  : 'text-gray-500 hover:text-gray-700 dark:text-gray-400'
-              }`}
-            >
-              <span aria-hidden="true">📋 </span>Paste URLs
-            </button>
-            <button
-              type="button"
-              onClick={() => rows.length > 0 && setStep('review')}
-              disabled={rows.length === 0}
-              className={`px-4 py-1.5 text-sm font-medium rounded-lg transition-colors disabled:opacity-40 ${
-                step === 'review'
-                  ? 'bg-sky-100 text-sky-800 dark:bg-sky-900/40 dark:text-sky-200'
-                  : 'text-gray-500 hover:text-gray-700 dark:text-gray-400'
-              }`}
-            >
-              <span aria-hidden="true">✅ </span>Review & add
-            </button>
-          </div>
-        </div>
-
-        <div className="flex-1 overflow-y-auto p-6 space-y-4 bg-gradient-to-b from-slate-50/50 to-white dark:from-[#1a1a1a] dark:to-[#1e1e1e]">
+        <div className="flex-1 overflow-y-auto pr-1 min-h-0 space-y-3">
           {step === 'paste' && (
-            <section className="rounded-xl border border-emerald-100 bg-emerald-50/60 dark:border-emerald-900/40 dark:bg-emerald-950/20 p-4 space-y-3 shadow-sm">
-              <div className="flex items-start gap-2.5 pb-2 border-b border-emerald-100/80 dark:border-emerald-900/30">
-                <span className="text-xl" aria-hidden="true">
+            <div className="rounded-xl border-2 border-sky-200 dark:border-sky-800/50 overflow-hidden shadow-sm">
+              <div className="flex items-center gap-3 px-3.5 py-3 bg-sky-50 dark:bg-sky-950/35">
+                <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg text-lg bg-sky-100 dark:bg-sky-900/50" aria-hidden>
                   🎯
                 </span>
-                <div>
-                  <h3 className="text-sm font-semibold text-emerald-900 dark:text-emerald-100">
-                    Links
-                  </h3>
-                  <p className="text-xs text-emerald-800/70 dark:text-emerald-200/60">
+                <div className="min-w-0">
+                  <div className="text-sm font-semibold text-sky-900 dark:text-sky-100">Links</div>
+                  <p className="text-[11px] text-slate-500 dark:text-slate-400 mt-0.5">
                     One URL per line — http, https, ssh, vnc, ftp, file, and more
                   </p>
                 </div>
               </div>
-              <textarea
-                value={text}
-                onChange={(e) => setText(e.target.value)}
-                rows={12}
-                placeholder={
-                  'https://example.com\nssh://user@host:22\nvnc://host:5900\nftp://files.example.com'
-                }
-                className={`${inputClass} font-mono min-h-[280px] resize-y border-emerald-200 focus:border-emerald-400 focus:ring-emerald-100`}
-                autoFocus
-              />
-              <p className="text-xs text-emerald-700/80 dark:text-emerald-300/70">
-                <span aria-hidden="true">📊 </span>
-                {lineCount} unique URL{lineCount === 1 ? '' : 's'}
-                {lineCount >= BULK_ADD_MAX_LINES ? ` (max ${BULK_ADD_MAX_LINES})` : ''}
-              </p>
-            </section>
+              <div className="p-3.5 space-y-3 border-t border-sky-100 dark:border-sky-900/40 bg-white/80 dark:bg-slate-900/40">
+                <textarea
+                  value={text}
+                  onChange={(e) => setText(e.target.value)}
+                  rows={12}
+                  placeholder={
+                    'https://example.com\nssh://user@host:22\nvnc://host:5900\nftp://files.example.com'
+                  }
+                  className={`${inputClass} font-mono min-h-[220px] resize-y`}
+                  autoFocus
+                />
+                <p className="text-xs text-slate-500 dark:text-slate-400">
+                  {lineCount} unique URL{lineCount === 1 ? '' : 's'}
+                  {lineCount >= BULK_ADD_MAX_LINES ? ` (max ${BULK_ADD_MAX_LINES})` : ''}
+                </p>
+              </div>
+            </div>
           )}
 
           {step === 'review' && (
             <div className="space-y-3">
-              <div className="flex flex-wrap items-center justify-between gap-3 rounded-xl border border-sky-100 bg-sky-50/70 dark:border-sky-900/40 dark:bg-sky-950/20 px-4 py-3">
+              <div className="flex flex-wrap items-center justify-between gap-3 rounded-xl border-2 border-sky-200 dark:border-sky-800/50 bg-sky-50 dark:bg-sky-950/35 px-3.5 py-3">
                 <div className="text-sm text-sky-900 dark:text-sky-100">
-                  <span aria-hidden="true">📌 </span>
                   <strong>{selectedCount}</strong> of {rows.length} selected
                   {analyzing ? (
-                    <span className="ml-2 text-emerald-700 dark:text-emerald-300 animate-pulse">
-                      Analyzing…
-                    </span>
+                    <span className="ml-2 text-brand-600 dark:text-brand-400 animate-pulse">Analyzing…</span>
                   ) : null}
                 </div>
                 <div className="flex flex-wrap items-center gap-2 text-xs">
                   <button
                     type="button"
-                    className="px-2.5 py-1 rounded-lg bg-white/80 dark:bg-black/20 border border-sky-200/80 dark:border-sky-800/40 text-sky-800 dark:text-sky-200 hover:bg-white dark:hover:bg-black/30"
+                    className="px-2.5 py-1 rounded-lg border border-slate-200 dark:border-slate-600 text-slate-600 dark:text-slate-300 hover:bg-white dark:hover:bg-slate-700"
                     onClick={() => toggleAll(true)}
                   >
                     Select all
                   </button>
                   <button
                     type="button"
-                    className="px-2.5 py-1 rounded-lg bg-white/80 dark:bg-black/20 border border-sky-200/80 dark:border-sky-800/40 text-sky-800 dark:text-sky-200 hover:bg-white dark:hover:bg-black/30"
+                    className="px-2.5 py-1 rounded-lg border border-slate-200 dark:border-slate-600 text-slate-600 dark:text-slate-300 hover:bg-white dark:hover:bg-slate-700"
                     onClick={() => toggleAll(false)}
                   >
                     Deselect all
@@ -538,30 +495,18 @@ export const BulkAddLinksDialog: React.FC<BulkAddLinksDialogProps> = ({
                   {fixableCount > 0 && (
                     <button
                       type="button"
-                      className="px-2.5 py-1 rounded-lg bg-amber-100 dark:bg-amber-900/40 text-amber-800 dark:text-amber-200 border border-amber-200 dark:border-amber-800/50 hover:bg-amber-200 dark:hover:bg-amber-900/60"
+                      className="px-2.5 py-1 rounded-lg bg-amber-50 dark:bg-amber-950/40 text-amber-800 dark:text-amber-200 border border-amber-200 dark:border-amber-800/50"
                       onClick={applyAllSuggested}
                     >
                       Apply all suggested URLs ({fixableCount})
                     </button>
                   )}
-                  <button
-                    type="button"
-                    onClick={() => {
-                      abortRef.current?.abort();
-                      setStep('paste');
-                      setAnalyzing(false);
-                    }}
-                    className="text-sm font-medium text-sky-700 hover:text-sky-800 dark:text-sky-300"
-                    disabled={committing}
-                  >
-                    ← Back to paste
-                  </button>
                 </div>
               </div>
 
-              <div className="overflow-x-auto rounded-xl border border-emerald-100 dark:border-[#333] shadow-sm">
+              <div className="overflow-x-auto rounded-xl border-2 border-slate-200 dark:border-slate-700 shadow-sm">
                 <table className="w-full text-sm">
-                  <thead className="bg-emerald-50/80 dark:bg-emerald-950/30 text-left text-xs uppercase tracking-wide text-emerald-800/80 dark:text-emerald-200/70">
+                  <thead className="bg-slate-50 dark:bg-slate-900/50 text-left text-xs uppercase tracking-wide text-slate-500 dark:text-slate-400">
                     <tr>
                       <th className="p-2.5 w-10" />
                       <th className="p-2.5 min-w-[10rem]">Name</th>
@@ -570,7 +515,7 @@ export const BulkAddLinksDialog: React.FC<BulkAddLinksDialogProps> = ({
                       <th className="p-2.5 w-40">Health / RTT</th>
                     </tr>
                   </thead>
-                  <tbody className="divide-y divide-emerald-50 dark:divide-[#333] bg-white dark:bg-[#1e1e1e]">
+                  <tbody className="divide-y divide-slate-100 dark:divide-slate-700 bg-white dark:bg-slate-800">
                     {rows.map((row) => {
                       const diagnosis = diagnoseLinkUrl(row.url);
                       const blocking = hasBlockingUrlIssues(diagnosis);
@@ -587,7 +532,7 @@ export const BulkAddLinksDialog: React.FC<BulkAddLinksDialogProps> = ({
                               onChange={(e) =>
                                 updateRow(row.id, { selected: e.target.checked })
                               }
-                              className="rounded border-gray-300 text-emerald-600 focus:ring-emerald-500"
+                              className="rounded border-slate-300 text-brand-600 focus:ring-brand-500"
                             />
                           </td>
                           <td className="p-2.5 align-top">
@@ -597,7 +542,7 @@ export const BulkAddLinksDialog: React.FC<BulkAddLinksDialogProps> = ({
                               onChange={(e) => updateRow(row.id, { label: e.target.value })}
                               className={inputClass}
                             />
-                            <div className="mt-0.5 text-[10px] text-emerald-700/60 dark:text-emerald-300/50">
+                            <div className="mt-0.5 text-[10px] text-slate-400">
                               {row.titleSource === 'page'
                                 ? 'Page title'
                                 : row.titleSource === 'fallback'
@@ -612,7 +557,7 @@ export const BulkAddLinksDialog: React.FC<BulkAddLinksDialogProps> = ({
                               onChange={(e) => updateRow(row.id, { url: e.target.value })}
                               className={`${inputClass} font-mono text-xs ${
                                 blocking
-                                  ? 'border-amber-400 dark:border-amber-600 focus:border-amber-400 focus:ring-amber-100'
+                                  ? 'border-amber-400 dark:border-amber-600 focus:border-amber-500 focus:ring-amber-500/40'
                                   : ''
                               }`}
                             />
@@ -635,7 +580,7 @@ export const BulkAddLinksDialog: React.FC<BulkAddLinksDialogProps> = ({
                             {suggestedDiff && (
                               <button
                                 type="button"
-                                className="mt-1 text-[10px] text-emerald-700 dark:text-emerald-300 hover:underline"
+                                className="mt-1 text-[10px] text-brand-600 dark:text-brand-400 hover:underline"
                                 onClick={() => updateRow(row.id, { url: suggestedDiff })}
                               >
                                 Use suggested: {suggestedDiff}
@@ -643,32 +588,32 @@ export const BulkAddLinksDialog: React.FC<BulkAddLinksDialogProps> = ({
                             )}
                           </td>
                           <td className="p-2.5 align-top">
-                            <span className="inline-flex px-1.5 py-0.5 rounded bg-emerald-100/80 dark:bg-emerald-900/40 text-[10px] font-mono uppercase text-emerald-800 dark:text-emerald-200">
+                            <span className="inline-flex px-1.5 py-0.5 rounded bg-sky-100 dark:bg-sky-900/40 text-[10px] font-mono uppercase text-sky-800 dark:text-sky-200">
                               {schemeBadge(row.url)}
                             </span>
                           </td>
                           <td className="p-2.5 align-top">
                             {row.healthLoading || row.analyzing ? (
-                              <span className="text-xs text-emerald-600/70 dark:text-emerald-300/60 animate-pulse">
+                              <span className="text-xs text-brand-600/80 dark:text-brand-400 animate-pulse">
                                 Checking…
                               </span>
                             ) : row.health?.skipped ? (
-                              <span className="text-xs text-gray-400">No HTTP probe</span>
+                              <span className="text-xs text-slate-400">No HTTP probe</span>
                             ) : row.health ? (
                               <div className="flex flex-col gap-0.5">
                                 <span className="inline-flex items-center gap-1.5 text-xs">
                                   <span
                                     className={`w-2 h-2 rounded-full shrink-0 ${healthDotClass(row.health.status)}`}
                                   />
-                                  <span className="capitalize text-gray-700 dark:text-gray-200">
+                                  <span className="capitalize text-slate-700 dark:text-slate-200">
                                     {row.health.status || 'unknown'}
                                   </span>
                                   {row.health.httpCode ? (
-                                    <span className="text-gray-400">{row.health.httpCode}</span>
+                                    <span className="text-slate-400">{row.health.httpCode}</span>
                                   ) : null}
                                 </span>
                                 {row.health.serverLatency != null && (
-                                  <span className="text-[10px] text-gray-500">
+                                  <span className="text-[10px] text-slate-500">
                                     RTT {formatProbeLatency(row.health.serverLatency)}
                                     {row.health.redirectCount
                                       ? ` · ${row.health.redirectCount} redirect(s)`
@@ -677,7 +622,7 @@ export const BulkAddLinksDialog: React.FC<BulkAddLinksDialogProps> = ({
                                 )}
                                 {row.health.error && (
                                   <span
-                                    className="text-[10px] text-gray-400 truncate max-w-[10rem]"
+                                    className="text-[10px] text-slate-400 truncate max-w-[10rem]"
                                     title={row.health.error}
                                   >
                                     {row.health.error}
@@ -685,7 +630,7 @@ export const BulkAddLinksDialog: React.FC<BulkAddLinksDialogProps> = ({
                                 )}
                               </div>
                             ) : (
-                              <span className="text-xs text-gray-400">—</span>
+                              <span className="text-xs text-slate-400">—</span>
                             )}
                           </td>
                         </tr>
@@ -699,7 +644,7 @@ export const BulkAddLinksDialog: React.FC<BulkAddLinksDialogProps> = ({
 
           {error && (
             <div
-              className="text-sm text-red-700 bg-red-50 border border-red-200 rounded-xl px-4 py-3 flex items-start gap-2 dark:bg-red-950/30 dark:border-red-900/50 dark:text-red-300"
+              className="text-sm text-rose-700 dark:text-rose-300 bg-rose-50 dark:bg-rose-950/30 border-2 border-rose-200 dark:border-rose-900/50 rounded-xl px-4 py-3 flex items-start gap-2"
               role="alert"
             >
               <span aria-hidden="true">⚠️</span>
@@ -708,11 +653,11 @@ export const BulkAddLinksDialog: React.FC<BulkAddLinksDialogProps> = ({
           )}
         </div>
 
-        <div className="px-6 py-4 border-t border-emerald-100 dark:border-[#333] bg-gradient-to-r from-slate-50 via-emerald-50/40 to-teal-50/30 dark:from-[#252525] dark:via-emerald-950/20 dark:to-teal-950/10 flex justify-end gap-3 shrink-0">
+        <div className="flex flex-wrap gap-2 justify-end pt-3 mt-3 border-t border-slate-200 dark:border-slate-700 shrink-0">
           <button
             type="button"
             onClick={onClose}
-            className="px-4 py-2 rounded-lg border border-gray-300 dark:border-[#444] text-gray-700 dark:text-gray-300 hover:bg-white dark:hover:bg-[#333] transition-colors"
+            className="px-4 py-2 text-xs font-medium text-slate-600 dark:text-slate-300 hover:text-slate-900 dark:hover:text-white hover:bg-slate-100 dark:hover:bg-slate-700 rounded-lg border border-slate-200 dark:border-slate-600 transition-all"
             disabled={committing}
           >
             Cancel
@@ -722,39 +667,58 @@ export const BulkAddLinksDialog: React.FC<BulkAddLinksDialogProps> = ({
               type="button"
               onClick={runAnalyze}
               disabled={lineCount === 0 || analyzing}
-              className="px-4 py-2 rounded-lg bg-gradient-to-r from-emerald-600 to-teal-600 hover:from-emerald-700 hover:to-teal-700 disabled:opacity-50 text-white font-medium shadow-sm transition-colors"
+              className="px-4 py-2 text-xs font-semibold bg-brand-600 hover:bg-brand-500 disabled:opacity-50 disabled:cursor-not-allowed text-white rounded-lg transition-all shadow-md hover:shadow-lg shadow-brand-500/30"
             >
-              {analyzing
-                ? '🔮 Analyzing…'
-                : `✨ Analyze${lineCount > 0 ? ` (${lineCount})` : ''}`}
+              {analyzing ? 'Analyzing…' : `Analyze${lineCount > 0 ? ` (${lineCount})` : ''}`}
             </button>
           ) : (
             <button
               type="button"
               onClick={handleCommit}
               disabled={selectedCount === 0 || analyzing || committing}
-              className="px-4 py-2 rounded-lg bg-gradient-to-r from-sky-600 to-cyan-600 hover:from-sky-700 hover:to-cyan-700 disabled:opacity-50 text-white font-medium shadow-sm transition-colors"
+              className="px-4 py-2 text-xs font-semibold bg-brand-600 hover:bg-brand-500 disabled:opacity-50 disabled:cursor-not-allowed text-white rounded-lg transition-all shadow-md hover:shadow-lg shadow-brand-500/30"
             >
               {committing
-                ? '⏳ Adding…'
-                : `🚀 Add ${selectedCount} link${selectedCount === 1 ? '' : 's'}`}
+                ? 'Adding…'
+                : `Add ${selectedCount} link${selectedCount === 1 ? '' : 's'}`}
             </button>
           )}
         </div>
 
-        {/* Resize handles */}
+        <div
+          onMouseDown={handleDragStart}
+          className={`absolute left-0 right-6 bottom-0 h-7 cursor-move flex items-center justify-center gap-1.5 select-none border-t border-slate-200/80 dark:border-slate-700/80 ${
+            isDragging
+              ? 'bg-sky-100/90 dark:bg-sky-950/50'
+              : 'bg-slate-50/95 dark:bg-slate-800/95 hover:bg-slate-100 dark:hover:bg-slate-700/80'
+          }`}
+          title="Drag to move"
+          role="presentation"
+        >
+          <span className="w-8 h-1 rounded-full bg-slate-300 dark:bg-slate-500" aria-hidden />
+          <span className="text-[10px] font-medium text-slate-400 dark:text-slate-500 uppercase tracking-wide">
+            Drag
+          </span>
+          <span className="w-8 h-1 rounded-full bg-slate-300 dark:bg-slate-500" aria-hidden />
+        </div>
         <div
           onMouseDown={(e) => handleResizeStart(e, 'se')}
-          className="absolute bottom-0 right-0 w-4 h-4 cursor-nwse-resize z-20 rounded-br-2xl hover:bg-emerald-200/40 dark:hover:bg-emerald-800/30"
+          className={`absolute bottom-0 right-0 w-6 h-7 cursor-nwse-resize flex items-end justify-end ${isResizing ? 'bg-brand-500/20' : 'hover:bg-slate-200/50 dark:hover:bg-slate-700/50'}`}
           title="Resize"
-        />
+          aria-hidden
+        >
+          <div className="w-4 h-4 relative mb-0.5 mr-0.5">
+            <div className="absolute bottom-0 right-0 w-3 h-3 border-r-2 border-b-2 border-slate-400 dark:border-slate-500 rounded-br-lg" />
+            <div className="absolute bottom-1 right-1 w-2 h-2 border-r border-b border-slate-400 dark:border-slate-500 rounded-br" />
+          </div>
+        </div>
         <div
           onMouseDown={(e) => handleResizeStart(e, 's')}
-          className="absolute bottom-0 left-0 right-4 h-2 cursor-ns-resize z-10"
+          className="absolute bottom-0 left-0 right-6 h-2 cursor-ns-resize z-10"
         />
         <div
           onMouseDown={(e) => handleResizeStart(e, 'e')}
-          className="absolute top-0 right-0 bottom-4 w-2 cursor-ew-resize z-10"
+          className="absolute top-0 right-0 bottom-7 w-2 cursor-ew-resize z-10"
         />
       </div>
     </div>,

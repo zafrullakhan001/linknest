@@ -2487,6 +2487,331 @@ function handleUpdatePageAnimation($tileId) {
     ]);
 }
 
+function cloneRowVisibility(array $row): string {
+    $visibility = $row['visibility'] ?? 'public';
+    return in_array($visibility, ['public', 'authenticated', 'private'], true) ? $visibility : 'public';
+}
+
+function cloneRowPublished(array $row): int {
+    if (!array_key_exists('published', $row) || $row['published'] === null || $row['published'] === '') {
+        return 1;
+    }
+    return ((int)$row['published'] === 0 || $row['published'] === '0') ? 0 : 1;
+}
+
+function cloneTileLinksAndRichText(PDO $db, string $sourceSectionId, string $newSectionId): void {
+    $linkStmt = $db->prepare('SELECT * FROM links WHERE section_id = ?');
+    $linkStmt->execute([$sourceSectionId]);
+    $links = $linkStmt->fetchAll();
+
+    foreach ($links as $link) {
+        $newLinkId = uniqid('link_', true);
+        $linkInsertStmt = $db->prepare('INSERT INTO links (id, section_id, label, url, icon, text_color, visibility, allowed_users, allowed_groups, notes, tooltip, visible_from, expires_at, browser, position, rich_text_content, animation, published, access_restrictions, maintenance_enabled, maintenance_message, maintenance_video_url, notes_enabled, rich_text_enabled, info_show_open_link) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)');
+        $linkInsertStmt->execute([
+            $newLinkId,
+            $newSectionId,
+            $link['label'],
+            $link['url'],
+            $link['icon'] ?? null,
+            $link['text_color'] ?? null,
+            cloneRowVisibility($link),
+            $link['allowed_users'] ?? null,
+            $link['allowed_groups'] ?? null,
+            $link['notes'] ?? null,
+            $link['tooltip'] ?? null,
+            $link['visible_from'] ?? null,
+            $link['expires_at'] ?? null,
+            $link['browser'] ?? null,
+            isset($link['position']) ? (int)$link['position'] : 0,
+            $link['rich_text_content'] ?? null,
+            $link['animation'] ?? null,
+            cloneRowPublished($link),
+            $link['access_restrictions'] ?? null,
+            ...linkMaintenanceInsertValuesFromRow($link),
+            ...linkFeatureToggleInsertValuesFromRow($link)
+        ]);
+        persistInheritShortUrls($db, 'links', $newLinkId, $link);
+        persistLinkTooltipStyle($db, $newLinkId, $link);
+        persistLinkOpenTarget($db, $newLinkId, $link);
+        persistLinkForceShortUrl($db, $newLinkId, $link);
+        persistLinkBrokenStatusLabel($db, $newLinkId, $link);
+    }
+
+    $richTextStmt = $db->prepare('SELECT * FROM rich_text_content WHERE section_id = ?');
+    $richTextStmt->execute([$sourceSectionId]);
+    $richTextItems = $richTextStmt->fetchAll();
+
+    foreach ($richTextItems as $richText) {
+        $newRichTextId = uniqid('richtext_', true);
+        insertRichTextContent($db, $newRichTextId, $newSectionId, [
+            'content' => $richText['content'] ?? '',
+            'position' => isset($richText['position']) ? (int)$richText['position'] : 0,
+            'visibility' => $richText['visibility'] ?? 'public',
+            'allowed_users' => $richText['allowed_users'] ?? null,
+            'allowed_groups' => $richText['allowed_groups'] ?? null,
+            'boxed' => !empty($richText['boxed']),
+            'box_title' => $richText['box_title'] ?? null,
+            'box_footer' => $richText['box_footer'] ?? null,
+            'box_header_align' => $richText['box_header_align'] ?? 'left',
+            'box_footer_align' => $richText['box_footer_align'] ?? 'left',
+            'box_header_bg' => $richText['box_header_bg'] ?? null,
+            'box_footer_bg' => $richText['box_footer_bg'] ?? null,
+            'box_body_bg' => $richText['box_body_bg'] ?? null,
+            'box_header_font_weight' => $richText['box_header_font_weight'] ?? 'bold',
+            'box_footer_font_weight' => $richText['box_footer_font_weight'] ?? 'normal',
+            'box_header_font_size' => $richText['box_header_font_size'] ?? 'md',
+            'box_footer_font_size' => $richText['box_footer_font_size'] ?? 'sm',
+            'box_header_emoji' => $richText['box_header_emoji'] ?? null,
+            'box_importance' => $richText['box_importance'] ?? 'notes',
+        ]);
+    }
+}
+
+function cloneTileSectionRow(PDO $db, array $section, string $newTileId, string $newTabId, int $sectionIndex): void {
+    $newSectionId = uniqid('section_', true);
+    $sectionPosition = isset($section['position']) ? (int)$section['position'] : $sectionIndex;
+    $sectionInsertStmt = $db->prepare('INSERT INTO sections (id, tile_id, tab_id, title, text_color, emoji, visible_from, expires_at, force_stacked_view, position, visibility, allowed_users, allowed_groups, published) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)');
+    $sectionInsertStmt->execute([
+        $newSectionId,
+        $newTileId,
+        $newTabId,
+        $section['title'],
+        isset($section['text_color']) ? $section['text_color'] : null,
+        contentEmojiFromRow($section),
+        $section['visible_from'] ?? null,
+        $section['expires_at'] ?? null,
+        isset($section['force_stacked_view']) && $section['force_stacked_view'] == 1 ? 1 : 0,
+        $sectionPosition,
+        cloneRowVisibility($section),
+        $section['allowed_users'] ?? null,
+        $section['allowed_groups'] ?? null,
+        cloneRowPublished($section)
+    ]);
+    persistInheritShortUrls($db, 'sections', $newSectionId, $section);
+    cloneTileLinksAndRichText($db, $section['id'], $newSectionId);
+}
+
+/**
+ * Clone a tile row plus tabs, sections, links, rich text, and messages.
+ * Copies visibility, allowed_users, allowed_groups, published, and access_restrictions.
+ *
+ * @param array $overrides title, group, user_id, source_tab, position
+ */
+function cloneTileRecordAndContents(PDO $db, array $originalTile, string $newTileId, array $overrides): void {
+    $newTitle = $overrides['title'] ?? $originalTile['title'];
+    $newGroup = array_key_exists('group', $overrides) ? $overrides['group'] : ($originalTile['group'] ?? 'General');
+    $newUserId = $overrides['user_id'] ?? $originalTile['user_id'];
+    $newSourceTab = $overrides['source_tab'] ?? (
+        (isset($originalTile['source_tab']) && trim((string)$originalTile['source_tab']) === 'staging') ? 'staging' : 'public'
+    );
+    if ($newSourceTab !== 'staging') {
+        $newSourceTab = 'public';
+    }
+    $newPosition = isset($overrides['position']) ? (int)$overrides['position'] : 0;
+
+    $tileBackgroundColor = !empty($originalTile['tile_background_color']) ? $originalTile['tile_background_color'] : null;
+    $tileGradientEnabled = isset($originalTile['tile_gradient_enabled']) && $originalTile['tile_gradient_enabled'] !== null ? (int)$originalTile['tile_gradient_enabled'] : null;
+    $tileGradientColors = !empty($originalTile['tile_gradient_colors']) ? $originalTile['tile_gradient_colors'] : null;
+    $tileGradientColorPositions = !empty($originalTile['tile_gradient_color_positions']) ? $originalTile['tile_gradient_color_positions'] : null;
+    $tileGradientDirection = !empty($originalTile['tile_gradient_direction']) ? $originalTile['tile_gradient_direction'] : null;
+    $tileGradientType = !empty($originalTile['tile_gradient_type']) ? $originalTile['tile_gradient_type'] : null;
+    $tileBorderRadius = isset($originalTile['tile_border_radius']) && $originalTile['tile_border_radius'] !== null ? (int)$originalTile['tile_border_radius'] : null;
+    $tileTextColor = !empty($originalTile['tile_text_color']) ? $originalTile['tile_text_color'] : null;
+    $headerImage = !empty($originalTile['header_image']) ? $originalTile['header_image'] : null;
+    $headerImageAlign = (isset($originalTile['header_image_align']) && in_array($originalTile['header_image_align'], ['left', 'center', 'right'], true))
+        ? $originalTile['header_image_align']
+        : ($headerImage ? 'right' : null);
+    $headerImageOpacity = $headerImage !== null
+        ? (isset($originalTile['header_image_opacity']) && $originalTile['header_image_opacity'] !== null && $originalTile['header_image_opacity'] !== ''
+            ? max(0, min(100, (int)$originalTile['header_image_opacity'])) : 100)
+        : null;
+    $headerImageOffsetX = $headerImage !== null
+        ? (isset($originalTile['header_image_offset_x']) && $originalTile['header_image_offset_x'] !== null && $originalTile['header_image_offset_x'] !== ''
+            ? max(-300, min(300, (int)$originalTile['header_image_offset_x'])) : 0)
+        : null;
+    $headerImageFit = $headerImage !== null
+        ? ((isset($originalTile['header_image_fit']) && $originalTile['header_image_fit'] === 'cover') ? 'cover' : 'contain')
+        : null;
+    $showEmoji = !(isset($originalTile['show_emoji']) && ((int)$originalTile['show_emoji'] === 0 || $originalTile['show_emoji'] === '0'));
+    $emojiImage = !empty($originalTile['emoji_image']) ? $originalTile['emoji_image'] : null;
+    $emojiImageOpacity = $emojiImage !== null
+        ? (isset($originalTile['emoji_image_opacity']) && $originalTile['emoji_image_opacity'] !== null && $originalTile['emoji_image_opacity'] !== ''
+            ? max(0, min(100, (int)$originalTile['emoji_image_opacity'])) : 100)
+        : null;
+    $emojiImageOffsetX = $emojiImage !== null
+        ? (isset($originalTile['emoji_image_offset_x']) && $originalTile['emoji_image_offset_x'] !== null && $originalTile['emoji_image_offset_x'] !== ''
+            ? max(-50, min(50, (int)$originalTile['emoji_image_offset_x'])) : 0)
+        : null;
+    $emojiImageOffsetY = $emojiImage !== null
+        ? (isset($originalTile['emoji_image_offset_y']) && $originalTile['emoji_image_offset_y'] !== null && $originalTile['emoji_image_offset_y'] !== ''
+            ? max(-50, min(50, (int)$originalTile['emoji_image_offset_y'])) : 0)
+        : null;
+    $emojiImageZoom = $emojiImage !== null
+        ? (isset($originalTile['emoji_image_zoom']) && $originalTile['emoji_image_zoom'] !== null && $originalTile['emoji_image_zoom'] !== ''
+            ? max(50, min(300, (int)$originalTile['emoji_image_zoom'])) : 100)
+        : null;
+    $showTitle = !(isset($originalTile['show_title']) && ((int)$originalTile['show_title'] === 0 || $originalTile['show_title'] === '0'));
+    $showDescription = !(isset($originalTile['show_description']) && ((int)$originalTile['show_description'] === 0 || $originalTile['show_description'] === '0'));
+    $searchTagsJson = encodeSearchTagsForStorage(decodeSearchTagsFromRow($originalTile));
+    $headerImageOffsetY = $headerImage !== null
+        ? (isset($originalTile['header_image_offset_y']) && $originalTile['header_image_offset_y'] !== null && $originalTile['header_image_offset_y'] !== ''
+            ? max(-300, min(300, (int)$originalTile['header_image_offset_y'])) : 0)
+        : null;
+    $headerImageZoom = $headerImage !== null
+        ? (isset($originalTile['header_image_zoom']) && $originalTile['header_image_zoom'] !== null && $originalTile['header_image_zoom'] !== ''
+            ? max(50, min(300, (int)$originalTile['header_image_zoom'])) : 100)
+        : null;
+
+    $insertStmt = $db->prepare('INSERT INTO tiles (id, user_id, title, description, html_content, emoji, theme_color, "group", visibility, allowed_users, allowed_groups, is_hyperlink, hyperlink_url, open_in_new_tab, is_video, video_url, video_source, visible_from, expires_at, browser, tile_background_color, tile_gradient_enabled, tile_gradient_colors, tile_gradient_color_positions, tile_gradient_direction, tile_gradient_type, tile_border_radius, tile_text_color, page_animation, links_animation, header_image, header_image_align, header_image_opacity, header_image_offset_x, header_image_offset_y, header_image_zoom, header_image_fit, show_emoji, emoji_image, emoji_image_opacity, emoji_image_offset_x, emoji_image_offset_y, emoji_image_zoom, show_title, show_description, search_tags, source_tab, published, access_restrictions, position, created_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)');
+
+    if (!$insertStmt->execute([
+        $newTileId,
+        $newUserId,
+        $newTitle,
+        $originalTile['description'],
+        $originalTile['html_content'],
+        $originalTile['emoji'],
+        $originalTile['theme_color'],
+        $newGroup,
+        cloneRowVisibility($originalTile),
+        $originalTile['allowed_users'] ?? null,
+        $originalTile['allowed_groups'] ?? null,
+        $originalTile['is_hyperlink'] ?? 0,
+        $originalTile['hyperlink_url'] ?? null,
+        $originalTile['open_in_new_tab'] ?? 0,
+        $originalTile['is_video'] ?? 0,
+        $originalTile['video_url'] ?? null,
+        $originalTile['video_source'] ?? null,
+        $originalTile['visible_from'] ?? null,
+        $originalTile['expires_at'] ?? null,
+        $originalTile['browser'] ?? null,
+        $tileBackgroundColor,
+        $tileGradientEnabled,
+        $tileGradientColors,
+        $tileGradientColorPositions,
+        $tileGradientDirection,
+        $tileGradientType,
+        $tileBorderRadius,
+        $tileTextColor,
+        $originalTile['page_animation'] ?? null,
+        $originalTile['links_animation'] ?? null,
+        $headerImage,
+        $headerImageAlign,
+        $headerImageOpacity,
+        $headerImageOffsetX,
+        $headerImageOffsetY,
+        $headerImageZoom,
+        $headerImageFit,
+        $showEmoji ? 1 : 0,
+        $emojiImage,
+        $emojiImageOpacity,
+        $emojiImageOffsetX,
+        $emojiImageOffsetY,
+        $emojiImageZoom,
+        $showTitle ? 1 : 0,
+        $showDescription ? 1 : 0,
+        $searchTagsJson,
+        $newSourceTab,
+        cloneRowPublished($originalTile),
+        $originalTile['access_restrictions'] ?? null,
+        $newPosition,
+        time()
+    ])) {
+        throw new Exception('Failed to create cloned tile');
+    }
+
+    persistTileShowShortUrls($db, $newTileId, null, $originalTile);
+
+    $sourceTileId = $originalTile['id'];
+    $tabStmt = $db->prepare('SELECT * FROM tabs WHERE tile_id = ? ORDER BY position ASC');
+    $tabStmt->execute([$sourceTileId]);
+    $tabs = $tabStmt->fetchAll();
+
+    if (empty($tabs)) {
+        $legacySectionStmt = $db->prepare('SELECT * FROM sections WHERE tile_id = ? AND (tab_id IS NULL OR tab_id = "")');
+        $legacySectionStmt->execute([$sourceTileId]);
+        $legacySections = $legacySectionStmt->fetchAll();
+
+        if (!empty($legacySections)) {
+            $defaultTabId = uniqid('tab_', true);
+            $tabInsertStmt = $db->prepare('INSERT INTO tabs (id, tile_id, title, position, text_color, visibility, published) VALUES (?, ?, ?, ?, ?, ?, ?)');
+            $tabInsertStmt->execute([
+                $defaultTabId,
+                $newTileId,
+                'Default',
+                0,
+                null,
+                'public',
+                1
+            ]);
+
+            foreach ($legacySections as $sectionIndex => $section) {
+                cloneTileSectionRow($db, $section, $newTileId, $defaultTabId, $sectionIndex);
+            }
+        }
+    } else {
+        foreach ($tabs as $tab) {
+            $newTabId = uniqid('tab_', true);
+            $tabInsertStmt = $db->prepare('INSERT INTO tabs (id, tile_id, title, position, text_color, emoji, visible_from, expires_at, visibility, allowed_users, allowed_groups, published, access_restrictions) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)');
+            $tabInsertStmt->execute([
+                $newTabId,
+                $newTileId,
+                $tab['title'],
+                $tab['position'] ?? 0,
+                (!empty($tab['text_color']) && trim($tab['text_color']) !== '') ? trim($tab['text_color']) : null,
+                contentEmojiFromRow($tab),
+                $tab['visible_from'] ?? null,
+                $tab['expires_at'] ?? null,
+                cloneRowVisibility($tab),
+                $tab['allowed_users'] ?? null,
+                $tab['allowed_groups'] ?? null,
+                cloneRowPublished($tab),
+                $tab['access_restrictions'] ?? null
+            ]);
+            persistInheritShortUrls($db, 'tabs', $newTabId, $tab);
+
+            $sectionStmt = $db->prepare('SELECT * FROM sections WHERE tab_id = ? ORDER BY position ASC, id ASC');
+            $sectionStmt->execute([$tab['id']]);
+            $sections = $sectionStmt->fetchAll();
+
+            foreach ($sections as $sectionIndex => $section) {
+                cloneTileSectionRow($db, $section, $newTileId, $newTabId, $sectionIndex);
+            }
+        }
+    }
+
+    $msgStmt = $db->prepare('SELECT * FROM tile_messages WHERE tile_id = ?');
+    $msgStmt->execute([$sourceTileId]);
+    $messages = $msgStmt->fetchAll();
+
+    if (!empty($messages)) {
+        $msgInsertStmt = $db->prepare('INSERT INTO tile_messages (id, tile_id, content, type, start_date, end_date, is_active, priority, text_color, font_style, display_location, animation_type, delay_before, celebration_effect, celebration_config, url, url_label) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)');
+        foreach ($messages as $msg) {
+            $newMsgId = uniqid('msg_', true);
+            $cc = isset($msg['celebration_config']) && $msg['celebration_config'] !== null && $msg['celebration_config'] !== '' ? $msg['celebration_config'] : null;
+            $msgInsertStmt->execute([
+                $newMsgId,
+                $newTileId,
+                $msg['content'] ?? '',
+                $msg['type'] ?? 'info',
+                $msg['start_date'] ?? null,
+                $msg['end_date'] ?? null,
+                isset($msg['is_active']) && $msg['is_active'] ? 1 : 0,
+                isset($msg['priority']) ? (int)$msg['priority'] : 0,
+                $msg['text_color'] ?? null,
+                $msg['font_style'] ?? null,
+                $msg['display_location'] ?? 'both',
+                $msg['animation_type'] ?? 'rollover',
+                isset($msg['delay_before']) ? (float)$msg['delay_before'] : 0,
+                $msg['celebration_effect'] ?? 'none',
+                $cc,
+                $msg['url'] ?? null,
+                $msg['url_label'] ?? null
+            ]);
+        }
+    }
+}
+
 function handleCloneTile($tileId) {
     $user = requireAuth();
     $db = getDB();
@@ -2562,391 +2887,27 @@ function handleCloneTile($tileId) {
             return;
         }
     
-        // Generate new tile ID
         $newTileId = generateUuid();
-        
-        // Get current max position to append new tile
+
         $maxPositionStmt = $db->prepare('SELECT MAX(position) as max_pos FROM tiles');
         $maxPositionStmt->execute();
         $maxPosRow = $maxPositionStmt->fetch();
         $newPosition = ($maxPosRow && $maxPosRow['max_pos'] !== null) ? (int)$maxPosRow['max_pos'] + 1 : 0;
-        
-        // Create new tile with "Copy of" prefix
+
         $newTitle = 'Copy of ' . $originalTile['title'];
-        $newVisibility = $originalTile['visibility'];
-        $newAllowedUsers = $originalTile['allowed_users'];
-        $newAllowedGroups = $originalTile['allowed_groups'];
-        
-        // Prepare tile decoration properties
-        $tileBackgroundColor = !empty($originalTile['tile_background_color']) ? $originalTile['tile_background_color'] : null;
-        $tileGradientEnabled = isset($originalTile['tile_gradient_enabled']) && $originalTile['tile_gradient_enabled'] !== null ? (int)$originalTile['tile_gradient_enabled'] : null;
-        $tileGradientColors = !empty($originalTile['tile_gradient_colors']) ? $originalTile['tile_gradient_colors'] : null;
-        $tileGradientColorPositions = !empty($originalTile['tile_gradient_color_positions']) ? $originalTile['tile_gradient_color_positions'] : null;
-        $tileGradientDirection = !empty($originalTile['tile_gradient_direction']) ? $originalTile['tile_gradient_direction'] : null;
-        $tileGradientType = !empty($originalTile['tile_gradient_type']) ? $originalTile['tile_gradient_type'] : null;
-        $tileBorderRadius = isset($originalTile['tile_border_radius']) && $originalTile['tile_border_radius'] !== null ? (int)$originalTile['tile_border_radius'] : null;
-        $tileTextColor = !empty($originalTile['tile_text_color']) ? $originalTile['tile_text_color'] : null;
-        $headerImage = !empty($originalTile['header_image']) ? $originalTile['header_image'] : null;
-        $headerImageAlign = (isset($originalTile['header_image_align']) && in_array($originalTile['header_image_align'], ['left', 'center', 'right'], true))
-            ? $originalTile['header_image_align']
-            : ($headerImage ? 'right' : null);
-        $headerImageOpacity = $headerImage !== null
-            ? (isset($originalTile['header_image_opacity']) && $originalTile['header_image_opacity'] !== null && $originalTile['header_image_opacity'] !== ''
-                ? max(0, min(100, (int)$originalTile['header_image_opacity'])) : 100)
-            : null;
-        $headerImageOffsetX = $headerImage !== null
-            ? (isset($originalTile['header_image_offset_x']) && $originalTile['header_image_offset_x'] !== null && $originalTile['header_image_offset_x'] !== ''
-                ? max(-300, min(300, (int)$originalTile['header_image_offset_x'])) : 0)
-            : null;
-        $headerImageFit = $headerImage !== null
-            ? ((isset($originalTile['header_image_fit']) && $originalTile['header_image_fit'] === 'cover') ? 'cover' : 'contain')
-            : null;
-        $showEmoji = !(isset($originalTile['show_emoji']) && ((int)$originalTile['show_emoji'] === 0 || $originalTile['show_emoji'] === '0'));
-        $emojiImage = !empty($originalTile['emoji_image']) ? $originalTile['emoji_image'] : null;
-        $emojiImageOpacity = $emojiImage !== null
-            ? (isset($originalTile['emoji_image_opacity']) && $originalTile['emoji_image_opacity'] !== null && $originalTile['emoji_image_opacity'] !== ''
-                ? max(0, min(100, (int)$originalTile['emoji_image_opacity'])) : 100)
-            : null;
-        $emojiImageOffsetX = $emojiImage !== null
-            ? (isset($originalTile['emoji_image_offset_x']) && $originalTile['emoji_image_offset_x'] !== null && $originalTile['emoji_image_offset_x'] !== ''
-                ? max(-50, min(50, (int)$originalTile['emoji_image_offset_x'])) : 0)
-            : null;
-        $emojiImageOffsetY = $emojiImage !== null
-            ? (isset($originalTile['emoji_image_offset_y']) && $originalTile['emoji_image_offset_y'] !== null && $originalTile['emoji_image_offset_y'] !== ''
-                ? max(-50, min(50, (int)$originalTile['emoji_image_offset_y'])) : 0)
-            : null;
-        $emojiImageZoom = $emojiImage !== null
-            ? (isset($originalTile['emoji_image_zoom']) && $originalTile['emoji_image_zoom'] !== null && $originalTile['emoji_image_zoom'] !== ''
-                ? max(50, min(300, (int)$originalTile['emoji_image_zoom'])) : 100)
-            : null;
-        $showTitle = !(isset($originalTile['show_title']) && ((int)$originalTile['show_title'] === 0 || $originalTile['show_title'] === '0'));
-        $showDescription = !(isset($originalTile['show_description']) && ((int)$originalTile['show_description'] === 0 || $originalTile['show_description'] === '0'));
-        $searchTagsJson = encodeSearchTagsForStorage(decodeSearchTagsFromRow($originalTile));
-        $headerImageOffsetY = $headerImage !== null
-            ? (isset($originalTile['header_image_offset_y']) && $originalTile['header_image_offset_y'] !== null && $originalTile['header_image_offset_y'] !== ''
-                ? max(-300, min(300, (int)$originalTile['header_image_offset_y'])) : 0)
-            : null;
-        $headerImageZoom = $headerImage !== null
-            ? (isset($originalTile['header_image_zoom']) && $originalTile['header_image_zoom'] !== null && $originalTile['header_image_zoom'] !== ''
-                ? max(50, min(300, (int)$originalTile['header_image_zoom'])) : 100)
-            : null;
-        // Copy source_tab so cloned tile stays in same area (staging vs public)
         $newSourceTab = isset($originalTile['source_tab']) && trim($originalTile['source_tab']) === 'staging' ? 'staging' : 'public';
-        
-        $insertStmt = $db->prepare('INSERT INTO tiles (id, user_id, title, description, html_content, emoji, theme_color, "group", visibility, allowed_users, allowed_groups, is_hyperlink, hyperlink_url, open_in_new_tab, is_video, video_url, video_source, visible_from, expires_at, browser, tile_background_color, tile_gradient_enabled, tile_gradient_colors, tile_gradient_color_positions, tile_gradient_direction, tile_gradient_type, tile_border_radius, tile_text_color, page_animation, links_animation, header_image, header_image_align, header_image_opacity, header_image_offset_x, header_image_offset_y, header_image_zoom, header_image_fit, show_emoji, emoji_image, emoji_image_opacity, emoji_image_offset_x, emoji_image_offset_y, emoji_image_zoom, show_title, show_description, search_tags, source_tab, position, created_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)');
-        
-        if (!$insertStmt->execute([
-            $newTileId,
-            $user['id'],
-            $newTitle,
-            $originalTile['description'],
-            $originalTile['html_content'],
-            $originalTile['emoji'],
-            $originalTile['theme_color'],
-            $originalTile['group'],
-            $newVisibility,
-            $newAllowedUsers,
-            $newAllowedGroups,
-            $originalTile['is_hyperlink'] ?? 0,
-            $originalTile['hyperlink_url'] ?? null,
-            $originalTile['open_in_new_tab'] ?? 0,
-            $originalTile['is_video'] ?? 0,
-            $originalTile['video_url'] ?? null,
-            $originalTile['video_source'] ?? null,
-            $originalTile['visible_from'] ?? null,
-            $originalTile['expires_at'] ?? null,
-            $originalTile['browser'] ?? null,
-            $tileBackgroundColor,
-            $tileGradientEnabled,
-            $tileGradientColors,
-            $tileGradientColorPositions,
-            $tileGradientDirection,
-            $tileGradientType,
-            $tileBorderRadius,
-            $tileTextColor,
-            $originalTile['page_animation'] ?? null,
-            $originalTile['links_animation'] ?? null,
-            $headerImage,
-            $headerImageAlign,
-            $headerImageOpacity,
-            $headerImageOffsetX,
-            $headerImageOffsetY,
-            $headerImageZoom,
-            $headerImageFit,
-            $showEmoji ? 1 : 0,
-            $emojiImage,
-            $emojiImageOpacity,
-            $emojiImageOffsetX,
-            $emojiImageOffsetY,
-            $emojiImageZoom,
-            $showTitle ? 1 : 0,
-            $showDescription ? 1 : 0,
-            $searchTagsJson,
-            $newSourceTab,
-            $newPosition,
-            time()
-        ])) {
-            $db->rollBack();
-            sendJSON(['error' => 'Failed to create cloned tile'], 500);
-            return;
-        }
-        $db->prepare('UPDATE tiles SET access_restrictions = ? WHERE id = ?')->execute([$originalTile['access_restrictions'] ?? null, $newTileId]);
-        persistTileShowShortUrls($db, $newTileId, null, $originalTile);
-    
-        // Clone tabs, sections, and links
-        $tabStmt = $db->prepare('SELECT * FROM tabs WHERE tile_id = ? ORDER BY position ASC');
-        $tabStmt->execute([$tileId]);
-        $tabs = $tabStmt->fetchAll();
-        
-        if (empty($tabs)) {
-        // Check for legacy sections (backward compatibility)
-        $legacySectionStmt = $db->prepare('SELECT * FROM sections WHERE tile_id = ? AND (tab_id IS NULL OR tab_id = "")');
-        $legacySectionStmt->execute([$tileId]);
-        $legacySections = $legacySectionStmt->fetchAll();
-        
-        if (!empty($legacySections)) {
-            // Create a default tab for legacy sections
-            $defaultTabId = uniqid('tab_', true);
-            $tabInsertStmt = $db->prepare('INSERT INTO tabs (id, tile_id, title, position, text_color) VALUES (?, ?, ?, ?, ?)');
-            $tabInsertStmt->execute([
-                $defaultTabId,
-                $newTileId,
-                'Default',
-                0,
-                null
-            ]);
-            
-            foreach ($legacySections as $sectionIndex => $section) {
-                $newSectionId = uniqid('section_', true);
-                $sectionPosition = isset($section['position']) ? (int)$section['position'] : $sectionIndex;
-                $sectionInsertStmt = $db->prepare('INSERT INTO sections (id, tile_id, tab_id, title, text_color, emoji, visible_from, expires_at, force_stacked_view, position) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)');
-                $sectionInsertStmt->execute([
-                    $newSectionId,
-                    $newTileId,
-                    $defaultTabId,
-                    $section['title'],
-                    isset($section['text_color']) ? $section['text_color'] : null,
-                    contentEmojiFromRow($section),
-                    $section['visible_from'] ?? null,
-                    $section['expires_at'] ?? null,
-                    isset($section['force_stacked_view']) && $section['force_stacked_view'] == 1 ? 1 : 0,
-                    $sectionPosition
-                ]);
-                
-                // Clone links
-                $linkStmt = $db->prepare('SELECT * FROM links WHERE section_id = ?');
-                $linkStmt->execute([$section['id']]);
-                $links = $linkStmt->fetchAll();
-                
-                foreach ($links as $link) {
-                    $newLinkId = uniqid('link_', true);
-                    $linkInsertStmt = $db->prepare('INSERT INTO links (id, section_id, label, url, icon, text_color, visibility, allowed_users, allowed_groups, notes, tooltip, visible_from, expires_at, browser, position, rich_text_content, animation, access_restrictions, maintenance_enabled, maintenance_message, maintenance_video_url, notes_enabled, rich_text_enabled, info_show_open_link) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)');
-                    $linkInsertStmt->execute([
-                        $newLinkId,
-                        $newSectionId,
-                        $link['label'],
-                        $link['url'],
-                        $link['icon'] ?? null,
-                        $link['text_color'] ?? null,
-                        $link['visibility'] ?? 'public',
-                        null, // Reset allowed_users for cloned links
-                        null, // Reset allowed_groups for cloned links
-                        $link['notes'] ?? null,
-                        $link['tooltip'] ?? null,
-                        $link['visible_from'] ?? null,
-                        $link['expires_at'] ?? null,
-                        $link['browser'] ?? null,
-                        isset($link['position']) ? (int)$link['position'] : 0,
-                                $link['rich_text_content'] ?? null,
-                                $link['animation'] ?? null,
-                        $link['access_restrictions'] ?? null,
-                        ...linkMaintenanceInsertValuesFromRow($link),
-                        ...linkFeatureToggleInsertValuesFromRow($link)
-                    ]);
-                    persistLinkTooltipStyle($db, $newLinkId, $link);
-                                persistLinkOpenTarget($db, $newLinkId, $link);
-                                persistLinkForceShortUrl($db, $newLinkId, $link);
-                                persistLinkBrokenStatusLabel($db, $newLinkId, $link);
-                }
-                
-                // Clone rich text content for legacy sections
-                $richTextStmt = $db->prepare('SELECT * FROM rich_text_content WHERE section_id = ?');
-                $richTextStmt->execute([$section['id']]);
-                $richTextItems = $richTextStmt->fetchAll();
-                
-                foreach ($richTextItems as $richText) {
-                    $newRichTextId = uniqid('richtext_', true);
-                    insertRichTextContent($db, $newRichTextId, $newSectionId, [
-                        'content' => $richText['content'] ?? '',
-                        'position' => isset($richText['position']) ? (int)$richText['position'] : 0,
-                        'visibility' => $richText['visibility'] ?? 'public',
-                        'allowed_users' => $richText['allowed_users'] ?? null,
-                        'allowed_groups' => $richText['allowed_groups'] ?? null,
-                        'boxed' => !empty($richText['boxed']),
-                        'box_title' => $richText['box_title'] ?? null,
-                        'box_footer' => $richText['box_footer'] ?? null,
-                        'box_header_align' => $richText['box_header_align'] ?? 'left',
-                        'box_footer_align' => $richText['box_footer_align'] ?? 'left',
-                        'box_header_bg' => $richText['box_header_bg'] ?? null,
-                        'box_footer_bg' => $richText['box_footer_bg'] ?? null,
-                        'box_body_bg' => $richText['box_body_bg'] ?? null,
-                        'box_header_font_weight' => $richText['box_header_font_weight'] ?? 'bold',
-                        'box_footer_font_weight' => $richText['box_footer_font_weight'] ?? 'normal',
-                        'box_header_font_size' => $richText['box_header_font_size'] ?? 'md',
-                        'box_footer_font_size' => $richText['box_footer_font_size'] ?? 'sm',
-                        'box_header_emoji' => $richText['box_header_emoji'] ?? null,
-                        'box_importance' => $richText['box_importance'] ?? 'notes',
-                    ]);
-                }
-            }
-        }
-    } else {
-        // Clone tabs and their sections/links
-        foreach ($tabs as $tab) {
-            $newTabId = uniqid('tab_', true);
-            $tabInsertStmt = $db->prepare('INSERT INTO tabs (id, tile_id, title, position, text_color, emoji, visible_from, expires_at, access_restrictions) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)');
-            $tabInsertStmt->execute([
-                $newTabId,
-                $newTileId,
-                $tab['title'],
-                $tab['position'] ?? 0,
-                (!empty($tab['text_color']) && trim($tab['text_color']) !== '') ? trim($tab['text_color']) : null,
-                contentEmojiFromRow($tab),
-                $tab['visible_from'] ?? null,
-                $tab['expires_at'] ?? null,
-                $tab['access_restrictions'] ?? null
-            ]);
-            persistInheritShortUrls($db, 'tabs', $newTabId, $tab);
-            
-            // Clone sections for this tab
-            $sectionStmt = $db->prepare('SELECT * FROM sections WHERE tab_id = ? ORDER BY position ASC, id ASC');
-            $sectionStmt->execute([$tab['id']]);
-            $sections = $sectionStmt->fetchAll();
-            
-            foreach ($sections as $sectionIndex => $section) {
-                $newSectionId = uniqid('section_', true);
-                $sectionPosition = isset($section['position']) ? (int)$section['position'] : $sectionIndex;
-                $sectionInsertStmt = $db->prepare('INSERT INTO sections (id, tile_id, tab_id, title, text_color, emoji, visible_from, expires_at, force_stacked_view, position) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)');
-                $sectionInsertStmt->execute([
-                    $newSectionId,
-                    $newTileId,
-                    $newTabId,
-                    $section['title'],
-                    isset($section['text_color']) ? $section['text_color'] : null,
-                    contentEmojiFromRow($section),
-                    $section['visible_from'] ?? null,
-                    $section['expires_at'] ?? null,
-                    isset($section['force_stacked_view']) && $section['force_stacked_view'] == 1 ? 1 : 0,
-                    $sectionPosition
-                ]);
-                
-                // Clone links
-                $linkStmt = $db->prepare('SELECT * FROM links WHERE section_id = ?');
-                $linkStmt->execute([$section['id']]);
-                $links = $linkStmt->fetchAll();
-                
-                foreach ($links as $link) {
-                    $newLinkId = uniqid('link_', true);
-                    $linkInsertStmt = $db->prepare('INSERT INTO links (id, section_id, label, url, icon, text_color, visibility, allowed_users, allowed_groups, notes, tooltip, visible_from, expires_at, browser, position, rich_text_content, animation, access_restrictions, maintenance_enabled, maintenance_message, maintenance_video_url, notes_enabled, rich_text_enabled, info_show_open_link) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)');
-                    $linkInsertStmt->execute([
-                        $newLinkId,
-                        $newSectionId,
-                        $link['label'],
-                        $link['url'],
-                        $link['icon'] ?? null,
-                        $link['text_color'] ?? null,
-                        $link['visibility'] ?? 'public',
-                        null, // Reset allowed_users for cloned links
-                        null, // Reset allowed_groups for cloned links
-                        $link['notes'] ?? null,
-                        $link['tooltip'] ?? null,
-                        $link['visible_from'] ?? null,
-                        $link['expires_at'] ?? null,
-                        $link['browser'] ?? null,
-                        isset($link['position']) ? (int)$link['position'] : 0,
-                                $link['rich_text_content'] ?? null,
-                                $link['animation'] ?? null,
-                        $link['access_restrictions'] ?? null,
-                        ...linkMaintenanceInsertValuesFromRow($link),
-                        ...linkFeatureToggleInsertValuesFromRow($link)
-                    ]);
-                    persistInheritShortUrls($db, 'links', $newLinkId, $link);
-                    persistLinkTooltipStyle($db, $newLinkId, $link);
-                                persistLinkOpenTarget($db, $newLinkId, $link);
-                                persistLinkForceShortUrl($db, $newLinkId, $link);
-                                persistLinkBrokenStatusLabel($db, $newLinkId, $link);
-                }
-                
-                // Clone rich text content for sections
-                $richTextStmt = $db->prepare('SELECT * FROM rich_text_content WHERE section_id = ?');
-                $richTextStmt->execute([$section['id']]);
-                $richTextItems = $richTextStmt->fetchAll();
-                
-                foreach ($richTextItems as $richText) {
-                    $newRichTextId = uniqid('richtext_', true);
-                    insertRichTextContent($db, $newRichTextId, $newSectionId, [
-                        'content' => $richText['content'] ?? '',
-                        'position' => isset($richText['position']) ? (int)$richText['position'] : 0,
-                        'visibility' => $richText['visibility'] ?? 'public',
-                        'allowed_users' => $richText['allowed_users'] ?? null,
-                        'allowed_groups' => $richText['allowed_groups'] ?? null,
-                        'boxed' => !empty($richText['boxed']),
-                        'box_title' => $richText['box_title'] ?? null,
-                        'box_footer' => $richText['box_footer'] ?? null,
-                        'box_header_align' => $richText['box_header_align'] ?? 'left',
-                        'box_footer_align' => $richText['box_footer_align'] ?? 'left',
-                        'box_header_bg' => $richText['box_header_bg'] ?? null,
-                        'box_footer_bg' => $richText['box_footer_bg'] ?? null,
-                        'box_body_bg' => $richText['box_body_bg'] ?? null,
-                        'box_header_font_weight' => $richText['box_header_font_weight'] ?? 'bold',
-                        'box_footer_font_weight' => $richText['box_footer_font_weight'] ?? 'normal',
-                        'box_header_font_size' => $richText['box_header_font_size'] ?? 'md',
-                        'box_footer_font_size' => $richText['box_footer_font_size'] ?? 'sm',
-                        'box_header_emoji' => $richText['box_header_emoji'] ?? null,
-                        'box_importance' => $richText['box_importance'] ?? 'notes',
-                    ]);
-                }
-            }
-        }
-    }
-    
-    // Clone tile messages
-    $msgStmt = $db->prepare('SELECT * FROM tile_messages WHERE tile_id = ?');
-    $msgStmt->execute([$tileId]);
-    $messages = $msgStmt->fetchAll();
-    
-    if (!empty($messages)) {
-        $msgInsertStmt = $db->prepare('INSERT INTO tile_messages (id, tile_id, content, type, start_date, end_date, is_active, priority, text_color, font_style, display_location, animation_type, delay_before, celebration_effect, celebration_config, url, url_label) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)');
-        foreach ($messages as $msg) {
-            $newMsgId = uniqid('msg_', true);
-            $cc = isset($msg['celebration_config']) && $msg['celebration_config'] !== null && $msg['celebration_config'] !== '' ? $msg['celebration_config'] : null;
-            $msgInsertStmt->execute([
-                $newMsgId,
-                $newTileId,
-                $msg['content'] ?? '',
-                $msg['type'] ?? 'info',
-                $msg['start_date'] ?? null,
-                $msg['end_date'] ?? null,
-                isset($msg['is_active']) && $msg['is_active'] ? 1 : 0,
-                isset($msg['priority']) ? (int)$msg['priority'] : 0,
-                $msg['text_color'] ?? null,
-                $msg['font_style'] ?? null,
-                $msg['display_location'] ?? 'both',
-                $msg['animation_type'] ?? 'rollover',
-                isset($msg['delay_before']) ? (float)$msg['delay_before'] : 0,
-                $msg['celebration_effect'] ?? 'none',
-                $cc,
-                $msg['url'] ?? null,
-                $msg['url_label'] ?? null
-            ]);
-        }
-    }
-        
-    // Commit transaction
-    $db->commit();
-    
-    invalidateGuestTilesListCache();
-    sendJSON(['success' => true, 'id' => $newTileId], 201);
+
+        cloneTileRecordAndContents($db, $originalTile, $newTileId, [
+            'title' => $newTitle,
+            'user_id' => $user['id'],
+            'source_tab' => $newSourceTab,
+            'position' => $newPosition,
+        ]);
+
+        $db->commit();
+
+        invalidateGuestTilesListCache();
+        sendJSON(['success' => true, 'id' => $newTileId], 201);
     
     } catch (PDOException $e) {
         $db->rollBack();
@@ -3094,312 +3055,17 @@ function handleCloneCategory($categoryName) {
                 continue; // Skip tiles user can't view
             }
             
-            // Generate new tile ID
             $newTileId = generateUuid();
-            
-            // Keep original space titles; "Copy" is only on the category name
             $newTitle = $originalTile['title'];
-            $newVisibility = $originalTile['visibility'];
-            $newAllowedUsers = $originalTile['allowed_users'];
-            $newAllowedGroups = $originalTile['allowed_groups'];
-            
-            // Prepare tile decoration properties
-            $tileBackgroundColor = !empty($originalTile['tile_background_color']) ? $originalTile['tile_background_color'] : null;
-            $tileGradientEnabled = isset($originalTile['tile_gradient_enabled']) && $originalTile['tile_gradient_enabled'] !== null ? (int)$originalTile['tile_gradient_enabled'] : null;
-            $tileGradientColors = !empty($originalTile['tile_gradient_colors']) ? $originalTile['tile_gradient_colors'] : null;
-            $tileGradientColorPositions = !empty($originalTile['tile_gradient_color_positions']) ? $originalTile['tile_gradient_color_positions'] : null;
-            $tileGradientDirection = !empty($originalTile['tile_gradient_direction']) ? $originalTile['tile_gradient_direction'] : null;
-            $tileGradientType = !empty($originalTile['tile_gradient_type']) ? $originalTile['tile_gradient_type'] : null;
-            $tileBorderRadius = isset($originalTile['tile_border_radius']) && $originalTile['tile_border_radius'] !== null ? (int)$originalTile['tile_border_radius'] : null;
-            $tileTextColor = !empty($originalTile['tile_text_color']) ? $originalTile['tile_text_color'] : null;
-            $headerImage = !empty($originalTile['header_image']) ? $originalTile['header_image'] : null;
-            $headerImageAlign = (isset($originalTile['header_image_align']) && in_array($originalTile['header_image_align'], ['left', 'center', 'right'], true))
-                ? $originalTile['header_image_align']
-                : ($headerImage ? 'right' : null);
-            $headerImageOpacity = $headerImage !== null
-                ? (isset($originalTile['header_image_opacity']) && $originalTile['header_image_opacity'] !== null && $originalTile['header_image_opacity'] !== ''
-                    ? max(0, min(100, (int)$originalTile['header_image_opacity'])) : 100)
-                : null;
-            $headerImageOffsetX = $headerImage !== null
-                ? (isset($originalTile['header_image_offset_x']) && $originalTile['header_image_offset_x'] !== null && $originalTile['header_image_offset_x'] !== ''
-                    ? max(-300, min(300, (int)$originalTile['header_image_offset_x'])) : 0)
-                : null;
-            $headerImageFit = $headerImage !== null
-                ? ((isset($originalTile['header_image_fit']) && $originalTile['header_image_fit'] === 'cover') ? 'cover' : 'contain')
-                : null;
-            $showEmoji = !(isset($originalTile['show_emoji']) && ((int)$originalTile['show_emoji'] === 0 || $originalTile['show_emoji'] === '0'));
-            $emojiImage = !empty($originalTile['emoji_image']) ? $originalTile['emoji_image'] : null;
-            $emojiImageOpacity = $emojiImage !== null
-                ? (isset($originalTile['emoji_image_opacity']) && $originalTile['emoji_image_opacity'] !== null && $originalTile['emoji_image_opacity'] !== ''
-                    ? max(0, min(100, (int)$originalTile['emoji_image_opacity'])) : 100)
-                : null;
-            $emojiImageOffsetX = $emojiImage !== null
-                ? (isset($originalTile['emoji_image_offset_x']) && $originalTile['emoji_image_offset_x'] !== null && $originalTile['emoji_image_offset_x'] !== ''
-                    ? max(-50, min(50, (int)$originalTile['emoji_image_offset_x'])) : 0)
-                : null;
-            $emojiImageOffsetY = $emojiImage !== null
-                ? (isset($originalTile['emoji_image_offset_y']) && $originalTile['emoji_image_offset_y'] !== null && $originalTile['emoji_image_offset_y'] !== ''
-                    ? max(-50, min(50, (int)$originalTile['emoji_image_offset_y'])) : 0)
-                : null;
-            $emojiImageZoom = $emojiImage !== null
-                ? (isset($originalTile['emoji_image_zoom']) && $originalTile['emoji_image_zoom'] !== null && $originalTile['emoji_image_zoom'] !== ''
-                    ? max(50, min(300, (int)$originalTile['emoji_image_zoom'])) : 100)
-                : null;
-            $showTitle = !(isset($originalTile['show_title']) && ((int)$originalTile['show_title'] === 0 || $originalTile['show_title'] === '0'));
-            $showDescription = !(isset($originalTile['show_description']) && ((int)$originalTile['show_description'] === 0 || $originalTile['show_description'] === '0'));
-            $searchTagsJson = encodeSearchTagsForStorage(decodeSearchTagsFromRow($originalTile));
-            $headerImageOffsetY = $headerImage !== null
-                ? (isset($originalTile['header_image_offset_y']) && $originalTile['header_image_offset_y'] !== null && $originalTile['header_image_offset_y'] !== ''
-                    ? max(-300, min(300, (int)$originalTile['header_image_offset_y'])) : 0)
-                : null;
-            $headerImageZoom = $headerImage !== null
-                ? (isset($originalTile['header_image_zoom']) && $originalTile['header_image_zoom'] !== null && $originalTile['header_image_zoom'] !== ''
-                    ? max(50, min(300, (int)$originalTile['header_image_zoom'])) : 100)
-                : null;
-            
-            $insertStmt = $db->prepare('INSERT INTO tiles (id, user_id, title, description, html_content, emoji, theme_color, "group", visibility, allowed_users, allowed_groups, is_hyperlink, hyperlink_url, open_in_new_tab, is_video, video_url, video_source, visible_from, expires_at, browser, tile_background_color, tile_gradient_enabled, tile_gradient_colors, tile_gradient_color_positions, tile_gradient_direction, tile_gradient_type, tile_border_radius, tile_text_color, page_animation, links_animation, header_image, header_image_align, header_image_opacity, header_image_offset_x, header_image_offset_y, header_image_zoom, header_image_fit, show_emoji, emoji_image, emoji_image_opacity, emoji_image_offset_x, emoji_image_offset_y, emoji_image_zoom, show_title, show_description, search_tags, source_tab, position, created_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)');
-            
-            if (!$insertStmt->execute([
-                $newTileId,
-                $user['id'],
-                $newTitle,
-                $originalTile['description'],
-                $originalTile['html_content'],
-                $originalTile['emoji'],
-                $originalTile['theme_color'],
-                $finalCategoryName, // Use the new category name
-                $newVisibility,
-                $newAllowedUsers,
-                $newAllowedGroups,
-                $originalTile['is_hyperlink'] ?? 0,
-                $originalTile['hyperlink_url'] ?? null,
-                $originalTile['open_in_new_tab'] ?? 0,
-                $originalTile['is_video'] ?? 0,
-                $originalTile['video_url'] ?? null,
-                $originalTile['video_source'] ?? null,
-                $originalTile['visible_from'] ?? null,
-                $originalTile['expires_at'] ?? null,
-                $originalTile['browser'] ?? null,
-                $tileBackgroundColor,
-                $tileGradientEnabled,
-                $tileGradientColors,
-                $tileGradientColorPositions,
-                $tileGradientDirection,
-                $tileGradientType,
-                $tileBorderRadius,
-                $tileTextColor,
-                $originalTile['page_animation'] ?? null,
-                $originalTile['links_animation'] ?? null,
-                $headerImage,
-                $headerImageAlign,
-                $headerImageOpacity,
-                $headerImageOffsetX,
-                $headerImageOffsetY,
-                $headerImageZoom,
-                $headerImageFit,
-                $showEmoji ? 1 : 0,
-                $emojiImage,
-                $emojiImageOpacity,
-                $emojiImageOffsetX,
-                $emojiImageOffsetY,
-                $emojiImageZoom,
-                $showTitle ? 1 : 0,
-                $showDescription ? 1 : 0,
-                $searchTagsJson,
-                $sourceTab,
-                $nextPosition++,
-                time()
-            ])) {
-                $errors[] = 'Failed to clone tile: ' . $originalTile['title'];
-                continue;
-            }
-            $db->prepare('UPDATE tiles SET access_restrictions = ? WHERE id = ?')->execute([$originalTile['access_restrictions'] ?? null, $newTileId]);
-        persistTileShowShortUrls($db, $newTileId, null, $originalTile);
-            
-            // Clone tabs, sections, and links
-            $tabStmt = $db->prepare('SELECT * FROM tabs WHERE tile_id = ? ORDER BY position ASC');
-            $tabStmt->execute([$originalTile['id']]);
-            $tabs = $tabStmt->fetchAll();
-            
-            if (empty($tabs)) {
-                // Check for legacy sections (backward compatibility)
-                $legacySectionStmt = $db->prepare('SELECT * FROM sections WHERE tile_id = ? AND (tab_id IS NULL OR tab_id = "")');
-                $legacySectionStmt->execute([$originalTile['id']]);
-                $legacySections = $legacySectionStmt->fetchAll();
-                
-                if (!empty($legacySections)) {
-                    // Create a default tab for legacy sections
-                    $defaultTabId = uniqid('tab_', true);
-                    $tabInsertStmt = $db->prepare('INSERT INTO tabs (id, tile_id, title, position) VALUES (?, ?, ?, ?)');
-                    $tabInsertStmt->execute([
-                        $defaultTabId,
-                        $newTileId,
-                        'Default',
-                        0
-                    ]);
-                    
-                    foreach ($legacySections as $sectionIndex => $section) {
-                        $newSectionId = uniqid('section_', true);
-                        $sectionPosition = isset($section['position']) ? (int)$section['position'] : $sectionIndex;
-                        $sectionInsertStmt = $db->prepare('INSERT INTO sections (id, tile_id, tab_id, title, text_color, emoji, visible_from, expires_at, force_stacked_view, position) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)');
-                        $sectionInsertStmt->execute([
-                            $newSectionId,
-                            $newTileId,
-                            $defaultTabId,
-                            $section['title'],
-                            isset($section['text_color']) ? $section['text_color'] : null,
-                            contentEmojiFromRow($section),
-                            $section['visible_from'] ?? null,
-                            $section['expires_at'] ?? null,
-                            isset($section['force_stacked_view']) && $section['force_stacked_view'] == 1 ? 1 : 0,
-                            $sectionPosition
-                        ]);
-                        
-                        // Clone links
-                        $linkStmt = $db->prepare('SELECT * FROM links WHERE section_id = ?');
-                        $linkStmt->execute([$section['id']]);
-                        $links = $linkStmt->fetchAll();
-                        
-                        foreach ($links as $link) {
-                            $newLinkId = uniqid('link_', true);
-                            $linkInsertStmt = $db->prepare('INSERT INTO links (id, section_id, label, url, icon, text_color, visibility, allowed_users, notes, tooltip, visible_from, expires_at, browser, position, rich_text_content, animation, access_restrictions, maintenance_enabled, maintenance_message, maintenance_video_url, notes_enabled, rich_text_enabled, info_show_open_link) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)');
-                            $linkInsertStmt->execute([
-                                $newLinkId,
-                                $newSectionId,
-                                $link['label'],
-                                $link['url'],
-                                $link['icon'] ?? null,
-                                $link['text_color'] ?? null,
-                                $link['visibility'] ?? 'public',
-                                null, // Reset allowed_users for cloned links
-                                $link['notes'] ?? null,
-                                $link['tooltip'] ?? null,
-                                $link['visible_from'] ?? null,
-                                $link['expires_at'] ?? null,
-                                $link['browser'] ?? null,
-                                $link['position'] ?? 0,
-                                $link['rich_text_content'] ?? null,
-                                $link['animation'] ?? null,
-                                $link['access_restrictions'] ?? null,
-                                ...linkMaintenanceInsertValuesFromRow($link),
-                                ...linkFeatureToggleInsertValuesFromRow($link)
-                            ]);
-                            persistLinkTooltipStyle($db, $newLinkId, $link);
-                                persistLinkOpenTarget($db, $newLinkId, $link);
-                                persistLinkForceShortUrl($db, $newLinkId, $link);
-                                persistLinkBrokenStatusLabel($db, $newLinkId, $link);
-                        }
-                    }
-                }
-            } else {
-                // Clone tabs and their sections/links
-                foreach ($tabs as $tab) {
-                    $newTabId = uniqid('tab_', true);
-                    $tabInsertStmt = $db->prepare('INSERT INTO tabs (id, tile_id, title, position, text_color, emoji, visible_from, expires_at, access_restrictions) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)');
-                    $tabInsertStmt->execute([
-                        $newTabId,
-                        $newTileId,
-                        $tab['title'],
-                        $tab['position'] ?? 0,
-                        (!empty($tab['text_color']) && trim($tab['text_color']) !== '') ? trim($tab['text_color']) : null,
-                        contentEmojiFromRow($tab),
-                        $tab['visible_from'] ?? null,
-                        $tab['expires_at'] ?? null,
-                        $tab['access_restrictions'] ?? null
-                    ]);
-                    
-                    // Clone sections for this tab
-                    $sectionStmt = $db->prepare('SELECT * FROM sections WHERE tab_id = ? ORDER BY position ASC, id ASC');
-                    $sectionStmt->execute([$tab['id']]);
-                    $sections = $sectionStmt->fetchAll();
-                    
-                    foreach ($sections as $sectionIndex => $section) {
-                        $newSectionId = uniqid('section_', true);
-                        $sectionPosition = isset($section['position']) ? (int)$section['position'] : $sectionIndex;
-                        $sectionInsertStmt = $db->prepare('INSERT INTO sections (id, tile_id, tab_id, title, text_color, emoji, visible_from, expires_at, force_stacked_view, position) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)');
-                        $sectionInsertStmt->execute([
-                            $newSectionId,
-                            $newTileId,
-                            $newTabId,
-                            $section['title'],
-                            isset($section['text_color']) ? $section['text_color'] : null,
-                            contentEmojiFromRow($section),
-                            $section['visible_from'] ?? null,
-                            $section['expires_at'] ?? null,
-                            isset($section['force_stacked_view']) && $section['force_stacked_view'] == 1 ? 1 : 0,
-                            $sectionPosition
-                        ]);
-                        
-                        // Clone links
-                        $linkStmt = $db->prepare('SELECT * FROM links WHERE section_id = ?');
-                        $linkStmt->execute([$section['id']]);
-                        $links = $linkStmt->fetchAll();
-                        
-                        foreach ($links as $link) {
-                            $newLinkId = uniqid('link_', true);
-                            $linkInsertStmt = $db->prepare('INSERT INTO links (id, section_id, label, url, icon, text_color, visibility, allowed_users, notes, tooltip, visible_from, expires_at, browser, position, rich_text_content, animation, access_restrictions, maintenance_enabled, maintenance_message, maintenance_video_url, notes_enabled, rich_text_enabled, info_show_open_link) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)');
-                            $linkInsertStmt->execute([
-                                $newLinkId,
-                                $newSectionId,
-                                $link['label'],
-                                $link['url'],
-                                $link['icon'] ?? null,
-                                $link['text_color'] ?? null,
-                                $link['visibility'] ?? 'public',
-                                null, // Reset allowed_users for cloned links
-                                $link['notes'] ?? null,
-                                $link['tooltip'] ?? null,
-                                $link['visible_from'] ?? null,
-                                $link['expires_at'] ?? null,
-                                $link['browser'] ?? null,
-                                $link['position'] ?? 0,
-                                $link['rich_text_content'] ?? null,
-                                $link['animation'] ?? null,
-                                $link['access_restrictions'] ?? null,
-                                ...linkMaintenanceInsertValuesFromRow($link),
-                                ...linkFeatureToggleInsertValuesFromRow($link)
-                            ]);
-                            persistLinkTooltipStyle($db, $newLinkId, $link);
-                                persistLinkOpenTarget($db, $newLinkId, $link);
-                                persistLinkForceShortUrl($db, $newLinkId, $link);
-                                persistLinkBrokenStatusLabel($db, $newLinkId, $link);
-                        }
-                    }
-                }
-            }
-            
-            // Clone tile messages
-            $msgStmt = $db->prepare('SELECT * FROM tile_messages WHERE tile_id = ?');
-            $msgStmt->execute([$originalTile['id']]);
-            $messages = $msgStmt->fetchAll();
-            
-            if (!empty($messages)) {
-                $msgInsertStmt = $db->prepare('INSERT INTO tile_messages (id, tile_id, content, type, start_date, end_date, is_active, priority, text_color, font_style, display_location, animation_type, delay_before, celebration_effect, celebration_config, url, url_label) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)');
-                foreach ($messages as $msg) {
-                    $newMsgId = uniqid('msg_', true);
-                    $cc = isset($msg['celebration_config']) && $msg['celebration_config'] !== null && $msg['celebration_config'] !== '' ? $msg['celebration_config'] : null;
-                    $msgInsertStmt->execute([
-                        $newMsgId,
-                        $newTileId,
-                        $msg['content'] ?? '',
-                        $msg['type'] ?? 'info',
-                        $msg['start_date'] ?? null,
-                        $msg['end_date'] ?? null,
-                        isset($msg['is_active']) && $msg['is_active'] ? 1 : 0,
-                        isset($msg['priority']) ? (int)$msg['priority'] : 0,
-                        $msg['text_color'] ?? null,
-                        $msg['font_style'] ?? null,
-                        $msg['display_location'] ?? 'both',
-                        $msg['animation_type'] ?? 'rollover',
-                        isset($msg['delay_before']) ? (float)$msg['delay_before'] : 0,
-                        $msg['celebration_effect'] ?? 'none',
-                        $cc,
-                        $msg['url'] ?? null,
-                        $msg['url_label'] ?? null
-                    ]);
-                }
-            }
-             
+
+            cloneTileRecordAndContents($db, $originalTile, $newTileId, [
+                'title' => $newTitle,
+                'group' => $finalCategoryName,
+                'user_id' => $user['id'],
+                'source_tab' => $sourceTab,
+                'position' => $nextPosition++,
+            ]);
+
             $clonedTiles[] = [
                 'id' => $newTileId,
                 'title' => $newTitle

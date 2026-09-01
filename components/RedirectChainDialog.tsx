@@ -1,6 +1,6 @@
-import React, { useMemo, useState } from 'react';
+import React, { useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
-import { Check, Copy, Download } from 'lucide-react';
+import { Check, Copy, Download, GripVertical } from 'lucide-react';
 import { LinkRedirectHop } from '../types';
 import { copyTextToClipboard } from '../services/shortUrlService';
 import {
@@ -35,6 +35,28 @@ export interface RedirectChainDialogProps {
   onClose: () => void;
   onAdoptUrl?: (url: string) => void;
   onCheckSsl?: (url: string) => void;
+}
+
+const DEFAULT_SIZE = { width: 672, height: 640 };
+const MIN_SIZE = { width: 420, height: 360 };
+
+function getCenteredPosition(width: number, height: number) {
+  if (typeof window === 'undefined') {
+    return { x: 16, y: 16 };
+  }
+  return {
+    x: Math.max(16, (window.innerWidth - width) / 2),
+    y: Math.max(16, (window.innerHeight - height) / 2),
+  };
+}
+
+function clampDialogPosition(x: number, y: number, width: number, height: number) {
+  if (typeof window === 'undefined') return { x, y };
+  const minVisible = 72;
+  return {
+    x: Math.min(Math.max(minVisible - width, x), window.innerWidth - minVisible),
+    y: Math.min(Math.max(8, y), window.innerHeight - 48),
+  };
 }
 
 const hopStatusColor = (code: number): string => {
@@ -150,6 +172,24 @@ export const RedirectChainDialog: React.FC<RedirectChainDialogProps> = ({
   onCheckSsl,
 }) => {
   const [copied, setCopied] = useState<string | null>(null);
+  const [position, setPosition] = useState(() =>
+    getCenteredPosition(DEFAULT_SIZE.width, DEFAULT_SIZE.height)
+  );
+  const [isDragging, setIsDragging] = useState(false);
+  const [isPositionReady, setIsPositionReady] = useState(false);
+  const [dialogSize, setDialogSize] = useState(DEFAULT_SIZE);
+  const [isResizing, setIsResizing] = useState(false);
+  const [resizeStart, setResizeStart] = useState({
+    x: 0,
+    y: 0,
+    width: 0,
+    height: 0,
+    handle: '',
+  });
+  const dragOffset = useRef({ x: 0, y: 0 });
+  const modalRef = useRef<HTMLDivElement>(null);
+  const ignoreBackdropClick = useRef(false);
+
   const summary = useMemo(() => summarizeChain(originalUrl, hops), [originalUrl, hops]);
   const hopTimingTotal = hops.reduce((sum, hop) => sum + (hop.timingMs || 0), 0);
   const totalMs = hopTimingTotal || serverLatencyMs || null;
@@ -197,6 +237,116 @@ export const RedirectChainDialog: React.FC<RedirectChainDialogProps> = ({
     onClose();
   };
 
+  useLayoutEffect(() => {
+    const width = Math.min(
+      DEFAULT_SIZE.width,
+      typeof window !== 'undefined' ? window.innerWidth - 32 : DEFAULT_SIZE.width
+    );
+    const height = Math.min(
+      DEFAULT_SIZE.height,
+      typeof window !== 'undefined' ? window.innerHeight - 32 : DEFAULT_SIZE.height
+    );
+    setDialogSize({ width, height });
+    setPosition(getCenteredPosition(width, height));
+    setIsPositionReady(true);
+  }, []);
+
+  const handleDragStart = (e: React.MouseEvent) => {
+    if ((e.target as HTMLElement).closest('button')) return;
+    if (!modalRef.current || !(e.target as HTMLElement).closest('[data-drag-handle]')) return;
+    e.preventDefault();
+    e.stopPropagation();
+    const rect = modalRef.current.getBoundingClientRect();
+    dragOffset.current = {
+      x: e.clientX - rect.left,
+      y: e.clientY - rect.top,
+    };
+    setIsDragging(true);
+  };
+
+  useEffect(() => {
+    if (!isDragging) return;
+
+    const handleMouseMove = (e: MouseEvent) => {
+      const width = modalRef.current?.offsetWidth ?? dialogSize.width;
+      const height = modalRef.current?.offsetHeight ?? dialogSize.height;
+      setPosition(
+        clampDialogPosition(e.clientX - dragOffset.current.x, e.clientY - dragOffset.current.y, width, height)
+      );
+    };
+    const handleMouseUp = () => {
+      ignoreBackdropClick.current = true;
+      window.setTimeout(() => {
+        ignoreBackdropClick.current = false;
+      }, 0);
+      setIsDragging(false);
+    };
+
+    document.addEventListener('mousemove', handleMouseMove);
+    document.addEventListener('mouseup', handleMouseUp);
+    document.body.style.userSelect = 'none';
+
+    return () => {
+      document.removeEventListener('mousemove', handleMouseMove);
+      document.removeEventListener('mouseup', handleMouseUp);
+      document.body.style.userSelect = '';
+    };
+  }, [isDragging, dialogSize.width, dialogSize.height]);
+
+  const handleResizeStart = (e: React.MouseEvent<HTMLDivElement>, handle: string) => {
+    if (!modalRef.current) return;
+    e.preventDefault();
+    e.stopPropagation();
+    const rect = modalRef.current.getBoundingClientRect();
+    setIsResizing(true);
+    setResizeStart({
+      x: e.clientX,
+      y: e.clientY,
+      width: rect.width,
+      height: rect.height,
+      handle,
+    });
+  };
+
+  useEffect(() => {
+    if (!isResizing) return;
+
+    const handleMouseMove = (e: MouseEvent) => {
+      const deltaX = e.clientX - resizeStart.x;
+      const deltaY = e.clientY - resizeStart.y;
+      const maxWidth = window.innerWidth - position.x - 16;
+      const maxHeight = window.innerHeight - position.y - 16;
+
+      let newWidth = resizeStart.width;
+      let newHeight = resizeStart.height;
+      if (resizeStart.handle.includes('e')) newWidth = resizeStart.width + deltaX;
+      if (resizeStart.handle.includes('s')) newHeight = resizeStart.height + deltaY;
+
+      setDialogSize({
+        width: Math.max(MIN_SIZE.width, Math.min(newWidth, maxWidth)),
+        height: Math.max(MIN_SIZE.height, Math.min(newHeight, maxHeight)),
+      });
+    };
+
+    const handleMouseUp = () => {
+      ignoreBackdropClick.current = true;
+      window.setTimeout(() => {
+        ignoreBackdropClick.current = false;
+      }, 0);
+      setIsResizing(false);
+    };
+
+    document.addEventListener('mousemove', handleMouseMove);
+    document.addEventListener('mouseup', handleMouseUp);
+    document.body.style.userSelect = 'none';
+
+    return () => {
+      document.removeEventListener('mousemove', handleMouseMove);
+      document.removeEventListener('mouseup', handleMouseUp);
+      document.body.style.userSelect = '';
+    };
+  }, [isResizing, resizeStart, position.x, position.y]);
+
   const safetyClass =
     summary.safeToAdopt === 'yes'
       ? 'border-emerald-200 bg-emerald-50 text-emerald-800 dark:border-emerald-800 dark:bg-emerald-950/40 dark:text-emerald-200'
@@ -205,39 +355,68 @@ export const RedirectChainDialog: React.FC<RedirectChainDialogProps> = ({
         : 'border-rose-200 bg-rose-50 text-rose-800 dark:border-rose-800 dark:bg-rose-950/40 dark:text-rose-200';
 
   return createPortal(
-    <div
-      className="fixed inset-0 z-[100080] flex items-center justify-center p-4 bg-black/50 backdrop-blur-sm"
-      onClick={onClose}
-      role="presentation"
-    >
+    <div className="fixed inset-0 z-[100080]" role="presentation">
       <div
-        className="bg-white dark:bg-slate-800 rounded-2xl shadow-2xl border border-slate-200 dark:border-slate-700 w-full max-w-2xl max-h-[90vh] flex flex-col"
+        className="absolute inset-0 bg-black/50 backdrop-blur-sm"
+        onClick={() => {
+          if (ignoreBackdropClick.current) return;
+          onClose();
+        }}
+        aria-hidden="true"
+      />
+      <div
+        ref={modalRef}
+        className="bg-white dark:bg-slate-800 rounded-2xl shadow-2xl border border-slate-200 dark:border-slate-700 flex flex-col overflow-hidden relative"
         role="dialog"
         aria-modal="true"
         aria-labelledby="redirect-chain-dialog-title"
         onClick={(e) => e.stopPropagation()}
+        style={{
+          position: 'absolute',
+          left: `${position.x}px`,
+          top: `${position.y}px`,
+          width: `${dialogSize.width}px`,
+          height: `${dialogSize.height}px`,
+          maxWidth: '95vw',
+          maxHeight: '95vh',
+          minWidth: `${MIN_SIZE.width}px`,
+          minHeight: `${MIN_SIZE.height}px`,
+          visibility: isPositionReady ? 'visible' : 'hidden',
+        }}
       >
-        <div className="px-5 py-4 border-b border-slate-200 dark:border-slate-700 flex items-start justify-between gap-3 shrink-0">
-          <div className="min-w-0">
-            <h3 id="redirect-chain-dialog-title" className="text-base font-bold text-slate-900 dark:text-white">
-              Redirect chain
-            </h3>
-            <p className="text-xs text-slate-500 dark:text-slate-400 mt-0.5">
-              {summary.hopCount} hop{summary.hopCount === 1 ? '' : 's'}
-              {' · '}
-              Reached after {summary.redirectCount} redirect{summary.redirectCount === 1 ? '' : 's'}
-              {totalMs != null ? ` · ${formatMs(totalMs)} total` : ''}
-              {error ? ` · ${error}` : ''}
-            </p>
-            <p className="text-[11px] text-slate-400 dark:text-slate-500 mt-1">
-              Traced from the LinkNest server with HEAD (not your browser). Browser RTT
-              {browserLatencyMs != null ? ` ${formatMs(browserLatencyMs)}` : ' pending'} is a separate timing.
-            </p>
+        <div
+          data-drag-handle
+          onMouseDown={handleDragStart}
+          style={{ cursor: isDragging ? 'grabbing' : 'grab' }}
+          className="px-5 py-4 border-b border-slate-200 dark:border-slate-700 flex items-start justify-between gap-3 shrink-0 select-none"
+        >
+          <div className="min-w-0 flex items-start gap-2">
+            <GripVertical
+              className="w-4 h-4 mt-0.5 text-slate-400 dark:text-slate-500 shrink-0 pointer-events-none"
+              aria-hidden
+            />
+            <div className="min-w-0">
+              <h3 id="redirect-chain-dialog-title" className="text-base font-bold text-slate-900 dark:text-white">
+                Redirect chain
+              </h3>
+              <p className="text-xs text-slate-500 dark:text-slate-400 mt-0.5">
+                {summary.hopCount} hop{summary.hopCount === 1 ? '' : 's'}
+                {' · '}
+                Reached after {summary.redirectCount} redirect{summary.redirectCount === 1 ? '' : 's'}
+                {totalMs != null ? ` · ${formatMs(totalMs)} total` : ''}
+                {error ? ` · ${error}` : ''}
+              </p>
+              <p className="text-[11px] text-slate-400 dark:text-slate-500 mt-1">
+                Traced from the LinkNest server with HEAD (not your browser). Browser RTT
+                {browserLatencyMs != null ? ` ${formatMs(browserLatencyMs)}` : ' pending'} is a separate timing.
+                {' · '}Drag the header · resize the corner
+              </p>
+            </div>
           </div>
           <button
             type="button"
             onClick={onClose}
-            className="p-1.5 rounded-lg hover:bg-slate-100 dark:hover:bg-slate-700 text-slate-400 hover:text-slate-600 dark:hover:text-slate-300 transition-colors shrink-0"
+            className="p-1.5 rounded-lg hover:bg-slate-100 dark:hover:bg-slate-700 text-slate-400 hover:text-slate-600 dark:hover:text-slate-300 transition-colors shrink-0 cursor-pointer"
             aria-label="Close redirect chain"
           >
             <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" strokeWidth={2} stroke="currentColor" className="w-5 h-5">
@@ -518,6 +697,22 @@ export const RedirectChainDialog: React.FC<RedirectChainDialogProps> = ({
             Close
           </button>
         </div>
+
+        <div
+          onMouseDown={(e) => handleResizeStart(e, 'se')}
+          className={`absolute bottom-0 right-0 w-4 h-4 cursor-nwse-resize z-20 rounded-br-2xl ${
+            isResizing ? 'bg-sky-200/50 dark:bg-sky-800/40' : 'hover:bg-slate-200/70 dark:hover:bg-slate-600/50'
+          }`}
+          title="Resize"
+        />
+        <div
+          onMouseDown={(e) => handleResizeStart(e, 's')}
+          className="absolute bottom-0 left-0 right-4 h-2 cursor-ns-resize z-10"
+        />
+        <div
+          onMouseDown={(e) => handleResizeStart(e, 'e')}
+          className="absolute top-0 right-0 bottom-4 w-2 cursor-ew-resize z-10"
+        />
       </div>
     </div>,
     document.body
