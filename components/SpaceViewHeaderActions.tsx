@@ -16,6 +16,7 @@ import { removeSharedTile } from '../services/tileShareService';
 import { isPublicFavorite, togglePublicFavorite } from '../services/publicFavoritesService';
 import { TileAnimationSelector, getAnimationOption, type TileAnimation } from './TileAnimationSelector';
 import { HeaderIcons, SpaceHeaderDrawerButton, SpaceHeaderIconButton } from './SpaceHeaderIconButton';
+import { SpaceHeaderDock } from './SpaceHeaderDock';
 
 const TileInfoDialog = lazy(() => import('./TileInfoDialog').then((m) => ({ default: m.TileInfoDialog })));
 const ShareTileDialog = lazy(() => import('./ShareTileDialog').then((m) => ({ default: m.ShareTileDialog })));
@@ -235,7 +236,7 @@ export const SpaceViewHeaderActions: React.FC<SpaceViewHeaderActionsProps> = ({
   return (
     <>
       <div className="flex items-center gap-2 justify-center md:justify-end w-full md:w-auto">
-        <div className="hidden md:flex items-center gap-2 flex-wrap justify-end">
+        <SpaceHeaderDock className="hidden md:flex items-end gap-1.5 flex-wrap justify-end py-1">
           {canEdit && (
             <SpaceHeaderIconButton
               title={shortUrlTitle}
@@ -248,7 +249,7 @@ export const SpaceViewHeaderActions: React.FC<SpaceViewHeaderActionsProps> = ({
             </SpaceHeaderIconButton>
           )}
           {canEdit && (
-            <div className="relative flex items-center">
+            <div className="relative flex items-end">
               <SpaceHeaderIconButton title={animTitle} onClick={() => setPageAnimOpen(!pageAnimOpen)}>
                 <span className="text-base leading-none" aria-hidden="true">{animOption.icon}</span>
               </SpaceHeaderIconButton>
@@ -335,7 +336,10 @@ export const SpaceViewHeaderActions: React.FC<SpaceViewHeaderActionsProps> = ({
               {HeaderIcons.plus}
             </SpaceHeaderIconButton>
           )}
-        </div>
+          <SpaceHeaderIconButton title="Back to Dashboard (Esc)" onClick={onBack}>
+            {HeaderIcons.back}
+          </SpaceHeaderIconButton>
+        </SpaceHeaderDock>
 
         <div className="md:hidden flex items-center gap-2" ref={headerActionsMenuRef}>
           <SpaceHeaderIconButton
@@ -562,9 +566,11 @@ export const SpaceViewHeaderActions: React.FC<SpaceViewHeaderActionsProps> = ({
             )}
         </div>
 
-        <SpaceHeaderIconButton title="Back to Dashboard (Esc)" onClick={onBack}>
-          {HeaderIcons.back}
-        </SpaceHeaderIconButton>
+        <div className="md:hidden">
+          <SpaceHeaderIconButton title="Back to Dashboard (Esc)" onClick={onBack}>
+            {HeaderIcons.back}
+          </SpaceHeaderIconButton>
+        </div>
       </div>
 
       {showInfo && (

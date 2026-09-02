@@ -8531,4 +8531,61 @@ input[type="search"]::-ms-clear {
   background: transparent !important;
 }
 
+/* Space header macOS-style dock magnification */
+.ln-space-dock-item button,
+.ln-space-dock-item-hot button {
+  will-change: transform;
+  transition:
+    transform 0.16s cubic-bezier(0.22, 1, 0.36, 1),
+    box-shadow 0.16s cubic-bezier(0.22, 1, 0.36, 1);
+}
+
+.ln-space-dock-label {
+  position: fixed;
+  z-index: 10060;
+  pointer-events: none;
+  transform: translate(-50%, -100%);
+}
+
+.ln-space-dock-label-inner {
+  display: block;
+  max-width: min(16rem, calc(100vw - 24px));
+  padding: 5px 10px;
+  border-radius: 8px;
+  background: rgba(15, 23, 42, 0.92);
+  color: #fff;
+  font-size: 11px;
+  font-weight: 600;
+  line-height: 1.35;
+  letter-spacing: 0.01em;
+  text-align: center;
+  white-space: normal;
+  box-shadow: 0 8px 22px rgba(15, 23, 42, 0.3);
+  border: 1px solid rgba(255, 255, 255, 0.14);
+  animation: ln-space-dock-label-in 0.18s cubic-bezier(0.22, 1, 0.36, 1);
+}
+
+@keyframes ln-space-dock-label-in {
+  from {
+    opacity: 0;
+    transform: translateY(6px) scale(0.92);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0) scale(1);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .ln-space-dock-item button,
+  .ln-space-dock-item-hot button {
+    transition: none !important;
+    transform: none !important;
+    box-shadow: none !important;
+  }
+  .ln-space-dock-label-inner {
+    animation: none !important;
+  }
+}
+
 

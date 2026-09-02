@@ -7257,11 +7257,12 @@ export const TileDetail: React.FC<TileDetailProps> = ({
                 <div className="animate-in fade-in slide-in-from-bottom-4 duration-300 min-h-[80vh] flex flex-col w-full pb-10">
 
                     {/* Compact Modern Header */}
-                    <div className="linknest-content-header relative rounded-2xl overflow-hidden mb-6 group border border-slate-200 dark:border-slate-700/50 shadow-lg dark:shadow-none isolate">
-                        {/* Ambient Background - rounded to match parent and avoid corner artifacts */}
-                        <div className={`absolute inset-0 rounded-2xl bg-gradient-to-r ${styles.gradient} opacity-90 dark:opacity-20`}></div>
-                        {/* Light mode overlay - solid overlay instead of backdrop-blur to avoid corner notch artifacts */}
-                        <div className="absolute inset-0 rounded-2xl bg-white/10 dark:bg-slate-900/60"></div>
+                    <div className="linknest-content-header relative rounded-2xl mb-6 group border border-slate-200 dark:border-slate-700/50 shadow-lg dark:shadow-none isolate">
+                        {/* Clip only the wash so dock icons can magnify past the header edge */}
+                        <div className="absolute inset-0 rounded-2xl overflow-hidden pointer-events-none">
+                            <div className={`absolute inset-0 rounded-2xl bg-gradient-to-r ${styles.gradient} opacity-90 dark:opacity-20`}></div>
+                            <div className="absolute inset-0 rounded-2xl bg-white/10 dark:bg-slate-900/60"></div>
+                        </div>
 
                         <div className="relative z-10 px-6 py-6 flex flex-col md:flex-row items-center gap-6">
 

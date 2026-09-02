@@ -1,9 +1,10 @@
-import React from 'react';
+import React, { useEffect, useId, useLayoutEffect, useRef, useState } from 'react';
+import { dockScaleFor, useSpaceHeaderDock } from './SpaceHeaderDock';
 
 const HEADER_BTN =
-  'p-2 rounded-lg bg-white/15 hover:bg-white/25 text-white border border-white/20 transition-all shadow-sm flex items-center justify-center backdrop-blur-sm disabled:opacity-50 disabled:cursor-not-allowed';
+  'p-2 rounded-lg bg-white/15 hover:bg-white/25 text-white border border-white/20 transition-colors duration-150 shadow-sm flex items-center justify-center backdrop-blur-sm disabled:opacity-50 disabled:cursor-not-allowed';
 const HEADER_BTN_ACTIVE =
-  'p-2 rounded-lg bg-white/35 hover:bg-white/45 text-white border border-white/50 transition-all shadow-sm flex items-center justify-center backdrop-blur-sm disabled:opacity-50 disabled:cursor-not-allowed';
+  'p-2 rounded-lg bg-white/35 hover:bg-white/45 text-white border border-white/50 transition-colors duration-150 shadow-sm flex items-center justify-center backdrop-blur-sm disabled:opacity-50 disabled:cursor-not-allowed';
 const DRAWER_BTN =
   'w-full px-3 py-3 text-left text-sm font-medium text-slate-700 dark:text-slate-200 hover:bg-slate-50 dark:hover:bg-slate-800 rounded-lg flex items-center gap-3 disabled:opacity-50';
 
@@ -14,19 +15,90 @@ export const SpaceHeaderIconButton: React.FC<{
   active?: boolean;
   className?: string;
   children: React.ReactNode;
-}> = ({ title, onClick, disabled, active, className, children }) => (
-  <button
-    type="button"
-    onClick={onClick}
-    disabled={disabled}
-    className={`${active ? HEADER_BTN_ACTIVE : HEADER_BTN} ${className || ''}`}
-    title={title}
-    aria-label={title}
-    aria-pressed={active ? true : undefined}
-  >
-    {children}
-  </button>
-);
+}> = ({ title, onClick, disabled, active, className, children }) => {
+  const dock = useSpaceHeaderDock();
+  const dockId = useId();
+  const wrapRef = useRef<HTMLSpanElement>(null);
+  const [scale, setScale] = useState(1);
+
+  useEffect(() => {
+    if (!dock) return;
+    return dock.register({
+      id: dockId,
+      title,
+      getRect: () => wrapRef.current?.getBoundingClientRect() ?? null,
+    });
+  }, [dock, dockId, title]);
+
+  useLayoutEffect(() => {
+    if (!dock) {
+      setScale(1);
+      return;
+    }
+    const rect = wrapRef.current?.getBoundingClientRect();
+    if (!rect) {
+      setScale(1);
+      return;
+    }
+    setScale(
+      dockScaleFor(
+        dock.pointer,
+        rect.left + rect.width / 2,
+        rect.top + rect.height / 2,
+        dock.reducedMotion
+      )
+    );
+  }, [dock]);
+
+  const button = (
+    <button
+      type="button"
+      onClick={onClick}
+      disabled={disabled}
+      className={`${active ? HEADER_BTN_ACTIVE : HEADER_BTN} ${className || ''}`}
+      title={dock ? undefined : title}
+      aria-label={title}
+      aria-pressed={active ? true : undefined}
+      onFocus={() => {
+        if (!dock) return;
+        const rect = wrapRef.current?.getBoundingClientRect();
+        if (!rect) return;
+        dock.setFocusPointer({
+          x: rect.left + rect.width / 2,
+          y: rect.top + rect.height / 2,
+        });
+      }}
+      onBlur={() => dock?.setFocusPointer(null)}
+      style={
+        dock
+          ? {
+              transform: `translate3d(0, ${-((scale - 1) * 10)}px, 0) scale(${scale})`,
+              transformOrigin: 'center bottom',
+              boxShadow:
+                scale > 1.08
+                  ? `0 ${10 * (scale - 1)}px ${22 * (scale - 1)}px rgba(15, 23, 42, 0.28)`
+                  : undefined,
+            }
+          : undefined
+      }
+    >
+      {children}
+    </button>
+  );
+
+  if (!dock) return button;
+
+  const liftActive = scale > 1.01;
+  return (
+    <span
+      ref={wrapRef}
+      className={`relative inline-flex items-end justify-center ${liftActive ? 'ln-space-dock-item-hot' : 'ln-space-dock-item'}`}
+      style={{ zIndex: Math.round(scale * 20) }}
+    >
+      {button}
+    </span>
+  );
+};
 
 export const SpaceHeaderDrawerButton: React.FC<{
   label: string;
