@@ -609,7 +609,7 @@ export const HelpAboutDialog: React.FC<HelpAboutDialogProps> = ({
                   <div className="bg-slate-50 dark:bg-slate-900/50 rounded-lg p-4">
                     <h4 className="font-semibold text-slate-900 dark:text-white mb-2">Visitor Insights</h4>
                     <p className="text-sm text-slate-700 dark:text-slate-300">
-                      Track space visits from Space Info → Visitors. Total Hits counts every open, including repeats by the same person. Unique Visitors counts different people — logged-in users and guests — each only once. Admins can click the Unique Visitors count to see who opened the space. Admins can hide Unique Visitors from guests under Admin → Settings → Access → Guest & UI. Signed-in people who currently have the space open appear as Currently here in the space header and Space Info.
+                      Track space visits from Space Info → Visitors. Total Hits counts every open, including repeats by the same person. Unique Visitors counts different people — logged-in users and guests — each only once. Admins can click the Unique Visitors count to see who opened the space. Admins can hide Unique Visitors from guests under Admin → Settings → Access → Guest & UI. Signed-in people who currently have the space open appear as Currently here in the space header and Space Info. The page footer also shows how many browser sessions are using the site right now (online now).
                     </p>
                   </div>
                   <div className="bg-slate-50 dark:bg-slate-900/50 rounded-lg p-4">

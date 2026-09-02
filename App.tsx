@@ -42,6 +42,7 @@ import {
   getFingerprintHash,
 } from './services/fingerprintService';
 import { recordAndGetPageVisits } from './services/pageVisitService';
+import { useAppPresence } from './hooks/useAppPresence';
 import { linkifyHtml } from './utils/richTextDisplay';
 
 // Lazy load heavy components for better initial load performance
@@ -173,6 +174,7 @@ const AppContent: React.FC = () => {
   });
   const [pageVisitCount, setPageVisitCount] = useState<number | null>(null);
   const [spaceVisitCount, setSpaceVisitCount] = useState<number | null>(null);
+  const appPresence = useAppPresence();
 
   useEffect(() => {
     localStorage.setItem('linknest_show_footer_details', showFooterDetails.toString());
@@ -1867,16 +1869,38 @@ const AppContent: React.FC = () => {
                 </div>
               )}
 
-              {detailTile && spaceVisitCount !== null ? (
+              {(detailTile && spaceVisitCount !== null) || pageVisitCount !== null || appPresence !== null ? (
                 <p className="text-[9px] sm:text-[10px] italic text-slate-400/80 dark:text-slate-500/80 leading-none -mt-1 text-center px-2">
-                  {detailTile.title} space{' '}
-                  {spaceVisitCount === 1 ? 'visit' : 'visits'}:{' '}
-                  {spaceVisitCount.toLocaleString('en-US')}
-                </p>
-              ) : pageVisitCount !== null ? (
-                <p className="text-[9px] sm:text-[10px] italic text-slate-400/80 dark:text-slate-500/80 leading-none -mt-1 text-center px-2">
-                  {pageVisitCount.toLocaleString('en-US')} website{' '}
-                  {pageVisitCount === 1 ? 'visit' : 'visits'}
+                  {detailTile && spaceVisitCount !== null ? (
+                    <>
+                      {detailTile.title} space{' '}
+                      {spaceVisitCount === 1 ? 'visit' : 'visits'}:{' '}
+                      {spaceVisitCount.toLocaleString('en-US')}
+                    </>
+                  ) : pageVisitCount !== null ? (
+                    <>
+                      {pageVisitCount.toLocaleString('en-US')} website{' '}
+                      {pageVisitCount === 1 ? 'visit' : 'visits'}
+                    </>
+                  ) : null}
+                  {appPresence !== null && (
+                    <>
+                      {((detailTile && spaceVisitCount !== null) || pageVisitCount !== null) && (
+                        <span className="mx-1.5 opacity-50" aria-hidden>·</span>
+                      )}
+                      <span
+                        className="inline-flex items-center gap-1 not-italic"
+                        title={
+                          appPresence.count === 1
+                            ? '1 browser session is using this site right now'
+                            : `${appPresence.count.toLocaleString('en-US')} browser sessions are using this site right now`
+                        }
+                      >
+                        <span className="inline-block w-1.5 h-1.5 rounded-full bg-emerald-500" aria-hidden />
+                        {appPresence.count.toLocaleString('en-US')} online now
+                      </span>
+                    </>
+                  )}
                 </p>
               ) : null}
             </div>

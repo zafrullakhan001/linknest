@@ -313,6 +313,15 @@ if ($path === '/') {
     }
     require __DIR__ . '/page_visits.php';
     exit;
+} elseif (strpos($path, '/app-presence') === 0) {
+    $remainingPath = substr($path, 13); // Remove '/app-presence'
+    if (empty($remainingPath) || $remainingPath === '/') {
+        $_SERVER['PATH_INFO'] = '/';
+    } else {
+        $_SERVER['PATH_INFO'] = ($remainingPath[0] === '/') ? $remainingPath : '/' . $remainingPath;
+    }
+    require __DIR__ . '/app_presence.php';
+    exit;
 } elseif (strpos($path, '/visit-stats') === 0) {
     $remainingPath = substr($path, 12); // Remove '/visit-stats'
     if (empty($remainingPath) || $remainingPath === '/') {

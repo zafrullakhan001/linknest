@@ -1818,6 +1818,8 @@ class CloneService {
                 'tile_visit_visitors',
                 'tile_visit_daily',
                 'page_visit_daily',
+                'app_presence',
+                'tile_presence',
                 'tile_versions',
                 'tile_messages',
                 'email_outbox',
