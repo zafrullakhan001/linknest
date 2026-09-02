@@ -12,7 +12,7 @@ import {
   parseBulkAddUrlLines,
   prepareBulkAddLines,
 } from '../utils/bulkAddLinks';
-import { useEscapeToClose } from '../hooks/useEscapeToClose';
+import { LinkHealthStatusDot } from './LinkHealthStatusDot';
 import { SpaceModalHeader, EditModalTabButton } from './SpaceFormChrome';
 
 export type BulkAddLinksDialogProps = {
@@ -61,10 +61,6 @@ function getCenteredPosition(width: number, height: number) {
 function schemeBadge(url: string): string {
   const m = String(url || '').trim().match(/^([a-z][a-z0-9+.-]*):/i);
   return m ? m[1].toLowerCase() : 'url';
-}
-
-function healthDotClass(status?: string): string {
-  return linkHealthService.getHealthColor(status || 'unknown');
 }
 
 export const BulkAddLinksDialog: React.FC<BulkAddLinksDialogProps> = ({
@@ -602,8 +598,14 @@ export const BulkAddLinksDialog: React.FC<BulkAddLinksDialogProps> = ({
                             ) : row.health ? (
                               <div className="flex flex-col gap-0.5">
                                 <span className="inline-flex items-center gap-1.5 text-xs">
-                                  <span
-                                    className={`w-2 h-2 rounded-full shrink-0 ${healthDotClass(row.health.status)}`}
+                                  <LinkHealthStatusDot
+                                    status={row.health.status || 'unknown'}
+                                    health={{
+                                      httpCode: row.health.httpCode,
+                                      redirectCount: row.health.redirectCount,
+                                      finalUrl: row.health.finalUrl,
+                                    }}
+                                    linkUrl={row.url}
                                   />
                                   <span className="capitalize text-slate-700 dark:text-slate-200">
                                     {row.health.status || 'unknown'}

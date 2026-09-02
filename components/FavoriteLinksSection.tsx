@@ -29,6 +29,7 @@ import { shouldOpenInfoDialog, shouldShowLinkNotes } from '../utils/linkFeatureT
 import { LinkMaintenanceBadge } from './LinkMaintenanceBadge';
 import { LinkHoverTooltip } from './LinkHoverTooltip';
 import { InvalidUrlMark } from './UrlFormDiagnostics';
+import { LinkHealthStatusDot } from './LinkHealthStatusDot';
 import { useSettings } from '../contexts/SettingsContext';
 import { isUrlExcludedFromLinkCheck, parseExceptionsSetting } from '../services/linkCheckExceptionsService';
 import {
@@ -266,29 +267,36 @@ const SortableFavoriteLinkCard: React.FC<{
         onClick={openLink}
       >
         {(healthResult && !skipHealth) || showBrokenBadge ? (
-          <div
-            className="absolute -top-[1px] -left-[1px] w-3.5 h-3.5 z-20 pointer-events-none overflow-hidden"
-            title={healthStatusTitle}
-          >
+          showBrokenBadge ? (
             <div
-              className="absolute -top-2 -left-2 w-4 h-4 rotate-45"
-              style={{
-                backgroundColor: showBrokenBadge
-                  ? brokenTone === 'amber'
-                    ? '#f59e0b'
-                    : brokenTone === 'slate'
-                      ? '#94a3b8'
-                      : '#ef4444'
-                  : healthStatus === 'healthy' ||
-                      healthStatus === 'accessible' ||
-                      healthStatus === 'restricted'
-                    ? '#10b981'
-                    : healthStatus === 'network'
-                      ? '#94a3b8'
-                      : '#f59e0b',
+              className="absolute -top-[1px] -left-[1px] w-3.5 h-3.5 z-20 pointer-events-none overflow-hidden"
+              title={healthStatusTitle}
+            >
+              <div
+                className="absolute -top-2 -left-2 w-4 h-4 rotate-45"
+                style={{
+                  backgroundColor:
+                    brokenTone === 'amber'
+                      ? '#f59e0b'
+                      : brokenTone === 'slate'
+                        ? '#94a3b8'
+                        : '#ef4444',
+                }}
+              />
+            </div>
+          ) : (
+            <LinkHealthStatusDot
+              variant="corner"
+              status={healthStatus || 'unknown'}
+              health={{
+                httpCode: healthResult?.health?.httpCode,
+                redirectCount: healthResult?.health?.redirectCount,
+                finalUrl: healthResult?.health?.finalUrl,
               }}
+              linkUrl={link.url}
+              title={healthStatusTitle}
             />
-          </div>
+          )
         ) : null}
         <div className="flex-1 min-w-0">
           <div className="flex items-center gap-1.5 min-w-0">
@@ -364,27 +372,36 @@ const SortableFavoriteLinkCard: React.FC<{
       onClick={openLink}
     >
       {(healthResult || showBrokenBadge) && (
-        <div
-          className="absolute -top-[1px] -left-[1px] w-4 h-4 z-20 pointer-events-none overflow-hidden"
-          title={healthStatusTitle}
-        >
+        showBrokenBadge ? (
           <div
-            className="absolute -top-2 -left-2 w-5 h-5 rotate-45"
-            style={{
-              backgroundColor: showBrokenBadge
-                ? brokenTone === 'amber'
-                  ? '#f59e0b'
-                  : brokenTone === 'slate'
-                    ? '#94a3b8'
-                    : '#ef4444'
-                : healthStatus === 'healthy' || healthStatus === 'accessible' || healthStatus === 'restricted'
-                  ? '#10b981'
-                  : healthStatus === 'network'
-                    ? '#94a3b8'
-                    : '#f59e0b',
+            className="absolute -top-[1px] -left-[1px] w-4 h-4 z-20 pointer-events-none overflow-hidden"
+            title={healthStatusTitle}
+          >
+            <div
+              className="absolute -top-2 -left-2 w-5 h-5 rotate-45"
+              style={{
+                backgroundColor:
+                  brokenTone === 'amber'
+                    ? '#f59e0b'
+                    : brokenTone === 'slate'
+                      ? '#94a3b8'
+                      : '#ef4444',
+              }}
+            />
+          </div>
+        ) : (
+          <LinkHealthStatusDot
+            variant="corner"
+            status={healthStatus || 'unknown'}
+            health={{
+              httpCode: healthResult?.health?.httpCode,
+              redirectCount: healthResult?.health?.redirectCount,
+              finalUrl: healthResult?.health?.finalUrl,
             }}
+            linkUrl={link.url}
+            title={healthStatusTitle}
           />
-        </div>
+        )
       )}
 
       <div className="w-10 h-10 rounded-lg bg-gradient-to-br from-slate-50 to-slate-100 dark:from-slate-900 dark:to-slate-800 flex items-center justify-center shrink-0 text-lg border border-slate-200 dark:border-slate-700">

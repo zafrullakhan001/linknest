@@ -1,6 +1,11 @@
 import React, { createContext, useContext, useState, useEffect, useMemo, useCallback, ReactNode } from 'react';
 import { settingsService, AppSettings } from '../services/settingsService';
 import { getAppBasePath, getAppStorageScope } from '../services/apiHelpers';
+import {
+  DEFAULT_LINK_HEALTH_STATUS_COLORS,
+  linkHealthColorsToCssVars,
+  parseLinkHealthStatusColors,
+} from '../services/linkHealthColors';
 
 function brandingStorageKey(base: string): string {
   const scope = getAppStorageScope() || '__root__';
@@ -33,6 +38,8 @@ const BRANDING_HYDRATE_KEYS = [
   'disabled_tabs', 'footer_text', 'footer_font_size', 'footer_font_family', 'footer_font_weight',
   'footer_font_style', 'footer_font_color', 'footer_font_color_dark',
   'show_database_path_in_footer', 'semi_pwa_enabled',
+  'link_health_status_colors',
+  'link_health_status_shape',
 ] as const;
 
 /** Branding keys that can be live-previewed before Save Settings */
@@ -202,6 +209,8 @@ export const emptyBrandingDefaults: AppSettings = {
   footer_font_color: '',
   footer_font_color_dark: '',
   public_tile_animation: 'fade-in',
+  link_health_status_colors: '',
+  link_health_status_shape: 'circle',
 };
 
 /** Resolve browser tab title from pattern tokens. Never invents "LinkNest". */
@@ -430,6 +439,11 @@ nav.linknest-nav .linknest-brand-subheading {
   if (s.footer_font_color_dark) {
     rules.push(`.dark .linknest-footer .linknest-footer-text { color: ${s.footer_font_color_dark} !important; }`);
   }
+
+  const healthColors = parseLinkHealthStatusColors(
+    s.link_health_status_colors || DEFAULT_LINK_HEALTH_STATUS_COLORS
+  );
+  rules.push(`:root { ${linkHealthColorsToCssVars(healthColors)}; }`);
 
   el.textContent = rules.join('\n').trim();
   try {

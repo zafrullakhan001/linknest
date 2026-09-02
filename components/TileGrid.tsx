@@ -49,6 +49,7 @@ import { tryHandleVncLinkClick, isVncLinkUrl } from '../utils/vncLink';
 import { isUrlExcludedFromLinkCheck, parseExceptionsSetting } from '../services/linkCheckExceptionsService';
 import { diagnoseLinkUrl, hasBlockingUrlIssues } from '../utils/urlDiagnostics';
 import { InvalidUrlMark } from './UrlFormDiagnostics';
+import { LinkHealthStatusDot } from './LinkHealthStatusDot';
 import { isLinkInMaintenance } from '../utils/linkMaintenance';
 import { shouldOpenInfoDialog } from '../utils/linkFeatureToggles';
 import { LinkMaintenanceBadge } from './LinkMaintenanceBadge';
@@ -10091,9 +10092,6 @@ You may also wrap the array in an object: { "messages": [ ... ] }.
                         const showBroken = shouldShowBrokenStatusBadge(link, healthStatus);
                         if (!showBroken && (skipHealth || !link.health)) return null;
                         const tone = getBrokenStatusTone(link);
-                        const colorClass = showBroken
-                          ? getBrokenBadgeClassNames(tone).dot
-                          : linkHealthService.getHealthColor(link.health!.status);
                         const title = showBroken
                           ? getBrokenBadgeTitle(link, link.health?.error)
                           : `${linkHealthService.getHealthLabel(link.health!.status, link.brokenStatusLabel, {
@@ -10101,7 +10099,19 @@ You may also wrap the array in an object: { "messages": [ ... ] }.
                             })}${link.health?.error ? `: ${link.health.error}` : ''}`;
                         return (
                           <div className="shrink-0">
-                            <div className={`w-2 h-2 rounded-full ${colorClass}`} title={title} />
+                            {showBroken ? (
+                              <div
+                                className={`w-2 h-2 rounded-full ${getBrokenBadgeClassNames(tone).dot}`}
+                                title={title}
+                              />
+                            ) : (
+                              <LinkHealthStatusDot
+                                status={link.health!.status}
+                                health={link.health}
+                                linkUrl={link.url}
+                                title={title}
+                              />
+                            )}
                           </div>
                         );
                       })()}

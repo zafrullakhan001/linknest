@@ -124,6 +124,8 @@ const useHashRoute = () => {
   return route;
 };
 
+const isAdminRoute = (route: string) => route === '#/admin' || route.startsWith('#/admin/');
+
 const AppContent: React.FC = () => {
   const route = useHashRoute();
   const [tiles, setTiles] = useState<Tile[]>([]);
@@ -1162,7 +1164,7 @@ const AppContent: React.FC = () => {
   // Session cookies are HttpOnly, so a refresh can render #/admin before getCurrentUser
   // finishes. Wait for that check so admins are not bounced to the dashboard.
   useEffect(() => {
-    if (route !== '#/admin' || authLoading) return;
+    if (!isAdminRoute(route) || authLoading) return;
     if (!user?.is_admin) {
       window.location.hash = '#/';
     }
@@ -1503,7 +1505,7 @@ const AppContent: React.FC = () => {
         />
       </Suspense>
     );
-  } else if (route === '#/admin') {
+  } else if (isAdminRoute(route)) {
     if (authLoading) {
       content = <LoadingFallback />;
     } else if (user?.is_admin) {
@@ -1698,7 +1700,7 @@ const AppContent: React.FC = () => {
             <CelebrationEffects containerRef={celebrationContainerRef} styles={styles} />
           </Suspense>
         </div>
-        <main className={`flex-grow mx-auto px-4 py-8 w-full linknest-page-content relative z-10 ${route === '#/admin' ? 'max-w-admin' : 'container max-w-6xl-plus'} ${styles?.backgroundRaised && route !== '#/admin' ? 'linknest-page-background' : ''} ${!guestAccessEnabled && !isAuthenticated ? 'flex items-center justify-center' : ''}`}>
+        <main className={`flex-grow mx-auto px-4 py-8 w-full linknest-page-content relative z-10 ${isAdminRoute(route) ? 'max-w-admin' : 'container max-w-6xl-plus'} ${styles?.backgroundRaised && !isAdminRoute(route) ? 'linknest-page-background' : ''} ${!guestAccessEnabled && !isAuthenticated ? 'flex items-center justify-center' : ''}`}>
           <div className="relative min-h-0">
             {content}
           </div>

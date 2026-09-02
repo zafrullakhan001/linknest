@@ -2,6 +2,16 @@
 @tailwind components;
 @tailwind utilities;
 
+/* Default Check Links status-dot colors (overridden by Admin Settings via branding CSS) */
+:root {
+  --ln-health-online: #10b981;
+  --ln-health-redirected: #f59e0b;
+  --ln-health-unknown: #f59e0b;
+  --ln-health-broken: #ef4444;
+  --ln-health-network: #94a3b8;
+  --ln-health-checking: #3b82f6;
+}
+
 /* Suppress theme/layout transitions during bootstrap so refresh doesn't animate into place */
 html.ln-bootstrapping,
 html.ln-bootstrapping *,

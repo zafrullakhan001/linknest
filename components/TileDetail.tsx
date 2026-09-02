@@ -46,7 +46,7 @@ import { AccessRestrictionsEditor, AccessRestrictionsBadge } from './AccessRestr
 import { ShortUrlActions } from './ShortUrlActions';
 import { isEscapeDialogOpen, useEscapeToClose } from '../hooks/useEscapeToClose';
 import { SelectableRichTextEditor } from './SelectableRichTextEditor';
-import { LinkLabelField } from './LinkLabelField';
+import { LinkHealthStatusDot } from './LinkHealthStatusDot';
 import { RichTextContentItem, type RichTextContentItemHandle } from './RichTextContentItem';
 import { RichTextBoxedView } from './RichTextBoxedView';
 import {
@@ -6360,18 +6360,26 @@ export const TileDetail: React.FC<TileDetailProps> = ({
         const status = health?.status || 'unknown';
         const showBroken = shouldShowBrokenStatusBadge(link, status);
         const tone = getBrokenStatusTone(link);
-        const colorClass = showBroken
-            ? getBrokenBadgeClassNames(tone).dot
-            : linkHealthService.getHealthColor(status);
         const label = showBroken
             ? getBrokenBadgeTitle(link, health?.error)
             : `${linkHealthService.getHealthLabel(status, link.brokenStatusLabel, {
                   expected: link.brokenStatusExpected === true,
               })}${health?.error ? `: ${health.error}` : ''}`;
 
+        if (showBroken) {
+            return (
+                <div
+                    className={`w-2 h-2 rounded-full shrink-0 ${getBrokenBadgeClassNames(tone).dot}`}
+                    title={label}
+                />
+            );
+        }
+
         return (
-            <div
-                className={`w-2 h-2 rounded-full ${colorClass} shrink-0`}
+            <LinkHealthStatusDot
+                status={status}
+                health={health}
+                linkUrl={link.url}
                 title={label}
             />
         );

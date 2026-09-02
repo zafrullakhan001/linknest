@@ -190,19 +190,20 @@ class FavoriteLinkHealthService {
             case 'healthy':
             case 'accessible':
             case 'restricted':
-                return 'bg-emerald-500'; // Active / available
+                return 'bg-[var(--ln-health-online)]';
             case 'broken':
-                return 'bg-red-500';
+                return 'bg-[var(--ln-health-broken)]';
             case 'network':
-                return 'bg-slate-400';
+                return 'bg-[var(--ln-health-network)]';
+            case 'redirected':
+                return 'bg-[var(--ln-health-redirected)]';
             case 'unknown':
             case 'timeout':
-            case 'redirected':
-                return 'bg-amber-500'; // Unsure, timed out, or redirected
+                return 'bg-[var(--ln-health-unknown)]';
             case 'checking':
-                return 'bg-blue-500 animate-pulse';
+                return 'bg-[var(--ln-health-checking)] animate-pulse';
             default:
-                return 'bg-amber-500';
+                return 'bg-[var(--ln-health-unknown)]';
         }
     }
 

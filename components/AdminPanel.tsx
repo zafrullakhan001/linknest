@@ -196,7 +196,7 @@ const ADMIN_NAV_SECTIONS: Array<{
       { id: 'spaces', label: 'Spaces', emoji: '📦' },
       { id: 'visitCounter', label: 'Visit Counter', emoji: '📊' },
       { id: 'tabVisibility', label: 'Enable/Disable Tabs', emoji: '📑' },
-      { id: 'linkCheckExceptions', label: 'Link Check Exceptions', emoji: '🚫' },
+      { id: 'linkCheckExceptions', label: 'Link Check / Status Colors', emoji: '🎨' },
       { id: 'urlScanFix', label: 'Scan & Fix URLs', emoji: '🔧' },
       { id: 'tooltipSync', label: 'Sync Tooltips', emoji: '💬' },
       { id: 'iframeBlockDomains', label: 'Iframe Block Domains', emoji: '🖼️' },
@@ -234,6 +234,48 @@ const ADMIN_NAV_SECTIONS: Array<{
 ];
 
 const ADMIN_NAV_ITEMS = ADMIN_NAV_SECTIONS.flatMap((section) => section.items);
+const ADMIN_NAV_TAB_IDS = ADMIN_NAV_ITEMS.map((item) => item.id);
+
+function parseAdminTabFromHash(hash: string): AdminNavTabId | null {
+  const match = hash.match(/^#\/admin\/([^/?#]+)/);
+  const tabId = match?.[1];
+  if (tabId && ADMIN_NAV_TAB_IDS.includes(tabId as AdminNavTabId)) {
+    return tabId as AdminNavTabId;
+  }
+  return null;
+}
+
+function adminHashForTab(tabId: AdminNavTabId): string {
+  return tabId === 'pending' ? '#/admin' : `#/admin/${tabId}`;
+}
+
+function adminNavItemMatchesSearch(
+  item: { id: AdminNavTabId; label: string; emoji: string },
+  sectionLabel: string,
+  query: string
+): boolean {
+  const q = query.trim().toLowerCase();
+  if (!q) return true;
+  return (
+    item.label.toLowerCase().includes(q) ||
+    item.id.toLowerCase().includes(q) ||
+    sectionLabel.toLowerCase().includes(q)
+  );
+}
+
+function filterAdminNavSections(
+  sections: typeof ADMIN_NAV_SECTIONS,
+  query: string
+): typeof ADMIN_NAV_SECTIONS {
+  const q = query.trim().toLowerCase();
+  if (!q) return sections;
+  return sections
+    .map((section) => ({
+      ...section,
+      items: section.items.filter((item) => adminNavItemMatchesSearch(item, section.label, q)),
+    }))
+    .filter((section) => section.items.length > 0);
+}
 
 /** Shared SAML/LDAP-style sky/teal chrome for Admin content pages */
 const ADMIN_SECTION_CARD =
@@ -288,6 +330,8 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({ onUserApproved }) => {
   // Initialize activeTab from localStorage or default to 'pending'
   // Migrate legacy 'footer' tab → Settings › Branding
   const [activeTab, setActiveTab] = useState<AdminNavTabId | 'footer'>(() => {
+    const fromHash = parseAdminTabFromHash(window.location.hash);
+    if (fromHash) return fromHash;
     const savedTab = localStorage.getItem('adminPanelActiveTab');
     if (savedTab === 'footer') return 'settings';
     const validTabs: Array<AdminNavTabId | 'footer'> = [
@@ -299,14 +343,17 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({ onUserApproved }) => {
       ? (savedTab as AdminNavTabId | 'footer')
       : 'pending';
   });
-  // Initialize tab layout from localStorage or default to 'horizontal'
+  // Default to vertical so section labels (Configuration, Users, etc.) are visible.
   const [tabLayout, setTabLayout] = useState<'horizontal' | 'vertical'>(() => {
     const savedLayout = localStorage.getItem('adminPanelTabLayout');
-    return (savedLayout === 'vertical') ? 'vertical' : 'horizontal';
+    if (savedLayout === 'horizontal' || savedLayout === 'vertical') {
+      return savedLayout;
+    }
+    return 'vertical';
   });
   const [adminNavCollapsed, setAdminNavCollapsed] = useState(() => {
     const saved = localStorage.getItem('adminPanelNavCollapsed');
-    return saved !== '0';
+    return saved === '1';
   });
   const [pendingUsers, setPendingUsers] = useState<PendingUser[]>([]);
   const [allUsers, setAllUsers] = useState<AllUser[]>([]);
@@ -341,6 +388,8 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({ onUserApproved }) => {
   const [ldapDirectoryExpanded, setLdapDirectoryExpanded] = useState(false);
   const [autoDetecting, setAutoDetecting] = useState(false);
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
+  const [adminNavSearch, setAdminNavSearch] = useState('');
+  const adminNavSearchRef = useRef<HTMLInputElement>(null);
 
   // Settings state
   const [settings, setSettings] = useState<AppSettings>({
@@ -1582,6 +1631,29 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({ onUserApproved }) => {
     showBulkAssignModal
   ]);
 
+  const selectAdminTab = (tabId: AdminNavTabId) => {
+    setActiveTab(tabId);
+    localStorage.setItem('adminPanelActiveTab', tabId);
+    const nextHash = adminHashForTab(tabId);
+    if (window.location.hash !== nextHash) {
+      window.location.hash = nextHash;
+    }
+  };
+
+  // Deep links like #/admin/linkCheckExceptions
+  useEffect(() => {
+    const syncFromHash = () => {
+      const fromHash = parseAdminTabFromHash(window.location.hash);
+      if (fromHash) {
+        setActiveTab(fromHash);
+        localStorage.setItem('adminPanelActiveTab', fromHash);
+      }
+    };
+    syncFromHash();
+    window.addEventListener('hashchange', syncFromHash);
+    return () => window.removeEventListener('hashchange', syncFromHash);
+  }, []);
+
   // Persist tabLayout to localStorage whenever it changes
   useEffect(() => {
     localStorage.setItem('adminPanelTabLayout', tabLayout);
@@ -1592,6 +1664,29 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({ onUserApproved }) => {
   }, [adminNavCollapsed]);
 
   const disabledTabs = useMemo<Set<AppTabId>>(() => getDisabledTabsFromSettings(settings), [settings.disabled_tabs]);
+
+  const filteredAdminNavSections = useMemo(
+    () => filterAdminNavSections(ADMIN_NAV_SECTIONS, adminNavSearch),
+    [adminNavSearch]
+  );
+
+  useEffect(() => {
+    if (adminNavSearch.trim() && adminNavCollapsed && tabLayout === 'vertical' && !isMobile) {
+      setAdminNavCollapsed(false);
+    }
+  }, [adminNavSearch, adminNavCollapsed, tabLayout, isMobile]);
+
+  useEffect(() => {
+    const onKeyDown = (event: KeyboardEvent) => {
+      if ((event.ctrlKey || event.metaKey) && event.key.toLowerCase() === 'k') {
+        event.preventDefault();
+        adminNavSearchRef.current?.focus();
+        adminNavSearchRef.current?.select();
+      }
+    };
+    window.addEventListener('keydown', onKeyDown);
+    return () => window.removeEventListener('keydown', onKeyDown);
+  }, []);
 
   const setTabDisabled = (tabId: AppTabId, disabled: boolean) => {
     const next = new Set<AppTabId>(disabledTabs as Set<AppTabId>);
@@ -4370,7 +4465,42 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({ onUserApproved }) => {
             </button>
           )}
         </div>
-        <div className={`flex items-center ${isMobile ? 'w-full justify-between' : 'gap-2'}`}>
+        {!isMobile && (
+          <div className="relative flex-1 max-w-md mx-4 min-w-[12rem]">
+            <svg
+              xmlns="http://www.w3.org/2000/svg"
+              viewBox="0 0 20 20"
+              fill="currentColor"
+              className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-slate-400"
+              aria-hidden="true"
+            >
+              <path fillRule="evenodd" d="M9 3.5a5.5 5.5 0 100 11 5.5 5.5 0 000-11zM2 9a7 7 0 1112.452 4.391l3.328 3.329a.75.75 0 11-1.06 1.06l-3.329-3.328A7 7 0 012 9z" clipRule="evenodd" />
+            </svg>
+            <input
+              ref={adminNavSearchRef}
+              type="search"
+              value={adminNavSearch}
+              onChange={(e) => setAdminNavSearch(e.target.value)}
+              placeholder="Search admin menu…"
+              aria-label="Search admin menu"
+              className="w-full rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900 py-2 pl-9 pr-16 text-sm text-slate-900 dark:text-white placeholder:text-slate-400 focus:outline-none focus:ring-2 focus:ring-brand-500/40 focus:border-brand-400"
+            />
+            <span className="pointer-events-none absolute right-3 top-1/2 -translate-y-1/2 hidden sm:inline text-[10px] font-medium text-slate-400 dark:text-slate-500">
+              Ctrl+K
+            </span>
+            {adminNavSearch && (
+              <button
+                type="button"
+                onClick={() => setAdminNavSearch('')}
+                className="absolute right-12 top-1/2 -translate-y-1/2 rounded p-0.5 text-slate-400 hover:text-slate-600 dark:hover:text-slate-200"
+                aria-label="Clear search"
+              >
+                ×
+              </button>
+            )}
+          </div>
+        )}
+        <div className={`flex items-center ${isMobile ? 'w-full justify-between' : 'gap-2 shrink-0'}`}>
           {/* Hide horizontal/vertical toggle on mobile */}
           {!isMobile && (
             <button
@@ -4403,6 +4533,40 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({ onUserApproved }) => {
           </button>
         </div>
       </div>
+
+      {isMobile && (
+        <div className="relative">
+          <svg
+            xmlns="http://www.w3.org/2000/svg"
+            viewBox="0 0 20 20"
+            fill="currentColor"
+            className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-slate-400"
+            aria-hidden="true"
+          >
+            <path fillRule="evenodd" d="M9 3.5a5.5 5.5 0 100 11 5.5 5.5 0 000-11zM2 9a7 7 0 1112.452 4.391l3.328 3.329a.75.75 0 11-1.06 1.06l-3.329-3.328A7 7 0 012 9z" clipRule="evenodd" />
+          </svg>
+          <input
+            ref={adminNavSearchRef}
+            type="search"
+            value={adminNavSearch}
+            onChange={(e) => setAdminNavSearch(e.target.value)}
+            placeholder="Search admin menu…"
+            aria-label="Search admin menu"
+            className="w-full rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900 py-2.5 pl-9 pr-9 text-sm text-slate-900 dark:text-white placeholder:text-slate-400 focus:outline-none focus:ring-2 focus:ring-brand-500/40 focus:border-brand-400 touch-manipulation"
+            style={{ minHeight: '44px' }}
+          />
+          {adminNavSearch && (
+            <button
+              type="button"
+              onClick={() => setAdminNavSearch('')}
+              className="absolute right-3 top-1/2 -translate-y-1/2 rounded p-1 text-slate-400 hover:text-slate-600 dark:hover:text-slate-200 touch-manipulation"
+              aria-label="Clear search"
+            >
+              ×
+            </button>
+          )}
+        </div>
+      )}
 
       {/* Mobile Menu Overlay */}
       {isMobile && mobileMenuOpen && (
@@ -4452,7 +4616,11 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({ onUserApproved }) => {
                   <span>Home</span>
                 </button>
 
-                {ADMIN_NAV_SECTIONS.map((section) => (
+                {filteredAdminNavSections.length === 0 ? (
+                  <p className="px-3 py-4 text-sm text-slate-500 dark:text-slate-400">
+                    No menu items match &ldquo;{adminNavSearch.trim()}&rdquo;
+                  </p>
+                ) : filteredAdminNavSections.map((section) => (
                   <div key={section.label} className="mt-2">
                     <p className="px-3 pt-2 pb-1 text-[10px] font-semibold uppercase tracking-wider text-slate-400 dark:text-slate-500">
                       {section.label}
@@ -4464,7 +4632,7 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({ onUserApproved }) => {
                           <button
                             key={item.id}
                             onClick={() => {
-                              setActiveTab(item.id);
+                              selectAdminTab(item.id);
                               setMobileMenuOpen(false);
                             }}
                             className={`px-3 py-2.5 text-sm font-medium transition-all rounded-xl text-left touch-manipulation flex items-center gap-3 ${isActive
@@ -4498,28 +4666,39 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({ onUserApproved }) => {
             </div>
           </>
         ) : tabLayout === 'horizontal' ? (
-          <div className="flex gap-1.5 border-b border-slate-200 dark:border-slate-700 overflow-x-auto pb-px scrollbar-thin">
-            {ADMIN_NAV_ITEMS.map((item) => {
-              const isActive = activeTab === item.id;
-              return (
-                <button
-                  key={item.id}
-                  onClick={() => setActiveTab(item.id)}
-                  className={`px-3.5 py-2 text-sm font-medium transition-colors border-b-2 whitespace-nowrap flex items-center gap-1.5 ${isActive
-                    ? 'border-brand-500 text-brand-600 dark:text-brand-400'
-                    : 'border-transparent text-slate-500 dark:text-slate-400 hover:text-slate-700 dark:hover:text-slate-300'
-                    }`}
-                >
-                  <span className="text-sm leading-none" aria-hidden="true">{item.emoji}</span>
-                  <span>{item.label}</span>
-                  {item.id === 'pending' && pendingUsers.length > 0 && (
-                    <span className="ml-1 px-2 py-0.5 rounded-full bg-brand-100 dark:bg-brand-500/20 text-brand-600 dark:text-brand-400 text-xs font-semibold">
-                      {pendingUsers.length}
-                    </span>
-                  )}
-                </button>
-              );
-            })}
+          <div className="flex gap-3 border-b border-slate-200 dark:border-slate-700 overflow-x-auto pb-px scrollbar-thin">
+            {filteredAdminNavSections.length === 0 ? (
+              <p className="px-2 py-3 text-sm text-slate-500 dark:text-slate-400 whitespace-nowrap">
+                No menu items match &ldquo;{adminNavSearch.trim()}&rdquo;
+              </p>
+            ) : filteredAdminNavSections.map((section) => (
+              <div key={section.label} className="flex items-center gap-1.5 shrink-0 pr-3 border-r border-slate-200/80 dark:border-slate-700/80 last:border-r-0 last:pr-0">
+                <span className="px-1 text-[10px] font-semibold uppercase tracking-wider text-slate-400 dark:text-slate-500 whitespace-nowrap">
+                  {section.label}
+                </span>
+                {section.items.map((item) => {
+                  const isActive = activeTab === item.id;
+                  return (
+                    <button
+                      key={item.id}
+                      onClick={() => selectAdminTab(item.id)}
+                      className={`px-3.5 py-2 text-sm font-medium transition-colors border-b-2 whitespace-nowrap flex items-center gap-1.5 ${isActive
+                        ? 'border-brand-500 text-brand-600 dark:text-brand-400'
+                        : 'border-transparent text-slate-500 dark:text-slate-400 hover:text-slate-700 dark:hover:text-slate-300'
+                        }`}
+                    >
+                      <span className="text-sm leading-none" aria-hidden="true">{item.emoji}</span>
+                      <span>{item.label}</span>
+                      {item.id === 'pending' && pendingUsers.length > 0 && (
+                        <span className="ml-1 px-2 py-0.5 rounded-full bg-brand-100 dark:bg-brand-500/20 text-brand-600 dark:text-brand-400 text-xs font-semibold">
+                          {pendingUsers.length}
+                        </span>
+                      )}
+                    </button>
+                  );
+                })}
+              </div>
+            ))}
           </div>
         ) : (
           <div
@@ -4560,7 +4739,11 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({ onUserApproved }) => {
             )}
 
             <div className={`flex-1 min-h-0 overflow-y-auto admin-nav-scrollbar ${adminNavCollapsed ? 'px-0.5 py-0.5' : 'px-1.5 py-0.5'}`}>
-              {ADMIN_NAV_SECTIONS.map((section, sectionIndex) => (
+              {filteredAdminNavSections.length === 0 ? (
+                <p className={`px-2 py-4 text-xs text-slate-500 dark:text-slate-400 ${adminNavCollapsed ? 'text-center' : ''}`}>
+                  {adminNavCollapsed ? 'No matches' : `No menu items match “${adminNavSearch.trim()}”`}
+                </p>
+              ) : filteredAdminNavSections.map((section, sectionIndex) => (
                 <div key={section.label} className={adminNavCollapsed ? 'mb-1.5 last:mb-0' : 'mb-2 last:mb-0'}>
                   {adminNavCollapsed ? (
                     sectionIndex > 0 ? (
@@ -4579,7 +4762,7 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({ onUserApproved }) => {
                         <button
                           key={item.id}
                           type="button"
-                          onClick={() => setActiveTab(item.id)}
+                          onClick={() => selectAdminTab(item.id)}
                           title={adminNavCollapsed ? (pendingCount > 0 ? `${item.label} (${pendingCount})` : item.label) : undefined}
                           aria-label={item.label}
                           className={`${

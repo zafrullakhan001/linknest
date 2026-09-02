@@ -1,5 +1,12 @@
 import { LinkHealth } from '../types';
 import { resolveApiBase } from './apiHelpers';
+import {
+  type LinkHealthColorContext,
+  linkHealthIndicatorDotClassName,
+  resolveLinkHealthColorCss,
+  resolveLinkHealthColorHex,
+  resolveLinkHealthDotStyle,
+} from './linkHealthColors';
 
 function healthApi(path: string): string {
   const base = resolveApiBase().replace(/\/$/, '');
@@ -347,27 +354,68 @@ export const linkHealthService = {
   },
 
   /**
-   * Get health indicator color class
+   * Get health indicator color class (uses CSS vars from Settings when set).
    */
   getHealthColor(status: string): string {
     switch (status) {
       case 'healthy':
       case 'accessible':
       case 'restricted':
-        return 'bg-emerald-500'; // Active / available
+        return 'bg-[var(--ln-health-online)]';
       case 'broken':
-        return 'bg-red-500';
+        return 'bg-[var(--ln-health-broken)]';
       case 'network':
-        return 'bg-slate-400';
+        return 'bg-[var(--ln-health-network)]';
+      case 'redirected':
+        return 'bg-[var(--ln-health-redirected)]';
       case 'unknown':
       case 'timeout':
-      case 'redirected':
-        return 'bg-amber-500'; // Unsure, timed out, or redirected
+        return 'bg-[var(--ln-health-unknown)]';
       case 'checking':
-        return 'bg-blue-500 animate-pulse';
+        return 'bg-[var(--ln-health-checking)] animate-pulse';
       default:
-        return 'bg-amber-500';
+        return 'bg-[var(--ln-health-unknown)]';
     }
+  },
+
+  /** Color for inline styles (shark fins, guest bookmarks). Uses saved settings when provided. */
+  getHealthColorHex(
+    status: string,
+    colorsSetting?: string | null,
+    health?: LinkHealthColorContext | null,
+    linkUrl?: string | null
+  ): string {
+    return resolveLinkHealthColorCss(status, colorsSetting, health, linkUrl);
+  },
+
+  /** Inline background color + optional pulse class for status dots. */
+  getHealthDotStyle(
+    status: string,
+    options?: {
+      colorsSetting?: string | null;
+      health?: LinkHealthColorContext | null;
+      linkUrl?: string | null;
+      shapeSetting?: string | null;
+      size?: 'xs' | 'sm' | 'md';
+    }
+  ): { backgroundColor: string; className: string } {
+    const resolved = resolveLinkHealthDotStyle(
+      status,
+      options?.colorsSetting,
+      options?.health,
+      options?.linkUrl,
+      options?.shapeSetting
+    );
+    if (options?.size && options.size !== 'sm') {
+      return {
+        ...resolved,
+        className: linkHealthIndicatorDotClassName(options?.shapeSetting, {
+          size: options.size,
+          pulsing: status === 'checking',
+        }),
+      };
+    }
+    return resolved;
   },
 
   /**

@@ -73,6 +73,7 @@ import {
   getTileDecorationClass
 } from './TileAnimationSelector';
 import { TitleEmojiPicker } from './TitleEmojiPicker';
+import { LinkHealthStatusDot } from './LinkHealthStatusDot';
 import { linkHealthService, isLikelyClientNetworkError, isNetworkHealthStatus, networkHealthResult } from '../services/linkHealthService';
 import {
   requestBookmarksFromBrowserExtension,
@@ -1443,22 +1444,6 @@ export const PublicBookmarksPanel: React.FC<PublicBookmarksPanelProps> = ({
     const otherSpaces = data.categories.filter((c) => c.id !== cat.id);
     const healthStatus = link.healthStatus || '';
     const isBroken = isRemovableBrokenBookmarkHealth(healthStatus);
-    const healthColor =
-      healthStatus === 'healthy' ||
-      healthStatus === 'accessible' ||
-      healthStatus === 'restricted'
-        ? '#10b981'
-        : healthStatus === 'broken'
-          ? '#ef4444'
-          : healthStatus === 'network'
-            ? '#94a3b8'
-            : healthStatus === 'timeout' ||
-              healthStatus === 'redirected' ||
-              healthStatus === 'unknown'
-            ? '#f59e0b'
-            : healthStatus
-              ? '#94a3b8'
-              : '#cbd5e1';
     const healthTitle = healthStatus
       ? `${linkHealthService.getHealthLabel(healthStatus)}${
           link.healthHttpCode ? ` (HTTP ${link.healthHttpCode})` : ''
@@ -1479,11 +1464,15 @@ export const PublicBookmarksPanel: React.FC<PublicBookmarksPanelProps> = ({
           onClick={() => handleOpenLink(cat, link)}
           title={link.url}
         >
-          <span
-            className="w-1.5 h-1.5 rounded-full shrink-0"
-            style={{ backgroundColor: healthColor }}
-            title={healthTitle}
-          />
+          {healthStatus ? (
+            <LinkHealthStatusDot
+              status={healthStatus}
+              health={{ httpCode: link.healthHttpCode }}
+              linkUrl={link.url}
+              title={healthTitle}
+              size="xs"
+            />
+          ) : null}
           <div className="w-5 h-5 rounded overflow-hidden shrink-0 bg-slate-100 dark:bg-slate-800 border border-slate-200/80 dark:border-slate-700 flex items-center justify-center">
             <FaviconImg url={link.url} className="w-full h-full object-contain p-0.5" />
           </div>
@@ -1586,13 +1575,15 @@ export const PublicBookmarksPanel: React.FC<PublicBookmarksPanelProps> = ({
         style={{ animationDelay: `${animationDelay}ms` }}
         onClick={() => handleOpenLink(cat, link)}
       >
-        {healthStatus && (
-          <div
-            className="absolute top-0 right-0 w-0 h-0 border-t-[18px] border-l-[18px] border-l-transparent z-10"
-            style={{ borderTopColor: healthColor }}
+        {healthStatus ? (
+          <LinkHealthStatusDot
+            status={healthStatus}
+            health={{ httpCode: link.healthHttpCode }}
+            linkUrl={link.url}
             title={healthTitle}
+            className="absolute top-1.5 right-1.5 z-10"
           />
-        )}
+        ) : null}
         <div className="w-10 h-10 rounded-lg bg-gradient-to-br from-slate-50 to-slate-100 dark:from-slate-900 dark:to-slate-800 flex items-center justify-center shrink-0 border border-slate-200 dark:border-slate-700 overflow-hidden">
           <FaviconImg url={link.url} />
         </div>

@@ -152,6 +152,13 @@ export interface AppSettings {
   device_quick_presets?: string;
   /** JSON string array of URL/host patterns skipped by Check Links */
   link_check_exceptions?: string;
+  /**
+   * JSON object of Check Links status-dot colors:
+   * { online, redirected, unknown, broken, network, checking } as #rrggbb hex.
+   */
+  link_health_status_colors?: string;
+  /** Check Links status marker shape: circle | square | rounded | diamond */
+  link_health_status_shape?: string;
   /** JSON string array of hosts that skip in-app mobile preview (iframe blocked) */
   iframe_block_domains?: string;
 
@@ -400,6 +407,8 @@ export const settingsService = {
       device_presets: data.settings?.device_presets || '',
       device_quick_presets: data.settings?.device_quick_presets || '',
       link_check_exceptions: data.settings?.link_check_exceptions || '[]',
+      link_health_status_colors: data.settings?.link_health_status_colors || '',
+      link_health_status_shape: data.settings?.link_health_status_shape || 'circle',
       iframe_block_domains: data.settings?.iframe_block_domains || '[]',
 
       // LDAP defaults

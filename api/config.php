@@ -179,6 +179,8 @@ function ensureLocalRegistrationSetting(PDO $db): void {
         $stmt->execute(['login_allowlist_enabled', '0', $now]);
         $stmt->execute(['login_allowed_user_ids', '[]', $now]);
         $stmt->execute(['login_allowed_ldap_groups', '', $now]);
+        $stmt->execute(['link_health_status_colors', '{"online":"#10b981","redirected":"#f59e0b","unknown":"#f59e0b","broken":"#ef4444","network":"#94a3b8","checking":"#3b82f6"}', $now]);
+        $stmt->execute(['link_health_status_shape', 'circle', $now]);
     } catch (PDOException $e) {
         // Table may not exist yet during first bootstrap
     }
@@ -4201,6 +4203,8 @@ function initDatabase() {
             ['login_allowlist_enabled', '0', time()],
             ['login_allowed_user_ids', '[]', time()],
             ['login_allowed_ldap_groups', '', time()],
+            ['link_health_status_colors', '{"online":"#10b981","redirected":"#f59e0b","unknown":"#f59e0b","broken":"#ef4444","network":"#94a3b8","checking":"#3b82f6"}', time()],
+            ['link_health_status_shape', 'circle', time()],
         ];
         
         foreach ($defaultSettings as $setting) {

@@ -108,6 +108,67 @@ function normalizeLogoUrl($url) {
 }
 
 /**
+ * Normalize Check Links status-dot colors JSON.
+ * @return string JSON object with online/redirected/unknown/broken/network/checking hex colors
+ */
+function normalizeLinkHealthStatusColorsSetting($value) {
+    $defaults = [
+        'online' => '#10b981',
+        'redirected' => '#f59e0b',
+        'unknown' => '#f59e0b',
+        'broken' => '#ef4444',
+        'network' => '#94a3b8',
+        'checking' => '#3b82f6',
+    ];
+
+    $decoded = null;
+    if (is_array($value)) {
+        $decoded = $value;
+    } elseif (is_string($value)) {
+        $trimmed = trim($value);
+        if ($trimmed === '') {
+            return json_encode($defaults);
+        }
+        $decoded = json_decode($trimmed, true);
+        if (!is_array($decoded)) {
+            sendJSON(['error' => 'link_health_status_colors must be a JSON object'], 400);
+        }
+    } else {
+        return json_encode($defaults);
+    }
+
+    $out = $defaults;
+    foreach ($defaults as $key => $fallback) {
+        if (!array_key_exists($key, $decoded)) {
+            continue;
+        }
+        $raw = is_string($decoded[$key]) ? trim($decoded[$key]) : '';
+        if ($raw === '') {
+            continue;
+        }
+        if (!preg_match('/^#([0-9a-fA-F]{3}|[0-9a-fA-F]{6})$/', $raw)) {
+            sendJSON(['error' => "link_health_status_colors.{$key} must be a #rgb or #rrggbb hex color"], 400);
+        }
+        if (strlen($raw) === 4) {
+            $raw = '#' . $raw[1] . $raw[1] . $raw[2] . $raw[2] . $raw[3] . $raw[3];
+        }
+        $out[$key] = strtolower($raw);
+    }
+
+    return json_encode($out);
+}
+
+/**
+ * Normalize Check Links status-marker shape.
+ * @return string circle | square | rounded | diamond
+ */
+function normalizeLinkHealthStatusShapeSetting($value) {
+    $allowed = ['circle', 'square', 'rounded', 'diamond'];
+    $shape = is_string($value) ? strtolower(trim($value)) : '';
+    return in_array($shape, $allowed, true) ? $shape : 'circle';
+}
+
+/**
  * Normalize / validate link-check exception patterns (URLs / hosts skipped by health checks).
  * @return string JSON array string (never empty object — uses "[]")
  */
@@ -880,6 +941,8 @@ function handleUpdateSettings() {
                 'disabled_tabs',
                 'device_presets', 'device_quick_presets',
                 'link_check_exceptions',
+                'link_health_status_colors',
+                'link_health_status_shape',
                 'iframe_block_domains',
                 'maintenance_enabled', 'maintenance_message', 'semi_pwa_enabled', 'semi_pwa_include_paths', 'semi_pwa_exclude_paths',
                 'ldap_enabled', 'ldap_server', 'ldap_port', 'ldap_protocol', 'ldap_base_dn',
@@ -1224,6 +1287,14 @@ function handleUpdateSettings() {
 
             if ($key === 'link_check_exceptions') {
                 $value = normalizeLinkCheckExceptionsSetting($value);
+            }
+
+            if ($key === 'link_health_status_colors') {
+                $value = normalizeLinkHealthStatusColorsSetting($value);
+            }
+
+            if ($key === 'link_health_status_shape') {
+                $value = normalizeLinkHealthStatusShapeSetting($value);
             }
 
             if ($key === 'iframe_block_domains') {
