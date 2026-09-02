@@ -6,6 +6,7 @@ import { SecurePasswordInput } from './SecurePasswordInput';
 import { PasswordCriteriaList } from './PasswordCriteriaList';
 import { validatePassword } from '../services/passwordValidation';
 import { authService } from '../services/authService';
+import { useTileAnimation, getTileAnimationClass } from './TileAnimationSelector';
 
 interface AuthModalProps {
   isOpen: boolean;
@@ -140,6 +141,9 @@ export const AuthModal: React.FC<AuthModalProps> = ({ isOpen, onClose, initialMo
 
   const { login, register } = useAuth();
   const { settings: appSettings, loading: settingsLoading } = useSettings();
+  const { animation: tileAnimation } = useTileAnimation();
+  const tileAnimationClass = getTileAnimationClass(tileAnimation);
+  const tileAnimatedClass = tileAnimationClass ? 'linknest-tile-animated' : '';
   const localRegistrationEnabled =
     String(appSettings.local_auth_enabled || '1') === '1' &&
     String(appSettings.local_registration_enabled || '1') === '1';
@@ -626,7 +630,7 @@ export const AuthModal: React.FC<AuthModalProps> = ({ isOpen, onClose, initialMo
         onClick={onClose}
         aria-hidden
       />
-      <div className="auth-modal-panel relative w-full max-w-md sm:max-w-2xl max-h-[95vh] overflow-y-auto scrollbar-hide rounded-2xl sm:rounded-3xl border border-white/40 dark:border-slate-600/60 shadow-2xl shadow-brand-900/20 bg-white dark:bg-slate-800">
+      <div className={`auth-modal-panel relative w-full max-w-md sm:max-w-2xl max-h-[95vh] overflow-y-auto scrollbar-hide rounded-2xl sm:rounded-3xl border border-white/40 dark:border-slate-600/60 shadow-2xl shadow-brand-900/20 bg-white dark:bg-slate-800 ${tileAnimatedClass} ${tileAnimationClass}`.trim()}>
         {/* Soft faded brand wash — short height, fades quickly into the card */}
         <div className="auth-modal-wash pointer-events-none absolute inset-x-0 top-0 h-16 sm:h-20 overflow-hidden rounded-t-2xl sm:rounded-t-3xl">
           <div className="absolute inset-0 bg-gradient-to-b from-brand-400/45 via-brand-300/20 to-transparent dark:from-brand-500/35 dark:via-brand-600/15 dark:to-transparent" />

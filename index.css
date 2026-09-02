@@ -156,8 +156,14 @@ html:not(.ln-branding-ready) nav.linknest-nav {
   animation: authBackdropIn 0.25s ease-out;
 }
 
-.auth-modal-panel {
+.auth-modal-panel:not([class*="tile-anim-"]) {
   animation: authModalIn 0.35s cubic-bezier(0.22, 1, 0.36, 1);
+}
+
+/* Tile entrance animations set overflow:hidden; keep the sign-in card scrollable. */
+.auth-modal-panel.linknest-tile-animated {
+  overflow-x: hidden;
+  overflow-y: auto;
 }
 
 .auth-modal-logo {
@@ -196,6 +202,10 @@ html:not(.ln-branding-ready) nav.linknest-nav {
   .auth-method-card-selected,
   .auth-status-live {
     animation: none !important;
+  }
+
+  .auth-modal-panel.linknest-tile-animated {
+    opacity: 1;
   }
 }
 
