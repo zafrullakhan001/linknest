@@ -240,6 +240,7 @@ export const SpaceViewHeaderActions: React.FC<SpaceViewHeaderActionsProps> = ({
           {canEdit && (
             <SpaceHeaderIconButton
               title={shortUrlTitle}
+              label="Short"
               active={showShortUrls}
               onClick={() => {
                 void persistShowShortUrls(!showShortUrls);
@@ -250,7 +251,7 @@ export const SpaceViewHeaderActions: React.FC<SpaceViewHeaderActionsProps> = ({
           )}
           {canEdit && (
             <div className="relative flex items-end">
-              <SpaceHeaderIconButton title={animTitle} onClick={() => setPageAnimOpen(!pageAnimOpen)}>
+              <SpaceHeaderIconButton title={animTitle} label="Anim" onClick={() => setPageAnimOpen(!pageAnimOpen)}>
                 <span className="text-base leading-none" aria-hidden="true">{animOption.icon}</span>
               </SpaceHeaderIconButton>
               <TileAnimationSelector
@@ -268,75 +269,76 @@ export const SpaceViewHeaderActions: React.FC<SpaceViewHeaderActionsProps> = ({
               />
             </div>
           )}
-          <SpaceHeaderIconButton title={favoriteTitle} active={isFavorited} onClick={() => void handleFavorite()}>
+          <SpaceHeaderIconButton title={favoriteTitle} label="Fav" active={isFavorited} onClick={() => void handleFavorite()}>
             {HeaderIcons.favorite(isFavorited)}
           </SpaceHeaderIconButton>
           {canInfo && (
-            <SpaceHeaderIconButton title="Show tile information" onClick={() => setShowInfo(true)}>
+            <SpaceHeaderIconButton title="Show tile information" label="Info" onClick={() => setShowInfo(true)}>
               {HeaderIcons.info}
             </SpaceHeaderIconButton>
           )}
           <SpaceHeaderIconButton
             title={checkingHealth ? 'Checking links…' : 'Check all links in this tile'}
+            label={checkingHealth ? 'Wait' : 'Check'}
             disabled={checkingHealth}
             onClick={(e) => onCheckLinks(e)}
           >
             {checkingHealth ? HeaderIcons.spinner : HeaderIcons.checkLinks}
           </SpaceHeaderIconButton>
           {canEdit && canEditTile && (
-            <SpaceHeaderIconButton title="Compare & merge with another space" onClick={onCompare}>
+            <SpaceHeaderIconButton title="Compare & merge with another space" label="Merge" onClick={onCompare}>
               {HeaderIcons.compare}
             </SpaceHeaderIconButton>
           )}
-          <SpaceHeaderIconButton title="Export this space as JSON" onClick={() => void exportTileToFileAsync(tile)}>
+          <SpaceHeaderIconButton title="Export this space as JSON" label="Export" onClick={() => void exportTileToFileAsync(tile)}>
             {HeaderIcons.export}
           </SpaceHeaderIconButton>
           {canEdit && (
-            <SpaceHeaderIconButton title="AI space analysis" onClick={() => setShowAi(true)}>
+            <SpaceHeaderIconButton title="AI space analysis" label="AI" onClick={() => setShowAi(true)}>
               {HeaderIcons.ai}
             </SpaceHeaderIconButton>
           )}
           {canShare && (
-            <SpaceHeaderIconButton title="Share with user" onClick={() => setShowShare(true)}>
+            <SpaceHeaderIconButton title="Share with user" label="Share" onClick={() => setShowShare(true)}>
               {HeaderIcons.share}
             </SpaceHeaderIconButton>
           )}
           {isAuthenticated && canEdit && (
-            <SpaceHeaderIconButton title="Edit" onClick={onEdit}>
+            <SpaceHeaderIconButton title="Edit" label="Edit" onClick={onEdit}>
               {HeaderIcons.edit}
             </SpaceHeaderIconButton>
           )}
           {isAuthenticated && canEdit && canClone && (
-            <SpaceHeaderIconButton title="Clone this space" onClick={() => void handleClone()}>
+            <SpaceHeaderIconButton title="Clone this space" label="Clone" onClick={() => void handleClone()}>
               {HeaderIcons.clone}
             </SpaceHeaderIconButton>
           )}
           {canDelete && (
-            <SpaceHeaderIconButton title="Archive" onClick={() => void handleArchive()}>
+            <SpaceHeaderIconButton title="Archive" label="Archive" onClick={() => void handleArchive()}>
               {HeaderIcons.archive}
             </SpaceHeaderIconButton>
           )}
           {canDelete && (
-            <SpaceHeaderIconButton title="Delete" onClick={() => void handleDelete()}>
+            <SpaceHeaderIconButton title="Delete" label="Delete" onClick={() => void handleDelete()}>
               {HeaderIcons.trash}
             </SpaceHeaderIconButton>
           )}
           {tile.sharedWithMeInvitationId && isAuthenticated && (
-            <SpaceHeaderIconButton title="Remove from my Private tab" onClick={() => void handleRemoveShared()}>
+            <SpaceHeaderIconButton title="Remove from my Private tab" label="Remove" onClick={() => void handleRemoveShared()}>
               {HeaderIcons.close}
             </SpaceHeaderIconButton>
           )}
           {(sourceTab === 'public' || sourceTab === null) && user?.is_admin && (
-            <SpaceHeaderIconButton title="Move to Staging tab" onClick={() => void handleMoveTab('staging')}>
+            <SpaceHeaderIconButton title="Move to Staging tab" label="Stage" onClick={() => void handleMoveTab('staging')}>
               {HeaderIcons.plus}
             </SpaceHeaderIconButton>
           )}
           {sourceTab === 'staging' && user?.is_admin && (
-            <SpaceHeaderIconButton title="Move to Public tab" onClick={() => void handleMoveTab('public')}>
+            <SpaceHeaderIconButton title="Move to Public tab" label="Public" onClick={() => void handleMoveTab('public')}>
               {HeaderIcons.plus}
             </SpaceHeaderIconButton>
           )}
-          <SpaceHeaderIconButton title="Back to Dashboard (Esc)" onClick={onBack}>
+          <SpaceHeaderIconButton title="Back to Dashboard (Esc)" label="Back" onClick={onBack}>
             {HeaderIcons.back}
           </SpaceHeaderIconButton>
         </SpaceHeaderDock>

@@ -1,4 +1,4 @@
-import React, { useEffect, useId, useLayoutEffect, useRef, useState } from 'react';
+import React, { useLayoutEffect, useRef, useState } from 'react';
 import { dockScaleFor, useSpaceHeaderDock } from './SpaceHeaderDock';
 
 const HEADER_BTN =
@@ -8,27 +8,26 @@ const HEADER_BTN_ACTIVE =
 const DRAWER_BTN =
   'w-full px-3 py-3 text-left text-sm font-medium text-slate-700 dark:text-slate-200 hover:bg-slate-50 dark:hover:bg-slate-800 rounded-lg flex items-center gap-3 disabled:opacity-50';
 
+function faceLabelFrom(title: string, label?: string): string {
+  if (label) return label;
+  return title.split(/\s+/)[0] || title;
+}
+
 export const SpaceHeaderIconButton: React.FC<{
   title: string;
+  label?: string;
   onClick?: (e: React.MouseEvent<HTMLButtonElement>) => void;
   disabled?: boolean;
   active?: boolean;
   className?: string;
   children: React.ReactNode;
-}> = ({ title, onClick, disabled, active, className, children }) => {
+}> = ({ title, label, onClick, disabled, active, className, children }) => {
   const dock = useSpaceHeaderDock();
-  const dockId = useId();
   const wrapRef = useRef<HTMLSpanElement>(null);
   const [scale, setScale] = useState(1);
-
-  useEffect(() => {
-    if (!dock) return;
-    return dock.register({
-      id: dockId,
-      title,
-      getRect: () => wrapRef.current?.getBoundingClientRect() ?? null,
-    });
-  }, [dock, dockId, title]);
+  const liftActive = !!dock && scale > 1.01;
+  const faceLabel = faceLabelFrom(title, label);
+  const showFaceLabel = !!dock;
 
   useLayoutEffect(() => {
     if (!dock) {
@@ -55,7 +54,9 @@ export const SpaceHeaderIconButton: React.FC<{
       type="button"
       onClick={onClick}
       disabled={disabled}
-      className={`${active ? HEADER_BTN_ACTIVE : HEADER_BTN} ${className || ''}`}
+      className={`${active ? HEADER_BTN_ACTIVE : HEADER_BTN} ${className || ''} ${
+        dock ? 'relative overflow-hidden' : ''
+      }`}
       title={dock ? undefined : title}
       aria-label={title}
       aria-pressed={active ? true : undefined}
@@ -72,23 +73,23 @@ export const SpaceHeaderIconButton: React.FC<{
       style={
         dock
           ? {
-              transform: `translate3d(0, ${-((scale - 1) * 10)}px, 0) scale(${scale})`,
+              transform: `scale(${scale})`,
               transformOrigin: 'center bottom',
-              boxShadow:
-                scale > 1.08
-                  ? `0 ${10 * (scale - 1)}px ${22 * (scale - 1)}px rgba(15, 23, 42, 0.28)`
-                  : undefined,
             }
           : undefined
       }
     >
       {children}
+      {showFaceLabel && (
+        <span className="ln-space-dock-btn-label" aria-hidden="true">
+          {faceLabel}
+        </span>
+      )}
     </button>
   );
 
   if (!dock) return button;
 
-  const liftActive = scale > 1.01;
   return (
     <span
       ref={wrapRef}
