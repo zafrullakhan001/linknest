@@ -65,6 +65,9 @@ location / {
 - `POST /api/tiles` - Create a new tile (requires authentication)
 - `PUT /api/tiles/{id}` - Update a tile (requires authentication)
 - `DELETE /api/tiles/{id}` - Delete a tile (requires authentication)
+- `GET /api/tiles/{id}/presence` - Who is currently viewing or editing this space
+- `POST /api/tiles/{id}/presence` - Heartbeat (`{ mode: "viewing"|"editing" }`) or leave (`{ action: "leave" }`); requires authentication
+- `DELETE /api/tiles/{id}/presence` - Clear your presence on this space (requires authentication)
 
 ### MCP (LLM tools)
 

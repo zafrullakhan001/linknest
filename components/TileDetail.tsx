@@ -36,6 +36,8 @@ import {
     parseTabExport
 } from '../services/sectionTabTransferService';
 import { cloneTile, createTile, getTiles, saveTile, toggleLinkFavorite, createTempVersion, updateTilePageAnimation, recordTileVisit } from '../services/storageService';
+import { useTilePresence } from '../hooks/useTilePresence';
+import { TilePresence } from './TilePresence';
 import { generateUuid } from '../services/idService';
 import { removeSharedTile } from '../services/tileShareService';
 import { useSettings } from '../contexts/SettingsContext';
@@ -1370,6 +1372,11 @@ export const TileDetail: React.FC<TileDetailProps> = ({
         }
         // eslint-disable-next-line react-hooks/exhaustive-deps
     }, [tile?.id]);
+
+    const presenceViewers = useTilePresence(tile?.id, {
+        enabled: !!isAuthenticated && !!user,
+        mode: isEditing ? 'editing' : 'viewing',
+    });
 
     // Abort in-flight health checks when leaving this tile (prevents hung UI / blocked navigation)
     useEffect(() => {
@@ -7289,7 +7296,7 @@ export const TileDetail: React.FC<TileDetailProps> = ({
 
                             {/* Title & Meta */}
                             <div className="flex-1 min-w-0 text-center md:text-left">
-                                <div className="flex items-center justify-center md:justify-start gap-3 mb-1">
+                                <div className="flex items-center justify-center md:justify-start gap-3 mb-1 flex-wrap">
                                     <h1 className="linknest-content-title text-2xl md:text-3xl font-bold text-white tracking-tight">
                                         {tile.title}
                                     </h1>
@@ -7302,6 +7309,13 @@ export const TileDetail: React.FC<TileDetailProps> = ({
                                         onRecycled={({ shortUrl }) => applyRecycledShortUrl('tile', tile.id, shortUrl)}
                                     />
                                     ) : null}
+                                    {isAuthenticated && (
+                                        <TilePresence
+                                            viewers={presenceViewers}
+                                            currentUserId={user?.id}
+                                            variant="onDark"
+                                        />
+                                    )}
                                 </div>
                                 <p className="text-white/80 dark:text-slate-400 text-sm font-medium dark:font-normal">{tile.description}</p>
                             </div>
@@ -10343,6 +10357,13 @@ export const TileDetail: React.FC<TileDetailProps> = ({
                         availableBrowsers={availableBrowsers}
                         user={user}
                         hierarchyToolbar={hierarchyToolbar}
+                        presence={isAuthenticated ? (
+                            <TilePresence
+                                viewers={presenceViewers}
+                                currentUserId={user?.id}
+                                variant="onLight"
+                            />
+                        ) : null}
                     />
                 )}
                 {!isMobile && (
@@ -10352,6 +10373,15 @@ export const TileDetail: React.FC<TileDetailProps> = ({
                         <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4">
                             <div>
                                 <h1 className="text-2xl font-bold text-slate-800 dark:text-white mb-1">Edit Page</h1>
+                                {isAuthenticated && (
+                                    <div className="mb-2">
+                                        <TilePresence
+                                            viewers={presenceViewers}
+                                            currentUserId={user?.id}
+                                            variant="onLight"
+                                        />
+                                    </div>
+                                )}
                                 <p className="text-sm text-slate-500 dark:text-slate-400 flex items-center gap-2">
                                     {editEmojiImage ? (
                                         <img

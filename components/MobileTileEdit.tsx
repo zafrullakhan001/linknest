@@ -54,6 +54,7 @@ interface MobileTileEditProps {
     availableBrowsers?: string[];
     user?: User | null;
     hierarchyToolbar?: HierarchyToolbarHandlers;
+    presence?: React.ReactNode;
 }
 
 /**
@@ -101,7 +102,8 @@ export const MobileTileEdit: React.FC<MobileTileEditProps> = ({
     settings = {},
     availableBrowsers = [],
     user,
-    hierarchyToolbar
+    hierarchyToolbar,
+    presence
 }) => {
     const [activeSection, setActiveSection] = useState<string | null>(null);
     const [editingIntro, setEditingIntro] = useState(false);
@@ -697,6 +699,7 @@ export const MobileTileEdit: React.FC<MobileTileEditProps> = ({
                         <span className="text-2xl">{editEmoji || '✨'}</span>
                         <span className="font-medium">{editTitle || 'Untitled Page'}</span>
                     </div>
+                    {presence ? <div className="mt-2">{presence}</div> : null}
                 </div>
             </div>
 

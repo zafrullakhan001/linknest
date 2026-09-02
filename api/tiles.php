@@ -36,6 +36,8 @@ switch ($method) {
             handleGetTileUniqueVisitors($matches[1]);
         } elseif (preg_match('#^/([^/]+)/visit$#', $path, $matches)) {
             handleGetTileVisitStats($matches[1]);
+        } elseif (preg_match('#^/([^/]+)/presence$#', $path, $matches)) {
+            handleGetTilePresence($matches[1]);
         } elseif ($path === '/staging-template') {
             handleGetStagingTemplate();
         } elseif ($path === '/staging-prompt') {
@@ -105,6 +107,8 @@ switch ($method) {
             handleUpdatePageAnimation($matches[1]);
         } elseif (preg_match('#^/([^/]+)/visit$#', $path, $matches)) {
             handleRecordTileVisit($matches[1]);
+        } elseif (preg_match('#^/([^/]+)/presence$#', $path, $matches)) {
+            handlePostTilePresence($matches[1]);
         } else {
             sendJSON(['error' => 'Invalid endpoint'], 404);
         }
@@ -131,6 +135,8 @@ switch ($method) {
             handlePermanentDeleteTile($matches[1]);
         } elseif (preg_match('#^/([^/]+)/versions/([^/]+)$#', $path, $matches)) {
             handleDeleteVersion($matches[1], $matches[2]);
+        } elseif (preg_match('#^/([^/]+)/presence$#', $path, $matches)) {
+            handleDeleteTilePresence($matches[1]);
         } elseif (preg_match('#^/([^/]+)$#', $path, $matches)) {
             handleDeleteTile($matches[1]);
         } else {
@@ -7700,4 +7706,83 @@ function handleRecordTileVisit($tileId) {
         error_log('Failed to record tile visit: ' . $e->getMessage());
         sendJSON(['error' => 'Failed to record visit'], 500);
     }
+}
+
+function sendTilePresenceList(string $tileId, PDO $db): void
+{
+    require_once __DIR__ . '/tile_presence_lib.php';
+    ensureTilePresenceTable($db);
+    cleanupStaleTilePresence($db);
+    sendJSON([
+        'success' => true,
+        'viewers' => listTilePresence($db, $tileId),
+    ]);
+}
+
+/**
+ * GET who is currently viewing or editing this tile.
+ */
+function handleGetTilePresence($tileId)
+{
+    [, $db] = assertTileAccessibleForVisit($tileId);
+    linknestReleaseSessionLock();
+    sendTilePresenceList($tileId, $db);
+}
+
+/**
+ * POST heartbeat or leave. Authenticated users only.
+ * Body: { mode: "viewing"|"editing" } or { action: "leave" }
+ */
+function handlePostTilePresence($tileId)
+{
+    $user = getAuthenticatedUser();
+    if (!$user) {
+        sendJSON(['error' => 'Authentication required'], 401);
+    }
+
+    [, $db] = assertTileAccessibleForVisit($tileId);
+    linknestReleaseSessionLock();
+
+    require_once __DIR__ . '/tile_presence_lib.php';
+    ensureTilePresenceTable($db);
+
+    $input = json_decode(file_get_contents('php://input') ?: '', true);
+    if (!is_array($input)) {
+        $input = [];
+    }
+
+    $action = isset($input['action']) ? strtolower(trim((string)$input['action'])) : '';
+    if ($action === 'leave') {
+        clearTilePresence($db, $tileId, (int)$user['id']);
+        sendJSON(['success' => true, 'viewers' => []]);
+        return;
+    }
+
+    $mode = normalizeTilePresenceMode($input['mode'] ?? 'viewing');
+    try {
+        upsertTilePresence($db, $tileId, (int)$user['id'], $mode);
+        sendTilePresenceList($tileId, $db);
+    } catch (Throwable $e) {
+        error_log('Failed to update tile presence: ' . $e->getMessage());
+        sendJSON(['error' => 'Failed to update presence'], 500);
+    }
+}
+
+/**
+ * DELETE own presence row for this tile.
+ */
+function handleDeleteTilePresence($tileId)
+{
+    $user = getAuthenticatedUser();
+    if (!$user) {
+        sendJSON(['error' => 'Authentication required'], 401);
+    }
+
+    [, $db] = assertTileAccessibleForVisit($tileId);
+    linknestReleaseSessionLock();
+
+    require_once __DIR__ . '/tile_presence_lib.php';
+    ensureTilePresenceTable($db);
+    clearTilePresence($db, $tileId, (int)$user['id']);
+    sendJSON(['success' => true]);
 }

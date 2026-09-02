@@ -1892,6 +1892,8 @@ function initDatabase() {
             speedtestEnsureSchema($db);
             require_once __DIR__ . '/media_lib.php';
             ensureMediaLibrarySchema($db);
+            require_once __DIR__ . '/tile_presence_lib.php';
+            ensureTilePresenceTable($db);
             if (!schemaPatchesAlreadyApplied()) {
                 ensureTilesHeaderImageColumns($db);
                 ensureTilesSearchTagsColumn($db);
@@ -1936,6 +1938,8 @@ function initDatabase() {
             speedtestEnsureSchema($db);
             require_once __DIR__ . '/media_lib.php';
             ensureMediaLibrarySchema($db);
+            require_once __DIR__ . '/tile_presence_lib.php';
+            ensureTilePresenceTable($db);
             if (!schemaPatchesAlreadyApplied()) {
                 ensureTilesHeaderImageColumns($db);
                 ensureTilesSearchTagsColumn($db);
@@ -4243,6 +4247,8 @@ function initDatabase() {
         speedtestEnsureSchema($db);
         require_once __DIR__ . '/media_lib.php';
         ensureMediaLibrarySchema($db);
+        require_once __DIR__ . '/tile_presence_lib.php';
+        ensureTilePresenceTable($db);
         
         // Create indexes for optimal performance
         createDatabaseIndexes($db);

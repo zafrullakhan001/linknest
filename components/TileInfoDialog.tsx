@@ -6,6 +6,8 @@ import { ShortUrlActions } from './ShortUrlActions';
 import { useAuth } from '../contexts/AuthContext';
 import { useSettings } from '../contexts/SettingsContext';
 import { getTileUniqueVisitors, TileUniqueVisitor } from '../services/storageService';
+import { getTilePresence, type TilePresenceViewer } from '../services/tilePresenceService';
+import { TilePresence } from './TilePresence';
 
 interface TileAdmin {
   userId: number;
@@ -346,6 +348,43 @@ const CopyableId: React.FC<{ value: string }> = ({ value }) => {
         {copied ? <FaCheck className="w-3.5 h-3.5 text-emerald-500" /> : <FaCopy className="w-3.5 h-3.5" />}
       </button>
     </div>
+  );
+};
+
+const CurrentHereRow: React.FC<{
+  tileId: string;
+  currentUserId?: number | null;
+}> = ({ tileId, currentUserId }) => {
+  const [viewers, setViewers] = useState<TilePresenceViewer[]>([]);
+
+  useEffect(() => {
+    let cancelled = false;
+    const load = async () => {
+      const next = await getTilePresence(tileId);
+      if (!cancelled) setViewers(next);
+    };
+    void load();
+    const timer = window.setInterval(() => {
+      void load();
+    }, 15000);
+    return () => {
+      cancelled = true;
+      window.clearInterval(timer);
+    };
+  }, [tileId]);
+
+  return (
+    <InfoRow
+      label="Currently here"
+      labelEmoji="🟢"
+      hint="logged-in people who have this space open right now — viewing or editing"
+    >
+      {viewers.length === 0 ? (
+        <span className="text-xs text-slate-500 dark:text-slate-400">Nobody signed in is here right now</span>
+      ) : (
+        <TilePresence viewers={viewers} currentUserId={currentUserId} variant="onLight" />
+      )}
+    </InfoRow>
   );
 };
 
@@ -832,6 +871,8 @@ export const TileInfoDialog: React.FC<TileInfoDialogProps> = ({
               canRecycleShortUrl={tile?.canEdit === true}
               isAdmin={isAdmin}
               showUniqueVisitors={showUniqueVisitors}
+              currentUserId={user?.id}
+              showCurrentHere={!!user}
             />
           ) : null}
         </div>
@@ -882,7 +923,9 @@ const TileInfoView: React.FC<{
   canRecycleShortUrl?: boolean;
   isAdmin?: boolean;
   showUniqueVisitors?: boolean;
-}> = ({ tileInfo, formatDate, formatRelativeTime, spaceShortUrl, setSpaceShortUrl, canRecycleShortUrl, isAdmin, showUniqueVisitors }) => {
+  currentUserId?: number | null;
+  showCurrentHere?: boolean;
+}> = ({ tileInfo, formatDate, formatRelativeTime, spaceShortUrl, setSpaceShortUrl, canRecycleShortUrl, isAdmin, showUniqueVisitors, currentUserId, showCurrentHere }) => {
   return (
     <div className="space-y-5">
       <SectionCard emoji="📋" title="Basic Information" accent="sky">
@@ -973,6 +1016,9 @@ const TileInfoView: React.FC<{
       </SectionCard>
 
       <SectionCard emoji="📈" title="Visitors" accent="rose">
+        {showCurrentHere && (
+          <CurrentHereRow tileId={tileInfo.tileId} currentUserId={currentUserId} />
+        )}
         <InfoRow label="Total Hits" labelEmoji="👆" hint="all times this space was opened — the same person can count more than once">
           <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-xs font-semibold bg-rose-100 text-rose-800 dark:bg-rose-900/40 dark:text-rose-300">
             {(tileInfo.stats?.hitCount ?? 0).toLocaleString()}
