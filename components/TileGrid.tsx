@@ -19,7 +19,23 @@ import { useAuth } from '../contexts/AuthContext';
 import { useAccessRestrictionGate } from '../contexts/AccessRestrictionContext';
 import { AccessRestrictionsEditor, AccessRestrictionsBadge } from './AccessRestrictionsEditor';
 import { userPreferencesService } from '../services/userPreferencesService';
-import { categoryPresetService, groupDbCategoryPresets, groupBuiltinCategoryPresets, flattenCategoryPresetsForSync, mergeCategoryPresetsForTab, isBuiltinPresetId, downloadCategoryPresetsJson, parseCategoryPresetsImportFile, mergeImportedUserPresets } from '../services/categoryPresetService';
+import {
+  categoryPresetService,
+  groupDbCategoryPresets,
+  groupBuiltinCategoryPresets,
+  flattenCategoryPresetsForSync,
+  mergeCategoryPresetsForTab,
+  isBuiltinPresetId,
+  downloadCategoryPresetsJson,
+  parseCategoryPresetsImportFile,
+  mergeImportedUserPresets,
+  readPersonalCategoryPresets,
+  writePersonalCategoryPresets,
+  readActiveCategoryPresetIds,
+  writeActiveCategoryPresetIds,
+  removePersonalPresetFromByTab,
+  pickDefaultBuiltinPreset,
+} from '../services/categoryPresetService';
 import { getPublicFavorites, togglePublicFavorite, isPublicFavorite, getPublicActiveTab, setPublicActiveTab, exportPublicFavorites, importPublicFavorites, clearPublicFavorites, getPublicLinkFavorites, togglePublicLinkFavorite, clearPublicLinkFavorites, getPublicLinkFavoriteDetails, syncPublicLinkFavoriteDetails, upsertPublicLinkFavoriteDetail, removePublicLinkFavoriteDetail, getPublicFavoritesInstanceLabel, setPublicFavorites as writePublicFavorites, setPublicLinkFavorites as writePublicLinkFavorites, swapPublicFavoriteIds, getPublicFavoritesLayout, setPublicFavoritesLayout } from '../services/publicFavoritesService';
 import { linkHealthService } from '../services/linkHealthService';
 import {
@@ -557,8 +573,9 @@ const CategoryPresetSwitcher: React.FC<{
   presets: CategoryVisibilityPreset[];
   activePresetId: string;
   onSelect: (preset: CategoryVisibilityPreset) => void;
+  onDelete?: (preset: CategoryVisibilityPreset) => void;
   buttonClassName?: string;
-}> = ({ presets, activePresetId, onSelect, buttonClassName }) => {
+}> = ({ presets, activePresetId, onSelect, onDelete, buttonClassName }) => {
   const [open, setOpen] = useState(false);
   const [floating, setFloating] = useState(() => (typeof window !== 'undefined' ? loadPresetMenuFloating() : false));
   const [floatPos, setFloatPos] = useState<PresetMenuFloatPoint>(() =>
@@ -747,98 +764,144 @@ const CategoryPresetSwitcher: React.FC<{
     }
   };
 
+  const handleDeleteClick = (e: React.MouseEvent, preset: CategoryVisibilityPreset) => {
+    e.preventDefault();
+    e.stopPropagation();
+    if (!onDelete) return;
+    onDelete(preset);
+  };
+
+  const deleteButton = (preset: CategoryVisibilityPreset, size: 'sm' | 'xs' = 'sm') => {
+    if (!onDelete) return null;
+    const pad = size === 'xs' ? 'p-0.5' : 'p-1';
+    const icon = size === 'xs' ? 'w-3 h-3' : 'w-3.5 h-3.5';
+    return (
+      <button
+        type="button"
+        onClick={(e) => handleDeleteClick(e, preset)}
+        onPointerDown={(e) => e.stopPropagation()}
+        className={`shrink-0 ${pad} rounded-md text-red-500/80 hover:text-red-600 dark:hover:text-red-400 hover:bg-red-50 dark:hover:bg-red-950/40 transition-colors`}
+        title={`Delete personal preset "${preset.name}"`}
+        aria-label={`Delete personal preset ${preset.name}`}
+      >
+        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor" className={icon} aria-hidden>
+          <path fillRule="evenodd" d="M8.75 1A2.75 2.75 0 006 3.75v.443c-.795.077-1.584.176-2.365.298a.75.75 0 10.23 1.482l.149-.022.341 10.174A1.75 1.75 0 006.105 16.5h7.79a1.75 1.75 0 001.75-1.375l.341-10.174.149.022a.75.75 0 00.23-1.482A41.03 41.03 0 0014 4.193V3.75A2.75 2.75 0 0011.25 1h-2.5zM10 4c.784 0 1.569.032 2.35.094V3.75c0-.69-.56-1.25-1.25-1.25h-2.5c-.69 0-1.25.56-1.25 1.25v.344A41.558 41.558 0 0110 4zM8.58 7.72a.75.75 0 00-1.5.06l.3 7.5a.75.75 0 101.5-.06l-.3-7.5zm4.34.06a.75.75 0 10-1.5-.06l-.3 7.5a.75.75 0 101.5.06l.3-7.5z" clipRule="evenodd" />
+        </svg>
+      </button>
+    );
+  };
+
   const renderPresetButton = (preset: CategoryVisibilityPreset, builtin: boolean) => {
     const isActive = preset.id === activePresetId;
     const count = preset.visible.length;
     if (view === 'tiles') {
       return (
-        <button
+        <div
           key={preset.id}
-          type="button"
-          role="menuitem"
-          onClick={() => selectPreset(preset)}
-          className={`text-left p-2.5 rounded-xl text-sm font-medium transition-colors flex flex-col gap-1.5 min-h-[4.5rem] ${
+          className={`relative text-left p-2.5 rounded-xl text-sm font-medium transition-colors flex flex-col gap-1.5 min-h-[4.5rem] ${
             isActive
               ? 'bg-brand-50 dark:bg-brand-900/30 text-brand-700 dark:text-brand-300 ring-1 ring-inset ring-brand-200/80 dark:ring-brand-700/50 font-semibold'
               : 'bg-white dark:bg-slate-800 text-slate-700 dark:text-slate-300 hover:bg-slate-50 dark:hover:bg-slate-700/80 border border-slate-200/80 dark:border-slate-700'
           }`}
         >
-          <span className="font-semibold leading-snug break-words line-clamp-2">{preset.name}</span>
-          <span className="mt-auto flex items-center justify-between gap-1">
+          <button
+            type="button"
+            role="menuitem"
+            onClick={() => selectPreset(preset)}
+            className="text-left flex flex-col gap-1.5 flex-1 min-w-0 w-full"
+          >
+            <span className="font-semibold leading-snug break-words line-clamp-2 pr-5">{preset.name}</span>
+            <span className="mt-auto flex items-center justify-between gap-1">
             {builtin ? (
               <span className="px-1 py-0.5 text-[9px] rounded font-semibold uppercase tracking-wide bg-slate-200/80 dark:bg-slate-700 text-slate-600 dark:text-slate-300">
-                Built-in
+                {preset.is_default ? 'Default' : 'Built-in'}
               </span>
             ) : (
               <span className="text-[10px] text-slate-400">My preset</span>
             )}
-            <span
-              className={`shrink-0 px-1.5 py-0.5 text-[10px] rounded-full font-semibold ${
-                isActive
-                  ? 'bg-brand-100 dark:bg-brand-800/50 text-brand-700 dark:text-brand-300'
-                  : 'bg-slate-100 dark:bg-slate-900 text-slate-500 dark:text-slate-400'
-              }`}
-              title={`${count} categor${count === 1 ? 'y' : 'ies'}`}
-            >
-              {count}
+              <span
+                className={`shrink-0 px-1.5 py-0.5 text-[10px] rounded-full font-semibold ${
+                  isActive
+                    ? 'bg-brand-100 dark:bg-brand-800/50 text-brand-700 dark:text-brand-300'
+                    : 'bg-slate-100 dark:bg-slate-900 text-slate-500 dark:text-slate-400'
+                }`}
+                title={`${count} categor${count === 1 ? 'y' : 'ies'}`}
+              >
+                {count}
+              </span>
             </span>
-          </span>
-        </button>
+          </button>
+          {!builtin && (
+            <div className="absolute top-1.5 right-1.5">
+              {deleteButton(preset, 'xs')}
+            </div>
+          )}
+        </div>
       );
     }
     if (view === 'compact') {
       return (
-        <button
+        <div
           key={preset.id}
-          type="button"
-          role="menuitem"
-          onClick={() => selectPreset(preset)}
-          className={`w-full text-left px-2 py-1 rounded-md text-xs font-medium transition-colors flex items-center gap-1.5 ${
+          className={`w-full rounded-md text-xs font-medium transition-colors flex items-center gap-1 ${
             isActive
               ? 'bg-brand-50 dark:bg-brand-900/30 text-brand-700 dark:text-brand-300 font-semibold'
               : 'text-slate-700 dark:text-slate-300 hover:bg-white dark:hover:bg-slate-800'
           }`}
         >
-          {builtin && (
-            <span className="shrink-0 w-1.5 h-1.5 rounded-full bg-slate-400" title="Built-in" aria-hidden />
-          )}
-          <span className="flex-1 min-w-0 truncate">{preset.name}</span>
-          <span className="shrink-0 tabular-nums text-[10px] text-slate-400">{count}</span>
-        </button>
+          <button
+            type="button"
+            role="menuitem"
+            onClick={() => selectPreset(preset)}
+            className="flex-1 min-w-0 text-left px-2 py-1 flex items-center gap-1.5"
+          >
+            {builtin && (
+              <span className="shrink-0 w-1.5 h-1.5 rounded-full bg-slate-400" title="Built-in" aria-hidden />
+            )}
+            <span className="flex-1 min-w-0 truncate">{preset.name}</span>
+            <span className="shrink-0 tabular-nums text-[10px] text-slate-400">{count}</span>
+          </button>
+          {!builtin && deleteButton(preset, 'xs')}
+        </div>
       );
     }
     return (
-      <button
+      <div
         key={preset.id}
-        type="button"
-        role="menuitem"
-        onClick={() => selectPreset(preset)}
-        className={`w-full text-left px-3 py-2.5 rounded-lg text-sm font-medium transition-colors flex items-center gap-2 ${
+        className={`w-full rounded-lg text-sm font-medium transition-colors flex items-center gap-1 ${
           isActive
             ? 'bg-brand-50 dark:bg-brand-900/30 text-brand-700 dark:text-brand-300 ring-1 ring-inset ring-brand-200/80 dark:ring-brand-700/50 font-semibold'
             : 'text-slate-700 dark:text-slate-300 hover:bg-white dark:hover:bg-slate-800 hover:text-slate-900 dark:hover:text-white'
         }`}
       >
-        <span className="flex-1 min-w-0 truncate">{preset.name}</span>
-        {builtin && (
-          <span
-            className="shrink-0 px-1.5 py-0.5 text-[9px] rounded font-semibold uppercase tracking-wide bg-slate-200/80 dark:bg-slate-700 text-slate-600 dark:text-slate-300"
-            title="Built-in preset (read-only)"
-          >
-            Built-in
-          </span>
-        )}
-        <span
-          className={`shrink-0 px-1.5 py-0.5 text-[10px] rounded-full font-semibold ${
-            isActive
-              ? 'bg-brand-100 dark:bg-brand-800/50 text-brand-700 dark:text-brand-300'
-              : 'bg-white dark:bg-slate-800 text-slate-500 dark:text-slate-400'
-          }`}
-          title={`${count} categor${count === 1 ? 'y' : 'ies'}`}
+        <button
+          type="button"
+          role="menuitem"
+          onClick={() => selectPreset(preset)}
+          className="flex-1 min-w-0 text-left px-3 py-2.5 flex items-center gap-2"
         >
-          {count}
-        </span>
-      </button>
+          <span className="flex-1 min-w-0 truncate">{preset.name}</span>
+          {builtin && (
+            <span
+              className="shrink-0 px-1.5 py-0.5 text-[9px] rounded font-semibold uppercase tracking-wide bg-slate-200/80 dark:bg-slate-700 text-slate-600 dark:text-slate-300"
+              title={preset.is_default ? 'Default built-in preset' : 'Built-in preset (read-only)'}
+            >
+              {preset.is_default ? 'Default' : 'Built-in'}
+            </span>
+          )}
+          <span
+            className={`shrink-0 px-1.5 py-0.5 text-[10px] rounded-full font-semibold ${
+              isActive
+                ? 'bg-brand-100 dark:bg-brand-800/50 text-brand-700 dark:text-brand-300'
+                : 'bg-white dark:bg-slate-800 text-slate-500 dark:text-slate-400'
+            }`}
+            title={`${count} categor${count === 1 ? 'y' : 'ies'}`}
+          >
+            {count}
+          </span>
+        </button>
+        {!builtin && <div className="pr-1.5">{deleteButton(preset)}</div>}
+      </div>
     );
   };
 
@@ -3048,64 +3111,7 @@ interface CategoryVisibilityPreset {
   name: string;
   visible: string[];
   source?: 'user' | 'builtin';
-}
-
-const CATEGORY_PRESETS_STORAGE_KEY = 'linknest_category_presets';
-const CATEGORY_PRESET_ACTIVE_STORAGE_KEY = 'linknest_category_preset_active';
-
-function parseCategoryPresetsByTab(raw: string | null | undefined): Record<string, CategoryVisibilityPreset[]> {
-  if (!raw || typeof raw !== 'string') return {};
-  try {
-    const parsed = JSON.parse(raw);
-    if (!parsed || typeof parsed !== 'object' || Array.isArray(parsed)) return {};
-    const out: Record<string, CategoryVisibilityPreset[]> = {};
-    for (const [tab, list] of Object.entries(parsed)) {
-      if (!Array.isArray(list)) continue;
-      const presets: CategoryVisibilityPreset[] = [];
-      for (const item of list) {
-        if (!item || typeof item !== 'object') continue;
-        const name = typeof (item as CategoryVisibilityPreset).name === 'string'
-          ? (item as CategoryVisibilityPreset).name.trim()
-          : '';
-        if (!name) continue;
-        const rawId = typeof (item as CategoryVisibilityPreset).id === 'string'
-          ? (item as CategoryVisibilityPreset).id.trim()
-          : '';
-        const visible = Array.isArray((item as CategoryVisibilityPreset).visible)
-          ? (item as CategoryVisibilityPreset).visible
-            .filter((n): n is string => typeof n === 'string' && n.trim().length > 0)
-            .map((n) => n.trim())
-          : [];
-        presets.push({
-          id: rawId || `preset-${tab}-${presets.length}-${name.toLowerCase()}`,
-          name,
-          visible,
-          source: rawId.startsWith('builtin-') || (item as CategoryVisibilityPreset).source === 'builtin'
-            ? 'builtin'
-            : 'user'
-        });
-      }
-      if (presets.length > 0) out[tab] = presets;
-    }
-    return out;
-  } catch {
-    return {};
-  }
-}
-
-function parseActivePresetIds(raw: string | null | undefined): Record<string, string> {
-  if (!raw || typeof raw !== 'string') return {};
-  try {
-    const parsed = JSON.parse(raw);
-    if (!parsed || typeof parsed !== 'object' || Array.isArray(parsed)) return {};
-    const out: Record<string, string> = {};
-    for (const [tab, id] of Object.entries(parsed)) {
-      if (typeof id === 'string' && id.trim()) out[tab] = id.trim();
-    }
-    return out;
-  } catch {
-    return {};
-  }
+  is_default?: boolean;
 }
 
 function remapPresetCategoryNames(
@@ -3735,56 +3741,24 @@ export const TileGrid: React.FC<TileGridProps> = ({
   }, [activeTab, isAuthenticated]);
 
   const [categoryPresetsByTab, setCategoryPresetsByTab] = useState<Record<string, CategoryVisibilityPreset[]>>(() => {
-    if (typeof window === 'undefined') return {};
-    try {
-      return parseCategoryPresetsByTab(localStorage.getItem(CATEGORY_PRESETS_STORAGE_KEY));
-    } catch {
-      return {};
-    }
+    return readPersonalCategoryPresets();
   });
 
   const [activePresetIdByTab, setActivePresetIdByTab] = useState<Record<string, string>>(() => {
-    if (typeof window === 'undefined') return {};
-    try {
-      return parseActivePresetIds(localStorage.getItem(CATEGORY_PRESET_ACTIVE_STORAGE_KEY));
-    } catch {
-      return {};
-    }
+    return readActiveCategoryPresetIds();
   });
 
   const [presetNameDraft, setPresetNameDraft] = useState('');
   const categoryPresetImportInputRef = useRef<HTMLInputElement>(null);
+  /** Bumped on local personal-preset deletes so a late GET /list cannot restore removed rows. */
+  const categoryPresetsLoadGenRef = useRef(0);
 
   useEffect(() => {
-    try {
-      // Never persist built-in presets in the browser — only personal/user presets
-      const personalOnly: Record<string, CategoryVisibilityPreset[]> = {};
-      for (const [tab, list] of Object.entries(categoryPresetsByTab)) {
-        const filtered = (list || []).filter((p) => p.source !== 'builtin' && !isBuiltinPresetId(p.id));
-        if (filtered.length > 0) personalOnly[tab] = filtered.map(({ id, name, visible }) => ({ id, name, visible, source: 'user' as const }));
-      }
-      const hasAny = Object.keys(personalOnly).length > 0;
-      if (hasAny) {
-        localStorage.setItem(CATEGORY_PRESETS_STORAGE_KEY, JSON.stringify(personalOnly));
-      } else {
-        localStorage.removeItem(CATEGORY_PRESETS_STORAGE_KEY);
-      }
-    } catch (e) {
-      console.error('Failed to save category presets', e);
-    }
+    writePersonalCategoryPresets(categoryPresetsByTab);
   }, [categoryPresetsByTab]);
 
   useEffect(() => {
-    try {
-      const hasAny = Object.keys(activePresetIdByTab).some((tab) => Boolean(activePresetIdByTab[tab]));
-      if (hasAny) {
-        localStorage.setItem(CATEGORY_PRESET_ACTIVE_STORAGE_KEY, JSON.stringify(activePresetIdByTab));
-      } else {
-        localStorage.removeItem(CATEGORY_PRESET_ACTIVE_STORAGE_KEY);
-      }
-    } catch (e) {
-      console.error('Failed to save active category preset', e);
-    }
+    writeActiveCategoryPresetIds(activePresetIdByTab);
   }, [activePresetIdByTab]);
 
   const [builtinPresetsByTab, setBuiltinPresetsByTab] = useState<Record<string, CategoryVisibilityPreset[]>>({});
@@ -3807,14 +3781,15 @@ export const TileGrid: React.FC<TileGridProps> = ({
 
   useEffect(() => {
     if (!isAuthenticated) return;
+    const loadGen = categoryPresetsLoadGenRef.current;
     let cancelled = false;
     (async () => {
       try {
         let data = await categoryPresetService.list();
-        if (cancelled) return;
+        if (cancelled || loadGen !== categoryPresetsLoadGenRef.current) return;
         if (data.presets.length === 0) {
-          const local = parseCategoryPresetsByTab(localStorage.getItem(CATEGORY_PRESETS_STORAGE_KEY));
-          const localActive = parseActivePresetIds(localStorage.getItem(CATEGORY_PRESET_ACTIVE_STORAGE_KEY));
+          const local = readPersonalCategoryPresets();
+          const localActive = readActiveCategoryPresetIds();
           const importPayload: Array<{ tab_key: string; name: string; visible: string[]; is_active?: boolean }> = [];
           Object.entries(local).forEach(([tabKey, list]) => {
             list.forEach((preset) => {
@@ -3831,7 +3806,7 @@ export const TileGrid: React.FC<TileGridProps> = ({
             data = await categoryPresetService.importLocal(importPayload);
           }
         }
-        if (cancelled) return;
+        if (cancelled || loadGen !== categoryPresetsLoadGenRef.current) return;
         setCategoryPresetsByTab(groupDbCategoryPresets(data.presets));
         setActivePresetIdByTab(data.activeByTab || {});
       } catch (error) {
@@ -3847,7 +3822,20 @@ export const TileGrid: React.FC<TileGridProps> = ({
     () => mergeCategoryPresetsForTab(builtinPresetsByTab[activeTab], categoryPresetsByTab[activeTab]),
     [builtinPresetsByTab, categoryPresetsByTab, activeTab]
   );
-  const activeCategoryPresetId = activePresetIdByTab[activeTab] || '';
+  const defaultBuiltinForTab = useMemo(
+    () => pickDefaultBuiltinPreset(builtinPresetsByTab[activeTab]),
+    [builtinPresetsByTab, activeTab]
+  );
+  const storedActiveId = activePresetIdByTab[activeTab] || '';
+  const hasPersistedPersonalActive = !!(
+    storedActiveId
+    && !isBuiltinPresetId(storedActiveId)
+    && (categoryPresetsByTab[activeTab] || []).some((p) => p.id === storedActiveId)
+  );
+  // Built-in is the default until the user persists a My preset in this browser / account
+  const activeCategoryPresetId = hasPersistedPersonalActive
+    ? storedActiveId
+    : (defaultBuiltinForTab?.id || '');
   const activeCategoryPreset = tabCategoryPresets.find((preset) => preset.id === activeCategoryPresetId) || null;
   const activeIsBuiltin = !!(activeCategoryPreset && (activeCategoryPreset.source === 'builtin' || isBuiltinPresetId(activeCategoryPreset.id)));
   const builtinNameConflict = useMemo(() => {
@@ -3866,15 +3854,55 @@ export const TileGrid: React.FC<TileGridProps> = ({
       else next[activeTab] = hidden;
       return next;
     });
-    setActivePresetIdByTab((prev) => ({ ...prev, [activeTab]: preset.id }));
+    const isBuiltin = preset.source === 'builtin' || isBuiltinPresetId(preset.id);
+    setActivePresetIdByTab((prev) => {
+      if (isBuiltin) {
+        // Built-in is the ephemeral default — do not keep it as browser persistence
+        if (!prev[activeTab]) return prev;
+        const next = { ...prev };
+        delete next[activeTab];
+        return next;
+      }
+      return { ...prev, [activeTab]: preset.id };
+    });
     setSelectedCategoryFilter(null);
     setPresetNameDraft(preset.name);
-    if (isAuthenticated && /^\d+$/.test(preset.id)) {
-      categoryPresetService.apply(preset.id).catch((error) => {
-        console.error('Failed to apply category preset', error);
-      });
+    if (isAuthenticated) {
+      if (isBuiltin) {
+        // Clear personal active in DB so the built-in default applies again
+        categoryPresetService.setActive(activeTab, null).catch(() => { });
+      } else if (/^\d+$/.test(preset.id)) {
+        categoryPresetService.apply(preset.id).catch((error) => {
+          console.error('Failed to apply category preset', error);
+        });
+      }
     }
   }, [activeTab, isAuthenticated]);
+
+  // When no personal (browser/account) active preset is persisted, apply the admin default built-in.
+  const defaultBuiltinAppliedRef = useRef<Record<string, string>>({});
+  useEffect(() => {
+    const builtins = builtinPresetsByTab[activeTab] || [];
+    if (builtins.length === 0) return;
+    const personalList = categoryPresetsByTab[activeTab] || [];
+    const storedActive = activePresetIdByTab[activeTab] || '';
+    const hasPersonalActive = !!(
+      storedActive
+      && !isBuiltinPresetId(storedActive)
+      && personalList.some((p) => p.id === storedActive)
+    );
+    if (hasPersonalActive) {
+      delete defaultBuiltinAppliedRef.current[activeTab];
+      return;
+    }
+    const defaultBuiltin = pickDefaultBuiltinPreset(builtins);
+    if (!defaultBuiltin) return;
+    if (defaultBuiltinAppliedRef.current[activeTab] === defaultBuiltin.id) return;
+    const categoryNames = Object.keys(groupedTilesRef.current || {});
+    if (categoryNames.length === 0) return;
+    defaultBuiltinAppliedRef.current[activeTab] = defaultBuiltin.id;
+    applyCategoryPreset(defaultBuiltin, categoryNames);
+  }, [activeTab, builtinPresetsByTab, categoryPresetsByTab, activePresetIdByTab, applyCategoryPreset, tiles]);
 
   const saveCategoryPreset = useCallback(async (name: string, visibleNames: string[]) => {
     const trimmed = name.trim().slice(0, 60);
@@ -3935,39 +3963,50 @@ export const TileGrid: React.FC<TileGridProps> = ({
     setPresetNameDraft(nextPreset.name);
   }, [activeTab, categoryPresetsByTab, builtinPresetsByTab, isAuthenticated]);
 
-  const deleteCategoryPreset = useCallback(async (presetId: string) => {
+  const deleteCategoryPreset = useCallback(async (presetId: string, tabKey: string = activeTab) => {
     if (isBuiltinPresetId(presetId)) {
       alert('Built-in presets cannot be deleted.');
       return;
     }
-    const preset = (categoryPresetsByTab[activeTab] || []).find((item) => item.id === presetId);
+    const preset = (categoryPresetsByTab[tabKey] || []).find((item) => item.id === presetId);
     if (!preset || preset.source === 'builtin') return;
-    if (!window.confirm(`Delete preset "${preset.name}"?`)) return;
+    if (!window.confirm(`Delete personal preset "${preset.name}"? This removes it from this browser only.`)) return;
 
-    if (isAuthenticated && /^\d+$/.test(presetId)) {
+    const nextByTab = removePersonalPresetFromByTab(categoryPresetsByTab, tabKey, presetId);
+    const nextActive = { ...activePresetIdByTab };
+    if (nextActive[tabKey] === presetId) delete nextActive[tabKey];
+
+    // Persist to browser immediately so a refresh cannot resurrect the row
+    categoryPresetsLoadGenRef.current += 1;
+    writePersonalCategoryPresets(nextByTab);
+    writeActiveCategoryPresetIds(nextActive);
+
+    if (isAuthenticated) {
       try {
-        await categoryPresetService.remove(presetId);
+        if (/^\d+$/.test(presetId)) {
+          await categoryPresetService.remove(presetId);
+        } else {
+          // Guest-era UUID (or other non-numeric id): drop via full sync so DB leftovers go away
+          const data = await categoryPresetService.sync(
+            flattenCategoryPresetsForSync(nextByTab, nextActive)
+          );
+          setCategoryPresetsByTab(groupDbCategoryPresets(data.presets));
+          setActivePresetIdByTab(data.activeByTab || {});
+          writePersonalCategoryPresets(groupDbCategoryPresets(data.presets));
+          writeActiveCategoryPresetIds(data.activeByTab || {});
+          if (presetNameDraft === preset.name) setPresetNameDraft('');
+          return;
+        }
       } catch (error) {
         alert(error instanceof Error ? error.message : 'Failed to delete preset from the database.');
         return;
       }
     }
 
-    setCategoryPresetsByTab((prev) => {
-      const list = (prev[activeTab] || []).filter((item) => item.id !== presetId);
-      const next = { ...prev };
-      if (list.length === 0) delete next[activeTab];
-      else next[activeTab] = list;
-      return next;
-    });
-    setActivePresetIdByTab((prev) => {
-      if (prev[activeTab] !== presetId) return prev;
-      const next = { ...prev };
-      delete next[activeTab];
-      return next;
-    });
+    setCategoryPresetsByTab(nextByTab);
+    setActivePresetIdByTab(nextActive);
     if (presetNameDraft === preset.name) setPresetNameDraft('');
-  }, [activeTab, categoryPresetsByTab, presetNameDraft, isAuthenticated]);
+  }, [activeTab, categoryPresetsByTab, activePresetIdByTab, presetNameDraft, isAuthenticated]);
 
   const persistCategoryPresetsToDb = useCallback((
     byTab: Record<string, CategoryVisibilityPreset[]>,
@@ -3986,7 +4025,7 @@ export const TileGrid: React.FC<TileGridProps> = ({
 
   const exportUserCategoryPresets = useCallback(() => {
     const rows: Array<{ tab_key: string; name: string; visible: string[] }> = [];
-    for (const [tabKey, list] of Object.entries(categoryPresetsByTab)) {
+    for (const [tabKey, list] of Object.entries(categoryPresetsByTab) as Array<[string, CategoryVisibilityPreset[]]>) {
       for (const preset of list || []) {
         if (preset.source === 'builtin' || isBuiltinPresetId(preset.id)) continue;
         rows.push({ tab_key: tabKey, name: preset.name, visible: [...preset.visible] });
@@ -3997,7 +4036,7 @@ export const TileGrid: React.FC<TileGridProps> = ({
       return;
     }
     const activeExport: Record<string, string> = {};
-    for (const [tab, id] of Object.entries(activePresetIdByTab)) {
+    for (const [tab, id] of Object.entries(activePresetIdByTab) as Array<[string, string]>) {
       if (!id || isBuiltinPresetId(id)) continue;
       const match = (categoryPresetsByTab[tab] || []).find((p) => p.id === id);
       // Export active as preset name so import can resolve across machines
@@ -9485,6 +9524,9 @@ You may also wrap the array in an object: { "messages": [ ... ] }.
               presets={tabCategoryPresets}
               activePresetId={activeCategoryPresetId}
               onSelect={(preset) => applyCategoryPreset(preset, Object.keys(groupedTiles))}
+              onDelete={(preset) => {
+                void deleteCategoryPreset(preset.id);
+              }}
             />
           )}
           <button
@@ -9628,6 +9670,9 @@ You may also wrap the array in an object: { "messages": [ ... ] }.
                 presets={tabCategoryPresets}
                 activePresetId={activeCategoryPresetId}
                 onSelect={(preset) => applyCategoryPreset(preset, Object.keys(groupedTiles))}
+                onDelete={(preset) => {
+                  void deleteCategoryPreset(preset.id);
+                }}
                 buttonClassName="flex items-center gap-2 px-3 py-1.5 text-sm font-medium text-slate-700 dark:text-slate-200 bg-white dark:bg-slate-800 rounded-lg border border-slate-200 dark:border-slate-700 hover:bg-slate-50 dark:hover:bg-slate-700/80 transition-colors min-w-[9rem] justify-between"
               />
             )}

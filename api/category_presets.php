@@ -41,6 +41,8 @@ try {
                 handleSetActiveCategoryPreset($db, $allowedTabs);
             } elseif (preg_match('#^/(\d+)/apply$#', $path, $m)) {
                 handleApplyCategoryPreset($db, (int)$m[1], $allowedTabs);
+            } elseif (preg_match('#^/builtin/(\d+)/default$#', $path, $m)) {
+                handleSetBuiltinCategoryPresetDefault($db, (int)$m[1], $allowedTabs);
             } else {
                 sendJSON(['error' => 'Invalid endpoint'], 404);
             }
@@ -127,7 +129,10 @@ function categoryPresetRowToApi(array $row): array
         'tab_key' => (string)$row['tab_key'],
         'name' => (string)$row['name'],
         'visible' => $visible,
-        'is_active' => $scope === 'user' && ((int)$row['is_active']) === 1,
+        // User rows: is_active = currently selected personal preset.
+        // Built-in rows: is_active = default for that tab (guests/users without personal persistence).
+        'is_active' => ((int)$row['is_active']) === 1,
+        'is_default' => $scope === 'builtin' && ((int)$row['is_active']) === 1,
         'scope' => $scope,
         'source' => $scope,
         'created_at' => (int)$row['created_at'],
@@ -163,7 +168,7 @@ function listBuiltinCategoryPresetRows(PDO $db, ?string $tabKey = null): array
             'SELECT id, user_id, scope, tab_key, name, visible_json, is_active, created_at, updated_at
              FROM category_visibility_presets
              WHERE scope = \'builtin\' AND tab_key = ?
-             ORDER BY name COLLATE NOCASE ASC, id ASC'
+             ORDER BY is_active DESC, name COLLATE NOCASE ASC, id ASC'
         );
         $stmt->execute([$tabKey]);
     } else {
@@ -171,7 +176,7 @@ function listBuiltinCategoryPresetRows(PDO $db, ?string $tabKey = null): array
             'SELECT id, user_id, scope, tab_key, name, visible_json, is_active, created_at, updated_at
              FROM category_visibility_presets
              WHERE scope = \'builtin\'
-             ORDER BY tab_key ASC, name COLLATE NOCASE ASC, id ASC'
+             ORDER BY tab_key ASC, is_active DESC, name COLLATE NOCASE ASC, id ASC'
         );
     }
     $presets = [];
@@ -403,6 +408,39 @@ function handleDeleteBuiltinCategoryPreset(PDO $db, int $presetId): void
         sendJSON(['error' => 'Built-in preset not found'], 404);
     }
     sendJSON(['success' => true]);
+}
+
+/**
+ * Mark a built-in preset as the default for its tab.
+ * Guests (and users without a personal active preset) get this until they save/select a My preset.
+ */
+function handleSetBuiltinCategoryPresetDefault(PDO $db, int $presetId, array $allowedTabs): void
+{
+    requireAdmin();
+    $row = fetchBuiltinCategoryPresetRow($db, $presetId);
+    if (!$row) {
+        sendJSON(['error' => 'Built-in preset not found'], 404);
+    }
+    $tabKey = (string)$row['tab_key'];
+    if (!in_array($tabKey, $allowedTabs, true)) {
+        sendJSON(['error' => 'Invalid tab'], 400);
+    }
+    $now = time();
+    $clear = $db->prepare(
+        'UPDATE category_visibility_presets SET is_active = 0, updated_at = ?
+         WHERE scope = \'builtin\' AND tab_key = ? AND is_active = 1'
+    );
+    $clear->execute([$now, $tabKey]);
+    $set = $db->prepare(
+        'UPDATE category_visibility_presets SET is_active = 1, updated_at = ?
+         WHERE id = ? AND scope = \'builtin\''
+    );
+    $set->execute([$now, $presetId]);
+    $preset = fetchBuiltinCategoryPresetRow($db, $presetId);
+    if (!$preset) {
+        sendJSON(['error' => 'Failed to set default built-in preset'], 500);
+    }
+    sendJSON(['preset' => categoryPresetRowToApi($preset)]);
 }
 
 function migrateLegacyCategoryPresetsFromPreferences(PDO $db, int $userId, array $allowedTabs): void

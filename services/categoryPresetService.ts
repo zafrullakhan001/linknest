@@ -12,6 +12,7 @@ export interface DbCategoryPreset {
   name: string;
   visible: string[];
   is_active: boolean;
+  is_default?: boolean;
   scope?: CategoryPresetSource;
   source?: CategoryPresetSource;
   created_at?: number;
@@ -32,6 +33,7 @@ export interface CategoryVisibilityPresetItem {
   name: string;
   visible: string[];
   source?: CategoryPresetSource;
+  is_default?: boolean;
 }
 
 async function parseJson(res: Response): Promise<any> {
@@ -58,6 +60,7 @@ function normalizePreset(raw: any): DbCategoryPreset {
     name: String(raw?.name ?? ''),
     visible: Array.isArray(raw?.visible) ? raw.visible.filter((n: unknown): n is string => typeof n === 'string') : [],
     is_active: !!raw?.is_active,
+    is_default: scope === 'builtin' && (!!raw?.is_default || !!raw?.is_active),
     scope,
     source: scope,
     created_at: typeof raw?.created_at === 'number' ? raw.created_at : undefined,
@@ -132,6 +135,18 @@ export const categoryPresetService = {
     });
     const data = await parseJson(res);
     if (!res.ok) throw new Error(data.error || 'Failed to delete built-in category preset');
+  },
+
+  async setBuiltinDefault(id: string): Promise<DbCategoryPreset> {
+    const dbId = builtinDbIdFromPresetId(id) || (/^\d+$/.test(id) ? id : '');
+    if (!dbId) throw new Error('Invalid built-in preset id');
+    const res = await fetch(`${PRESET_BASE}/builtin/${encodeURIComponent(dbId)}/default`, {
+      method: 'POST',
+      credentials: 'include',
+    });
+    const data = await parseJson(res);
+    if (!res.ok) throw new Error(data.error || 'Failed to set default built-in preset');
+    return normalizePreset(data.preset);
   },
 
   async save(tabKey: string, name: string, visible: string[]): Promise<DbCategoryPreset> {
@@ -242,9 +257,26 @@ export function groupBuiltinCategoryPresets(
       name: preset.name,
       visible: Array.isArray(preset.visible) ? preset.visible : [],
       source: 'builtin',
+      is_default: !!(preset.is_default || (preset.scope === 'builtin' && preset.is_active)),
+    });
+  }
+  // Defaults first so callers can use [0] as a fallback
+  for (const tab of Object.keys(out)) {
+    out[tab].sort((a, b) => {
+      if (!!a.is_default !== !!b.is_default) return a.is_default ? -1 : 1;
+      return a.name.localeCompare(b.name);
     });
   }
   return out;
+}
+
+/** Pick the admin-marked default built-in for a tab, or the first built-in. */
+export function pickDefaultBuiltinPreset(
+  builtins: CategoryVisibilityPresetItem[] | undefined
+): CategoryVisibilityPresetItem | null {
+  const list = builtins || [];
+  if (list.length === 0) return null;
+  return list.find((p) => p.is_default) || list[0] || null;
 }
 
 export function mergeCategoryPresetsForTab(
@@ -408,4 +440,214 @@ export function mergeImportedUserPresets(
     next[item.tab_key] = list;
   }
   return next;
+}
+
+/** Browser localStorage keys for personal (non-built-in) category presets. */
+export const CATEGORY_PRESETS_STORAGE_KEY = 'linknest_category_presets';
+export const CATEGORY_PRESET_ACTIVE_STORAGE_KEY = 'linknest_category_preset_active';
+
+function isPersonalPreset(preset: CategoryVisibilityPresetItem): boolean {
+  return preset.source !== 'builtin' && !isBuiltinPresetId(preset.id);
+}
+
+/** Parse personal presets from a localStorage JSON string (built-ins stripped). */
+export function parsePersonalCategoryPresetsByTab(
+  raw: string | null | undefined
+): Record<string, CategoryVisibilityPresetItem[]> {
+  if (!raw || typeof raw !== 'string') return {};
+  try {
+    const parsed = JSON.parse(raw);
+    if (!parsed || typeof parsed !== 'object' || Array.isArray(parsed)) return {};
+    const out: Record<string, CategoryVisibilityPresetItem[]> = {};
+    for (const [tab, list] of Object.entries(parsed)) {
+      if (!Array.isArray(list)) continue;
+      const presets: CategoryVisibilityPresetItem[] = [];
+      for (const item of list) {
+        if (!item || typeof item !== 'object') continue;
+        const name = typeof (item as CategoryVisibilityPresetItem).name === 'string'
+          ? (item as CategoryVisibilityPresetItem).name.trim()
+          : '';
+        if (!name) continue;
+        const rawId = typeof (item as CategoryVisibilityPresetItem).id === 'string'
+          ? (item as CategoryVisibilityPresetItem).id.trim()
+          : '';
+        const visible = Array.isArray((item as CategoryVisibilityPresetItem).visible)
+          ? (item as CategoryVisibilityPresetItem).visible
+            .filter((n): n is string => typeof n === 'string' && n.trim().length > 0)
+            .map((n) => n.trim())
+          : [];
+        const source: CategoryPresetSource =
+          rawId.startsWith('builtin-') || (item as CategoryVisibilityPresetItem).source === 'builtin'
+            ? 'builtin'
+            : 'user';
+        if (source === 'builtin') continue;
+        presets.push({
+          id: rawId || `preset-${tab}-${presets.length}-${name.toLowerCase()}`,
+          name,
+          visible,
+          source: 'user',
+        });
+      }
+      if (presets.length > 0) out[tab] = presets;
+    }
+    return out;
+  } catch {
+    return {};
+  }
+}
+
+export function parseActiveCategoryPresetIds(
+  raw: string | null | undefined
+): Record<string, string> {
+  if (!raw || typeof raw !== 'string') return {};
+  try {
+    const parsed = JSON.parse(raw);
+    if (!parsed || typeof parsed !== 'object' || Array.isArray(parsed)) return {};
+    const out: Record<string, string> = {};
+    for (const [tab, id] of Object.entries(parsed)) {
+      // Never treat built-in ids as browser persistence — built-ins are the default until user saves a My preset
+      if (typeof id === 'string' && id.trim() && !isBuiltinPresetId(id.trim())) {
+        out[tab] = id.trim();
+      }
+    }
+    return out;
+  } catch {
+    return {};
+  }
+}
+
+/** Keep only personal presets (never built-ins) for browser storage. */
+export function filterPersonalCategoryPresetsByTab(
+  byTab: Record<string, CategoryVisibilityPresetItem[]>
+): Record<string, CategoryVisibilityPresetItem[]> {
+  const personalOnly: Record<string, CategoryVisibilityPresetItem[]> = {};
+  for (const [tab, list] of Object.entries(byTab)) {
+    const filtered = (list || [])
+      .filter(isPersonalPreset)
+      .map(({ id, name, visible }) => ({ id, name, visible, source: 'user' as const }));
+    if (filtered.length > 0) personalOnly[tab] = filtered;
+  }
+  return personalOnly;
+}
+
+/** Read personal category presets from this browser's localStorage. */
+export function readPersonalCategoryPresets(): Record<string, CategoryVisibilityPresetItem[]> {
+  if (typeof window === 'undefined') return {};
+  try {
+    return parsePersonalCategoryPresetsByTab(localStorage.getItem(CATEGORY_PRESETS_STORAGE_KEY));
+  } catch {
+    return {};
+  }
+}
+
+/** Write personal category presets to localStorage immediately (built-ins never stored). */
+export function writePersonalCategoryPresets(
+  byTab: Record<string, CategoryVisibilityPresetItem[]>
+): void {
+  if (typeof window === 'undefined') return;
+  try {
+    const personalOnly = filterPersonalCategoryPresetsByTab(byTab);
+    if (Object.keys(personalOnly).length > 0) {
+      localStorage.setItem(CATEGORY_PRESETS_STORAGE_KEY, JSON.stringify(personalOnly));
+    } else {
+      localStorage.removeItem(CATEGORY_PRESETS_STORAGE_KEY);
+    }
+  } catch (e) {
+    console.error('Failed to save category presets', e);
+  }
+}
+
+/** Read active preset id per tab from localStorage. */
+export function readActiveCategoryPresetIds(): Record<string, string> {
+  if (typeof window === 'undefined') return {};
+  try {
+    return parseActiveCategoryPresetIds(localStorage.getItem(CATEGORY_PRESET_ACTIVE_STORAGE_KEY));
+  } catch {
+    return {};
+  }
+}
+
+/** Write active preset ids to localStorage — personal My presets only (never built-in defaults). */
+export function writeActiveCategoryPresetIds(activeByTab: Record<string, string>): void {
+  if (typeof window === 'undefined') return;
+  try {
+    const personalOnly: Record<string, string> = {};
+    for (const [tab, id] of Object.entries(activeByTab)) {
+      if (typeof id === 'string' && id.trim() && !isBuiltinPresetId(id)) {
+        personalOnly[tab] = id.trim();
+      }
+    }
+    if (Object.keys(personalOnly).length > 0) {
+      localStorage.setItem(CATEGORY_PRESET_ACTIVE_STORAGE_KEY, JSON.stringify(personalOnly));
+    } else {
+      localStorage.removeItem(CATEGORY_PRESET_ACTIVE_STORAGE_KEY);
+    }
+  } catch (e) {
+    console.error('Failed to save active category preset', e);
+  }
+}
+
+/**
+ * Remove a personal preset from a by-tab map (and clear active if it pointed at it).
+ * Does not touch built-in presets.
+ */
+export function removePersonalPresetFromByTab(
+  byTab: Record<string, CategoryVisibilityPresetItem[]>,
+  tabKey: string,
+  presetId: string
+): Record<string, CategoryVisibilityPresetItem[]> {
+  if (isBuiltinPresetId(presetId)) return byTab;
+  const list = (byTab[tabKey] || []).filter((item) => item.id !== presetId && isPersonalPreset(item));
+  const next = { ...byTab };
+  if (list.length === 0) delete next[tabKey];
+  else next[tabKey] = list;
+  return next;
+}
+
+/**
+ * Merge DB user presets with leftover browser-only (UUID) rows for admin display.
+ * Prefers DB rows when name collides on the same tab.
+ */
+export function mergeBrowserPersonalPresetsForAdmin(
+  dbPresets: DbCategoryPreset[],
+  localByTab: Record<string, CategoryVisibilityPresetItem[]>
+): Array<{ id: string; tab_key: string; name: string; visible: string[]; storage: 'db' | 'browser' }> {
+  const rows: Array<{ id: string; tab_key: string; name: string; visible: string[]; storage: 'db' | 'browser' }> = [];
+  const seen = new Set<string>();
+
+  for (const preset of dbPresets) {
+    if (preset.source === 'builtin' || preset.scope === 'builtin') continue;
+    const key = `${preset.tab_key}::${preset.name.toLowerCase()}`;
+    seen.add(key);
+    rows.push({
+      id: String(preset.id),
+      tab_key: preset.tab_key,
+      name: preset.name,
+      visible: Array.isArray(preset.visible) ? preset.visible : [],
+      storage: 'db',
+    });
+  }
+
+  for (const [tabKey, list] of Object.entries(localByTab)) {
+    for (const preset of list || []) {
+      if (!isPersonalPreset(preset)) continue;
+      const key = `${tabKey}::${preset.name.toLowerCase()}`;
+      if (seen.has(key)) continue;
+      seen.add(key);
+      rows.push({
+        id: preset.id,
+        tab_key: tabKey,
+        name: preset.name,
+        visible: [...preset.visible],
+        storage: 'browser',
+      });
+    }
+  }
+
+  rows.sort((a, b) => {
+    const tabCmp = a.tab_key.localeCompare(b.tab_key);
+    if (tabCmp !== 0) return tabCmp;
+    return a.name.localeCompare(b.name);
+  });
+  return rows;
 }

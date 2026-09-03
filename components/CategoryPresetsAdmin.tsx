@@ -3,6 +3,15 @@ import {
   categoryPresetService,
   downloadCategoryPresetsJson,
   parseCategoryPresetsImportFile,
+  readPersonalCategoryPresets,
+  writePersonalCategoryPresets,
+  readActiveCategoryPresetIds,
+  writeActiveCategoryPresetIds,
+  removePersonalPresetFromByTab,
+  mergeBrowserPersonalPresetsForAdmin,
+  flattenCategoryPresetsForSync,
+  groupDbCategoryPresets,
+  isBuiltinPresetId,
   type DbCategoryPreset,
 } from '../services/categoryPresetService';
 
@@ -27,6 +36,14 @@ const TAB_OPTIONS: Array<{ value: string; label: string }> = [
   { value: 'public-favorites', label: 'Public Favorites' },
 ];
 
+type BrowserPersonalRow = {
+  id: string;
+  tab_key: string;
+  name: string;
+  visible: string[];
+  storage: 'db' | 'browser';
+};
+
 function parseVisibleLines(raw: string): string[] {
   const seen = new Set<string>();
   const out: string[] = [];
@@ -40,19 +57,26 @@ function parseVisibleLines(raw: string): string[] {
   return out;
 }
 
+function tabLabel(tabKey: string): string {
+  return TAB_OPTIONS.find((t) => t.value === tabKey)?.label || tabKey;
+}
+
 interface CategoryPresetsAdminProps {
   setError: (msg: string) => void;
 }
 
 export const CategoryPresetsAdmin: React.FC<CategoryPresetsAdminProps> = ({ setError }) => {
   const [presets, setPresets] = useState<DbCategoryPreset[]>([]);
+  const [browserRows, setBrowserRows] = useState<BrowserPersonalRow[]>([]);
   const [loading, setLoading] = useState(true);
+  const [browserLoading, setBrowserLoading] = useState(true);
   const [saving, setSaving] = useState(false);
   const [editingId, setEditingId] = useState<string | null>(null);
   const [tabKey, setTabKey] = useState('public');
   const [name, setName] = useState('');
   const [visibleText, setVisibleText] = useState('');
   const [filterTab, setFilterTab] = useState<string>('all');
+  const [browserFilterTab, setBrowserFilterTab] = useState<string>('all');
   const [importing, setImporting] = useState(false);
   const fileInputRef = useRef<HTMLInputElement>(null);
 
@@ -69,14 +93,40 @@ export const CategoryPresetsAdmin: React.FC<CategoryPresetsAdminProps> = ({ setE
     }
   }, [setError]);
 
+  const loadBrowser = useCallback(async () => {
+    setBrowserLoading(true);
+    try {
+      let dbPresets: DbCategoryPreset[] = [];
+      try {
+        const data = await categoryPresetService.list();
+        dbPresets = data.presets;
+      } catch {
+        // Guest admin session unlikely; still show localStorage leftovers
+        dbPresets = [];
+      }
+      const local = readPersonalCategoryPresets();
+      setBrowserRows(mergeBrowserPersonalPresetsForAdmin(dbPresets, local));
+    } catch (err: unknown) {
+      setError(err instanceof Error ? err.message : 'Failed to load browser personal presets');
+    } finally {
+      setBrowserLoading(false);
+    }
+  }, [setError]);
+
   useEffect(() => {
     void load();
-  }, [load]);
+    void loadBrowser();
+  }, [load, loadBrowser]);
 
   const filtered = useMemo(() => {
     if (filterTab === 'all') return presets;
     return presets.filter((p) => p.tab_key === filterTab);
   }, [presets, filterTab]);
+
+  const browserFiltered = useMemo(() => {
+    if (browserFilterTab === 'all') return browserRows;
+    return browserRows.filter((p) => p.tab_key === browserFilterTab);
+  }, [browserRows, browserFilterTab]);
 
   const resetForm = () => {
     setEditingId(null);
@@ -135,6 +185,19 @@ export const CategoryPresetsAdmin: React.FC<CategoryPresetsAdminProps> = ({ setE
     }
   };
 
+  const handleSetDefault = async (preset: DbCategoryPreset) => {
+    setSaving(true);
+    setError('');
+    try {
+      await categoryPresetService.setBuiltinDefault(preset.id);
+      await load();
+    } catch (err: unknown) {
+      setError(err instanceof Error ? err.message : 'Failed to set default built-in preset');
+    } finally {
+      setSaving(false);
+    }
+  };
+
   const handleExport = () => {
     const rows = presets.map((p) => ({
       tab_key: p.tab_key,
@@ -174,6 +237,122 @@ export const CategoryPresetsAdmin: React.FC<CategoryPresetsAdminProps> = ({ setE
     }
   };
 
+  const handleImportAsBuiltin = async (row: BrowserPersonalRow) => {
+    const existing = presets.find(
+      (p) => p.tab_key === row.tab_key && p.name.toLowerCase() === row.name.toLowerCase()
+    );
+    if (existing) {
+      const ok = confirm(
+        `A built-in preset named "${existing.name}" already exists on ${tabLabel(row.tab_key)}. Replace it with this browser preset?`
+      );
+      if (!ok) return;
+    } else {
+      const ok = confirm(
+        `Import "${row.name}" as a built-in preset for ${tabLabel(row.tab_key)}? Guests and users will see it. Your personal copy stays until you delete it.`
+      );
+      if (!ok) return;
+    }
+    setSaving(true);
+    setError('');
+    try {
+      await categoryPresetService.saveBuiltin(row.tab_key, row.name, row.visible);
+      await load();
+      alert(`Imported "${row.name}" as a built-in preset.`);
+    } catch (err: unknown) {
+      setError(err instanceof Error ? err.message : 'Failed to import as built-in');
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  const handleImportAllAsBuiltin = async () => {
+    if (browserFiltered.length === 0) return;
+    const ok = confirm(
+      `Import ${browserFiltered.length} browser preset${browserFiltered.length === 1 ? '' : 's'} as built-in? Existing built-ins with the same name on the same tab will be updated. Personal copies stay until deleted.`
+    );
+    if (!ok) return;
+    setSaving(true);
+    setError('');
+    try {
+      for (const row of browserFiltered) {
+        await categoryPresetService.saveBuiltin(row.tab_key, row.name, row.visible);
+      }
+      await load();
+      alert(`Imported ${browserFiltered.length} built-in preset${browserFiltered.length === 1 ? '' : 's'}`);
+    } catch (err: unknown) {
+      setError(err instanceof Error ? err.message : 'Failed to import browser presets as built-in');
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  const handleDeleteBrowser = async (row: BrowserPersonalRow) => {
+    if (isBuiltinPresetId(row.id)) {
+      setError('Built-in presets cannot be deleted from the browser list.');
+      return;
+    }
+    const ok = confirm(
+      `Delete personal preset "${row.name}"? This removes it from this browser / your account only — not the shared built-in list.`
+    );
+    if (!ok) return;
+
+    setSaving(true);
+    setError('');
+    try {
+      const local = readPersonalCategoryPresets();
+      const nextLocal = removePersonalPresetFromByTab(local, row.tab_key, row.id);
+      // Also remove by name match if local id differs from DB numeric id
+      const byName = (nextLocal[row.tab_key] || []).filter(
+        (p) => p.name.toLowerCase() !== row.name.toLowerCase()
+      );
+      if (byName.length === 0) {
+        const cleaned = { ...nextLocal };
+        delete cleaned[row.tab_key];
+        writePersonalCategoryPresets(cleaned);
+      } else {
+        writePersonalCategoryPresets({ ...nextLocal, [row.tab_key]: byName });
+      }
+
+      const active = readActiveCategoryPresetIds();
+      if (active[row.tab_key] === row.id) {
+        const nextActive = { ...active };
+        delete nextActive[row.tab_key];
+        writeActiveCategoryPresetIds(nextActive);
+      }
+
+      if (/^\d+$/.test(row.id)) {
+        await categoryPresetService.remove(row.id);
+      } else {
+        // Sync remaining personal presets so any DB leftover for this UUID/name is dropped
+        try {
+          const data = await categoryPresetService.list();
+          const byTab = groupDbCategoryPresets(data.presets);
+          const without = removePersonalPresetFromByTab(byTab, row.tab_key, row.id);
+          const withoutName = {
+            ...without,
+            [row.tab_key]: (without[row.tab_key] || []).filter(
+              (p) => p.name.toLowerCase() !== row.name.toLowerCase()
+            ),
+          };
+          if ((withoutName[row.tab_key] || []).length === 0) {
+            delete withoutName[row.tab_key];
+          }
+          const nextActive = { ...data.activeByTab };
+          if (nextActive[row.tab_key] === row.id) delete nextActive[row.tab_key];
+          await categoryPresetService.sync(flattenCategoryPresetsForSync(withoutName, nextActive));
+        } catch {
+          // Not authenticated or no DB row — localStorage write above is enough
+        }
+      }
+
+      await loadBrowser();
+    } catch (err: unknown) {
+      setError(err instanceof Error ? err.message : 'Failed to delete personal preset');
+    } finally {
+      setSaving(false);
+    }
+  };
+
   return (
     <div className="space-y-6">
       <div className={ADMIN_SECTION_CARD}>
@@ -184,7 +363,7 @@ export const CategoryPresetsAdmin: React.FC<CategoryPresetsAdminProps> = ({ setE
           </h2>
           <p className={ADMIN_SECTION_SUBTITLE}>
             Shared presets stored in the database. Guests and users can switch to them, but only admins can change them.
-            Personal presets stay in each browser (guests) or user account.
+            Mark one built-in per tab as Default — that applies until someone saves a personal preset in their browser or account.
           </p>
         </div>
 
@@ -311,8 +490,13 @@ export const CategoryPresetsAdmin: React.FC<CategoryPresetsAdminProps> = ({ setE
                     <div className="flex items-center gap-2 flex-wrap">
                       <span className="font-semibold text-slate-900 dark:text-white">{preset.name}</span>
                       <span className="px-1.5 py-0.5 text-[10px] font-semibold uppercase tracking-wide rounded bg-slate-100 dark:bg-slate-700 text-slate-600 dark:text-slate-300">
-                        {TAB_OPTIONS.find((t) => t.value === preset.tab_key)?.label || preset.tab_key}
+                        {tabLabel(preset.tab_key)}
                       </span>
+                      {(preset.is_default || preset.is_active) && (
+                        <span className="px-1.5 py-0.5 text-[10px] font-semibold uppercase tracking-wide rounded bg-emerald-50 dark:bg-emerald-950/40 text-emerald-700 dark:text-emerald-300 border border-emerald-200/70 dark:border-emerald-800/50">
+                          Default
+                        </span>
+                      )}
                       <span className="text-xs text-slate-500 dark:text-slate-400">
                         {preset.visible.length} categor{preset.visible.length === 1 ? 'y' : 'ies'}
                       </span>
@@ -322,6 +506,17 @@ export const CategoryPresetsAdmin: React.FC<CategoryPresetsAdminProps> = ({ setE
                     </p>
                   </div>
                   <div className="flex items-center gap-2 shrink-0">
+                    {!(preset.is_default || preset.is_active) && (
+                      <button
+                        type="button"
+                        onClick={() => void handleSetDefault(preset)}
+                        disabled={saving}
+                        className="px-3 py-1.5 text-xs font-medium text-emerald-700 dark:text-emerald-300 hover:bg-emerald-50 dark:hover:bg-emerald-950/40 rounded-lg border border-emerald-200 dark:border-emerald-800"
+                        title="Use this built-in as the default for this tab until users save a personal preset"
+                      >
+                        Set as default
+                      </button>
+                    )}
                     <button
                       type="button"
                       onClick={() => startEdit(preset)}
@@ -333,6 +528,102 @@ export const CategoryPresetsAdmin: React.FC<CategoryPresetsAdminProps> = ({ setE
                     <button
                       type="button"
                       onClick={() => void handleDelete(preset)}
+                      disabled={saving}
+                      className="px-3 py-1.5 text-xs font-medium text-red-600 dark:text-red-400 hover:bg-red-50 dark:hover:bg-red-950/40 rounded-lg border border-red-200 dark:border-red-800"
+                    >
+                      Delete
+                    </button>
+                  </div>
+                </li>
+              ))}
+            </ul>
+          )}
+        </div>
+      </div>
+
+      <div className={ADMIN_SECTION_CARD}>
+        <div className="px-6 py-4 border-b border-slate-200 dark:border-slate-700 flex flex-wrap items-center justify-between gap-3">
+          <div className="min-w-0">
+            <h3 className="text-sm font-bold text-slate-900 dark:text-white">
+              Browser / personal presets ({browserFiltered.length})
+            </h3>
+            <p className="text-xs text-slate-500 dark:text-slate-400 mt-0.5">
+              This browser and your account only. Deleting here does not remove shared built-ins.
+            </p>
+          </div>
+          <div className="flex flex-wrap items-center gap-2">
+            <select
+              value={browserFilterTab}
+              onChange={(e) => setBrowserFilterTab(e.target.value)}
+              className="px-3 py-1.5 text-sm rounded-lg border border-slate-200 dark:border-slate-600 bg-white dark:bg-slate-900 text-slate-800 dark:text-slate-100"
+            >
+              <option value="all">All tabs</option>
+              {TAB_OPTIONS.map((opt) => (
+                <option key={opt.value} value={opt.value}>{opt.label}</option>
+              ))}
+            </select>
+            <button
+              type="button"
+              onClick={() => void loadBrowser()}
+              disabled={browserLoading || saving}
+              className="px-3 py-1.5 text-xs font-medium text-slate-700 dark:text-slate-200 hover:bg-slate-100 dark:hover:bg-slate-700 rounded-lg border border-slate-200 dark:border-slate-600 disabled:opacity-50"
+              title="Reload personal presets from this browser and your account"
+            >
+              {browserLoading ? 'Refreshing…' : 'Refresh'}
+            </button>
+            <button
+              type="button"
+              onClick={() => void handleImportAllAsBuiltin()}
+              disabled={saving || browserFiltered.length === 0}
+              className="px-3 py-1.5 text-xs font-medium text-sky-700 dark:text-sky-300 hover:bg-sky-50 dark:hover:bg-sky-950/40 rounded-lg border border-sky-200 dark:border-sky-800 disabled:opacity-50"
+              title="Copy all listed personal presets into the shared built-in list"
+            >
+              Import all as built-in
+            </button>
+          </div>
+        </div>
+        <div className="p-4">
+          {browserLoading ? (
+            <div className="flex items-center justify-center py-10">
+              <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-sky-500" />
+            </div>
+          ) : browserFiltered.length === 0 ? (
+            <p className="text-sm text-slate-500 dark:text-slate-400 py-6 text-center">
+              No personal presets in this browser or your account.
+            </p>
+          ) : (
+            <ul className="divide-y divide-slate-200 dark:divide-slate-700">
+              {browserFiltered.map((row) => (
+                <li key={`${row.tab_key}:${row.id}`} className="py-3 flex flex-wrap items-start justify-between gap-3">
+                  <div className="min-w-0">
+                    <div className="flex items-center gap-2 flex-wrap">
+                      <span className="font-semibold text-slate-900 dark:text-white">{row.name}</span>
+                      <span className="px-1.5 py-0.5 text-[10px] font-semibold uppercase tracking-wide rounded bg-slate-100 dark:bg-slate-700 text-slate-600 dark:text-slate-300">
+                        {tabLabel(row.tab_key)}
+                      </span>
+                      <span className="px-1.5 py-0.5 text-[10px] font-semibold uppercase tracking-wide rounded bg-amber-50 dark:bg-amber-950/40 text-amber-700 dark:text-amber-300 border border-amber-200/70 dark:border-amber-800/50">
+                        {row.storage === 'db' ? 'Account' : 'Browser'}
+                      </span>
+                      <span className="text-xs text-slate-500 dark:text-slate-400">
+                        {row.visible.length} categor{row.visible.length === 1 ? 'y' : 'ies'}
+                      </span>
+                    </div>
+                    <p className="mt-1 text-xs text-slate-500 dark:text-slate-400 truncate max-w-xl">
+                      {(row.visible || []).join(', ') || '(none visible)'}
+                    </p>
+                  </div>
+                  <div className="flex items-center gap-2 shrink-0">
+                    <button
+                      type="button"
+                      onClick={() => void handleImportAsBuiltin(row)}
+                      disabled={saving}
+                      className="px-3 py-1.5 text-xs font-medium text-sky-700 dark:text-sky-300 hover:bg-sky-50 dark:hover:bg-sky-950/40 rounded-lg border border-sky-200 dark:border-sky-800"
+                    >
+                      Import as built-in
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => void handleDeleteBrowser(row)}
                       disabled={saving}
                       className="px-3 py-1.5 text-xs font-medium text-red-600 dark:text-red-400 hover:bg-red-50 dark:hover:bg-red-950/40 rounded-lg border border-red-200 dark:border-red-800"
                     >

@@ -9,7 +9,7 @@ import React, {
 } from 'react';
 
 const MAGNIFY_RADIUS = 78;
-const MAX_SCALE = 1.24;
+const MAX_SCALE = 1.48;
 
 export type DockPointer = { x: number; y: number };
 

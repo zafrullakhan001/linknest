@@ -8548,14 +8548,21 @@ input[type="search"]::-ms-clear {
   transition: transform 0.16s cubic-bezier(0.22, 1, 0.36, 1);
 }
 
+.ln-space-dock-item:hover button,
+.ln-space-dock-item-hot:hover button,
+.ln-space-dock-item:focus-within button,
+.ln-space-dock-item-hot:focus-within button {
+  padding-top: 11px;
+}
+
 .ln-space-dock-btn-label {
   position: absolute;
   left: 2px;
   right: 2px;
-  bottom: 2px;
+  top: 2px;
   z-index: 2;
   display: block;
-  font-size: 6px;
+  font-size: 7px;
   font-weight: 700;
   line-height: 1;
   letter-spacing: 0.02em;
