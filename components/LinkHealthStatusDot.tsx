@@ -1,7 +1,8 @@
 import React from 'react';
 import {
   type LinkHealthColorContext,
-  normalizeLinkHealthStatusShape,
+  type LinkHealthFavFinCorner,
+  normalizeLinkHealthFavFinCorner,
 } from '../services/linkHealthColors';
 import { linkHealthService } from '../services/linkHealthService';
 import { useSettings } from '../contexts/SettingsContext';
@@ -17,7 +18,28 @@ type LinkHealthStatusDotProps = {
   className?: string;
   colorsSetting?: string | null;
   shapeSetting?: string | null;
+  /** Favorite-card fin corner. Defaults to the admin Check Links setting. */
+  corner?: LinkHealthFavFinCorner | string | null;
 };
+
+const CORNER_FIN_PX: Record<'xs' | 'sm' | 'md', number> = {
+  xs: 14,
+  sm: 18,
+  md: 24,
+};
+
+const CORNER_LAYOUT: Record<LinkHealthFavFinCorner, { wrap: string; svg: string }> = {
+  'top-left': { wrap: 'absolute -top-px -left-px', svg: '' },
+  'top-right': { wrap: 'absolute -top-px -right-px', svg: 'scale-x-[-1]' },
+  'bottom-left': { wrap: 'absolute -bottom-px -left-px', svg: 'scale-y-[-1]' },
+  'bottom-right': { wrap: 'absolute -bottom-px -right-px', svg: 'scale-x-[-1] scale-y-[-1]' },
+};
+
+/**
+ * White-shark dorsal-fin tip: hugs the card corner, then tapers with a slight
+ * inward curve so the inner edge is sharper than a 45° dog-ear.
+ */
+const SHARK_FIN_PATH = 'M0 0 H20 Q8 8 0 20 Z';
 
 export const LinkHealthStatusDot: React.FC<LinkHealthStatusDotProps> = ({
   status,
@@ -29,10 +51,14 @@ export const LinkHealthStatusDot: React.FC<LinkHealthStatusDotProps> = ({
   className = '',
   colorsSetting,
   shapeSetting,
+  corner,
 }) => {
   const { settings } = useSettings();
   const colors = colorsSetting ?? settings.link_health_status_colors;
   const shape = shapeSetting ?? settings.link_health_status_shape;
+  const finCorner = normalizeLinkHealthFavFinCorner(
+    corner ?? settings.link_health_fav_fin_corner
+  );
   const dotStyle = linkHealthService.getHealthDotStyle(status, {
     colorsSetting: colors,
     health,
@@ -42,27 +68,24 @@ export const LinkHealthStatusDot: React.FC<LinkHealthStatusDotProps> = ({
   });
 
   if (variant === 'corner') {
-    const shapeKey = normalizeLinkHealthStatusShape(shape);
-    if (shapeKey === 'diamond') {
-      return (
-        <div
-          className={`absolute -top-[1px] -left-[1px] w-3.5 h-3.5 z-20 pointer-events-none overflow-hidden ${className}`}
-          title={title}
-        >
-          <div
-            className={`absolute -top-2 -left-2 w-4 h-4 rotate-45 ${dotStyle.className.includes('animate-pulse') ? 'animate-pulse' : ''}`}
-            style={{ backgroundColor: dotStyle.backgroundColor }}
-          />
-        </div>
-      );
-    }
+    const isPulsing = status === 'checking' || dotStyle.className.includes('animate-pulse');
+    const px = CORNER_FIN_PX[size] ?? CORNER_FIN_PX.sm;
+    const layout = CORNER_LAYOUT[finCorner];
 
     return (
       <div
-        className={`absolute top-0 left-0 z-20 pointer-events-none ${dotStyle.className} ${className}`}
-        style={{ backgroundColor: dotStyle.backgroundColor }}
+        className={`${layout.wrap} z-20 pointer-events-none ${className}`}
+        style={{ width: px, height: px }}
         title={title}
-      />
+      >
+        <svg
+          viewBox="0 0 20 20"
+          className={`block h-full w-full ${layout.svg} ${isPulsing ? 'animate-pulse' : ''}`}
+          aria-hidden
+        >
+          <path d={SHARK_FIN_PATH} fill={dotStyle.backgroundColor} />
+        </svg>
+      </div>
     );
   }
 

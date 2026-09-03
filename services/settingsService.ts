@@ -159,6 +159,8 @@ export interface AppSettings {
   link_health_status_colors?: string;
   /** Check Links status marker shape: circle | square | rounded | diamond */
   link_health_status_shape?: string;
+  /** Favorite Links shark-fin corner: top-left | top-right | bottom-left | bottom-right */
+  link_health_fav_fin_corner?: string;
   /** JSON string array of hosts that skip in-app mobile preview (iframe blocked) */
   iframe_block_domains?: string;
 
@@ -409,6 +411,7 @@ export const settingsService = {
       link_check_exceptions: data.settings?.link_check_exceptions || '[]',
       link_health_status_colors: data.settings?.link_health_status_colors || '',
       link_health_status_shape: data.settings?.link_health_status_shape || 'circle',
+      link_health_fav_fin_corner: data.settings?.link_health_fav_fin_corner || 'top-left',
       iframe_block_domains: data.settings?.iframe_block_domains || '[]',
 
       // LDAP defaults

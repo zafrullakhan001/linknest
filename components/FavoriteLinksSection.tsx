@@ -37,6 +37,7 @@ import {
   getBrokenStatusTone,
   shouldShowBrokenStatusBadge,
 } from '../utils/brokenStatusDisplay';
+import { brokenToneToHealthStatus } from '../services/linkHealthColors';
 
 const stripHtml = (value: string): string =>
   String(value || '').replace(/<[^>]*>/g, '').trim();
@@ -184,6 +185,27 @@ const SortableFavoriteLinkCard: React.FC<{
   };
 
   const title = stripHtml(link.label);
+  const finStatus = showBrokenBadge
+    ? brokenToneToHealthStatus(brokenTone)
+    : (healthStatus || 'unknown');
+  const healthDot = (
+    <LinkHealthStatusDot
+      variant="corner"
+      size={compact ? 'sm' : 'md'}
+      status={finStatus}
+      health={
+        showBrokenBadge
+          ? null
+          : {
+              httpCode: healthResult?.health?.httpCode,
+              redirectCount: healthResult?.health?.redirectCount,
+              finalUrl: healthResult?.health?.finalUrl,
+            }
+      }
+      linkUrl={showBrokenBadge ? undefined : link.url}
+      title={healthStatusTitle}
+    />
+  );
 
   const openLink = async (e: React.MouseEvent) => {
     if (tryHandleSshLinkClick(link.url, e)) return;
@@ -266,38 +288,7 @@ const SortableFavoriteLinkCard: React.FC<{
         }`}
         onClick={openLink}
       >
-        {(healthResult && !skipHealth) || showBrokenBadge ? (
-          showBrokenBadge ? (
-            <div
-              className="absolute -top-[1px] -left-[1px] w-3.5 h-3.5 z-20 pointer-events-none overflow-hidden"
-              title={healthStatusTitle}
-            >
-              <div
-                className="absolute -top-2 -left-2 w-4 h-4 rotate-45"
-                style={{
-                  backgroundColor:
-                    brokenTone === 'amber'
-                      ? '#f59e0b'
-                      : brokenTone === 'slate'
-                        ? '#94a3b8'
-                        : '#ef4444',
-                }}
-              />
-            </div>
-          ) : (
-            <LinkHealthStatusDot
-              variant="corner"
-              status={healthStatus || 'unknown'}
-              health={{
-                httpCode: healthResult?.health?.httpCode,
-                redirectCount: healthResult?.health?.redirectCount,
-                finalUrl: healthResult?.health?.finalUrl,
-              }}
-              linkUrl={link.url}
-              title={healthStatusTitle}
-            />
-          )
-        ) : null}
+        {(healthResult && !skipHealth) || showBrokenBadge ? healthDot : null}
         <div className="flex-1 min-w-0">
           <div className="flex items-center gap-1.5 min-w-0">
             <div className="text-[13px] leading-tight font-semibold text-slate-900 dark:text-white truncate group-hover:text-amber-600 dark:group-hover:text-amber-400 transition-colors">
@@ -371,38 +362,7 @@ const SortableFavoriteLinkCard: React.FC<{
       }`}
       onClick={openLink}
     >
-      {(healthResult || showBrokenBadge) && (
-        showBrokenBadge ? (
-          <div
-            className="absolute -top-[1px] -left-[1px] w-4 h-4 z-20 pointer-events-none overflow-hidden"
-            title={healthStatusTitle}
-          >
-            <div
-              className="absolute -top-2 -left-2 w-5 h-5 rotate-45"
-              style={{
-                backgroundColor:
-                  brokenTone === 'amber'
-                    ? '#f59e0b'
-                    : brokenTone === 'slate'
-                      ? '#94a3b8'
-                      : '#ef4444',
-              }}
-            />
-          </div>
-        ) : (
-          <LinkHealthStatusDot
-            variant="corner"
-            status={healthStatus || 'unknown'}
-            health={{
-              httpCode: healthResult?.health?.httpCode,
-              redirectCount: healthResult?.health?.redirectCount,
-              finalUrl: healthResult?.health?.finalUrl,
-            }}
-            linkUrl={link.url}
-            title={healthStatusTitle}
-          />
-        )
-      )}
+      {(healthResult || showBrokenBadge) ? healthDot : null}
 
       <div className="w-10 h-10 rounded-lg bg-gradient-to-br from-slate-50 to-slate-100 dark:from-slate-900 dark:to-slate-800 flex items-center justify-center shrink-0 text-lg border border-slate-200 dark:border-slate-700">
         {link.icon || '🔗'}

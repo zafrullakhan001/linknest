@@ -40,6 +40,7 @@ const BRANDING_HYDRATE_KEYS = [
   'show_database_path_in_footer', 'semi_pwa_enabled',
   'link_health_status_colors',
   'link_health_status_shape',
+  'link_health_fav_fin_corner',
 ] as const;
 
 /** Branding keys that can be live-previewed before Save Settings */
@@ -211,6 +212,7 @@ export const emptyBrandingDefaults: AppSettings = {
   public_tile_animation: 'fade-in',
   link_health_status_colors: '',
   link_health_status_shape: 'circle',
+  link_health_fav_fin_corner: 'top-left',
 };
 
 /** Resolve browser tab title from pattern tokens. Never invents "LinkNest". */

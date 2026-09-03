@@ -159,6 +159,26 @@ function normalizeLinkHealthStatusColorsSetting($value) {
 }
 
 /**
+ * Normalize Favorite Links shark-fin corner.
+ * @return string top-left | top-right | bottom-left | bottom-right
+ */
+function normalizeLinkHealthFavFinCornerSetting($value) {
+    $raw = is_string($value) ? strtolower(trim($value)) : '';
+    $raw = str_replace(' ', '-', $raw);
+    $aliases = [
+        'left-top' => 'top-left',
+        'right-top' => 'top-right',
+        'left-bottom' => 'bottom-left',
+        'right-bottom' => 'bottom-right',
+    ];
+    if (isset($aliases[$raw])) {
+        $raw = $aliases[$raw];
+    }
+    $allowed = ['top-left', 'top-right', 'bottom-left', 'bottom-right'];
+    return in_array($raw, $allowed, true) ? $raw : 'top-left';
+}
+
+/**
  * Normalize Check Links status-marker shape.
  * @return string circle | square | rounded | diamond
  */
@@ -943,6 +963,7 @@ function handleUpdateSettings() {
                 'link_check_exceptions',
                 'link_health_status_colors',
                 'link_health_status_shape',
+                'link_health_fav_fin_corner',
                 'iframe_block_domains',
                 'maintenance_enabled', 'maintenance_message', 'semi_pwa_enabled', 'semi_pwa_include_paths', 'semi_pwa_exclude_paths',
                 'ldap_enabled', 'ldap_server', 'ldap_port', 'ldap_protocol', 'ldap_base_dn',
@@ -1295,6 +1316,10 @@ function handleUpdateSettings() {
 
             if ($key === 'link_health_status_shape') {
                 $value = normalizeLinkHealthStatusShapeSetting($value);
+            }
+
+            if ($key === 'link_health_fav_fin_corner') {
+                $value = normalizeLinkHealthFavFinCornerSetting($value);
             }
 
             if ($key === 'iframe_block_domains') {

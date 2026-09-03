@@ -17,7 +17,11 @@ export type LinkHealthStatusColors = Record<LinkHealthColorKey, string>;
 
 export type LinkHealthIndicatorShape = 'circle' | 'square' | 'rounded' | 'diamond';
 
+export type LinkHealthFavFinCorner = 'top-left' | 'top-right' | 'bottom-left' | 'bottom-right';
+
 export const DEFAULT_LINK_HEALTH_STATUS_SHAPE: LinkHealthIndicatorShape = 'circle';
+
+export const DEFAULT_LINK_HEALTH_FAV_FIN_CORNER: LinkHealthFavFinCorner = 'top-left';
 
 export const LINK_HEALTH_SHAPE_OPTIONS: Array<{
   id: LinkHealthIndicatorShape;
@@ -28,6 +32,17 @@ export const LINK_HEALTH_SHAPE_OPTIONS: Array<{
   { id: 'square', label: 'Square', description: 'Sharp square marker' },
   { id: 'rounded', label: 'Rounded square', description: 'Soft square corners' },
   { id: 'diamond', label: 'Diamond', description: 'Rotated square (45°)' },
+];
+
+export const LINK_HEALTH_FAV_FIN_CORNER_OPTIONS: Array<{
+  id: LinkHealthFavFinCorner;
+  label: string;
+  description: string;
+}> = [
+  { id: 'top-left', label: 'Top left', description: 'Upper-left corner of Favorite Links cards' },
+  { id: 'top-right', label: 'Top right', description: 'Upper-right corner of Favorite Links cards' },
+  { id: 'bottom-left', label: 'Bottom left', description: 'Lower-left corner of Favorite Links cards' },
+  { id: 'bottom-right', label: 'Bottom right', description: 'Lower-right corner of Favorite Links cards' },
 ];
 
 export const DEFAULT_LINK_HEALTH_STATUS_COLORS: LinkHealthStatusColors = {
@@ -210,6 +225,30 @@ export function normalizeLinkHealthStatusShape(value: unknown): LinkHealthIndica
     return shape;
   }
   return DEFAULT_LINK_HEALTH_STATUS_SHAPE;
+}
+
+export function normalizeLinkHealthFavFinCorner(value: unknown): LinkHealthFavFinCorner {
+  const raw = typeof value === 'string' ? value.trim().toLowerCase().replace(/\s+/g, '-') : '';
+  if (
+    raw === 'top-left' ||
+    raw === 'top-right' ||
+    raw === 'bottom-left' ||
+    raw === 'bottom-right'
+  ) {
+    return raw;
+  }
+  if (raw === 'left-top') return 'top-left';
+  if (raw === 'right-top') return 'top-right';
+  if (raw === 'left-bottom') return 'bottom-left';
+  if (raw === 'right-bottom') return 'bottom-right';
+  return DEFAULT_LINK_HEALTH_FAV_FIN_CORNER;
+}
+
+/** Map a custom broken-badge tone onto Check Links color keys so favorites use admin colors. */
+export function brokenToneToHealthStatus(tone: 'red' | 'amber' | 'slate' | string | null | undefined): string {
+  if (tone === 'amber') return 'unknown';
+  if (tone === 'slate') return 'network';
+  return 'broken';
 }
 
 /** Tailwind classes for inline status markers (dot variant). */

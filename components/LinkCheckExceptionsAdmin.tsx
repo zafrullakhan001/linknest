@@ -6,15 +6,19 @@ import {
   parseExceptionsSetting,
 } from '../services/linkCheckExceptionsService';
 import {
+  DEFAULT_LINK_HEALTH_FAV_FIN_CORNER,
   DEFAULT_LINK_HEALTH_STATUS_COLORS,
   DEFAULT_LINK_HEALTH_STATUS_SHAPE,
   LINK_HEALTH_COLOR_LABELS,
+  LINK_HEALTH_FAV_FIN_CORNER_OPTIONS,
   LINK_HEALTH_SHAPE_OPTIONS,
   linkHealthStatusColorsToSetting,
   normalizeHealthColorHex,
+  normalizeLinkHealthFavFinCorner,
   normalizeLinkHealthStatusShape,
   parseLinkHealthStatusColors,
   type LinkHealthColorKey,
+  type LinkHealthFavFinCorner,
   type LinkHealthIndicatorShape,
   type LinkHealthStatusColors,
 } from '../services/linkHealthColors';
@@ -61,6 +65,9 @@ export const LinkCheckExceptionsAdmin: React.FC<LinkCheckExceptionsAdminProps> =
   const [healthShape, setHealthShape] = useState<LinkHealthIndicatorShape>(() =>
     normalizeLinkHealthStatusShape(settings.link_health_status_shape)
   );
+  const [favFinCorner, setFavFinCorner] = useState<LinkHealthFavFinCorner>(() =>
+    normalizeLinkHealthFavFinCorner(settings.link_health_fav_fin_corner)
+  );
 
   useEffect(() => {
     setHealthColors(parseLinkHealthStatusColors(settings.link_health_status_colors));
@@ -69,6 +76,10 @@ export const LinkCheckExceptionsAdmin: React.FC<LinkCheckExceptionsAdminProps> =
   useEffect(() => {
     setHealthShape(normalizeLinkHealthStatusShape(settings.link_health_status_shape));
   }, [settings.link_health_status_shape]);
+
+  useEffect(() => {
+    setFavFinCorner(normalizeLinkHealthFavFinCorner(settings.link_health_fav_fin_corner));
+  }, [settings.link_health_fav_fin_corner]);
 
   const exceptions = useMemo(
     () => parseExceptionsSetting(settings.link_check_exceptions),
@@ -163,6 +174,7 @@ export const LinkCheckExceptionsAdmin: React.FC<LinkCheckExceptionsAdminProps> =
       const payload = {
         link_health_status_colors: linkHealthStatusColorsToSetting(normalized),
         link_health_status_shape: healthShape,
+        link_health_fav_fin_corner: favFinCorner,
       };
       await settingsService.updateSettings(payload);
       setHealthColors(normalized);
@@ -181,6 +193,7 @@ export const LinkCheckExceptionsAdmin: React.FC<LinkCheckExceptionsAdminProps> =
   const handleResetColors = () => {
     setHealthColors({ ...DEFAULT_LINK_HEALTH_STATUS_COLORS });
     setHealthShape(DEFAULT_LINK_HEALTH_STATUS_SHAPE);
+    setFavFinCorner(DEFAULT_LINK_HEALTH_FAV_FIN_CORNER);
   };
 
   const previewCount = useMemo(() => parseExceptionPatterns(bulkText).length, [bulkText]);
@@ -195,7 +208,8 @@ export const LinkCheckExceptionsAdmin: React.FC<LinkCheckExceptionsAdminProps> =
           </h2>
           <p className={ADMIN_SECTION_SUBTITLE}>
             Customize the colored dots next to links after Check Links runs (online, redirected,
-            broken, and more). Changes apply site-wide after you save.
+            broken, and more). Favorite Links shark-fin tips use these same colors. Changes apply
+            site-wide after you save.
           </p>
           <p className="mt-2 text-xs text-amber-800/90 dark:text-amber-200/90 rounded-lg border border-amber-200/70 dark:border-amber-800/40 bg-amber-50/80 dark:bg-amber-950/20 px-3 py-2 leading-relaxed">
             Many login and SSO links are labeled <strong>Unknown / Timeout</strong>, not{' '}
@@ -244,6 +258,62 @@ export const LinkCheckExceptionsAdmin: React.FC<LinkCheckExceptionsAdminProps> =
                           style={{ backgroundColor: previewColor }}
                           aria-hidden
                         />
+                      </span>
+                      <span>
+                        <span className="block text-sm font-semibold text-slate-900 dark:text-white">
+                          {option.label}
+                        </span>
+                        <span className="block text-[11px] text-slate-500 dark:text-slate-400 leading-snug">
+                          {option.description}
+                        </span>
+                      </span>
+                    </div>
+                  </button>
+                );
+              })}
+            </div>
+          </div>
+
+          <div>
+            <p className="text-sm font-semibold text-slate-800 dark:text-slate-100 mb-1">
+              Favorite Links fin position
+            </p>
+            <p className="text-xs text-slate-500 dark:text-slate-400 mb-2">
+              Place the shark-fin status tip on any corner of Favorite Links cards.
+            </p>
+            <div className="grid gap-2 sm:grid-cols-2 lg:grid-cols-4">
+              {LINK_HEALTH_FAV_FIN_CORNER_OPTIONS.map((option) => {
+                const selected = favFinCorner === option.id;
+                const previewColor = healthColors.online;
+                const finClass =
+                  option.id === 'top-right'
+                    ? 'absolute -top-px -right-px scale-x-[-1]'
+                    : option.id === 'bottom-left'
+                      ? 'absolute -bottom-px -left-px scale-y-[-1]'
+                      : option.id === 'bottom-right'
+                        ? 'absolute -bottom-px -right-px scale-x-[-1] scale-y-[-1]'
+                        : 'absolute -top-px -left-px';
+                return (
+                  <button
+                    key={option.id}
+                    type="button"
+                    onClick={() => setFavFinCorner(option.id)}
+                    disabled={colorsSaving}
+                    className={`rounded-xl border p-3 text-left transition-all ${
+                      selected
+                        ? 'border-sky-400 bg-sky-50/80 dark:border-sky-500 dark:bg-sky-950/30 ring-2 ring-sky-400/40'
+                        : 'border-sky-100 dark:border-sky-900/40 bg-slate-50/80 dark:bg-slate-900/40 hover:border-sky-300'
+                    }`}
+                  >
+                    <div className="flex items-center gap-3">
+                      <span className="relative block h-10 w-14 overflow-hidden rounded-md bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 shrink-0">
+                        <svg
+                          viewBox="0 0 20 20"
+                          className={`h-4 w-4 ${finClass}`}
+                          aria-hidden
+                        >
+                          <path d="M0 0 H20 Q8 8 0 20 Z" fill={previewColor} />
+                        </svg>
                       </span>
                       <span>
                         <span className="block text-sm font-semibold text-slate-900 dark:text-white">
@@ -331,7 +401,7 @@ export const LinkCheckExceptionsAdmin: React.FC<LinkCheckExceptionsAdminProps> =
               onClick={() => void handleSaveColors()}
               disabled={colorsSaving}
             >
-              {colorsSaving ? 'Saving…' : 'Save Status Colors & Shape'}
+              {colorsSaving ? 'Saving…' : 'Save Status Colors, Shape & Fin'}
             </button>
             <button
               type="button"
