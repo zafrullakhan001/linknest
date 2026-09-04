@@ -1,6 +1,7 @@
 import React, { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
 import { Link } from '../types';
+import { useEscapeToClose } from '../hooks/useEscapeToClose';
 import { linkHealthService } from '../services/linkHealthService';
 import { normalizeStoredLinkUrl } from '../utils/urlDisplay';
 import { diagnoseLinkUrl, hasBlockingUrlIssues } from '../utils/urlDiagnostics';
