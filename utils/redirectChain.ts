@@ -74,7 +74,16 @@ const TRACKING_QUERY_KEYS = new Set([
   'ref_src',
   'ref_url',
   'feature',
+  // Microsoft Teams / SharePoint / OneDrive sharing wrappers
+  'xsdata',
+  'sdata',
+  'ovuser',
+  'clickparams',
 ]);
+
+/** Only stripped when a Teams/SharePoint share payload is present (avoid nuking unrelated OR/CT). */
+const TEAMS_SHARE_PAYLOAD_KEYS = new Set(['xsdata', 'sdata', 'ovuser', 'clickparams']);
+const TEAMS_SHARE_COMPANION_KEYS = new Set(['or', 'ct']);
 
 const SSO_HOST_RE =
   /(^|\.)(okta|onelogin|auth0|pingidentity|login\.microsoftonline|login\.windows|sts\.windows|accounts\.google|signin\.aws|login\.salesforce|adfs)(\.|$)/i;
@@ -107,12 +116,22 @@ export function isTrackingQueryKey(key: string): boolean {
   return false;
 }
 
+function hasTeamsSharePayload(keys: Iterable<string>): boolean {
+  for (const key of keys) {
+    if (TEAMS_SHARE_PAYLOAD_KEYS.has((key || '').toLowerCase())) return true;
+  }
+  return false;
+}
+
 export function stripTrackingParams(url: string): string | null {
   try {
     const parsed = new URL(url);
     let changed = false;
-    for (const key of [...parsed.searchParams.keys()]) {
-      if (isTrackingQueryKey(key)) {
+    const keys = [...parsed.searchParams.keys()];
+    const teamsShare = hasTeamsSharePayload(keys);
+    for (const key of keys) {
+      const lower = (key || '').toLowerCase();
+      if (isTrackingQueryKey(key) || (teamsShare && TEAMS_SHARE_COMPANION_KEYS.has(lower))) {
         parsed.searchParams.delete(key);
         changed = true;
       }
@@ -122,6 +141,13 @@ export function stripTrackingParams(url: string): string | null {
   } catch {
     return null;
   }
+}
+
+/** URL used for RTT / HTTPS probes — tracking junk stripped; original bookmark unchanged. */
+export function urlForHealthProbe(url: string): string {
+  const trimmed = (url || '').trim();
+  if (!trimmed) return trimmed;
+  return stripTrackingParams(trimmed) ?? trimmed;
 }
 
 export function looksLikeSsoUrl(url: string): boolean {

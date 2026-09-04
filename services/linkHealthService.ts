@@ -1,5 +1,6 @@
 import { LinkHealth } from '../types';
 import { resolveApiBase } from './apiHelpers';
+import { urlForHealthProbe } from '../utils/redirectChain';
 import {
   type LinkHealthColorContext,
   linkHealthIndicatorDotClassName,
@@ -259,12 +260,13 @@ export const linkHealthService = {
     scheme: 'http' | 'https' | string;
     health: LinkHealth & { serverLatency?: number; finalUrl?: string | null; redirectCount?: number };
   }> {
+    const probeUrl = urlForHealthProbe(url);
     const response = await withTimeout(
       fetch(healthApi('/linkhealth/check-url'), {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         credentials: 'include',
-        body: JSON.stringify({ url }),
+        body: JSON.stringify({ url: probeUrl }),
         signal
       }),
       65000,

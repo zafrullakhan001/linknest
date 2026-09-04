@@ -70,7 +70,7 @@ import { LinkMaintenanceDialog } from './LinkMaintenanceDialog';
 import { LinkMaintenanceVideoField } from './LinkMaintenanceVideoField';
 import { LinkMaintenanceBadge } from './LinkMaintenanceBadge';
 import { isLinkInMaintenance } from '../utils/linkMaintenance';
-import { hasVisibleRichText, looksLikeHtml, plainNotesToHtml, prepareViewerHtml } from '../utils/richTextDisplay';
+import { hasVisibleRichText, prepareViewerHtml } from '../utils/richTextDisplay';
 import { isInfoContentEnabled, isInfoOpenLinkShown, isNotesTooltipEnabled, shouldOpenInfoDialog, shouldShowLinkNotes } from '../utils/linkFeatureToggles';
 import { LinkNotesDialog } from './LinkNotesDialog';
 import { LinkHoverTooltip } from './LinkHoverTooltip';
@@ -104,6 +104,7 @@ import { EditLinkForm } from './EditLinkForm';
 import { AddLinkMenu } from './AddLinkMenu';
 import { BulkAddLinksDialog } from './BulkAddLinksDialog';
 import { DeleteDuplicateLinksDialog } from './DeleteDuplicateLinksDialog';
+import { NotesPresetFormDialog, mergePresetNotesIntoHtml } from './NotesPresetFormDialog';
 import { getDisplayUrl, isHttpOrHttpsUrl, normalizeStoredLinkUrl, rewriteHtmlAnchorHrefs, viewerLinkDisplay, viewerLinkUrl, effectiveShowShortUrls } from '../utils/urlDisplay';
 import { diagnoseLinkUrl, hasBlockingUrlIssues } from '../utils/urlDiagnostics';
 import { UrlFormDiagnostics, UrlNeedsFixBadge, InvalidUrlMark } from './UrlFormDiagnostics';
@@ -1319,24 +1320,6 @@ export const TileDetail: React.FC<TileDetailProps> = ({
 
 
     const [notesPresetFormState, setNotesPresetFormState] = useState<{ linkId: string } | null>(null);
-    useEscapeToClose(!!notesPresetFormState, () => setNotesPresetFormState(null));
-    const [notesPresetForm, setNotesPresetForm] = useState({
-        ownerInfo: '',
-        supportTeamInfo: '',
-        serviceNowGroupInfo: '',
-        businessOwner: '',
-        productOwner: '',
-        architect: '',
-        vendorDetails: '',
-        serviceNowDemand: '',
-        serviceNowProject: '',
-        serviceNowTask: '',
-        goLiveInfo: '',
-        majorUpgradeInfo: '',
-        serviceDeliveryManager: '',
-        businessRelationshipManager: '',
-        technologyRelationshipManager: ''
-    });
 
     // Auto-scroll to first matching link when search changes
     useEffect(() => {
@@ -10174,10 +10157,23 @@ export const TileDetail: React.FC<TileDetailProps> = ({
                             onToggleGroup={(groupId) => toggleEditGroupSelection(linkId, groupId)}
                             showEmojiPicker={!!showLinkEmojiPicker[linkId]}
                             onSetEmojiPicker={(open) => setShowLinkEmojiPicker((prev) => ({ ...prev, [linkId]: open }))}
+                            onOpenNotesPreset={() => setNotesPresetFormState({ linkId })}
                             linkAnimationForEdit={linkAnimationForEdit}
                         />
                     );
                 })()}
+
+                <NotesPresetFormDialog
+                    open={!!notesPresetFormState}
+                    onClose={() => setNotesPresetFormState(null)}
+                    onAddToNotes={(formattedNotes) => {
+                        if (!notesPresetFormState?.linkId) return;
+                        const linkId = notesPresetFormState.linkId;
+                        const currentNotes = editLinkState[linkId]?.notes || '';
+                        updateEditLinkState(linkId, 'notes', mergePresetNotesIntoHtml(currentNotes, formattedNotes));
+                        updateEditLinkState(linkId, 'notesEnabled', true);
+                    }}
+                />
 
                 {/* Link Info Dialog */}
                 {linkInfoDialog && (
@@ -14222,370 +14218,17 @@ export const TileDetail: React.FC<TileDetailProps> = ({
                 </div>
 
                 {/* Notes Preset Form Dialog */}
-                {notesPresetFormState && (
-                    <>
-                        {typeof document !== 'undefined' && createPortal(
-                            <div
-                                className="fixed inset-0 z-[99999] flex items-center justify-center p-4 bg-black/50 backdrop-blur-sm overflow-y-auto"
-                            >
-                                <div
-                                    className="bg-white dark:bg-slate-800 rounded-2xl shadow-2xl border border-slate-200 dark:border-slate-700 max-w-3xl w-full max-h-[90vh] flex flex-col my-8"
-                                    onClick={(e) => e.stopPropagation()}
-                                >
-                                    {/* Dialog Header */}
-                                    <div className="px-6 py-4 border-b border-slate-200 dark:border-slate-700 flex items-center justify-between sticky top-0 bg-white dark:bg-slate-800 z-10">
-                                        <div>
-                                            <h3 className="text-lg font-bold text-slate-900 dark:text-white">Notes Preset Form</h3>
-                                            <p className="text-sm text-slate-500 dark:text-slate-400 mt-0.5">Fill in the fields below (all optional)</p>
-                                        </div>
-                                        <button
-                                            onClick={() => {
-                                                setNotesPresetFormState(null);
-                                                setNotesPresetForm({
-                                                    ownerInfo: '',
-                                                    supportTeamInfo: '',
-                                                    serviceNowGroupInfo: '',
-                                                    businessOwner: '',
-                                                    productOwner: '',
-                                                    architect: '',
-                                                    vendorDetails: '',
-                                                    serviceNowDemand: '',
-                                                    serviceNowProject: '',
-                                                    serviceNowTask: '',
-                                                    goLiveInfo: '',
-                                                    majorUpgradeInfo: '',
-                                                    serviceDeliveryManager: '',
-                                                    businessRelationshipManager: '',
-                                                    technologyRelationshipManager: ''
-                                                });
-                                            }}
-                                            className="p-1.5 rounded-lg hover:bg-slate-100 dark:hover:bg-slate-700 text-slate-400 hover:text-slate-600 dark:hover:text-slate-300 transition-colors"
-                                        >
-                                            <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" strokeWidth={2} stroke="currentColor" className="w-5 h-5">
-                                                <path strokeLinecap="round" strokeLinejoin="round" d="M6 18L18 6M6 6l12 12" />
-                                            </svg>
-                                        </button>
-                                    </div>
-
-                                    {/* Dialog Content - Scrollable Form */}
-                                    <div className="px-6 py-4 flex-1 overflow-y-auto">
-                                        <div className="space-y-4">
-                                            {/* Owner Information */}
-                                            <div>
-                                                <label className="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-1.5">Owner Information</label>
-                                                <input
-                                                    type="text"
-                                                    value={notesPresetForm.ownerInfo}
-                                                    onChange={(e) => setNotesPresetForm(prev => ({ ...prev, ownerInfo: e.target.value }))}
-                                                    placeholder="Enter owner information..."
-                                                    className="w-full bg-slate-50 dark:bg-slate-900 border-2 border-slate-200 dark:border-slate-700 rounded-lg px-3 py-2 text-sm text-slate-900 dark:text-white focus:border-brand-500 focus:outline-none focus:ring-2 focus:ring-brand-500/50 transition-all"
-                                                />
-                                            </div>
-
-                                            {/* Support Team Information */}
-                                            <div>
-                                                <label className="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-1.5">Support Team Information</label>
-                                                <input
-                                                    type="text"
-                                                    value={notesPresetForm.supportTeamInfo}
-                                                    onChange={(e) => setNotesPresetForm(prev => ({ ...prev, supportTeamInfo: e.target.value }))}
-                                                    placeholder="Enter support team information..."
-                                                    className="w-full bg-slate-50 dark:bg-slate-900 border-2 border-slate-200 dark:border-slate-700 rounded-lg px-3 py-2 text-sm text-slate-900 dark:text-white focus:border-brand-500 focus:outline-none focus:ring-2 focus:ring-brand-500/50 transition-all"
-                                                />
-                                            </div>
-
-                                            {/* Service Now Group Information */}
-                                            <div>
-                                                <label className="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-1.5">Service Now Group Information</label>
-                                                <input
-                                                    type="text"
-                                                    value={notesPresetForm.serviceNowGroupInfo}
-                                                    onChange={(e) => setNotesPresetForm(prev => ({ ...prev, serviceNowGroupInfo: e.target.value }))}
-                                                    placeholder="Enter Service Now group information..."
-                                                    className="w-full bg-slate-50 dark:bg-slate-900 border-2 border-slate-200 dark:border-slate-700 rounded-lg px-3 py-2 text-sm text-slate-900 dark:text-white focus:border-brand-500 focus:outline-none focus:ring-2 focus:ring-brand-500/50 transition-all"
-                                                />
-                                            </div>
-
-                                            {/* Contact Information Section */}
-                                            <div className="border-t border-slate-200 dark:border-slate-700 pt-4">
-                                                <h4 className="text-sm font-semibold text-slate-800 dark:text-slate-200 mb-3">Contact Information</h4>
-                                                <div className="space-y-3">
-                                                    <div>
-                                                        <label className="block text-xs font-medium text-slate-600 dark:text-slate-400 mb-1.5">Business Owner</label>
-                                                        <input
-                                                            type="text"
-                                                            value={notesPresetForm.businessOwner}
-                                                            onChange={(e) => setNotesPresetForm(prev => ({ ...prev, businessOwner: e.target.value }))}
-                                                            placeholder="Business owner details..."
-                                                            className="w-full bg-slate-50 dark:bg-slate-900 border-2 border-slate-200 dark:border-slate-700 rounded-lg px-3 py-2 text-sm text-slate-900 dark:text-white focus:border-brand-500 focus:outline-none focus:ring-2 focus:ring-brand-500/50 transition-all"
-                                                        />
-                                                    </div>
-                                                    <div>
-                                                        <label className="block text-xs font-medium text-slate-600 dark:text-slate-400 mb-1.5">Product Owner</label>
-                                                        <input
-                                                            type="text"
-                                                            value={notesPresetForm.productOwner}
-                                                            onChange={(e) => setNotesPresetForm(prev => ({ ...prev, productOwner: e.target.value }))}
-                                                            placeholder="Product owner details..."
-                                                            className="w-full bg-slate-50 dark:bg-slate-900 border-2 border-slate-200 dark:border-slate-700 rounded-lg px-3 py-2 text-sm text-slate-900 dark:text-white focus:border-brand-500 focus:outline-none focus:ring-2 focus:ring-brand-500/50 transition-all"
-                                                        />
-                                                    </div>
-                                                    <div>
-                                                        <label className="block text-xs font-medium text-slate-600 dark:text-slate-400 mb-1.5">Architect</label>
-                                                        <input
-                                                            type="text"
-                                                            value={notesPresetForm.architect}
-                                                            onChange={(e) => setNotesPresetForm(prev => ({ ...prev, architect: e.target.value }))}
-                                                            placeholder="Architect details..."
-                                                            className="w-full bg-slate-50 dark:bg-slate-900 border-2 border-slate-200 dark:border-slate-700 rounded-lg px-3 py-2 text-sm text-slate-900 dark:text-white focus:border-brand-500 focus:outline-none focus:ring-2 focus:ring-brand-500/50 transition-all"
-                                                        />
-                                                    </div>
-                                                    <div>
-                                                        <label className="block text-xs font-medium text-slate-600 dark:text-slate-400 mb-1.5">Vendor Details</label>
-                                                        <input
-                                                            type="text"
-                                                            value={notesPresetForm.vendorDetails}
-                                                            onChange={(e) => setNotesPresetForm(prev => ({ ...prev, vendorDetails: e.target.value }))}
-                                                            placeholder="Vendor details..."
-                                                            className="w-full bg-slate-50 dark:bg-slate-900 border-2 border-slate-200 dark:border-slate-700 rounded-lg px-3 py-2 text-sm text-slate-900 dark:text-white focus:border-brand-500 focus:outline-none focus:ring-2 focus:ring-brand-500/50 transition-all"
-                                                        />
-                                                    </div>
-                                                </div>
-                                            </div>
-
-                                            {/* Service Now Information Section */}
-                                            <div className="border-t border-slate-200 dark:border-slate-700 pt-4">
-                                                <h4 className="text-sm font-semibold text-slate-800 dark:text-slate-200 mb-3">Service Now Ticket Information</h4>
-                                                <div className="space-y-3">
-                                                    <div>
-                                                        <label className="block text-xs font-medium text-slate-600 dark:text-slate-400 mb-1.5">Demand Ticket</label>
-                                                        <input
-                                                            type="text"
-                                                            value={notesPresetForm.serviceNowDemand}
-                                                            onChange={(e) => setNotesPresetForm(prev => ({ ...prev, serviceNowDemand: e.target.value }))}
-                                                            placeholder="Service Now demand ticket..."
-                                                            className="w-full bg-slate-50 dark:bg-slate-900 border-2 border-slate-200 dark:border-slate-700 rounded-lg px-3 py-2 text-sm text-slate-900 dark:text-white focus:border-brand-500 focus:outline-none focus:ring-2 focus:ring-brand-500/50 transition-all"
-                                                        />
-                                                    </div>
-                                                    <div>
-                                                        <label className="block text-xs font-medium text-slate-600 dark:text-slate-400 mb-1.5">Project Ticket</label>
-                                                        <input
-                                                            type="text"
-                                                            value={notesPresetForm.serviceNowProject}
-                                                            onChange={(e) => setNotesPresetForm(prev => ({ ...prev, serviceNowProject: e.target.value }))}
-                                                            placeholder="Service Now project ticket..."
-                                                            className="w-full bg-slate-50 dark:bg-slate-900 border-2 border-slate-200 dark:border-slate-700 rounded-lg px-3 py-2 text-sm text-slate-900 dark:text-white focus:border-brand-500 focus:outline-none focus:ring-2 focus:ring-brand-500/50 transition-all"
-                                                        />
-                                                    </div>
-                                                    <div>
-                                                        <label className="block text-xs font-medium text-slate-600 dark:text-slate-400 mb-1.5">Task Ticket</label>
-                                                        <input
-                                                            type="text"
-                                                            value={notesPresetForm.serviceNowTask}
-                                                            onChange={(e) => setNotesPresetForm(prev => ({ ...prev, serviceNowTask: e.target.value }))}
-                                                            placeholder="Service Now task ticket..."
-                                                            className="w-full bg-slate-50 dark:bg-slate-900 border-2 border-slate-200 dark:border-slate-700 rounded-lg px-3 py-2 text-sm text-slate-900 dark:text-white focus:border-brand-500 focus:outline-none focus:ring-2 focus:ring-brand-500/50 transition-all"
-                                                        />
-                                                    </div>
-                                                </div>
-                                            </div>
-
-                                            {/* Project Information Section */}
-                                            <div className="border-t border-slate-200 dark:border-slate-700 pt-4">
-                                                <h4 className="text-sm font-semibold text-slate-800 dark:text-slate-200 mb-3">Project Information</h4>
-                                                <div className="space-y-3">
-                                                    <div>
-                                                        <label className="block text-xs font-medium text-slate-600 dark:text-slate-400 mb-1.5">Go-Live Information</label>
-                                                        <input
-                                                            type="text"
-                                                            value={notesPresetForm.goLiveInfo}
-                                                            onChange={(e) => setNotesPresetForm(prev => ({ ...prev, goLiveInfo: e.target.value }))}
-                                                            placeholder="Go-live date and details..."
-                                                            className="w-full bg-slate-50 dark:bg-slate-900 border-2 border-slate-200 dark:border-slate-700 rounded-lg px-3 py-2 text-sm text-slate-900 dark:text-white focus:border-brand-500 focus:outline-none focus:ring-2 focus:ring-brand-500/50 transition-all"
-                                                        />
-                                                    </div>
-                                                    <div>
-                                                        <label className="block text-xs font-medium text-slate-600 dark:text-slate-400 mb-1.5">Major Upgrade Information</label>
-                                                        <input
-                                                            type="text"
-                                                            value={notesPresetForm.majorUpgradeInfo}
-                                                            onChange={(e) => setNotesPresetForm(prev => ({ ...prev, majorUpgradeInfo: e.target.value }))}
-                                                            placeholder="Major upgrade information..."
-                                                            className="w-full bg-slate-50 dark:bg-slate-900 border-2 border-slate-200 dark:border-slate-700 rounded-lg px-3 py-2 text-sm text-slate-900 dark:text-white focus:border-brand-500 focus:outline-none focus:ring-2 focus:ring-brand-500/50 transition-all"
-                                                        />
-                                                    </div>
-                                                </div>
-                                            </div>
-
-                                            {/* Manager Information Section */}
-                                            <div className="border-t border-slate-200 dark:border-slate-700 pt-4">
-                                                <h4 className="text-sm font-semibold text-slate-800 dark:text-slate-200 mb-3">Manager Information</h4>
-                                                <div className="space-y-3">
-                                                    <div>
-                                                        <label className="block text-xs font-medium text-slate-600 dark:text-slate-400 mb-1.5">Service Delivery Manager</label>
-                                                        <input
-                                                            type="text"
-                                                            value={notesPresetForm.serviceDeliveryManager}
-                                                            onChange={(e) => setNotesPresetForm(prev => ({ ...prev, serviceDeliveryManager: e.target.value }))}
-                                                            placeholder="Service Delivery Manager details..."
-                                                            className="w-full bg-slate-50 dark:bg-slate-900 border-2 border-slate-200 dark:border-slate-700 rounded-lg px-3 py-2 text-sm text-slate-900 dark:text-white focus:border-brand-500 focus:outline-none focus:ring-2 focus:ring-brand-500/50 transition-all"
-                                                        />
-                                                    </div>
-                                                    <div>
-                                                        <label className="block text-xs font-medium text-slate-600 dark:text-slate-400 mb-1.5">Business Relationship Manager</label>
-                                                        <input
-                                                            type="text"
-                                                            value={notesPresetForm.businessRelationshipManager}
-                                                            onChange={(e) => setNotesPresetForm(prev => ({ ...prev, businessRelationshipManager: e.target.value }))}
-                                                            placeholder="Business Relationship Manager details..."
-                                                            className="w-full bg-slate-50 dark:bg-slate-900 border-2 border-slate-200 dark:border-slate-700 rounded-lg px-3 py-2 text-sm text-slate-900 dark:text-white focus:border-brand-500 focus:outline-none focus:ring-2 focus:ring-brand-500/50 transition-all"
-                                                        />
-                                                    </div>
-                                                    <div>
-                                                        <label className="block text-xs font-medium text-slate-600 dark:text-slate-400 mb-1.5">Technology Relationship Manager</label>
-                                                        <input
-                                                            type="text"
-                                                            value={notesPresetForm.technologyRelationshipManager}
-                                                            onChange={(e) => setNotesPresetForm(prev => ({ ...prev, technologyRelationshipManager: e.target.value }))}
-                                                            placeholder="Technology Relationship Manager details..."
-                                                            className="w-full bg-slate-50 dark:bg-slate-900 border-2 border-slate-200 dark:border-slate-700 rounded-lg px-3 py-2 text-sm text-slate-900 dark:text-white focus:border-brand-500 focus:outline-none focus:ring-2 focus:ring-brand-500/50 transition-all"
-                                                        />
-                                                    </div>
-                                                </div>
-                                            </div>
-                                        </div>
-                                    </div>
-
-                                    {/* Dialog Footer */}
-                                    <div className="px-6 py-4 border-t border-slate-200 dark:border-slate-700 flex items-center justify-end gap-3">
-                                        <button
-                                            onClick={() => {
-                                                setNotesPresetFormState(null);
-                                                setNotesPresetForm({
-                                                    ownerInfo: '',
-                                                    supportTeamInfo: '',
-                                                    serviceNowGroupInfo: '',
-                                                    businessOwner: '',
-                                                    productOwner: '',
-                                                    architect: '',
-                                                    vendorDetails: '',
-                                                    serviceNowDemand: '',
-                                                    serviceNowProject: '',
-                                                    serviceNowTask: '',
-                                                    goLiveInfo: '',
-                                                    majorUpgradeInfo: '',
-                                                    serviceDeliveryManager: '',
-                                                    businessRelationshipManager: '',
-                                                    technologyRelationshipManager: ''
-                                                });
-                                            }}
-                                            className="px-4 py-2 bg-slate-200 hover:bg-slate-300 dark:bg-slate-700 dark:hover:bg-slate-600 text-slate-700 dark:text-slate-200 rounded-lg font-medium transition-colors"
-                                        >
-                                            Cancel
-                                        </button>
-                                        <button
-                                            onClick={() => {
-                                                // Fill form with demo data
-                                                setNotesPresetForm({
-                                                    ownerInfo: 'IT Operations Team - John Smith (john.smith@company.com)',
-                                                    supportTeamInfo: 'Level 1 Support - support@company.com | Level 2 Support - l2support@company.com',
-                                                    serviceNowGroupInfo: 'IT Operations Group (it-ops-group@company.com)',
-                                                    businessOwner: 'Sarah Johnson - Director of IT Operations (sarah.johnson@company.com, ext. 1234)',
-                                                    productOwner: 'Michael Chen - Senior Product Manager (michael.chen@company.com, ext. 5678)',
-                                                    architect: 'David Williams - Solutions Architect (david.williams@company.com, ext. 9012)',
-                                                    vendorDetails: 'TechCorp Solutions - Vendor Contact: vendor@techcorp.com | Support: support@techcorp.com | Phone: +1-555-0100',
-                                                    serviceNowDemand: 'DEM-2024-001234',
-                                                    serviceNowProject: 'PROJ-2024-005678',
-                                                    serviceNowTask: 'TASK-2024-009012',
-                                                    goLiveInfo: 'Planned Go-Live: Q2 2024 | Target Date: June 15, 2024 | Status: On Track',
-                                                    majorUpgradeInfo: 'Next Major Upgrade: Version 3.0 | Scheduled: Q3 2024 | Upgrade Window: September 2024',
-                                                    serviceDeliveryManager: 'Emily Davis - SDM (emily.davis@company.com, ext. 3456)',
-                                                    businessRelationshipManager: 'Robert Martinez - BRM (robert.martinez@company.com, ext. 7890)',
-                                                    technologyRelationshipManager: 'Jennifer Lee - TRM (jennifer.lee@company.com, ext. 2468)'
-                                                });
-                                            }}
-                                            className="px-4 py-2 bg-amber-500 hover:bg-amber-600 text-white rounded-lg font-medium transition-colors"
-                                        >
-                                            Demo Fill
-                                        </button>
-                                        <button
-                                            onClick={() => {
-                                                // Format the notes with proper headings
-                                                const sections: string[] = [];
-
-                                                if (notesPresetForm.ownerInfo) sections.push(`Owner Information:\n${notesPresetForm.ownerInfo}`);
-                                                if (notesPresetForm.supportTeamInfo) sections.push(`Support Team Information:\n${notesPresetForm.supportTeamInfo}`);
-                                                if (notesPresetForm.serviceNowGroupInfo) sections.push(`Service Now Group Information:\n${notesPresetForm.serviceNowGroupInfo}`);
-
-                                                const contacts: string[] = [];
-                                                if (notesPresetForm.businessOwner) contacts.push(`Business Owner: ${notesPresetForm.businessOwner}`);
-                                                if (notesPresetForm.productOwner) contacts.push(`Product Owner: ${notesPresetForm.productOwner}`);
-                                                if (notesPresetForm.architect) contacts.push(`Architect: ${notesPresetForm.architect}`);
-                                                if (notesPresetForm.vendorDetails) contacts.push(`Vendor Details: ${notesPresetForm.vendorDetails}`);
-                                                if (contacts.length > 0) sections.push(`Contact Information:\n${contacts.join('\n')}`);
-
-                                                const tickets: string[] = [];
-                                                if (notesPresetForm.serviceNowDemand) tickets.push(`Demand: ${notesPresetForm.serviceNowDemand}`);
-                                                if (notesPresetForm.serviceNowProject) tickets.push(`Project: ${notesPresetForm.serviceNowProject}`);
-                                                if (notesPresetForm.serviceNowTask) tickets.push(`Task: ${notesPresetForm.serviceNowTask}`);
-                                                if (tickets.length > 0) sections.push(`Service Now Ticket Information:\n${tickets.join('\n')}`);
-
-                                                if (notesPresetForm.goLiveInfo) sections.push(`Go-Live Information:\n${notesPresetForm.goLiveInfo}`);
-                                                if (notesPresetForm.majorUpgradeInfo) sections.push(`Major Upgrade Information:\n${notesPresetForm.majorUpgradeInfo}`);
-
-                                                const managers: string[] = [];
-                                                if (notesPresetForm.serviceDeliveryManager) managers.push(`Service Delivery Manager: ${notesPresetForm.serviceDeliveryManager}`);
-                                                if (notesPresetForm.businessRelationshipManager) managers.push(`Business Relationship Manager: ${notesPresetForm.businessRelationshipManager}`);
-                                                if (notesPresetForm.technologyRelationshipManager) managers.push(`Technology Relationship Manager: ${notesPresetForm.technologyRelationshipManager}`);
-                                                if (managers.length > 0) sections.push(`Manager Information:\n${managers.join('\n')}`);
-
-                                                const formattedNotes = sections.join('\n\n');
-                                                const additionHtml = plainNotesToHtml(formattedNotes);
-
-                                                // Update the notes field for this link
-                                                if (notesPresetFormState.linkId) {
-                                                    const currentNotes = editLinkState[notesPresetFormState.linkId]?.notes || '';
-                                                    const currentHtml = looksLikeHtml(currentNotes)
-                                                        ? currentNotes
-                                                        : plainNotesToHtml(currentNotes);
-                                                    const combinedNotes = hasVisibleRichText(currentNotes)
-                                                        ? `${currentHtml}${additionHtml}`
-                                                        : additionHtml;
-                                                    updateEditLinkState(notesPresetFormState.linkId, 'notes', combinedNotes);
-                                                    updateEditLinkState(notesPresetFormState.linkId, 'notesEnabled', true);
-                                                }
-
-                                                // Reset form and close dialog
-                                                setNotesPresetFormState(null);
-                                                setNotesPresetForm({
-                                                    ownerInfo: '',
-                                                    supportTeamInfo: '',
-                                                    serviceNowGroupInfo: '',
-                                                    businessOwner: '',
-                                                    productOwner: '',
-                                                    architect: '',
-                                                    vendorDetails: '',
-                                                    serviceNowDemand: '',
-                                                    serviceNowProject: '',
-                                                    serviceNowTask: '',
-                                                    goLiveInfo: '',
-                                                    majorUpgradeInfo: '',
-                                                    serviceDeliveryManager: '',
-                                                    businessRelationshipManager: '',
-                                                    technologyRelationshipManager: ''
-                                                });
-                                            }}
-                                            className="px-4 py-2 bg-brand-600 hover:bg-brand-500 text-white rounded-lg font-medium transition-colors"
-                                        >
-                                            Add to Notes
-                                        </button>
-                                    </div>
-                                </div>
-                            </div>,
-                            document.body
-                        )}
-                    </>
-                )}
+                <NotesPresetFormDialog
+                    open={!!notesPresetFormState}
+                    onClose={() => setNotesPresetFormState(null)}
+                    onAddToNotes={(formattedNotes) => {
+                        if (!notesPresetFormState?.linkId) return;
+                        const linkId = notesPresetFormState.linkId;
+                        const currentNotes = editLinkState[linkId]?.notes || '';
+                        updateEditLinkState(linkId, 'notes', mergePresetNotesIntoHtml(currentNotes, formattedNotes));
+                        updateEditLinkState(linkId, 'notesEnabled', true);
+                    }}
+                />
 
                 {/* Version Diff Viewer */}
                 {diffViewerOpen && diffOriginalTile && diffModifiedTile && (

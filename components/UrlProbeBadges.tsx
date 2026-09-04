@@ -3,6 +3,7 @@ import { LinkRedirectHop } from '../types';
 import { linkHealthService } from '../services/linkHealthService';
 import { isHttpOrHttpsUrl } from '../utils/urlDisplay';
 import { diagnoseLinkUrl, hasBlockingUrlIssues } from '../utils/urlDiagnostics';
+import { urlForHealthProbe } from '../utils/redirectChain';
 import { UrlNeedsFixBadge } from './UrlFormDiagnostics';
 import { RedirectChainDialog } from './RedirectChainDialog';
 
@@ -123,7 +124,9 @@ const UrlProbeBadgesInner: React.FC<{ url: string; excluded?: boolean; onAdoptUr
             return;
         }
 
-        const cacheKey = probeCacheKey(trimmed, excluded);
+        // Probe the cleaned target (Teams/SharePoint tracking stripped) so long paste URLs still get badges.
+        const probeUrl = urlForHealthProbe(trimmed);
+        const cacheKey = probeCacheKey(probeUrl, excluded);
         const cached = probeCache.get(cacheKey);
         if (cached && Date.now() - cached.cachedAt < PROBE_CACHE_TTL_MS) {
             setPhase(cached.phase);
@@ -139,9 +142,9 @@ const UrlProbeBadgesInner: React.FC<{ url: string; excluded?: boolean; onAdoptUr
             return;
         }
 
-        const detectedScheme = /^http:\/\//i.test(trimmed)
+        const detectedScheme = /^http:\/\//i.test(probeUrl)
             ? 'http'
-            : /^https:\/\//i.test(trimmed)
+            : /^https:\/\//i.test(probeUrl)
                 ? 'https'
                 : '';
         if (!detectedScheme) {
@@ -172,7 +175,7 @@ const UrlProbeBadgesInner: React.FC<{ url: string; excluded?: boolean; onAdoptUr
             const serverTimeout = window.setTimeout(() => controller.abort(), PROBE_SERVER_TIMEOUT_MS);
             const started = performance.now();
             try {
-                const result = await linkHealthService.checkUrl(trimmed, controller.signal);
+                const result = await linkHealthService.checkUrl(probeUrl, controller.signal);
                 if (requestId !== requestIdRef.current) return;
                 const roundTrip = Math.round(performance.now() - started);
                 setScheme(result.scheme || detectedScheme);
@@ -236,7 +239,7 @@ const UrlProbeBadgesInner: React.FC<{ url: string; excluded?: boolean; onAdoptUr
             const browserTimeout = window.setTimeout(() => controller.abort(), PROBE_BROWSER_TIMEOUT_MS);
             const started = performance.now();
             try {
-                await fetch(trimmed, {
+                await fetch(probeUrl, {
                     method: 'HEAD',
                     mode: 'no-cors',
                     cache: 'no-store',
@@ -278,7 +281,7 @@ const UrlProbeBadgesInner: React.FC<{ url: string; excluded?: boolean; onAdoptUr
     useEffect(() => {
         if (phase === 'checking' || browserPhase === 'checking') return;
         if (excluded || blocking || !isProbableUrl(trimmedUrl)) return;
-        probeCache.set(probeCacheKey(trimmedUrl, excluded), {
+        probeCache.set(probeCacheKey(urlForHealthProbe(trimmedUrl), excluded), {
             phase,
             browserPhase,
             scheme,

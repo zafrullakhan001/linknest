@@ -1226,8 +1226,16 @@ const TRACKING_QUERY_KEYS = new Set([
   'ref_url',
   'ncid',
   'cmpid',
-  's_cid'
+  's_cid',
+  // Microsoft Teams / SharePoint / OneDrive sharing wrappers
+  'xsdata',
+  'sdata',
+  'ovuser',
+  'clickparams',
 ]);
+
+const TEAMS_SHARE_PAYLOAD_KEYS = new Set(['xsdata', 'sdata', 'ovuser', 'clickparams']);
+const TEAMS_SHARE_COMPANION_KEYS = new Set(['or', 'ct']);
 
 const isTrackingQueryKey = (key: string): boolean => {
   const k = key.toLowerCase();
@@ -1245,8 +1253,10 @@ export const stripBookmarkTrackingParams = (url: string): string | null => {
     const parsed = new URL(url);
     let changed = false;
     const keys = [...parsed.searchParams.keys()];
+    const teamsShare = keys.some((k) => TEAMS_SHARE_PAYLOAD_KEYS.has(k.toLowerCase()));
     for (const key of keys) {
-      if (isTrackingQueryKey(key)) {
+      const lower = key.toLowerCase();
+      if (isTrackingQueryKey(key) || (teamsShare && TEAMS_SHARE_COMPANION_KEYS.has(lower))) {
         parsed.searchParams.delete(key);
         changed = true;
       }
