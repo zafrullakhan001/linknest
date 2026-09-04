@@ -505,8 +505,8 @@ export function parseActiveCategoryPresetIds(
     if (!parsed || typeof parsed !== 'object' || Array.isArray(parsed)) return {};
     const out: Record<string, string> = {};
     for (const [tab, id] of Object.entries(parsed)) {
-      // Never treat built-in ids as browser persistence — built-ins are the default until user saves a My preset
-      if (typeof id === 'string' && id.trim() && !isBuiltinPresetId(id.trim())) {
+      // Persist both personal and built-in selections so the menu highlight survives refresh
+      if (typeof id === 'string' && id.trim()) {
         out[tab] = id.trim();
       }
     }
@@ -567,24 +567,46 @@ export function readActiveCategoryPresetIds(): Record<string, string> {
   }
 }
 
-/** Write active preset ids to localStorage — personal My presets only (never built-in defaults). */
+/** Write active preset ids to localStorage (personal My presets and built-in selections). */
 export function writeActiveCategoryPresetIds(activeByTab: Record<string, string>): void {
   if (typeof window === 'undefined') return;
   try {
-    const personalOnly: Record<string, string> = {};
+    const cleaned: Record<string, string> = {};
     for (const [tab, id] of Object.entries(activeByTab)) {
-      if (typeof id === 'string' && id.trim() && !isBuiltinPresetId(id)) {
-        personalOnly[tab] = id.trim();
+      if (typeof id === 'string' && id.trim()) {
+        cleaned[tab] = id.trim();
       }
     }
-    if (Object.keys(personalOnly).length > 0) {
-      localStorage.setItem(CATEGORY_PRESET_ACTIVE_STORAGE_KEY, JSON.stringify(personalOnly));
+    if (Object.keys(cleaned).length > 0) {
+      localStorage.setItem(CATEGORY_PRESET_ACTIVE_STORAGE_KEY, JSON.stringify(cleaned));
     } else {
       localStorage.removeItem(CATEGORY_PRESET_ACTIVE_STORAGE_KEY);
     }
   } catch (e) {
     console.error('Failed to save active category preset', e);
   }
+}
+
+/**
+ * Merge DB personal actives with browser-stored built-in selections.
+ * DB only tracks My presets; built-in picks live in localStorage.
+ */
+export function mergeActivePresetIdsWithBrowserBuiltins(
+  fromDb: Record<string, string> | null | undefined,
+  browserOrPrev: Record<string, string> | null | undefined
+): Record<string, string> {
+  const next: Record<string, string> = {};
+  for (const [tab, id] of Object.entries(browserOrPrev || {})) {
+    if (typeof id === 'string' && id.trim() && isBuiltinPresetId(id.trim())) {
+      next[tab] = id.trim();
+    }
+  }
+  for (const [tab, id] of Object.entries(fromDb || {})) {
+    if (typeof id === 'string' && id.trim() && !isBuiltinPresetId(id.trim())) {
+      next[tab] = id.trim();
+    }
+  }
+  return next;
 }
 
 /**

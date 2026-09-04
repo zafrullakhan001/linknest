@@ -33,6 +33,7 @@ import {
   writePersonalCategoryPresets,
   readActiveCategoryPresetIds,
   writeActiveCategoryPresetIds,
+  mergeActivePresetIdsWithBrowserBuiltins,
   removePersonalPresetFromByTab,
   pickDefaultBuiltinPreset,
 } from '../services/categoryPresetService';
@@ -3808,7 +3809,8 @@ export const TileGrid: React.FC<TileGridProps> = ({
         }
         if (cancelled || loadGen !== categoryPresetsLoadGenRef.current) return;
         setCategoryPresetsByTab(groupDbCategoryPresets(data.presets));
-        setActivePresetIdByTab(data.activeByTab || {});
+        // DB only tracks personal actives — merge with browser built-in selections so they survive login load
+        setActivePresetIdByTab((prev) => mergeActivePresetIdsWithBrowserBuiltins(data.activeByTab, prev));
       } catch (error) {
         console.debug('Could not load category presets from the database:', error);
       }
@@ -3832,8 +3834,13 @@ export const TileGrid: React.FC<TileGridProps> = ({
     && !isBuiltinPresetId(storedActiveId)
     && (categoryPresetsByTab[activeTab] || []).some((p) => p.id === storedActiveId)
   );
-  // Built-in is the default until the user persists a My preset in this browser / account
-  const activeCategoryPresetId = hasPersistedPersonalActive
+  const hasPersistedBuiltinActive = !!(
+    storedActiveId
+    && isBuiltinPresetId(storedActiveId)
+    && (builtinPresetsByTab[activeTab] || []).some((p) => p.id === storedActiveId)
+  );
+  // Prefer the user's last selection (My preset or built-in); fall back to admin default built-in
+  const activeCategoryPresetId = hasPersistedPersonalActive || hasPersistedBuiltinActive
     ? storedActiveId
     : (defaultBuiltinForTab?.id || '');
   const activeCategoryPreset = tabCategoryPresets.find((preset) => preset.id === activeCategoryPresetId) || null;
@@ -3843,6 +3850,9 @@ export const TileGrid: React.FC<TileGridProps> = ({
     if (!draft) return false;
     return (builtinPresetsByTab[activeTab] || []).some((p) => p.name.toLowerCase() === draft);
   }, [presetNameDraft, builtinPresetsByTab, activeTab]);
+
+  // Tracks which preset was last applied per tab (bootstrap + user picks).
+  const defaultBuiltinAppliedRef = useRef<Record<string, string>>({});
 
   const applyCategoryPreset = useCallback((preset: CategoryVisibilityPreset, allCategoryNames: string[]) => {
     const visible = new Set(preset.visible);
@@ -3856,20 +3866,15 @@ export const TileGrid: React.FC<TileGridProps> = ({
     });
     const isBuiltin = preset.source === 'builtin' || isBuiltinPresetId(preset.id);
     setActivePresetIdByTab((prev) => {
-      if (isBuiltin) {
-        // Built-in is the ephemeral default — do not keep it as browser persistence
-        if (!prev[activeTab]) return prev;
-        const next = { ...prev };
-        delete next[activeTab];
-        return next;
-      }
+      if (prev[activeTab] === preset.id) return prev;
       return { ...prev, [activeTab]: preset.id };
     });
+    defaultBuiltinAppliedRef.current[activeTab] = preset.id;
     setSelectedCategoryFilter(null);
     setPresetNameDraft(preset.name);
     if (isAuthenticated) {
       if (isBuiltin) {
-        // Clear personal active in DB so the built-in default applies again
+        // Clear personal active in DB; built-in selection is persisted in the browser
         categoryPresetService.setActive(activeTab, null).catch(() => { });
       } else if (/^\d+$/.test(preset.id)) {
         categoryPresetService.apply(preset.id).catch((error) => {
@@ -3879,8 +3884,8 @@ export const TileGrid: React.FC<TileGridProps> = ({
     }
   }, [activeTab, isAuthenticated]);
 
-  // When no personal (browser/account) active preset is persisted, apply the admin default built-in.
-  const defaultBuiltinAppliedRef = useRef<Record<string, string>>({});
+  // Bootstrap the tab when builtins first load: restore a stored built-in, or apply the admin default once.
+  // Do not re-force the default after the user clears selection (Show all / Hide all).
   useEffect(() => {
     const builtins = builtinPresetsByTab[activeTab] || [];
     if (builtins.length === 0) return;
@@ -3892,12 +3897,24 @@ export const TileGrid: React.FC<TileGridProps> = ({
       && personalList.some((p) => p.id === storedActive)
     );
     if (hasPersonalActive) {
-      delete defaultBuiltinAppliedRef.current[activeTab];
+      defaultBuiltinAppliedRef.current[activeTab] = storedActive;
       return;
     }
+    const storedBuiltin = storedActive && isBuiltinPresetId(storedActive)
+      ? builtins.find((p) => p.id === storedActive) || null
+      : null;
+    if (storedBuiltin) {
+      if (defaultBuiltinAppliedRef.current[activeTab] === storedBuiltin.id) return;
+      const categoryNames = Object.keys(groupedTilesRef.current || {});
+      if (categoryNames.length === 0) return;
+      defaultBuiltinAppliedRef.current[activeTab] = storedBuiltin.id;
+      applyCategoryPreset(storedBuiltin, categoryNames);
+      return;
+    }
+    // No stored selection — apply admin default only once per tab (initial bootstrap)
+    if (defaultBuiltinAppliedRef.current[activeTab]) return;
     const defaultBuiltin = pickDefaultBuiltinPreset(builtins);
     if (!defaultBuiltin) return;
-    if (defaultBuiltinAppliedRef.current[activeTab] === defaultBuiltin.id) return;
     const categoryNames = Object.keys(groupedTilesRef.current || {});
     if (categoryNames.length === 0) return;
     defaultBuiltinAppliedRef.current[activeTab] = defaultBuiltin.id;
@@ -3991,9 +4008,12 @@ export const TileGrid: React.FC<TileGridProps> = ({
             flattenCategoryPresetsForSync(nextByTab, nextActive)
           );
           setCategoryPresetsByTab(groupDbCategoryPresets(data.presets));
-          setActivePresetIdByTab(data.activeByTab || {});
+          setActivePresetIdByTab((prev) => {
+            const merged = mergeActivePresetIdsWithBrowserBuiltins(data.activeByTab, prev);
+            writeActiveCategoryPresetIds(merged);
+            return merged;
+          });
           writePersonalCategoryPresets(groupDbCategoryPresets(data.presets));
-          writeActiveCategoryPresetIds(data.activeByTab || {});
           if (presetNameDraft === preset.name) setPresetNameDraft('');
           return;
         }
@@ -4016,7 +4036,10 @@ export const TileGrid: React.FC<TileGridProps> = ({
     categoryPresetService.sync(flattenCategoryPresetsForSync(byTab, activeByTab))
       .then((data) => {
         setCategoryPresetsByTab(groupDbCategoryPresets(data.presets));
-        setActivePresetIdByTab(data.activeByTab || {});
+        setActivePresetIdByTab((prev) => mergeActivePresetIdsWithBrowserBuiltins(data.activeByTab, {
+          ...prev,
+          ...activeByTab,
+        }));
       })
       .catch((error) => {
         console.error('Failed to sync category presets to the database', error);
