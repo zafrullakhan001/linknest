@@ -13,6 +13,7 @@ import {
   parseBulkAddUrlLines,
   prepareBulkAddLines,
 } from '../utils/bulkAddLinks';
+import { confirmBulkUrlSafetyBeforeSave } from '../utils/urlSafetyConfirm';
 import { LinkHealthStatusDot } from './LinkHealthStatusDot';
 import { SpaceModalHeader, EditModalTabButton } from './SpaceFormChrome';
 
@@ -352,6 +353,11 @@ export const BulkAddLinksDialog: React.FC<BulkAddLinksDialogProps> = ({
     setCommitting(true);
     setError(null);
     try {
+      const ok = await confirmBulkUrlSafetyBeforeSave(toAdd.map((r) => r.url));
+      if (!ok) {
+        setCommitting(false);
+        return;
+      }
       const links: Link[] = toAdd.map((r) => ({
         id: generateId(),
         label: r.label.trim(),

@@ -138,7 +138,7 @@ if (!defined('SYSTEM_TOKEN')) {
 
 // Bump when schema/migrations in initDatabase() change. Enables fast-path getDB().
 if (!defined('LINKNEST_SCHEMA_VERSION')) {
-    define('LINKNEST_SCHEMA_VERSION', 103);
+    define('LINKNEST_SCHEMA_VERSION', 104);
 }
 
 function getSchemaPatchFlagPath(): string {
@@ -787,6 +787,78 @@ function linkMaintenanceInsertValuesFromRow(array $row): array {
     ];
 }
 
+/** Per-link Notes / Info dialog video URLs (webcam or uploaded file). */
+function ensureLinkNotesInfoVideoColumns(PDO $db): void {
+    static $ensured = false;
+    if ($ensured) {
+        return;
+    }
+    try {
+        $exists = $db->query("SELECT name FROM sqlite_master WHERE type='table' AND name='links'")->fetchColumn();
+        if (!$exists) {
+            return;
+        }
+        $columns = $db->query('PRAGMA table_info(links)')->fetchAll(PDO::FETCH_ASSOC);
+        $names = array_column($columns, 'name');
+        if (!in_array('notes_video_url', $names, true)) {
+            $db->exec('ALTER TABLE links ADD COLUMN notes_video_url TEXT');
+        }
+        if (!in_array('info_video_url', $names, true)) {
+            $db->exec('ALTER TABLE links ADD COLUMN info_video_url TEXT');
+        }
+        $ensured = true;
+    } catch (PDOException $e) {
+        error_log('ensureLinkNotesInfoVideoColumns warning: ' . $e->getMessage());
+    }
+}
+
+function mapLinkNotesInfoVideoFromRow(array $row): array {
+    $notesVideo = isset($row['notes_video_url']) ? trim((string)$row['notes_video_url']) : '';
+    $infoVideo = isset($row['info_video_url']) ? trim((string)$row['info_video_url']) : '';
+    return [
+        'notesVideoUrl' => $notesVideo !== '' ? $notesVideo : null,
+        'infoVideoUrl' => $infoVideo !== '' ? $infoVideo : null,
+    ];
+}
+
+function applyLinkNotesInfoVideoToApi(array &$link, array $row): void {
+    foreach (mapLinkNotesInfoVideoFromRow($row) as $key => $value) {
+        $link[$key] = $value;
+    }
+}
+
+function linkNotesVideoUrlFromInput($link): ?string {
+    if (!is_array($link) || !isset($link['notesVideoUrl']) || !is_string($link['notesVideoUrl'])) {
+        return null;
+    }
+    $value = trim($link['notesVideoUrl']);
+    return $value === '' ? null : $value;
+}
+
+function linkInfoVideoUrlFromInput($link): ?string {
+    if (!is_array($link) || !isset($link['infoVideoUrl']) || !is_string($link['infoVideoUrl'])) {
+        return null;
+    }
+    $value = trim($link['infoVideoUrl']);
+    return $value === '' ? null : $value;
+}
+
+function linkNotesInfoVideoInsertValuesFromInput($link): array {
+    return [
+        linkNotesVideoUrlFromInput($link),
+        linkInfoVideoUrlFromInput($link),
+    ];
+}
+
+function linkNotesInfoVideoInsertValuesFromRow(array $row): array {
+    $notesVideo = isset($row['notes_video_url']) ? trim((string)$row['notes_video_url']) : '';
+    $infoVideo = isset($row['info_video_url']) ? trim((string)$row['info_video_url']) : '';
+    return [
+        $notesVideo !== '' ? $notesVideo : null,
+        $infoVideo !== '' ? $infoVideo : null,
+    ];
+}
+
 /** Per-link Notes/Tooltip and Information Content enable flags. */
 function ensureLinkFeatureToggleColumns(PDO $db): void {
     static $ensured = false;
@@ -852,8 +924,8 @@ function infoShowOpenLinkFromInput($link): int {
 
 function mapLinkFeatureTogglesFromRow(array $row): array {
     return [
-        'notesEnabled' => linkToggleFlagFromRow($row, 'notes_enabled', ['notes', 'tooltip']),
-        'richTextEnabled' => linkToggleFlagFromRow($row, 'rich_text_enabled', ['rich_text_content']),
+        'notesEnabled' => linkToggleFlagFromRow($row, 'notes_enabled', ['notes', 'tooltip', 'notes_video_url']),
+        'richTextEnabled' => linkToggleFlagFromRow($row, 'rich_text_enabled', ['rich_text_content', 'info_video_url']),
         'infoShowOpenLink' => infoShowOpenLinkFromRow($row),
     ];
 }
@@ -1312,8 +1384,8 @@ function linkToggleFromInput($link, string $jsKey, array $contentKeys): int {
 
 function linkFeatureToggleInsertValuesFromInput($link): array {
     return [
-        linkToggleFromInput($link, 'notesEnabled', ['notes', 'tooltip']),
-        linkToggleFromInput($link, 'richTextEnabled', ['richTextContent']),
+        linkToggleFromInput($link, 'notesEnabled', ['notes', 'tooltip', 'notesVideoUrl']),
+        linkToggleFromInput($link, 'richTextEnabled', ['richTextContent', 'infoVideoUrl']),
         infoShowOpenLinkFromInput($link),
     ];
 }
@@ -1879,6 +1951,7 @@ function initDatabase() {
             ensureShortUrlsSchema($db);
             ensureInheritShortUrlsColumns($db);
             ensureLinkMaintenanceColumns($db);
+            ensureLinkNotesInfoVideoColumns($db);
             ensureLinkFeatureToggleColumns($db);
             ensureLinkOpenTargetColumn($db);
             ensureLinkForceShortUrlColumn($db);
@@ -1897,6 +1970,8 @@ function initDatabase() {
             ensureTilePresenceTable($db);
             require_once __DIR__ . '/app_presence_lib.php';
             ensureAppPresenceTable($db);
+            require_once __DIR__ . '/url_safety_lib.php';
+            ensureUrlSafetySchema($db);
             if (!schemaPatchesAlreadyApplied()) {
                 ensureTilesHeaderImageColumns($db);
                 ensureTilesSearchTagsColumn($db);
@@ -1927,6 +2002,7 @@ function initDatabase() {
             ensureShortUrlsSchema($db);
             ensureInheritShortUrlsColumns($db);
             ensureLinkMaintenanceColumns($db);
+            ensureLinkNotesInfoVideoColumns($db);
             ensureLinkFeatureToggleColumns($db);
             ensureLinkOpenTargetColumn($db);
             ensureLinkForceShortUrlColumn($db);
@@ -1945,6 +2021,8 @@ function initDatabase() {
             ensureTilePresenceTable($db);
             require_once __DIR__ . '/app_presence_lib.php';
             ensureAppPresenceTable($db);
+            require_once __DIR__ . '/url_safety_lib.php';
+            ensureUrlSafetySchema($db);
             if (!schemaPatchesAlreadyApplied()) {
                 ensureTilesHeaderImageColumns($db);
                 ensureTilesSearchTagsColumn($db);
@@ -2935,6 +3013,7 @@ function initDatabase() {
         }
 
         ensureLinkMaintenanceColumns($db);
+        ensureLinkNotesInfoVideoColumns($db);
         ensureLinkFeatureToggleColumns($db);
         ensureLinkOpenTargetColumn($db);
         ensureLinkForceShortUrlColumn($db);
@@ -4215,6 +4294,9 @@ function initDatabase() {
             ['link_health_status_colors', '{"online":"#10b981","redirected":"#f59e0b","unknown":"#f59e0b","broken":"#ef4444","network":"#94a3b8","checking":"#3b82f6"}', time()],
             ['link_health_status_shape', 'circle', time()],
             ['link_health_fav_fin_corner', 'top-left', time()],
+            ['url_safety_enabled', '1', time()],
+            ['url_safety_check_adult', '1', time()],
+            ['url_safety_block_malicious', '0', time()],
         ];
         
         foreach ($defaultSettings as $setting) {
@@ -4257,6 +4339,8 @@ function initDatabase() {
         ensureTilePresenceTable($db);
         require_once __DIR__ . '/app_presence_lib.php';
         ensureAppPresenceTable($db);
+        require_once __DIR__ . '/url_safety_lib.php';
+        ensureUrlSafetySchema($db);
         
         // Create indexes for optimal performance
         createDatabaseIndexes($db);

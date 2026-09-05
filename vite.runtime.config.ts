@@ -1,12 +1,18 @@
 import path from 'path';
 import { defineConfig, loadEnv } from 'vite';
 import react from '@vitejs/plugin-react';
+import {
+  LINKNEST_CHUNK_SIZE_WARNING_LIMIT_KB,
+  linknestBuildLogger,
+  linknestRollupOnWarn,
+} from './scripts/vite-build-shared';
 
 export default defineConfig(({ mode }) => {
     const env = loadEnv(mode, '.', '');
     
     return {
       base: './', // Use relative paths for runtime deployment (works from any path)
+      customLogger: linknestBuildLogger(),
       build: {
         outDir: 'dist',
         assetsDir: 'assets',
@@ -14,7 +20,7 @@ export default defineConfig(({ mode }) => {
         sourcemap: false,
         minify: 'esbuild',
         cssCodeSplit: true,
-        chunkSizeWarningLimit: 1000,
+        chunkSizeWarningLimit: LINKNEST_CHUNK_SIZE_WARNING_LIMIT_KB,
         target: 'esnext',
         modulePreload: {
           polyfill: true,
@@ -31,6 +37,7 @@ export default defineConfig(({ mode }) => {
           }
         },
         rollupOptions: {
+          onwarn: linknestRollupOnWarn,
           output: {
             // Optimize chunk names for better caching
             chunkFileNames: (chunkInfo) => {

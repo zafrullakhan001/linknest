@@ -15,7 +15,7 @@ import {
     rectSortingStrategy,
     verticalListSortingStrategy,
 } from '@dnd-kit/sortable';
-import { Tile, Link, LinkSection, Tab, LinkVisibility, LinkOpenTarget, TileVisibility, COLOR_STYLES, THEME_COLORS, ThemeColor, TileMessage, AccessRestrictions, LinkRedirectHop } from '../types';
+import { Tile, Link, LinkSection, Tab, LinkVisibility, LinkOpenTarget, TileVisibility, COLOR_STYLES, THEME_COLORS, ThemeColor, TileMessage, AccessRestrictions, LinkRedirectHop, UrlSafetyResult } from '../types';
 import { linkHealthService, LinkHealthMap, isLikelyClientNetworkError, isNetworkHealthStatus, networkHealthResult } from '../services/linkHealthService';
 import {
     getBrokenBadgeClassNames,
@@ -107,6 +107,7 @@ import { DeleteDuplicateLinksDialog } from './DeleteDuplicateLinksDialog';
 import { NotesPresetFormDialog, mergePresetNotesIntoHtml } from './NotesPresetFormDialog';
 import { getDisplayUrl, isHttpOrHttpsUrl, normalizeStoredLinkUrl, rewriteHtmlAnchorHrefs, viewerLinkDisplay, viewerLinkUrl, effectiveShowShortUrls } from '../utils/urlDisplay';
 import { diagnoseLinkUrl, hasBlockingUrlIssues } from '../utils/urlDiagnostics';
+import { confirmUrlSafetyBeforeSave } from '../utils/urlSafetyConfirm';
 import { UrlFormDiagnostics, UrlNeedsFixBadge, InvalidUrlMark } from './UrlFormDiagnostics';
 import { LinkUrlField } from './LinkUrlField';
 import { UrlProbeBadges } from './UrlProbeBadges';
@@ -642,9 +643,11 @@ const cloneLinkItem = (link: Link, opts?: { appendCopyLabel?: boolean }): Link =
     notes: link.notes,
     tooltip: link.tooltip,
     notesEnabled: link.notesEnabled,
+    notesVideoUrl: link.notesVideoUrl,
     tooltipStyle: link.tooltipStyle,
     richTextContent: link.richTextContent,
     richTextEnabled: link.richTextEnabled,
+    infoVideoUrl: link.infoVideoUrl,
     infoShowOpenLink: link.infoShowOpenLink,
     maintenanceEnabled: link.maintenanceEnabled,
     maintenanceMessage: link.maintenanceMessage,
@@ -1017,7 +1020,7 @@ export const TileDetail: React.FC<TileDetailProps> = ({
     const [editSections, setEditSections] = useState<LinkSection[]>(tile.sections || []);
 
     // Temporary State for Adding Links (keyed by section ID)
-    const [newLinkState, setNewLinkState] = useState<Record<string, { label: string, url: string, icon: string, textColor: string, visibility: LinkVisibility, published: boolean, inheritShortUrls: boolean, forceShortUrl: boolean, brokenStatusLabel: string, brokenStatusNote: string, brokenStatusTone: '' | 'red' | 'amber' | 'slate', brokenStatusExpected: boolean, brokenStatusManual: boolean, brokenStatusFontColor: string, brokenStatusFontWeight: '' | 'normal' | 'bold', brokenStatusFontStyle: '' | 'normal' | 'italic', brokenStatusFontFamily: string, allowedUsers: number[], allowedGroups: number[], notes: string, tooltip: string, tooltipStyle: LinkTooltipStyle, notesEnabled: boolean, browser: string, openTarget: LinkOpenTarget, richTextContent: string, richTextEnabled: boolean, infoShowOpenLink: boolean, animation: string, accessRestrictions?: AccessRestrictions, maintenanceEnabled: boolean, maintenanceMessage: string, maintenanceVideoUrl: string }>>({});
+    const [newLinkState, setNewLinkState] = useState<Record<string, { label: string, url: string, icon: string, textColor: string, visibility: LinkVisibility, published: boolean, inheritShortUrls: boolean, forceShortUrl: boolean, brokenStatusLabel: string, brokenStatusNote: string, brokenStatusTone: '' | 'red' | 'amber' | 'slate', brokenStatusExpected: boolean, brokenStatusManual: boolean, brokenStatusFontColor: string, brokenStatusFontWeight: '' | 'normal' | 'bold', brokenStatusFontStyle: '' | 'normal' | 'italic', brokenStatusFontFamily: string, allowedUsers: number[], allowedGroups: number[], notes: string, tooltip: string, tooltipStyle: LinkTooltipStyle, notesEnabled: boolean, notesVideoUrl: string, browser: string, openTarget: LinkOpenTarget, richTextContent: string, richTextEnabled: boolean, infoVideoUrl: string, infoShowOpenLink: boolean, animation: string, accessRestrictions?: AccessRestrictions, maintenanceEnabled: boolean, maintenanceMessage: string, maintenanceVideoUrl: string }>>({});
 
     // Selection State for Bulk Actions
     const [selectedLinkIds, setSelectedLinkIds] = useState<string[]>([]);
@@ -1062,7 +1065,9 @@ export const TileDetail: React.FC<TileDetailProps> = ({
         | null
     >(null);
     const [convertingTabSectionToSpace, setConvertingTabSectionToSpace] = useState(false);
-    const [editLinkState, setEditLinkState] = useState<Record<string, { label: string, url: string, icon: string, textColor: string, visibility: LinkVisibility, published: boolean, inheritShortUrls: boolean, forceShortUrl: boolean, brokenStatusLabel: string, brokenStatusNote: string, brokenStatusTone: '' | 'red' | 'amber' | 'slate', brokenStatusExpected: boolean, brokenStatusManual: boolean, brokenStatusFontColor: string, brokenStatusFontWeight: '' | 'normal' | 'bold', brokenStatusFontStyle: '' | 'normal' | 'italic', brokenStatusFontFamily: string, allowedUsers: number[], allowedGroups: number[], notes: string, tooltip: string, tooltipStyle: LinkTooltipStyle, notesEnabled: boolean, browser: string, openTarget: LinkOpenTarget, richTextContent: string, richTextEnabled: boolean, infoShowOpenLink: boolean, animation: string, accessRestrictions?: AccessRestrictions, maintenanceEnabled: boolean, maintenanceMessage: string, maintenanceVideoUrl: string }>>({});
+    const [editLinkState, setEditLinkState] = useState<Record<string, { label: string, url: string, icon: string, textColor: string, visibility: LinkVisibility, published: boolean, inheritShortUrls: boolean, forceShortUrl: boolean, brokenStatusLabel: string, brokenStatusNote: string, brokenStatusTone: '' | 'red' | 'amber' | 'slate', brokenStatusExpected: boolean, brokenStatusManual: boolean, brokenStatusFontColor: string, brokenStatusFontWeight: '' | 'normal' | 'bold', brokenStatusFontStyle: '' | 'normal' | 'italic', brokenStatusFontFamily: string, allowedUsers: number[], allowedGroups: number[], notes: string, tooltip: string, tooltipStyle: LinkTooltipStyle, notesEnabled: boolean, notesVideoUrl: string, browser: string, openTarget: LinkOpenTarget, richTextContent: string, richTextEnabled: boolean, infoVideoUrl: string, infoShowOpenLink: boolean, animation: string, accessRestrictions?: AccessRestrictions, maintenanceEnabled: boolean, maintenanceMessage: string, maintenanceVideoUrl: string }>>({});
+    /** Live URL Safety results keyed by link id (for confirm-on-save). */
+    const urlSafetyByLinkRef = useRef<Record<string, UrlSafetyResult | null>>({});
 
     // Available browsers from BrowserLauncher API
     const [availableBrowsers, setAvailableBrowsers] = useState<string[]>([]);
@@ -1263,7 +1268,7 @@ export const TileDetail: React.FC<TileDetailProps> = ({
     // Link Search State (for edit mode)
     const [linkSearchTerm, setLinkSearchTerm] = useState('');
     const [hoveredLinkId, setHoveredLinkId] = useState<string | null>(null);
-    const [notesDialogState, setNotesDialogState] = useState<{ linkId: string; notes: string; linkLabel: string } | null>(null);
+    const [notesDialogState, setNotesDialogState] = useState<{ linkId: string; notes: string; notesVideoUrl?: string; linkLabel: string } | null>(null);
     const [linkInfoDialog, setLinkInfoDialog] = useState<{ link: Link } | null>(null);
     const [linkMaintenanceDialog, setLinkMaintenanceDialog] = useState<{ link: Link } | null>(null);
     const [qrDialogState, setQrDialogState] = useState<{ url: string; label: string } | null>(null);
@@ -2810,10 +2815,12 @@ export const TileDetail: React.FC<TileDetailProps> = ({
         tooltip: hasVisibleRichText(state.tooltip) ? state.tooltip?.trim() : (stripHtmlTags(state.label).trim() || undefined),
         tooltipStyle: normalizeLinkTooltipStyle(state.tooltipStyle),
         notesEnabled: state.notesEnabled === true,
+        notesVideoUrl: state.notesVideoUrl?.trim() || undefined,
         browser: state.browser && state.browser !== 'default' ? state.browser : undefined,
         openTarget: normalizeLinkOpenTarget(state.openTarget),
         richTextContent: state.richTextContent?.trim() || undefined,
         richTextEnabled: state.richTextEnabled === true,
+        infoVideoUrl: state.infoVideoUrl?.trim() || undefined,
         infoShowOpenLink: state.infoShowOpenLink !== false,
         maintenanceEnabled: state.maintenanceEnabled === true,
         maintenanceMessage: state.maintenanceMessage?.trim() || undefined,
@@ -2847,10 +2854,12 @@ export const TileDetail: React.FC<TileDetailProps> = ({
         tooltip: hasVisibleRichText(state.tooltip) ? state.tooltip?.trim() : (stripHtmlTags(state.label).trim() || undefined),
         tooltipStyle: normalizeLinkTooltipStyle(state.tooltipStyle),
         notesEnabled: state.notesEnabled === true,
+        notesVideoUrl: state.notesVideoUrl?.trim() || undefined,
         browser: state.browser && state.browser !== 'default' ? state.browser : undefined,
         openTarget: normalizeLinkOpenTarget(state.openTarget),
         richTextContent: state.richTextContent?.trim() || undefined,
         richTextEnabled: state.richTextEnabled === true,
+        infoVideoUrl: state.infoVideoUrl?.trim() || undefined,
         infoShowOpenLink: state.infoShowOpenLink !== false,
         maintenanceEnabled: state.maintenanceEnabled === true,
         maintenanceMessage: state.maintenanceMessage?.trim() || undefined,
@@ -2895,10 +2904,12 @@ export const TileDetail: React.FC<TileDetailProps> = ({
         tooltip: '',
         tooltipStyle: 'classic',
         notesEnabled: false,
+        notesVideoUrl: '',
         browser: 'default',
         openTarget: 'tab',
         richTextContent: '',
         richTextEnabled: false,
+        infoVideoUrl: '',
         infoShowOpenLink: true,
         animation: 'inherit',
         accessRestrictions: undefined,
@@ -4010,11 +4021,11 @@ export const TileDetail: React.FC<TileDetailProps> = ({
     };
 
     // Link Management
-    const updateNewLinkState = (sectionId: string, field: 'label' | 'url' | 'icon' | 'textColor' | 'visibility' | 'allowedUsers' | 'allowedGroups' | 'notes' | 'tooltip' | 'tooltipStyle' | 'notesEnabled' | 'browser' | 'openTarget' | 'richTextContent' | 'richTextEnabled' | 'infoShowOpenLink' | 'animation' | 'published' | 'inheritShortUrls' | 'forceShortUrl' | 'brokenStatusLabel' | 'brokenStatusNote' | 'brokenStatusTone' | 'brokenStatusExpected' | 'brokenStatusManual' | 'brokenStatusFontColor' | 'brokenStatusFontWeight' | 'brokenStatusFontStyle' | 'brokenStatusFontFamily' | 'maintenanceEnabled' | 'maintenanceMessage' | 'maintenanceVideoUrl', value: string | LinkVisibility | number[] | boolean) => {
+    const updateNewLinkState = (sectionId: string, field: 'label' | 'url' | 'icon' | 'textColor' | 'visibility' | 'allowedUsers' | 'allowedGroups' | 'notes' | 'tooltip' | 'tooltipStyle' | 'notesEnabled' | 'notesVideoUrl' | 'browser' | 'openTarget' | 'richTextContent' | 'richTextEnabled' | 'infoVideoUrl' | 'infoShowOpenLink' | 'animation' | 'published' | 'inheritShortUrls' | 'forceShortUrl' | 'brokenStatusLabel' | 'brokenStatusNote' | 'brokenStatusTone' | 'brokenStatusExpected' | 'brokenStatusManual' | 'brokenStatusFontColor' | 'brokenStatusFontWeight' | 'brokenStatusFontStyle' | 'brokenStatusFontFamily' | 'maintenanceEnabled' | 'maintenanceMessage' | 'maintenanceVideoUrl', value: string | LinkVisibility | number[] | boolean) => {
         setNewLinkState(prev => ({
             ...prev,
             [sectionId]: {
-                ...(prev[sectionId] || { label: '', url: '', icon: '', textColor: '', visibility: 'public' as LinkVisibility, published: true, inheritShortUrls: true, forceShortUrl: false, brokenStatusLabel: '', brokenStatusNote: '', brokenStatusTone: '' as const, brokenStatusExpected: false, brokenStatusManual: false, brokenStatusFontColor: '', brokenStatusFontWeight: '' as const, brokenStatusFontStyle: '' as const, brokenStatusFontFamily: '', allowedUsers: [], allowedGroups: [], notes: '', tooltip: '', tooltipStyle: 'classic' as LinkTooltipStyle, notesEnabled: false, browser: 'default', openTarget: 'tab' as LinkOpenTarget, richTextContent: '', richTextEnabled: false, infoShowOpenLink: true, animation: 'inherit', maintenanceEnabled: false, maintenanceMessage: '', maintenanceVideoUrl: '' }),
+                ...(prev[sectionId] || { label: '', url: '', icon: '', textColor: '', visibility: 'public' as LinkVisibility, published: true, inheritShortUrls: true, forceShortUrl: false, brokenStatusLabel: '', brokenStatusNote: '', brokenStatusTone: '' as const, brokenStatusExpected: false, brokenStatusManual: false, brokenStatusFontColor: '', brokenStatusFontWeight: '' as const, brokenStatusFontStyle: '' as const, brokenStatusFontFamily: '', allowedUsers: [], allowedGroups: [], notes: '', tooltip: '', tooltipStyle: 'classic' as LinkTooltipStyle, notesEnabled: false, notesVideoUrl: '', browser: 'default', openTarget: 'tab' as LinkOpenTarget, richTextContent: '', richTextEnabled: false, infoVideoUrl: '', infoShowOpenLink: true, animation: 'inherit', maintenanceEnabled: false, maintenanceMessage: '', maintenanceVideoUrl: '' }),
                 [field]: value
             }
         }));
@@ -4036,9 +4047,15 @@ export const TileDetail: React.FC<TileDetailProps> = ({
         updateNewLinkState(sectionId, 'allowedGroups', newGroups);
     };
 
-    const handleAddLinkToSection = (tabId: string, sectionId: string) => {
+    const handleAddLinkToSection = async (tabId: string, sectionId: string) => {
         const state = newLinkState[sectionId];
         if (!state || !state.label.trim() || !state.url.trim()) return;
+
+        const ok = await confirmUrlSafetyBeforeSave(
+            state.url,
+            urlSafetyByLinkRef.current[`new:${sectionId}`] ?? null
+        );
+        if (!ok) return;
 
         const newLink: Link = {
             id: generateId(),
@@ -4053,9 +4070,11 @@ export const TileDetail: React.FC<TileDetailProps> = ({
             notes: hasVisibleRichText(state.notes) ? state.notes?.trim() : undefined,
             tooltip: hasVisibleRichText(state.tooltip) ? state.tooltip?.trim() : (stripHtmlTags(state.label).trim() || undefined),
             notesEnabled: state.notesEnabled === true,
+            notesVideoUrl: state.notesVideoUrl?.trim() || undefined,
             browser: state.browser && state.browser !== 'default' ? state.browser : undefined,
             richTextContent: state.richTextContent?.trim() || undefined,
             richTextEnabled: state.richTextEnabled === true,
+            infoVideoUrl: state.infoVideoUrl?.trim() || undefined,
             infoShowOpenLink: state.infoShowOpenLink !== false,
             maintenanceEnabled: state.maintenanceEnabled === true,
             maintenanceMessage: state.maintenanceMessage?.trim() || undefined,
@@ -4355,10 +4374,12 @@ export const TileDetail: React.FC<TileDetailProps> = ({
                 tooltip: link.tooltip || '',
                 tooltipStyle: normalizeLinkTooltipStyle(link.tooltipStyle),
                 notesEnabled: isNotesTooltipEnabled(link),
+                notesVideoUrl: link.notesVideoUrl || '',
                 browser: link.browser || 'default',
                 openTarget: normalizeLinkOpenTarget(link.openTarget),
                 richTextContent: link.richTextContent || '',
                 richTextEnabled: isInfoContentEnabled(link),
+                infoVideoUrl: link.infoVideoUrl || '',
                 infoShowOpenLink: isInfoOpenLinkShown(link),
                 animation: linkAnimationForEdit(link.animation),
                 accessRestrictions: link.accessRestrictions,
@@ -4527,6 +4548,9 @@ export const TileDetail: React.FC<TileDetailProps> = ({
         if (!state || !state.label.trim() || !state.url.trim()) return;
         if (tile.canEdit !== true) return;
 
+        const ok = await confirmUrlSafetyBeforeSave(state.url, urlSafetyByLinkRef.current[linkId] ?? null);
+        if (!ok) return;
+
         const nextTabs = (tile.tabs || []).map((tab) => {
             if (tab.id !== tabId) return tab;
             return {
@@ -4606,7 +4630,9 @@ export const TileDetail: React.FC<TileDetailProps> = ({
             animation: linkToClone.animation,
             richTextContent: linkToClone.richTextContent,
             notesEnabled: linkToClone.notesEnabled,
+            notesVideoUrl: linkToClone.notesVideoUrl,
             richTextEnabled: linkToClone.richTextEnabled,
+            infoVideoUrl: linkToClone.infoVideoUrl,
             infoShowOpenLink: linkToClone.infoShowOpenLink,
             maintenanceEnabled: linkToClone.maintenanceEnabled,
             maintenanceMessage: linkToClone.maintenanceMessage,
@@ -4990,9 +5016,12 @@ export const TileDetail: React.FC<TileDetailProps> = ({
         }
     };
 
-    const handleUpdateLink = (tabId: string, sectionId: string, linkId: string) => {
+    const handleUpdateLink = async (tabId: string, sectionId: string, linkId: string) => {
         const state = editLinkState[linkId];
         if (!state || !state.label.trim() || !state.url.trim()) return;
+
+        const ok = await confirmUrlSafetyBeforeSave(state.url, urlSafetyByLinkRef.current[linkId] ?? null);
+        if (!ok) return;
 
         console.log('Updating link:', linkId, 'browser state:', state.browser, 'full state:', state);
 
@@ -5038,7 +5067,7 @@ export const TileDetail: React.FC<TileDetailProps> = ({
         setLinkGroupSearch(prev => ({ ...prev, [linkId]: '' }));
     };
 
-    const updateEditLinkState = (linkId: string, field: 'label' | 'url' | 'icon' | 'textColor' | 'visibility' | 'allowedUsers' | 'allowedGroups' | 'notes' | 'tooltip' | 'tooltipStyle' | 'notesEnabled' | 'browser' | 'openTarget' | 'richTextContent' | 'richTextEnabled' | 'infoShowOpenLink' | 'animation' | 'published' | 'inheritShortUrls' | 'forceShortUrl' | 'brokenStatusLabel' | 'brokenStatusNote' | 'brokenStatusTone' | 'brokenStatusExpected' | 'brokenStatusManual' | 'brokenStatusFontColor' | 'brokenStatusFontWeight' | 'brokenStatusFontStyle' | 'brokenStatusFontFamily' | 'maintenanceEnabled' | 'maintenanceMessage' | 'maintenanceVideoUrl', value: string | LinkVisibility | number[] | boolean) => {
+    const updateEditLinkState = (linkId: string, field: 'label' | 'url' | 'icon' | 'textColor' | 'visibility' | 'allowedUsers' | 'allowedGroups' | 'notes' | 'tooltip' | 'tooltipStyle' | 'notesEnabled' | 'notesVideoUrl' | 'browser' | 'openTarget' | 'richTextContent' | 'richTextEnabled' | 'infoVideoUrl' | 'infoShowOpenLink' | 'animation' | 'published' | 'inheritShortUrls' | 'forceShortUrl' | 'brokenStatusLabel' | 'brokenStatusNote' | 'brokenStatusTone' | 'brokenStatusExpected' | 'brokenStatusManual' | 'brokenStatusFontColor' | 'brokenStatusFontWeight' | 'brokenStatusFontStyle' | 'brokenStatusFontFamily' | 'maintenanceEnabled' | 'maintenanceMessage' | 'maintenanceVideoUrl', value: string | LinkVisibility | number[] | boolean) => {
         setEditLinkState(prev => ({
             ...prev,
             [linkId]: { ...prev[linkId], [field]: value }
@@ -5494,7 +5523,9 @@ export const TileDetail: React.FC<TileDetailProps> = ({
                         animation: linkToClone.animation,
                         richTextContent: linkToClone.richTextContent,
                         notesEnabled: linkToClone.notesEnabled,
+                        notesVideoUrl: linkToClone.notesVideoUrl,
                         richTextEnabled: linkToClone.richTextEnabled,
+                        infoVideoUrl: linkToClone.infoVideoUrl,
                         infoShowOpenLink: linkToClone.infoShowOpenLink,
                         maintenanceEnabled: linkToClone.maintenanceEnabled,
                         maintenanceMessage: linkToClone.maintenanceMessage,
@@ -9744,6 +9775,7 @@ export const TileDetail: React.FC<TileDetailProps> = ({
                                                                                 setNotesDialogState({
                                                                                     linkId: link.id,
                                                                                     notes: link.notes || '',
+                                                                                    notesVideoUrl: link.notesVideoUrl,
                                                                                     linkLabel: link.label || ''
                                                                                 });
                                                                             }}
@@ -9777,9 +9809,11 @@ export const TileDetail: React.FC<TileDetailProps> = ({
                                                                                         notes: link.notes,
                                                                                         tooltip: link.tooltip,
                                                                                         notesEnabled: link.notesEnabled,
+                                                                                        notesVideoUrl: link.notesVideoUrl,
                                                                                         browser: link.browser,
                                                                                         richTextContent: link.richTextContent,
                                                                                         richTextEnabled: link.richTextEnabled,
+                                                                                        infoVideoUrl: link.infoVideoUrl,
                                                                                         infoShowOpenLink: link.infoShowOpenLink,
                                                                                         maintenanceEnabled: link.maintenanceEnabled,
                                                                                         maintenanceMessage: link.maintenanceMessage,
@@ -10069,6 +10103,7 @@ export const TileDetail: React.FC<TileDetailProps> = ({
                     onClose={() => setNotesDialogState(null)}
                     linkLabel={notesDialogState?.linkLabel || ''}
                     notes={notesDialogState?.notes || ''}
+                    notesVideoUrl={notesDialogState?.notesVideoUrl}
                 />
 
                 {/* View-mode quick edit/add (same EditLinkForm dialog as edit panel) */}
@@ -10137,6 +10172,9 @@ export const TileDetail: React.FC<TileDetailProps> = ({
                                     onBrokenStatusFontStyleChange={(next) => updateEditLinkState(linkId, 'brokenStatusFontStyle', next)}
                                     brokenStatusFontFamily={draft.brokenStatusFontFamily || ''}
                                     onBrokenStatusFontFamilyChange={(next) => updateEditLinkState(linkId, 'brokenStatusFontFamily', next)}
+                                    onSafetyResult={(result) => {
+                                        urlSafetyByLinkRef.current[linkId] = result;
+                                    }}
                                 />
                             }
                             isAdmin={!!user?.is_admin}
@@ -10184,6 +10222,7 @@ export const TileDetail: React.FC<TileDetailProps> = ({
                         linkLabel={linkInfoDialog.link.label}
                         linkIcon={linkInfoDialog.link.icon}
                         richTextContent={linkInfoDialog.link.richTextContent || ''}
+                        infoVideoUrl={linkInfoDialog.link.infoVideoUrl}
                         linkUrl={viewerLinkUrl({ ...linkInfoDialog.link, shortUrl: shortOf('link', linkInfoDialog.link.id, linkInfoDialog.link.shortUrl) }, effectiveShowShortUrls(showShortUrls, activeViewTab, linkInfoDialog.link)) || linkInfoDialog.link.url}
                         showOpenLink={isInfoOpenLinkShown(linkInfoDialog.link)}
                         browser={linkInfoDialog.link.browser}
@@ -12259,7 +12298,9 @@ export const TileDetail: React.FC<TileDetailProps> = ({
                                                                                                 }));
                                                                                             }}
                                                                                             onCancel={handleCancelEditLink}
-                                                                                            onSave={() => handleUpdateLink(tab.id, section.id, link.id)}
+                            onSave={() => {
+                                void handleUpdateLink(tab.id, section.id, link.id);
+                            }}
                                                                                             onConvert={() => openConvertLinkDialog(tab.id, section.id, link)}
                                                                                             urlField={
                                                                                                 <LinkUrlField
@@ -12287,6 +12328,9 @@ export const TileDetail: React.FC<TileDetailProps> = ({
                                                                                                     onBrokenStatusFontStyleChange={(next) => updateEditLinkState(link.id, 'brokenStatusFontStyle', next)}
                                                                                                     brokenStatusFontFamily={editLinkState[link.id]?.brokenStatusFontFamily || ''}
                                                                                                     onBrokenStatusFontFamilyChange={(next) => updateEditLinkState(link.id, 'brokenStatusFontFamily', next)}
+                                                                                                    onSafetyResult={(result) => {
+                                                                                                        urlSafetyByLinkRef.current[link.id] = result;
+                                                                                                    }}
                                                                                                 />
                                                                                             }
                                                                                             isAdmin={!!user?.is_admin}
@@ -12547,6 +12591,9 @@ export const TileDetail: React.FC<TileDetailProps> = ({
                                                                                     onBrokenStatusFontStyleChange={(next) => updateNewLinkState(section.id, 'brokenStatusFontStyle', next)}
                                                                                     brokenStatusFontFamily={newLinkState[section.id]?.brokenStatusFontFamily || ''}
                                                                                     onBrokenStatusFontFamilyChange={(next) => updateNewLinkState(section.id, 'brokenStatusFontFamily', next)}
+                                                                                    onSafetyResult={(result) => {
+                                                                                        urlSafetyByLinkRef.current[`new:${section.id}`] = result;
+                                                                                    }}
                                                                                 />
                                                                                 <div>
                                                                                     <label className="block text-xs font-semibold uppercase tracking-wider text-slate-600 dark:text-slate-400 mb-1.5">
@@ -12888,6 +12935,13 @@ export const TileDetail: React.FC<TileDetailProps> = ({
                                                                                 />
                                                                             </div>
 
+                                                                            <LinkMaintenanceVideoField
+                                                                                value={newLinkState[section.id]?.notesVideoUrl || ''}
+                                                                                onChange={(url) => updateNewLinkState(section.id, 'notesVideoUrl', url)}
+                                                                                heading="Notes video"
+                                                                                description="Record a webcam message or upload a video file (WebM, MP4, up to 50MB)."
+                                                                            />
+
                                                                             {/* Rich Text Content */}
                                                                             <div>
                                                                                 <div className="flex items-center justify-between mb-1.5">
@@ -12925,6 +12979,13 @@ export const TileDetail: React.FC<TileDetailProps> = ({
                                                                                     className="min-h-[200px]"
                                                                                 />
                                                                             </div>
+
+                                                                            <LinkMaintenanceVideoField
+                                                                                value={newLinkState[section.id]?.infoVideoUrl || ''}
+                                                                                onChange={(url) => updateNewLinkState(section.id, 'infoVideoUrl', url)}
+                                                                                heading="Info video"
+                                                                                description="Record a webcam message or upload a video file (WebM, MP4, up to 50MB)."
+                                                                            />
 
                                                                             <div className={`flex items-center justify-between gap-3 p-3 rounded-lg border-2 ${
                                                                                 newLinkState[section.id]?.maintenanceEnabled
@@ -13052,7 +13113,7 @@ export const TileDetail: React.FC<TileDetailProps> = ({
                                                                             {/* Action Button */}
                                                                             <div className="flex justify-end pt-2 border-t border-slate-200 dark:border-slate-700">
                                                                                 <button
-                                                                                    onClick={() => handleAddLinkToSection(tab.id, section.id)}
+                                                                                    onClick={() => void handleAddLinkToSection(tab.id, section.id)}
                                                                                     disabled={!newLinkState[section.id]?.label || !newLinkState[section.id]?.url}
                                                                                     className="px-4 py-2 text-xs font-semibold bg-brand-600 hover:bg-brand-500 disabled:opacity-50 disabled:cursor-not-allowed text-white rounded-lg transition-all shadow-md hover:shadow-lg shadow-brand-500/30 flex items-center gap-1.5"
                                                                                 >

@@ -117,7 +117,7 @@ const extractSearchLinks = (tile: Tile): Tile['searchLinks'] => {
   }
   const links: NonNullable<Tile['searchLinks']> = [];
   const seen = new Set<string>();
-  const addLinks = (sectionLinks?: { id: string; label: string; url: string; icon?: string; browser?: string; openTarget?: string; notes?: string; tooltip?: string; notesEnabled?: boolean; tooltipStyle?: 'rich' | 'classic'; richTextContent?: string; richTextEnabled?: boolean; infoShowOpenLink?: boolean; maintenanceEnabled?: boolean; maintenanceMessage?: string; maintenanceVideoUrl?: string; health?: any; brokenStatusLabel?: string | null }[]) => {
+  const addLinks = (sectionLinks?: { id: string; label: string; url: string; icon?: string; browser?: string; openTarget?: string; notes?: string; tooltip?: string; notesEnabled?: boolean; notesVideoUrl?: string; tooltipStyle?: 'rich' | 'classic'; richTextContent?: string; richTextEnabled?: boolean; infoVideoUrl?: string; infoShowOpenLink?: boolean; maintenanceEnabled?: boolean; maintenanceMessage?: string; maintenanceVideoUrl?: string; health?: any; brokenStatusLabel?: string | null }[]) => {
     sectionLinks?.forEach((link) => {
       const key = `${(link.label || '').toLowerCase()}|${(link.url || '').toLowerCase()}`;
       if (seen.has(key)) return;
@@ -132,9 +132,11 @@ const extractSearchLinks = (tile: Tile): Tile['searchLinks'] => {
         notes: link.notes,
         tooltip: link.tooltip,
         notesEnabled: link.notesEnabled,
+        notesVideoUrl: link.notesVideoUrl,
         tooltipStyle: link.tooltipStyle,
         richTextContent: link.richTextContent,
         richTextEnabled: link.richTextEnabled,
+        infoVideoUrl: link.infoVideoUrl,
         infoShowOpenLink: link.infoShowOpenLink,
         maintenanceEnabled: link.maintenanceEnabled,
         maintenanceMessage: link.maintenanceMessage,
@@ -686,11 +688,13 @@ export interface FavoriteLink {
   notes?: string;
   tooltip?: string;
   notesEnabled?: boolean;
+  notesVideoUrl?: string;
   tooltipStyle?: 'rich' | 'classic';
   browser?: string;
   openTarget?: 'same' | 'tab' | 'window' | 'browser' | 'private';
   richTextContent?: string;
   richTextEnabled?: boolean;
+  infoVideoUrl?: string;
   infoShowOpenLink?: boolean;
   maintenanceEnabled?: boolean;
   maintenanceMessage?: string;

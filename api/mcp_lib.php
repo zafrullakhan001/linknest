@@ -1092,6 +1092,23 @@ function mcpToolAddLink(array $user, array $args): array {
     if (!mcpIsSafeUrl($url)) {
         return ['error' => 'URL is not allowed'];
     }
+
+    $safety = null;
+    if (function_exists('urlSafetyCheckUrl') || is_file(__DIR__ . '/url_safety_lib.php')) {
+        require_once __DIR__ . '/url_safety_lib.php';
+        try {
+            $safety = urlSafetyCheckUrl($url, false);
+            if (!empty($safety['blockMalicious'])) {
+                return [
+                    'error' => 'URL is blocked by URL Safety (malware/phishing). Allowlist the domain or disable hard-block in Admin → URL Safety.',
+                    'urlSafety' => $safety,
+                ];
+            }
+        } catch (Throwable $e) {
+            error_log('mcpToolAddLink url safety: ' . $e->getMessage());
+        }
+    }
+
     $db = getDB();
     $row = mcpLoadVisibleTileRow($db, $user, $spaceId);
     if (!$row) {
@@ -1108,7 +1125,16 @@ function mcpToolAddLink(array $user, array $args): array {
         'icon' => isset($args['icon']) ? (string)$args['icon'] : null,
     ]);
     mcpInvalidateGuestCache();
-    return ['ok' => true, 'id' => $linkId, 'spaceId' => $spaceId, 'label' => $label, 'url' => $url];
+    $out = ['ok' => true, 'id' => $linkId, 'spaceId' => $spaceId, 'label' => $label, 'url' => $url];
+    if (is_array($safety)) {
+        $out['urlSafety'] = [
+            'verdict' => $safety['verdict'] ?? 'unknown',
+            'requiresConfirm' => !empty($safety['requiresConfirm']),
+            'flags' => $safety['flags'] ?? [],
+            'host' => $safety['host'] ?? null,
+        ];
+    }
+    return $out;
 }
 
 function mcpFindLinkSpace(PDO $db, string $linkId): ?array {
@@ -1150,6 +1176,21 @@ function mcpToolUpdateLink(array $user, array $args): array {
         if (!mcpIsSafeUrl($url)) {
             return ['error' => 'URL is not allowed'];
         }
+        $safety = null;
+        if (is_file(__DIR__ . '/url_safety_lib.php')) {
+            require_once __DIR__ . '/url_safety_lib.php';
+            try {
+                $safety = urlSafetyCheckUrl($url, false);
+                if (!empty($safety['blockMalicious'])) {
+                    return [
+                        'error' => 'URL is blocked by URL Safety (malware/phishing). Allowlist the domain or disable hard-block in Admin → URL Safety.',
+                        'urlSafety' => $safety,
+                    ];
+                }
+            } catch (Throwable $e) {
+                error_log('mcpToolUpdateLink url safety: ' . $e->getMessage());
+            }
+        }
         $sets[] = 'url = ?';
         $params[] = $url;
     }
@@ -1163,7 +1204,16 @@ function mcpToolUpdateLink(array $user, array $args): array {
     $params[] = $linkId;
     $db->prepare('UPDATE links SET ' . implode(', ', $sets) . ' WHERE id = ?')->execute($params);
     mcpInvalidateGuestCache();
-    return ['ok' => true, 'id' => $linkId];
+    $out = ['ok' => true, 'id' => $linkId];
+    if (isset($safety) && is_array($safety)) {
+        $out['urlSafety'] = [
+            'verdict' => $safety['verdict'] ?? 'unknown',
+            'requiresConfirm' => !empty($safety['requiresConfirm']),
+            'flags' => $safety['flags'] ?? [],
+            'host' => $safety['host'] ?? null,
+        ];
+    }
+    return $out;
 }
 
 function mcpToolDeleteLink(array $user, array $args): array {

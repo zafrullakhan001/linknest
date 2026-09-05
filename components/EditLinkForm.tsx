@@ -128,10 +128,12 @@ export type EditLinkDraft = {
   tooltip: string;
   tooltipStyle: LinkTooltipStyle;
   notesEnabled: boolean;
+  notesVideoUrl: string;
   browser: string;
   openTarget: LinkOpenTarget;
   richTextContent: string;
   richTextEnabled: boolean;
+  infoVideoUrl: string;
   infoShowOpenLink: boolean;
   animation: string;
   accessRestrictions?: AccessRestrictions;
@@ -142,8 +144,8 @@ export type EditLinkDraft = {
 
 type EditLinkField =
   | 'label' | 'url' | 'icon' | 'textColor' | 'visibility' | 'allowedUsers' | 'allowedGroups'
-  | 'notes' | 'tooltip' | 'tooltipStyle' | 'notesEnabled' | 'browser' | 'openTarget' | 'richTextContent'
-  | 'richTextEnabled' | 'infoShowOpenLink' | 'animation' | 'published' | 'inheritShortUrls' | 'forceShortUrl' | 'brokenStatusLabel'
+  | 'notes' | 'tooltip' | 'tooltipStyle' | 'notesEnabled' | 'notesVideoUrl' | 'browser' | 'openTarget' | 'richTextContent'
+  | 'richTextEnabled' | 'infoVideoUrl' | 'infoShowOpenLink' | 'animation' | 'published' | 'inheritShortUrls' | 'forceShortUrl' | 'brokenStatusLabel'
   | 'brokenStatusNote' | 'brokenStatusTone' | 'brokenStatusExpected' | 'brokenStatusManual'
   | 'brokenStatusFontColor' | 'brokenStatusFontWeight' | 'brokenStatusFontStyle' | 'brokenStatusFontFamily'
   | 'maintenanceEnabled' | 'maintenanceMessage' | 'maintenanceVideoUrl';
@@ -1064,6 +1066,12 @@ export const EditLinkForm: React.FC<EditLinkFormProps> = (props) => {
           Yellow uses the normal Windows tooltip and a plain text box. Rich uses a formatted tooltip. This applies only to this link.
         </p>
       </div>
+      <LinkMaintenanceVideoField
+        value={draft.notesVideoUrl || ''}
+        onChange={(url) => onUpdateField('notesVideoUrl', url)}
+        heading="Notes video"
+        description="Record a webcam message or upload a video file (WebM, MP4, up to 50MB)."
+      />
     </div>
   );
 
@@ -1113,6 +1121,12 @@ export const EditLinkForm: React.FC<EditLinkFormProps> = (props) => {
           labelOff="Show Open Link button in info dialog"
         />
       </div>
+      <LinkMaintenanceVideoField
+        value={draft.infoVideoUrl || ''}
+        onChange={(url) => onUpdateField('infoVideoUrl', url)}
+        heading="Info video"
+        description="Record a webcam message or upload a video file (WebM, MP4, up to 50MB)."
+      />
     </div>
   );
 
@@ -1368,7 +1382,7 @@ export const EditLinkForm: React.FC<EditLinkFormProps> = (props) => {
         title="Notes & Tooltip"
         subtitle="Owner info, support details, hover text"
         accent="amber"
-        defaultOpen={!!(draft.notesEnabled || hasVisibleRichText(draft.notes) || hasVisibleRichText(draft.tooltip) || hasVisibleRichText(link.notes) || hasVisibleRichText(link.tooltip))}
+        defaultOpen={!!(draft.notesEnabled || hasVisibleRichText(draft.notes) || hasVisibleRichText(draft.tooltip) || draft.notesVideoUrl || hasVisibleRichText(link.notes) || hasVisibleRichText(link.tooltip) || link.notesVideoUrl)}
         foldNonce={foldNonce}
         foldOpen={foldOpen}
         plain={plain}
@@ -1399,7 +1413,7 @@ export const EditLinkForm: React.FC<EditLinkFormProps> = (props) => {
         title="Information Content"
         subtitle="Rich text dialog instead of opening the URL"
         accent="violet"
-        defaultOpen={!!(draft.richTextEnabled || draft.richTextContent || link.richTextContent)}
+        defaultOpen={!!(draft.richTextEnabled || draft.richTextContent || draft.infoVideoUrl || link.richTextContent || link.infoVideoUrl)}
         foldNonce={foldNonce}
         foldOpen={foldOpen}
         plain={plain}

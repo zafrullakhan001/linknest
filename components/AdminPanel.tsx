@@ -35,6 +35,7 @@ import { UpdatesPanel } from './UpdatesDialog';
 import { DevicePresetsAdmin } from './DevicePresetsAdmin';
 import { CategoryPresetsAdmin } from './CategoryPresetsAdmin';
 import { LinkCheckExceptionsAdmin } from './LinkCheckExceptionsAdmin';
+import { UrlSafetyAdmin } from './UrlSafetyAdmin';
 import { UrlScanFixAdmin } from './UrlScanFixAdmin';
 import { TooltipSyncAdmin } from './TooltipSyncAdmin';
 import { IframeBlockDomainsAdmin } from './IframeBlockDomainsAdmin';
@@ -157,6 +158,7 @@ type AdminNavTabId =
   | 'devicePresets'
   | 'categoryPresets'
   | 'linkCheckExceptions'
+  | 'urlSafety'
   | 'urlScanFix'
   | 'tooltipSync'
   | 'iframeBlockDomains'
@@ -197,6 +199,7 @@ const ADMIN_NAV_SECTIONS: Array<{
       { id: 'visitCounter', label: 'Visit Counter', emoji: '📊' },
       { id: 'tabVisibility', label: 'Enable/Disable Tabs', emoji: '📑' },
       { id: 'linkCheckExceptions', label: 'Link Check / Status Colors', emoji: '🎨' },
+      { id: 'urlSafety', label: 'URL Safety', emoji: '🛡️' },
       { id: 'urlScanFix', label: 'Scan & Fix URLs', emoji: '🔧' },
       { id: 'tooltipSync', label: 'Sync Tooltips', emoji: '💬' },
       { id: 'iframeBlockDomains', label: 'Iframe Block Domains', emoji: '🖼️' },
@@ -336,7 +339,7 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({ onUserApproved }) => {
     if (savedTab === 'footer') return 'settings';
     const validTabs: Array<AdminNavTabId | 'footer'> = [
       'pending', 'all', 'userAudit', 'settings', 'database', 'spaces', 'visitCounter', 'ldap', 'saml', 'footer',
-      'tabVisibility', 'devicePresets', 'categoryPresets', 'linkCheckExceptions', 'urlScanFix', 'tooltipSync', 'iframeBlockDomains', 'access', 'clone', 'browser', 'mcp', 'broadcast',
+      'tabVisibility', 'devicePresets', 'categoryPresets', 'linkCheckExceptions', 'urlSafety', 'urlScanFix', 'tooltipSync', 'iframeBlockDomains', 'access', 'clone', 'browser', 'mcp', 'broadcast',
       'maintenanceScripts', 'maintenance', 'widgets', 'media', 'addons', 'appUpdates', 'loadTest',
     ];
     return (savedTab && validTabs.includes(savedTab as AdminNavTabId | 'footer'))
@@ -1438,7 +1441,7 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({ onUserApproved }) => {
     if (activeTab === 'maintenance') {
       loadSettings();
     }
-    if (activeTab === 'devicePresets' || activeTab === 'tabVisibility' || activeTab === 'linkCheckExceptions' || activeTab === 'iframeBlockDomains') {
+    if (activeTab === 'devicePresets' || activeTab === 'tabVisibility' || activeTab === 'linkCheckExceptions' || activeTab === 'urlSafety' || activeTab === 'iframeBlockDomains') {
       loadSettings();
     }
     if (activeTab === 'widgets') {
@@ -9541,6 +9544,25 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({ onUserApproved }) => {
                   </div>
                 ) : (
                   <LinkCheckExceptionsAdmin
+                    settings={settings}
+                    onSettingsChange={(partial) => setSettings((prev) => ({ ...prev, ...partial }))}
+                    onRefresh={async () => {
+                      await refreshSettings();
+                      await loadSettings();
+                    }}
+                    isMobile={isMobile}
+                    setError={setError}
+                  />
+                )
+              )}
+
+              {activeTab === 'urlSafety' && (
+                settingsLoading ? (
+                  <div className="flex items-center justify-center py-12">
+                    <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-sky-500"></div>
+                  </div>
+                ) : (
+                  <UrlSafetyAdmin
                     settings={settings}
                     onSettingsChange={(partial) => setSettings((prev) => ({ ...prev, ...partial }))}
                     onRefresh={async () => {

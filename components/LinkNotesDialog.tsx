@@ -11,6 +11,7 @@ interface LinkNotesDialogProps {
   onClose: () => void;
   linkLabel: string;
   notes: string;
+  notesVideoUrl?: string;
 }
 
 const SECTION_EMOJIS: Array<{ match: RegExp; emoji: string }> = [
@@ -161,6 +162,7 @@ export const LinkNotesDialog: React.FC<LinkNotesDialogProps> = ({
   onClose,
   linkLabel,
   notes,
+  notesVideoUrl,
 }) => {
   const dialogRef = useRef<HTMLDivElement>(null);
   const viewerRef = useRef<TinyMceRichTextViewerHandle>(null);
@@ -176,6 +178,7 @@ export const LinkNotesDialog: React.FC<LinkNotesDialogProps> = ({
 
   const plainLabel = useMemo(() => stripHtmlTags(linkLabel || ''), [linkLabel]);
   const displayHtml = useMemo(() => notesToDisplayHtml(notes || ''), [notes]);
+  const hasVideo = !!notesVideoUrl?.trim();
   const speakableText = useMemo(
     () => toSpeakableText(looksLikeHtml(notes || '') ? notes || '' : displayHtml || notes || ''),
     [notes, displayHtml]
@@ -393,11 +396,21 @@ export const LinkNotesDialog: React.FC<LinkNotesDialogProps> = ({
           <ReadAloudSettingsRow readAloud={readAloud} idPrefix="link-notes" className="mt-2.5" />
         </div>
 
-        {/* Body — TinyMCE viewer, same engine as the editor */}
-        <div className="flex-1 overflow-hidden min-h-0 bg-slate-50 dark:bg-slate-900/50">
+        {/* Body — optional video + TinyMCE viewer, same engine as the editor */}
+        <div className={`flex-1 min-h-0 bg-slate-50 dark:bg-slate-900/50 ${hasVideo ? 'overflow-y-auto flex flex-col' : 'overflow-hidden'}`}>
+          {hasVideo && (
+            <video
+              src={notesVideoUrl}
+              controls
+              playsInline
+              className="w-full max-h-72 rounded-lg bg-black shrink-0 mx-auto mt-4 px-5"
+            />
+          )}
           {displayHtml ? (
-            <TinyMceRichTextViewer ref={viewerRef} html={displayHtml} onEscape={onClose} />
-          ) : (
+            <div className={hasVideo ? 'min-h-[220px] h-[280px] shrink-0 mt-3' : 'h-full'}>
+              <TinyMceRichTextViewer ref={viewerRef} html={displayHtml} onEscape={onClose} />
+            </div>
+          ) : hasVideo ? null : (
             <div className="h-full min-h-[120px] flex flex-col items-center justify-center text-center gap-2 text-slate-400">
               <p className="text-sm">No notes for this link yet.</p>
             </div>

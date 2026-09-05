@@ -260,6 +260,8 @@ export function collectMatchingSearchLinks(
           browser: link.browser,
           health: link.health,
           richTextContent: link.richTextContent,
+          notesVideoUrl: link.notesVideoUrl,
+          infoVideoUrl: link.infoVideoUrl,
           maintenanceEnabled: link.maintenanceEnabled,
           maintenanceMessage: link.maintenanceMessage,
           maintenanceVideoUrl: link.maintenanceVideoUrl,

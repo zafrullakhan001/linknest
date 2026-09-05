@@ -163,6 +163,12 @@ export interface AppSettings {
   link_health_fav_fin_corner?: string;
   /** JSON string array of hosts that skip in-app mobile preview (iframe blocked) */
   iframe_block_domains?: string;
+  /** '0' or '1' — URL Safety Intelligence (threat/adult list checks) */
+  url_safety_enabled?: string;
+  /** '0' or '1' — include adult/NSFW domain list */
+  url_safety_check_adult?: string;
+  /** '0' or '1' — hard-block malware/phishing on save (MCP); UI uses confirm when off */
+  url_safety_block_malicious?: string;
 
   // LDAP Settings
   ldap_enabled?: string;
@@ -413,6 +419,9 @@ export const settingsService = {
       link_health_status_shape: data.settings?.link_health_status_shape || 'circle',
       link_health_fav_fin_corner: data.settings?.link_health_fav_fin_corner || 'top-left',
       iframe_block_domains: data.settings?.iframe_block_domains || '[]',
+      url_safety_enabled: data.settings?.url_safety_enabled === '0' ? '0' : '1',
+      url_safety_check_adult: data.settings?.url_safety_check_adult === '0' ? '0' : '1',
+      url_safety_block_malicious: data.settings?.url_safety_block_malicious === '1' ? '1' : '0',
 
       // LDAP defaults
       ldap_enabled: data.settings?.ldap_enabled || '0',

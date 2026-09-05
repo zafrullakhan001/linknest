@@ -1,4 +1,4 @@
-import React, { useId, useMemo, useState } from 'react';
+import React, { useEffect, useId, useMemo, useState } from 'react';
 import { FaCheck, FaCopy } from 'react-icons/fa';
 import { useAuth } from '../contexts/AuthContext';
 import { useSettings } from '../contexts/SettingsContext';
@@ -22,9 +22,10 @@ import {
     getBrokenBadgeTextStyle,
     normalizeBrokenStatusTone,
 } from '../utils/brokenStatusDisplay';
+import type { UrlSafetyResult } from '../types';
 import { BrandingFontFamilyOptions } from './BrandingFontFamilyOptions';
 import { UrlFormDiagnostics } from './UrlFormDiagnostics';
-import { UrlProbeBadges } from './UrlProbeBadges';
+import { UrlProbeBadges, type UrlProbeFieldStatus } from './UrlProbeBadges';
 
 const COPY_BUTTON_MIN_LENGTH = 40;
 
@@ -64,6 +65,8 @@ export interface LinkUrlFieldProps {
     onBrokenStatusFontFamilyChange?: (value: string) => void;
     showCopyButton?: boolean;
     inputClassName?: string;
+    /** Receives live URL Safety Intelligence results for confirm-on-save. */
+    onSafetyResult?: (result: UrlSafetyResult | null) => void;
 }
 
 export const LinkUrlField: React.FC<LinkUrlFieldProps> = ({
@@ -99,6 +102,7 @@ export const LinkUrlField: React.FC<LinkUrlFieldProps> = ({
     onBrokenStatusFontFamilyChange,
     showCopyButton = false,
     inputClassName,
+    onSafetyResult,
 }) => {
     const diagnosis = useMemo(() => diagnoseLinkUrl(value), [value]);
     const blocking = hasBlockingUrlIssues(diagnosis);
@@ -109,6 +113,8 @@ export const LinkUrlField: React.FC<LinkUrlFieldProps> = ({
     const [savingException, setSavingException] = useState(false);
     const [exceptionError, setExceptionError] = useState('');
     const [copied, setCopied] = useState(false);
+    const [safetyResult, setSafetyResult] = useState<UrlSafetyResult | null>(null);
+    const [probeStatus, setProbeStatus] = useState<UrlProbeFieldStatus>('idle');
 
     const exceptions = useMemo(
         () => parseExceptionsSetting(settings.link_check_exceptions),
@@ -123,6 +129,21 @@ export const LinkUrlField: React.FC<LinkUrlFieldProps> = ({
     const showProbeBadges = isHttpOrHttpsUrl(trimmedUrl);
     const shouldShowCopy = showCopyButton && trimmedUrl.length >= COPY_BUTTON_MIN_LENGTH;
     const activeTone = normalizeBrokenStatusTone(brokenStatusTone || null) || '';
+
+    const handleSafetyResult = (result: UrlSafetyResult | null) => {
+        setSafetyResult(result);
+        onSafetyResult?.(result);
+    };
+
+    useEffect(() => {
+        setSafetyResult(null);
+        setProbeStatus('idle');
+    }, [trimmedUrl]);
+
+    const hasSafetyError =
+        safetyResult?.verdict === 'malicious' || safetyResult?.verdict === 'adult';
+    const hasUrlError = probeStatus === 'error' || hasSafetyError;
+    const hasUrlOk = !hasUrlError && probeStatus === 'ok';
 
     const handleIgnoreChange = async (next: boolean) => {
         if (!isAdmin || !isHttpUrl) return;
@@ -158,13 +179,23 @@ export const LinkUrlField: React.FC<LinkUrlFieldProps> = ({
         }
     };
 
-    const defaultInputClass = blocking
-        ? 'border-amber-400 dark:border-amber-600 focus:border-amber-500 focus:ring-amber-500/40'
-        : 'border-slate-200 dark:border-slate-700 focus:border-brand-500 focus:ring-brand-500/50';
+    const defaultInputClass = hasUrlError
+        ? 'bg-rose-50 dark:bg-rose-950/40 border-rose-500 dark:border-rose-400 focus:border-rose-500 focus:ring-rose-400/50 text-rose-950 dark:text-rose-100'
+        : hasUrlOk
+            ? 'bg-emerald-50 dark:bg-emerald-950/40 border-emerald-500 dark:border-emerald-400 focus:border-emerald-500 focus:ring-emerald-400/50 text-emerald-950 dark:text-emerald-100'
+            : blocking
+                ? 'bg-slate-50 dark:bg-slate-900 border-amber-400 dark:border-amber-600 focus:border-amber-500 focus:ring-amber-500/40'
+                : 'bg-slate-50 dark:bg-slate-900 border-slate-200 dark:border-slate-700 focus:border-brand-500 focus:ring-brand-500/50';
+
+    const statusOverrideClass = hasUrlError
+        ? '!border-rose-500 dark:!border-rose-400 !bg-rose-50 dark:!bg-rose-950/40 focus:!border-rose-500 focus:!ring-rose-400/50'
+        : hasUrlOk
+            ? '!border-emerald-500 dark:!border-emerald-400 !bg-emerald-50 dark:!bg-emerald-950/40 focus:!border-emerald-500 focus:!ring-emerald-400/50'
+            : '';
 
     const resolvedInputClass =
-        inputClassName ??
-        `w-full bg-slate-50 dark:bg-slate-900 border-2 rounded-lg px-3 py-2 text-sm text-slate-900 dark:text-white focus:outline-none focus:ring-2 transition-all font-mono ${defaultInputClass}`;
+        `${inputClassName ??
+            `w-full border-2 rounded-lg px-3 py-2 text-sm text-slate-900 dark:text-white focus:outline-none focus:ring-2 transition-all font-mono ${defaultInputClass}`} ${statusOverrideClass}`.trim();
 
     return (
         <div>
@@ -174,7 +205,15 @@ export const LinkUrlField: React.FC<LinkUrlFieldProps> = ({
                         URL
                     </label>
                 )}
-                {showProbeBadges ? <UrlProbeBadges url={value} excluded={excluded} onAdoptUrl={onChange} /> : null}
+                {showProbeBadges ? (
+                    <UrlProbeBadges
+                        url={value}
+                        excluded={excluded}
+                        onAdoptUrl={onChange}
+                        onSafetyResult={handleSafetyResult}
+                        onProbeStatus={setProbeStatus}
+                    />
+                ) : null}
             </div>
             <div className="flex items-stretch gap-2 min-w-0">
                 <input
@@ -183,7 +222,7 @@ export const LinkUrlField: React.FC<LinkUrlFieldProps> = ({
                     onChange={(e) => onChange(e.target.value)}
                     placeholder={placeholder}
                     required={required}
-                    aria-invalid={blocking}
+                    aria-invalid={blocking || hasUrlError}
                     aria-describedby={blocking ? issuesId : undefined}
                     className={`${resolvedInputClass} min-w-0 flex-1 overflow-hidden text-ellipsis`}
                     style={{ textOverflow: 'ellipsis' }}
@@ -474,6 +513,57 @@ export const LinkUrlField: React.FC<LinkUrlFieldProps> = ({
             {blocking && (
                 <UrlFormDiagnostics diagnosis={diagnosis} listId={issuesId} onApplyFix={onChange} />
             )}
+            {safetyResult &&
+                (safetyResult.verdict === 'malicious' ||
+                    safetyResult.verdict === 'adult' ||
+                    safetyResult.verdict === 'suspicious') && (
+                    <div
+                        className={`mt-1.5 rounded-lg border px-3 py-2 ${
+                            safetyResult.verdict === 'malicious'
+                                ? 'border-rose-300 dark:border-rose-700/80 bg-rose-50 dark:bg-rose-950/40'
+                                : safetyResult.verdict === 'adult'
+                                  ? 'border-fuchsia-300 dark:border-fuchsia-700/80 bg-fuchsia-50 dark:bg-fuchsia-950/40'
+                                  : 'border-amber-300 dark:border-amber-700/80 bg-amber-50 dark:bg-amber-950/40'
+                        }`}
+                        role="status"
+                    >
+                        <p
+                            className={`text-[11px] font-semibold ${
+                                safetyResult.verdict === 'malicious'
+                                    ? 'text-rose-950 dark:text-rose-100'
+                                    : safetyResult.verdict === 'adult'
+                                      ? 'text-fuchsia-950 dark:text-fuchsia-100'
+                                      : 'text-amber-950 dark:text-amber-100'
+                            }`}
+                        >
+                            {safetyResult.verdict === 'malicious'
+                                ? 'Safety warning — malicious or phishing'
+                                : safetyResult.verdict === 'adult'
+                                  ? 'Adult content list match'
+                                  : 'Suspicious URL characteristics'}
+                            {safetyResult.requiresConfirm ? (
+                                <span className="font-medium opacity-90"> · confirm required to save</span>
+                            ) : null}
+                        </p>
+                        <ul className="mt-1.5 space-y-1.5">
+                            {safetyResult.flags.slice(0, 4).map((flag) => (
+                                <li
+                                    key={flag.id}
+                                    className={`text-[11px] leading-snug ${
+                                        safetyResult.verdict === 'malicious'
+                                            ? 'text-rose-950 dark:text-rose-100'
+                                            : safetyResult.verdict === 'adult'
+                                              ? 'text-fuchsia-950 dark:text-fuchsia-100'
+                                              : 'text-amber-950 dark:text-amber-100'
+                                    }`}
+                                >
+                                    <span className="font-semibold">{flag.title}.</span>{' '}
+                                    <span className="opacity-90">{flag.detail}</span>
+                                </li>
+                            ))}
+                        </ul>
+                    </div>
+                )}
         </div>
     );
 };

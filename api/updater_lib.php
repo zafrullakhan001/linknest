@@ -1802,7 +1802,15 @@ function updaterRebuildFrontend(): void {
         $build = updaterRunCommand('npm run build:prod', null, 600, $viteEnv);
     }
     if (!$build['ok']) {
-        throw new RuntimeException('npm run build failed: ' . updaterCommandFailureMessage($build));
+        $distIndex = UPDATER_ROOT . DIRECTORY_SEPARATOR . 'dist' . DIRECTORY_SEPARATOR . 'index.html';
+        $combined = (string)($build['stdout'] ?? '') . "\n" . (string)($build['stderr'] ?? '');
+        // Vite prints "✓ built in …" only on success. Windows proc_close can still
+        // report -1, and warning-only stderr has been shown as a failed update.
+        if (is_file($distIndex) && stripos($combined, 'built in') !== false) {
+            updaterAppendLog('npm run build wrote dist/index.html; treating as success despite exit code ' . (int)($build['code'] ?? -1));
+        } else {
+            throw new RuntimeException('npm run build failed: ' . updaterCommandFailureMessage($build));
+        }
     }
 }
 
@@ -1816,18 +1824,29 @@ function updaterCommandFailureMessage(array $result): string {
     $stderr = trim((string)($result['stderr'] ?? ''));
     $code = isset($result['code']) ? (int)$result['code'] : -1;
 
-    $isBrowserslistNoise = static function (string $text): bool {
-        return $text !== ''
-            && stripos($text, 'Browserslist: browsers data') !== false
-            && stripos($text, 'update-browserslist-db') !== false
-            && !preg_match('/\b(error|failed|ERR!|ENOENT|SyntaxError|TypeError)\b/i', $text);
+    $isHarmlessViteNoise = static function (string $text): bool {
+        if ($text === '') {
+            return true;
+        }
+        $hasRealError = preg_match('/\b(error|failed|ERR!|ENOENT|SyntaxError|TypeError|ELIFECYCLE)\b/i', $text)
+            && stripos($text, 'Browserslist') === false
+            && stripos($text, "can't be bundled without type=\"module\"") === false;
+        if ($hasRealError) {
+            return false;
+        }
+        return stripos($text, 'Browserslist: browsers data') !== false
+            || stripos($text, 'update-browserslist-db') !== false
+            || stripos($text, "can't be bundled without type=\"module\"") !== false
+            || stripos($text, 'dynamically imported by') !== false
+            || stripos($text, 'Some chunks are larger than') !== false
+            || stripos($text, 'chunkSizeWarningLimit') !== false;
     };
 
     $parts = [];
-    if ($stdout !== '' && !$isBrowserslistNoise($stdout)) {
+    if ($stdout !== '' && !$isHarmlessViteNoise($stdout)) {
         $parts[] = $stdout;
     }
-    if ($stderr !== '' && !$isBrowserslistNoise($stderr)) {
+    if ($stderr !== '' && !$isHarmlessViteNoise($stderr)) {
         $parts[] = $stderr;
     }
     if ($parts === []) {

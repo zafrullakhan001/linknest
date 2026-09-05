@@ -43,6 +43,37 @@ export interface LinkHealth {
   redirectChain?: LinkRedirectHop[];
 }
 
+/** Live URL Safety Intelligence verdict (not persisted on the link). */
+export type UrlSafetyVerdict =
+  | 'safe'
+  | 'malicious'
+  | 'adult'
+  | 'suspicious'
+  | 'unknown'
+  | 'disabled';
+
+export interface UrlSafetyFlag {
+  id: string;
+  category?: string;
+  title: string;
+  detail: string;
+  source?: string;
+  sourceLabel?: string;
+  matchedDomain?: string;
+}
+
+export interface UrlSafetyResult {
+  verdict: UrlSafetyVerdict;
+  flags: UrlSafetyFlag[];
+  listsReady?: boolean;
+  listsPending?: boolean;
+  requiresConfirm?: boolean;
+  blockMalicious?: boolean;
+  host?: string;
+  matchedDomain?: string;
+  sourceLabel?: string;
+}
+
 export type LinkVisibility = 'public' | 'authenticated' | 'private';
 
 /** How a link opens when clicked. Default (missing) is `tab` (current behavior). */
@@ -113,9 +144,13 @@ export interface Link {
   tooltipStyle?: 'rich' | 'classic';
   /** When false, notes and hover tooltip are hidden. Content is kept. Unspecified infers from content. */
   notesEnabled?: boolean;
+  /** Optional uploaded/recorded video URL shown in the Notes dialog with the notes text. */
+  notesVideoUrl?: string;
   richTextContent?: string; // Optional rich text HTML content - if present, shows dialog instead of opening URL
   /** When false, clicking opens the URL even if richTextContent is stored. Unspecified infers from content. */
   richTextEnabled?: boolean;
+  /** Optional uploaded/recorded video URL shown in the Info dialog with the info content. */
+  infoVideoUrl?: string;
   /** When false, the info dialog hides the footer Open Link button. Defaults to shown. */
   infoShowOpenLink?: boolean;
   visibleFrom?: string; // ISO date string - link becomes visible from this date/time

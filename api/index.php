@@ -137,6 +137,15 @@ if ($path === '/') {
 } elseif (strpos($path, '/whois-lookup') === 0) {
     require __DIR__ . '/whois-lookup.php';
     exit;
+} elseif (strpos($path, '/url-safety') === 0) {
+    $remainingPath = substr($path, 11); // Remove '/url-safety'
+    if (empty($remainingPath) || $remainingPath === '/') {
+        $_SERVER['PATH_INFO'] = '/';
+    } else {
+        $_SERVER['PATH_INFO'] = ($remainingPath[0] === '/') ? $remainingPath : '/' . $remainingPath;
+    }
+    require __DIR__ . '/url_safety.php';
+    exit;
 } elseif (strpos($path, '/ct-lookup') === 0) {
     require __DIR__ . '/ct-lookup.php';
     exit;

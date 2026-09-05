@@ -19,6 +19,7 @@ interface LinkInfoDialogProps {
   linkLabel: string;
   linkIcon?: string;
   richTextContent: string;
+  infoVideoUrl?: string;
   linkUrl?: string;
   showOpenLink?: boolean;
   browser?: string;
@@ -91,6 +92,7 @@ export const LinkInfoDialog: React.FC<LinkInfoDialogProps> = ({
   linkLabel,
   linkIcon,
   richTextContent,
+  infoVideoUrl,
   linkUrl,
   showOpenLink = true,
   browser,
@@ -114,6 +116,7 @@ export const LinkInfoDialog: React.FC<LinkInfoDialogProps> = ({
     () => enhanceRichTextWithEmojis(linkifyHtml(richTextContent || '')),
     [richTextContent]
   );
+  const hasVideo = !!infoVideoUrl?.trim();
   const speakableText = useMemo(() => toSpeakableText(richTextContent || ''), [richTextContent]);
   const readAloud = useReadAloud({
     text: speakableText,
@@ -355,11 +358,21 @@ export const LinkInfoDialog: React.FC<LinkInfoDialogProps> = ({
           <ReadAloudSettingsRow readAloud={readAloud} idPrefix="link-info" className="mt-2.5" />
         </div>
 
-        {/* Content */}
-        <div className="flex-1 overflow-hidden min-h-0 bg-slate-50 dark:bg-slate-900/50">
+        {/* Content — optional video + rich text */}
+        <div className={`flex-1 min-h-0 bg-slate-50 dark:bg-slate-900/50 ${hasVideo ? 'overflow-y-auto flex flex-col' : 'overflow-hidden'}`}>
+          {hasVideo && (
+            <video
+              src={infoVideoUrl}
+              controls
+              playsInline
+              className="w-full max-h-72 rounded-lg bg-black shrink-0 mx-auto mt-4 px-5"
+            />
+          )}
           {displayHtml ? (
-            <TinyMceRichTextViewer ref={viewerRef} html={displayHtml} onEscape={onClose} />
-          ) : (
+            <div className={hasVideo ? 'min-h-[220px] h-[280px] shrink-0 mt-3' : 'h-full'}>
+              <TinyMceRichTextViewer ref={viewerRef} html={displayHtml} onEscape={onClose} />
+            </div>
+          ) : hasVideo ? null : (
             <div className="h-full min-h-[120px] flex items-center justify-center text-sm text-slate-400">
               No information available for this link.
             </div>

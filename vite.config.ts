@@ -3,6 +3,11 @@ import http from 'node:http';
 import { defineConfig, loadEnv, type ProxyOptions } from 'vite';
 import react from '@vitejs/plugin-react';
 import { phpDevServerPlugin } from './scripts/vite-php-dev-plugin.mjs';
+import {
+  LINKNEST_CHUNK_SIZE_WARNING_LIMIT_KB,
+  linknestBuildLogger,
+  linknestRollupOnWarn,
+} from './scripts/vite-build-shared';
 
 /** Never proxy Vite source modules (the `/s` short-link prefix used to swallow `/services/*.ts`). */
 function bypassViteModules(req: { url?: string }): string | undefined {
@@ -134,6 +139,7 @@ export default defineConfig(async ({ mode, command }) => {
 
   return {
     base: base,
+    customLogger: linknestBuildLogger(),
     build: {
       outDir: 'dist',
       assetsDir: 'assets',
@@ -141,7 +147,7 @@ export default defineConfig(async ({ mode, command }) => {
       sourcemap: false,
       minify: 'esbuild',
       cssCodeSplit: false, // Disable CSS code splitting to avoid HTML proxy plugin issues with base paths
-      chunkSizeWarningLimit: 1000,
+      chunkSizeWarningLimit: LINKNEST_CHUNK_SIZE_WARNING_LIMIT_KB,
       target: 'esnext',
       // Workaround for Vite 6.x HTML proxy plugin issue with base paths
       cssMinify: 'esbuild',
@@ -163,6 +169,7 @@ export default defineConfig(async ({ mode, command }) => {
         }
       },
       rollupOptions: {
+        onwarn: linknestRollupOnWarn,
         output: {
           // Optimize chunk names for better caching
           chunkFileNames: (chunkInfo) => {

@@ -39,6 +39,7 @@ COPY utils/ ./utils/
 COPY land/ ./land/
 COPY public/ ./public/
 COPY scripts/copy-tinymce-assets.mjs ./scripts/copy-tinymce-assets.mjs
+COPY scripts/vite-build-shared.ts ./scripts/vite-build-shared.ts
 COPY App.tsx ./
 COPY types.ts ./
 # Type declarations required by VNC Viewer widget (@novnc/novnc)

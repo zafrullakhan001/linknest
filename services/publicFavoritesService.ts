@@ -133,10 +133,12 @@ export interface PublicFavoriteLinkDetail {
   notes?: string;
   tooltip?: string;
   notesEnabled?: boolean;
+  notesVideoUrl?: string;
   tooltipStyle?: 'rich' | 'classic';
   browser?: string;
   richTextContent?: string;
   richTextEnabled?: boolean;
+  infoVideoUrl?: string;
   infoShowOpenLink?: boolean;
   maintenanceEnabled?: boolean;
   maintenanceMessage?: string;
@@ -553,10 +555,12 @@ const normalizeLinkFavoriteDetails = (
       notes: typeof detail.notes === 'string' ? detail.notes : undefined,
       tooltip: typeof detail.tooltip === 'string' ? detail.tooltip : undefined,
       notesEnabled: detail.notesEnabled === true,
+      notesVideoUrl: typeof detail.notesVideoUrl === 'string' ? detail.notesVideoUrl : undefined,
       tooltipStyle: detail.tooltipStyle === 'rich' ? 'rich' : (detail.tooltipStyle === 'classic' ? 'classic' : undefined),
       browser: typeof detail.browser === 'string' ? detail.browser : undefined,
       richTextContent: typeof detail.richTextContent === 'string' ? detail.richTextContent : undefined,
       richTextEnabled: detail.richTextEnabled === true,
+      infoVideoUrl: typeof detail.infoVideoUrl === 'string' ? detail.infoVideoUrl : undefined,
       infoShowOpenLink: detail.infoShowOpenLink !== false,
       maintenanceEnabled: detail.maintenanceEnabled === true,
       maintenanceMessage: typeof detail.maintenanceMessage === 'string' ? detail.maintenanceMessage : undefined,
@@ -646,10 +650,12 @@ export const buildPublicFavoritesExportData = (
         notes: link.notes,
         tooltip: link.tooltip,
         notesEnabled: link.notesEnabled,
+        notesVideoUrl: link.notesVideoUrl,
         tooltipStyle: link.tooltipStyle,
         browser: link.browser,
         richTextContent: link.richTextContent,
         richTextEnabled: link.richTextEnabled,
+        infoVideoUrl: link.infoVideoUrl,
         infoShowOpenLink: link.infoShowOpenLink,
         maintenanceEnabled: link.maintenanceEnabled,
         maintenanceMessage: link.maintenanceMessage,

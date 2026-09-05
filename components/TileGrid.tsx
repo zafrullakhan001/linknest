@@ -3326,7 +3326,7 @@ export const TileGrid: React.FC<TileGridProps> = ({
   const [tileInfoDialog, setTileInfoDialog] = useState<{ tile?: Tile; categoryInfo?: { categoryName: string; tiles: Tile[] } } | null>(null);
   const [shareTileDialog, setShareTileDialog] = useState<Tile | null>(null);
   const [compareTileId, setCompareTileId] = useState<string | null>(null);
-  const [favNotesDialogState, setFavNotesDialogState] = useState<{ linkId: string; notes: string; linkLabel: string } | null>(null);
+  const [favNotesDialogState, setFavNotesDialogState] = useState<{ linkId: string; notes: string; notesVideoUrl?: string; linkLabel: string } | null>(null);
   const [stagingTiles, setStagingTiles] = useState<Tile[]>([]);
   const tilesRef = useRef(tiles);
   const stagingTilesRef = useRef(stagingTiles);
@@ -8507,6 +8507,8 @@ You may also wrap the array in an object: { "messages": [ ... ] }.
         icon: link.icon,
         browser: link.browser,
         richTextContent: link.richTextContent,
+        notesVideoUrl: link.notesVideoUrl,
+        infoVideoUrl: link.infoVideoUrl,
         maintenanceEnabled: link.maintenanceEnabled,
         maintenanceMessage: link.maintenanceMessage,
         maintenanceVideoUrl: link.maintenanceVideoUrl,
@@ -9633,7 +9635,7 @@ You may also wrap the array in an object: { "messages": [ ... ] }.
                 }
               }
             }}
-            onOpenNotes={(link) => setFavNotesDialogState({ linkId: link.id, notes: link.notes || '', linkLabel: link.label || '' })}
+            onOpenNotes={(link) => setFavNotesDialogState({ linkId: link.id, notes: link.notes || '', notesVideoUrl: link.notesVideoUrl, linkLabel: link.label || '' })}
             onOpenLinkInfo={(link) => setLinkInfoDialog({ link })}
             onOpenMaintenance={(link) => setLinkMaintenanceDialog({ link })}
           />
@@ -10237,9 +10239,11 @@ You may also wrap the array in an object: { "messages": [ ... ] }.
                                 notes: undefined,
                                 tooltip: undefined,
                                 notesEnabled: link.notesEnabled,
+                                notesVideoUrl: link.notesVideoUrl,
                                 browser: link.browser,
                                 richTextContent: link.richTextContent,
                                 richTextEnabled: link.richTextEnabled,
+                                infoVideoUrl: link.infoVideoUrl,
                                 infoShowOpenLink: link.infoShowOpenLink,
         maintenanceEnabled: link.maintenanceEnabled,
         maintenanceMessage: link.maintenanceMessage,
@@ -10348,7 +10352,7 @@ You may also wrap the array in an object: { "messages": [ ... ] }.
                 }
               }
             }}
-            onOpenNotes={(link) => setFavNotesDialogState({ linkId: link.id, notes: link.notes || '', linkLabel: link.label || '' })}
+            onOpenNotes={(link) => setFavNotesDialogState({ linkId: link.id, notes: link.notes || '', notesVideoUrl: link.notesVideoUrl, linkLabel: link.label || '' })}
             onOpenLinkInfo={(link) => setLinkInfoDialog({ link })}
             onOpenMaintenance={(link) => setLinkMaintenanceDialog({ link })}
           />
@@ -14675,6 +14679,7 @@ You may also wrap the array in an object: { "messages": [ ... ] }.
             linkLabel={linkInfoDialog.link.label}
             linkIcon={linkInfoDialog.link.icon}
             richTextContent={linkInfoDialog.link.richTextContent || ''}
+            infoVideoUrl={linkInfoDialog.link.infoVideoUrl}
             linkUrl={linkInfoDialog.link.url}
             showOpenLink={linkInfoDialog.link.infoShowOpenLink !== false}
             browser={linkInfoDialog.link.browser}
@@ -14713,6 +14718,7 @@ You may also wrap the array in an object: { "messages": [ ... ] }.
             onClose={() => setFavNotesDialogState(null)}
             linkLabel={favNotesDialogState.linkLabel || ''}
             notes={favNotesDialogState.notes || ''}
+            notesVideoUrl={favNotesDialogState.notesVideoUrl}
           />
         </Suspense>
       )}

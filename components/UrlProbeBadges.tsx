@@ -1,11 +1,18 @@
 ﻿import React, { useState, useEffect, useRef, useMemo, lazy, Suspense, memo } from 'react';
-import { LinkRedirectHop } from '../types';
+import { LinkRedirectHop, UrlSafetyResult } from '../types';
 import { linkHealthService } from '../services/linkHealthService';
+import {
+    formatSafetyConfirmMessage,
+    safetyRequiresConfirm,
+    urlSafetyService,
+    type UrlSafetyCheckResult,
+} from '../services/urlSafetyService';
 import { isHttpOrHttpsUrl } from '../utils/urlDisplay';
 import { diagnoseLinkUrl, hasBlockingUrlIssues } from '../utils/urlDiagnostics';
 import { urlForHealthProbe } from '../utils/redirectChain';
 import { UrlNeedsFixBadge } from './UrlFormDiagnostics';
 import { RedirectChainDialog } from './RedirectChainDialog';
+import { useSettings } from '../contexts/SettingsContext';
 
 const SslCheckerDialog = lazy(() => import('./ssl/SslCheckerDialog'));
 const WhoisDialog = lazy(() => import('./ssl/WhoisDialog'));
@@ -33,8 +40,61 @@ const PROBE_SERVER_TIMEOUT_MS = 12000;
 const PROBE_BROWSER_TIMEOUT_MS = 8000;
 const PROBE_WATCHDOG_MS = 15000;
 const PROBE_CACHE_TTL_MS = 120_000;
+const SAFETY_CACHE_TTL_MS = 180_000;
 
 type ProbePhase = 'idle' | 'checking' | 'done' | 'error';
+
+const safetyCache = new Map<string, { result: UrlSafetyCheckResult; cachedAt: number }>();
+
+function toSafetyResult(check: UrlSafetyCheckResult): UrlSafetyResult {
+    const flag = check.flags?.find((f) => f.category === 'malware' || f.category === 'phishing' || f.category === 'adult');
+    return {
+        verdict: check.verdict,
+        flags: check.flags || [],
+        listsReady: check.lists_ready,
+        listsPending: check.lists_pending,
+        requiresConfirm: safetyRequiresConfirm(check),
+        blockMalicious: !!check.blockMalicious,
+        host: check.host,
+        matchedDomain: flag?.matchedDomain || check.matched?.domain,
+        sourceLabel: flag?.sourceLabel || flag?.source,
+    };
+}
+
+function safetyBadgeMeta(verdict: string): { label: string; className: string; title: string; icon: string } | null {
+    switch (verdict) {
+        case 'malicious':
+            return {
+                label: 'Malicious',
+                icon: '☠️',
+                className: 'bg-rose-100 text-rose-800 dark:bg-rose-900/50 dark:text-rose-200 border-rose-300 dark:border-rose-700',
+                title: 'Listed on a malware / phishing threat intelligence feed',
+            };
+        case 'adult':
+            return {
+                label: 'Adult',
+                icon: '🔞',
+                className: 'bg-fuchsia-100 text-fuchsia-800 dark:bg-fuchsia-900/50 dark:text-fuchsia-200 border-fuchsia-300 dark:border-fuchsia-700',
+                title: 'Listed on an adult / NSFW domain blocklist',
+            };
+        case 'suspicious':
+            return {
+                label: 'Suspicious',
+                icon: '⚠️',
+                className: 'bg-amber-100 text-amber-900 dark:bg-amber-900/50 dark:text-amber-200 border-amber-300 dark:border-amber-700',
+                title: 'Local heuristics flagged anomalies on this URL',
+            };
+        case 'safe':
+            return {
+                label: 'Safe',
+                icon: '🛡️',
+                className: 'bg-emerald-100 text-emerald-800 dark:bg-emerald-900/50 dark:text-emerald-200 border-emerald-200 dark:border-emerald-700',
+                title: 'Not found on threat or adult lists',
+            };
+        default:
+            return null;
+    }
+}
 
 type ProbeSnapshot = {
     phase: ProbePhase;
@@ -72,16 +132,75 @@ function settleServerProbeError(
     };
 }
 
-const UrlProbeBadgesInner: React.FC<{ url: string; excluded?: boolean; onAdoptUrl?: (url: string) => void }> = ({
+export type UrlProbeFieldStatus = 'idle' | 'ok' | 'error';
+
+/** True when the HTTPS/HTTP status badge represents a failure the user should notice. */
+export function probeIndicatesError(opts: {
+    phase: ProbePhase;
+    httpCode: number | null;
+    healthStatus: string;
+    error: string;
+}): boolean {
+    const { phase, httpCode, healthStatus, error } = opts;
+    if (phase !== 'done' && phase !== 'error') return false;
+    if (httpCode != null && httpCode >= 400) return true;
+    if (phase === 'error') return true;
+    if (healthStatus === 'timeout' || healthStatus === 'network' || healthStatus === 'broken') return true;
+    if (!httpCode && !!error) return true;
+    return false;
+}
+
+/** True when the URL is reachable — 2xx success or 3xx redirect both count. */
+export function probeIndicatesReachable(opts: {
+    phase: ProbePhase;
+    httpCode: number | null;
+}): boolean {
+    const { phase, httpCode } = opts;
+    if (phase !== 'done' && phase !== 'error') return false;
+    return httpCode != null && httpCode >= 200 && httpCode < 400;
+}
+
+export function probeFieldStatus(opts: {
+    excluded?: boolean;
+    blocking?: boolean;
+    phase: ProbePhase;
+    httpCode: number | null;
+    healthStatus: string;
+    error: string;
+}): UrlProbeFieldStatus {
+    if (opts.excluded || opts.blocking) return 'idle';
+    if (probeIndicatesError(opts)) return 'error';
+    if (probeIndicatesReachable(opts)) return 'ok';
+    return 'idle';
+}
+
+export type UrlProbeBadgesProps = {
+    url: string;
+    excluded?: boolean;
+    onAdoptUrl?: (url: string) => void;
+    onSafetyResult?: (result: UrlSafetyResult | null) => void;
+    /** idle while checking, ok when reachable (including redirects), error on 4xx/5xx/timeout/unreachable. */
+    onProbeStatus?: (status: UrlProbeFieldStatus) => void;
+};
+
+const UrlProbeBadgesInner: React.FC<UrlProbeBadgesProps> = ({
     url,
     excluded,
     onAdoptUrl,
+    onSafetyResult,
+    onProbeStatus,
 }) => {
+    const { settings } = useSettings();
+    const safetyEnabled = settings.url_safety_enabled !== '0';
     const trimmedUrl = (url || '').trim();
     const diagnosis = useMemo(() => diagnoseLinkUrl(url), [url]);
     const blocking = hasBlockingUrlIssues(diagnosis);
     const onAdoptUrlRef = useRef(onAdoptUrl);
     onAdoptUrlRef.current = onAdoptUrl;
+    const onSafetyResultRef = useRef(onSafetyResult);
+    onSafetyResultRef.current = onSafetyResult;
+    const onProbeStatusRef = useRef(onProbeStatus);
+    onProbeStatusRef.current = onProbeStatus;
     const [phase, setPhase] = useState<'idle' | 'checking' | 'done' | 'error'>('idle');
     const [scheme, setScheme] = useState<string>('');
     const [httpCode, setHttpCode] = useState<number | null>(null);
@@ -96,9 +215,13 @@ const UrlProbeBadgesInner: React.FC<{ url: string; excluded?: boolean; onAdoptUr
     const [whoisOpen, setWhoisOpen] = useState(false);
     const [healthStatus, setHealthStatus] = useState<string>('');
     const [error, setError] = useState<string>('');
+    const [safetyPhase, setSafetyPhase] = useState<'idle' | 'checking' | 'done' | 'error'>('idle');
+    const [safetyResult, setSafetyResult] = useState<UrlSafetyCheckResult | null>(null);
     const abortRef = useRef<AbortController | null>(null);
     const browserAbortRef = useRef<AbortController | null>(null);
+    const safetyAbortRef = useRef<AbortController | null>(null);
     const requestIdRef = useRef(0);
+    const safetyRequestIdRef = useRef(0);
 
     useEffect(() => {
         const trimmed = trimmedUrl;
@@ -278,6 +401,55 @@ const UrlProbeBadgesInner: React.FC<{ url: string; excluded?: boolean; onAdoptUr
         };
     }, [trimmedUrl, excluded]);
 
+    // URL Safety Intelligence — independent of reachability (works when firewall blocks the host).
+    useEffect(() => {
+        safetyAbortRef.current?.abort();
+        safetyAbortRef.current = null;
+
+        const blockingNow = hasBlockingUrlIssues(diagnoseLinkUrl(trimmedUrl));
+        if (!safetyEnabled || excluded || blockingNow || !isProbableUrl(trimmedUrl)) {
+            setSafetyPhase('idle');
+            setSafetyResult(null);
+            onSafetyResultRef.current?.(null);
+            return;
+        }
+
+        const cached = safetyCache.get(trimmedUrl);
+        if (cached && Date.now() - cached.cachedAt < SAFETY_CACHE_TTL_MS) {
+            setSafetyResult(cached.result);
+            setSafetyPhase('done');
+            onSafetyResultRef.current?.(toSafetyResult(cached.result));
+            return;
+        }
+
+        const requestId = ++safetyRequestIdRef.current;
+        setSafetyPhase('checking');
+        const controller = new AbortController();
+        safetyAbortRef.current = controller;
+
+        const timer = window.setTimeout(async () => {
+            try {
+                const result = await urlSafetyService.checkUrl(trimmedUrl, controller.signal);
+                if (requestId !== safetyRequestIdRef.current) return;
+                safetyCache.set(trimmedUrl, { result, cachedAt: Date.now() });
+                setSafetyResult(result);
+                setSafetyPhase('done');
+                onSafetyResultRef.current?.(toSafetyResult(result));
+            } catch (e) {
+                if (requestId !== safetyRequestIdRef.current) return;
+                if ((e as Error)?.name === 'AbortError') return;
+                setSafetyPhase('error');
+                setSafetyResult(null);
+                onSafetyResultRef.current?.(null);
+            }
+        }, PROBE_DEBOUNCE_MS);
+
+        return () => {
+            window.clearTimeout(timer);
+            safetyAbortRef.current?.abort();
+        };
+    }, [trimmedUrl, excluded, safetyEnabled]);
+
     useEffect(() => {
         if (phase === 'checking' || browserPhase === 'checking') return;
         if (excluded || blocking || !isProbableUrl(trimmedUrl)) return;
@@ -324,6 +496,29 @@ const UrlProbeBadgesInner: React.FC<{ url: string; excluded?: boolean; onAdoptUr
         };
     }, [chainOpen]);
 
+    const hasProbeError =
+        !excluded &&
+        !blocking &&
+        probeIndicatesError({ phase, httpCode, healthStatus, error });
+    const fieldStatus = probeFieldStatus({
+        excluded,
+        blocking,
+        phase,
+        httpCode,
+        healthStatus,
+        error,
+    });
+
+    useEffect(() => {
+        onProbeStatusRef.current?.(fieldStatus);
+    }, [fieldStatus]);
+
+    useEffect(() => {
+        return () => {
+            onProbeStatusRef.current?.('idle');
+        };
+    }, []);
+
     if (excluded) {
         return (
             <span
@@ -342,20 +537,18 @@ const UrlProbeBadgesInner: React.FC<{ url: string; excluded?: boolean; onAdoptUr
         return <UrlNeedsFixBadge count={errorCount} />;
     }
 
-    if (phase === 'idle') return null;
+    if (phase === 'idle' && safetyPhase === 'idle') return null;
 
     const codeColor =
-        httpCode && httpCode >= 200 && httpCode < 300
+        httpCode && httpCode >= 200 && httpCode < 400
             ? 'bg-emerald-100 text-emerald-800 dark:bg-emerald-900/50 dark:text-emerald-200 border-emerald-200 dark:border-emerald-700'
-            : httpCode && httpCode >= 300 && httpCode < 400
-                ? 'bg-amber-100 text-amber-800 dark:bg-amber-900/50 dark:text-amber-200 border-amber-200 dark:border-amber-700'
-                : httpCode
-                    ? 'bg-rose-100 text-rose-800 dark:bg-rose-900/50 dark:text-rose-200 border-rose-200 dark:border-rose-700'
-                    : healthStatus === 'timeout'
-                        ? 'bg-amber-100 text-amber-800 dark:bg-amber-900/50 dark:text-amber-200 border-amber-200 dark:border-amber-700'
-                        : healthStatus === 'network'
-                            ? 'bg-slate-100 text-slate-700 dark:bg-slate-800 dark:text-slate-300 border-slate-200 dark:border-slate-600'
-                            : 'bg-slate-100 text-slate-700 dark:bg-slate-800 dark:text-slate-300 border-slate-200 dark:border-slate-600';
+            : httpCode || (hasProbeError && healthStatus !== 'timeout')
+                ? 'bg-rose-100 text-rose-800 dark:bg-rose-900/50 dark:text-rose-200 border-rose-200 dark:border-rose-700'
+                : healthStatus === 'timeout'
+                    ? 'bg-amber-100 text-amber-800 dark:bg-amber-900/50 dark:text-amber-200 border-amber-200 dark:border-amber-700'
+                    : healthStatus === 'network'
+                        ? 'bg-slate-100 text-slate-700 dark:bg-slate-800 dark:text-slate-300 border-slate-200 dark:border-slate-600'
+                        : 'bg-slate-100 text-slate-700 dark:bg-slate-800 dark:text-slate-300 border-slate-200 dark:border-slate-600';
 
     const latencyBadgeClass = (ms: number | null) =>
         ms !== null && ms < 300
@@ -490,6 +683,31 @@ const UrlProbeBadgesInner: React.FC<{ url: string; excluded?: boolean; onAdoptUr
                     </button>
                 </>
             )}
+            {safetyEnabled && safetyPhase === 'checking' && (
+                <span className="inline-flex items-center gap-1 text-[10px] font-medium px-2 py-0.5 rounded-full border bg-sky-100 text-sky-800 dark:bg-sky-900/50 dark:text-sky-200 border-sky-200 dark:border-sky-700 animate-pulse">
+                    <span aria-hidden>🛡️</span> Safety…
+                </span>
+            )}
+            {safetyEnabled && safetyPhase === 'done' && safetyResult && (() => {
+                const meta = safetyBadgeMeta(safetyResult.verdict);
+                if (!meta) return null;
+                const extra =
+                    safetyRequiresConfirm(safetyResult)
+                        ? ` — ${formatSafetyConfirmMessage(safetyResult)}`
+                        : safetyResult.flags?.[0]?.detail
+                          ? ` — ${safetyResult.flags[0].detail}`
+                          : '';
+                return (
+                    <span
+                        className={`inline-flex items-center gap-1 text-[10px] font-semibold px-2 py-0.5 rounded-full border ${meta.className}`}
+                        title={`${meta.title}${extra}`}
+                        role="status"
+                    >
+                        <span aria-hidden>{meta.icon}</span>
+                        {meta.label}
+                    </span>
+                );
+            })()}
             {chainDialog}
             {sslOpen && (
                 <Suspense fallback={null}>
@@ -518,5 +736,7 @@ export const UrlProbeBadges = memo(
     UrlProbeBadgesInner,
     (prev, next) =>
         (prev.url || '').trim() === (next.url || '').trim() &&
-        !!prev.excluded === !!next.excluded
+        !!prev.excluded === !!next.excluded &&
+        prev.onSafetyResult === next.onSafetyResult &&
+        prev.onProbeStatus === next.onProbeStatus
 );

@@ -121,10 +121,12 @@ export const MobileTileEdit: React.FC<MobileTileEditProps> = ({
         tooltip: string;
         tooltipStyle: LinkTooltipStyle;
         notesEnabled: boolean;
+        notesVideoUrl: string;
         browser: string;
         openTarget: LinkOpenTarget;
         richTextContent: string;
         richTextEnabled: boolean;
+        infoVideoUrl: string;
         infoShowOpenLink: boolean;
         maintenanceEnabled: boolean;
         maintenanceMessage: string;
@@ -142,10 +144,12 @@ export const MobileTileEdit: React.FC<MobileTileEditProps> = ({
         tooltip: string;
         tooltipStyle: LinkTooltipStyle;
         notesEnabled: boolean;
+        notesVideoUrl: string;
         browser: string;
         openTarget: LinkOpenTarget;
         richTextContent: string;
         richTextEnabled: boolean;
+        infoVideoUrl: string;
         infoShowOpenLink: boolean;
         maintenanceEnabled: boolean;
         maintenanceMessage: string;
@@ -261,10 +265,12 @@ export const MobileTileEdit: React.FC<MobileTileEditProps> = ({
             tooltip: hasVisibleRichText(state.tooltip) ? state.tooltip : undefined,
             tooltipStyle: normalizeLinkTooltipStyle(state.tooltipStyle),
             notesEnabled: state.notesEnabled === true,
+            notesVideoUrl: state.notesVideoUrl || undefined,
             browser: state.browser || 'default',
             openTarget: normalizeLinkOpenTarget(state.openTarget),
             richTextContent: state.richTextContent || undefined,
             richTextEnabled: state.richTextEnabled === true,
+            infoVideoUrl: state.infoVideoUrl || undefined,
             infoShowOpenLink: state.infoShowOpenLink !== false,
             maintenanceEnabled: state.maintenanceEnabled === true,
             maintenanceMessage: state.maintenanceMessage || undefined,
@@ -297,10 +303,12 @@ export const MobileTileEdit: React.FC<MobileTileEditProps> = ({
                 tooltip: '',
                 tooltipStyle: 'classic',
                 notesEnabled: false,
+                notesVideoUrl: '',
                 browser: 'default',
                 openTarget: 'tab' as LinkOpenTarget,
                 richTextContent: '',
                 richTextEnabled: false,
+                infoVideoUrl: '',
                 infoShowOpenLink: true,
                 maintenanceEnabled: false,
                 maintenanceMessage: '',
@@ -329,10 +337,12 @@ export const MobileTileEdit: React.FC<MobileTileEditProps> = ({
                     tooltip: link.tooltip || '',
                     tooltipStyle: normalizeLinkTooltipStyle(link.tooltipStyle),
                     notesEnabled: isNotesTooltipEnabled(link),
+                    notesVideoUrl: link.notesVideoUrl || '',
                     browser: link.browser || 'default',
                     openTarget: normalizeLinkOpenTarget(link.openTarget),
                     richTextContent: link.richTextContent || '',
                     richTextEnabled: isInfoContentEnabled(link),
+                    infoVideoUrl: link.infoVideoUrl || '',
                     infoShowOpenLink: isInfoOpenLinkShown(link),
                     maintenanceEnabled: link.maintenanceEnabled === true,
                     maintenanceMessage: link.maintenanceMessage || '',
@@ -373,10 +383,12 @@ export const MobileTileEdit: React.FC<MobileTileEditProps> = ({
                                             tooltip: hasVisibleRichText(state.tooltip) ? state.tooltip : undefined,
                                             tooltipStyle: normalizeLinkTooltipStyle(state.tooltipStyle),
                                             notesEnabled: state.notesEnabled === true,
+                                            notesVideoUrl: state.notesVideoUrl || undefined,
                                             browser: state.browser || 'default',
                                             openTarget: normalizeLinkOpenTarget(state.openTarget),
                                             richTextContent: state.richTextContent || undefined,
                                             richTextEnabled: state.richTextEnabled === true,
+                                            infoVideoUrl: state.infoVideoUrl || undefined,
                                             infoShowOpenLink: state.infoShowOpenLink !== false,
                                             maintenanceEnabled: state.maintenanceEnabled === true,
                                             maintenanceMessage: state.maintenanceMessage || undefined,
@@ -422,10 +434,13 @@ export const MobileTileEdit: React.FC<MobileTileEditProps> = ({
         tooltip: '',
         tooltipStyle: 'classic',
         notesEnabled: false,
+        notesVideoUrl: '',
         browser: 'default',
         openTarget: 'tab',
         richTextContent: '',
         richTextEnabled: false,
+        infoVideoUrl: '',
+        infoShowOpenLink: true,
         maintenanceEnabled: false,
         maintenanceMessage: '',
         maintenanceVideoUrl: ''
@@ -446,10 +461,12 @@ export const MobileTileEdit: React.FC<MobileTileEditProps> = ({
         tooltip: hasVisibleRichText(state.tooltip) ? state.tooltip : undefined,
         tooltipStyle: normalizeLinkTooltipStyle(state.tooltipStyle),
         notesEnabled: state.notesEnabled === true,
+        notesVideoUrl: state.notesVideoUrl || undefined,
         browser: state.browser || 'default',
         openTarget: normalizeLinkOpenTarget(state.openTarget),
         richTextContent: state.richTextContent || undefined,
         richTextEnabled: state.richTextEnabled === true,
+        infoVideoUrl: state.infoVideoUrl || undefined,
         infoShowOpenLink: state.infoShowOpenLink !== false,
         maintenanceEnabled: state.maintenanceEnabled === true,
         maintenanceMessage: state.maintenanceMessage || undefined,
@@ -501,10 +518,12 @@ export const MobileTileEdit: React.FC<MobileTileEditProps> = ({
                 tooltip: hasVisibleRichText(state.tooltip) ? state.tooltip : undefined,
                 tooltipStyle: normalizeLinkTooltipStyle(state.tooltipStyle),
                 notesEnabled: state.notesEnabled === true,
+                notesVideoUrl: state.notesVideoUrl || undefined,
                 browser: state.browser || 'default',
                 openTarget: normalizeLinkOpenTarget(state.openTarget),
                 richTextContent: state.richTextContent || undefined,
                 richTextEnabled: state.richTextEnabled === true,
+                infoVideoUrl: state.infoVideoUrl || undefined,
                 infoShowOpenLink: state.infoShowOpenLink !== false,
                 maintenanceEnabled: state.maintenanceEnabled === true,
                 maintenanceMessage: state.maintenanceMessage || undefined,
@@ -616,10 +635,13 @@ export const MobileTileEdit: React.FC<MobileTileEditProps> = ({
                     tooltip: '',
                 tooltipStyle: 'classic',
                     notesEnabled: false,
+                    notesVideoUrl: '',
                     browser: 'default',
                     openTarget: 'tab' as LinkOpenTarget,
                     richTextContent: '',
                     richTextEnabled: false,
+                    infoVideoUrl: '',
+                    infoShowOpenLink: true,
                     maintenanceEnabled: false,
                     maintenanceMessage: '',
                     maintenanceVideoUrl: ''
@@ -644,10 +666,13 @@ export const MobileTileEdit: React.FC<MobileTileEditProps> = ({
                     tooltip: '',
                 tooltipStyle: 'classic',
                     notesEnabled: false,
+                    notesVideoUrl: '',
                     browser: 'default',
                     openTarget: 'tab' as LinkOpenTarget,
                     richTextContent: '',
                     richTextEnabled: false,
+                    infoVideoUrl: '',
+                    infoShowOpenLink: true,
                     maintenanceEnabled: false,
                     maintenanceMessage: '',
                     maintenanceVideoUrl: ''
@@ -1379,6 +1404,12 @@ export const MobileTileEdit: React.FC<MobileTileEditProps> = ({
                                                                         placeholder="Text shown on hover..."
                                                                     />
                                                                 </div>
+                                                                <LinkMaintenanceVideoField
+                                                                    value={newLinkState[section.id]?.notesVideoUrl || ''}
+                                                                    onChange={(url) => updateNewLinkState(section.id, 'notesVideoUrl', url)}
+                                                                    heading="Notes video"
+                                                                    description="Record a webcam message or upload a video file (WebM, MP4, up to 50MB)."
+                                                                />
                                                                 {(settings as any)?.browser_specific_links_enabled === '1' && (user?.is_admin || tile.canChangeBrowser === true) && (
                                                                     <div>
                                                                         <label className="block text-xs font-semibold uppercase tracking-wider text-slate-600 dark:text-slate-400 mb-1.5">
@@ -1422,6 +1453,12 @@ export const MobileTileEdit: React.FC<MobileTileEditProps> = ({
                                                                         placeholder="Enter rich text content..."
                                                                     />
                                                                 </div>
+                                                                <LinkMaintenanceVideoField
+                                                                    value={newLinkState[section.id]?.infoVideoUrl || ''}
+                                                                    onChange={(url) => updateNewLinkState(section.id, 'infoVideoUrl', url)}
+                                                                    heading="Info video"
+                                                                    description="Record a webcam message or upload a video file (WebM, MP4, up to 50MB)."
+                                                                />
                                                                 <div className={`flex items-center justify-between gap-3 p-3 rounded-lg border-2 ${
                                                                     newLinkState[section.id]?.maintenanceEnabled
                                                                         ? 'border-amber-300 dark:border-amber-700 bg-amber-50 dark:bg-amber-950/40'
@@ -1699,6 +1736,12 @@ export const MobileTileEdit: React.FC<MobileTileEditProps> = ({
                                                                                             placeholder="Text shown on hover..."
                                                                                         />
                                                                                     </div>
+                                                                                    <LinkMaintenanceVideoField
+                                                                                        value={editLinkState[link.id]?.notesVideoUrl || ''}
+                                                                                        onChange={(url) => updateEditLinkState(link.id, 'notesVideoUrl', url)}
+                                                                                        heading="Notes video"
+                                                                                        description="Record a webcam message or upload a video file (WebM, MP4, up to 50MB)."
+                                                                                    />
                                                                                     {(settings as any)?.browser_specific_links_enabled === '1' && (user?.is_admin || tile.canChangeBrowser === true) && (
                                                                                         <div>
                                                                                             <label className="block text-xs font-semibold uppercase tracking-wider text-slate-600 dark:text-slate-400 mb-1.5">
@@ -1742,6 +1785,12 @@ export const MobileTileEdit: React.FC<MobileTileEditProps> = ({
                                                                                             placeholder="Enter rich text content..."
                                                                                         />
                                                                                     </div>
+                                                                                    <LinkMaintenanceVideoField
+                                                                                        value={editLinkState[link.id]?.infoVideoUrl || ''}
+                                                                                        onChange={(url) => updateEditLinkState(link.id, 'infoVideoUrl', url)}
+                                                                                        heading="Info video"
+                                                                                        description="Record a webcam message or upload a video file (WebM, MP4, up to 50MB)."
+                                                                                    />
                                                                                     <div className={`flex items-center justify-between gap-3 p-3 rounded-lg border-2 ${
                                                                                         editLinkState[link.id]?.maintenanceEnabled
                                                                                             ? 'border-amber-300 dark:border-amber-700 bg-amber-50 dark:bg-amber-950/40'

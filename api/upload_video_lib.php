@@ -1,7 +1,8 @@
 <?php
 /**
  * Helpers for LinkNest uploaded videos (maintvid_* under uploads/).
- * Used by space video tiles (file/webcam) and link maintenance clips.
+ * Used by space video tiles (file/webcam), link maintenance clips,
+ * and Notes / Info dialog videos.
  */
 
 /**
@@ -62,16 +63,22 @@ function countMaintvidReferencesExcludingTile(PDO $db, string $url, string $excl
     $linkStmt = $db->prepare(
         'SELECT COUNT(*) FROM links l
          INNER JOIN sections s ON l.section_id = s.id
-         WHERE l.maintenance_video_url = ? AND s.tile_id != ?'
+         WHERE s.tile_id != ?
+           AND (
+             l.maintenance_video_url = ?
+             OR l.notes_video_url = ?
+             OR l.info_video_url = ?
+           )'
     );
-    $linkStmt->execute([$url, $excludeTileId]);
+    $linkStmt->execute([$excludeTileId, $url, $url, $url]);
     $count += (int)$linkStmt->fetchColumn();
 
     return $count;
 }
 
 /**
- * Collect maintvid URLs owned by a tile: space video (file) + link maintenance videos.
+ * Collect maintvid URLs owned by a tile: space video (file) + link videos
+ * (maintenance, notes, info).
  *
  * @return list<string>
  */
@@ -92,14 +99,30 @@ function collectTileMaintvidUrls(PDO $db, string $tileId): array {
     }
 
     $linkStmt = $db->prepare(
-        'SELECT DISTINCT l.maintenance_video_url AS url
-         FROM links l
-         INNER JOIN sections s ON l.section_id = s.id
-         WHERE s.tile_id = ?
-           AND l.maintenance_video_url IS NOT NULL
-           AND TRIM(l.maintenance_video_url) != \'\''
+        'SELECT DISTINCT url FROM (
+            SELECT l.maintenance_video_url AS url
+            FROM links l
+            INNER JOIN sections s ON l.section_id = s.id
+            WHERE s.tile_id = ?
+              AND l.maintenance_video_url IS NOT NULL
+              AND TRIM(l.maintenance_video_url) != \'\'
+            UNION
+            SELECT l.notes_video_url AS url
+            FROM links l
+            INNER JOIN sections s ON l.section_id = s.id
+            WHERE s.tile_id = ?
+              AND l.notes_video_url IS NOT NULL
+              AND TRIM(l.notes_video_url) != \'\'
+            UNION
+            SELECT l.info_video_url AS url
+            FROM links l
+            INNER JOIN sections s ON l.section_id = s.id
+            WHERE s.tile_id = ?
+              AND l.info_video_url IS NOT NULL
+              AND TRIM(l.info_video_url) != \'\'
+         )'
     );
-    $linkStmt->execute([$tileId]);
+    $linkStmt->execute([$tileId, $tileId, $tileId]);
     while ($linkRow = $linkStmt->fetch(PDO::FETCH_ASSOC)) {
         $u = isset($linkRow['url']) ? trim((string)$linkRow['url']) : '';
         if ($u !== '' && maintvidFilenameFromUrl($u) !== null) {
@@ -140,15 +163,27 @@ function purgeTileMaintvidUploads(PDO $db, string $tileId, bool $clearDbRefs = t
         'UPDATE tiles SET video_url = NULL, video_source = NULL
          WHERE id = ? AND video_url = ?'
     );
-    $linkClear = $db->prepare(
+    $maintClear = $db->prepare(
         'UPDATE links SET maintenance_video_url = NULL
          WHERE maintenance_video_url = ?
+           AND section_id IN (SELECT id FROM sections WHERE tile_id = ?)'
+    );
+    $notesClear = $db->prepare(
+        'UPDATE links SET notes_video_url = NULL
+         WHERE notes_video_url = ?
+           AND section_id IN (SELECT id FROM sections WHERE tile_id = ?)'
+    );
+    $infoClear = $db->prepare(
+        'UPDATE links SET info_video_url = NULL
+         WHERE info_video_url = ?
            AND section_id IN (SELECT id FROM sections WHERE tile_id = ?)'
     );
 
     foreach (array_keys($deleted) as $url) {
         $tileClear->execute([$tileId, $url]);
-        $linkClear->execute([$url, $tileId]);
+        $maintClear->execute([$url, $tileId]);
+        $notesClear->execute([$url, $tileId]);
+        $infoClear->execute([$url, $tileId]);
     }
 }
 

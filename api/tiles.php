@@ -615,7 +615,7 @@ function handleGetTiles() {
                         l.id, l.label, l.url, l.icon, l.browser, l.notes, l.tooltip,
                         l.rich_text_content, l.visibility, l.allowed_users, l.allowed_groups,
                         l.published, l.health_status, l.health_http_code, l.health_error, l.health_checked_at,
-                        l.maintenance_enabled, l.maintenance_message, l.maintenance_video_url, l.notes_enabled, l.rich_text_enabled, l.info_show_open_link, l.tooltip_style
+                        l.maintenance_enabled, l.maintenance_message, l.maintenance_video_url, l.notes_video_url, l.info_video_url, l.notes_enabled, l.rich_text_enabled, l.info_show_open_link, l.tooltip_style
                  FROM sections s
                  INNER JOIN links l ON l.section_id = s.id
                  LEFT JOIN tabs t ON t.id = s.tab_id
@@ -679,6 +679,7 @@ function handleGetTiles() {
                     'richTextContent' => $linkRow['rich_text_content'] ?? null,
                 ];
                 applyLinkMaintenanceToApi($searchLink, $linkRow);
+                applyLinkNotesInfoVideoToApi($searchLink, $linkRow);
                 applyLinkFeatureTogglesToApi($searchLink, $linkRow);
                 applyLinkOpenTargetToApi($searchLink, $linkRow);
                 applyLinkForceShortUrlToApi($searchLink, $linkRow);
@@ -1023,6 +1024,7 @@ function handleGetTiles() {
                                     }
                                     
                                     applyLinkMaintenanceToApi($link, $linkRow);
+                                    applyLinkNotesInfoVideoToApi($link, $linkRow);
                                     applyLinkFeatureTogglesToApi($link, $linkRow);
                 applyLinkOpenTargetToApi($link, $linkRow);
                 applyLinkForceShortUrlToApi($link, $linkRow);
@@ -1136,6 +1138,7 @@ function handleGetTiles() {
                             }
                             
                             applyLinkMaintenanceToApi($link, $linkRow);
+                            applyLinkNotesInfoVideoToApi($link, $linkRow);
                             applyLinkFeatureTogglesToApi($link, $linkRow);
                 applyLinkOpenTargetToApi($link, $linkRow);
                 applyLinkForceShortUrlToApi($link, $linkRow);
@@ -1599,6 +1602,7 @@ function handleGetTile($tileId) {
                 }
                 
                 applyLinkMaintenanceToApi($link, $linkRow);
+                applyLinkNotesInfoVideoToApi($link, $linkRow);
                 applyLinkFeatureTogglesToApi($link, $linkRow);
                 applyLinkOpenTargetToApi($link, $linkRow);
                 applyLinkForceShortUrlToApi($link, $linkRow);
@@ -1724,6 +1728,7 @@ function handleGetTile($tileId) {
                     }
 
                     applyLinkMaintenanceToApi($link, $linkRow);
+                    applyLinkNotesInfoVideoToApi($link, $linkRow);
                     applyLinkFeatureTogglesToApi($link, $linkRow);
                 applyLinkOpenTargetToApi($link, $linkRow);
                 applyLinkForceShortUrlToApi($link, $linkRow);
@@ -2086,7 +2091,7 @@ function handleCreateTile() {
                                 : null;
                             $linkPublished = resolvePublishedFlag($link, $user, true);
                             try {
-                                $linkStmt = $db->prepare('INSERT INTO links (id, section_id, label, url, icon, text_color, visibility, allowed_users, allowed_groups, notes, tooltip, visible_from, expires_at, browser, position, rich_text_content, animation, published, access_restrictions, maintenance_enabled, maintenance_message, maintenance_video_url, notes_enabled, rich_text_enabled, info_show_open_link) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)');
+                                $linkStmt = $db->prepare('INSERT INTO links (id, section_id, label, url, icon, text_color, visibility, allowed_users, allowed_groups, notes, tooltip, visible_from, expires_at, browser, position, rich_text_content, animation, published, access_restrictions, maintenance_enabled, maintenance_message, maintenance_video_url, notes_video_url, info_video_url, notes_enabled, rich_text_enabled, info_show_open_link) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)');
                                 $linkStmt->execute([
                                     $linkId,
                                     $sectionId,
@@ -2108,6 +2113,7 @@ function handleCreateTile() {
                                     $linkPublished,
                                     encodeAccessRestrictionsJson($link['accessRestrictions'] ?? null),
                                     ...linkMaintenanceInsertValuesFromInput($link),
+                                    ...linkNotesInfoVideoInsertValuesFromInput($link),
                                     ...linkFeatureToggleInsertValuesFromInput($link)
                                 ]);
                                 persistInheritShortUrls($db, 'links', $linkId, $link);
@@ -2512,7 +2518,7 @@ function cloneTileLinksAndRichText(PDO $db, string $sourceSectionId, string $new
 
     foreach ($links as $link) {
         $newLinkId = uniqid('link_', true);
-        $linkInsertStmt = $db->prepare('INSERT INTO links (id, section_id, label, url, icon, text_color, visibility, allowed_users, allowed_groups, notes, tooltip, visible_from, expires_at, browser, position, rich_text_content, animation, published, access_restrictions, maintenance_enabled, maintenance_message, maintenance_video_url, notes_enabled, rich_text_enabled, info_show_open_link) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)');
+        $linkInsertStmt = $db->prepare('INSERT INTO links (id, section_id, label, url, icon, text_color, visibility, allowed_users, allowed_groups, notes, tooltip, visible_from, expires_at, browser, position, rich_text_content, animation, published, access_restrictions, maintenance_enabled, maintenance_message, maintenance_video_url, notes_video_url, info_video_url, notes_enabled, rich_text_enabled, info_show_open_link) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)');
         $linkInsertStmt->execute([
             $newLinkId,
             $newSectionId,
@@ -2534,6 +2540,7 @@ function cloneTileLinksAndRichText(PDO $db, string $sourceSectionId, string $new
             cloneRowPublished($link),
             $link['access_restrictions'] ?? null,
             ...linkMaintenanceInsertValuesFromRow($link),
+            ...linkNotesInfoVideoInsertValuesFromRow($link),
             ...linkFeatureToggleInsertValuesFromRow($link)
         ]);
         persistInheritShortUrls($db, 'links', $newLinkId, $link);
@@ -4035,6 +4042,8 @@ function mapFavoriteLinkRow(array $row): array {
         'maintenanceEnabled' => !empty($row['maintenance_enabled']),
         'maintenanceMessage' => (isset($row['maintenance_message']) && trim((string)$row['maintenance_message']) !== '') ? $row['maintenance_message'] : null,
         'maintenanceVideoUrl' => (isset($row['maintenance_video_url']) && trim((string)$row['maintenance_video_url']) !== '') ? $row['maintenance_video_url'] : null,
+        'notesVideoUrl' => (isset($row['notes_video_url']) && trim((string)$row['notes_video_url']) !== '') ? $row['notes_video_url'] : null,
+        'infoVideoUrl' => (isset($row['info_video_url']) && trim((string)$row['info_video_url']) !== '') ? $row['info_video_url'] : null,
         'isFavorite' => true,
         'health' => $health,
         'tile' => [
@@ -4520,6 +4529,7 @@ function handleGetRecycleBin() {
                     }
                     
                     applyLinkMaintenanceToApi($link, $linkRow);
+                    applyLinkNotesInfoVideoToApi($link, $linkRow);
                     applyLinkFeatureTogglesToApi($link, $linkRow);
                 applyLinkOpenTargetToApi($link, $linkRow);
                 applyLinkForceShortUrlToApi($link, $linkRow);
@@ -4909,6 +4919,7 @@ function handleGetArchive() {
                         }
                         
                     applyLinkMaintenanceToApi($link, $linkRow);
+                    applyLinkNotesInfoVideoToApi($link, $linkRow);
                     applyLinkFeatureTogglesToApi($link, $linkRow);
                 applyLinkOpenTargetToApi($link, $linkRow);
                 applyLinkForceShortUrlToApi($link, $linkRow);
@@ -5455,6 +5466,7 @@ function getTileForVersion($tileId, $db) {
                     'isFavorite' => false // Not needed for versioning usually, but good for completeness
                 ];
                 applyLinkMaintenanceToApi($link, $linkRow);
+                applyLinkNotesInfoVideoToApi($link, $linkRow);
                 applyLinkFeatureTogglesToApi($link, $linkRow);
                 applyLinkOpenTargetToApi($link, $linkRow);
                 applyLinkForceShortUrlToApi($link, $linkRow);
@@ -6343,7 +6355,7 @@ function updateTileInternal($tileId, $data, $db, $user, $isRestore = false, $isF
                                 $allowedUsers = isset($link['allowedUsers']) && is_array($link['allowedUsers']) ? json_encode($link['allowedUsers']) : null;
                                 $allowedGroups = isset($link['allowedGroups']) && is_array($link['allowedGroups']) ? json_encode($link['allowedGroups']) : null;
                                 $linkPublished = resolvePublishedFlag($link, $user, true);
-                                $linkStmt = $db->prepare('INSERT INTO links (id, section_id, label, url, icon, text_color, visibility, allowed_users, allowed_groups, notes, tooltip, visible_from, expires_at, browser, position, rich_text_content, animation, published, access_restrictions, maintenance_enabled, maintenance_message, maintenance_video_url, notes_enabled, rich_text_enabled, info_show_open_link) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)');
+                                $linkStmt = $db->prepare('INSERT INTO links (id, section_id, label, url, icon, text_color, visibility, allowed_users, allowed_groups, notes, tooltip, visible_from, expires_at, browser, position, rich_text_content, animation, published, access_restrictions, maintenance_enabled, maintenance_message, maintenance_video_url, notes_video_url, info_video_url, notes_enabled, rich_text_enabled, info_show_open_link) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)');
                                 $linkStmt->execute([
                                     $linkId,
                                     $sectionId,
@@ -6365,6 +6377,7 @@ function updateTileInternal($tileId, $data, $db, $user, $isRestore = false, $isF
                                     $linkPublished,
                                     encodeAccessRestrictionsJson($link['accessRestrictions'] ?? null),
                                     ...linkMaintenanceInsertValuesFromInput($link),
+                                    ...linkNotesInfoVideoInsertValuesFromInput($link),
                                     ...linkFeatureToggleInsertValuesFromInput($link)
                                 ]);
                                 persistInheritShortUrls($db, 'links', $linkId, $link);
@@ -6417,7 +6430,7 @@ function updateTileInternal($tileId, $data, $db, $user, $isRestore = false, $isF
                         $visibility = $link['visibility'] ?? 'public';
                         $allowedUsers = isset($link['allowedUsers']) && is_array($link['allowedUsers']) ? json_encode($link['allowedUsers']) : null;
                         $allowedGroups = isset($link['allowedGroups']) && is_array($link['allowedGroups']) ? json_encode($link['allowedGroups']) : null;
-                        $linkStmt = $db->prepare('INSERT INTO links (id, section_id, label, url, icon, text_color, visibility, allowed_users, allowed_groups, notes, tooltip, browser, position, animation, maintenance_enabled, maintenance_message, maintenance_video_url, notes_enabled, rich_text_enabled, info_show_open_link) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)');
+                        $linkStmt = $db->prepare('INSERT INTO links (id, section_id, label, url, icon, text_color, visibility, allowed_users, allowed_groups, notes, tooltip, browser, position, animation, maintenance_enabled, maintenance_message, maintenance_video_url, notes_video_url, info_video_url, notes_enabled, rich_text_enabled, info_show_open_link) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)');
                         $linkStmt->execute([
                             $linkId,
                             $sectionId,
@@ -6434,6 +6447,7 @@ function updateTileInternal($tileId, $data, $db, $user, $isRestore = false, $isF
                             isset($link['position']) ? (int)$link['position'] : 0,
                             $link['animation'] ?? null,
                             ...linkMaintenanceInsertValuesFromInput($link),
+                            ...linkNotesInfoVideoInsertValuesFromInput($link),
                             ...linkFeatureToggleInsertValuesFromInput($link)
                         ]);
                         persistLinkTooltipStyle($db, $linkId, $link);
