@@ -1,5 +1,5 @@
 ﻿import React, { useState, useEffect, useRef, useMemo, lazy, Suspense, memo } from 'react';
-import { LinkRedirectHop, UrlSafetyResult } from '../types';
+import { LinkRedirectHop, UrlGradeInfo, UrlSafetyResult, UrlWafInfo } from '../types';
 import { linkHealthService } from '../services/linkHealthService';
 import {
     formatSafetyConfirmMessage,
@@ -13,6 +13,7 @@ import { urlForHealthProbe } from '../utils/redirectChain';
 import { UrlNeedsFixBadge } from './UrlFormDiagnostics';
 import { RedirectChainDialog } from './RedirectChainDialog';
 import { useSettings } from '../contexts/SettingsContext';
+import { gradeColorClass, type LetterGrade } from '../services/ssl/sslCheckGrading';
 
 const SslCheckerDialog = lazy(() => import('./ssl/SslCheckerDialog'));
 const WhoisDialog = lazy(() => import('./ssl/WhoisDialog'));
@@ -107,8 +108,23 @@ type ProbeSnapshot = {
     redirectChain: LinkRedirectHop[];
     healthStatus: string;
     error: string;
+    waf: UrlWafInfo | null;
+    urlGrade: UrlGradeInfo | null;
     cachedAt: number;
 };
+
+function urlGradeLetterClass(letter: string): string {
+    const known: LetterGrade[] = ['A+', 'A', 'A-', 'B+', 'B', 'B-', 'C+', 'C', 'C-', 'D', 'F'];
+    const grade = known.includes(letter as LetterGrade) ? (letter as LetterGrade) : 'F';
+    return `${gradeColorClass(grade)} border-transparent`;
+}
+
+function wafBadgeClass(waf: UrlWafInfo | null): string {
+    if (waf?.detected && waf.vendor) {
+        return 'bg-violet-100 text-violet-800 dark:bg-violet-900/50 dark:text-violet-200 border-violet-200 dark:border-violet-700';
+    }
+    return 'bg-slate-100 text-slate-600 dark:bg-slate-800 dark:text-slate-300 border-slate-200 dark:border-slate-600';
+}
 
 const probeCache = new Map<string, ProbeSnapshot>();
 
@@ -215,6 +231,8 @@ const UrlProbeBadgesInner: React.FC<UrlProbeBadgesProps> = ({
     const [whoisOpen, setWhoisOpen] = useState(false);
     const [healthStatus, setHealthStatus] = useState<string>('');
     const [error, setError] = useState<string>('');
+    const [waf, setWaf] = useState<UrlWafInfo | null>(null);
+    const [urlGrade, setUrlGrade] = useState<UrlGradeInfo | null>(null);
     const [safetyPhase, setSafetyPhase] = useState<'idle' | 'checking' | 'done' | 'error'>('idle');
     const [safetyResult, setSafetyResult] = useState<UrlSafetyCheckResult | null>(null);
     const abortRef = useRef<AbortController | null>(null);
@@ -244,6 +262,8 @@ const UrlProbeBadgesInner: React.FC<UrlProbeBadgesProps> = ({
             setChainOpen(false);
             setHealthStatus('');
             setError('');
+            setWaf(null);
+            setUrlGrade(null);
             return;
         }
 
@@ -262,6 +282,8 @@ const UrlProbeBadgesInner: React.FC<UrlProbeBadgesProps> = ({
             setRedirectChain(cached.redirectChain);
             setHealthStatus(cached.healthStatus);
             setError(cached.error);
+            setWaf(cached.waf ?? null);
+            setUrlGrade(cached.urlGrade ?? null);
             return;
         }
 
@@ -283,6 +305,8 @@ const UrlProbeBadgesInner: React.FC<UrlProbeBadgesProps> = ({
         setRedirectChain([]);
         setChainOpen(false);
         setBrowserLatency(null);
+        setWaf(null);
+        setUrlGrade(null);
 
         const requestId = ++requestIdRef.current;
 
@@ -308,6 +332,8 @@ const UrlProbeBadgesInner: React.FC<UrlProbeBadgesProps> = ({
                 setRedirectChain(Array.isArray(result.health.redirectChain) ? result.health.redirectChain : []);
                 setHealthStatus(result.health.status || '');
                 setError(result.health.error || '');
+                setWaf(result.health.waf ?? null);
+                setUrlGrade(result.health.urlGrade ?? null);
                 setPhase('done');
                 probeCache.set(cacheKey, {
                     phase: 'done',
@@ -320,6 +346,8 @@ const UrlProbeBadgesInner: React.FC<UrlProbeBadgesProps> = ({
                     redirectChain: Array.isArray(result.health.redirectChain) ? result.health.redirectChain : [],
                     healthStatus: result.health.status || '',
                     error: result.health.error || '',
+                    waf: result.health.waf ?? null,
+                    urlGrade: result.health.urlGrade ?? null,
                     cachedAt: Date.now(),
                 });
             } catch (err: any) {
@@ -333,6 +361,8 @@ const UrlProbeBadgesInner: React.FC<UrlProbeBadgesProps> = ({
                 setRedirectChain(settled.redirectChain);
                 setHealthStatus(settled.healthStatus);
                 setError(settled.error);
+                setWaf(null);
+                setUrlGrade(null);
                 setPhase(settled.phase);
                 probeCache.set(cacheKey, {
                     phase: settled.phase,
@@ -345,6 +375,8 @@ const UrlProbeBadgesInner: React.FC<UrlProbeBadgesProps> = ({
                     redirectChain: settled.redirectChain,
                     healthStatus: settled.healthStatus,
                     error: settled.error,
+                    waf: null,
+                    urlGrade: null,
                     cachedAt: Date.now(),
                 });
             } finally {
@@ -464,6 +496,8 @@ const UrlProbeBadgesInner: React.FC<UrlProbeBadgesProps> = ({
             redirectChain,
             healthStatus,
             error,
+            waf,
+            urlGrade,
             cachedAt: Date.now(),
         });
     }, [
@@ -477,6 +511,8 @@ const UrlProbeBadgesInner: React.FC<UrlProbeBadgesProps> = ({
         redirectChain,
         healthStatus,
         error,
+        waf,
+        urlGrade,
         trimmedUrl,
         excluded,
         blocking,
@@ -657,6 +693,37 @@ const UrlProbeBadgesInner: React.FC<UrlProbeBadgesProps> = ({
                             {hopCountLabel} redirect{hopCountLabel === 1 ? '' : 's'}
                         </button>
                     )}
+                    {(phase === 'done' || phase === 'error') && urlGrade?.letter ? (
+                        <span
+                            className={`inline-flex items-center gap-1 text-[10px] font-black px-2 py-0.5 rounded-full border ${urlGradeLetterClass(urlGrade.letter)}`}
+                            title={
+                                urlGrade.checks?.length
+                                    ? `URL rating ${urlGrade.letter} (${urlGrade.numeric}/100) — ${urlGrade.checks
+                                          .map((c) => (c.ok ? '✓ ' : '✗ ') + c.label)
+                                          .join(' · ')}`
+                                    : `URL rating ${urlGrade.letter} (${urlGrade.numeric}/100). ${urlGrade.summary}`
+                            }
+                            role="status"
+                        >
+                            URL {urlGrade.letter}
+                        </span>
+                    ) : null}
+                    {(phase === 'done' || phase === 'error') && waf ? (
+                        <button
+                            type="button"
+                            onClick={() => openSslFor((url || '').trim())}
+                            className={`inline-flex items-center gap-1 text-[10px] font-semibold px-2 py-0.5 rounded-full border ${wafBadgeClass(waf)} hover:opacity-90 cursor-pointer`}
+                            title={
+                                waf.detected && waf.vendor
+                                    ? `${waf.vendor} WAF/CDN detected (${waf.source || 'headers'}). ${waf.reason || ''} Click to open SSL checker.`
+                                    : `${waf.reason || 'No WAF/CDN fingerprint in response headers'}. Click to open SSL checker for a deeper scan.`
+                            }
+                            aria-haspopup="dialog"
+                        >
+                            <span aria-hidden>🛡️</span>
+                            {waf.detected && waf.vendor ? waf.vendor : 'No WAF'}
+                        </button>
+                    ) : null}
                 </>
             )}
             {(scheme === 'http' || scheme === 'https' || isHttpOrHttpsUrl((url || '').trim())) && (

@@ -110,6 +110,46 @@ function formatFetchedAt(ts: number): string {
   }
 }
 
+function formatRelativeAge(seconds: number | null | undefined): string {
+  if (seconds == null || seconds < 0) return 'Unknown';
+  if (seconds < 60) return 'Just now';
+  if (seconds < 3600) {
+    const m = Math.floor(seconds / 60);
+    return `${m}m ago`;
+  }
+  if (seconds < 86400) {
+    const h = Math.floor(seconds / 3600);
+    return `${h}h ago`;
+  }
+  const d = Math.floor(seconds / 86400);
+  if (d < 14) return `${d}d ago`;
+  const w = Math.floor(d / 7);
+  return `${w}w ago`;
+}
+
+function FreshnessPill({
+  freshness,
+}: {
+  freshness?: 'fresh' | 'aging' | 'stale' | 'unknown';
+}) {
+  const level = freshness || 'unknown';
+  const cls =
+    level === 'fresh'
+      ? 'border-emerald-200/80 dark:border-emerald-800/60 bg-emerald-100 text-emerald-800 dark:bg-emerald-950/50 dark:text-emerald-200'
+      : level === 'aging'
+        ? 'border-amber-200/80 dark:border-amber-800/60 bg-amber-100 text-amber-800 dark:bg-amber-950/50 dark:text-amber-200'
+        : level === 'stale'
+          ? 'border-rose-200/80 dark:border-rose-800/60 bg-rose-100 text-rose-800 dark:bg-rose-950/50 dark:text-rose-200'
+          : 'border-slate-200 dark:border-slate-600 bg-slate-100 text-slate-600 dark:bg-slate-800 dark:text-slate-300';
+  const label =
+    level === 'fresh' ? 'Fresh' : level === 'aging' ? 'Aging' : level === 'stale' ? 'Stale' : 'Unknown';
+  return (
+    <span className={`inline-flex rounded-md border px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wide ${cls}`}>
+      {label}
+    </span>
+  );
+}
+
 export const UrlSafetyAdmin: React.FC<UrlSafetyAdminProps> = ({
   settings,
   onSettingsChange,
@@ -739,13 +779,14 @@ export const UrlSafetyAdmin: React.FC<UrlSafetyAdminProps> = ({
                     <th className="py-2.5 px-3">Category</th>
                     <th className="py-2.5 px-3 w-28">Entries</th>
                     <th className="py-2.5 px-3">Last fetch</th>
+                    <th className="py-2.5 px-3">Source updated</th>
                     <th className="py-2.5 px-4">Status</th>
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-slate-100 dark:divide-slate-800/80">
                   {sources.length === 0 ? (
                     <tr>
-                      <td colSpan={5} className="py-8 text-center text-sm text-slate-500">
+                      <td colSpan={6} className="py-8 text-center text-sm text-slate-500">
                         No feed definitions loaded.
                       </td>
                     </tr>
@@ -768,6 +809,24 @@ export const UrlSafetyAdmin: React.FC<UrlSafetyAdminProps> = ({
                       </td>
                       <td className="py-3 px-3 text-xs text-slate-600 dark:text-slate-300 whitespace-nowrap">
                         {formatFetchedAt(src.fetched_at)}
+                      </td>
+                      <td className="py-3 px-3">
+                        <div className="flex flex-col gap-1 min-w-[9rem]">
+                          <div className="text-xs text-slate-700 dark:text-slate-200 whitespace-nowrap">
+                            {src.source_updated_at
+                              ? formatFetchedAt(src.source_updated_at)
+                              : 'Not in feed header'}
+                          </div>
+                          <div className="flex flex-wrap items-center gap-1.5">
+                            <FreshnessPill freshness={src.freshness} />
+                            <span className="text-[10px] text-slate-500 dark:text-slate-400">
+                              {formatRelativeAge(src.source_age_seconds)}
+                              {typeof src.expires_hours === 'number' && src.expires_hours > 0
+                                ? ` · expires ${src.expires_hours}h`
+                                : ''}
+                            </span>
+                          </div>
+                        </div>
                       </td>
                       <td className="py-3 px-4">
                         {src.last_error ? (

@@ -78,12 +78,27 @@ function ensureUrlSafetySchema($db): void {
             fetched_at INTEGER NOT NULL DEFAULT 0,
             etag TEXT,
             entry_count INTEGER NOT NULL DEFAULT 0,
-            last_error TEXT
+            last_error TEXT,
+            source_updated_at INTEGER NOT NULL DEFAULT 0,
+            expires_hours INTEGER
         )');
         $db->exec('CREATE TABLE IF NOT EXISTS url_safety_allowlist (
             domain TEXT PRIMARY KEY,
             created_at INTEGER NOT NULL
         )');
+        // Existing installs: add freshness columns if missing
+        try {
+            $cols = $db->query('PRAGMA table_info(url_safety_meta)')->fetchAll(PDO::FETCH_ASSOC);
+            $names = array_map(static fn($c) => (string)($c['name'] ?? ''), $cols ?: []);
+            if (!in_array('source_updated_at', $names, true)) {
+                $db->exec('ALTER TABLE url_safety_meta ADD COLUMN source_updated_at INTEGER NOT NULL DEFAULT 0');
+            }
+            if (!in_array('expires_hours', $names, true)) {
+                $db->exec('ALTER TABLE url_safety_meta ADD COLUMN expires_hours INTEGER');
+            }
+        } catch (Throwable $e) {
+            // ignore migrate race
+        }
         $ensured = true;
     } catch (Throwable $e) {
         error_log('ensureUrlSafetySchema: ' . $e->getMessage());
@@ -372,6 +387,7 @@ function urlSafetyDownloadFeed(string $sourceId, string $url, ?string $etag = nu
             'etag' => $etag ?? ($responseHeaders['etag'] ?? null),
             'bytes' => (int)filesize($path),
             'not_modified' => true,
+            'http_last_modified' => $responseHeaders['last-modified'] ?? null,
         ];
     }
     if ($code < 200 || $code >= 300) {
@@ -388,14 +404,114 @@ function urlSafetyDownloadFeed(string $sourceId, string $url, ?string $etag = nu
         'path' => $path,
         'etag' => $responseHeaders['etag'] ?? null,
         'bytes' => strlen($body),
+        'http_last_modified' => $responseHeaders['last-modified'] ?? null,
     ];
 }
 
 /**
- * Parse a domain list file into normalized domains.
- * Supports plain domains, hosts (0.0.0.0 host), and Adblock ||domain^ lines.
- * @return list<string>
+ * Try to parse a feed header / version / HTTP date into a unix timestamp.
  */
+function urlSafetyParseTimestampGuess(?string $raw): int {
+    if ($raw === null) {
+        return 0;
+    }
+    $raw = trim($raw);
+    if ($raw === '') {
+        return 0;
+    }
+    // HaGeZi Version: 2026.0905.1451.14
+    if (preg_match('/^(\d{4})\.(\d{2})(\d{2})\.(\d{2})(\d{2})(?:\.\d+)?$/', $raw, $m)) {
+        $ts = gmmktime((int)$m[4], (int)$m[5], 0, (int)$m[2], (int)$m[3], (int)$m[1]);
+        return $ts !== false ? (int)$ts : 0;
+    }
+    $ts = strtotime($raw);
+    return ($ts !== false && $ts > 0) ? (int)$ts : 0;
+}
+
+/**
+ * Read upstream freshness from a cached feed file (comment headers).
+ * @return array{source_updated_at: int, expires_hours: int|null, source_updated_label: string|null}
+ */
+function urlSafetyParseFeedFreshness(string $path, ?string $httpLastModified = null): array {
+    $updatedAt = 0;
+    $expiresHours = null;
+    $label = null;
+
+    $fh = @fopen($path, 'rb');
+    if ($fh !== false) {
+        $linesRead = 0;
+        while ($linesRead < 60 && ($line = fgets($fh)) !== false) {
+            $linesRead++;
+            $line = trim($line);
+            if ($line === '') {
+                continue;
+            }
+            // Stop once we leave the header comment block
+            if ($line[0] !== '#' && $line[0] !== '!' && !str_starts_with($line, '//')) {
+                break;
+            }
+            $body = ltrim($line, "#! \t/");
+            if (preg_match('/^(?:Last\s+Update|Last\s+modified|Updated|Date)\s*:\s*(.+)$/i', $body, $m)) {
+                $ts = urlSafetyParseTimestampGuess(trim($m[1]));
+                if ($ts > $updatedAt) {
+                    $updatedAt = $ts;
+                    $label = trim($m[1]);
+                }
+            } elseif (preg_match('/^Version\s*:\s*([0-9.]+)\s*$/i', $body, $m) && $updatedAt === 0) {
+                $ts = urlSafetyParseTimestampGuess(trim($m[1]));
+                if ($ts > 0) {
+                    $updatedAt = $ts;
+                    $label = 'Version ' . trim($m[1]);
+                }
+            } elseif (preg_match('/^Expires\s*:\s*(\d+)\s*hours?/i', $body, $m)) {
+                $expiresHours = (int)$m[1];
+            }
+        }
+        fclose($fh);
+    }
+
+    if ($updatedAt <= 0 && is_string($httpLastModified) && $httpLastModified !== '') {
+        $ts = urlSafetyParseTimestampGuess($httpLastModified);
+        if ($ts > 0) {
+            $updatedAt = $ts;
+            $label = $httpLastModified;
+        }
+    }
+
+    return [
+        'source_updated_at' => $updatedAt,
+        'expires_hours' => $expiresHours,
+        'source_updated_label' => $label,
+    ];
+}
+
+/**
+ * Classify how stale an upstream list is relative to now.
+ * @return 'fresh'|'aging'|'stale'|'unknown'
+ */
+function urlSafetyFreshnessLevel(int $sourceUpdatedAt, ?int $expiresHours = null): string {
+    if ($sourceUpdatedAt <= 0) {
+        return 'unknown';
+    }
+    $age = max(0, time() - $sourceUpdatedAt);
+    if ($expiresHours !== null && $expiresHours > 0) {
+        $limit = $expiresHours * 3600;
+        if ($age <= $limit) {
+            return 'fresh';
+        }
+        if ($age <= $limit * 3) {
+            return 'aging';
+        }
+        return 'stale';
+    }
+    if ($age <= 86400) {
+        return 'fresh'; // ≤ 24h
+    }
+    if ($age <= 259200) {
+        return 'aging'; // ≤ 72h
+    }
+    return 'stale';
+}
 function urlSafetyParseDomainListFile(string $path): array {
     $fh = @fopen($path, 'rb');
     if ($fh === false) {
@@ -590,18 +706,49 @@ function urlSafetyImportSource(PDO $db, string $sourceId, string $category, stri
     }
 }
 
-function urlSafetyUpdateMeta(PDO $db, string $sourceId, int $fetchedAt, ?string $etag, int $entryCount, ?string $error = null): void {
-    urlSafetyDbRetry(static function () use ($db, $sourceId, $fetchedAt, $etag, $entryCount, $error) {
+function urlSafetyUpdateMeta(
+    PDO $db,
+    string $sourceId,
+    int $fetchedAt,
+    ?string $etag,
+    int $entryCount,
+    ?string $error = null,
+    ?int $sourceUpdatedAt = null,
+    ?int $expiresHours = null
+): void {
+    urlSafetyDbRetry(static function () use ($db, $sourceId, $fetchedAt, $etag, $entryCount, $error, $sourceUpdatedAt, $expiresHours) {
+        // Preserve existing freshness when caller does not pass new values (e.g. download error)
+        $prevUpdated = 0;
+        $prevExpires = null;
+        try {
+            $prev = $db->prepare('SELECT source_updated_at, expires_hours FROM url_safety_meta WHERE source = ?');
+            $prev->execute([$sourceId]);
+            $row = $prev->fetch(PDO::FETCH_ASSOC);
+            if ($row) {
+                $prevUpdated = (int)($row['source_updated_at'] ?? 0);
+                $prevExpires = isset($row['expires_hours']) && $row['expires_hours'] !== null
+                    ? (int)$row['expires_hours']
+                    : null;
+            }
+        } catch (Throwable $e) {
+            // columns may not exist yet on very old DBs mid-migrate
+        }
+
+        $updatedAt = $sourceUpdatedAt !== null && $sourceUpdatedAt > 0 ? $sourceUpdatedAt : $prevUpdated;
+        $expires = $expiresHours !== null ? $expiresHours : $prevExpires;
+
         $stmt = $db->prepare(
-            'INSERT INTO url_safety_meta (source, fetched_at, etag, entry_count, last_error)
-             VALUES (?, ?, ?, ?, ?)
+            'INSERT INTO url_safety_meta (source, fetched_at, etag, entry_count, last_error, source_updated_at, expires_hours)
+             VALUES (?, ?, ?, ?, ?, ?, ?)
              ON CONFLICT(source) DO UPDATE SET
                fetched_at = excluded.fetched_at,
                etag = excluded.etag,
                entry_count = excluded.entry_count,
-               last_error = excluded.last_error'
+               last_error = excluded.last_error,
+               source_updated_at = excluded.source_updated_at,
+               expires_hours = excluded.expires_hours'
         );
-        $stmt->execute([$sourceId, $fetchedAt, $etag, $entryCount, $error]);
+        $stmt->execute([$sourceId, $fetchedAt, $etag, $entryCount, $error, $updatedAt, $expires]);
     });
 }
 
@@ -655,7 +802,9 @@ function urlSafetyRefreshLists(PDO $db, bool $force = false): array {
 
             $meta = null;
             try {
-                $metaStmt = $db->prepare('SELECT fetched_at, etag, entry_count FROM url_safety_meta WHERE source = ?');
+                $metaStmt = $db->prepare(
+                    'SELECT fetched_at, etag, entry_count, source_updated_at, expires_hours FROM url_safety_meta WHERE source = ?'
+                );
                 $metaStmt->execute([$sourceId]);
                 $meta = $metaStmt->fetch(PDO::FETCH_ASSOC) ?: null;
             } catch (Throwable $e) {
@@ -670,6 +819,7 @@ function urlSafetyRefreshLists(PDO $db, bool $force = false): array {
                     'reason' => 'fresh',
                     'fetched_at' => $fetchedAt,
                     'entry_count' => (int)($meta['entry_count'] ?? 0),
+                    'source_updated_at' => (int)($meta['source_updated_at'] ?? 0),
                 ];
                 $anyOk = $anyOk || ((int)($meta['entry_count'] ?? 0) > 0);
                 continue;
@@ -688,15 +838,34 @@ function urlSafetyRefreshLists(PDO $db, bool $force = false): array {
             }
 
             $path = (string)$dl['path'];
+            $fresh = urlSafetyParseFeedFreshness(
+                $path,
+                isset($dl['http_last_modified']) && is_string($dl['http_last_modified'])
+                    ? $dl['http_last_modified']
+                    : null
+            );
+            $sourceUpdatedAt = (int)($fresh['source_updated_at'] ?? 0);
+            $expiresHours = $fresh['expires_hours'] ?? null;
+
             if (!empty($dl['not_modified'])) {
                 try {
-                    urlSafetyUpdateMeta($db, $sourceId, $now, $dl['etag'] ?? $etag, (int)($meta['entry_count'] ?? 0), null);
+                    urlSafetyUpdateMeta(
+                        $db,
+                        $sourceId,
+                        $now,
+                        $dl['etag'] ?? $etag,
+                        (int)($meta['entry_count'] ?? 0),
+                        null,
+                        $sourceUpdatedAt > 0 ? $sourceUpdatedAt : null,
+                        $expiresHours
+                    );
                 } catch (Throwable $e) {
                 }
                 $results[$sourceId] = [
                     'ok' => true,
                     'not_modified' => true,
                     'entry_count' => (int)($meta['entry_count'] ?? 0),
+                    'source_updated_at' => $sourceUpdatedAt,
                 ];
                 $anyOk = true;
                 continue;
@@ -705,14 +874,32 @@ function urlSafetyRefreshLists(PDO $db, bool $force = false): array {
             $imp = urlSafetyImportSource($db, $sourceId, $feed['category'], $path);
             if (empty($imp['ok'])) {
                 try {
-                    urlSafetyUpdateMeta($db, $sourceId, $fetchedAt, $dl['etag'] ?? $etag, (int)($meta['entry_count'] ?? 0), $imp['error'] ?? 'import failed');
+                    urlSafetyUpdateMeta(
+                        $db,
+                        $sourceId,
+                        $fetchedAt,
+                        $dl['etag'] ?? $etag,
+                        (int)($meta['entry_count'] ?? 0),
+                        $imp['error'] ?? 'import failed',
+                        $sourceUpdatedAt > 0 ? $sourceUpdatedAt : null,
+                        $expiresHours
+                    );
                 } catch (Throwable $e) {
                 }
                 $results[$sourceId] = ['ok' => false, 'error' => $imp['error'] ?? 'import failed'];
                 continue;
             }
             try {
-                urlSafetyUpdateMeta($db, $sourceId, $now, $dl['etag'] ?? null, (int)$imp['entry_count'], null);
+                urlSafetyUpdateMeta(
+                    $db,
+                    $sourceId,
+                    $now,
+                    $dl['etag'] ?? null,
+                    (int)$imp['entry_count'],
+                    null,
+                    $sourceUpdatedAt > 0 ? $sourceUpdatedAt : null,
+                    $expiresHours
+                );
             } catch (Throwable $e) {
                 // Import succeeded; meta update can retry next status load
             }
@@ -720,6 +907,7 @@ function urlSafetyRefreshLists(PDO $db, bool $force = false): array {
                 'ok' => true,
                 'entry_count' => (int)$imp['entry_count'],
                 'label' => $feed['label'],
+                'source_updated_at' => $sourceUpdatedAt,
             ];
             $anyOk = true;
         }
@@ -920,9 +1108,50 @@ function urlSafetyStatus(PDO $db): array {
     }
 
     foreach ($feeds as $id => $feed) {
-        $stmt = $db->prepare('SELECT fetched_at, etag, entry_count, last_error FROM url_safety_meta WHERE source = ?');
+        $stmt = $db->prepare(
+            'SELECT fetched_at, etag, entry_count, last_error, source_updated_at, expires_hours
+             FROM url_safety_meta WHERE source = ?'
+        );
         $stmt->execute([$id]);
         $meta = $stmt->fetch(PDO::FETCH_ASSOC) ?: null;
+        $sourceUpdatedAt = $meta ? (int)($meta['source_updated_at'] ?? 0) : 0;
+        $expiresHours = null;
+        if ($meta && array_key_exists('expires_hours', $meta) && $meta['expires_hours'] !== null && $meta['expires_hours'] !== '') {
+            $expiresHours = (int)$meta['expires_hours'];
+        }
+
+        // Backfill freshness from cached feed file so admins see it without a force refresh
+        if ($sourceUpdatedAt <= 0 || $expiresHours === null) {
+            $safeId = preg_replace('/[^a-z0-9_\-]/i', '_', $id) ?: 'feed';
+            $cachePath = urlSafetyEnsureCacheDir() . DIRECTORY_SEPARATOR . $safeId . '.txt';
+            if (is_file($cachePath)) {
+                $fresh = urlSafetyParseFeedFreshness($cachePath);
+                if ($sourceUpdatedAt <= 0 && (int)$fresh['source_updated_at'] > 0) {
+                    $sourceUpdatedAt = (int)$fresh['source_updated_at'];
+                }
+                if ($expiresHours === null && $fresh['expires_hours'] !== null) {
+                    $expiresHours = (int)$fresh['expires_hours'];
+                }
+                if ($meta && ((int)($meta['source_updated_at'] ?? 0) <= 0 || !isset($meta['expires_hours']))) {
+                    try {
+                        urlSafetyUpdateMeta(
+                            $db,
+                            $id,
+                            (int)($meta['fetched_at'] ?? 0),
+                            isset($meta['etag']) ? (string)$meta['etag'] : null,
+                            (int)($meta['entry_count'] ?? 0),
+                            isset($meta['last_error']) ? (string)$meta['last_error'] : null,
+                            $sourceUpdatedAt > 0 ? $sourceUpdatedAt : null,
+                            $expiresHours
+                        );
+                    } catch (Throwable $e) {
+                        // non-fatal
+                    }
+                }
+            }
+        }
+
+        $ageSeconds = $sourceUpdatedAt > 0 ? max(0, time() - $sourceUpdatedAt) : null;
         $sources[$id] = [
             'id' => $id,
             'label' => $feed['label'],
@@ -931,6 +1160,10 @@ function urlSafetyStatus(PDO $db): array {
             'fetched_at' => $meta ? (int)$meta['fetched_at'] : 0,
             'entry_count' => $meta ? (int)$meta['entry_count'] : 0,
             'last_error' => $meta['last_error'] ?? null,
+            'source_updated_at' => $sourceUpdatedAt,
+            'expires_hours' => $expiresHours,
+            'source_age_seconds' => $ageSeconds,
+            'freshness' => urlSafetyFreshnessLevel($sourceUpdatedAt, $expiresHours),
         ];
     }
 
@@ -988,7 +1221,7 @@ function urlSafetyStatus(PDO $db): array {
             [
                 'name' => 'url_safety_meta',
                 'purpose' => 'Feed download metadata (etag, last fetch, errors)',
-                'columns' => ['source (PK)', 'fetched_at', 'etag', 'entry_count', 'last_error'],
+                'columns' => ['source (PK)', 'fetched_at', 'etag', 'entry_count', 'last_error', 'source_updated_at', 'expires_hours'],
                 'row_count' => count($feeds) + ($manualCount > 0 ? 1 : 0),
             ],
             [

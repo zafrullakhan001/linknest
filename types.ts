@@ -41,6 +41,31 @@ export interface LinkHealth {
   redirectCount?: number;
   /** Hop-by-hop redirect trace from the edit-form URL probe (when available). */
   redirectChain?: LinkRedirectHop[];
+  /** WAF/CDN fingerprint from the edit-form URL probe (when available). */
+  waf?: UrlWafInfo | null;
+  /** URL security letter grade (HTTPS + headers), SSL Labs–style bands. */
+  urlGrade?: UrlGradeInfo | null;
+}
+
+export interface UrlWafInfo {
+  detected: boolean;
+  vendor?: string | null;
+  reason?: string;
+  source?: string;
+  inconclusive?: boolean;
+}
+
+export interface UrlGradeCheck {
+  id: string;
+  ok: boolean;
+  label: string;
+}
+
+export interface UrlGradeInfo {
+  letter: string;
+  numeric: number;
+  summary: string;
+  checks?: UrlGradeCheck[];
 }
 
 /** Live URL Safety Intelligence verdict (not persisted on the link). */

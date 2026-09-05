@@ -6,6 +6,8 @@ set_time_limit(20);
 ob_start();
 
 require_once __DIR__ . '/config.php';
+require_once __DIR__ . '/waf_detect_lib.php';
+require_once __DIR__ . '/url_grade_lib.php';
 
 /** Max redirects to follow during health probes (SSO chains can exceed 50 hops). */
 if (!defined('HEALTH_MAX_REDIRS')) {
@@ -734,13 +736,15 @@ function parseHealthHopHeaders($rawHeaders) {
         'hsts' => false,
         'cache_control' => '',
         'www_authenticate' => '',
-        'content_length' => null
+        'content_length' => null,
+        'header_map' => [],
     ];
     $block = healthHopHeaderBlock($rawHeaders);
     if ($block === '') {
         return $out;
     }
     $names = [];
+    $headerMap = [];
     foreach (preg_split("/\n/", $block) ?: [] as $line) {
         $line = trim($line);
         if ($line === '' || !str_contains($line, ':')) {
@@ -770,11 +774,19 @@ function parseHealthHopHeaders($rawHeaders) {
                 $names[] = $cookieName;
             }
         }
+        if ($name !== '') {
+            if (!isset($headerMap[$name])) {
+                $headerMap[$name] = $value;
+            } else {
+                $headerMap[$name] .= "\n" . $value;
+            }
+        }
     }
     if (count($names) > 20) {
         $names = array_slice($names, 0, 20);
     }
     $out['set_cookie_names'] = $names;
+    $out['header_map'] = $headerMap;
     return $out;
 }
 
@@ -916,6 +928,9 @@ function buildHealthRedirectHop($ch, $url, $code, $rawHeaders, $error = '') {
     }
     if ($headers['www_authenticate'] !== '') {
         $entry['wwwAuthenticate'] = $headers['www_authenticate'];
+    }
+    if (!empty($headers['header_map']) && is_array($headers['header_map'])) {
+        $entry['_headerMap'] = $headers['header_map'];
     }
     return $entry;
 }
@@ -1084,14 +1099,23 @@ function checkUrlHealthWithRedirectChain($url, $timeoutSeconds = 5) {
     $statusResult = determineHealthStatus($httpCode, $errno, $error, $redirectCount);
 
     $finalUrl = null;
+    $lastHeaderMap = [];
     if (!empty($chain)) {
-        $lastUrl = (string)$chain[count($chain) - 1]['url'];
+        $lastHop = $chain[count($chain) - 1];
+        $lastUrl = (string)($lastHop['url'] ?? '');
         if ($lastUrl !== '' && strcasecmp($lastUrl, $url) !== 0) {
             $finalUrl = $lastUrl;
         } elseif ($redirectCount > 0 && $currentUrl !== '' && strcasecmp($currentUrl, $url) !== 0) {
             $finalUrl = $currentUrl;
         }
+        if (!empty($lastHop['_headerMap']) && is_array($lastHop['_headerMap'])) {
+            $lastHeaderMap = $lastHop['_headerMap'];
+        }
     }
+
+    $gradeUrl = $finalUrl ?: $url;
+    $waf = waf_match_from_headers($lastHeaderMap);
+    $urlGrade = url_grade_from_probe($gradeUrl, (int)$httpCode, $lastHeaderMap, $waf);
 
     return [
         'status' => $statusResult['status'],
@@ -1101,7 +1125,9 @@ function checkUrlHealthWithRedirectChain($url, $timeoutSeconds = 5) {
         'server_latency' => $serverLatency,
         'final_url' => $finalUrl,
         'redirect_count' => $redirectCount,
-        'redirect_chain' => $chain
+        'redirect_chain' => $chain,
+        'waf' => $waf,
+        'url_grade' => $urlGrade,
     ];
 }
 
@@ -2006,6 +2032,22 @@ function handleCheckUrl() {
                 'finalUrl' => !empty($healthResult['final_url']) ? (string)$healthResult['final_url'] : null,
                 'redirectCount' => isset($healthResult['redirect_count']) ? (int)$healthResult['redirect_count'] : 0,
                 'redirectChain' => $redirectChain,
+                'waf' => !empty($healthResult['waf']) && is_array($healthResult['waf'])
+                    ? [
+                        'detected' => true,
+                        'vendor' => (string)($healthResult['waf']['vendor'] ?? ''),
+                        'reason' => (string)($healthResult['waf']['reason'] ?? ''),
+                        'source' => (string)($healthResult['waf']['source'] ?? 'headers'),
+                    ]
+                    : [
+                        'detected' => false,
+                        'vendor' => null,
+                        'reason' => 'No known WAF/CDN fingerprint in response headers',
+                        'source' => 'headers',
+                    ],
+                'urlGrade' => !empty($healthResult['url_grade']) && is_array($healthResult['url_grade'])
+                    ? $healthResult['url_grade']
+                    : null,
                 'checkedAt' => time()
             ]
         ]);

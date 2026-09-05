@@ -62,6 +62,12 @@ export interface UrlSafetySourceStatus {
   fetched_at: number;
   entry_count: number;
   last_error?: string | null;
+  /** Upstream list publish time (unix seconds), when the feed header provides it */
+  source_updated_at?: number;
+  /** Declared refresh window from the feed header, if any */
+  expires_hours?: number | null;
+  source_age_seconds?: number | null;
+  freshness?: 'fresh' | 'aging' | 'stale' | 'unknown';
 }
 
 export interface UrlSafetyStatus {
