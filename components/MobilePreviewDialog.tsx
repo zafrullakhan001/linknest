@@ -24,7 +24,7 @@ interface MobilePreviewDialogProps {
 }
 
 const ZOOM_OPTIONS = [25, 50, 75, 100, 125, 150];
-const PREVIEW_WINDOW_NAME = 'linknest_device_preview';
+const PREVIEW_WINDOW_NAME_PREFIX = 'linknest_device_preview_';
 const DIALOG_POS_KEY = 'linknest.mobilePreviewDialog.position.v1'; // legacy; no longer persisted
 const DIALOG_SIZE_KEY = 'linknest.mobilePreviewDialog.size.v1';
 const DIALOG_MIN_W = 520;
@@ -263,6 +263,7 @@ export const MobilePreviewDialog: React.FC<MobilePreviewDialogProps> = ({
   const panelRef = useRef<HTMLDivElement>(null);
   const stageRef = useRef<HTMLDivElement>(null);
   const previewWinRef = useRef<Window | null>(null);
+  const onCloseRef = useRef(onClose);
   const [previewMode, setPreviewMode] = useState<PreviewMode>('in-app');
   const [presetId, setPresetId] = useState('iphone-14');
   const [viewWidth, setViewWidth] = useState(390);
@@ -300,6 +301,10 @@ export const MobilePreviewDialog: React.FC<MobilePreviewDialogProps> = ({
     direction: string;
   } | null>(null);
   const plainLabel = useMemo(() => stripHtmlTags(label || ''), [label]);
+
+  useEffect(() => {
+    onCloseRef.current = onClose;
+  }, [onClose]);
 
   useEffect(() => {
     if (!devicePresets.some((p) => p.id === presetId)) {
@@ -517,15 +522,8 @@ export const MobilePreviewDialog: React.FC<MobilePreviewDialogProps> = ({
     markResponsiveIfNeeded(nextW, nextH);
   }, [viewWidth, viewHeight, markResponsiveIfNeeded]);
 
-  const closePreviewWindow = useCallback(() => {
-    const win = previewWinRef.current;
-    if (win && !win.closed) {
-      try {
-        win.close();
-      } catch {
-        // ignore
-      }
-    }
+  /** Drop our handle to the popup without closing it (user may still be using DevTools). */
+  const orphanPreviewWindow = useCallback(() => {
     previewWinRef.current = null;
     setWindowOpened(false);
   }, []);
@@ -581,12 +579,21 @@ export const MobilePreviewDialog: React.FC<MobilePreviewDialogProps> = ({
       return win;
     }
 
-    win = window.open(url, PREVIEW_WINDOW_NAME, features);
+    // Unique name so a later session does not navigate an orphaned prior popup.
+    const windowName = `${PREVIEW_WINDOW_NAME_PREFIX}${Date.now()}`;
+    win = window.open(url, windowName, features);
     previewWinRef.current = win;
     if (!win) {
       setPopupBlocked(true);
       setWindowOpened(false);
       return null;
+    }
+    // Detach opener so SSO / third-party pages cannot drive LinkNest.
+    // Do not use the noopener feature flag — that makes window.open return null.
+    try {
+      win.opener = null;
+    } catch {
+      // ignore
     }
     setPopupBlocked(false);
     setWindowOpened(true);
@@ -624,8 +631,13 @@ export const MobilePreviewDialog: React.FC<MobilePreviewDialogProps> = ({
     setFitScale(Math.min(maxScale, Math.max(0.2, nextScale)));
   }, [isEmulationMode, isWatch, size.height, size.width, activePreset.variant]);
 
+  // Init only when the dialog actually opens — do not depend on onClose identity
+  // (TileDetail passes an inline handler; that was resetting mode to In-app and closing the popup).
   useEffect(() => {
-    if (!isOpen) return;
+    if (!isOpen) {
+      orphanPreviewWindow();
+      return;
+    }
 
     dialogRef.current?.focus();
     setPreviewMode('in-app');
@@ -659,7 +671,7 @@ export const MobilePreviewDialog: React.FC<MobilePreviewDialogProps> = ({
       if (e.key === 'Escape' || e.key === 'Esc') {
         e.preventDefault();
         e.stopPropagation();
-        onClose();
+        onCloseRef.current();
       }
     };
 
@@ -679,9 +691,10 @@ export const MobilePreviewDialog: React.FC<MobilePreviewDialogProps> = ({
       window.removeEventListener('keydown', handleEscKey, true);
       window.removeEventListener('resize', clampToViewport);
       window.visualViewport?.removeEventListener('resize', clampToViewport);
-      closePreviewWindow();
+      // Leave any emulation popup open; only drop our ref so the next open gets a new window.
+      orphanPreviewWindow();
     };
-  }, [isOpen, onClose, closePreviewWindow]);
+  }, [isOpen, orphanPreviewWindow]);
 
   useEffect(() => {
     if (!isOpen) return;
