@@ -125,6 +125,7 @@ export const SslCheckerDialog: React.FC<SslCheckerDialogProps> = ({
         title="Cert Decoder"
         onClose={() => setDecoderRequest(null)}
         maxWidthClass="max-w-6xl"
+        overlayClassName="z-[100100]"
       >
         <CertDecoderContent
           embedded

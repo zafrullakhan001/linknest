@@ -1,4 +1,5 @@
 import React, { useEffect, useRef } from 'react';
+import { createPortal } from 'react-dom';
 import { X } from 'lucide-react';
 
 export interface AppModalProps {
@@ -7,6 +8,8 @@ export interface AppModalProps {
   onClose: () => void;
   children: React.ReactNode;
   maxWidthClass?: string;
+  /** Overlay z-index class. Raise when opened above the SSL checker dialog. */
+  overlayClassName?: string;
 }
 
 const AppModal: React.FC<AppModalProps> = ({
@@ -15,6 +18,7 @@ const AppModal: React.FC<AppModalProps> = ({
   onClose,
   children,
   maxWidthClass = 'max-w-5xl',
+  overlayClassName = 'z-[100100]',
 }) => {
   const containerRef = useRef<HTMLDivElement>(null);
   const lastFocusedRef = useRef<HTMLElement | null>(null);
@@ -65,8 +69,8 @@ const AppModal: React.FC<AppModalProps> = ({
 
   if (!open) return null;
 
-  return (
-    <div className="fixed inset-0 z-[100070] flex items-center justify-center p-3 sm:p-6" role="presentation">
+  return createPortal(
+    <div className={`fixed inset-0 ${overlayClassName} flex items-center justify-center p-3 sm:p-6`} role="presentation">
       <button
         type="button"
         aria-label="Close modal"
@@ -93,7 +97,8 @@ const AppModal: React.FC<AppModalProps> = ({
         </div>
         <div className="min-h-0 flex-1 overflow-y-auto p-3 sm:p-5">{children}</div>
       </div>
-    </div>
+    </div>,
+    document.body
   );
 };
 
