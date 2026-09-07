@@ -232,6 +232,11 @@ export interface Link {
   maintenanceMessage?: string;
   /** Optional uploaded/recorded video URL for the maintenance dialog. */
   maintenanceVideoUrl?: string;
+  /**
+   * When true, the Preview on mobile action opens a Device emulation popup
+   * directly (skipping the in-app Device Preview dialog).
+   */
+  mobilePreviewEmulation?: boolean;
 }
 
 export interface RichTextContent {

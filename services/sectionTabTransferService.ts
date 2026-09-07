@@ -104,6 +104,7 @@ function normalizeImportedLink(raw: unknown): Link | null {
     maintenanceEnabled: link.maintenanceEnabled === true,
     maintenanceMessage: typeof link.maintenanceMessage === 'string' ? link.maintenanceMessage : undefined,
     maintenanceVideoUrl: typeof link.maintenanceVideoUrl === 'string' ? link.maintenanceVideoUrl : undefined,
+    mobilePreviewEmulation: link.mobilePreviewEmulation === true || undefined,
     health: link.health && typeof link.health === 'object' ? (link.health as Link['health']) : undefined,
     visibleFrom: typeof link.visibleFrom === 'string' ? link.visibleFrom : undefined,
     expiresAt: typeof link.expiresAt === 'string' ? link.expiresAt : undefined,

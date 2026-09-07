@@ -140,6 +140,7 @@ export type EditLinkDraft = {
   maintenanceEnabled: boolean;
   maintenanceMessage: string;
   maintenanceVideoUrl: string;
+  mobilePreviewEmulation: boolean;
 };
 
 type EditLinkField =
@@ -148,7 +149,7 @@ type EditLinkField =
   | 'richTextEnabled' | 'infoVideoUrl' | 'infoShowOpenLink' | 'animation' | 'published' | 'inheritShortUrls' | 'forceShortUrl' | 'brokenStatusLabel'
   | 'brokenStatusNote' | 'brokenStatusTone' | 'brokenStatusExpected' | 'brokenStatusManual'
   | 'brokenStatusFontColor' | 'brokenStatusFontWeight' | 'brokenStatusFontStyle' | 'brokenStatusFontFamily'
-  | 'maintenanceEnabled' | 'maintenanceMessage' | 'maintenanceVideoUrl';
+  | 'maintenanceEnabled' | 'maintenanceMessage' | 'maintenanceVideoUrl' | 'mobilePreviewEmulation';
 
 const LINK_EDIT_NEUTRAL_CARD = 'border-slate-300 dark:border-slate-600 bg-slate-50 dark:bg-slate-900/50';
 
@@ -1234,6 +1235,38 @@ export const EditLinkForm: React.FC<EditLinkFormProps> = (props) => {
           </span>
         </div>
       </div>
+      <div className={`rounded-xl border-2 p-3 ${LINK_EDIT_NEUTRAL_CARD}`}>
+        <div className="flex items-start justify-between gap-3">
+          <div className="min-w-0">
+            <p className="text-sm font-semibold text-slate-800 dark:text-slate-100 flex items-center gap-1.5">
+              <span aria-hidden>🖥️</span> Device emulation on mobile preview
+            </p>
+            <p className="text-[11px] text-slate-500 dark:text-slate-400 mt-1 leading-relaxed">
+              When on, the phone action opens a sized Device emulation window directly — no Device Preview dialog.
+            </p>
+          </div>
+          <button
+            type="button"
+            role="switch"
+            aria-checked={draft.mobilePreviewEmulation === true}
+            onClick={() => onUpdateField('mobilePreviewEmulation', !(draft.mobilePreviewEmulation === true))}
+            className={`relative inline-flex h-7 w-12 shrink-0 items-center rounded-full transition-colors ${
+              draft.mobilePreviewEmulation === true ? 'bg-sky-600' : 'bg-slate-400 dark:bg-slate-600'
+            }`}
+            title={
+              draft.mobilePreviewEmulation === true
+                ? 'Mobile preview opens Device emulation window'
+                : 'Mobile preview opens Device Preview dialog'
+            }
+          >
+            <span
+              className={`inline-block h-5 w-5 transform rounded-full bg-white shadow transition-transform ${
+                draft.mobilePreviewEmulation === true ? 'translate-x-6' : 'translate-x-1'
+              }`}
+            />
+          </button>
+        </div>
+      </div>
     </div>
   );
 
@@ -1464,7 +1497,7 @@ export const EditLinkForm: React.FC<EditLinkFormProps> = (props) => {
       <LinkEditSection
         emoji="⚙️"
         title="Advanced"
-        subtitle="Browser target & entrance animation"
+        subtitle="Browser target, animation & mobile preview"
         accent="slate"
         defaultOpen={false}
         foldNonce={foldNonce}

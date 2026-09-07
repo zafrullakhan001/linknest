@@ -1,6 +1,7 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
 import { getDisplayUrl } from '../utils/urlDisplay';
+import { openDeviceEmulationWindow } from '../utils/deviceEmulationWindow';
 import { useSettings } from '../contexts/SettingsContext';
 import {
   findPreset,
@@ -24,7 +25,6 @@ interface MobilePreviewDialogProps {
 }
 
 const ZOOM_OPTIONS = [25, 50, 75, 100, 125, 150];
-const PREVIEW_WINDOW_NAME_PREFIX = 'linknest_device_preview_';
 const DIALOG_POS_KEY = 'linknest.mobilePreviewDialog.position.v1'; // legacy; no longer persisted
 const DIALOG_SIZE_KEY = 'linknest.mobilePreviewDialog.size.v1';
 const DIALOG_MIN_W = 520;
@@ -530,78 +530,15 @@ export const MobilePreviewDialog: React.FC<MobilePreviewDialogProps> = ({
 
   const openDeviceWindow = useCallback(() => {
     if (!url) return null;
-
-    const width = size.width;
-    const height = size.height;
-    const dualScreenLeft = window.screenLeft ?? window.screenX ?? 0;
-    const dualScreenTop = window.screenTop ?? window.screenY ?? 0;
-    const left = Math.max(0, Math.round(dualScreenLeft + (window.outerWidth - width) / 2));
-    const top = Math.max(0, Math.round(dualScreenTop + (window.outerHeight - height) / 2));
-    const features = [
-      `width=${width}`,
-      `height=${height}`,
-      `left=${left}`,
-      `top=${top}`,
-      'menubar=no',
-      'toolbar=no',
-      'location=yes',
-      'status=no',
-      'resizable=yes',
-      'scrollbars=yes',
-    ].join(',');
-
-    let win = previewWinRef.current;
-    if (win && !win.closed) {
-      try {
-        win.resizeTo(width, height);
-        win.moveTo(left, top);
-      } catch {
-        try {
-          win.resizeTo(width, height);
-        } catch {
-          // ignore
-        }
-      }
-      try {
-        if (win.location.href !== url) {
-          win.location.href = url;
-        }
-      } catch {
-        // Cross-origin after navigation
-      }
-      try {
-        win.focus();
-      } catch {
-        // ignore
-      }
-      setPopupBlocked(false);
-      setWindowOpened(true);
-      return win;
-    }
-
-    // Unique name so a later session does not navigate an orphaned prior popup.
-    const windowName = `${PREVIEW_WINDOW_NAME_PREFIX}${Date.now()}`;
-    win = window.open(url, windowName, features);
+    const win = openDeviceEmulationWindow(url, { width: size.width, height: size.height }, previewWinRef.current);
     previewWinRef.current = win;
     if (!win) {
       setPopupBlocked(true);
       setWindowOpened(false);
       return null;
     }
-    // Detach opener so SSO / third-party pages cannot drive LinkNest.
-    // Do not use the noopener feature flag — that makes window.open return null.
-    try {
-      win.opener = null;
-    } catch {
-      // ignore
-    }
     setPopupBlocked(false);
     setWindowOpened(true);
-    try {
-      win.focus();
-    } catch {
-      // ignore
-    }
     return win;
   }, [url, size.width, size.height]);
 

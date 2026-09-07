@@ -682,6 +682,7 @@ function handleGetTiles() {
                 applyLinkNotesInfoVideoToApi($searchLink, $linkRow);
                 applyLinkFeatureTogglesToApi($searchLink, $linkRow);
                 applyLinkOpenTargetToApi($searchLink, $linkRow);
+                applyLinkMobilePreviewEmulationToApi($searchLink, $linkRow);
                 applyLinkForceShortUrlToApi($searchLink, $linkRow);
                 applyLinkBrokenStatusLabelToApi($searchLink, $linkRow);
                 if (isset($linkRow['health_status']) && !isNonHttpLinkHealthUrl($linkRow['url'] ?? '')) {
@@ -1027,6 +1028,7 @@ function handleGetTiles() {
                                     applyLinkNotesInfoVideoToApi($link, $linkRow);
                                     applyLinkFeatureTogglesToApi($link, $linkRow);
                 applyLinkOpenTargetToApi($link, $linkRow);
+                applyLinkMobilePreviewEmulationToApi($link, $linkRow);
                 applyLinkForceShortUrlToApi($link, $linkRow);
                 applyLinkBrokenStatusLabelToApi($link, $linkRow);
                                     $section['links'][] = $link;
@@ -1141,6 +1143,7 @@ function handleGetTiles() {
                             applyLinkNotesInfoVideoToApi($link, $linkRow);
                             applyLinkFeatureTogglesToApi($link, $linkRow);
                 applyLinkOpenTargetToApi($link, $linkRow);
+                applyLinkMobilePreviewEmulationToApi($link, $linkRow);
                 applyLinkForceShortUrlToApi($link, $linkRow);
                 applyLinkBrokenStatusLabelToApi($link, $linkRow);
                             $section['links'][] = $link;
@@ -1605,6 +1608,7 @@ function handleGetTile($tileId) {
                 applyLinkNotesInfoVideoToApi($link, $linkRow);
                 applyLinkFeatureTogglesToApi($link, $linkRow);
                 applyLinkOpenTargetToApi($link, $linkRow);
+                applyLinkMobilePreviewEmulationToApi($link, $linkRow);
                 applyLinkForceShortUrlToApi($link, $linkRow);
                 applyLinkBrokenStatusLabelToApi($link, $linkRow);
                 $section['links'][] = $link;
@@ -1731,6 +1735,7 @@ function handleGetTile($tileId) {
                     applyLinkNotesInfoVideoToApi($link, $linkRow);
                     applyLinkFeatureTogglesToApi($link, $linkRow);
                 applyLinkOpenTargetToApi($link, $linkRow);
+                applyLinkMobilePreviewEmulationToApi($link, $linkRow);
                 applyLinkForceShortUrlToApi($link, $linkRow);
                 applyLinkBrokenStatusLabelToApi($link, $linkRow);
                     $section['links'][] = $link;
@@ -2119,6 +2124,7 @@ function handleCreateTile() {
                                 persistInheritShortUrls($db, 'links', $linkId, $link);
                                 persistLinkTooltipStyle($db, $linkId, $link);
                                 persistLinkOpenTarget($db, $linkId, $link);
+                                persistLinkMobilePreviewEmulation($db, $linkId, $link);
                                 persistLinkForceShortUrl($db, $linkId, $link);
                                 persistLinkBrokenStatusLabel($db, $linkId, $link);
                             } catch (PDOException $e) {
@@ -2144,6 +2150,7 @@ function handleCreateTile() {
                                     ]);
                                     persistLinkTooltipStyle($db, $linkId, $link);
                                 persistLinkOpenTarget($db, $linkId, $link);
+                                persistLinkMobilePreviewEmulation($db, $linkId, $link);
                                 persistLinkForceShortUrl($db, $linkId, $link);
                                 persistLinkBrokenStatusLabel($db, $linkId, $link);
                                 } catch (PDOException $e2) {
@@ -2546,6 +2553,7 @@ function cloneTileLinksAndRichText(PDO $db, string $sourceSectionId, string $new
         persistInheritShortUrls($db, 'links', $newLinkId, $link);
         persistLinkTooltipStyle($db, $newLinkId, $link);
         persistLinkOpenTarget($db, $newLinkId, $link);
+        persistLinkMobilePreviewEmulation($db, $newLinkId, $link);
         persistLinkForceShortUrl($db, $newLinkId, $link);
         persistLinkBrokenStatusLabel($db, $newLinkId, $link);
     }
@@ -4059,6 +4067,7 @@ function mapFavoriteLinkRow(array $row): array {
     ];
     applyLinkFeatureTogglesToApi($mapped, $row);
                 applyLinkOpenTargetToApi($mapped, $row);
+                applyLinkMobilePreviewEmulationToApi($mapped, $row);
                 applyLinkForceShortUrlToApi($mapped, $row);
                 applyLinkBrokenStatusLabelToApi($mapped, $row);
     return $mapped;
@@ -4532,6 +4541,7 @@ function handleGetRecycleBin() {
                     applyLinkNotesInfoVideoToApi($link, $linkRow);
                     applyLinkFeatureTogglesToApi($link, $linkRow);
                 applyLinkOpenTargetToApi($link, $linkRow);
+                applyLinkMobilePreviewEmulationToApi($link, $linkRow);
                 applyLinkForceShortUrlToApi($link, $linkRow);
                 applyLinkBrokenStatusLabelToApi($link, $linkRow);
                     $section['links'][] = $link;
@@ -4922,6 +4932,7 @@ function handleGetArchive() {
                     applyLinkNotesInfoVideoToApi($link, $linkRow);
                     applyLinkFeatureTogglesToApi($link, $linkRow);
                 applyLinkOpenTargetToApi($link, $linkRow);
+                applyLinkMobilePreviewEmulationToApi($link, $linkRow);
                 applyLinkForceShortUrlToApi($link, $linkRow);
                 applyLinkBrokenStatusLabelToApi($link, $linkRow);
                     $section['links'][] = $link;
@@ -5469,6 +5480,7 @@ function getTileForVersion($tileId, $db) {
                 applyLinkNotesInfoVideoToApi($link, $linkRow);
                 applyLinkFeatureTogglesToApi($link, $linkRow);
                 applyLinkOpenTargetToApi($link, $linkRow);
+                applyLinkMobilePreviewEmulationToApi($link, $linkRow);
                 applyLinkForceShortUrlToApi($link, $linkRow);
                 applyLinkBrokenStatusLabelToApi($link, $linkRow);
                 $section['links'][] = $link;
@@ -6383,6 +6395,7 @@ function updateTileInternal($tileId, $data, $db, $user, $isRestore = false, $isF
                                 persistInheritShortUrls($db, 'links', $linkId, $link);
                                 persistLinkTooltipStyle($db, $linkId, $link);
                                 persistLinkOpenTarget($db, $linkId, $link);
+                                persistLinkMobilePreviewEmulation($db, $linkId, $link);
                                 persistLinkForceShortUrl($db, $linkId, $link);
                                 persistLinkBrokenStatusLabel($db, $linkId, $link);
                             }
@@ -6452,6 +6465,7 @@ function updateTileInternal($tileId, $data, $db, $user, $isRestore = false, $isF
                         ]);
                         persistLinkTooltipStyle($db, $linkId, $link);
                                 persistLinkOpenTarget($db, $linkId, $link);
+                                persistLinkMobilePreviewEmulation($db, $linkId, $link);
                                 persistLinkForceShortUrl($db, $linkId, $link);
                                 persistLinkBrokenStatusLabel($db, $linkId, $link);
                     }
