@@ -346,6 +346,7 @@ const normalizeImportedLink = (link: any): Link => ({
   maintenanceMessage: typeof link.maintenanceMessage === 'string' ? link.maintenanceMessage : undefined,
   maintenanceVideoUrl: typeof link.maintenanceVideoUrl === 'string' ? link.maintenanceVideoUrl : undefined,
   mobilePreviewEmulation: link.mobilePreviewEmulation === true || undefined,
+  openInEmulation: link.openInEmulation === true || undefined,
   health: link.health || undefined,
   visibleFrom: typeof link.visibleFrom === 'string' ? link.visibleFrom : undefined,
   expiresAt: typeof link.expiresAt === 'string' ? link.expiresAt : undefined,

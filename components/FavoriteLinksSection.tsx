@@ -22,6 +22,7 @@ import { viewerLinkDisplay, viewerLinkUrl } from '../utils/urlDisplay';
 import { isSshLinkUrl, tryHandleSshLinkClick } from '../utils/sshLink';
 import { isVncLinkUrl, tryHandleVncLinkClick } from '../utils/vncLink';
 import { openLinkUrl, normalizeLinkOpenTarget, prepareSeparateWindowIfNeeded, assignUrlToWindow } from '../utils/openLinkUrl';
+import { openLinkInDeviceEmulation } from '../utils/deviceEmulationWindow';
 import { getTileAnimationClass, getTileDecorationClass, type TileAnimation, type TileDecoration } from './TileAnimationSelector';
 import { useAccessRestrictionGate } from '../contexts/AccessRestrictionContext';
 import { isLinkInMaintenance } from '../utils/linkMaintenance';
@@ -249,6 +250,14 @@ const SortableFavoriteLinkCard: React.FC<{
       e.preventDefault();
       e.stopPropagation();
       onOpenLinkInfo();
+      return;
+    }
+
+    if (link.openInEmulation === true) {
+      closePending();
+      e.preventDefault();
+      e.stopPropagation();
+      openLinkInDeviceEmulation(link.url);
       return;
     }
 

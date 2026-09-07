@@ -5,6 +5,7 @@ import { getDisplayUrl } from '../utils/urlDisplay';
 import { tryHandleSshLinkClick } from '../utils/sshLink';
 import { tryHandleVncLinkClick } from '../utils/vncLink';
 import { openLinkUrl, normalizeLinkOpenTarget, prepareSeparateWindowIfNeeded, assignUrlToWindow } from '../utils/openLinkUrl';
+import { openLinkInDeviceEmulation } from '../utils/deviceEmulationWindow';
 import { linkifyHtml } from '../utils/richTextDisplay';
 import { useAccessRestrictionGate } from '../contexts/AccessRestrictionContext';
 import { toSpeakableText, useReadAloud } from '../hooks/useReadAloud';
@@ -24,6 +25,7 @@ interface LinkInfoDialogProps {
   showOpenLink?: boolean;
   browser?: string;
   openTarget?: string;
+  openInEmulation?: boolean;
 }
 
 const SECTION_EMOJIS: Array<{ match: RegExp; emoji: string }> = [
@@ -97,6 +99,7 @@ export const LinkInfoDialog: React.FC<LinkInfoDialogProps> = ({
   showOpenLink = true,
   browser,
   openTarget,
+  openInEmulation = false,
 }) => {
   const { settings } = useSettings();
   const { assertCanOpen } = useAccessRestrictionGate();
@@ -401,6 +404,11 @@ export const LinkInfoDialog: React.FC<LinkInfoDialogProps> = ({
                         try { pendingWindow?.close(); } catch { /* ignore */ }
                         return;
                       }
+                    }
+                    if (openInEmulation) {
+                      try { pendingWindow?.close(); } catch { /* ignore */ }
+                      openLinkInDeviceEmulation(linkUrl);
+                      return;
                     }
                     if (settings.browser_specific_links_enabled === '1' && browser && browser !== 'default') {
                       try { pendingWindow?.close(); } catch { /* ignore */ }

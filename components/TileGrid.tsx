@@ -62,6 +62,7 @@ import { useEscapeToClose } from '../hooks/useEscapeToClose';
 import { viewerLinkDisplay, viewerLinkUrl } from '../utils/urlDisplay';
 import { tryHandleSshLinkClick, isSshLinkUrl } from '../utils/sshLink';
 import { openLinkUrl, normalizeLinkOpenTarget, prepareSeparateWindowIfNeeded, assignUrlToWindow } from '../utils/openLinkUrl';
+import { openLinkInDeviceEmulation } from '../utils/deviceEmulationWindow';
 import { tryHandleVncLinkClick, isVncLinkUrl } from '../utils/vncLink';
 import { isUrlExcludedFromLinkCheck, parseExceptionsSetting } from '../services/linkCheckExceptionsService';
 import { diagnoseLinkUrl, hasBlockingUrlIssues } from '../utils/urlDiagnostics';
@@ -10125,6 +10126,14 @@ You may also wrap the array in an object: { "messages": [ ... ] }.
                           return;
                         }
 
+                        if ((link as Link).openInEmulation === true) {
+                          closePending();
+                          e.preventDefault();
+                          e.stopPropagation();
+                          openLinkInDeviceEmulation(link.url);
+                          return;
+                        }
+
                         if (settings.browser_specific_links_enabled === '1' && browserToUse) {
                           closePending();
                           e.preventDefault();
@@ -14684,6 +14693,7 @@ You may also wrap the array in an object: { "messages": [ ... ] }.
             showOpenLink={linkInfoDialog.link.infoShowOpenLink !== false}
             browser={linkInfoDialog.link.browser}
             openTarget={linkInfoDialog.link.openTarget}
+            openInEmulation={linkInfoDialog.link.openInEmulation === true}
           />
         </Suspense>
       )}

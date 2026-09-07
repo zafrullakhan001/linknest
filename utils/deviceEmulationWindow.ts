@@ -81,3 +81,13 @@ export function openDeviceEmulationWindow(
   }
   return win;
 }
+
+/** Open Device emulation; alerts if the popup was blocked. Returns true if a window opened. */
+export function openLinkInDeviceEmulation(url: string): boolean {
+  const win = openDeviceEmulationWindow(url);
+  if (!win) {
+    alert('Pop-up was blocked. Allow pop-ups for this site, then try again.');
+    return false;
+  }
+  return true;
+}

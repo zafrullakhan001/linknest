@@ -237,6 +237,11 @@ export interface Link {
    * directly (skipping the in-app Device Preview dialog).
    */
   mobilePreviewEmulation?: boolean;
+  /**
+   * When true, clicking the link opens a Device emulation popup instead of
+   * the normal tab/browser target (Notes / Info / Maintenance still take priority).
+   */
+  openInEmulation?: boolean;
 }
 
 export interface RichTextContent {

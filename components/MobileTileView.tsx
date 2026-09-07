@@ -20,6 +20,7 @@ import { getFavoriteLinks, resolveFavoriteLinks, FavoriteLink } from '../service
 import { getDisplayUrl, viewerLinkDisplay, viewerLinkUrl } from '../utils/urlDisplay';
 import { tryHandleSshLinkClick } from '../utils/sshLink';
 import { openLinkUrl } from '../utils/openLinkUrl';
+import { openLinkInDeviceEmulation } from '../utils/deviceEmulationWindow';
 import { tryHandleVncLinkClick } from '../utils/vncLink';
 import { isLinkInMaintenance } from '../utils/linkMaintenance';
 import { LinkMaintenanceBadge } from './LinkMaintenanceBadge';
@@ -1186,6 +1187,10 @@ export const MobileTileView: React.FC<MobileTileViewProps> = ({
                           });
                           return;
                         }
+                        if (link.openInEmulation === true) {
+                          openLinkInDeviceEmulation(link.url);
+                          return;
+                        }
                         openLinkUrl(link.url, link.openTarget, {
                           browserId: link.browser && link.browser !== 'default' ? link.browser : null,
                         });
@@ -1258,6 +1263,10 @@ export const MobileTileView: React.FC<MobileTileViewProps> = ({
                           maintenanceMessage: link.maintenanceMessage,
                           maintenanceVideoUrl: link.maintenanceVideoUrl,
                         });
+                        return;
+                      }
+                      if (link.openInEmulation === true) {
+                        openLinkInDeviceEmulation(link.url);
                         return;
                       }
                       openLinkUrl(link.url, link.openTarget, {

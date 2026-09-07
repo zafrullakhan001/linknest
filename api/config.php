@@ -1068,6 +1068,62 @@ function persistLinkMobilePreviewEmulation(PDO $db, string $linkId, $source): vo
     }
 }
 
+/** Per-link: clicking the link opens Device emulation instead of normal Open Target. */
+function ensureLinkOpenInEmulationColumn(PDO $db): void {
+    static $ensured = false;
+    if ($ensured) {
+        return;
+    }
+    try {
+        $exists = $db->query("SELECT name FROM sqlite_master WHERE type='table' AND name='links'")->fetchColumn();
+        if (!$exists) {
+            return;
+        }
+        $columns = $db->query('PRAGMA table_info(links)')->fetchAll(PDO::FETCH_ASSOC);
+        $names = array_column($columns, 'name');
+        if (!in_array('open_in_emulation', $names, true)) {
+            $db->exec('ALTER TABLE links ADD COLUMN open_in_emulation INTEGER DEFAULT 0');
+        }
+        $ensured = true;
+    } catch (PDOException $e) {
+        error_log('ensureLinkOpenInEmulationColumn warning: ' . $e->getMessage());
+    }
+}
+
+function mapOpenInEmulationFromRow(array $row): bool {
+    return !empty($row['open_in_emulation']);
+}
+
+function applyLinkOpenInEmulationToApi(array &$link, array $row): void {
+    $link['openInEmulation'] = mapOpenInEmulationFromRow($row);
+}
+
+function openInEmulationDbValue($source): int {
+    if (!is_array($source)) {
+        return 0;
+    }
+    if (array_key_exists('openInEmulation', $source)) {
+        return !empty($source['openInEmulation']) ? 1 : 0;
+    }
+    if (array_key_exists('open_in_emulation', $source)) {
+        return ((int)$source['open_in_emulation'] === 1) ? 1 : 0;
+    }
+    return 0;
+}
+
+function persistLinkOpenInEmulation(PDO $db, string $linkId, $source): void {
+    if ($linkId === '') {
+        return;
+    }
+    ensureLinkOpenInEmulationColumn($db);
+    try {
+        $stmt = $db->prepare('UPDATE links SET open_in_emulation = ? WHERE id = ?');
+        $stmt->execute([openInEmulationDbValue($source), $linkId]);
+    } catch (PDOException $e) {
+        error_log('persistLinkOpenInEmulation: ' . $e->getMessage());
+    }
+}
+
 /** Per-link: always show/open the short URL even if the space uses original URLs. */
 function ensureLinkForceShortUrlColumn(PDO $db): void {
     static $ensured = false;
@@ -2011,6 +2067,7 @@ function initDatabase() {
             ensureLinkFeatureToggleColumns($db);
             ensureLinkOpenTargetColumn($db);
             ensureLinkMobilePreviewEmulationColumn($db);
+            ensureLinkOpenInEmulationColumn($db);
             ensureLinkForceShortUrlColumn($db);
             ensureMcpTokensTable($db);
             ensureCategoryVisibilityPresetsTable($db);
@@ -2063,6 +2120,7 @@ function initDatabase() {
             ensureLinkFeatureToggleColumns($db);
             ensureLinkOpenTargetColumn($db);
             ensureLinkMobilePreviewEmulationColumn($db);
+            ensureLinkOpenInEmulationColumn($db);
             ensureLinkForceShortUrlColumn($db);
             ensureMcpTokensTable($db);
             ensureCategoryVisibilityPresetsTable($db);
@@ -3075,6 +3133,7 @@ function initDatabase() {
         ensureLinkFeatureToggleColumns($db);
         ensureLinkOpenTargetColumn($db);
         ensureLinkMobilePreviewEmulationColumn($db);
+        ensureLinkOpenInEmulationColumn($db);
         ensureLinkForceShortUrlColumn($db);
         
         // Create rich_text_content table

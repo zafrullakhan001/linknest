@@ -79,7 +79,7 @@ import { HoverTooltipEditor } from './HoverTooltipEditor';
 import { normalizeLinkTooltipStyle, type LinkTooltipStyle } from '../utils/linkTooltipPreference';
 import { QRCodeDialog } from './QRCodeDialog';
 import { MobilePreviewDialog } from './MobilePreviewDialog';
-import { openDeviceEmulationWindow } from '../utils/deviceEmulationWindow';
+import { openLinkInDeviceEmulation } from '../utils/deviceEmulationWindow';
 import { BrandedQRCode } from './BrandedQRCode';
 import { TitleEmojiPicker } from './TitleEmojiPicker';
 import { EmojiPickerPanel } from './EmojiPickerPanel';
@@ -654,6 +654,7 @@ const cloneLinkItem = (link: Link, opts?: { appendCopyLabel?: boolean }): Link =
     maintenanceMessage: link.maintenanceMessage,
     maintenanceVideoUrl: link.maintenanceVideoUrl,
     mobilePreviewEmulation: link.mobilePreviewEmulation,
+    openInEmulation: link.openInEmulation,
     visibleFrom: link.visibleFrom,
     expiresAt: link.expiresAt,
     accessRestrictions: link.accessRestrictions
@@ -1022,7 +1023,7 @@ export const TileDetail: React.FC<TileDetailProps> = ({
     const [editSections, setEditSections] = useState<LinkSection[]>(tile.sections || []);
 
     // Temporary State for Adding Links (keyed by section ID)
-    const [newLinkState, setNewLinkState] = useState<Record<string, { label: string, url: string, icon: string, textColor: string, visibility: LinkVisibility, published: boolean, inheritShortUrls: boolean, forceShortUrl: boolean, brokenStatusLabel: string, brokenStatusNote: string, brokenStatusTone: '' | 'red' | 'amber' | 'slate', brokenStatusExpected: boolean, brokenStatusManual: boolean, brokenStatusFontColor: string, brokenStatusFontWeight: '' | 'normal' | 'bold', brokenStatusFontStyle: '' | 'normal' | 'italic', brokenStatusFontFamily: string, allowedUsers: number[], allowedGroups: number[], notes: string, tooltip: string, tooltipStyle: LinkTooltipStyle, notesEnabled: boolean, notesVideoUrl: string, browser: string, openTarget: LinkOpenTarget, richTextContent: string, richTextEnabled: boolean, infoVideoUrl: string, infoShowOpenLink: boolean, animation: string, accessRestrictions?: AccessRestrictions, maintenanceEnabled: boolean, maintenanceMessage: string, maintenanceVideoUrl: string, mobilePreviewEmulation: boolean }>>({});
+    const [newLinkState, setNewLinkState] = useState<Record<string, { label: string, url: string, icon: string, textColor: string, visibility: LinkVisibility, published: boolean, inheritShortUrls: boolean, forceShortUrl: boolean, brokenStatusLabel: string, brokenStatusNote: string, brokenStatusTone: '' | 'red' | 'amber' | 'slate', brokenStatusExpected: boolean, brokenStatusManual: boolean, brokenStatusFontColor: string, brokenStatusFontWeight: '' | 'normal' | 'bold', brokenStatusFontStyle: '' | 'normal' | 'italic', brokenStatusFontFamily: string, allowedUsers: number[], allowedGroups: number[], notes: string, tooltip: string, tooltipStyle: LinkTooltipStyle, notesEnabled: boolean, notesVideoUrl: string, browser: string, openTarget: LinkOpenTarget, richTextContent: string, richTextEnabled: boolean, infoVideoUrl: string, infoShowOpenLink: boolean, animation: string, accessRestrictions?: AccessRestrictions, maintenanceEnabled: boolean, maintenanceMessage: string, maintenanceVideoUrl: string, mobilePreviewEmulation: boolean, openInEmulation: boolean }>>({});
 
     // Selection State for Bulk Actions
     const [selectedLinkIds, setSelectedLinkIds] = useState<string[]>([]);
@@ -1067,7 +1068,7 @@ export const TileDetail: React.FC<TileDetailProps> = ({
         | null
     >(null);
     const [convertingTabSectionToSpace, setConvertingTabSectionToSpace] = useState(false);
-    const [editLinkState, setEditLinkState] = useState<Record<string, { label: string, url: string, icon: string, textColor: string, visibility: LinkVisibility, published: boolean, inheritShortUrls: boolean, forceShortUrl: boolean, brokenStatusLabel: string, brokenStatusNote: string, brokenStatusTone: '' | 'red' | 'amber' | 'slate', brokenStatusExpected: boolean, brokenStatusManual: boolean, brokenStatusFontColor: string, brokenStatusFontWeight: '' | 'normal' | 'bold', brokenStatusFontStyle: '' | 'normal' | 'italic', brokenStatusFontFamily: string, allowedUsers: number[], allowedGroups: number[], notes: string, tooltip: string, tooltipStyle: LinkTooltipStyle, notesEnabled: boolean, notesVideoUrl: string, browser: string, openTarget: LinkOpenTarget, richTextContent: string, richTextEnabled: boolean, infoVideoUrl: string, infoShowOpenLink: boolean, animation: string, accessRestrictions?: AccessRestrictions, maintenanceEnabled: boolean, maintenanceMessage: string, maintenanceVideoUrl: string, mobilePreviewEmulation: boolean }>>({});
+    const [editLinkState, setEditLinkState] = useState<Record<string, { label: string, url: string, icon: string, textColor: string, visibility: LinkVisibility, published: boolean, inheritShortUrls: boolean, forceShortUrl: boolean, brokenStatusLabel: string, brokenStatusNote: string, brokenStatusTone: '' | 'red' | 'amber' | 'slate', brokenStatusExpected: boolean, brokenStatusManual: boolean, brokenStatusFontColor: string, brokenStatusFontWeight: '' | 'normal' | 'bold', brokenStatusFontStyle: '' | 'normal' | 'italic', brokenStatusFontFamily: string, allowedUsers: number[], allowedGroups: number[], notes: string, tooltip: string, tooltipStyle: LinkTooltipStyle, notesEnabled: boolean, notesVideoUrl: string, browser: string, openTarget: LinkOpenTarget, richTextContent: string, richTextEnabled: boolean, infoVideoUrl: string, infoShowOpenLink: boolean, animation: string, accessRestrictions?: AccessRestrictions, maintenanceEnabled: boolean, maintenanceMessage: string, maintenanceVideoUrl: string, mobilePreviewEmulation: boolean, openInEmulation: boolean }>>({});
     /** Live URL Safety results keyed by link id (for confirm-on-save). */
     const urlSafetyByLinkRef = useRef<Record<string, UrlSafetyResult | null>>({});
 
@@ -2828,6 +2829,7 @@ export const TileDetail: React.FC<TileDetailProps> = ({
         maintenanceMessage: state.maintenanceMessage?.trim() || undefined,
         maintenanceVideoUrl: state.maintenanceVideoUrl?.trim() || undefined,
         mobilePreviewEmulation: state.mobilePreviewEmulation === true || undefined,
+        openInEmulation: state.openInEmulation === true || undefined,
         animation: linkAnimationForSave(state.animation),
         accessRestrictions: state.accessRestrictions,
         inheritShortUrls: state.inheritShortUrls !== false,
@@ -2868,6 +2870,7 @@ export const TileDetail: React.FC<TileDetailProps> = ({
         maintenanceMessage: state.maintenanceMessage?.trim() || undefined,
         maintenanceVideoUrl: state.maintenanceVideoUrl?.trim() || undefined,
         mobilePreviewEmulation: state.mobilePreviewEmulation === true || undefined,
+        openInEmulation: state.openInEmulation === true || undefined,
         animation: linkAnimationForSave(state.animation),
         hasRoleAccess: tile.hasRoleAccess === true || undefined,
         accessRestrictions: state.accessRestrictions,
@@ -2920,7 +2923,8 @@ export const TileDetail: React.FC<TileDetailProps> = ({
         maintenanceEnabled: false,
         maintenanceMessage: '',
         maintenanceVideoUrl: '',
-        mobilePreviewEmulation: false
+        mobilePreviewEmulation: false,
+        openInEmulation: false
     });
 
     const applyRichTextDraftToItem = (rt: RichTextContent, content: string, meta?: RichTextBoxMeta): RichTextContent => {
@@ -4030,7 +4034,7 @@ export const TileDetail: React.FC<TileDetailProps> = ({
         setNewLinkState(prev => ({
             ...prev,
             [sectionId]: {
-                ...(prev[sectionId] || { label: '', url: '', icon: '', textColor: '', visibility: 'public' as LinkVisibility, published: true, inheritShortUrls: true, forceShortUrl: false, brokenStatusLabel: '', brokenStatusNote: '', brokenStatusTone: '' as const, brokenStatusExpected: false, brokenStatusManual: false, brokenStatusFontColor: '', brokenStatusFontWeight: '' as const, brokenStatusFontStyle: '' as const, brokenStatusFontFamily: '', allowedUsers: [], allowedGroups: [], notes: '', tooltip: '', tooltipStyle: 'classic' as LinkTooltipStyle, notesEnabled: false, notesVideoUrl: '', browser: 'default', openTarget: 'tab' as LinkOpenTarget, richTextContent: '', richTextEnabled: false, infoVideoUrl: '', infoShowOpenLink: true, animation: 'inherit', maintenanceEnabled: false, maintenanceMessage: '', maintenanceVideoUrl: '', mobilePreviewEmulation: false }),
+                ...(prev[sectionId] || { label: '', url: '', icon: '', textColor: '', visibility: 'public' as LinkVisibility, published: true, inheritShortUrls: true, forceShortUrl: false, brokenStatusLabel: '', brokenStatusNote: '', brokenStatusTone: '' as const, brokenStatusExpected: false, brokenStatusManual: false, brokenStatusFontColor: '', brokenStatusFontWeight: '' as const, brokenStatusFontStyle: '' as const, brokenStatusFontFamily: '', allowedUsers: [], allowedGroups: [], notes: '', tooltip: '', tooltipStyle: 'classic' as LinkTooltipStyle, notesEnabled: false, notesVideoUrl: '', browser: 'default', openTarget: 'tab' as LinkOpenTarget, richTextContent: '', richTextEnabled: false, infoVideoUrl: '', infoShowOpenLink: true, animation: 'inherit', maintenanceEnabled: false, maintenanceMessage: '', maintenanceVideoUrl: '', mobilePreviewEmulation: false, openInEmulation: false }),
                 [field]: value
             }
         }));
@@ -4085,6 +4089,7 @@ export const TileDetail: React.FC<TileDetailProps> = ({
             maintenanceMessage: state.maintenanceMessage?.trim() || undefined,
             maintenanceVideoUrl: state.maintenanceVideoUrl?.trim() || undefined,
             mobilePreviewEmulation: state.mobilePreviewEmulation === true || undefined,
+            openInEmulation: state.openInEmulation === true || undefined,
             animation: linkAnimationForSave(state.animation),
             // Role-assigned spaces: mark new links as role-visible so Your Apps keeps them after save
             hasRoleAccess: tile.hasRoleAccess === true || undefined,
@@ -4403,7 +4408,8 @@ export const TileDetail: React.FC<TileDetailProps> = ({
                 maintenanceEnabled: link.maintenanceEnabled === true,
                 maintenanceMessage: link.maintenanceMessage || '',
                 maintenanceVideoUrl: link.maintenanceVideoUrl || '',
-                mobilePreviewEmulation: link.mobilePreviewEmulation === true
+                mobilePreviewEmulation: link.mobilePreviewEmulation === true,
+                openInEmulation: link.openInEmulation === true
             }
         });
         setShowUserPicker(prev => ({ ...prev, [link.id]: false }));
@@ -4645,6 +4651,7 @@ export const TileDetail: React.FC<TileDetailProps> = ({
             maintenanceMessage: linkToClone.maintenanceMessage,
             maintenanceVideoUrl: linkToClone.maintenanceVideoUrl,
             mobilePreviewEmulation: linkToClone.mobilePreviewEmulation,
+            openInEmulation: linkToClone.openInEmulation,
             accessRestrictions: linkToClone.accessRestrictions,
             inheritShortUrls: linkToClone.inheritShortUrls,
             forceShortUrl: linkToClone.forceShortUrl,
@@ -5539,6 +5546,7 @@ export const TileDetail: React.FC<TileDetailProps> = ({
                         maintenanceMessage: linkToClone.maintenanceMessage,
                         maintenanceVideoUrl: linkToClone.maintenanceVideoUrl,
                         mobilePreviewEmulation: linkToClone.mobilePreviewEmulation,
+                        openInEmulation: linkToClone.openInEmulation,
                         inheritShortUrls: linkToClone.inheritShortUrls,
                         forceShortUrl: linkToClone.forceShortUrl,
                         brokenStatusLabel: linkToClone.brokenStatusLabel,
@@ -9214,6 +9222,12 @@ export const TileDetail: React.FC<TileDetailProps> = ({
                                                                 return;
                                                             }
 
+                                                            if (link.openInEmulation === true) {
+                                                                closePending();
+                                                                openLinkInDeviceEmulation(link.url);
+                                                                return;
+                                                            }
+
                                                             // If browser extension is enabled, check for browser configuration
                                                             if (settings.browser_specific_links_enabled === '1') {
                                                                 // Priority: link-specific browser > tile default browser > default browser
@@ -9322,6 +9336,11 @@ export const TileDetail: React.FC<TileDetailProps> = ({
                                                                                     if (isLinkInMaintenance(link)) {
                                                                                         try { pendingWindow?.close(); } catch { /* ignore */ }
                                                                                         setLinkMaintenanceDialog({ link });
+                                                                                        return;
+                                                                                    }
+                                                                                    if (link.openInEmulation === true) {
+                                                                                        try { pendingWindow?.close(); } catch { /* ignore */ }
+                                                                                        openLinkInDeviceEmulation(link.url);
                                                                                         return;
                                                                                     }
                                                                                     if (pendingWindow) {
@@ -9976,10 +9995,7 @@ export const TileDetail: React.FC<TileDetailProps> = ({
                                                                                 e.preventDefault();
                                                                                 e.stopPropagation();
                                                                                 if (link.mobilePreviewEmulation === true) {
-                                                                                    const win = openDeviceEmulationWindow(link.url);
-                                                                                    if (!win) {
-                                                                                        alert('Pop-up was blocked. Allow pop-ups for this site, then try again.');
-                                                                                    }
+                                                                                    openLinkInDeviceEmulation(link.url);
                                                                                     return;
                                                                                 }
                                                                                 const tempDiv = document.createElement('div');
@@ -10243,6 +10259,7 @@ export const TileDetail: React.FC<TileDetailProps> = ({
                         showOpenLink={isInfoOpenLinkShown(linkInfoDialog.link)}
                         browser={linkInfoDialog.link.browser}
                         openTarget={linkInfoDialog.link.openTarget}
+                        openInEmulation={linkInfoDialog.link.openInEmulation === true}
                     />
                 )}
 
