@@ -72,6 +72,7 @@ import { LinkMaintenanceBadge } from './LinkMaintenanceBadge';
 import { isLinkInMaintenance } from '../utils/linkMaintenance';
 import { hasVisibleRichText, prepareViewerHtml } from '../utils/richTextDisplay';
 import { isInfoContentEnabled, isInfoOpenLinkShown, isNotesTooltipEnabled, shouldOpenInfoDialog, shouldShowLinkNotes } from '../utils/linkFeatureToggles';
+import { shouldPromptInfoDialog } from '../utils/linkInfoDismiss';
 import { LinkNotesDialog } from './LinkNotesDialog';
 import { LinkHoverTooltip } from './LinkHoverTooltip';
 import { LinkTooltipStyleToggle } from './LinkTooltipStyleToggle';
@@ -9139,6 +9140,7 @@ export const TileDetail: React.FC<TileDetailProps> = ({
                                                         const isCompact = sectionLinkLayout === 'compact';
                                                         const isQrView = sectionLinkLayout === 'qr';
                                                         const showNotesAction = isLinkActionAllowed('notes') && shouldShowLinkNotes(link);
+                                                        const showInfoAction = shouldOpenInfoDialog(link);
                                                         const showFavoriteAction = isLinkActionAllowed('favorite');
                                                         const showHealthAction = isLinkActionAllowed('health') && !skipHealth;
                                                         const showCopyAction = isLinkActionAllowed('copy');
@@ -9203,8 +9205,8 @@ export const TileDetail: React.FC<TileDetailProps> = ({
                                                             // If Ctrl/Cmd key is held, always open in default browser (override configured browser)
                                                             if (e.ctrlKey || e.metaKey) {
                                                                 closePending();
-                                                                // If rich text content exists, still show dialog on Ctrl/Cmd
-                                                                if (shouldOpenInfoDialog(link)) {
+                                                                // If rich text content exists and is not dismissed, still show dialog on Ctrl/Cmd
+                                                                if (shouldPromptInfoDialog(link)) {
                                                                     setLinkInfoDialog({ link });
                                                                     return;
                                                                 }
@@ -9216,7 +9218,7 @@ export const TileDetail: React.FC<TileDetailProps> = ({
                                                             }
 
                                                             // If link has rich text content, show dialog instead of opening URL
-                                                            if (shouldOpenInfoDialog(link)) {
+                                                            if (shouldPromptInfoDialog(link)) {
                                                                 closePending();
                                                                 setLinkInfoDialog({ link });
                                                                 return;
@@ -9812,6 +9814,23 @@ export const TileDetail: React.FC<TileDetailProps> = ({
                                                                         >
                                                                             <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" strokeWidth={2} stroke="currentColor" className="w-4 h-4">
                                                                                 <path strokeLinecap="round" strokeLinejoin="round" d="m11.25 11.25.041-.02a.75.75 0 0 1 1.063.852l-.708 2.836a.75.75 0 0 0 1.063.853l.041-.021M21 12a9 9 0 1 1-18 0 9 9 0 0 1 18 0Zm-9-3.75h.008v.008H12V8.25Z" />
+                                                                            </svg>
+                                                                        </button>
+                                                                    )}
+                                                                    {/* View info — reopen information dialog even after skip */}
+                                                                    {showInfoAction && (
+                                                                        <button
+                                                                            onClick={(e) => {
+                                                                                e.preventDefault();
+                                                                                e.stopPropagation();
+                                                                                setLinkInfoDialog({ link });
+                                                                            }}
+                                                                            className="p-1 rounded-md hover:bg-slate-100 dark:hover:bg-slate-700 text-slate-400 hover:text-violet-600 dark:hover:text-violet-400 transition-all"
+                                                                            title="View info"
+                                                                            aria-label="View info"
+                                                                        >
+                                                                            <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" strokeWidth={2} stroke="currentColor" className="w-4 h-4" aria-hidden>
+                                                                                <path strokeLinecap="round" strokeLinejoin="round" d="M19.5 14.25v-2.625a3.375 3.375 0 0 0-3.375-3.375h-1.5A1.125 1.125 0 0 1 13.5 7.125v-1.5a3.375 3.375 0 0 0-3.375-3.375H8.25m0 12.75h7.5m-7.5 3H12M10.5 2.25H5.625c-.621 0-1.125.504-1.125 1.125v17.25c0 .621.504 1.125 1.125 1.125h12.75c.621 0 1.125-.504 1.125-1.125V11.25a9 9 0 0 0-9-9Z" />
                                                                             </svg>
                                                                         </button>
                                                                     )}
@@ -13003,7 +13022,7 @@ export const TileDetail: React.FC<TileDetailProps> = ({
                                                                                     </div>
                                                                                 </div>
                                                                                 <p className="text-xs text-slate-500 dark:text-slate-400 mb-2">
-                                                                                    If provided, clicking this link will open a rich text dialog instead of navigating to the URL. Leave empty to open the URL normally.
+                                                                                    If provided, clicking this link will open a rich text dialog instead of navigating to the URL. Viewers can skip the dialog until the information is updated, and reopen it anytime with the View info icon. Leave empty to open the URL normally.
                                                                                 </p>
                                                                                 <SelectableRichTextEditor
                                                                                     value={newLinkState[section.id]?.richTextContent || ''}

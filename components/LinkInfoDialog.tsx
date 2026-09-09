@@ -12,6 +12,7 @@ import { toSpeakableText, useReadAloud } from '../hooks/useReadAloud';
 import { useEscapeToClose } from '../hooks/useEscapeToClose';
 import { ReadAloudButtons, ReadAloudSettingsRow } from './ReadAloudControls';
 import { TinyMceRichTextViewer, type TinyMceRichTextViewerHandle } from './TinyMceRichTextViewer';
+import { isLinkInfoDismissed, setLinkInfoDismissed } from '../utils/linkInfoDismiss';
 
 interface LinkInfoDialogProps {
   isOpen: boolean;
@@ -126,8 +127,31 @@ export const LinkInfoDialog: React.FC<LinkInfoDialogProps> = ({
     active: isOpen,
     autoStart: false,
   });
+  const dismissFields = useMemo(
+    () => ({ id: linkId, richTextContent, infoVideoUrl }),
+    [linkId, richTextContent, infoVideoUrl]
+  );
+  const [dontShowNextTime, setDontShowNextTime] = useState(false);
 
-  useEscapeToClose(isOpen, onClose);
+  useEffect(() => {
+    if (!isOpen) return;
+    setDontShowNextTime(isLinkInfoDismissed(dismissFields));
+  }, [isOpen, dismissFields]);
+
+  const persistDismissPreference = useCallback(
+    (dismissed: boolean) => {
+      setDontShowNextTime(dismissed);
+      setLinkInfoDismissed(dismissFields, dismissed);
+    },
+    [dismissFields]
+  );
+
+  const handleClose = useCallback(() => {
+    setLinkInfoDismissed(dismissFields, dontShowNextTime);
+    onClose();
+  }, [dismissFields, dontShowNextTime, onClose]);
+
+  useEscapeToClose(isOpen, handleClose);
 
   useEffect(() => {
     if (!readAloud.isSpeaking) {
@@ -212,7 +236,7 @@ export const LinkInfoDialog: React.FC<LinkInfoDialogProps> = ({
 
   const handleDragStart = (e: React.MouseEvent) => {
     const target = e.target as HTMLElement;
-    if (target.closest('button, a, select, label')) return;
+    if (target.closest('button, a, select, label, input')) return;
     e.preventDefault();
     e.stopPropagation();
     setIsDragging(true);
@@ -294,7 +318,7 @@ export const LinkInfoDialog: React.FC<LinkInfoDialogProps> = ({
 
   return createPortal(
     <div className="fixed inset-0 z-[99999]" role="presentation">
-      <div className="absolute inset-0 bg-black/40" onClick={onClose} aria-hidden />
+      <div className="absolute inset-0 bg-black/40" onClick={handleClose} aria-hidden />
       <div
         ref={dialogRef}
         role="dialog"
@@ -347,7 +371,7 @@ export const LinkInfoDialog: React.FC<LinkInfoDialogProps> = ({
               />
               <button
                 type="button"
-                onClick={onClose}
+                onClick={handleClose}
                 className="p-1.5 rounded-lg hover:bg-slate-100 dark:hover:bg-slate-700 text-slate-400 hover:text-slate-600 dark:hover:text-slate-200 transition-colors"
                 title="Close"
                 aria-label="Close"
@@ -373,7 +397,7 @@ export const LinkInfoDialog: React.FC<LinkInfoDialogProps> = ({
           )}
           {displayHtml ? (
             <div className={hasVideo ? 'min-h-[220px] h-[280px] shrink-0 mt-3' : 'h-full'}>
-              <TinyMceRichTextViewer ref={viewerRef} html={displayHtml} onEscape={onClose} />
+              <TinyMceRichTextViewer ref={viewerRef} html={displayHtml} onEscape={handleClose} />
             </div>
           ) : hasVideo ? null : (
             <div className="h-full min-h-[120px] flex items-center justify-center text-sm text-slate-400">
@@ -395,6 +419,7 @@ export const LinkInfoDialog: React.FC<LinkInfoDialogProps> = ({
                   onClick={async (e) => {
                     e.preventDefault();
                     e.stopPropagation();
+                    setLinkInfoDismissed(dismissFields, dontShowNextTime);
                     if (tryHandleSshLinkClick(linkUrl, e)) return;
                     if (tryHandleVncLinkClick(linkUrl, e)) return;
                     const pendingWindow = prepareSeparateWindowIfNeeded(openTarget);
@@ -440,9 +465,32 @@ export const LinkInfoDialog: React.FC<LinkInfoDialogProps> = ({
               </>
             )}
           </div>
+          {linkId ? (
+            <label
+              className="flex items-start gap-2 min-w-0 max-w-[42%] cursor-pointer select-none"
+              onMouseDown={(e) => e.stopPropagation()}
+            >
+              <input
+                type="checkbox"
+                className="mt-0.5 rounded border-slate-300 dark:border-slate-600 text-brand-600 focus:ring-brand-500"
+                checked={dontShowNextTime}
+                onChange={(e) => persistDismissPreference(e.target.checked)}
+              />
+              <span className="min-w-0">
+                <span className="block text-sm text-slate-700 dark:text-slate-200 leading-snug">
+                  Don&apos;t show this next time
+                </span>
+                <span className="block text-[11px] text-slate-500 dark:text-slate-400 leading-snug">
+                  Until this information is updated
+                </span>
+              </span>
+            </label>
+          ) : (
+            <span className="flex-1" aria-hidden />
+          )}
           <button
             type="button"
-            onClick={onClose}
+            onClick={handleClose}
             className="px-4 py-2 bg-brand-600 hover:bg-brand-500 text-white rounded-lg text-sm font-medium transition-colors"
           >
             Close

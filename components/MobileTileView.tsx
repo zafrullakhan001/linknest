@@ -1,5 +1,5 @@
 import React, { useState, useMemo, useEffect, useCallback } from 'react';
-import { Tile } from '../types';
+import { Tile, Link } from '../types';
 import { useSettings } from '../contexts/SettingsContext';
 import { useAuth } from '../contexts/AuthContext';
 import { useAccessRestrictionGate } from '../contexts/AccessRestrictionContext';
@@ -23,9 +23,12 @@ import { openLinkUrl } from '../utils/openLinkUrl';
 import { openLinkInDeviceEmulation } from '../utils/deviceEmulationWindow';
 import { tryHandleVncLinkClick } from '../utils/vncLink';
 import { isLinkInMaintenance } from '../utils/linkMaintenance';
+import { shouldOpenInfoDialog } from '../utils/linkFeatureToggles';
+import { shouldPromptInfoDialog } from '../utils/linkInfoDismiss';
 import { LinkMaintenanceBadge } from './LinkMaintenanceBadge';
 import { LinkHoverTooltip } from './LinkHoverTooltip';
 import { LinkMaintenanceDialog } from './LinkMaintenanceDialog';
+import { LinkInfoDialog } from './LinkInfoDialog';
 import { QRCodeDialog } from './QRCodeDialog';
 import { UpdatesDialog } from './UpdatesDialog';
 import { ThemeModeMenu } from './ThemeModeMenu';
@@ -196,6 +199,7 @@ export const MobileTileView: React.FC<MobileTileViewProps> = ({
     maintenanceMessage?: string;
     maintenanceVideoUrl?: string;
   } | null>(null);
+  const [linkInfoDialog, setLinkInfoDialog] = useState<{ link: Link } | null>(null);
   const isFavoritesTab = activeTab === 'favorites' || activeTab === 'public-favorites';
   const [publicFavoritesSubTab, setPublicFavoritesSubTabState] = useState<PublicFavoritesSubTab>(() =>
     typeof window !== 'undefined' ? getPublicFavoritesSubTab() : 'favorites'
@@ -1171,8 +1175,15 @@ export const MobileTileView: React.FC<MobileTileViewProps> = ({
                   const host = viewerLinkDisplay(link, link.tile?.showShortUrls);
                   return (
                     <LinkHoverTooltip key={link.id} link={link} fallbackTitle={host}>
-                    <button
-                      type="button"
+                    <div
+                      role="button"
+                      tabIndex={0}
+                      onKeyDown={(e) => {
+                        if (e.key === 'Enter' || e.key === ' ') {
+                          e.preventDefault();
+                          (e.currentTarget as HTMLDivElement).click();
+                        }
+                      }}
                       onClick={async () => {
                         if (tryHandleSshLinkClick(link.url || '')) return;
                         if (tryHandleVncLinkClick(link.url || '')) return;
@@ -1187,6 +1198,10 @@ export const MobileTileView: React.FC<MobileTileViewProps> = ({
                           });
                           return;
                         }
+                        if (shouldPromptInfoDialog(link)) {
+                          setLinkInfoDialog({ link: link as unknown as Link });
+                          return;
+                        }
                         if (link.openInEmulation === true) {
                           openLinkInDeviceEmulation(link.url);
                           return;
@@ -1195,7 +1210,7 @@ export const MobileTileView: React.FC<MobileTileViewProps> = ({
                           browserId: link.browser && link.browser !== 'default' ? link.browser : null,
                         });
                       }}
-                      className="group relative flex items-center gap-3 p-3.5 w-full text-left bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-xl active:scale-[0.99] transition-all shadow-sm"
+                      className="group relative flex items-center gap-3 p-3.5 w-full text-left bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-xl active:scale-[0.99] transition-all shadow-sm cursor-pointer"
                     >
                       <div className="w-10 h-10 rounded-lg bg-gradient-to-br from-slate-50 to-slate-100 dark:from-slate-900 dark:to-slate-800 flex items-center justify-center shrink-0 text-lg border border-slate-200 dark:border-slate-700">
                         {link.icon || '🔗'}
@@ -1215,10 +1230,27 @@ export const MobileTileView: React.FC<MobileTileViewProps> = ({
                           </span>
                         </div>
                       </div>
+                      {shouldOpenInfoDialog(link) && (
+                        <button
+                          type="button"
+                          onClick={(e) => {
+                            e.preventDefault();
+                            e.stopPropagation();
+                            setLinkInfoDialog({ link: link as unknown as Link });
+                          }}
+                          className="p-1.5 rounded-md text-slate-400 hover:text-violet-600 dark:hover:text-violet-400 hover:bg-slate-100 dark:hover:bg-slate-700 shrink-0"
+                          title="View info"
+                          aria-label="View info"
+                        >
+                          <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" strokeWidth={2} stroke="currentColor" className="w-4 h-4" aria-hidden>
+                            <path strokeLinecap="round" strokeLinejoin="round" d="M19.5 14.25v-2.625a3.375 3.375 0 0 0-3.375-3.375h-1.5A1.125 1.125 0 0 1 13.5 7.125v-1.5a3.375 3.375 0 0 0-3.375-3.375H8.25m0 12.75h7.5m-7.5 3H12M10.5 2.25H5.625c-.621 0-1.125.504-1.125 1.125v17.25c0 .621.504 1.125 1.125 1.125h12.75c.621 0 1.125-.504 1.125-1.125V11.25a9 9 0 0 0-9-9Z" />
+                          </svg>
+                        </button>
+                      )}
                       <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor" className="w-4 h-4 text-slate-300 dark:text-slate-600 shrink-0">
                         <path fillRule="evenodd" d="M5.22 14.78a.75.75 0 001.06 0l7.22-7.22v5.69a.75.75 0 001.5 0v-7.5a.75.75 0 00-.75-.75h-7.5a.75.75 0 000 1.5h5.69l-7.22 7.22a.75.75 0 000 1.06z" clipRule="evenodd" />
                       </svg>
-                    </button>
+                    </div>
                     </LinkHoverTooltip>
                   );
                 })}
@@ -1249,8 +1281,15 @@ export const MobileTileView: React.FC<MobileTileViewProps> = ({
                 }
                 return (
                   <LinkHoverTooltip key={link.id} link={link} fallbackTitle={stripHtml(link.label)}>
-                  <button
-                    type="button"
+                  <div
+                    role="button"
+                    tabIndex={0}
+                    onKeyDown={(e) => {
+                      if (e.key === 'Enter' || e.key === ' ') {
+                        e.preventDefault();
+                        (e.currentTarget as HTMLDivElement).click();
+                      }
+                    }}
                     onClick={async () => {
                       if (tryHandleSshLinkClick(link.url || '')) return;
                       if (tryHandleVncLinkClick(link.url || '')) return;
@@ -1265,6 +1304,10 @@ export const MobileTileView: React.FC<MobileTileViewProps> = ({
                         });
                         return;
                       }
+                      if (shouldPromptInfoDialog(link)) {
+                        setLinkInfoDialog({ link: link as unknown as Link });
+                        return;
+                      }
                       if (link.openInEmulation === true) {
                         openLinkInDeviceEmulation(link.url);
                         return;
@@ -1273,7 +1316,7 @@ export const MobileTileView: React.FC<MobileTileViewProps> = ({
                         browserId: link.browser && link.browser !== 'default' ? link.browser : null,
                       });
                     }}
-                    className="group relative flex items-center gap-3 p-3.5 w-full text-left bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-xl active:scale-[0.99] transition-all shadow-sm"
+                    className="group relative flex items-center gap-3 p-3.5 w-full text-left bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-xl active:scale-[0.99] transition-all shadow-sm cursor-pointer"
                   >
                     <div className="w-10 h-10 rounded-lg bg-gradient-to-br from-slate-50 to-slate-100 dark:from-slate-900 dark:to-slate-800 flex items-center justify-center shrink-0 text-lg border border-slate-200 dark:border-slate-700">
                       {link.icon || '🔗'}
@@ -1296,7 +1339,24 @@ export const MobileTileView: React.FC<MobileTileViewProps> = ({
                         <MatchScoreBadge match={link.match} />
                       </div>
                     </div>
-                  </button>
+                    {shouldOpenInfoDialog(link) && (
+                      <button
+                        type="button"
+                        onClick={(e) => {
+                          e.preventDefault();
+                          e.stopPropagation();
+                          setLinkInfoDialog({ link: link as unknown as Link });
+                        }}
+                        className="p-1.5 rounded-md text-slate-400 hover:text-violet-600 dark:hover:text-violet-400 hover:bg-slate-100 dark:hover:bg-slate-700 shrink-0"
+                        title="View info"
+                        aria-label="View info"
+                      >
+                        <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" strokeWidth={2} stroke="currentColor" className="w-4 h-4" aria-hidden>
+                          <path strokeLinecap="round" strokeLinejoin="round" d="M19.5 14.25v-2.625a3.375 3.375 0 0 0-3.375-3.375h-1.5A1.125 1.125 0 0 1 13.5 7.125v-1.5a3.375 3.375 0 0 0-3.375-3.375H8.25m0 12.75h7.5m-7.5 3H12M10.5 2.25H5.625c-.621 0-1.125.504-1.125 1.125v17.25c0 .621.504 1.125 1.125 1.125h12.75c.621 0 1.125-.504 1.125-1.125V11.25a9 9 0 0 0-9-9Z" />
+                        </svg>
+                      </button>
+                    )}
+                  </div>
                   </LinkHoverTooltip>
                 );
               })}
@@ -1509,6 +1569,22 @@ export const MobileTileView: React.FC<MobileTileViewProps> = ({
         maintenanceMessage={linkMaintenanceDialog?.maintenanceMessage}
         maintenanceVideoUrl={linkMaintenanceDialog?.maintenanceVideoUrl}
       />
+      {linkInfoDialog && (
+        <LinkInfoDialog
+          isOpen={!!linkInfoDialog}
+          onClose={() => setLinkInfoDialog(null)}
+          linkId={linkInfoDialog.link.id}
+          linkLabel={linkInfoDialog.link.label}
+          linkIcon={linkInfoDialog.link.icon}
+          richTextContent={linkInfoDialog.link.richTextContent || ''}
+          infoVideoUrl={linkInfoDialog.link.infoVideoUrl}
+          linkUrl={linkInfoDialog.link.url}
+          showOpenLink={linkInfoDialog.link.infoShowOpenLink !== false}
+          browser={linkInfoDialog.link.browser}
+          openTarget={linkInfoDialog.link.openTarget}
+          openInEmulation={linkInfoDialog.link.openInEmulation === true}
+        />
+      )}
       <QRCodeDialog
         isOpen={showAppQrDialog}
         onClose={() => setShowAppQrDialog(false)}

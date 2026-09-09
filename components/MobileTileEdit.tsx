@@ -1445,7 +1445,7 @@ export const MobileTileEdit: React.FC<MobileTileEditProps> = ({
                                                                         </button>
                                                                     </div>
                                                                     <p className="text-xs text-slate-500 dark:text-slate-400 mb-2">
-                                                                        If provided, clicking this link will open a rich text dialog instead of navigating to the URL.
+                                                                        If provided, clicking this link will open a rich text dialog instead of navigating to the URL. Viewers can skip the dialog until the information is updated, and reopen it anytime with the View info icon.
                                                                     </p>
                                                                     <MobileRichTextEditor
                                                                         value={newLinkState[section.id]?.richTextContent || ''}
@@ -1777,7 +1777,7 @@ export const MobileTileEdit: React.FC<MobileTileEditProps> = ({
                                                                                             </button>
                                                                                         </div>
                                                                                         <p className="text-xs text-slate-500 dark:text-slate-400 mb-2">
-                                                                                            If provided, clicking this link will open a rich text dialog instead of navigating to the URL.
+                                                                                            If provided, clicking this link will open a rich text dialog instead of navigating to the URL. Viewers can skip the dialog until the information is updated, and reopen it anytime with the View info icon.
                                                                                         </p>
                                                                                         <MobileRichTextEditor
                                                                                             value={editLinkState[link.id]?.richTextContent || ''}

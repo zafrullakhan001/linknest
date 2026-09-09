@@ -1081,7 +1081,7 @@ export const EditLinkForm: React.FC<EditLinkFormProps> = (props) => {
     <div className="space-y-3">
       <div className="flex items-center justify-between gap-2">
         <p className="text-xs text-slate-500 dark:text-slate-400">
-          If provided, clicking this link opens a rich text dialog instead of navigating to the URL.
+          If provided, clicking this link opens a rich text dialog instead of navigating to the URL. Viewers can skip the dialog until the information is updated, and reopen it anytime with the View info icon.
         </p>
         <button
           type="button"
