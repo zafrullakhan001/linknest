@@ -68,6 +68,8 @@ location / {
 - `GET /api/tiles/{id}/presence` - Who is currently viewing or editing this space
 - `POST /api/tiles/{id}/presence` - Heartbeat (`{ mode: "viewing"|"editing" }`) or leave (`{ action: "leave" }`); requires authentication
 - `DELETE /api/tiles/{id}/presence` - Clear your presence on this space (requires authentication)
+- `GET /api/apache-monitor` - Realtime Apache dashboard (admin): `mod_status` workers/uptime, access-log top paths, OPcache, PHP memory, SQLite size, disk. Polled only while the admin dashboard window is open (`?fresh=1` bypasses the short log/disk cache).
+- `POST /api/apache-monitor/purge-logs` - Empty Apache and/or PHP log files in place (admin; `{ target: "apache"|"php"|"all", confirm: true }`)
 
 ### MCP (LLM tools)
 

@@ -136,7 +136,7 @@ RUN set -eux; \
     rm -rf /var/www/html/bin
 
 # Enable Apache modules (including SSL, WebSocket proxy for SSH/VNC gateways)
-RUN a2enmod rewrite headers mime ssl expires deflate cache proxy proxy_http proxy_wstunnel
+RUN a2enmod rewrite headers mime ssl expires deflate cache proxy proxy_http proxy_wstunnel status
 
 # Set working directory
 WORKDIR /var/www/html
@@ -149,6 +149,7 @@ RUN find ./scripts -type d -name '__pycache__' -prune -exec rm -rf {} + 2>/dev/n
 COPY extensions/ ./extensions/
 COPY land/ ./land/
 COPY docs/ ./docs/
+COPY apache/ ./apache/
 COPY config/SamlConfig.php ./config/SamlConfig.php
 COPY composer.json ./composer.json
 COPY vendor/ ./vendor/

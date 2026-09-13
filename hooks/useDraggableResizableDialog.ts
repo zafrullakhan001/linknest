@@ -10,6 +10,8 @@ export interface UseDraggableResizableDialogOptions {
   minWidth?: number;
   minHeight?: number;
   minVisible?: number;
+  /** When set, position and size are restored from and saved to localStorage. */
+  storageKey?: string;
 }
 
 const clampNum = (n: number, min: number, max: number) => Math.max(min, Math.min(max, n));
@@ -66,6 +68,44 @@ function clampDialogSize(size: DialogSize, pos: DialogPoint, minWidth: number, m
   };
 }
 
+function loadStoredDialogGeom(key: string): { pos: DialogPoint; size: DialogSize } | null {
+  try {
+    const raw = localStorage.getItem(key);
+    if (!raw) return null;
+    const parsed = JSON.parse(raw) as { x?: unknown; y?: unknown; width?: unknown; height?: unknown };
+    if (
+      typeof parsed.x !== 'number' ||
+      typeof parsed.y !== 'number' ||
+      typeof parsed.width !== 'number' ||
+      typeof parsed.height !== 'number' ||
+      !Number.isFinite(parsed.x) ||
+      !Number.isFinite(parsed.y) ||
+      !Number.isFinite(parsed.width) ||
+      !Number.isFinite(parsed.height)
+    ) {
+      return null;
+    }
+    return {
+      pos: { x: parsed.x, y: parsed.y },
+      size: { width: parsed.width, height: parsed.height },
+    };
+  } catch {
+    return null;
+  }
+}
+
+function saveStoredDialogGeom(key: string, pos: DialogPoint, size: DialogSize): void {
+  if (size.width <= 0 || size.height <= 0) return;
+  try {
+    localStorage.setItem(
+      key,
+      JSON.stringify({ x: pos.x, y: pos.y, width: size.width, height: size.height })
+    );
+  } catch {
+    /* ignore quota / private mode */
+  }
+}
+
 export function useDraggableResizableDialog({
   open,
   defaultWidth = 768,
@@ -73,6 +113,7 @@ export function useDraggableResizableDialog({
   minWidth = 360,
   minHeight = 320,
   minVisible = 64,
+  storageKey,
 }: UseDraggableResizableDialogOptions) {
   const [modalPosition, setModalPosition] = useState<DialogPoint>({ x: 0, y: 0 });
   const [modalSize, setModalSize] = useState<DialogSize>({ width: 0, height: 0 });
@@ -93,18 +134,28 @@ export function useDraggableResizableDialog({
       return;
     }
 
-    const nextSize = clampDialogSize(
+    let nextSize = clampDialogSize(
       defaultDialogSize(defaultWidth, defaultHeight, minWidth, minHeight),
       { x: 0, y: 0 },
       minWidth,
       minHeight
     );
-    const nextPos = clampDialogPos(centeredDialogPos(nextSize), nextSize, minVisible);
+    let nextPos = clampDialogPos(centeredDialogPos(nextSize), nextSize, minVisible);
+
+    if (storageKey) {
+      const stored = loadStoredDialogGeom(storageKey);
+      if (stored) {
+        nextSize = clampDialogSize(stored.size, stored.pos, minWidth, minHeight);
+        nextPos = clampDialogPos(stored.pos, nextSize, minVisible);
+        nextSize = clampDialogSize(nextSize, nextPos, minWidth, minHeight);
+      }
+    }
+
     setModalSize(nextSize);
     setModalPosition(nextPos);
     modalSizeRef.current = nextSize;
     modalPositionRef.current = nextPos;
-  }, [open, defaultWidth, defaultHeight, minWidth, minHeight, minVisible]);
+  }, [open, defaultWidth, defaultHeight, minWidth, minHeight, minVisible, storageKey]);
 
   useEffect(() => {
     if (!isDragging && !isResizing) {
@@ -129,6 +180,9 @@ export function useDraggableResizableDialog({
         modalRef.current.style.width = `${nextSize.width}px`;
         modalRef.current.style.height = `${nextSize.height}px`;
       }
+      if (storageKey) {
+        saveStoredDialogGeom(storageKey, nextPos, nextSize);
+      }
     };
 
     window.addEventListener('resize', reclamp);
@@ -139,7 +193,7 @@ export function useDraggableResizableDialog({
       window.visualViewport?.removeEventListener('resize', reclamp);
       window.visualViewport?.removeEventListener('scroll', reclamp);
     };
-  }, [open, modalSize.width, minWidth, minHeight, minVisible]);
+  }, [open, modalSize.width, minWidth, minHeight, minVisible, storageKey]);
 
   const handleDragStart = (e: React.MouseEvent) => {
     const target = e.target as HTMLElement;
@@ -177,7 +231,10 @@ export function useDraggableResizableDialog({
   const handleDragEnd = useCallback(() => {
     setModalPosition(modalPositionRef.current);
     setIsDragging(false);
-  }, []);
+    if (storageKey) {
+      saveStoredDialogGeom(storageKey, modalPositionRef.current, modalSizeRef.current);
+    }
+  }, [storageKey]);
 
   const handleResizeStart = (e: React.MouseEvent) => {
     e.preventDefault();
@@ -219,7 +276,10 @@ export function useDraggableResizableDialog({
   const handleResizeEnd = useCallback(() => {
     setModalSize(modalSizeRef.current);
     setIsResizing(false);
-  }, []);
+    if (storageKey) {
+      saveStoredDialogGeom(storageKey, modalPositionRef.current, modalSizeRef.current);
+    }
+  }, [storageKey]);
 
   useEffect(() => {
     if (!isDragging && !isResizing) return;

@@ -84,6 +84,7 @@ const VncViewerWidget = lazy(() => import('./components/VncViewerWidget').then(m
 const FloatingSshTerminalWidget = lazy(() => import('./components/FloatingSshTerminalWidget').then(m => ({ default: m.FloatingSshTerminalWidget })));
 const SshTerminalWidget = lazy(() => import('./components/SshTerminalWidget').then(m => ({ default: m.SshTerminalWidget })));
 const InternetSpeedTester = lazy(() => import('./components/InternetSpeedTester').then(m => ({ default: m.InternetSpeedTester })));
+const ApacheMonitoringDashboard = lazy(() => import('./components/ApacheMonitoringDashboard').then(m => ({ default: m.ApacheMonitoringDashboard })));
 
 function hasLikelySession(): boolean {
   try {
@@ -138,6 +139,7 @@ const AppContent: React.FC = () => {
   const [styleManagerInitialTab, setStyleManagerInitialTab] = useState<'spaces' | 'hero' | 'content' | undefined>(undefined);
   const [pageBackgroundDialogOpen, setPageBackgroundDialogOpen] = useState(false);
   const [helpAboutOpen, setHelpAboutOpen] = useState(false);
+  const [apacheMonitorOpen, setApacheMonitorOpen] = useState(false);
   const [authRequired, setAuthRequired] = useState(false); // Track if we got 401 error
   const didAutoOpenLoginRef = useRef(false); // Avoid re-opening login when user closed it (guest disabled)
   const celebrationContainerRef = useRef<HTMLDivElement>(null);
@@ -1889,12 +1891,31 @@ const AppContent: React.FC = () => {
                         <span className="mx-1.5 opacity-50" aria-hidden>·</span>
                       )}
                       <span
-                        className="inline-flex items-center gap-1 not-italic"
+                        className={`inline-flex items-center gap-1 not-italic ${
+                          user?.is_admin
+                            ? 'cursor-pointer rounded-full px-1.5 py-0.5 -mx-1.5 hover:bg-emerald-50 dark:hover:bg-emerald-950/40 hover:text-emerald-700 dark:hover:text-emerald-300 transition-colors'
+                            : ''
+                        }`}
                         title={
-                          appPresence.count === 1
-                            ? '1 browser session is using this site right now'
-                            : `${appPresence.count.toLocaleString('en-US')} browser sessions are using this site right now`
+                          user?.is_admin
+                            ? 'Open Apache monitoring dashboard'
+                            : appPresence.count === 1
+                              ? '1 browser session is using this site right now'
+                              : `${appPresence.count.toLocaleString('en-US')} browser sessions are using this site right now`
                         }
+                        {...(user?.is_admin
+                          ? {
+                              role: 'button' as const,
+                              tabIndex: 0,
+                              onClick: () => setApacheMonitorOpen(true),
+                              onKeyDown: (event: React.KeyboardEvent<HTMLSpanElement>) => {
+                                if (event.key === 'Enter' || event.key === ' ') {
+                                  event.preventDefault();
+                                  setApacheMonitorOpen(true);
+                                }
+                              },
+                            }
+                          : {})}
                       >
                         <span className="inline-block w-1.5 h-1.5 rounded-full bg-emerald-500" aria-hidden />
                         {appPresence.count.toLocaleString('en-US')} online now
@@ -2061,6 +2082,14 @@ const AppContent: React.FC = () => {
           <HelpAboutDialog
             isOpen={helpAboutOpen}
             onClose={() => setHelpAboutOpen(false)}
+          />
+        </Suspense>
+      )}
+      {user?.is_admin && apacheMonitorOpen && (
+        <Suspense fallback={null}>
+          <ApacheMonitoringDashboard
+            isOpen={apacheMonitorOpen}
+            onClose={() => setApacheMonitorOpen(false)}
           />
         </Suspense>
       )}

@@ -331,6 +331,15 @@ if ($path === '/') {
     }
     require __DIR__ . '/app_presence.php';
     exit;
+} elseif (strpos($path, '/apache-monitor') === 0) {
+    $remainingPath = substr($path, strlen('/apache-monitor'));
+    if ($remainingPath === false || $remainingPath === '') {
+        $_SERVER['PATH_INFO'] = '/';
+    } else {
+        $_SERVER['PATH_INFO'] = ($remainingPath[0] === '/') ? $remainingPath : '/' . $remainingPath;
+    }
+    require __DIR__ . '/apache_monitor.php';
+    exit;
 } elseif (strpos($path, '/visit-stats') === 0) {
     $remainingPath = substr($path, 12); // Remove '/visit-stats'
     if (empty($remainingPath) || $remainingPath === '/') {

@@ -233,9 +233,18 @@ LoadModule headers_module modules/mod_headers.so
 LoadModule deflate_module modules/mod_deflate.so
 LoadModule mime_module modules/mod_mime.so
 LoadModule dir_module modules/mod_dir.so
+LoadModule status_module modules/mod_status.so
 ```
 
 `authz_core_module` is already on in a stock Apache 2.4 install (`Require all granted` needs it).
+
+For the admin Apache monitoring dashboard (footer **online now**), also uncomment:
+
+```apache
+Include conf/extra/httpd-info.conf
+```
+
+and keep `/server-status` limited to `Require local`. If `httpd-info.conf` is not present, copy [`apache/linknest-server-status.conf`](../apache/linknest-server-status.conf) to `conf/extra/` and include that instead.
 
 Leave these **commented** until the optional HTTPS / WSS section:
 
