@@ -1,7 +1,7 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
 import { getDisplayUrl } from '../utils/urlDisplay';
-import { openDeviceEmulationWindow } from '../utils/deviceEmulationWindow';
+import { openDeviceEmulationWindow, EMULATION_CHROME_PAD } from '../utils/deviceEmulationWindow';
 import { useSettings } from '../contexts/SettingsContext';
 import {
   findPreset,
@@ -530,7 +530,12 @@ export const MobilePreviewDialog: React.FC<MobilePreviewDialogProps> = ({
 
   const openDeviceWindow = useCallback(() => {
     if (!url) return null;
-    const win = openDeviceEmulationWindow(url, { width: size.width, height: size.height }, previewWinRef.current);
+    const win = openDeviceEmulationWindow(
+      url,
+      { width: size.width, height: size.height },
+      previewWinRef.current,
+      { label: size.label }
+    );
     previewWinRef.current = win;
     if (!win) {
       setPopupBlocked(true);
@@ -540,7 +545,7 @@ export const MobilePreviewDialog: React.FC<MobilePreviewDialogProps> = ({
     setPopupBlocked(false);
     setWindowOpened(true);
     return win;
-  }, [url, size.width, size.height]);
+  }, [url, size.width, size.height, size.label]);
 
   const switchToEmulationMode = useCallback(() => {
     setPreviewMode('emulation');
@@ -704,10 +709,16 @@ export const MobilePreviewDialog: React.FC<MobilePreviewDialogProps> = ({
       setWindowOpened(false);
       return;
     }
+    // Best-effort outer resize; chrome pad approximates address/title bar height.
+    // Full chrome compensation only works on the same-origin bootstrap (Open window).
     try {
-      win.resizeTo(size.width, size.height);
+      win.resizeTo(size.width, size.height + EMULATION_CHROME_PAD);
     } catch {
-      // ignore
+      try {
+        win.resizeTo(size.width, size.height);
+      } catch {
+        // ignore
+      }
     }
   }, [isOpen, isEmulationMode, windowOpened, size.width, size.height]);
 
@@ -801,17 +812,30 @@ export const MobilePreviewDialog: React.FC<MobilePreviewDialogProps> = ({
           No URL to preview
         </div>
       ) : isEmulationMode ? (
-        <div className="flex flex-col items-center justify-center gap-2 px-4 text-center bg-gradient-to-b from-sky-50 to-teal-50/60 dark:from-sky-950/40 dark:to-teal-950/30 w-full h-full">
-          <p className="text-2xl" aria-hidden>
-            🧭
-          </p>
-          <p className="text-sm font-semibold text-slate-800 dark:text-slate-100">{size.label}</p>
-          <p className="text-xs text-sky-800/70 dark:text-sky-200/70">
+        <div className="flex flex-col items-center justify-center gap-2.5 px-4 text-center bg-gradient-to-b from-slate-900 via-sky-950 to-slate-900 w-full h-full text-sky-50">
+          <div
+            className="w-10 h-[4.25rem] rounded-[0.65rem] border-2 border-sky-400/80 relative opacity-90 shrink-0"
+            aria-hidden
+          >
+            <span className="absolute top-1.5 left-1/2 -translate-x-1/2 w-3.5 h-0.5 rounded-full bg-sky-400/80" />
+          </div>
+          <p className={`font-semibold ${isWatch ? 'text-[10px]' : 'text-sm'}`}>{size.label}</p>
+          <p className={`text-sky-300/80 font-mono ${isWatch ? 'text-[9px]' : 'text-xs'}`}>
             {size.width} × {size.height}
           </p>
-          <p className="text-[11px] text-sky-700/70 dark:text-sky-300/70 max-w-[14rem] leading-relaxed">
-            Open the device window, then use DevTools device mode ({emulateShortcut}).
-          </p>
+          {!isWatch && (
+            <p className="text-[11px] text-sky-200/70 max-w-[14rem] leading-relaxed">
+              {windowOpened
+                ? 'Live site is open in the mobile-sized window beside this skin.'
+                : 'Opens a mobile-sized window that matches this device viewport.'}
+            </p>
+          )}
+          {windowOpened && (
+            <span className="inline-flex items-center gap-1.5 text-[10px] font-semibold uppercase tracking-wider text-emerald-300/90">
+              <span className="w-1.5 h-1.5 rounded-full bg-emerald-400 animate-pulse" aria-hidden />
+              Window open
+            </span>
+          )}
         </div>
       ) : null}
 
@@ -1095,7 +1119,7 @@ export const MobilePreviewDialog: React.FC<MobilePreviewDialogProps> = ({
               className={`h-7 px-3 text-xs ${primaryBtnClass}`}
             >
               <span aria-hidden>{windowOpened ? '🎯' : '🚀'}</span>
-              {windowOpened ? 'Focus window' : 'Open window'}
+              {windowOpened ? 'Focus / resize' : 'Open mobile window'}
             </button>
           )}
         </div>
@@ -1117,26 +1141,24 @@ export const MobilePreviewDialog: React.FC<MobilePreviewDialogProps> = ({
             {isEmulationMode && (
               <div className="w-full max-w-lg rounded-xl border border-sky-200/70 dark:border-sky-800/40 bg-gradient-to-br from-sky-50/70 to-white dark:from-sky-950/30 dark:to-slate-900/50 px-4 py-3 text-left space-y-2 shadow-sm shadow-sky-500/5">
                 <p className="text-xs font-semibold text-slate-800 dark:text-slate-100 flex items-center gap-1.5">
-                  <span aria-hidden>💡</span>
-                  Use the browser like DevTools ({size.label})
+                  <span aria-hidden>📱</span>
+                  Mobile-style window · {size.label}
                 </p>
-                <ol className="text-xs text-sky-800/70 dark:text-sky-200/70 space-y-1.5 list-decimal list-inside leading-relaxed">
-                  <li>
-                    Click <span className="font-medium text-sky-900 dark:text-sky-100">Open window</span> to load the
-                    real site at {size.width}×{size.height}.
-                  </li>
-                  <li>
-                    Open DevTools (<span className="font-mono text-[11px]">F12</span>), then press{' '}
-                    <kbd className="px-1.5 py-0.5 rounded border border-sky-200 dark:border-sky-700 bg-sky-50 dark:bg-sky-950/40 font-mono text-[11px]">
-                      {emulateShortcut}
-                    </kbd>{' '}
-                    for device emulation.
-                  </li>
-                  <li>
-                    Match Dimensions to <span className="font-medium text-sky-900 dark:text-sky-100">{size.label}</span>{' '}
-                    or pick the same device in DevTools.
-                  </li>
-                </ol>
+                <p className="text-xs text-sky-800/70 dark:text-sky-200/70 leading-relaxed">
+                  The site runs in a separate popup sized to{' '}
+                  <span className="font-medium text-sky-900 dark:text-sky-100">
+                    {size.width}×{size.height}
+                  </span>
+                  . This skin is the controller — change preset or rotate, then reopen/focus the window.
+                </p>
+                <p className="text-[11px] text-sky-700/60 dark:text-sky-300/60 leading-relaxed">
+                  Optional: press{' '}
+                  <kbd className="px-1.5 py-0.5 rounded border border-sky-200 dark:border-sky-700 bg-sky-50 dark:bg-sky-950/40 font-mono text-[10px]">
+                    {emulateShortcut}
+                  </kbd>{' '}
+                  in that window for full DevTools device mode (user-agent, touch). Browsers may still show a thin
+                  address bar.
+                </p>
                 {popupBlocked && (
                   <p className="text-xs text-amber-800 dark:text-amber-200 bg-amber-50 dark:bg-amber-900/20 border border-amber-200 dark:border-amber-800 rounded-lg px-3 py-2">
                     <span aria-hidden>⚠️</span> Pop-up was blocked. Allow pop-ups for this site, then open again.
@@ -1158,7 +1180,12 @@ export const MobilePreviewDialog: React.FC<MobilePreviewDialogProps> = ({
             <span aria-hidden>{isEmulationMode ? '🖥️' : '🖼️'}</span>
             <span className="truncate">
               {isEmulationMode ? 'Device emulation' : 'In-app mockup'} · {size.label} · {size.width}×{size.height}
-              {isEmulationMode ? ` · zoom ${zoomPercent}%` : ` · fit ${Math.round(fitScale * 100)}%`}
+              {isEmulationMode
+                ? windowOpened
+                  ? ' · mobile window open'
+                  : ' · mobile-style popup'
+                : ` · fit ${Math.round(fitScale * 100)}%`}
+              {isEmulationMode ? ` · zoom ${zoomPercent}%` : ''}
             </span>
           </p>
           <div className="flex items-center gap-2" data-no-drag>
@@ -1177,7 +1204,7 @@ export const MobilePreviewDialog: React.FC<MobilePreviewDialogProps> = ({
                 disabled={!url}
                 className={`px-3 py-2 text-sm ${primaryBtnClass}`}
               >
-                <span aria-hidden>🚀</span> Open device window
+                <span aria-hidden>🚀</span> {windowOpened ? 'Focus / resize' : 'Open mobile window'}
               </button>
             ) : (
               <button
