@@ -105,3 +105,20 @@ if (is_dir($robrichardsXmlseclibs)) {
         }
     }
 }
+
+// lbuchs/WebAuthn (passkeys / FIDO2)
+$webauthnSrc = __DIR__ . '/lbuchs/webauthn/src';
+if (is_dir($webauthnSrc)) {
+    spl_autoload_register(function ($class) use ($webauthnSrc) {
+        if (strpos($class, 'lbuchs\\WebAuthn\\') !== 0) {
+            return false;
+        }
+        $relative = substr($class, strlen('lbuchs\\WebAuthn\\'));
+        $file = $webauthnSrc . '/' . str_replace('\\', '/', $relative) . '.php';
+        if (is_file($file)) {
+            require $file;
+            return true;
+        }
+        return false;
+    });
+}

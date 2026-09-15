@@ -439,9 +439,11 @@ export const ApacheMonitoringDashboard: React.FC<{
 
   const handleRestartApache = useCallback(async () => {
     const bin = data?.actions?.apacheBinary || 'Apache';
+    const svc = data?.actions?.apacheService;
+    const target = svc ? `${bin} (Windows service ${svc})` : bin;
     if (
       !window.confirm(
-        `Restart Apache (${bin})? The site will drop for a few seconds. This dashboard may disconnect, then recover.`
+        `Restart Apache (${target})? The site will drop for a few seconds. This dashboard may disconnect, then recover.`
       )
     ) {
       return;
@@ -962,7 +964,9 @@ export const ApacheMonitoringDashboard: React.FC<{
                   </div>
                   <p className="text-[11px] text-slate-400 mt-2">
                     {actions?.canRestartApache
-                      ? `Restart uses ${actions.apacheBinary || 'the local Apache binary'} after a short delay so this request can finish.`
+                      ? `Restart uses ${actions.apacheBinary || 'the local Apache binary'}${
+                          actions.apacheService ? ` as Windows service ${actions.apacheService}` : ''
+                        } (httpd -k restart, then net/sc stop+start). A short delay lets this request finish.`
                       : 'Apache binary was not found. Discovery looks at the running process, ServerRoot, Windows service, PATH, and nearby folders. Set LINKNEST_APACHE_HTTPD to the full httpd.exe / apachectl path if it still cannot be located.'}
                     {!actions?.phpIniWritable && actions?.phpIniPath
                       ? ' php.ini is not writable by the Apache account.'

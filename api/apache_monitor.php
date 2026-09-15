@@ -111,6 +111,7 @@ if ($method === 'POST' && ($sub === '/restart-apache' || $sub === 'restart-apach
             'details' => [
                 'method' => $result['method'] ?? null,
                 'binary' => $result['binary'] ?? null,
+                'service' => $result['service'] ?? null,
             ],
         ]);
     }

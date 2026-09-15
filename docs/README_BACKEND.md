@@ -71,7 +71,7 @@ location / {
 - `GET /api/apache-monitor` - Realtime Apache dashboard (admin): `mod_status` workers/uptime, access-log top paths, OPcache, PHP memory, SQLite size, disk. Polled only while the admin dashboard window is open (`?fresh=1` bypasses the short log/disk cache). Works wherever Apache is installed (vanilla, XAMPP, WAMP, Laragon, Docker); probes this host's scheme/port on loopback (not Docker `:8090` unless the process is Docker).
 - `POST /api/apache-monitor/purge-logs` - Empty Apache and/or PHP log files in place (admin; `{ target: "apache"|"php"|"all", confirm: true }`)
 - `POST /api/apache-monitor/enable-opcache` - Write recommended OPcache keys into the loaded `php.ini` (admin; `{ confirm: true }`; backs up to `php.ini.linknest.bak`)
-- `POST /api/apache-monitor/restart-apache` - Schedule a delayed Apache restart (`httpd -k restart` / `apachectl graceful`) (admin; `{ confirm: true }`). Locates `httpd.exe` / `apachectl` from the running process, `ServerRoot`, Windows service, PATH, or nearby folders. Override with `LINKNEST_APACHE_HTTPD`.
+- `POST /api/apache-monitor/restart-apache` - Schedule a delayed Apache restart (admin; `{ confirm: true }`). On Windows it locates the Apache service (`sc.exe`, including names like `Apache2.4`) and runs `httpd -k restart -n <service>`, then `net stop`/`net start` and `sc stop`/`sc start` if needed, from a detached process so the service can recycle. Optional `LINKNEST_APACHE_HTTPD` and `LINKNEST_APACHE_SERVICE`. Linux uses `apachectl graceful`.
 
 ### MCP (LLM tools)
 

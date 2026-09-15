@@ -37,12 +37,12 @@ function extractDomainFromBaseDn(baseDn: string): string | null {
 }
 
 type AuthState = 'idle' | 'connecting' | 'ldap_attempting' | 'ldap_authenticating' | 'local_authenticating' | 'success';
-type AuthMethodChoice = 'local' | 'ldap' | 'auto' | 'saml';
+type AuthMethodChoice = 'local' | 'ldap' | 'auto' | 'saml' | 'passkey';
 
 const AUTH_METHOD_STORAGE_KEY = 'linknest_preferred_auth_method';
 const LDAP_SERVER_STORAGE_KEY = 'linknest_preferred_ldap_server_index';
 
-const VALID_AUTH_METHODS: AuthMethodChoice[] = ['local', 'ldap', 'auto', 'saml'];
+const VALID_AUTH_METHODS: AuthMethodChoice[] = ['local', 'ldap', 'auto', 'saml', 'passkey'];
 
 function readStoredAuthMethod(): AuthMethodChoice | null {
   try {
@@ -87,7 +87,8 @@ function isAuthMethodAvailable(
   method: AuthMethodChoice,
   ldapOn: boolean,
   localOn: boolean,
-  samlOn: boolean
+  samlOn: boolean,
+  passkeyOn: boolean
 ): boolean {
   switch (method) {
     case 'auto':
@@ -98,17 +99,26 @@ function isAuthMethodAvailable(
       return localOn;
     case 'saml':
       return samlOn;
+    case 'passkey':
+      return passkeyOn;
     default:
       return false;
   }
 }
 
-function resolveDefaultAuthMethod(ldapOn: boolean, localOn: boolean, samlOn: boolean): AuthMethodChoice {
+function resolveDefaultAuthMethod(
+  ldapOn: boolean,
+  localOn: boolean,
+  samlOn: boolean,
+  passkeyOn: boolean
+): AuthMethodChoice {
   if (ldapOn && localOn) return 'auto';
-  if (samlOn && !localOn && !ldapOn) return 'saml';
+  if (samlOn && !localOn && !ldapOn && !passkeyOn) return 'saml';
+  if (passkeyOn && !localOn && !ldapOn && !samlOn) return 'passkey';
   if (ldapOn && !localOn) return 'ldap';
   if (localOn) return 'local';
   if (samlOn) return 'saml';
+  if (passkeyOn) return 'passkey';
   return 'local';
 }
 
@@ -128,6 +138,7 @@ export const AuthModal: React.FC<AuthModalProps> = ({ isOpen, onClose, initialMo
   const [ldapServers, setLdapServers] = useState<Array<{ name: string; server: string; login_domain?: string }>>([]);
   const [selectedLdapServerIndex, setSelectedLdapServerIndex] = useState<number>(() => readStoredLdapServerIndex() ?? 0);
   const [samlEnabled, setSamlEnabled] = useState(false);
+  const [passkeyEnabled, setPasskeyEnabled] = useState(false);
   const [localAuthEnabled, setLocalAuthEnabled] = useState(true);
   const [authState, setAuthState] = useState<AuthState>('idle');
   const [progress, setProgress] = useState(0);
@@ -139,7 +150,7 @@ export const AuthModal: React.FC<AuthModalProps> = ({ isOpen, onClose, initialMo
   const progressIntervalRef = useRef<NodeJS.Timeout | null>(null);
   const countdownTimerRef = useRef<NodeJS.Timeout | null>(null);
 
-  const { login, register } = useAuth();
+  const { login, loginWithPasskey, register } = useAuth();
   const { settings: appSettings, loading: settingsLoading } = useSettings();
   const { animation: tileAnimation } = useTileAnimation();
   const tileAnimationClass = getTileAnimationClass(tileAnimation);
@@ -191,6 +202,9 @@ export const AuthModal: React.FC<AuthModalProps> = ({ isOpen, onClose, initialMo
       // Determine SAML enabled from global settings context
       const samlEnabledValue = String(appSettings.saml_enabled || '0') === '1';
       setSamlEnabled(samlEnabledValue);
+
+      const passkeyEnabledValue = String(appSettings.passkey_enabled || '0') === '1';
+      setPasskeyEnabled(passkeyEnabledValue);
       
       // Determine local auth enabled from global settings context
       const localAuthEnabledValue = String(appSettings.local_auth_enabled || '1') === '1';
@@ -198,13 +212,13 @@ export const AuthModal: React.FC<AuthModalProps> = ({ isOpen, onClose, initialMo
 
       // Prefer last-used auth method from browser storage when still available
       const storedMethod = readStoredAuthMethod();
-      const preferredMethod = storedMethod && isAuthMethodAvailable(storedMethod, enabled, localAuthEnabledValue, samlEnabledValue)
+      const preferredMethod = storedMethod && isAuthMethodAvailable(storedMethod, enabled, localAuthEnabledValue, samlEnabledValue, passkeyEnabledValue)
         ? storedMethod
-        : resolveDefaultAuthMethod(enabled, localAuthEnabledValue, samlEnabledValue);
+        : resolveDefaultAuthMethod(enabled, localAuthEnabledValue, samlEnabledValue, passkeyEnabledValue);
 
-      if (!isAuthMethodAvailable(authMethod, enabled, localAuthEnabledValue, samlEnabledValue)) {
+      if (!isAuthMethodAvailable(authMethod, enabled, localAuthEnabledValue, samlEnabledValue, passkeyEnabledValue)) {
         setAuthMethod(preferredMethod);
-      } else if (storedMethod && storedMethod !== authMethod && isAuthMethodAvailable(storedMethod, enabled, localAuthEnabledValue, samlEnabledValue)) {
+      } else if (storedMethod && storedMethod !== authMethod && isAuthMethodAvailable(storedMethod, enabled, localAuthEnabledValue, samlEnabledValue, passkeyEnabledValue)) {
         setAuthMethod(storedMethod);
       }
 
@@ -392,6 +406,26 @@ export const AuthModal: React.FC<AuthModalProps> = ({ isOpen, onClose, initialMo
     if (mode === 'login' && authMethod === 'saml') {
       const API_BASE = import.meta.env.VITE_API_BASE || '/api';
       window.location.href = `${API_BASE}/saml?action=login`;
+      return;
+    }
+
+    // Passkey: WebAuthn ceremony (no username/password)
+    if (mode === 'login' && authMethod === 'passkey') {
+      setLoading(true);
+      setError('');
+      try {
+        await loginWithPasskey(rememberMe);
+        onClose();
+      } catch (err: any) {
+        const msg = err?.message || 'Passkey sign-in failed';
+        if (/cancel|abort|not allowed/i.test(msg)) {
+          setError('Passkey sign-in was cancelled.');
+        } else {
+          setError(msg);
+        }
+      } finally {
+        setLoading(false);
+      }
       return;
     }
 
@@ -613,9 +647,12 @@ export const AuthModal: React.FC<AuthModalProps> = ({ isOpen, onClose, initialMo
     (ldapEnabled && localAuthEnabled ? 1 : 0) +
     (ldapEnabled ? 1 : 0) +
     (localAuthEnabled ? 1 : 0) +
-    (samlEnabled ? 1 : 0);
+    (samlEnabled ? 1 : 0) +
+    (passkeyEnabled ? 1 : 0);
   const authMethodGridClass =
-    authMethodCount >= 4
+    authMethodCount >= 5
+      ? 'grid-cols-2 sm:grid-cols-3'
+      : authMethodCount >= 4
       ? 'grid-cols-2 sm:grid-cols-4'
       : authMethodCount === 3
         ? 'grid-cols-3'
@@ -765,6 +802,13 @@ export const AuthModal: React.FC<AuthModalProps> = ({ isOpen, onClose, initialMo
                   <span className="sm:hidden">SAML</span>
                 </span>
               )}
+              {passkeyEnabled && (
+                <span className="px-2.5 py-1 sm:px-3 sm:py-1.5 rounded-full bg-violet-100 dark:bg-violet-500/20 text-violet-700 dark:text-violet-300 text-[10px] sm:text-xs font-semibold flex items-center gap-1 border border-violet-200/80 dark:border-violet-500/30">
+                  <span aria-hidden>🔑</span>
+                  <span className="hidden sm:inline">Passkeys On</span>
+                  <span className="sm:hidden">Passkey</span>
+                </span>
+              )}
             </div>
           </>
         )}
@@ -850,10 +894,10 @@ export const AuthModal: React.FC<AuthModalProps> = ({ isOpen, onClose, initialMo
 
           {(mode === 'login' || mode === 'register') && (
           <>
-          {mode === 'login' && (localAuthEnabled || samlEnabled || ldapEnabled) && (
+          {mode === 'login' && (localAuthEnabled || samlEnabled || ldapEnabled || passkeyEnabled) && (
             <>
               {/* Authentication Method Selection */}
-              {(ldapEnabled || samlEnabled || localAuthEnabled) && (
+              {(ldapEnabled || samlEnabled || localAuthEnabled || passkeyEnabled) && (
                 <div className="mb-2 sm:mb-3">
                   <label className="block text-xs sm:text-sm font-semibold text-slate-700 dark:text-slate-200 mb-1.5 sm:mb-2">
                     <span className="mr-1" aria-hidden>🔑</span>Authentication Method
@@ -940,12 +984,31 @@ export const AuthModal: React.FC<AuthModalProps> = ({ isOpen, onClose, initialMo
                         </div>
                       </label>
                     )}
+
+                    {passkeyEnabled && (
+                      <label className={`${methodCardBase} ${authMethod === 'passkey' ? methodCardSelected : methodCardIdle} ${loading ? 'opacity-50 cursor-not-allowed hover:translate-y-0 hover:shadow-none' : ''}`}>
+                        <input
+                          type="radio"
+                          name="authMethod"
+                          value="passkey"
+                          checked={authMethod === 'passkey'}
+                          onChange={(e) => selectAuthMethod(e.target.value as AuthMethodChoice)}
+                          disabled={loading}
+                          className="sr-only"
+                        />
+                        <span className="text-xl sm:text-2xl mb-1 flex-shrink-0" aria-hidden>🔑</span>
+                        <div className="text-center min-w-0 w-full">
+                          <span className={`text-xs font-semibold block truncate ${authMethod === 'passkey' ? 'text-brand-700 dark:text-brand-300' : 'text-slate-700 dark:text-slate-300'}`}>Passkey</span>
+                          <span className="text-[10px] sm:text-xs text-slate-500 dark:text-slate-400 block mt-0.5">Hello / Face ID</span>
+                        </div>
+                      </label>
+                    )}
                   </div>
                 </div>
               )}
 
               {/* Authentication Method Explanation */}
-              {(samlEnabled || ldapEnabled) && (
+              {(samlEnabled || ldapEnabled || passkeyEnabled) && (
                 <div className="mb-2 sm:mb-3">
                   <button
                     type="button"
@@ -967,7 +1030,7 @@ export const AuthModal: React.FC<AuthModalProps> = ({ isOpen, onClose, initialMo
                   {showHelpInfo && (
                     <div className="bg-brand-50/80 dark:bg-brand-900/20 border border-brand-200 dark:border-brand-800 rounded-xl p-2 sm:p-2.5 mt-1.5 animate-fadeIn">
                       <p className="text-[10px] sm:text-xs text-brand-800 dark:text-brand-200">
-                        The system supports multiple authentication methods: {samlEnabled && 'SAML Single Sign-On, '}{ldapEnabled && 'LDAP, '}and local accounts. {samlEnabled && 'Select SAML to be redirected to your organization\'s login page, or '}enter credentials for {ldapEnabled ? 'LDAP/' : ''}local authentication.
+                        The system supports multiple authentication methods: {samlEnabled && 'SAML Single Sign-On, '}{ldapEnabled && 'LDAP, '}{passkeyEnabled && 'passkeys, '}and local accounts. {samlEnabled && 'Select SAML to be redirected to your organization\'s login page. '}{passkeyEnabled && 'Select Passkey to use Windows Hello, Face ID, or a security key. '}Enter credentials for {ldapEnabled ? 'LDAP/' : ''}local authentication when needed.
                       </p>
                     </div>
                   )}
@@ -1012,8 +1075,8 @@ export const AuthModal: React.FC<AuthModalProps> = ({ isOpen, onClose, initialMo
                 </div>
               )}
 
-              {/* Username/Password fields - only show if not using SAML */}
-              {authMethod !== 'saml' && (
+              {/* Username/Password fields - only show if not using SAML or Passkey */}
+              {authMethod !== 'saml' && authMethod !== 'passkey' && (
                 <div className="animate-fadeIn">
                   <label className="block text-xs sm:text-sm font-medium text-slate-700 dark:text-slate-300 mb-1.5 sm:mb-2">
                     <span className="mr-1" aria-hidden>{(authMethod === 'ldap' || authMethod === 'auto') && ldapEnabled ? '🏢' : '👤'}</span>
@@ -1023,7 +1086,7 @@ export const AuthModal: React.FC<AuthModalProps> = ({ isOpen, onClose, initialMo
                     type="text"
                     value={username}
                     onChange={(e) => setUsername(e.target.value)}
-                    required={authMethod !== 'saml'}
+                    required={authMethod !== 'saml' && authMethod !== 'passkey'}
                     disabled={loading}
                     autoComplete="username"
                     className={`w-full bg-slate-50 dark:bg-slate-900 border rounded-xl px-3 py-2 sm:px-4 sm:py-2.5 text-slate-900 dark:text-white focus:outline-none focus:ring-2 disabled:opacity-50 disabled:cursor-not-allowed text-sm transition-shadow ${(authMethod === 'ldap' || authMethod === 'auto') && ldapEnabled ? 'border-sky-200 dark:border-sky-800/50 focus:ring-sky-400 focus:border-sky-400' : 'border-slate-200 dark:border-slate-700 focus:ring-brand-500 focus:border-brand-400'}`}
@@ -1047,10 +1110,20 @@ export const AuthModal: React.FC<AuthModalProps> = ({ isOpen, onClose, initialMo
                   </p>
                 </div>
               )}
+
+              {/* Passkey Info Message */}
+              {authMethod === 'passkey' && (
+                <div className="bg-gradient-to-r from-violet-50 to-fuchsia-50/70 dark:from-violet-900/30 dark:to-fuchsia-900/20 border border-violet-200 dark:border-violet-700/60 rounded-xl p-3 sm:p-3.5 mb-2 sm:mb-3 animate-fadeIn shadow-sm shadow-violet-500/10">
+                  <p className="text-xs sm:text-sm text-violet-800 dark:text-violet-200 text-center font-medium flex items-center justify-center gap-2">
+                    <span className="text-lg" aria-hidden>🔑</span>
+                    <span>Click &quot;Sign In&quot; to use a registered passkey (Windows Hello, Face ID, or security key).</span>
+                  </p>
+                </div>
+              )}
             </>
           )}
 
-          {mode === 'login' && !localAuthEnabled && !samlEnabled && !ldapEnabled && (
+          {mode === 'login' && !localAuthEnabled && !samlEnabled && !ldapEnabled && !passkeyEnabled && (
             <div className="bg-amber-50 dark:bg-amber-900/20 border border-amber-200 dark:border-amber-800 rounded-xl p-3 sm:p-4 text-center">
               <p className="text-xs sm:text-sm text-amber-800 dark:text-amber-200">
                 <span className="mr-1" aria-hidden>🚧</span>
@@ -1095,8 +1168,8 @@ export const AuthModal: React.FC<AuthModalProps> = ({ isOpen, onClose, initialMo
             </>
           )}
 
-          {/* Password field - only show if not using SAML */}
-          {authMethod !== 'saml' && (
+          {/* Password field - only show if not using SAML or Passkey */}
+          {authMethod !== 'saml' && authMethod !== 'passkey' && (
             <>
               <div>
                 <label className="block text-xs sm:text-sm font-medium text-slate-700 dark:text-slate-300 mb-1.5 sm:mb-2">
@@ -1106,7 +1179,7 @@ export const AuthModal: React.FC<AuthModalProps> = ({ isOpen, onClose, initialMo
                 <SecurePasswordInput
                   value={password}
                   onChange={(e) => setPassword(e.target.value)}
-                  required={authMethod !== 'saml'}
+                  required={authMethod !== 'saml' && authMethod !== 'passkey'}
                   disabled={loading}
                   minLength={mode === 'register' ? 8 : undefined}
                   autoComplete={mode === 'login' ? 'current-password' : 'new-password'}
@@ -1272,7 +1345,11 @@ export const AuthModal: React.FC<AuthModalProps> = ({ isOpen, onClose, initialMo
                   ? 'Signing In...'
                   : 'Please wait...'
                 : mode === 'login'
-                  ? (authMethod === 'saml' ? '🔐 Continue with SAML' : 'Sign In')
+                  ? (authMethod === 'saml'
+                    ? '🔐 Continue with SAML'
+                    : authMethod === 'passkey'
+                      ? '🔑 Continue with Passkey'
+                      : 'Sign In')
                   : '✨ Create Account'}
             </button>
           </div>

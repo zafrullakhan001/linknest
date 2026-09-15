@@ -171,7 +171,7 @@ realpath_cache_ttl=600
 
 After the install is stable you can set `opcache.validate_timestamps=0` and restart Apache on each deploy.
 
-From the admin Apache monitoring dashboard (footer **online now**), **Enable OPcache in php.ini** writes these keys into the loaded ini and **Restart Apache** locates `httpd.exe` (running process, `ServerRoot`, Windows service, PATH, or folders next to DocumentRoot / php.ini — any drive or install path) and schedules `httpd -k restart` (or `apachectl graceful` on Linux). Optional override: `LINKNEST_APACHE_HTTPD=D:\path\to\httpd.exe`.
+From the admin Apache monitoring dashboard (footer **online now**), **Enable OPcache in php.ini** writes these keys into the loaded ini and **Restart Apache** locates `httpd.exe` (running process, `ServerRoot`, Windows service, PATH, or folders next to DocumentRoot / php.ini — any drive or install path) and restarts the Windows service (`httpd -k restart -n <service>`, then `net`/`sc` stop+start). On Linux it uses `apachectl graceful`. Optional overrides: `LINKNEST_APACHE_HTTPD=D:\path\to\httpd.exe` and `LINKNEST_APACHE_SERVICE=Apache2.4`.
 
 ### 1.4 Limits and production flags
 

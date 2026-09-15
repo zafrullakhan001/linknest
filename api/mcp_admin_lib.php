@@ -878,6 +878,9 @@ function mcpAdminGetAuthStatus(): array {
         'ldap_enabled' => (string)getSetting('ldap_enabled', '0') === '1',
         'saml_enabled' => (string)getSetting('saml_enabled', '0') === '1',
         'local_auth_enabled' => (string)getSetting('local_auth_enabled', '1') !== '0',
+        'passkey_enabled' => (string)getSetting('passkey_enabled', '0') === '1',
+        'webauthn_library_available' => class_exists('lbuchs\\WebAuthn\\WebAuthn')
+            || (is_file(__DIR__ . '/../vendor/lbuchs/webauthn/src/WebAuthn.php')),
         'php_ldap_extension_loaded' => extension_loaded('ldap'),
         'onelogin_saml_available' => mcpAdminOneloginAvailable(),
         'ldap_servers' => $servers,

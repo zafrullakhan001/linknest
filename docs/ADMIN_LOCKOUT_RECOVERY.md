@@ -23,8 +23,17 @@ Also in-app: **Help & About → Help → Admin password & lockout recovery**, an
 | Only LDAP/SAML admin (no local account) | Script cannot reset IdP passwords | Fix credentials in AD / IdP, or create a local admin from DB/ops tooling |
 | Fingerprint-only access on; hash changed | Guests / non-admins see fingerprint lock page | **Admin signs in with credentials** (hash ignored for admins), or run `unlock_fingerprint_lock.php` |
 | Login allowlist on; admin not on list | Non-admins on the list can sign in; others cannot | **Admin signs in with credentials** (allowlist ignored for admins), or run `unlock_login_allowlist.php` |
+| Lost passkey / no passkey registered | Passkey sign-in fails or is unavailable | Passkeys are an **add-on** only. Sign in with Local, LDAP, or SAML, then re-register a passkey from the profile menu. Passkeys do **not** replace Local recovery. |
 
-The app also refuses to disable the **last** enabled sign-in method (Local / LDAP / SAML) so a single toggle cannot wipe every login path from the UI. Server-side recovery still covers cases where Local was already off.
+The app also refuses to disable the **last** enabled sign-in method (Local / LDAP / SAML) so a single toggle cannot wipe every login path from the UI. Passkeys are optional and are **not** counted in that rule. Server-side recovery still covers cases where Local was already off.
+
+---
+
+## Passkeys
+
+Passkeys (WebAuthn) let users who already have a Local, LDAP, or SAML account register a device credential and sign in without a password next time. They cannot create a new account or recover a locked-out admin by themselves.
+
+If you cannot use a passkey: sign in with Local / LDAP / SAML, open the profile menu → **Manage passkeys**, and add or remove credentials. Administrators can turn passkeys off under **Admin → Settings → Access → Sign-in**.
 
 ---
 

@@ -8,14 +8,14 @@ LinkNest is a **link and space organization platform** built with a React fronte
 - Create and manage link spaces (tiles) with customizable themes
 - Organize links using tabs and sections with drag-and-drop
 - Link health monitoring and analytics
-- User authentication (Local, LDAP, SAML)
+- User authentication (Local, LDAP, SAML, and optional Passkeys / WebAuthn)
 - Role-based access control and user groups
 - Floating widgets (clock, weather, calculator, notes, media library, etc.)
 - AI-powered content generation via Google Gemini
 - MCP interface so LLMs can list, search, and edit spaces and links (admin-scoped tokens can also manage users, roles, LDAP/SAML, Device Presets, and database export/import)
 - Email notifications and broadcast messaging
 - Browser integration for direct link opening
-- Admin Apache monitoring dashboard (footer “online now” click; `mod_status`, access logs, OPcache, PHP memory, SQLite, disk; admins can purge Apache/PHP logs, enable OPcache in php.ini, and restart Apache). Work runs only while the dashboard window is open. Locates Apache from the running process / ServerRoot / service / PATH (any install path; optional `LINKNEST_APACHE_HTTPD`). Loopback `/server-status` uses this host’s scheme and port (not Docker `:8090` unless running in Docker).
+- Admin Apache monitoring dashboard (footer “online now” click; `mod_status`, access logs, OPcache, PHP memory, SQLite, disk; admins can purge Apache/PHP logs, enable OPcache in php.ini, and restart Apache). Work runs only while the dashboard window is open. Locates Apache from the running process / ServerRoot / service / PATH (any install path; optional `LINKNEST_APACHE_HTTPD`). Windows restart targets the installed service (`httpd -k restart -n`, then `net`/`sc` stop+start) from a detached process. Loopback `/server-status` uses this host’s scheme and port (not Docker `:8090` unless running in Docker).
 
 ---
 
@@ -183,7 +183,7 @@ GEMINI_API_KEY=your_gemini_api_key_here  # Optional, for AI features
 
 3. **Authentication:**
    - Session-based PHP authentication
-   - Supports Local, LDAP, and SAML
+   - Supports Local, LDAP, SAML, and optional Passkeys (WebAuthn)
    - User roles and permissions system
 
 ---

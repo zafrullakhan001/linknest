@@ -138,7 +138,7 @@ if (!defined('SYSTEM_TOKEN')) {
 
 // Bump when schema/migrations in initDatabase() change. Enables fast-path getDB().
 if (!defined('LINKNEST_SCHEMA_VERSION')) {
-    define('LINKNEST_SCHEMA_VERSION', 104);
+    define('LINKNEST_SCHEMA_VERSION', 105);
 }
 
 function getSchemaPatchFlagPath(): string {
@@ -223,7 +223,7 @@ if (!file_exists(DB_DIR)) {
 // CORS headers for development (skip if in analytics API mode)
 if (!defined('ANALYTICS_API_MODE') || !ANALYTICS_API_MODE) {
     header('Access-Control-Allow-Origin: *');
-    header('Access-Control-Allow-Methods: GET, POST, PUT, DELETE, OPTIONS');
+    header('Access-Control-Allow-Methods: GET, POST, PUT, PATCH, DELETE, OPTIONS');
     header('Access-Control-Allow-Headers: Content-Type, Authorization, Mcp-Session-Id, MCP-Protocol-Version, Last-Event-ID, X-LinkNest-Fingerprint');
     header('Access-Control-Expose-Headers: Mcp-Session-Id, MCP-Protocol-Version');
     
@@ -1720,6 +1720,33 @@ function ensurePasswordResetColumns(PDO $db): void {
     }
 }
 
+/** WebAuthn / passkey credentials (one user → many authenticators). */
+function ensureWebauthnCredentialsTable(PDO $db): void {
+    static $ensured = false;
+    if ($ensured) {
+        return;
+    }
+    try {
+        $db->exec('CREATE TABLE IF NOT EXISTS webauthn_credentials (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            user_id INTEGER NOT NULL,
+            credential_id TEXT NOT NULL UNIQUE,
+            public_key TEXT NOT NULL,
+            sign_count INTEGER NOT NULL DEFAULT 0,
+            transports TEXT,
+            aaguid TEXT,
+            nickname TEXT,
+            created_at INTEGER NOT NULL,
+            last_used_at INTEGER,
+            FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE
+        )');
+        $db->exec('CREATE INDEX IF NOT EXISTS idx_webauthn_credentials_user ON webauthn_credentials(user_id)');
+        $ensured = true;
+    } catch (PDOException $e) {
+        error_log('ensureWebauthnCredentialsTable warning: ' . $e->getMessage());
+    }
+}
+
 /** Ensure SSH connection color column exists (identification strip in SSH Terminal). */
 function ensureSshConnectionColorColumn(PDO $db): void {
     static $ensured = false;
@@ -2073,6 +2100,7 @@ function initDatabase() {
             ensureCategoryVisibilityPresetsTable($db);
             ensureTilesVideoColumns($db);
             ensurePasswordResetColumns($db);
+            ensureWebauthnCredentialsTable($db);
             require_once __DIR__ . '/visit_analytics_lib.php';
             ensureVisitAnalyticsTables($db);
             backfillVisitAnalyticsIfNeeded($db);
@@ -2126,6 +2154,7 @@ function initDatabase() {
             ensureCategoryVisibilityPresetsTable($db);
             ensureTilesVideoColumns($db);
             ensurePasswordResetColumns($db);
+            ensureWebauthnCredentialsTable($db);
             require_once __DIR__ . '/visit_analytics_lib.php';
             ensureVisitAnalyticsTables($db);
             backfillVisitAnalyticsIfNeeded($db);
@@ -4459,6 +4488,7 @@ function initDatabase() {
         ensureAppPresenceTable($db);
         require_once __DIR__ . '/url_safety_lib.php';
         ensureUrlSafetySchema($db);
+        ensureWebauthnCredentialsTable($db);
         
         // Create indexes for optimal performance
         createDatabaseIndexes($db);

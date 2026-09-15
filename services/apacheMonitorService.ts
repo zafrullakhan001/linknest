@@ -150,6 +150,7 @@ export type ApacheMonitorActions = {
   canRestartApache: boolean;
   apacheBinary: string | null;
   apacheBinarySource?: string | null;
+  apacheService?: string | null;
   layout: 'docker' | 'xampp' | 'vanilla';
 };
 
@@ -353,6 +354,7 @@ export type ApacheMonitorRestartResult = {
   ok: boolean;
   method: string;
   binary: string | null;
+  service?: string | null;
   message: string;
 };
 

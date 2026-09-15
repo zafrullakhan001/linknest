@@ -1590,6 +1590,15 @@ function handleDeleteUser($userId) {
         // Continue with user deletion even if link cleanup fails
     }
     
+    // Delete passkeys for this user (SQLite FK cascade not always enabled)
+    try {
+        ensureWebauthnCredentialsTable($db);
+        $credDel = $db->prepare('DELETE FROM webauthn_credentials WHERE user_id = ?');
+        $credDel->execute([$userId]);
+    } catch (Throwable $e) {
+        error_log('Error deleting webauthn credentials for user: ' . $e->getMessage());
+    }
+
     // Delete the user account (cascade will delete their tiles)
     $stmt = $db->prepare('DELETE FROM users WHERE id = ? AND is_admin = 0');
     $stmt->execute([$userId]);

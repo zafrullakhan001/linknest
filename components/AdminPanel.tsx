@@ -485,6 +485,7 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({ onUserApproved }) => {
     local_auth_enabled: '1',
     ldap_enabled: '0',
     saml_enabled: '0',
+    passkey_enabled: '0',
     public_tile_animation: DEFAULT_TILE_ANIMATION,
     disabled_tabs: '[]',
     device_presets: '',
@@ -13484,6 +13485,45 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({ onUserApproved }) => {
                                 })}
                               </div>
 
+                              <div className="rounded-xl border border-violet-200/80 dark:border-violet-800/50 bg-gradient-to-br from-violet-50/90 to-white dark:from-violet-950/30 dark:to-slate-900/40 px-4 py-3.5">
+                                <div className="flex items-center justify-between gap-3">
+                                  <div className="flex items-start gap-3 min-w-0 flex-1">
+                                    <div className="w-11 h-11 rounded-xl flex items-center justify-center shrink-0 text-xl bg-violet-100 dark:bg-violet-900/50 text-violet-700 dark:text-violet-200" aria-hidden>
+                                      🔑
+                                    </div>
+                                    <div className="min-w-0">
+                                      <div className="flex flex-wrap items-center gap-2">
+                                        <span className="text-sm font-semibold text-slate-800 dark:text-slate-100">Passkeys</span>
+                                        <span className={`text-[10px] font-semibold uppercase tracking-wide px-2 py-0.5 rounded-full ${settings.passkey_enabled === '1'
+                                          ? 'bg-emerald-100 text-emerald-800 dark:bg-emerald-900/40 dark:text-emerald-200'
+                                          : 'bg-slate-200 text-slate-600 dark:bg-slate-700 dark:text-slate-300'
+                                          }`}>
+                                          {settings.passkey_enabled === '1' ? 'On' : 'Off'}
+                                        </span>
+                                      </div>
+                                      <p className="text-xs text-slate-500 dark:text-slate-400 mt-0.5">
+                                        Optional add-on: users register a passkey after signing in (Local / LDAP / SAML), then use Windows Hello, Face ID, or a security key next time. Requires HTTPS except on localhost.
+                                      </p>
+                                    </div>
+                                  </div>
+                                  <button
+                                    type="button"
+                                    onClick={() => setSettings({
+                                      ...settings,
+                                      passkey_enabled: settings.passkey_enabled === '1' ? '0' : '1',
+                                    })}
+                                    className={`relative inline-flex h-6 w-11 items-center rounded-full transition-colors shrink-0 ${settings.passkey_enabled === '1'
+                                      ? 'bg-violet-600'
+                                      : 'bg-slate-300 dark:bg-slate-600'
+                                      }`}
+                                  >
+                                    <span
+                                      className={`inline-block h-4 w-4 transform rounded-full bg-white transition-transform ${settings.passkey_enabled === '1' ? 'translate-x-6' : 'translate-x-1'}`}
+                                    />
+                                  </button>
+                                </div>
+                              </div>
+
                               <button
                                 onClick={async () => {
                                   try {
@@ -13493,6 +13533,7 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({ onUserApproved }) => {
                                       local_auth_enabled: settings.local_auth_enabled,
                                       ldap_enabled: settings.ldap_enabled,
                                       saml_enabled: settings.saml_enabled,
+                                      passkey_enabled: settings.passkey_enabled === '1' ? '1' : '0',
                                     });
                                     await loadSettings();
                                     await refreshSettings();

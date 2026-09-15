@@ -982,7 +982,7 @@ function handleUpdateSettings() {
                 'ldap_mail_domains',
                 'access_control_enabled', 'access_control_mode', 'access_control_allow_anonymous', 'access_control_audit_logging',
                 'browser_specific_links_enabled', 'browser_extension_id',
-                'saml_enabled', 'local_auth_enabled', 'sp_entity_id', 'sp_assertion_consumer_service',
+                'saml_enabled', 'local_auth_enabled', 'passkey_enabled', 'sp_entity_id', 'sp_assertion_consumer_service',
                 'sp_single_logout_service', 'sp_site_url', 'idp_entity_id', 'idp_sso_url', 'idp_slo_url',
                 'idp_x509cert', 'nameid_format', 'strict', 'debug', 'map_name_to', 'map_email_to',
                 'map_display_name_to', 'auto_provision',

@@ -1700,7 +1700,8 @@ function apacheMonitorAcceptBin(string $path, array $basenames): ?string
 function apacheMonitorSanitizeServiceName(string $name): ?string
 {
     $name = trim($name);
-    if ($name === '' || !preg_match('/^[A-Za-z0-9_\-]{1,64}$/', $name)) {
+    // Windows Apache services commonly use dots: Apache2.4
+    if ($name === '' || !preg_match('/^[A-Za-z0-9][A-Za-z0-9._\-]{0,63}$/', $name)) {
         return null;
     }
     return $name;
@@ -2018,50 +2019,283 @@ function apacheMonitorWindowsRunningHttpd(): ?array
     return apacheMonitorHttpdResult($keys[0], 'httpd', 'process');
 }
 
-function apacheMonitorWindowsServiceHttpd(): ?array
+/**
+ * @return list<string>
+ */
+function apacheMonitorWindowsCommonServiceNames(): array
+{
+    return [
+        'Apache2.4',
+        'Apache24',
+        'Apache24-Vanilla',
+        'Apache2.4_D',
+        'Apache2.4-64',
+        'Apache2.2',
+        'Apache2',
+        'Apache',
+        'apache',
+        'httpd',
+        'xampp',
+        'wampapache64',
+        'wampapache',
+        'laragon',
+    ];
+}
+
+function apacheMonitorWindowsNormPath(string $path): string
+{
+    return strtolower(str_replace('/', '\\', $path));
+}
+
+/**
+ * @return array{name:string,state:string,bin:?string,pathName:string}|null
+ */
+function apacheMonitorWindowsScQc(string $name): ?array
+{
+    $name = apacheMonitorSanitizeServiceName($name);
+    if ($name === null) {
+        return null;
+    }
+    $out = [];
+    $code = 1;
+    @exec('sc.exe qc ' . $name . ' 2>NUL', $out, $code);
+    if ($code !== 0 || $out === []) {
+        return null;
+    }
+    $text = implode("\n", $out);
+    if (!preg_match('/BINARY_PATH_NAME\s*:\s*(.+)/i', $text, $m)) {
+        return null;
+    }
+    $pathName = trim($m[1]);
+    if (stripos($pathName, 'httpd.exe') === false) {
+        return null;
+    }
+    $exe = apacheMonitorExtractQuotedExe($pathName);
+    $bin = $exe !== null ? apacheMonitorAcceptBin($exe, apacheMonitorWindowsHttpdBasenames()) : null;
+    $state = 'unknown';
+    $query = [];
+    @exec('sc.exe query ' . $name . ' 2>NUL', $query);
+    $qtext = implode("\n", $query);
+    if (preg_match('/STATE\s*:\s*\d+\s+(\w+)/i', $qtext, $sm)) {
+        $state = strtolower($sm[1]);
+    }
+    return [
+        'name' => $name,
+        'state' => $state,
+        'bin' => $bin,
+        'pathName' => $pathName,
+    ];
+}
+
+/**
+ * @param array<string,array{name:string,state:string,bin:?string,pathName:string}> $found
+ */
+function apacheMonitorWindowsRememberService(array &$found, ?array $item): void
+{
+    if ($item === null) {
+        return;
+    }
+    $name = (string) ($item['name'] ?? '');
+    if ($name === '' || isset($found[$name])) {
+        return;
+    }
+    $found[$name] = $item;
+}
+
+/**
+ * @return list<array{name:string,state:string,bin:?string,pathName:string}>
+ */
+function apacheMonitorWindowsListHttpdServices(): array
 {
     static $done = false;
-    static $cached = null;
+    static $list = [];
     if ($done) {
-        return $cached;
+        return $list;
     }
     $done = true;
-    $wmi = apacheMonitorWindowsWmi();
-    if ($wmi === null) {
-        return null;
+    $found = [];
+
+    foreach (apacheMonitorWindowsCommonServiceNames() as $name) {
+        $item = apacheMonitorWindowsScQc($name);
+        apacheMonitorWindowsRememberService($found, $item);
+        if (
+            is_array($item)
+            && strtolower((string) ($item['state'] ?? '')) === 'running'
+            && !empty($item['bin'])
+        ) {
+            $list = array_values($found);
+            return $list;
+        }
     }
+
+    $queryOut = [];
+    @exec('sc.exe query state= all', $queryOut);
+    foreach ($queryOut as $line) {
+        if (!preg_match('/SERVICE_NAME:\s*(.+)\s*$/i', (string) $line, $m)) {
+            continue;
+        }
+        $name = trim($m[1]);
+        if (!preg_match('/apache|httpd|xampp|wamp|laragon/i', $name)) {
+            continue;
+        }
+        $item = apacheMonitorWindowsScQc($name);
+        apacheMonitorWindowsRememberService($found, $item);
+        if (
+            is_array($item)
+            && strtolower((string) ($item['state'] ?? '')) === 'running'
+            && !empty($item['bin'])
+        ) {
+            $list = array_values($found);
+            return $list;
+        }
+    }
+
+    if ($found !== []) {
+        $list = array_values($found);
+        return $list;
+    }
+
+    $wmi = apacheMonitorWindowsWmi();
+    if ($wmi !== null) {
+        try {
+            $q = $wmi->ExecQuery(
+                "SELECT Name, PathName, State FROM Win32_Service WHERE PathName LIKE '%httpd.exe%'"
+            );
+            foreach ($q as $row) {
+                $svc = apacheMonitorSanitizeServiceName((string) $row->Name);
+                if ($svc === null) {
+                    continue;
+                }
+                $pathName = trim((string) $row->PathName);
+                $exe = apacheMonitorExtractQuotedExe($pathName);
+                $bin = $exe !== null ? apacheMonitorAcceptBin($exe, apacheMonitorWindowsHttpdBasenames()) : null;
+                apacheMonitorWindowsRememberService($found, [
+                    'name' => $svc,
+                    'state' => strtolower((string) $row->State),
+                    'bin' => $bin,
+                    'pathName' => $pathName,
+                ]);
+            }
+        } catch (Throwable $e) {
+            // sc.exe discovery above is enough when COM is missing
+        }
+    }
+
+    if ($found === []) {
+        $ps = 'Get-CimInstance Win32_Service | Where-Object {$_.PathName -like \'*httpd.exe*\'} | ForEach-Object { $_.Name + \'|\' + $_.State + \'|\' + $_.PathName }';
+        $cim = [];
+        @exec(
+            'powershell.exe -NoProfile -NonInteractive -NoLogo -WindowStyle Hidden -Command ' . escapeshellarg($ps),
+            $cim
+        );
+        foreach ($cim as $line) {
+            $parts = explode('|', trim((string) $line), 3);
+            if (count($parts) < 3) {
+                continue;
+            }
+            $svc = apacheMonitorSanitizeServiceName($parts[0]);
+            if ($svc === null) {
+                continue;
+            }
+            $pathName = trim($parts[2]);
+            $exe = apacheMonitorExtractQuotedExe($pathName);
+            $bin = $exe !== null ? apacheMonitorAcceptBin($exe, apacheMonitorWindowsHttpdBasenames()) : null;
+            apacheMonitorWindowsRememberService($found, [
+                'name' => $svc,
+                'state' => strtolower($parts[1]),
+                'bin' => $bin,
+                'pathName' => $pathName,
+            ]);
+        }
+    }
+
+    $list = array_values($found);
+    return $list;
+}
+
+function apacheMonitorWindowsServiceHttpd(): ?array
+{
     $running = null;
     $any = null;
-    try {
-        $q = $wmi->ExecQuery(
-            "SELECT Name, PathName, State FROM Win32_Service WHERE PathName LIKE '%httpd.exe%'"
-        );
-        foreach ($q as $row) {
-            $pathName = (string) $row->PathName;
-            if (stripos($pathName, 'httpd.exe') === false) {
-                continue;
-            }
-            $exe = apacheMonitorExtractQuotedExe($pathName);
-            $ok = $exe !== null ? apacheMonitorAcceptBin($exe, apacheMonitorWindowsHttpdBasenames()) : null;
-            if ($ok === null) {
-                continue;
-            }
-            $svc = apacheMonitorSanitizeServiceName((string) $row->Name);
-            $item = apacheMonitorHttpdResult($ok, 'httpd', 'service', $svc);
-            $state = strtolower((string) $row->State);
-            if ($state === 'running') {
-                $running = $item;
-                break;
-            }
-            if ($any === null) {
-                $any = $item;
-            }
+    foreach (apacheMonitorWindowsListHttpdServices() as $svc) {
+        $bin = $svc['bin'] ?? null;
+        if (!is_string($bin) || $bin === '') {
+            continue;
         }
-    } catch (Throwable $e) {
-        return null;
+        $item = apacheMonitorHttpdResult($bin, 'httpd', 'service', $svc['name']);
+        $state = strtolower((string) ($svc['state'] ?? ''));
+        if ($state === 'running') {
+            $running = $item;
+            break;
+        }
+        if ($any === null) {
+            $any = $item;
+        }
     }
-    $cached = $running ?? $any;
-    return $cached;
+    return $running ?? $any;
+}
+
+function apacheMonitorPsSingleQuote(string $value): string
+{
+    return "'" . str_replace("'", "''", $value) . "'";
+}
+
+function apacheMonitorWindowsSpawnDetached(string $bat): bool
+{
+    $bat = str_replace('/', '\\', $bat);
+    if (!is_file($bat) || preg_match('/["&|<>%\r\n]/', $bat)) {
+        return false;
+    }
+
+    $wmi = apacheMonitorWindowsWmi();
+    if ($wmi !== null) {
+        try {
+            $pid = 0;
+            $res = $wmi->Get('Win32_Process')->Create('cmd.exe /c "' . $bat . '"', null, null, $pid);
+            if ((int) $res === 0) {
+                return true;
+            }
+        } catch (Throwable $e) {
+            // fall through
+        }
+    }
+
+    $ps = 'Start-Process -FilePath ' . apacheMonitorPsSingleQuote($bat) . ' -WindowStyle Hidden';
+    $out = [];
+    $code = 1;
+    @exec(
+        'powershell.exe -NoProfile -NonInteractive -NoLogo -WindowStyle Hidden -Command ' . escapeshellarg($ps),
+        $out,
+        $code
+    );
+    if ($code === 0) {
+        return true;
+    }
+
+    $comspec = getenv('ComSpec');
+    if (!is_string($comspec) || $comspec === '') {
+        $comspec = 'C:\\Windows\\System32\\cmd.exe';
+    }
+    $comspec = str_replace('/', '\\', $comspec);
+    $proc = @proc_open(
+        [$comspec, '/c', 'start', '/B', '', $bat],
+        [
+            0 => ['file', 'NUL', 'r'],
+            1 => ['file', 'NUL', 'a'],
+            2 => ['file', 'NUL', 'a'],
+        ],
+        $pipes,
+        null,
+        null,
+        ['bypass_shell' => true, 'create_process_group' => true]
+    );
+    if (is_resource($proc)) {
+        @proc_close($proc);
+        return true;
+    }
+
+    @pclose(@popen('"' . $comspec . '" /c start "" /B "' . $bat . '"', 'r'));
+    return is_file($bat);
 }
 
 /**
@@ -2312,6 +2546,9 @@ function apacheMonitorCollectActions(): array
 {
     $ini = apacheMonitorPhpIniPath();
     $httpd = apacheMonitorFindHttpd();
+    if (is_array($httpd)) {
+        $httpd = apacheMonitorAttachWindowsService($httpd);
+    }
     $opcacheActive = false;
     try {
         $op = apacheMonitorCollectOpcache();
@@ -2328,6 +2565,7 @@ function apacheMonitorCollectActions(): array
         'canRestartApache' => $httpd !== null,
         'apacheBinary' => $httpd['label'] ?? null,
         'apacheBinarySource' => $httpd['source'] ?? null,
+        'apacheService' => $httpd['service'] ?? null,
         'layout' => apacheMonitorIsDocker() ? 'docker' : (apacheMonitorIsXampp() ? 'xampp' : 'vanilla'),
     ];
 }
@@ -2422,13 +2660,110 @@ function apacheMonitorEnableOpcache(): array
     ];
 }
 
+/**
+ * @return list<string>
+ */
+function apacheMonitorWindowsServiceNamesForBin(string $bin): array
+{
+    $want = apacheMonitorWindowsNormPath($bin);
+    $matched = [];
+    $runningMatched = [];
+    $others = [];
+    foreach (apacheMonitorWindowsListHttpdServices() as $svc) {
+        $name = apacheMonitorSanitizeServiceName((string) ($svc['name'] ?? ''));
+        if ($name === null) {
+            continue;
+        }
+        $svcBin = apacheMonitorWindowsNormPath((string) ($svc['bin'] ?? ''));
+        $state = strtolower((string) ($svc['state'] ?? ''));
+        if ($want !== '' && $svcBin === $want) {
+            if ($state === 'running') {
+                $runningMatched[] = $name;
+            } else {
+                $matched[] = $name;
+            }
+            continue;
+        }
+        $others[] = $name;
+    }
+    $names = array_values(array_unique(array_merge($runningMatched, $matched)));
+    if ($names === [] && count($others) === 1) {
+        $names = $others;
+    }
+    return $names;
+}
+
+function apacheMonitorBuildWindowsRestartCmd(string $bin, array $serviceNames): string
+{
+    $bin = str_replace('/', '\\', $bin);
+    $safe = [];
+    foreach ($serviceNames as $name) {
+        $name = apacheMonitorSanitizeServiceName((string) $name);
+        if ($name !== null) {
+            $safe[$name] = true;
+        }
+    }
+    if ($safe === []) {
+        foreach (apacheMonitorWindowsCommonServiceNames() as $name) {
+            $safe[$name] = true;
+        }
+    }
+    $svcList = implode(' ', array_keys($safe));
+    $nl = "\r\n";
+    return '@echo off' . $nl
+        . 'setlocal EnableExtensions' . $nl
+        . 'set "LOG=%TEMP%\\linknest-apache-restart.log"' . $nl
+        . 'echo ===== %DATE% %TIME% =====>>"%LOG%"' . $nl
+        . 'echo httpd=' . $bin . '>>"%LOG%"' . $nl
+        . 'echo services=' . $svcList . '>>"%LOG%"' . $nl
+        . 'ping 127.0.0.1 -n 5 >nul' . $nl
+        . 'set "HTTPD=' . $bin . '"' . $nl
+        . 'for %%S in (' . $svcList . ') do (' . $nl
+        . '  echo [try] httpd -k restart -n %%S>>"%LOG%"' . $nl
+        . '  "%HTTPD%" -k restart -n %%S >>"%LOG%" 2>&1' . $nl
+        . '  if not errorlevel 1 goto :ok' . $nl
+        . ')' . $nl
+        . 'echo [try] httpd -k restart>>"%LOG%"' . $nl
+        . '"%HTTPD%" -k restart >>"%LOG%" 2>&1' . $nl
+        . 'if not errorlevel 1 goto :ok' . $nl
+        . 'for %%S in (' . $svcList . ') do (' . $nl
+        . '  echo [try] net stop/start %%S>>"%LOG%"' . $nl
+        . '  net.exe stop %%S /y >>"%LOG%" 2>&1' . $nl
+        . '  ping 127.0.0.1 -n 5 >nul' . $nl
+        . '  net.exe start %%S >>"%LOG%" 2>&1' . $nl
+        . '  if not errorlevel 1 goto :ok' . $nl
+        . '  echo [try] sc start %%S>>"%LOG%"' . $nl
+        . '  sc.exe start %%S >>"%LOG%" 2>&1' . $nl
+        . '  if not errorlevel 1 goto :ok' . $nl
+        . ')' . $nl
+        . 'for %%S in (' . $svcList . ') do (' . $nl
+        . '  echo [try] sc stop/start %%S>>"%LOG%"' . $nl
+        . '  sc.exe stop %%S >>"%LOG%" 2>&1' . $nl
+        . '  ping 127.0.0.1 -n 6 >nul' . $nl
+        . '  sc.exe start %%S >>"%LOG%" 2>&1' . $nl
+        . '  if not errorlevel 1 goto :ok' . $nl
+        . ')' . $nl
+        . 'for %%S in (' . $svcList . ') do (' . $nl
+        . '  echo [try] httpd -k stop/start -n %%S>>"%LOG%"' . $nl
+        . '  "%HTTPD%" -k stop -n %%S >>"%LOG%" 2>&1' . $nl
+        . '  ping 127.0.0.1 -n 5 >nul' . $nl
+        . '  "%HTTPD%" -k start -n %%S >>"%LOG%" 2>&1' . $nl
+        . '  if not errorlevel 1 goto :ok' . $nl
+        . ')' . $nl
+        . 'echo FAILED>>"%LOG%"' . $nl
+        . 'exit /b 1' . $nl
+        . ':ok' . $nl
+        . 'echo OK>>"%LOG%"' . $nl
+        . 'exit /b 0' . $nl;
+}
+
 function apacheMonitorSpawnDelayedRestart(array $httpd): void
 {
     ignore_user_abort(true);
     if (($httpd['kind'] ?? '') === 'ctl') {
         $bin = (string) $httpd['bin'];
         $script = 'sleep 2; ' . escapeshellarg($bin) . ' graceful >/dev/null 2>&1';
-        @proc_open(
+        $proc = @proc_open(
             ['sh', '-c', $script],
             [
                 0 => ['file', '/dev/null', 'r'],
@@ -2440,38 +2775,36 @@ function apacheMonitorSpawnDelayedRestart(array $httpd): void
             null,
             ['bypass_shell' => true]
         );
+        if (!is_resource($proc)) {
+            throw new RuntimeException('Could not schedule apachectl graceful.');
+        }
         return;
     }
 
     $bin = str_replace('/', '\\', (string) $httpd['bin']);
-    $svcRaw = $httpd['service'] ?? null;
-    $svc = is_string($svcRaw) ? apacheMonitorSanitizeServiceName($svcRaw) : null;
-    $restart = '"' . $bin . '" -k restart';
-    if ($svc !== null) {
-        $restart = '"' . $bin . '" -k restart -n ' . $svc;
+    $names = [];
+    if (isset($httpd['services']) && is_array($httpd['services'])) {
+        $names = $httpd['services'];
     }
+    $primary = apacheMonitorSanitizeServiceName((string) ($httpd['service'] ?? ''));
+    if ($primary !== null) {
+        array_unshift($names, $primary);
+    }
+    $names = array_values(array_unique(array_merge($names, apacheMonitorWindowsServiceNamesForBin($bin))));
+
     $bat = sys_get_temp_dir() . DIRECTORY_SEPARATOR . 'linknest-apache-restart.cmd';
-    $body = '@echo off' . "\r\n"
-        . 'ping 127.0.0.1 -n 3 >nul' . "\r\n"
-        . $restart . "\r\n"
-        . 'if errorlevel 1 (' . "\r\n"
-        . '  "' . $bin . '" -k stop' . "\r\n"
-        . '  ping 127.0.0.1 -n 2 >nul' . "\r\n"
-        . '  start "" "' . $bin . '"' . "\r\n"
-        . ')' . "\r\n";
-    if ($svc !== null) {
-        $body .= 'if errorlevel 1 (' . "\r\n"
-            . '  net stop ' . $svc . "\r\n"
-            . '  ping 127.0.0.1 -n 2 >nul' . "\r\n"
-            . '  net start ' . $svc . "\r\n"
-            . ')' . "\r\n";
+    $body = apacheMonitorBuildWindowsRestartCmd($bin, $names);
+    if (@file_put_contents($bat, $body) === false) {
+        throw new RuntimeException('Could not write Apache restart helper: ' . $bat);
     }
-    @file_put_contents($bat, $body);
-    $comspec = getenv('ComSpec');
-    if (!is_string($comspec) || $comspec === '') {
-        $comspec = 'cmd.exe';
+    if (!apacheMonitorWindowsSpawnDetached($bat)) {
+        throw new RuntimeException(
+            'Could not start a detached Apache restart. From an elevated Command Prompt run: '
+            . '"' . $bin . '" -k restart'
+            . ($primary !== null ? ' -n ' . $primary : '')
+            . '  or  net stop ' . ($primary ?? 'Apache2.4') . ' & net start ' . ($primary ?? 'Apache2.4')
+        );
     }
-    @pclose(@popen('"' . $comspec . '" /c start "" /B "' . $bat . '"', 'r'));
 }
 
 function apacheMonitorAttachWindowsService(array $httpd): array
@@ -2479,13 +2812,18 @@ function apacheMonitorAttachWindowsService(array $httpd): array
     if (PHP_OS_FAMILY !== 'Windows' || ($httpd['kind'] ?? '') !== 'httpd') {
         return $httpd;
     }
-    if (is_string($httpd['service'] ?? null) && $httpd['service'] !== '') {
+    $bin = (string) ($httpd['bin'] ?? '');
+    $names = apacheMonitorWindowsServiceNamesForBin($bin);
+    $envSvc = apacheMonitorSanitizeServiceName(apacheMonitorEnvValue('LINKNEST_APACHE_SERVICE'));
+    if ($envSvc !== null) {
+        array_unshift($names, $envSvc);
+        $names = array_values(array_unique($names));
+    }
+    if ($names === []) {
         return $httpd;
     }
-    $svc = apacheMonitorWindowsServiceHttpd();
-    if (is_array($svc) && ($svc['bin'] ?? '') === ($httpd['bin'] ?? '')) {
-        $httpd['service'] = $svc['service'] ?? null;
-    }
+    $httpd['service'] = $names[0];
+    $httpd['services'] = $names;
     return $httpd;
 }
 
@@ -2501,20 +2839,25 @@ function apacheMonitorRestartApache(): array
         );
     }
     $httpd = apacheMonitorAttachWindowsService($httpd);
+    apacheMonitorSpawnDelayedRestart($httpd);
 
-    register_shutdown_function(static function () use ($httpd) {
-        try {
-            apacheMonitorSpawnDelayedRestart($httpd);
-        } catch (Throwable $e) {
-            error_log('apacheMonitorSpawnDelayedRestart: ' . $e->getMessage());
-        }
-    });
+    $svc = is_string($httpd['service'] ?? null) ? (string) $httpd['service'] : null;
+    if (($httpd['kind'] ?? '') === 'ctl') {
+        $method = 'apachectl graceful';
+        $message = 'Apache graceful restart is scheduled in about 2 seconds. This page may disconnect briefly.';
+    } elseif ($svc !== null) {
+        $method = 'windows-service:' . $svc;
+        $message = 'Windows service ' . $svc . ' will restart in a few seconds (httpd -k restart, then net/sc stop+start if needed). This page may disconnect briefly.';
+    } else {
+        $method = 'httpd -k restart';
+        $message = 'Apache restart is scheduled in a few seconds (httpd -k restart, then Windows service stop/start). This page may disconnect briefly.';
+    }
 
-    $method = ($httpd['kind'] ?? '') === 'ctl' ? 'apachectl graceful' : 'httpd -k restart';
     return [
         'ok' => true,
         'method' => $method,
         'binary' => $httpd['label'] ?? null,
-        'message' => 'Apache restart is scheduled in about 2 seconds. This page may disconnect briefly.',
+        'service' => $svc,
+        'message' => $message,
     ];
 }

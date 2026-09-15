@@ -105,6 +105,10 @@ if ($path === '/') {
     $remainingPath = substr($path, 12); // Remove '/fingerprint'
     $_SERVER['PATH_INFO'] = (empty($remainingPath) || $remainingPath === '/') ? '/' : (($remainingPath[0] === '/') ? $remainingPath : '/' . $remainingPath);
     require __DIR__ . '/fingerprint.php';
+} elseif (strpos($path, '/webauthn') === 0) {
+    $remainingPath = substr($path, 9); // Remove '/webauthn'
+    $_SERVER['PATH_INFO'] = (empty($remainingPath) || $remainingPath === '/') ? '/' : (($remainingPath[0] === '/') ? $remainingPath : '/' . $remainingPath);
+    require __DIR__ . '/webauthn.php';
 } elseif (strpos($path, '/tiles') === 0) {
     $_SERVER['PATH_INFO'] = substr($path, 6); // Remove '/tiles'
     require __DIR__ . '/tiles.php';

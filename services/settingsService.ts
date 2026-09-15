@@ -227,6 +227,8 @@ export interface AppSettings {
   // SAML Settings
   saml_enabled?: string; // '0' or '1'
   local_auth_enabled?: string; // '0' or '1'
+  /** Passkeys / WebAuthn as an add-on sign-in method ('0' or '1') */
+  passkey_enabled?: string;
   sp_entity_id?: string;
   sp_assertion_consumer_service?: string;
   sp_single_logout_service?: string;
@@ -475,6 +477,7 @@ export const settingsService = {
       // SAML defaults
       saml_enabled: data.settings?.saml_enabled || '0',
       local_auth_enabled: data.settings?.local_auth_enabled || '1',
+      passkey_enabled: data.settings?.passkey_enabled === '1' ? '1' : '0',
       sp_entity_id: data.settings?.sp_entity_id || '',
       sp_assertion_consumer_service: data.settings?.sp_assertion_consumer_service || '',
       sp_single_logout_service: data.settings?.sp_single_logout_service || '',

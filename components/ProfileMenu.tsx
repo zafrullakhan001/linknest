@@ -1,10 +1,12 @@
 import React, { useState, useRef, useEffect, useLayoutEffect } from 'react';
 import { createPortal } from 'react-dom';
 import { useAuth } from '../contexts/AuthContext';
+import { useSettings } from '../contexts/SettingsContext';
 import { authService } from '../services/authService';
 import { validatePassword } from '../services/passwordValidation';
 import { SecurePasswordInput } from './SecurePasswordInput';
 import { PasswordCriteriaList } from './PasswordCriteriaList';
+import { PasskeyManagerDialog } from './PasskeyManagerDialog';
 
 interface ProfileMenuProps {
   onLogout: () => void;
@@ -12,9 +14,11 @@ interface ProfileMenuProps {
 
 export const ProfileMenu: React.FC<ProfileMenuProps> = ({ onLogout }) => {
   const { user, refreshUser } = useAuth();
+  const { settings } = useSettings();
   const [open, setOpen] = useState(false);
   const [showChangePassword, setShowChangePassword] = useState(false);
   const [showDisplayNameEdit, setShowDisplayNameEdit] = useState(false);
+  const [showPasskeys, setShowPasskeys] = useState(false);
   const [displayNameValue, setDisplayNameValue] = useState('');
   const [currentPassword, setCurrentPassword] = useState('');
   const [newPassword, setNewPassword] = useState('');
@@ -27,6 +31,7 @@ export const ProfileMenu: React.FC<ProfileMenuProps> = ({ onLogout }) => {
 
   const displayLabel = (user?.display_name && user.display_name.trim()) ? user.display_name.trim() : (user?.username ?? '');
   const canChangePassword = (user?.auth_source ?? 'local') === 'local';
+  const passkeysEnabled = String(settings?.passkey_enabled || '0') === '1';
 
   const updatePosition = () => {
     if (menuRef.current) {
@@ -293,6 +298,20 @@ export const ProfileMenu: React.FC<ProfileMenuProps> = ({ onLogout }) => {
             </button>
           ) : null}
 
+          {passkeysEnabled && (
+            <button
+              type="button"
+              onClick={() => {
+                setOpen(false);
+                setShowPasskeys(true);
+              }}
+              className="w-full px-4 py-2.5 text-left text-sm text-slate-700 dark:text-slate-300 hover:bg-slate-50 dark:hover:bg-slate-700/50 flex items-center gap-2"
+            >
+              <span className="w-4 h-4 text-center text-sm leading-4" aria-hidden>🔑</span>
+              Manage passkeys
+            </button>
+          )}
+
           <div className="pt-1">
             <button
               type="button"
@@ -308,6 +327,8 @@ export const ProfileMenu: React.FC<ProfileMenuProps> = ({ onLogout }) => {
         </div>,
         document.body
       )}
+
+      <PasskeyManagerDialog isOpen={showPasskeys} onClose={() => setShowPasskeys(false)} />
     </div>
   );
 };
