@@ -1,64 +1,48 @@
 <?php
 require_once __DIR__ . '/config.php';
 
-if (session_status() === PHP_SESSION_NONE) {
-    session_start();
+// Session is started by api/index.php for all routed requests.
+// Keep helpers above the router: handlers call exit via sendJSON(), so any
+// runtime const/define after the switch never executes.
+
+if (!defined('STYLE_PROFILES_SCHEMA_VERSION')) {
+    define('STYLE_PROFILES_SCHEMA_VERSION', 1);
 }
 
-$method = $_SERVER['REQUEST_METHOD'];
-$path = $_SERVER['PATH_INFO'] ?? $_SERVER['REDIRECT_PATH_INFO'] ?? '';
+function isStyleProfilesSchemaCurrent($db) {
+    try {
+        $stmt = $db->prepare("SELECT value FROM settings WHERE key = 'style_profiles_schema_version'");
+        $stmt->execute();
+        $version = $stmt->fetchColumn();
+        return $version !== false && (int)$version >= STYLE_PROFILES_SCHEMA_VERSION;
+    } catch (PDOException $e) {
+        return false;
+    }
+}
 
-// Remove leading slash if present
-$path = ltrim($path, '/');
-
-switch ($method) {
-    case 'GET':
-        if ($path === '' || $path === '/') {
-            handleGetStyles();
-        } else if ($path === 'profiles') {
-            handleGetProfiles();
-        } else if (preg_match('/^profiles\/(\d+)$/', $path, $matches)) {
-            handleGetProfile((int)$matches[1]);
-        } else {
-            sendJSON(['error' => 'Invalid endpoint'], 404);
-        }
-        break;
-        
-    case 'PUT':
-        if ($path === '' || $path === '/') {
-            handleUpdateStyles();
-        } else if (preg_match('/^profiles\/(\d+)\/activate$/', $path, $matches)) {
-            handleActivateProfile((int)$matches[1]);
-        } else {
-            sendJSON(['error' => 'Invalid endpoint'], 404);
-        }
-        break;
-        
-    case 'POST':
-        if ($path === 'profiles') {
-            handleCreateProfile();
-        } else {
-            sendJSON(['error' => 'Invalid endpoint'], 404);
-        }
-        break;
-        
-    case 'DELETE':
-        if ($path === '' || $path === '/') {
-            handleResetStyles();
-        } else if (preg_match('/^profiles\/(\d+)$/', $path, $matches)) {
-            handleDeleteProfile((int)$matches[1]);
-        } else if ($path === 'profiles/inactive') {
-            handleDeleteInactiveProfiles();
-        } else {
-            sendJSON(['error' => 'Invalid endpoint'], 404);
-        }
-        break;
-        
-    default:
-        sendJSON(['error' => 'Method not allowed'], 405);
+function markStyleProfilesSchemaCurrent($db) {
+    try {
+        $stmt = $db->prepare('INSERT OR REPLACE INTO settings (key, value, updated_at) VALUES (?, ?, ?)');
+        $stmt->execute(['style_profiles_schema_version', (string)STYLE_PROFILES_SCHEMA_VERSION, time()]);
+    } catch (PDOException $e) {
+        error_log('Error marking style_profiles schema version: ' . $e->getMessage());
+    }
 }
 
 function ensureStyleProfilesTable($db) {
+    // Skip heavy migration if schema was already migrated (write/admin paths only)
+    if (isStyleProfilesSchemaCurrent($db)) {
+        try {
+            $indexExists = $db->query("SELECT name FROM sqlite_master WHERE type='index' AND name='idx_style_profiles_active'")->fetch();
+            if (!$indexExists) {
+                $db->exec('CREATE INDEX IF NOT EXISTS idx_style_profiles_active ON style_profiles(is_active)');
+            }
+        } catch (PDOException $e) {
+            error_log('Error ensuring style_profiles index: ' . $e->getMessage());
+        }
+        return;
+    }
+
     try {
         // Check if table exists
         $tableExists = $db->query("SELECT name FROM sqlite_master WHERE type='table' AND name='style_profiles'")->fetch();
@@ -230,6 +214,8 @@ function ensureStyleProfilesTable($db) {
                 }
             }
         }
+
+        markStyleProfilesSchemaCurrent($db);
     } catch (PDOException $e) {
         error_log('Error ensuring style_profiles table: ' . $e->getMessage());
         throw $e;
@@ -237,54 +223,77 @@ function ensureStyleProfilesTable($db) {
 }
 
 function handleGetStyles() {
-    // Styles are public (for display), but only admins can update
-    $db = getDB();
-    
-    // Ensure style_profiles table exists
-    ensureStyleProfilesTable($db);
-    
-    // Try to get active profile first
-    $stmt = $db->prepare('SELECT styles_data FROM style_profiles WHERE is_active = 1 ORDER BY updated_at DESC LIMIT 1');
-    $stmt->execute();
-    $activeProfile = $stmt->fetch(PDO::FETCH_ASSOC);
-    
-    if ($activeProfile && !empty($activeProfile['styles_data'])) {
-        $styles = json_decode($activeProfile['styles_data'], true);
-        if ($styles !== null && json_last_error() === JSON_ERROR_NONE) {
-            sendJSON(['styles' => $styles]);
+    $maxAttempts = 2;
+    for ($attempt = 1; $attempt <= $maxAttempts; $attempt++) {
+        try {
+            handleGetStylesRead();
             return;
+        } catch (PDOException $e) {
+            error_log('Error loading styles (attempt ' . $attempt . '): ' . $e->getMessage());
+            if ($attempt < $maxAttempts) {
+                usleep(200000);
+            }
         }
     }
-    
-    // Fallback to old space_styles table for backward compatibility
-    try {
-        $db->exec('CREATE TABLE IF NOT EXISTS space_styles (
-            id INTEGER PRIMARY KEY AUTOINCREMENT,
-            key TEXT UNIQUE NOT NULL,
-            value TEXT NOT NULL,
-            updated_at INTEGER NOT NULL
-        )');
-    } catch (PDOException $e) {
-        // Table might already exist, continue
+    sendJSON(['error' => 'Styles temporarily unavailable', 'retry' => true], 503);
+}
+
+function handleGetStylesRead() {
+    // Styles are public (for display) — read-only path, no DDL/migration
+    $cached = responseCacheGet('styles_public');
+    if (is_array($cached) && array_key_exists('styles', $cached)) {
+        responseCacheHitHeader(true);
+        sendJSON($cached);
+        return;
     }
-    
+
+    $db = getDB();
+
+    $tableExists = $db->query("SELECT name FROM sqlite_master WHERE type='table' AND name='style_profiles'")->fetch();
+    if ($tableExists) {
+        $stmt = $db->prepare('SELECT styles_data FROM style_profiles WHERE is_active = 1 ORDER BY updated_at DESC LIMIT 1');
+        $stmt->execute();
+        $activeProfile = $stmt->fetch(PDO::FETCH_ASSOC);
+
+        if ($activeProfile && !empty($activeProfile['styles_data'])) {
+            $styles = json_decode($activeProfile['styles_data'], true);
+            if ($styles !== null && json_last_error() === JSON_ERROR_NONE) {
+                $payload = ['styles' => $styles];
+                responseCacheSet('styles_public', $payload);
+                responseCacheHitHeader(false);
+                sendJSON($payload);
+                return;
+            }
+        }
+    }
+
+    // Fallback to legacy space_styles table (no DDL on read path)
+    $legacyExists = $db->query("SELECT name FROM sqlite_master WHERE type='table' AND name='space_styles'")->fetch();
+    if (!$legacyExists) {
+        $payload = ['styles' => null];
+        responseCacheSet('styles_public', $payload);
+        responseCacheHitHeader(false);
+        sendJSON($payload);
+        return;
+    }
+
     $stmt = $db->prepare('SELECT key, value FROM space_styles');
     $stmt->execute();
     $rows = $stmt->fetchAll(PDO::FETCH_ASSOC);
-    
+
     if (empty($rows)) {
-        // Return empty object, frontend will use defaults
-        sendJSON(['styles' => null]);
+        $payload = ['styles' => null];
+        responseCacheSet('styles_public', $payload);
+        responseCacheHitHeader(false);
+        sendJSON($payload);
         return;
     }
-    
-    // Reconstruct styles object from key-value pairs
+
     $styles = [];
     foreach ($rows as $row) {
         $key = $row['key'];
         $value = $row['value'];
-        
-        // Handle nested keys (e.g., gridColumns.sm)
+
         if (strpos($key, '.') !== false) {
             $parts = explode('.', $key);
             $current = &$styles;
@@ -296,13 +305,15 @@ function handleGetStyles() {
             }
             $current[$parts[count($parts) - 1]] = json_decode($value, true);
         } else {
-            // Try to decode JSON, fallback to string
             $decoded = json_decode($value, true);
             $styles[$key] = ($decoded !== null && json_last_error() === JSON_ERROR_NONE) ? $decoded : $value;
         }
     }
-    
-    sendJSON(['styles' => $styles]);
+
+    $payload = ['styles' => $styles];
+    responseCacheSet('styles_public', $payload);
+    responseCacheHitHeader(false);
+    sendJSON($payload);
 }
 
 function handleUpdateStyles() {
@@ -428,6 +439,7 @@ function handleUpdateStyles() {
         $profileId = $db->lastInsertId();
         
         $db->commit();
+        invalidateStylesCache();
         sendJSON([
             'success' => true, 
             'message' => 'Style profile created and activated successfully',
@@ -438,6 +450,48 @@ function handleUpdateStyles() {
         $db->rollBack();
         error_log('Error creating style profile: ' . $e->getMessage() . ' in ' . $e->getFile() . ' on line ' . $e->getLine());
         sendJSON(['error' => 'Failed to create style profile: ' . $e->getMessage()], 500);
+    }
+}
+
+/**
+ * Update the currently active style profile with new styles (e.g. page background).
+ * Used when admin changes page background so the choice persists across refresh.
+ */
+function handleUpdateActiveProfileStyles() {
+    requireAdmin();
+    
+    $data = getJSONInput();
+    if (!isset($data['styles']) || !is_array($data['styles'])) {
+        sendJSON(['error' => 'Styles data is required'], 400);
+    }
+    
+    $db = getDB();
+    ensureStyleProfilesTable($db);
+    
+    try {
+        $timestamp = time();
+        $stylesData = json_encode($data['styles']);
+        
+        $stmt = $db->prepare('SELECT id, name FROM style_profiles WHERE is_active = 1 ORDER BY updated_at DESC LIMIT 1');
+        $stmt->execute();
+        $active = $stmt->fetch(PDO::FETCH_ASSOC);
+        
+        if ($active) {
+            $stmt = $db->prepare('UPDATE style_profiles SET styles_data = ?, updated_at = ? WHERE id = ?');
+            $stmt->execute([$stylesData, $timestamp, (int)$active['id']]);
+            invalidateStylesCache();
+            sendJSON(['success' => true, 'message' => 'Active profile updated', 'profileId' => (int)$active['id']]);
+        } else {
+            $db->exec('UPDATE style_profiles SET is_active = 0');
+            $stmt = $db->prepare('INSERT INTO style_profiles (name, styles_data, is_active, created_at, updated_at) VALUES (?, ?, 1, ?, ?)');
+            $stmt->execute(['Default', $stylesData, $timestamp, $timestamp]);
+            $profileId = (int)$db->lastInsertId();
+            invalidateStylesCache();
+            sendJSON(['success' => true, 'message' => 'Default profile created and activated', 'profileId' => $profileId]);
+        }
+    } catch (Exception $e) {
+        error_log('Error updating active profile styles: ' . $e->getMessage());
+        sendJSON(['error' => 'Failed to save styles: ' . $e->getMessage()], 500);
     }
 }
 
@@ -529,6 +583,7 @@ function handleActivateProfile($profileId) {
         $stmt->execute([time(), $profileId]);
         
         $db->commit();
+        invalidateStylesCache();
         sendJSON(['success' => true, 'message' => 'Profile activated successfully']);
     } catch (Exception $e) {
         $db->rollBack();
@@ -640,6 +695,9 @@ function handleCreateProfile() {
         
         $profileId = $db->lastInsertId();
         
+        if ($activate) {
+            invalidateStylesCache();
+        }
         sendJSON([
             'success' => true,
             'message' => 'Profile created successfully',
@@ -668,9 +726,64 @@ function handleResetStyles() {
         // Clear all styles
         $db->exec('DELETE FROM space_styles');
         
+        invalidateStylesCache();
         sendJSON(['success' => true, 'message' => 'Styles reset to default']);
     } catch (Exception $e) {
         sendJSON(['error' => 'Failed to reset styles: ' . $e->getMessage()], 500);
     }
 }
 
+
+// Router must run after all handlers are defined (handlers exit via sendJSON).
+$method = $_SERVER['REQUEST_METHOD'];
+$path = $_SERVER['PATH_INFO'] ?? $_SERVER['REDIRECT_PATH_INFO'] ?? '';
+$path = ltrim($path, '/');
+
+switch ($method) {
+    case 'GET':
+        if ($path === '' || $path === '/') {
+            handleGetStyles();
+        } else if ($path === 'profiles') {
+            handleGetProfiles();
+        } else if (preg_match('/^profiles\/(\d+)$/', $path, $matches)) {
+            handleGetProfile((int)$matches[1]);
+        } else {
+            sendJSON(['error' => 'Invalid endpoint'], 404);
+        }
+        break;
+
+    case 'PUT':
+        if ($path === '' || $path === '/') {
+            handleUpdateStyles();
+        } else if ($path === 'active') {
+            handleUpdateActiveProfileStyles();
+        } else if (preg_match('/^profiles\/(\d+)\/activate$/', $path, $matches)) {
+            handleActivateProfile((int)$matches[1]);
+        } else {
+            sendJSON(['error' => 'Invalid endpoint'], 404);
+        }
+        break;
+
+    case 'POST':
+        if ($path === 'profiles') {
+            handleCreateProfile();
+        } else {
+            sendJSON(['error' => 'Invalid endpoint'], 404);
+        }
+        break;
+
+    case 'DELETE':
+        if ($path === '' || $path === '/') {
+            handleResetStyles();
+        } else if (preg_match('/^profiles\/(\d+)$/', $path, $matches)) {
+            handleDeleteProfile((int)$matches[1]);
+        } else if ($path === 'profiles/inactive') {
+            handleDeleteInactiveProfiles();
+        } else {
+            sendJSON(['error' => 'Invalid endpoint'], 404);
+        }
+        break;
+
+    default:
+        sendJSON(['error' => 'Method not allowed'], 405);
+}

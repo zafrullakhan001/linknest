@@ -4,8 +4,12 @@
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <meta name="description" content="LinkNest - Organize and manage your links and spaces" />
-  <title>LinkNest</title>
+  <meta name="robots" content="noindex, nofollow, noarchive, nosnippet" />
+  <meta name="googlebot" content="noindex, nofollow, noarchive, nosnippet" />
+  <meta name="description" content="Organize and manage your links and spaces" />
+  <!-- Title set from branding settings after load — leave empty to avoid LinkNest flash -->
+  <title></title>
+  <link rel="icon" type="image/svg+xml" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect width='32' height='32' rx='8' fill='%233b82f6'/%3E%3Cpath fill='none' stroke='%23fff' stroke-width='2.4' stroke-linecap='round' stroke-linejoin='round' d='M13.2 18.8l-1.2 1.2a3.6 3.6 0 01-5.1-5.1l2.2-2.2m9.9-.9l1.2-1.2a3.6 3.6 0 015.1 5.1l-2.2 2.2M12.8 19.2l6.4-6.4'/%3E%3C/svg%3E" />
 
   <!-- DNS Prefetch for external resources -->
   <link rel="dns-prefetch" href="https://fonts.googleapis.com">
@@ -15,56 +19,20 @@
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 
-  <!-- Preload critical font with font-display swap for better performance -->
-  <link rel="preload" href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap"
-    as="style" onload="this.onload=null;this.rel='stylesheet'">
-  <noscript>
-    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap" rel="stylesheet">
-  </noscript>
+  <!-- Inter font (no inline onload — CSP-safe) -->
+  <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap">
 
-  <!-- Inline critical CSS moved to index.css to prevent Vite proxy issues -->
-  <!-- Initialize style tag and apply cached styles early to prevent style flash on refresh -->
-  <script>
-    (function () {
-      // Create style tag immediately
-      let styleTag = document.getElementById('linknest-custom-styles');
-      if (!styleTag) {
-        styleTag = document.createElement('style');
-        styleTag.id = 'linknest-custom-styles';
-        document.head.appendChild(styleTag);
-      }
-
-      // Try to apply cached styles immediately
-      try {
-        const cached = localStorage.getItem('linknest_styles_cache');
-        const timestamp = localStorage.getItem('linknest_styles_cache_timestamp');
-
-        if (cached && timestamp) {
-          const age = Date.now() - parseInt(timestamp, 10);
-          // Use cache if less than 5 minutes old
-          if (age < 300000) {
-            const styles = JSON.parse(cached);
-            const isDark = document.documentElement.classList.contains('dark');
-
-            // Generate CSS from cached styles (we need the generateCSS function)
-            // For now, we'll just ensure the style tag exists and let React populate it
-            // The actual CSS generation will happen in React, but having the tag ready helps
-          }
-        }
-      } catch (error) {
-        // Silently fail - React will handle it
-      }
-    })();
-  </script>
-  <!-- Browser Launcher Pro Integration Script -->
-  <script type="module" src="land/browser-launcher-integration.js?v=2.0"></script>
+  <!-- Apply theme + cached styles before first paint to avoid refresh jerk -->
+  <script src="./ln-boot-theme.js"></script>
+  <!-- Browser Launcher Pro — load after first paint so it does not compete with the app bundle -->
+  <script src="./ln-load-browser-launcher.js" defer></script>
 </head>
 
 <body>
   <div id="root">
     <div class="loading">Loading...</div>
   </div>
-  <script type="module" src="/index.tsx"></script>
+  <script type="module" src="./index.tsx"></script>
 </body>
 
 </html>

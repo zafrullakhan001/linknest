@@ -18,7 +18,7 @@ This script will:
 3. Build the Docker image
 4. Start the application
 
-The application will be available at `http://localhost:8000`
+The application will be available at `http://localhost:8090` and `https://localhost:8443`
 
 ## Manual Deployment
 
@@ -58,8 +58,8 @@ docker compose -f docker/docker-compose.yml up -d --build
 ### Step 5: Access Application
 
 Open your browser and navigate to:
-- Development: `http://localhost:8000`
-- Production: `http://localhost:8000`
+- HTTP: `http://localhost:8090`
+- HTTPS: `https://localhost:8443`
 
 ## Docker Commands
 
@@ -100,6 +100,28 @@ docker exec -it linknest bash
 
 **Important**: Change the admin password immediately after first login!
 
+## Clone Instance (host only)
+
+Admin → Integrations → Clone copies the app to a **sibling folder**. On the host that is XAMPP `htdocs`. **In Docker**, clones go to `/var/www/clones/{name}` and are served at `http://localhost:8090/{name}/` (same container; Node.js rebuilds the UI). WSL folder clone is not supported.
+
+To refresh this container after code changes, rebuild:
+
+```bash
+# from the project root
+./redeploy-docker.sh
+# Windows: redeploy-docker.bat
+```
+
+The Docker image includes **Node.js 20 + npm** so Admin → App Updates can apply a GitHub commit and rebuild `dist/` inside the container (Vite config `vite.docker.config.ts`, base `/`).
+
+To create another **host** copy (not a second container), run on the host:
+
+```bash
+scripts/clone-linknest.sh myspaces --preset empty
+```
+
+Presets: `empty`, `structure`, `full`, `demo`. Each clone writes `data/install_identity.php` so logins do not share cookies with other folders. The Docker entrypoint writes a Docker identity (`LNSESSdocker`, cookie path `/`) so `http://localhost:8090` stays separate from host XAMPP.
+
 ## Production Deployment
 
 For production, use the production compose file:
@@ -109,9 +131,22 @@ docker compose -f docker/docker-compose.prod.yml up -d --build
 ```
 
 This will:
-- Run on port 8000
+- Run on HTTP 8090 and HTTPS 8443
 - Set restart policy to `always`
-- Include health checks
+- Include health checks, SSH/VNC gateway ports, and workers
+
+### Monitoring workers (built-in)
+
+The container entrypoint runs `monitor_runner.py` + `email_sender.py` on a loop. You do **not** need Windows Task Scheduler when using Docker.
+
+| Variable | Default | Purpose |
+|----------|---------|---------|
+| `LINKNEST_WORKERS_ENABLED` | `1` | Set `0` to disable |
+| `LINKNEST_WORKER_INTERVAL_SECONDS` | `60` | Seconds between cycles |
+| `LINKNEST_WORKER_MAX_WORKERS` | `10` | Concurrent checks |
+| `LINKNEST_EMAIL_LIMIT` | `50` | Max emails per sender run |
+
+For **Windows/XAMPP** (non-Docker), register Task Scheduler jobs once with `scripts\schedule-monitor-workers.bat`. See `docs/PYTHON_WORKERS.md`.
 
 ## Environment Variables
 
@@ -146,7 +181,8 @@ chmod -R 755 data uploads
 Edit `docker/docker-compose.yml` and change the port mapping:
 ```yaml
 ports:
-  - "8000:80"  # Change 8000 to any available port (e.g., "8001:80")
+  - "8090:80"  # Change 8090 to any available port (e.g., "8001:80")
+  - "8443:443"
 ```
 
 ### Rebuild after code changes
@@ -159,7 +195,7 @@ docker compose -f docker/docker-compose.yml up -d --build
 
 The Docker setup includes:
 - **Frontend**: React/Vite application (built during Docker build)
-- **Backend**: PHP 8.2 with Apache
+- **Backend**: PHP 8.4 with Apache (GD, LDAP, zip, OPcache)
 - **Database**: SQLite (stored in `./data` directory)
 - **Uploads**: Logo images (stored in `./uploads` directory)
 

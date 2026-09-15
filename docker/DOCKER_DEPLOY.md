@@ -1,4 +1,4 @@
-# Docker Deployment Guide - Port 8000
+# Docker Deployment Guide - HTTP 8090 / HTTPS 8443
 
 This guide will help you deploy LinkNest as a Docker container on port 8000.
 
@@ -30,7 +30,7 @@ chmod +x docker-deploy.sh
    ```
 
 3. **Access the application:**
-   Open your browser and navigate to: **http://localhost:8000**
+   Open your browser and navigate to: **http://localhost:8090** or **https://localhost:8443**
 
 ## Default Credentials
 
@@ -74,14 +74,15 @@ docker exec -it linknest bash
 
 ## Port Configuration
 
-The application is configured to run on **port 8000**. The container maps:
-- Host port: `8000`
-- Container port: `80` (Apache)
+The application is configured to run on **HTTP 8090** and **HTTPS 8443**. The container maps:
+- Host port: `8090` → container `80` (Apache)
+- Host port: `8443` → container `443` (Apache SSL)
 
 To change the port, edit `docker/docker-compose.yml`:
 ```yaml
 ports:
-  - "YOUR_PORT:80"  # Change YOUR_PORT to desired port
+  - "YOUR_PORT:80"  # Change YOUR_PORT to desired HTTP port
+  - "YOUR_SSL_PORT:443"
 ```
 
 ## Data Persistence
@@ -99,12 +100,13 @@ These directories are created automatically if they don't exist.
 docker compose -f docker/docker-compose.yml logs
 ```
 
-### Port 8000 already in use
-1. Stop the service using port 8000, or
+### Port 8090 already in use
+1. Stop the service using port 8090, or
 2. Change the port in `docker/docker-compose.yml`:
    ```yaml
    ports:
      - "8001:80"  # Use port 8001 instead
+     - "8443:443"
    ```
 
 ### Permission issues (Linux/Mac)
@@ -122,7 +124,7 @@ docker compose -f docker/docker-compose.yml up -d --build
 ## Architecture
 
 - **Frontend:** React/Vite application (built during Docker build)
-- **Backend:** PHP 8.2 with Apache
+- **Backend:** PHP 8.4 with Apache (GD, LDAP, zip, OPcache)
 - **Database:** SQLite (stored in `./data` directory)
 - **Uploads:** Logo images (stored in `./uploads` directory)
 

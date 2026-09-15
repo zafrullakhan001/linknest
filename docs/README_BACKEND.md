@@ -21,21 +21,19 @@ chmod 755 data
 
 ### 2. PHP Built-in Server (Development)
 
-For development, you can use PHP's built-in server:
+`npm run dev` starts PHP on port 8000 for you. To run the backend alone:
 
 ```bash
-# Terminal 1: Start PHP server
 php -S localhost:8000 -t .
-
-# Terminal 2: Start Vite dev server (for frontend)
-npm run dev
 ```
 
-Then access the application at `http://localhost:3000` (Vite will proxy API requests).
+Then access the application at `http://localhost:3000` (Vite proxies `/api` and `/uploads` to PHP).
 
 ### 3. Apache Configuration
 
-If using Apache, ensure mod_rewrite is enabled and the `.htaccess` file is being read. The `.htaccess` file is already configured to route API requests.
+If using Apache, ensure `mod_rewrite` is enabled and the `.htaccess` file is being read. The `.htaccess` file is already configured to route API requests.
+
+**Vanilla Apache + PHP 8.5 on Windows** (not XAMPP): after the stock install, see [VANILLA_APACHE_PHP85_WINDOWS.md](VANILLA_APACHE_PHP85_WINDOWS.md) for the exact `httpd.conf` and `php.ini` edits (`AllowOverride All`, `php8apache2_4.dll`, required extensions).
 
 ### 4. Nginx Configuration
 
@@ -67,6 +65,22 @@ location / {
 - `POST /api/tiles` - Create a new tile (requires authentication)
 - `PUT /api/tiles/{id}` - Update a tile (requires authentication)
 - `DELETE /api/tiles/{id}` - Delete a tile (requires authentication)
+- `GET /api/tiles/{id}/presence` - Who is currently viewing or editing this space
+- `POST /api/tiles/{id}/presence` - Heartbeat (`{ mode: "viewing"|"editing" }`) or leave (`{ action: "leave" }`); requires authentication
+- `DELETE /api/tiles/{id}/presence` - Clear your presence on this space (requires authentication)
+- `GET /api/apache-monitor` - Realtime Apache dashboard (admin): `mod_status` workers/uptime, access-log top paths, OPcache, PHP memory, SQLite size, disk. Polled only while the admin dashboard window is open (`?fresh=1` bypasses the short log/disk cache). Works wherever Apache is installed (vanilla, XAMPP, WAMP, Laragon, Docker); probes this host's scheme/port on loopback (not Docker `:8090` unless the process is Docker).
+- `POST /api/apache-monitor/purge-logs` - Empty Apache and/or PHP log files in place (admin; `{ target: "apache"|"php"|"all", confirm: true }`)
+- `POST /api/apache-monitor/enable-opcache` - Write recommended OPcache keys into the loaded `php.ini` (admin; `{ confirm: true }`; backs up to `php.ini.linknest.bak`)
+- `POST /api/apache-monitor/restart-apache` - Schedule a delayed Apache restart (admin; `{ confirm: true }`). On Windows it locates the Apache service (`sc.exe`, including names like `Apache2.4`) and runs `httpd -k restart -n <service>`, then `net stop`/`net start` and `sc stop`/`sc start` if needed, from a detached process so the service can recycle. Optional `LINKNEST_APACHE_HTTPD` and `LINKNEST_APACHE_SERVICE`. Linux uses `apachectl graceful`.
+
+### MCP (LLM tools)
+
+- `POST /api/mcp` - Model Context Protocol JSON-RPC (Bearer `lnmcp_` token)
+- `GET /api/mcp-tokens` - List MCP tokens (admin)
+- `POST /api/mcp-tokens` - Create an MCP token (admin; secret returned once)
+- `DELETE /api/mcp-tokens/{id}` - Revoke an MCP token (admin)
+
+See [MCP.md](MCP.md) for Cursor / Claude Desktop setup.
 
 ## Environment Variables
 
@@ -75,7 +89,10 @@ Create a `.env` file in the root directory:
 ```
 VITE_API_BASE=/api
 GEMINI_API_KEY=your_gemini_api_key_here
+LINKNEST_APACHE_HTTPD=D:\Apache\bin\httpd.exe
 ```
+
+`LINKNEST_APACHE_HTTPD` is optional. Apache monitor restart discovers `httpd.exe` / `apachectl` from the running process, ServerRoot, Windows service, PATH, and folders next to DocumentRoot / php.ini.
 
 ## Security Notes
 

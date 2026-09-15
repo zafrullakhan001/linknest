@@ -1,44 +1,72 @@
 #!/bin/bash
-# Clone LinkNest to a new folder with all necessary files
-# Usage: ./clone-linknest.sh <new-folder-name> [--source <path>] [--target <path>] [--assets] [--database]
-# Example: ./clone-linknest.sh myspaces --source /var/www/linknest --target /home/user/projects --assets --database
+# Clone LinkNest to a sibling folder on the host (not Docker or WSL).
+# Usage: ./clone-linknest.sh <new-folder-name> [--source <path>] [--target <path>] [--preset empty|structure|full|demo]
+# Legacy: --assets --database  (both => full, database only => structure)
 
 set -e
 
-# Colors for output
 RED='\033[0;31m'
 GREEN='\033[0;32m'
 YELLOW='\033[1;33m'
-NC='\033[0m' # No Color
+NC='\033[0m'
 
-if [ -z "$1" ]; then
+CLONE_UNAVAILABLE='Clone is not available in Docker or WSL mode. Please go with Docker clone or redeploy via Docker container.'
+
+refuse_if_not_host() {
+    if [ -f /.dockerenv ] || [ "${LINKNEST_DOCKER:-}" = "1" ] || [ "${SSH_GATEWAY_DOCKER:-}" = "1" ]; then
+        echo -e "${RED}${CLONE_UNAVAILABLE}${NC}"
+        exit 1
+    fi
+    if [ -n "${WSL_DISTRO_NAME:-}" ] || [ -n "${WSL_INTEROP:-}" ]; then
+        echo -e "${RED}${CLONE_UNAVAILABLE}${NC}"
+        exit 1
+    fi
+    if [ -r /proc/version ] && grep -qiE 'microsoft|WSL' /proc/version 2>/dev/null; then
+        echo -e "${RED}${CLONE_UNAVAILABLE}${NC}"
+        exit 1
+    fi
+}
+
+print_usage() {
     echo ""
-    echo "Usage: ./clone-linknest.sh <new-folder-name> [--source <path>] [--target <path>] [--assets] [--database]"
+    echo "Usage: ./clone-linknest.sh <new-folder-name> [--source <path>] [--target <path>] [--preset empty|structure|full|demo]"
+    echo ""
+    echo "Host filesystem only. In Docker, rebuild with redeploy-docker.sh / docker-deploy.sh instead."
     echo ""
     echo "Parameters:"
-    echo "  new-folder-name  Name of the new folder to create"
-    echo "  --source <path>  Source directory to clone from (optional, default: current directory)"
-    echo "  --target <path>  Target directory where folder will be created (optional)"
-    echo "  --assets         Copy logos and favicon from uploads folder"
-    echo "  --database       Copy database file from data folder"
+    echo "  new-folder-name              Name of the new folder to create"
+    echo "  --source <path>              Source directory (default: this repo)"
+    echo "  --target <path>              Parent directory for the clone (optional)"
+    echo "  --preset empty|structure|full|demo   Clone content preset (default: empty)"
+    echo "  --assets / --database        Legacy flags (both => full, database => structure)"
+    echo ""
+    echo "Presets:"
+    echo "  empty       Fresh admin / admin123, no tiles or uploads"
+    echo "  structure   Public/authenticated tiles only; admin / admin123"
+    echo "  full        Full database and uploads; same logins as source"
+    echo "  demo        Demo tiles plus demo1–demo10 / password"
     echo ""
     echo "Examples:"
     echo "  ./clone-linknest.sh myspaces"
-    echo "  ./clone-linknest.sh myspaces --target /home/user/projects"
-    echo "  ./clone-linknest.sh myspaces --source /var/www/linknest"
-    echo "  ./clone-linknest.sh myspaces --assets --database"
-    echo "  ./clone-linknest.sh myspaces --source /var/www/linknest --target /home/user/projects --assets"
+    echo "  ./clone-linknest.sh myspaces --preset full"
+    echo "  ./clone-linknest.sh myspaces --source /var/www/linknest --target /home/user/projects --preset structure"
     echo ""
+}
+
+refuse_if_not_host
+
+if [ -z "$1" ]; then
+    print_usage
     exit 1
 fi
 
 NEW_FOLDER="$1"
+PRESET=""
 COPY_ASSETS=0
 COPY_DATABASE=0
 TARGET_PATH=""
 SOURCE_PATH=""
 
-# Parse optional parameters
 shift
 while [[ $# -gt 0 ]]; do
     case $1 in
@@ -50,15 +78,19 @@ while [[ $# -gt 0 ]]; do
             TARGET_PATH="$2"
             shift 2
             ;;
+        --preset)
+            PRESET="$2"
+            shift 2
+            ;;
+        --empty|--structure|--full|--demo)
+            PRESET="${1#--}"
+            shift
+            ;;
         --assets)
             COPY_ASSETS=1
             shift
             ;;
-        --database)
-            COPY_DATABASE=1
-            shift
-            ;;
-        --databases)
+        --database|--databases)
             COPY_DATABASE=1
             shift
             ;;
@@ -68,17 +100,40 @@ while [[ $# -gt 0 ]]; do
             ;;
     esac
 done
+
+PRESET="$(echo "${PRESET:-}" | tr '[:upper:]' '[:lower:]')"
+if [ -z "$PRESET" ]; then
+    if [ "$COPY_DATABASE" -eq 1 ] && [ "$COPY_ASSETS" -eq 1 ]; then
+        PRESET="full"
+    elif [ "$COPY_DATABASE" -eq 1 ]; then
+        PRESET="structure"
+    else
+        PRESET="empty"
+    fi
+fi
+case "$PRESET" in
+    empty|structure|full|demo) ;;
+    *)
+        echo -e "${RED}ERROR: Unknown preset '$PRESET' (use empty, structure, full, or demo)${NC}"
+        exit 1
+        ;;
+esac
+
+COPY_DATABASE=0
+COPY_ALL_UPLOADS=0
+if [ "$PRESET" = "full" ] || [ "$PRESET" = "structure" ]; then
+    COPY_DATABASE=1
+    COPY_ALL_UPLOADS=1
+fi
+
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-# Determine source directory
 if [ -n "$SOURCE_PATH" ]; then
-    # User specified a custom source path
     if [ ! -d "$SOURCE_PATH" ]; then
         echo -e "${RED}ERROR: Source directory does not exist: $SOURCE_PATH${NC}"
         exit 1
     fi
     CURRENT_DIR="$(cd "$SOURCE_PATH" && pwd)"
 else
-    # Default: use parent directory of script location
     CURRENT_DIR="$(cd "$SCRIPT_DIR/.." && pwd)"
 fi
 if [ -n "$TARGET_PATH" ]; then
@@ -95,9 +150,9 @@ echo "========================================"
 echo ""
 echo "Source: $CURRENT_DIR"
 echo "Target: $TARGET_DIR"
+echo "Preset: $PRESET"
 echo ""
 
-# Check if target folder already exists
 if [ -d "$TARGET_DIR" ]; then
     echo -e "${YELLOW}WARNING: Folder '$TARGET_DIR' already exists!${NC}"
     echo ""
@@ -105,11 +160,6 @@ if [ -d "$TARGET_DIR" ]; then
     if [[ "$REPLACE" =~ ^[Yy]$ ]]; then
         echo "Removing existing folder..."
         rm -rf "$TARGET_DIR"
-        if [ $? -ne 0 ]; then
-            echo -e "${RED}ERROR: Failed to remove existing folder!${NC}"
-            echo "Please delete it manually and try again."
-            exit 1
-        fi
         echo "Existing folder removed successfully."
     else
         echo "Operation cancelled by user."
@@ -117,66 +167,40 @@ if [ -d "$TARGET_DIR" ]; then
     fi
 fi
 
-# Create target directory
-echo "[1/6] Creating target directory..."
+echo "[1/7] Creating target directory..."
 mkdir -p "$TARGET_DIR"
-if [ $? -ne 0 ]; then
-    echo -e "${RED}ERROR: Failed to create target directory!${NC}"
-    exit 1
-fi
 
-# Verify source directory exists
 if [ ! -f "$CURRENT_DIR/package.json" ]; then
     echo -e "${RED}ERROR: Source directory not found or invalid!${NC}"
     echo "Expected: $CURRENT_DIR"
-    echo "Please run this script from the scripts folder."
     exit 1
 fi
 
-# Copy necessary files and directories
-echo "[2/6] Copying files..."
+echo "[2/7] Copying files..."
 echo ""
 
-# Copy root files
 echo "  - Copying root files..."
 COPY_ERROR=0
-cp "$CURRENT_DIR/package.json" "$TARGET_DIR/" 2>/dev/null || COPY_ERROR=1
-cp "$CURRENT_DIR/package-lock.json" "$TARGET_DIR/" 2>/dev/null || COPY_ERROR=1
-cp "$CURRENT_DIR/tsconfig.json" "$TARGET_DIR/" 2>/dev/null || COPY_ERROR=1
-cp "$CURRENT_DIR/vite.config.ts" "$TARGET_DIR/" 2>/dev/null || COPY_ERROR=1
-cp "$CURRENT_DIR/vite.docker.config.ts" "$TARGET_DIR/" 2>/dev/null || COPY_ERROR=1
-cp "$CURRENT_DIR/vite.runtime.config.ts" "$TARGET_DIR/" 2>/dev/null || COPY_ERROR=1
-cp "$CURRENT_DIR/tailwind.config.js" "$TARGET_DIR/" 2>/dev/null || COPY_ERROR=1
-cp "$CURRENT_DIR/postcss.config.js" "$TARGET_DIR/" 2>/dev/null || COPY_ERROR=1
-cp "$CURRENT_DIR/index.html" "$TARGET_DIR/" 2>/dev/null || COPY_ERROR=1
-cp "$CURRENT_DIR/index.tsx" "$TARGET_DIR/" 2>/dev/null || COPY_ERROR=1
-cp "$CURRENT_DIR/index.css" "$TARGET_DIR/" 2>/dev/null || COPY_ERROR=1
-cp "$CURRENT_DIR/App.tsx" "$TARGET_DIR/" 2>/dev/null || COPY_ERROR=1
-cp "$CURRENT_DIR/types.ts" "$TARGET_DIR/" 2>/dev/null || COPY_ERROR=1
-cp "$CURRENT_DIR/router.php" "$TARGET_DIR/" 2>/dev/null || COPY_ERROR=1
+for f in package.json package-lock.json tsconfig.json vite.config.ts vite.docker.config.ts vite.runtime.config.ts \
+         tailwind.config.js postcss.config.js index.html index.tsx index.css App.tsx types.ts router.php README.md \
+         AGENTS.md composer.json novnc.d.ts package-for-deployment.bat redeploy-docker.bat redeploy-docker.sh \
+         bulk-import-template.csv section-links-import-template.csv staging-ai-import-template.csv staging-ai-prompt-guide.md; do
+    if [ -f "$CURRENT_DIR/$f" ]; then
+        cp "$CURRENT_DIR/$f" "$TARGET_DIR/" 2>/dev/null || COPY_ERROR=1
+    fi
+done
 [ -f "$CURRENT_DIR/.htaccess" ] && cp "$CURRENT_DIR/.htaccess" "$TARGET_DIR/" 2>/dev/null || true
-cp "$CURRENT_DIR/README.md" "$TARGET_DIR/" 2>/dev/null || COPY_ERROR=1
-[ -f "$CURRENT_DIR/bulk-import-template.csv" ] && cp "$CURRENT_DIR/bulk-import-template.csv" "$TARGET_DIR/" 2>/dev/null || true
-[ -f "$CURRENT_DIR/section-links-import-template.csv" ] && cp "$CURRENT_DIR/section-links-import-template.csv" "$TARGET_DIR/" 2>/dev/null || true
+[ -f "$CURRENT_DIR/.gitignore" ] && cp "$CURRENT_DIR/.gitignore" "$TARGET_DIR/" 2>/dev/null || true
 if [ "$COPY_ERROR" -eq 1 ]; then
     echo "    ${YELLOW}WARNING: Some files may not have been copied successfully${NC}"
 fi
 
-# Copy directories
-echo "  - Copying api directory..."
-cp -r "$CURRENT_DIR/api" "$TARGET_DIR/" 2>/dev/null || true
-
-echo "  - Copying components directory..."
-cp -r "$CURRENT_DIR/components" "$TARGET_DIR/" 2>/dev/null || true
-
-echo "  - Copying contexts directory..."
-cp -r "$CURRENT_DIR/contexts" "$TARGET_DIR/" 2>/dev/null || true
-
-echo "  - Copying services directory..."
-cp -r "$CURRENT_DIR/services" "$TARGET_DIR/" 2>/dev/null || true
-
-echo "  - Copying src directory..."
-cp -r "$CURRENT_DIR/src" "$TARGET_DIR/" 2>/dev/null || true
+for d in api analytics bin components config contexts hooks migrations services src utils public docker docs land extensions; do
+    if [ -d "$CURRENT_DIR/$d" ]; then
+        echo "  - Copying $d directory..."
+        cp -r "$CURRENT_DIR/$d" "$TARGET_DIR/" 2>/dev/null || true
+    fi
+done
 
 echo "  - Creating data directory..."
 mkdir -p "$TARGET_DIR/data"
@@ -184,66 +208,36 @@ mkdir -p "$TARGET_DIR/data"
 echo "  - Creating uploads directory..."
 mkdir -p "$TARGET_DIR/uploads"
 
-echo "  - Creating scripts directory..."
+echo "  - Copying scripts directory..."
 mkdir -p "$TARGET_DIR/scripts"
-
-echo "  - Copying clone scripts..."
-cp "$SCRIPT_DIR/clone-linknest.bat" "$TARGET_DIR/scripts/" 2>/dev/null || true
-cp "$SCRIPT_DIR/clone-linknest.sh" "$TARGET_DIR/scripts/" 2>/dev/null || true
-cp "$SCRIPT_DIR/encrypt_ldap_passwords.php" "$TARGET_DIR/scripts/" 2>/dev/null || true
+cp -r "$CURRENT_DIR/scripts/." "$TARGET_DIR/scripts/" 2>/dev/null || true
 chmod +x "$TARGET_DIR/scripts/clone-linknest.sh" 2>/dev/null || true
-echo "    Copied clone scripts to target folder"
 
-# Copy assets if requested
-if [ "$COPY_ASSETS" -eq 1 ]; then
-    echo "  - Copying logos and favicon..."
-    LOGO_COUNT=0
-    FAVICON_COUNT=0
-    
-    # Copy logo files
-    if ls "$CURRENT_DIR/uploads/logo_"*.* 1> /dev/null 2>&1; then
-        cp "$CURRENT_DIR/uploads/logo_"*.* "$TARGET_DIR/uploads/" 2>/dev/null || true
-        LOGO_COUNT=$(ls -1 "$TARGET_DIR/uploads/logo_"*.* 2>/dev/null | wc -l)
-        echo "    Copied $LOGO_COUNT logo file(s)"
-    fi
-    
-    # Copy favicon files
-    if ls "$CURRENT_DIR/uploads/favicon_"*.* 1> /dev/null 2>&1; then
-        cp "$CURRENT_DIR/uploads/favicon_"*.* "$TARGET_DIR/uploads/" 2>/dev/null || true
-        FAVICON_COUNT=$(ls -1 "$TARGET_DIR/uploads/favicon_"*.* 2>/dev/null | wc -l)
-        echo "    Copied $FAVICON_COUNT favicon file(s)"
-    fi
-    
-    if [ "$LOGO_COUNT" -eq 0 ] && [ "$FAVICON_COUNT" -eq 0 ]; then
-        echo "    No logos or favicons found to copy"
+if [ "$COPY_ALL_UPLOADS" -eq 1 ]; then
+    echo "  - Copying all uploads..."
+    if [ -d "$CURRENT_DIR/uploads" ]; then
+        cp -a "$CURRENT_DIR/uploads/." "$TARGET_DIR/uploads/" 2>/dev/null || true
+        echo "    Copied uploads folder"
     fi
 fi
 
-# Copy database if requested
 if [ "$COPY_DATABASE" -eq 1 ]; then
     echo "  - Copying database..."
     if [ -f "$CURRENT_DIR/data/linknest.db" ]; then
-        cp "$CURRENT_DIR/data/linknest.db" "$TARGET_DIR/data/linknest.db" 2>/dev/null
-        if [ $? -eq 0 ]; then
-            DB_SIZE=$(du -h "$TARGET_DIR/data/linknest.db" | cut -f1)
-            echo "    Copied database: data/linknest.db ($DB_SIZE)"
+        cp "$CURRENT_DIR/data/linknest.db" "$TARGET_DIR/data/linknest.db"
+        DB_SIZE=$(du -h "$TARGET_DIR/data/linknest.db" | cut -f1)
+        echo "    Copied database: data/linknest.db ($DB_SIZE)"
+        if [ "$PRESET" = "full" ]; then
             echo "  - Encrypting LDAP passwords in copied database..."
-            (cd "$TARGET_DIR" && php scripts/encrypt_ldap_passwords.php >/dev/null 2>&1)
-            if [ $? -eq 0 ]; then
-                echo "    Successfully encrypted LDAP passwords (if any were found)"
-            else
+            (cd "$TARGET_DIR" && php scripts/encrypt_ldap_passwords.php >/dev/null 2>&1) || {
                 echo -e "    ${YELLOW}WARNING: Failed to encrypt LDAP passwords in copied database${NC}"
-                echo "    Please run: php scripts/encrypt_ldap_passwords.php manually"
-            fi
-        else
-            echo -e "    ${RED}ERROR: Failed to copy database file${NC}"
+            }
         fi
     else
         echo "    No database file found to copy"
     fi
 fi
 
-# Create .env file with new base path
 echo "[3/7] Creating .env file..."
 cat > "$TARGET_DIR/.env" << EOF
 # LinkNest Environment Variables
@@ -258,87 +252,55 @@ VITE_BASE_PATH=/$NEW_FOLDER
 # Optional: Gemini API Key
 # GEMINI_API_KEY=your-api-key-here
 EOF
-
 echo "  Created .env with VITE_BASE_PATH=/$NEW_FOLDER"
 
-# Install dependencies
-echo "[4/7] Installing npm dependencies..."
+echo "[4/7] Applying preset and install identity..."
+php "$TARGET_DIR/scripts/apply-clone-preset.php" "$TARGET_DIR" "$NEW_FOLDER" "$PRESET" "http://localhost/$NEW_FOLDER/"
+if [ $? -ne 0 ]; then
+    echo -e "${RED}ERROR: Failed to apply clone preset / install identity${NC}"
+    exit 1
+fi
+
+echo "[5/7] Installing npm dependencies..."
 echo "  This may take a few minutes..."
 cd "$TARGET_DIR"
 if [ ! -f "package.json" ]; then
-    echo ""
     echo -e "${RED}ERROR: package.json not found in target directory!${NC}"
-    echo "The file copy operation may have failed."
-    echo "Please check that the source directory is correct and try again."
     exit 1
 fi
 npm install
-if [ $? -ne 0 ]; then
-    echo ""
-    echo -e "${RED}ERROR: npm install failed!${NC}"
-    echo "Please check the error messages above."
-    exit 1
-fi
 
-# Build the application
-echo "[5/7] Building the application..."
+echo "[6/7] Building the application..."
 echo "  This may take a few minutes..."
 npm run build
-if [ $? -ne 0 ]; then
-    echo ""
-    echo -e "${RED}ERROR: npm run build failed!${NC}"
-    echo "Please check the error messages above."
-    exit 1
-fi
-
-# Remove node_modules after build (not needed for production, saves space)
 echo "  Build complete! Removing node_modules folder (not needed for production)..."
 if [ -d "$TARGET_DIR/node_modules" ]; then
     rm -rf "$TARGET_DIR/node_modules"
     echo "  Deleted node_modules folder to save space"
-else
-    echo "  node_modules folder not found"
 fi
 
-# Create a README for the cloned instance
-echo "[6/7] Creating deployment README..."
+echo "[7/7] Creating deployment README..."
 cat > "$TARGET_DIR/DEPLOYMENT.md" << EOF
 # $NEW_FOLDER - LinkNest Instance
 
 This is a cloned instance of LinkNest deployed to /$NEW_FOLDER/
 
+Preset: $PRESET
+
 ## Quick Start
 
-1. The application has been built and is ready to use
-2. Access it at: http://localhost/$NEW_FOLDER/
-3. Default admin credentials: admin / admin123
+1. Access it at: http://localhost/$NEW_FOLDER/
+2. Empty / structure: admin / admin123
+3. Full: same logins as the source instance
+4. Demo: admin / admin123 and demo1–demo10 / password
 
-## Database
+Each clone has its own login cookie (data/install_identity.php). Do not copy that file between installs.
 
-The database file will be created at: data/linknest.db
+## Cloning
 
-## Configuration
-
-Edit .env to change settings:
-- VITE_BASE_PATH: Current value is /$NEW_FOLDER
-- VITE_PROTOCOL: HTTP/HTTPS protocol
-- VITE_HOST: Server hostname
-- GEMINI_API_KEY: Optional API key for AI features
-
-## Rebuilding
-
-To rebuild after making changes:
-  cd $NEW_FOLDER
-  npm run build
-
-## Cloning This Instance
-
-You can clone this instance using the scripts in the scripts folder:
-  scripts/clone-linknest.sh new-instance-name
+Host only: scripts/clone-linknest.sh new-instance-name --preset empty
+Docker: use redeploy-docker.sh (Admin folder clone is disabled in Docker/WSL).
 EOF
-
-echo "[7/7] Finalizing..."
-echo "  Clone scripts are available in: $TARGET_DIR/scripts"
 
 echo ""
 echo "========================================"
@@ -346,18 +308,16 @@ echo -e "${GREEN}Clone Complete!${NC}"
 echo "========================================"
 echo ""
 echo "New instance created at: $TARGET_DIR"
+echo "Preset: $PRESET"
 echo ""
 echo "Next steps:"
 echo "1. Access the application at: http://localhost/$NEW_FOLDER/"
-echo "2. Login with default credentials: admin / admin123"
+if [ "$PRESET" = "full" ]; then
+    echo "2. Login with the same credentials as the source instance"
+elif [ "$PRESET" = "demo" ]; then
+    echo "2. Login as admin / admin123 or demo1–demo10 / password"
+else
+    echo "2. Login with default credentials: admin / admin123"
+fi
 echo "3. Change the admin password in the Admin Panel"
 echo ""
-if [ "$COPY_DATABASE" -eq 1 ]; then
-    echo "Database file: $TARGET_DIR/data/linknest.db"
-    echo "(Copied from source)"
-else
-    echo "Database file: $TARGET_DIR/data/linknest.db"
-    echo "(Will be created on first use)"
-fi
-echo ""
-

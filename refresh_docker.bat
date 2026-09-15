@@ -42,7 +42,7 @@ if %ERRORLEVEL% NEQ 0 (
         set /a WAIT_COUNT+=2
         docker info >nul 2>&1
         if %ERRORLEVEL% EQU 0 (
-        echo Docker Desktop is now ready!
+            echo Docker Desktop is now ready!
             echo.
             goto docker_check_done
         )
@@ -107,13 +107,15 @@ if %ERRORLEVEL% NEQ 0 (
         :docker_started
         echo Docker Desktop is now running!
         echo.
-        goto docker_check_done
+        goto docker_ready
     )
     :docker_check_done
+    goto docker_ready
 ) else (
     echo Docker Desktop is already running.
     echo.
 )
+:docker_ready
 
 REM Determine search for docker compose command
 docker compose version >nul 2>&1
@@ -138,8 +140,9 @@ if %ERRORLEVEL% NEQ 0 (
 echo.
 
 REM 2. Rebuild the image (Multi-stage build handles frontend & backend)
+REM PHP version is set in docker/Dockerfile (FROM php:8.4-apache). Dependent modules there: curl, ldap, zip, pdo_sqlite, opcache, openssl
 echo Step 2: Rebuilding images from source...
-echo This will recompile the React frontend and update the PHP backend.
+echo This will recompile the React frontend and update the PHP backend (PHP 8.4).
 %COMPOSE_CMD% -f docker/docker-compose.yml build --no-cache
 if %ERRORLEVEL% NEQ 0 (
     echo ❌ Error: Docker build failed.
@@ -162,6 +165,8 @@ echo.
 
 REM 3b. Verify Python is available inside the container (needed for worker scripts)
 echo Step 3b: Verifying Python workers inside container...
+echo    Waiting a few seconds for container to be ready...
+timeout /t 5 /nobreak >nul
 echo    Checking python3 version...
 %COMPOSE_CMD% -f docker/docker-compose.yml exec -T linknest python3 --version
 if errorlevel 1 goto python_missing
@@ -202,6 +207,10 @@ echo.
 echo LinkNest is running at:
 echo    HTTP:  http://localhost:8090
 echo    HTTPS: https://localhost:8443
+echo.
+echo Docker Landing Page (Quick Access):
+echo    HTTP:  http://localhost:8090/docker-landing.php
+echo    HTTPS: https://localhost:8443/docker-landing.php
 echo.
 echo Mail Server (Pilot):
 echo    Mailpit Web UI: http://localhost:8025

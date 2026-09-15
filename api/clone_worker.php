@@ -83,6 +83,18 @@ writeWorkerTraceLog("Loading: " . __DIR__ . '/clone_service.php', 'DEBUG');
 require_once __DIR__ . '/clone_service.php';
 writeWorkerTraceLog("Required files loaded successfully", 'INFO');
 
+if (function_exists('linknestCloneIsDocker') && linknestCloneIsDocker()) {
+    putenv('HOME=/var/www');
+    putenv('npm_config_strict_ssl=false');
+    putenv('NODE_TLS_REJECT_UNAUTHORIZED=0');
+    $path = getenv('PATH') ?: '/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin';
+    if (strpos($path, '/usr/local/bin') === false) {
+        $path = '/usr/local/bin:' . $path;
+    }
+    putenv('PATH=' . $path);
+    writeWorkerTraceLog("Docker npm environment prepared (HOME=/var/www, strict-ssl=false)", 'INFO');
+}
+
 // Get clone ID from command line argument
 if ($argc < 2) {
     writeWorkerTraceLog("ERROR: No clone ID provided in command line arguments", 'ERROR');
@@ -132,7 +144,7 @@ try {
     
     writeWorkerTraceLog("Clone record found: folder_name={$clone['folder_name']}, status={$clone['status']}", 'INFO');
     writeWorkerTraceLog("Clone details: source_path={$clone['source_path']}, target_path={$clone['target_path']}", 'DEBUG');
-    writeWorkerTraceLog("Clone options: copy_assets=" . ($clone['copy_assets'] ? '1' : '0') . ", copy_database=" . ($clone['copy_database'] ? '1' : '0'), 'DEBUG');
+    writeWorkerTraceLog("Clone options: preset=" . ($clone['clone_preset'] ?? 'legacy') . ", copy_assets=" . ($clone['copy_assets'] ? '1' : '0') . ", copy_database=" . ($clone['copy_database'] ? '1' : '0'), 'DEBUG');
     error_log("Clone worker: Found clone - {$clone['folder_name']}, status: {$clone['status']}");
     
     // Verify source and target paths exist
@@ -192,7 +204,8 @@ try {
         $clone['target_path'],
         (bool)$clone['copy_assets'],
         (bool)$clone['copy_database'],
-        $clone['created_by']
+        $clone['created_by'],
+        $clone['clone_preset'] ?? null
     );
     
     $executionTime = number_format(microtime(true) - $executionStart, 2);

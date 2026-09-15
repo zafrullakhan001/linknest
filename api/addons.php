@@ -1,0 +1,2157 @@
+<?php
+/**
+ * Performance Analytics Add-on Configuration API
+ * Admin-only endpoints for managing add-on configuration
+ */
+
+require_once __DIR__ . '/config.php';
+require_once __DIR__ . '/mailer.php';
+require_once __DIR__ . '/email_templates.php';
+require_once __DIR__ . '/auth_mail.php';
+
+if (session_status() === PHP_SESSION_NONE) {
+    session_start();
+}
+
+// Require admin authentication for all add-on management
+$AUTH_USER = requireAdmin();
+
+$method = $_SERVER['REQUEST_METHOD'];
+$path = $_SERVER['PATH_INFO'] ?? $_SERVER['REDIRECT_PATH_INFO'] ?? '';
+
+switch ($method) {
+    case 'GET':
+        if ($path === '/performance-analytics' || $path === '/performance-analytics/') {
+            handleGetAnalyticsConfig();
+        } elseif ($path === '/performance-analytics/status' || $path === '/performance-analytics/status/') {
+            handleCheckAnalyticsStatus();
+        } elseif ($path === '/performance-analytics/backup' || $path === '/performance-analytics/backup/') {
+            handleBackupAnalyticsDb();
+        } elseif ($path === '/monitorv2' || $path === '/monitorv2/') {
+            handleGetMonitorv2Config();
+        } elseif ($path === '/monitorv2/status' || $path === '/monitorv2/status/') {
+            handleCheckMonitorv2Status();
+        } elseif ($path === '/monitorv2/backup' || $path === '/monitorv2/backup/') {
+            handleBackupMonitorv2Db();
+        } elseif ($path === '/monitorv2/schema-backup' || $path === '/monitorv2/schema-backup/') {
+            handleBackupMonitorv2Schema();
+        } elseif ($path === '/system-email' || $path === '/system-email/') {
+            handleGetSystemEmailConfig();
+        } elseif ($path === '/system-email/status' || $path === '/system-email/status/') {
+            handleCheckSystemEmailStatus();
+        } else {
+            sendJSON(['error' => 'Invalid endpoint'], 404);
+        }
+        break;
+        
+    case 'POST':
+        if ($path === '/performance-analytics/test-connection' || $path === '/performance-analytics/test-connection/') {
+            handleTestAnalyticsConnection();
+        } elseif ($path === '/performance-analytics/setup-schema' || $path === '/performance-analytics/setup-schema/') {
+            handleSetupSchema();
+        } elseif ($path === '/performance-analytics/purge-database' || $path === '/performance-analytics/purge-database/') {
+            handlePurgeDatabase();
+        } elseif ($path === '/performance-analytics/download-geolite2' || $path === '/performance-analytics/download-geolite2/') {
+            handleDownloadGeoLite2();
+        } elseif ($path === '/performance-analytics/restore' || $path === '/performance-analytics/restore/') {
+            handleRestoreAnalyticsDb();
+        } elseif ($path === '/monitorv2/test-connection' || $path === '/monitorv2/test-connection/') {
+            handleTestMonitorv2Connection();
+        } elseif ($path === '/monitorv2/create-database' || $path === '/monitorv2/create-database/') {
+            handleCreateMonitorv2Database();
+        } elseif ($path === '/monitorv2/install-extensions' || $path === '/monitorv2/install-extensions/') {
+            handleInstallMonitorv2Extensions();
+        } elseif ($path === '/monitorv2/setup-schema' || $path === '/monitorv2/setup-schema/') {
+            handleSetupMonitorv2Schema();
+        } elseif ($path === '/monitorv2/purge-data' || $path === '/monitorv2/purge-data/') {
+            handlePurgeMonitorv2Data();
+        } elseif ($path === '/monitorv2/restore' || $path === '/monitorv2/restore/') {
+            handleRestoreMonitorv2Db();
+        } elseif ($path === '/system-email/test' || $path === '/system-email/test/') {
+            handleTestSystemEmail();
+        } else {
+            sendJSON(['error' => 'Invalid endpoint'], 404);
+        }
+        break;
+        
+    case 'PUT':
+        if ($path === '/performance-analytics' || $path === '/performance-analytics/') {
+            handleUpdateAnalyticsConfig();
+        } elseif ($path === '/monitorv2' || $path === '/monitorv2/') {
+            handleUpdateMonitorv2Config();
+        } elseif ($path === '/system-email' || $path === '/system-email/') {
+            handleUpdateSystemEmailConfig();
+        } else {
+            sendJSON(['error' => 'Invalid endpoint'], 404);
+        }
+        break;
+        
+    default:
+        sendJSON(['error' => 'Method not allowed'], 405);
+}
+
+/**
+ * Get current Performance Analytics configuration
+ */
+function handleGetAnalyticsConfig() {
+    try {
+        $db = getDB();
+        
+        // Get all settings with 'performance_analytics_' prefix
+        $stmt = $db->prepare("
+            SELECT key, value 
+            FROM settings 
+            WHERE key LIKE 'performance_analytics_%'
+        ");
+        $stmt->execute();
+        $settings = $stmt->fetchAll(PDO::FETCH_KEY_PAIR);
+        
+        // Get addon status
+        $statusStmt = $db->prepare("
+            SELECT * FROM addon_status 
+            WHERE addon_name = 'performance_analytics'
+        ");
+        $statusStmt->execute();
+        $status = $statusStmt->fetch(PDO::FETCH_ASSOC);
+        
+        // Parse beacon URLs
+        $beaconUrls = [];
+        if (!empty($settings['performance_analytics_beacon_urls'])) {
+            $beaconUrls = array_filter(
+                array_map('trim', explode(',', $settings['performance_analytics_beacon_urls'])),
+                function($url) { return !empty($url); }
+            );
+        }
+        
+        sendJSON([
+            'config' => [
+                'enabled' => (bool)($settings['performance_analytics_enabled'] ?? false),
+                'pgHost' => $settings['performance_analytics_pg_host'] ?? '',
+                'pgPort' => (int)($settings['performance_analytics_pg_port'] ?? 5432),
+                'pgDatabase' => $settings['performance_analytics_pg_database'] ?? '',
+                'pgUser' => $settings['performance_analytics_pg_user'] ?? '',
+                // Don't send password back
+                'sampleRate' => (float)($settings['performance_analytics_sample_rate'] ?? 0.1),
+                'trackAnonymous' => (bool)($settings['performance_analytics_track_anonymous'] ?? true),
+                'trackLogins' => (bool)($settings['performance_analytics_track_logins'] ?? true),
+                'beaconUrls' => $beaconUrls,
+                'workerEnabled' => (bool)($settings['performance_analytics_worker_enabled'] ?? false),
+                'retentionDays' => (int)($settings['performance_analytics_retention_days'] ?? 90),
+                'dashboardUrl' => $settings['performance_analytics_dashboard_url'] ?? ''
+            ],
+            'status' => $status
+        ]);
+        
+    } catch (Exception $e) {
+        sendJSON(['error' => 'Failed to load configuration: ' . $e->getMessage()], 500);
+    }
+}
+
+/**
+ * Check Performance Analytics addon health status
+ */
+function handleCheckAnalyticsStatus() {
+    try {
+        $db = getDB();
+        
+        // Check if enabled
+        $stmt = $db->prepare("SELECT value FROM settings WHERE key = 'performance_analytics_enabled'");
+        $stmt->execute();
+        $enabled = ($stmt->fetchColumn() === '1');
+        
+        if (!$enabled) {
+            sendJSON([
+                'status' => 'disabled',
+                'message' => 'Performance Analytics addon is disabled'
+            ]);
+            return;
+        }
+        
+        // Try to connect to PostgreSQL
+        $analyticsDB = getAnalyticsDB();
+        
+        if (!$analyticsDB) {
+            sendJSON([
+                'status' => 'unavailable',
+                'message' => 'Cannot connect to PostgreSQL database'
+            ]);
+            return;
+        }
+        
+        // Check if required tables exist
+        $stmt = $analyticsDB->query("
+            SELECT table_name 
+            FROM information_schema.tables 
+            WHERE table_schema = 'public' 
+            AND table_name IN ('metrics_queue', 'performance_metrics', 'link_latency_summary')
+        ");
+        $tables = $stmt->fetchAll(PDO::FETCH_COLUMN);
+        
+        if (count($tables) < 3) {
+            sendJSON([
+                'status' => 'not_configured',
+                'message' => 'Database schema not initialized',
+                'existing_tables' => $tables
+            ]);
+            return;
+        }
+        
+        // Get metrics count
+        $stmt = $analyticsDB->query("SELECT COUNT(*) FROM performance_metrics");
+        $metricsCount = $stmt->fetchColumn();
+        
+        $stmt = $analyticsDB->query("SELECT COUNT(*) FROM metrics_queue WHERE processed = FALSE");
+        $queueCount = $stmt->fetchColumn();
+        
+        sendJSON([
+            'status' => 'available',
+            'message' => 'Performance Analytics is operational',
+            'metrics_count' => (int)$metricsCount,
+            'queue_pending' => (int)$queueCount
+        ]);
+        
+    } catch (Exception $e) {
+        sendJSON([
+            'status' => 'error',
+            'message' => 'Health check failed: ' . $e->getMessage()
+        ], 500);
+    }
+}
+
+/**
+ * Test PostgreSQL connection with provided credentials
+ */
+function handleTestAnalyticsConnection() {
+    try {
+        $data = getJSONInput();
+        
+        if (empty($data['pgHost']) || empty($data['pgDatabase']) || empty($data['pgUser'])) {
+            sendJSON(['error' => 'Host, database, and user are required'], 400);
+            return;
+        }
+        
+        // Try to connect
+        $dsn = sprintf(
+            "pgsql:host=%s;port=%d;dbname=%s",
+            $data['pgHost'],
+            $data['pgPort'] ?? 5432,
+            $data['pgDatabase']
+        );
+        
+        $pdo = new PDO(
+            $dsn,
+            $data['pgUser'],
+            $data['pgPassword'] ?? '',
+            [
+                PDO::ATTR_ERRMODE => PDO::ERRMODE_EXCEPTION,
+                PDO::ATTR_TIMEOUT => 5
+            ]
+        );
+        
+        // Check if TimescaleDB is available
+        $stmt = $pdo->query("SELECT default_version FROM pg_available_extensions WHERE name = 'timescaledb'");
+        $timescaledb = $stmt->fetch(PDO::FETCH_ASSOC);
+        
+        // Check if extension is installed
+        $stmt = $pdo->query("SELECT * FROM pg_extension WHERE extname = 'timescaledb'");
+        $timescaledbInstalled = $stmt->fetch(PDO::FETCH_ASSOC);
+        
+        // Check if required tables exist
+        $stmt = $pdo->query("
+            SELECT table_name 
+            FROM information_schema.tables 
+            WHERE table_schema = 'public' 
+            AND table_name IN ('metrics_queue', 'performance_metrics', 'link_latency_summary', 'user_geolocations')
+        ");
+        $existingTables = $stmt->fetchAll(PDO::FETCH_COLUMN);
+        
+        sendJSON([
+            'success' => true,
+            'message' => 'Connection successful',
+            'details' => [
+                'timescaledb_available' => !empty($timescaledb),
+                'timescaledb_installed' => !empty($timescaledbInstalled),
+                'timescaledb_version' => $timescaledb['default_version'] ?? null,
+                'tables_exist' => $existingTables,
+                'schema_ready' => count($existingTables) >= 4,
+                'postgres_version' => $pdo->getAttribute(PDO::ATTR_SERVER_VERSION)
+            ]
+        ]);
+        
+    } catch (PDOException $e) {
+        sendJSON([
+            'success' => false,
+            'error' => 'Connection failed: ' . $e->getMessage()
+        ], 400);
+    } catch (Exception $e) {
+        sendJSON([
+            'success' => false,
+            'error' => $e->getMessage()
+        ], 500);
+    }
+}
+
+/**
+ * Update Performance Analytics configuration
+ */
+function handleUpdateAnalyticsConfig() {
+    try {
+        $db = getDB();
+        $data = getJSONInput();
+        
+        // Validate required fields if enabling
+        if (!empty($data['enabled'])) {
+            if (empty($data['pgHost']) || empty($data['pgDatabase']) || empty($data['pgUser'])) {
+                sendJSON(['error' => 'PostgreSQL connection settings are required when enabling the addon'], 400);
+                return;
+            }
+        }
+        
+        // Prepare settings to update
+        $settings = [
+            'performance_analytics_enabled' => !empty($data['enabled']) ? '1' : '0',
+            'performance_analytics_pg_host' => $data['pgHost'] ?? '',
+            'performance_analytics_pg_port' => (string)($data['pgPort'] ?? 5432),
+            'performance_analytics_pg_database' => $data['pgDatabase'] ?? '',
+            'performance_analytics_pg_user' => $data['pgUser'] ?? '',
+            'performance_analytics_sample_rate' => (string)($data['sampleRate'] ?? 0.1),
+            'performance_analytics_track_anonymous' => !empty($data['trackAnonymous']) ? '1' : '0',
+            'performance_analytics_track_logins' => !empty($data['trackLogins']) ? '1' : '0',
+            'performance_analytics_worker_enabled' => !empty($data['workerEnabled']) ? '1' : '0',
+            'performance_analytics_retention_days' => (string)($data['retentionDays'] ?? 90),
+            'performance_analytics_dashboard_url' => $data['dashboardUrl'] ?? ''
+        ];
+        
+        // Handle beacon URLs (array to comma-separated string)
+        if (isset($data['beaconUrls'])) {
+            $urls = is_array($data['beaconUrls']) ? $data['beaconUrls'] : [$data['beaconUrls']];
+            $settings['performance_analytics_beacon_urls'] = implode(',', array_filter($urls));
+        }
+        
+        // Update password only if provided
+        if (!empty($data['pgPassword'])) {
+            $settings['performance_analytics_pg_password'] = $data['pgPassword'];
+        }
+        
+        // Update all settings
+        $stmt = $db->prepare("
+            INSERT INTO settings (key, value, updated_at) VALUES (?, ?, ?)
+            ON CONFLICT(key) DO UPDATE SET value = excluded.value, updated_at = excluded.updated_at
+        ");
+        
+        $now = time();
+        foreach ($settings as $key => $value) {
+            $stmt->execute([$key, $value, $now]);
+        }
+        
+        // Update addon status
+        $statusStmt = $db->prepare("
+            UPDATE addon_status 
+            SET is_enabled = ?, last_check_at = ?
+            WHERE addon_name = 'performance_analytics'
+        ");
+        $statusStmt->execute([!empty($data['enabled']) ? 1 : 0, $now]);
+        
+        sendJSON([
+            'success' => true,
+            'message' => 'Configuration saved successfully'
+        ]);
+        
+    } catch (Exception $e) {
+        sendJSON(['error' => 'Failed to save configuration: ' . $e->getMessage()], 500);
+    }
+}
+
+/**
+ * Setup database schema
+ */
+function handleSetupSchema() {
+    try {
+        $schemaFile = __DIR__ . '/../analytics/schema.sql';
+        
+        if (!file_exists($schemaFile)) {
+            sendJSON(['error' => 'Schema file not found: ' . $schemaFile], 404);
+            return;
+        }
+        
+        // Get PostgreSQL connection
+        $analyticsDB = getAnalyticsDB();
+        if (!$analyticsDB) {
+            sendJSON(['error' => 'Cannot connect to PostgreSQL. Please configure connection settings first.'], 400);
+            return;
+        }
+        
+        // Read and execute schema file
+        $schemaSQL = file_get_contents($schemaFile);
+        
+        // Split by semicolons and execute each statement
+        $statements = array_filter(
+            array_map('trim', explode(';', $schemaSQL)),
+            function($stmt) { return !empty($stmt) && !preg_match('/^--/', $stmt); }
+        );
+        
+        $executed = 0;
+        $errors = [];
+        
+        foreach ($statements as $statement) {
+            if (empty(trim($statement))) continue;
+            
+            try {
+                $analyticsDB->exec($statement);
+                $executed++;
+            } catch (PDOException $e) {
+                // Ignore "already exists" errors
+                if (strpos($e->getMessage(), 'already exists') === false && 
+                    strpos($e->getMessage(), 'duplicate') === false) {
+                    $errors[] = $e->getMessage();
+                }
+            }
+        }
+        
+        // Verify tables were created
+        $stmt = $analyticsDB->query("
+            SELECT table_name 
+            FROM information_schema.tables 
+            WHERE table_schema = 'public' 
+            AND table_name IN ('metrics_queue', 'performance_metrics', 'link_latency_summary', 'user_geolocations')
+        ");
+        $tables = $stmt->fetchAll(PDO::FETCH_COLUMN);
+        
+        sendJSON([
+            'success' => true,
+            'message' => 'Schema setup completed',
+            'statements_executed' => $executed,
+            'tables_created' => $tables,
+            'warnings' => $errors
+        ]);
+        
+    } catch (Exception $e) {
+        sendJSON(['error' => 'Schema setup failed: ' . $e->getMessage()], 500);
+    }
+}
+
+/**
+ * Purge all analytics data
+ */
+function handlePurgeDatabase() {
+    try {
+        $analyticsDB = getAnalyticsDB();
+        if (!$analyticsDB) {
+            sendJSON(['error' => 'Cannot connect to PostgreSQL'], 400);
+            return;
+        }
+        
+        // Get confirmation from request
+        $data = getJSONInput();
+        if (empty($data['confirm']) || $data['confirm'] !== 'DELETE_ALL_DATA') {
+            sendJSON(['error' => 'Confirmation required. Send confirm: "DELETE_ALL_DATA"'], 400);
+            return;
+        }
+        
+        // Disable foreign key checks temporarily
+        $analyticsDB->exec('SET session_replication_role = replica;');
+        
+        // Truncate all tables
+        $tables = [
+            'metrics_queue',
+            'performance_metrics',
+            'link_latency_summary',
+            'user_geolocations',
+            'alert_thresholds'
+        ];
+        
+        $truncated = [];
+        foreach ($tables as $table) {
+            try {
+                $analyticsDB->exec("TRUNCATE TABLE $table CASCADE");
+                $truncated[] = $table;
+            } catch (PDOException $e) {
+                // Table might not exist, that's okay
+            }
+        }
+        
+        // Re-enable foreign key checks
+        $analyticsDB->exec('SET session_replication_role = DEFAULT;');
+        
+        // Get counts to verify
+        $counts = [];
+        foreach ($tables as $table) {
+            try {
+                $stmt = $analyticsDB->query("SELECT COUNT(*) FROM $table");
+                $counts[$table] = (int)$stmt->fetchColumn();
+            } catch (PDOException $e) {
+                $counts[$table] = 'N/A';
+            }
+        }
+        
+        sendJSON([
+            'success' => true,
+            'message' => 'Database purged successfully',
+            'tables_truncated' => $truncated,
+            'remaining_counts' => $counts
+        ]);
+        
+    } catch (Exception $e) {
+        sendJSON(['error' => 'Purge failed: ' . $e->getMessage()], 500);
+    }
+}
+
+/**
+ * Download GeoLite2 database
+ */
+function handleDownloadGeoLite2() {
+    try {
+        $geoipDir = __DIR__ . '/../analytics/geoip';
+        $targetFile = $geoipDir . '/GeoLite2-City.mmdb';
+        
+        // Check if already exists
+        if (file_exists($targetFile)) {
+            sendJSON([
+                'success' => true,
+                'message' => 'GeoLite2 database already exists',
+                'file_path' => $targetFile,
+                'file_size' => filesize($targetFile),
+                'already_exists' => true
+            ]);
+            return;
+        }
+        
+        // Create directory if needed
+        if (!is_dir($geoipDir)) {
+            mkdir($geoipDir, 0755, true);
+        }
+        
+        // GeoLite2 download requires MaxMind account
+        // For now, provide instructions
+        sendJSON([
+            'success' => false,
+            'message' => 'GeoLite2 download requires manual setup',
+            'instructions' => [
+                '1. Sign up for a free MaxMind account at https://www.maxmind.com/en/accounts/current/geoip/downloads',
+                '2. Download GeoLite2-City.mmdb',
+                '3. Place it in: ' . $targetFile,
+                '4. Alternatively, the system will use online geolocation API as fallback'
+            ],
+            'download_url' => 'https://www.maxmind.com/en/accounts/current/geoip/downloads',
+            'target_path' => $targetFile
+        ]);
+        
+    } catch (Exception $e) {
+        sendJSON(['error' => 'Download setup failed: ' . $e->getMessage()], 500);
+    }
+}
+
+/**
+ * Get analytics PostgreSQL connection params from settings (for backup/restore).
+ * Decrypts password if stored in encrypted format.
+ *
+ * @return array{host:string,port:int,database:string,user:string,password:string}|null
+ */
+function getAnalyticsConnectionParams(): ?array {
+    try {
+        $db = getDB();
+        $stmt = $db->prepare("SELECT key, value FROM settings WHERE key LIKE 'performance_analytics_pg_%'");
+        $stmt->execute();
+        $settings = $stmt->fetchAll(PDO::FETCH_KEY_PAIR);
+        $host = $settings['performance_analytics_pg_host'] ?? '';
+        $database = $settings['performance_analytics_pg_database'] ?? '';
+        if (empty($host) || empty($database)) {
+            return null;
+        }
+        $password = $settings['performance_analytics_pg_password'] ?? '';
+        if (!empty($password) && strpos($password, '.') !== false && substr_count($password, '.') === 2) {
+            try {
+                $password = decryptPassword($password);
+            } catch (Exception $e) {
+                // keep as-is if decryption fails
+            }
+        }
+        return [
+            'host' => $host,
+            'port' => (int)($settings['performance_analytics_pg_port'] ?? 5432),
+            'database' => $database,
+            'user' => $settings['performance_analytics_pg_user'] ?? 'postgres',
+            'password' => $password
+        ];
+    } catch (Exception $e) {
+        return null;
+    }
+}
+
+/**
+ * Export analytics database to SQL file using PDO only (no pg_dump).
+ * Produces a data-only backup: TRUNCATE + INSERT for all public tables.
+ * Restore assumes the schema (e.g. analytics/schema.sql) is already applied.
+ */
+function exportAnalyticsDbViaPhp(PDO $pdo, string $sqlPath): void {
+    $fp = fopen($sqlPath, 'wb');
+    if (!$fp) {
+        throw new RuntimeException('Could not create SQL file');
+    }
+    fwrite($fp, "-- Linknest Performance Analytics backup (PHP export)\n");
+    fwrite($fp, "-- " . date('c') . "\n");
+    fwrite($fp, "-- Data-only: run analytics/schema.sql before restore if needed.\n\n");
+    fwrite($fp, "SET session_replication_role = replica;\n\n");
+    $tables = $pdo->query("SELECT tablename FROM pg_tables WHERE schemaname = 'public' ORDER BY tablename")->fetchAll(PDO::FETCH_COLUMN);
+    if (empty($tables)) {
+        fwrite($fp, "-- No tables in public schema\n");
+        fwrite($fp, "SET session_replication_role = DEFAULT;\n");
+        fclose($fp);
+        return;
+    }
+    $truncateList = implode(', ', array_map(function ($t) { return '"' . str_replace('"', '""', $t) . '"'; }, $tables));
+    fwrite($fp, "TRUNCATE TABLE {$truncateList} CASCADE;\n\n");
+    $batchSize = 100;
+    foreach ($tables as $table) {
+        $safeTable = '"' . str_replace('"', '""', $table) . '"';
+        $cols = $pdo->query("SELECT column_name FROM information_schema.columns WHERE table_schema = 'public' AND table_name = " . $pdo->quote($table) . " ORDER BY ordinal_position")->fetchAll(PDO::FETCH_COLUMN);
+        if (empty($cols)) {
+            continue;
+        }
+        $colList = implode(', ', array_map(function ($c) { return '"' . str_replace('"', '""', $c) . '"'; }, $cols));
+        $stmt = $pdo->query("SELECT * FROM {$safeTable}");
+        $rows = $stmt->fetchAll(PDO::FETCH_ASSOC);
+        if (empty($rows)) {
+            fwrite($fp, "-- Table {$table}: 0 rows\n");
+            continue;
+        }
+        $rowCount = 0;
+        $batches = array_chunk($rows, $batchSize);
+        foreach ($batches as $batch) {
+            $values = [];
+            foreach ($batch as $row) {
+                $v = [];
+                foreach ($cols as $col) {
+                    $val = $row[$col] ?? null;
+                    if ($val === null) {
+                        $v[] = 'NULL';
+                    } elseif (is_bool($val)) {
+                        $v[] = $val ? 'TRUE' : 'FALSE';
+                    } elseif (is_int($val) || (is_float($val) && (float)(int)$val === $val)) {
+                        $v[] = (string)(int)$val;
+                    } elseif (is_float($val)) {
+                        $v[] = str_replace(',', '.', (string)$val);
+                    } else {
+                        $v[] = $pdo->quote((string)$val);
+                    }
+                }
+                $values[] = '(' . implode(', ', $v) . ')';
+            }
+            fwrite($fp, "INSERT INTO {$safeTable} ({$colList}) VALUES " . implode(",\n ", $values) . ";\n");
+            $rowCount += count($batch);
+        }
+        fwrite($fp, "-- Table {$table}: {$rowCount} rows\n\n");
+    }
+    fwrite($fp, "SET session_replication_role = DEFAULT;\n");
+    fclose($fp);
+}
+
+/**
+ * Create analytics DB backup and send as ZIP download.
+ * Uses PHP/PDO export only (no pg_dump required).
+ */
+function handleBackupAnalyticsDb(): void {
+    $params = getAnalyticsConnectionParams();
+    if (!$params) {
+        sendJSON(['error' => 'Analytics database not configured. Set PostgreSQL connection in add-on settings.'], 400);
+        return;
+    }
+    $tmpDir = rtrim(sys_get_temp_dir(), DIRECTORY_SEPARATOR) . DIRECTORY_SEPARATOR . 'ln_backup_' . bin2hex(random_bytes(8));
+    if (!@mkdir($tmpDir, 0700, true)) {
+        sendJSON(['error' => 'Could not create temporary directory'], 500);
+        return;
+    }
+    $timestamp = date('Ymd-His');
+    $sqlFile = $tmpDir . DIRECTORY_SEPARATOR . 'analytics_backup_' . $timestamp . '.sql';
+    $zipFile = $tmpDir . DIRECTORY_SEPARATOR . 'analytics_backup_' . $timestamp . '.zip';
+    try {
+        $dsn = sprintf('pgsql:host=%s;port=%d;dbname=%s', $params['host'], $params['port'], $params['database']);
+        $pdo = new PDO($dsn, $params['user'], $params['password'], [
+            PDO::ATTR_ERRMODE => PDO::ERRMODE_EXCEPTION,
+            PDO::ATTR_TIMEOUT => 300,
+        ]);
+        exportAnalyticsDbViaPhp($pdo, $sqlFile);
+    } catch (Exception $e) {
+        if (is_dir($tmpDir)) {
+            if (file_exists($sqlFile)) @unlink($sqlFile);
+            @rmdir($tmpDir);
+        }
+        sendJSON(['error' => 'Export failed: ' . $e->getMessage()], 500);
+        return;
+    }
+    if (!file_exists($sqlFile) || filesize($sqlFile) === 0) {
+        @unlink($sqlFile);
+        @rmdir($tmpDir);
+        sendJSON(['error' => 'Export produced empty file'], 500);
+        return;
+    }
+    if (!class_exists('ZipArchive')) {
+        @unlink($sqlFile);
+        @rmdir($tmpDir);
+        sendJSON(['error' => 'Zip extension not available. Enable php zip extension.'], 500);
+        return;
+    }
+    $zip = new ZipArchive();
+    if ($zip->open($zipFile, ZipArchive::CREATE | ZipArchive::OVERWRITE) !== true) {
+        @unlink($sqlFile);
+        @rmdir($tmpDir);
+        sendJSON(['error' => 'Could not create zip file'], 500);
+        return;
+    }
+    $zip->addFile($sqlFile, basename($sqlFile));
+    $zip->close();
+    @unlink($sqlFile);
+    $zipName = 'analytics_backup_' . $timestamp . '.zip';
+    while (ob_get_level()) {
+        ob_end_clean();
+    }
+    header('Content-Type: application/zip');
+    header('Content-Disposition: attachment; filename="' . $zipName . '"');
+    header('Content-Length: ' . filesize($zipFile));
+    readfile($zipFile);
+    @unlink($zipFile);
+    @rmdir($tmpDir);
+    exit;
+}
+
+/**
+ * Restore analytics DB from uploaded SQL or ZIP containing SQL.
+ */
+function handleRestoreAnalyticsDb(): void {
+    $params = getAnalyticsConnectionParams();
+    if (!$params) {
+        sendJSON(['error' => 'Analytics database not configured.'], 400);
+        return;
+    }
+    $file = $_FILES['file'] ?? null;
+    if (!$file || ($file['error'] !== UPLOAD_ERR_OK)) {
+        $msg = 'No file uploaded or upload error.';
+        if ($file && $file['error'] !== UPLOAD_ERR_OK) {
+            $msg = 'Upload error: ' . ($file['error'] === UPLOAD_ERR_INI_SIZE ? 'file too large' : 'code ' . $file['error']);
+        }
+        sendJSON(['error' => $msg], 400);
+        return;
+    }
+    $tmpDir = rtrim(sys_get_temp_dir(), DIRECTORY_SEPARATOR) . DIRECTORY_SEPARATOR . 'ln_restore_' . bin2hex(random_bytes(8));
+    if (!@mkdir($tmpDir, 0700, true)) {
+        sendJSON(['error' => 'Could not create temporary directory'], 500);
+        return;
+    }
+    $sqlFile = null;
+    $name = $file['name'];
+    $path = $file['tmp_name'];
+    $ext = strtolower(pathinfo($name, PATHINFO_EXTENSION));
+    if ($ext === 'zip') {
+        $zip = new ZipArchive();
+        if ($zip->open($path) !== true) {
+            @rmdir($tmpDir);
+            sendJSON(['error' => 'Invalid zip file'], 400);
+            return;
+        }
+        for ($i = 0; $i < $zip->numFiles; $i++) {
+            $entry = $zip->getNameIndex($i);
+            if (preg_match('/\.sql$/i', $entry)) {
+                $zip->extractTo($tmpDir, $entry);
+                $sqlFile = $tmpDir . DIRECTORY_SEPARATOR . str_replace('/', DIRECTORY_SEPARATOR, $entry);
+                break;
+            }
+        }
+        $zip->close();
+        if (!$sqlFile || !file_exists($sqlFile)) {
+            @rmdir($tmpDir);
+            sendJSON(['error' => 'Zip file does not contain a .sql file'], 400);
+            return;
+        }
+    } elseif ($ext === 'sql') {
+        $dest = $tmpDir . DIRECTORY_SEPARATOR . basename($name);
+        if (!@move_uploaded_file($path, $dest)) {
+            @rmdir($tmpDir);
+            sendJSON(['error' => 'Failed to save uploaded file'], 500);
+            return;
+        }
+        $sqlFile = $dest;
+    } else {
+        @rmdir($tmpDir);
+        sendJSON(['error' => 'Upload a .sql or .zip file containing a .sql backup'], 400);
+        return;
+    }
+    $usePhpRestore = false;
+    $psql = 'psql';
+    if (strtoupper(substr(PHP_OS, 0, 3)) === 'WIN') {
+        $psql = 'psql.exe';
+    }
+    $descriptors = [1 => ['pipe', 'w'], 2 => ['pipe', 'w']];
+    $env = $_ENV;
+    $env['PGPASSWORD'] = $params['password'];
+    $cmd = [
+        $psql,
+        '-h', $params['host'],
+        '-p', (string)$params['port'],
+        '-U', $params['user'],
+        '-d', $params['database'],
+        '-f', $sqlFile
+    ];
+    $proc = @proc_open($cmd, $descriptors, $pipes, null, $env);
+    if (!is_resource($proc)) {
+        $usePhpRestore = true;
+    } else {
+        $stderr = stream_get_contents($pipes[2] ?? null);
+        fclose($pipes[1] ?? null);
+        fclose($pipes[2] ?? null);
+        $code = proc_close($proc);
+        if ($code !== 0) {
+            $usePhpRestore = true;
+        }
+    }
+    if ($usePhpRestore) {
+        try {
+            $dsn = sprintf('pgsql:host=%s;port=%d;dbname=%s', $params['host'], $params['port'], $params['database']);
+            $pdo = new PDO($dsn, $params['user'], $params['password'], [
+                PDO::ATTR_ERRMODE => PDO::ERRMODE_EXCEPTION,
+                PDO::ATTR_TIMEOUT => 600,
+            ]);
+            $sql = file_get_contents($sqlFile);
+            if ($sql === false) {
+                throw new RuntimeException('Could not read SQL file');
+            }
+            foreach (restoreSplitSql($sql) as $statement) {
+                if (trim($statement) !== '') {
+                    $pdo->exec($statement);
+                }
+            }
+        } catch (Exception $e) {
+            if (is_dir($tmpDir)) {
+                array_map('unlink', glob($tmpDir . DIRECTORY_SEPARATOR . '*'));
+                @rmdir($tmpDir);
+            }
+            sendJSON(['error' => 'Restore failed (PHP): ' . $e->getMessage()], 500);
+            return;
+        }
+        if (is_dir($tmpDir)) {
+            array_map('unlink', glob($tmpDir . DIRECTORY_SEPARATOR . '*'));
+            @rmdir($tmpDir);
+        }
+        sendJSON(['success' => true, 'message' => 'Database restored successfully (PHP).']);
+        return;
+    }
+    if (is_dir($tmpDir)) {
+        array_map('unlink', glob($tmpDir . DIRECTORY_SEPARATOR . '*'));
+        @rmdir($tmpDir);
+    }
+    sendJSON(['success' => true, 'message' => 'Database restored successfully.']);
+}
+
+/**
+ * Split SQL content into single statements for PHP restore.
+ * Handles our PHP export format (statements end with ;\n).
+ */
+function restoreSplitSql(string $sql): array {
+    $statements = [];
+    $current = '';
+    $len = strlen($sql);
+    $i = 0;
+    $inSingle = false;
+    $inDouble = false;
+    $escape = false;
+    $lineComment = false;
+    $blockComment = false;
+    $blockEnd = 0;
+    while ($i < $len) {
+        $c = $sql[$i];
+        if ($blockComment) {
+            if ($i + 1 < $len && $c === '*' && $sql[$i + 1] === '/') {
+                $blockComment = false;
+                $i += 2;
+                continue;
+            }
+            $i++;
+            continue;
+        }
+        if ($lineComment) {
+            if ($c === "\n") {
+                $lineComment = false;
+            }
+            $i++;
+            continue;
+        }
+        if ($i + 1 < $len && $c === '-' && $sql[$i + 1] === '-') {
+            $lineComment = true;
+            $i += 2;
+            continue;
+        }
+        if ($i + 1 < $len && $c === '/' && $sql[$i + 1] === '*') {
+            $blockComment = true;
+            $i += 2;
+            continue;
+        }
+        if ($inSingle || $inDouble) {
+            if ($escape) {
+                $escape = false;
+                $i++;
+                continue;
+            }
+            if ($c === '\\' && $inSingle) {
+                $escape = true;
+                $i++;
+                continue;
+            }
+            if (($c === "'" && $inSingle) || ($c === '"' && $inDouble)) {
+                $inSingle = false;
+                $inDouble = false;
+                $i++;
+                continue;
+            }
+            $i++;
+            continue;
+        }
+        if ($c === "'" && !$inDouble) {
+            $inSingle = true;
+            $i++;
+            continue;
+        }
+        if ($c === '"' && !$inSingle) {
+            $inDouble = true;
+            $i++;
+            continue;
+        }
+        if ($c === ';' && ($i + 1 >= $len || $sql[$i + 1] === "\n" || $sql[$i + 1] === "\r")) {
+            $statements[] = trim($current);
+            $current = '';
+            $i++;
+            if ($i < $len && $sql[$i] === "\r") $i++;
+            if ($i < $len && $sql[$i] === "\n") $i++;
+            continue;
+        }
+        $current .= $c;
+        $i++;
+    }
+    if (trim($current) !== '') {
+        $statements[] = trim($current);
+    }
+    return $statements;
+}
+
+
+// ============================================
+// MONITORV2 ADDON FUNCTIONS
+// ============================================
+
+/**
+ * Get Monitorv2 PostgreSQL connection params from settings (for backup/restore).
+ * Decrypts password if stored in encrypted format.
+ *
+ * @return array{host:string,port:int,database:string,user:string,password:string}|null
+ */
+function getMonitorv2ConnectionParams(): ?array {
+    try {
+        $db = getDB();
+        $stmt = $db->prepare("SELECT key, value FROM settings WHERE key LIKE 'monitorv2_%'");
+        $stmt->execute();
+        $settings = $stmt->fetchAll(PDO::FETCH_KEY_PAIR);
+        $host = $settings['monitorv2_pg_host'] ?? '';
+        $database = $settings['monitorv2_pg_database'] ?? '';
+        if (empty($host) || empty($database)) {
+            return null;
+        }
+        $password = $settings['monitorv2_pg_password'] ?? '';
+        if (!empty($password) && strpos($password, '.') !== false && substr_count($password, '.') === 2) {
+            try {
+                $password = decryptPassword($password);
+            } catch (Exception $e) {
+                // keep as-is if decryption fails
+            }
+        }
+        return [
+            'host' => $host,
+            'port' => (int)($settings['monitorv2_pg_port'] ?? 5433),
+            'database' => $database,
+            'user' => $settings['monitorv2_pg_user'] ?? 'postgres',
+            'password' => $password
+        ];
+    } catch (Exception $e) {
+        return null;
+    }
+}
+
+/**
+ * Export Monitorv2 database (zmonitoring schema) to SQL file using PDO only (no pg_dump).
+ * Produces a data-only backup: TRUNCATE + INSERT for all zmonitoring tables.
+ * Restore assumes the schema (e.g. monitorv2/schema.sql) is already applied.
+ */
+function exportMonitorv2DbViaPhp(PDO $pdo, string $sqlPath): void {
+    $fp = fopen($sqlPath, 'wb');
+    if (!$fp) {
+        throw new RuntimeException('Could not create SQL file');
+    }
+    $schema = 'zmonitoring';
+    fwrite($fp, "-- Linknest Monitorv2 backup (PHP export)\n");
+    fwrite($fp, "-- " . date('c') . "\n");
+    fwrite($fp, "-- Data-only: run monitorv2/schema.sql before restore if needed.\n\n");
+    fwrite($fp, "SET session_replication_role = replica;\n\n");
+    $tables = $pdo->query("SELECT tablename FROM pg_tables WHERE schemaname = " . $pdo->quote($schema) . " ORDER BY tablename")->fetchAll(PDO::FETCH_COLUMN);
+    if (empty($tables)) {
+        fwrite($fp, "-- No tables in {$schema} schema\n");
+        fwrite($fp, "SET session_replication_role = DEFAULT;\n");
+        fclose($fp);
+        return;
+    }
+    $qualified = array_map(function ($t) use ($schema) {
+        return '"' . str_replace('"', '""', $schema) . '"."' . str_replace('"', '""', $t) . '"';
+    }, $tables);
+    $truncateList = implode(', ', $qualified);
+    fwrite($fp, "TRUNCATE TABLE {$truncateList} CASCADE;\n\n");
+    $batchSize = 100;
+    foreach ($tables as $table) {
+        $safeTable = '"' . str_replace('"', '""', $schema) . '"."' . str_replace('"', '""', $table) . '"';
+        $cols = $pdo->query("SELECT column_name FROM information_schema.columns WHERE table_schema = " . $pdo->quote($schema) . " AND table_name = " . $pdo->quote($table) . " ORDER BY ordinal_position")->fetchAll(PDO::FETCH_COLUMN);
+        if (empty($cols)) {
+            continue;
+        }
+        $colList = implode(', ', array_map(function ($c) { return '"' . str_replace('"', '""', $c) . '"'; }, $cols));
+        $stmt = $pdo->query("SELECT * FROM {$safeTable}");
+        $rows = $stmt->fetchAll(PDO::FETCH_ASSOC);
+        if (empty($rows)) {
+            fwrite($fp, "-- Table {$schema}.{$table}: 0 rows\n");
+            continue;
+        }
+        $rowCount = 0;
+        $batches = array_chunk($rows, $batchSize);
+        foreach ($batches as $batch) {
+            $values = [];
+            foreach ($batch as $row) {
+                $v = [];
+                foreach ($cols as $col) {
+                    $val = $row[$col] ?? null;
+                    if ($val === null) {
+                        $v[] = 'NULL';
+                    } elseif (is_bool($val)) {
+                        $v[] = $val ? 'TRUE' : 'FALSE';
+                    } elseif (is_int($val) || (is_float($val) && (float)(int)$val === $val)) {
+                        $v[] = (string)(int)$val;
+                    } elseif (is_float($val)) {
+                        $v[] = str_replace(',', '.', (string)$val);
+                    } else {
+                        $v[] = $pdo->quote((string)$val);
+                    }
+                }
+                $values[] = '(' . implode(', ', $v) . ')';
+            }
+            fwrite($fp, "INSERT INTO {$safeTable} ({$colList}) VALUES " . implode(",\n ", $values) . ";\n");
+            $rowCount += count($batch);
+        }
+        fwrite($fp, "-- Table {$schema}.{$table}: {$rowCount} rows\n\n");
+    }
+    fwrite($fp, "SET session_replication_role = DEFAULT;\n");
+    fclose($fp);
+}
+
+/**
+ * Create Monitorv2 DB backup and send as ZIP download.
+ * Uses PHP/PDO export only (no pg_dump required).
+ */
+function handleBackupMonitorv2Db(): void {
+    $params = getMonitorv2ConnectionParams();
+    if (!$params) {
+        sendJSON(['error' => 'Monitorv2 database not configured. Set PostgreSQL connection in add-on settings.'], 400);
+        return;
+    }
+    $tmpDir = rtrim(sys_get_temp_dir(), DIRECTORY_SEPARATOR) . DIRECTORY_SEPARATOR . 'ln_mv2_backup_' . bin2hex(random_bytes(8));
+    if (!@mkdir($tmpDir, 0700, true)) {
+        sendJSON(['error' => 'Could not create temporary directory'], 500);
+        return;
+    }
+    $timestamp = date('Ymd-His');
+    $sqlFile = $tmpDir . DIRECTORY_SEPARATOR . 'monitorv2_backup_' . $timestamp . '.sql';
+    $zipFile = $tmpDir . DIRECTORY_SEPARATOR . 'monitorv2_backup_' . $timestamp . '.zip';
+    try {
+        $dsn = sprintf('pgsql:host=%s;port=%d;dbname=%s', $params['host'], $params['port'], $params['database']);
+        $pdo = new PDO($dsn, $params['user'], $params['password'], [
+            PDO::ATTR_ERRMODE => PDO::ERRMODE_EXCEPTION,
+            PDO::ATTR_TIMEOUT => 300,
+        ]);
+        exportMonitorv2DbViaPhp($pdo, $sqlFile);
+    } catch (Exception $e) {
+        if (is_dir($tmpDir)) {
+            if (file_exists($sqlFile)) @unlink($sqlFile);
+            @rmdir($tmpDir);
+        }
+        sendJSON(['error' => 'Export failed: ' . $e->getMessage()], 500);
+        return;
+    }
+    if (!file_exists($sqlFile) || filesize($sqlFile) === 0) {
+        @unlink($sqlFile);
+        @rmdir($tmpDir);
+        sendJSON(['error' => 'Export produced empty file'], 500);
+        return;
+    }
+    if (!class_exists('ZipArchive')) {
+        @unlink($sqlFile);
+        @rmdir($tmpDir);
+        sendJSON(['error' => 'Zip extension not available. Enable php zip extension.'], 500);
+        return;
+    }
+    $zip = new ZipArchive();
+    if ($zip->open($zipFile, ZipArchive::CREATE | ZipArchive::OVERWRITE) !== true) {
+        @unlink($sqlFile);
+        @rmdir($tmpDir);
+        sendJSON(['error' => 'Could not create zip file'], 500);
+        return;
+    }
+    $zip->addFile($sqlFile, basename($sqlFile));
+    $zip->close();
+    @unlink($sqlFile);
+    $zipName = 'monitorv2_backup_' . $timestamp . '.zip';
+    while (ob_get_level()) {
+        ob_end_clean();
+    }
+    header('Content-Type: application/zip');
+    header('Content-Disposition: attachment; filename="' . $zipName . '"');
+    header('Content-Length: ' . filesize($zipFile));
+    readfile($zipFile);
+    @unlink($zipFile);
+    @rmdir($tmpDir);
+    exit;
+}
+
+/**
+ * Restore Monitorv2 DB from uploaded SQL or ZIP containing SQL.
+ * Uses psql if available, otherwise runs the SQL via PHP (no CLI tools required).
+ */
+function handleRestoreMonitorv2Db(): void {
+    $params = getMonitorv2ConnectionParams();
+    if (!$params) {
+        sendJSON(['error' => 'Monitorv2 database not configured.'], 400);
+        return;
+    }
+    // Create database if it does not exist
+    if (!ensureMonitorv2DatabaseExists()) {
+        sendJSON(['error' => 'Cannot connect to PostgreSQL or create database. Check connection settings.'], 400);
+        return;
+    }
+    $file = $_FILES['file'] ?? null;
+    if (!$file || ($file['error'] !== UPLOAD_ERR_OK)) {
+        $msg = 'No file uploaded or upload error.';
+        if ($file && $file['error'] !== UPLOAD_ERR_OK) {
+            $msg = 'Upload error: ' . ($file['error'] === UPLOAD_ERR_INI_SIZE ? 'file too large' : 'code ' . $file['error']);
+        }
+        sendJSON(['error' => $msg], 400);
+        return;
+    }
+    $tmpDir = rtrim(sys_get_temp_dir(), DIRECTORY_SEPARATOR) . DIRECTORY_SEPARATOR . 'ln_mv2_restore_' . bin2hex(random_bytes(8));
+    if (!@mkdir($tmpDir, 0700, true)) {
+        sendJSON(['error' => 'Could not create temporary directory'], 500);
+        return;
+    }
+    $sqlFile = null;
+    $name = $file['name'];
+    $path = $file['tmp_name'];
+    $ext = strtolower(pathinfo($name, PATHINFO_EXTENSION));
+    if ($ext === 'zip') {
+        $zip = new ZipArchive();
+        if ($zip->open($path) !== true) {
+            @rmdir($tmpDir);
+            sendJSON(['error' => 'Invalid zip file'], 400);
+            return;
+        }
+        for ($i = 0; $i < $zip->numFiles; $i++) {
+            $entry = $zip->getNameIndex($i);
+            if (preg_match('/\.sql$/i', $entry)) {
+                $zip->extractTo($tmpDir, $entry);
+                $sqlFile = $tmpDir . DIRECTORY_SEPARATOR . str_replace('/', DIRECTORY_SEPARATOR, $entry);
+                break;
+            }
+        }
+        $zip->close();
+        if (!$sqlFile || !file_exists($sqlFile)) {
+            @rmdir($tmpDir);
+            sendJSON(['error' => 'Zip file does not contain a .sql file'], 400);
+            return;
+        }
+    } elseif ($ext === 'sql') {
+        $dest = $tmpDir . DIRECTORY_SEPARATOR . basename($name);
+        if (!@move_uploaded_file($path, $dest)) {
+            @rmdir($tmpDir);
+            sendJSON(['error' => 'Failed to save uploaded file'], 500);
+            return;
+        }
+        $sqlFile = $dest;
+    } else {
+        @rmdir($tmpDir);
+        sendJSON(['error' => 'Upload a .sql or .zip file containing a .sql backup'], 400);
+        return;
+    }
+    $usePhpRestore = false;
+    $psql = 'psql';
+    if (strtoupper(substr(PHP_OS, 0, 3)) === 'WIN') {
+        $psql = 'psql.exe';
+    }
+    $descriptors = [1 => ['pipe', 'w'], 2 => ['pipe', 'w']];
+    $env = $_ENV;
+    $env['PGPASSWORD'] = $params['password'];
+    $cmd = [
+        $psql,
+        '-h', $params['host'],
+        '-p', (string)$params['port'],
+        '-U', $params['user'],
+        '-d', $params['database'],
+        '-f', $sqlFile
+    ];
+    $proc = @proc_open($cmd, $descriptors, $pipes, null, $env);
+    if (!is_resource($proc)) {
+        $usePhpRestore = true;
+    } else {
+        $stderr = stream_get_contents($pipes[2] ?? null);
+        fclose($pipes[1] ?? null);
+        fclose($pipes[2] ?? null);
+        $code = proc_close($proc);
+        if ($code !== 0) {
+            $usePhpRestore = true;
+        }
+    }
+    if ($usePhpRestore) {
+        try {
+            $dsn = sprintf('pgsql:host=%s;port=%d;dbname=%s', $params['host'], $params['port'], $params['database']);
+            $pdo = new PDO($dsn, $params['user'], $params['password'], [
+                PDO::ATTR_ERRMODE => PDO::ERRMODE_EXCEPTION,
+                PDO::ATTR_TIMEOUT => 600,
+            ]);
+            $sql = file_get_contents($sqlFile);
+            if ($sql === false) {
+                throw new RuntimeException('Could not read SQL file');
+            }
+            foreach (restoreSplitSql($sql) as $statement) {
+                if (trim($statement) !== '') {
+                    $pdo->exec($statement);
+                }
+            }
+        } catch (Exception $e) {
+            if (is_dir($tmpDir)) {
+                array_map('unlink', glob($tmpDir . DIRECTORY_SEPARATOR . '*'));
+                @rmdir($tmpDir);
+            }
+            sendJSON(['error' => 'Restore failed (PHP): ' . $e->getMessage()], 500);
+            return;
+        }
+        if (is_dir($tmpDir)) {
+            array_map('unlink', glob($tmpDir . DIRECTORY_SEPARATOR . '*'));
+            @rmdir($tmpDir);
+        }
+        sendJSON(['success' => true, 'message' => 'Database restored successfully (PHP).']);
+        return;
+    }
+    if (is_dir($tmpDir)) {
+        array_map('unlink', glob($tmpDir . DIRECTORY_SEPARATOR . '*'));
+        @rmdir($tmpDir);
+    }
+    sendJSON(['success' => true, 'message' => 'Database restored successfully.']);
+}
+
+/**
+ * Get Monitorv2 configuration
+ */
+function handleGetMonitorv2Config() {
+    try {
+        $db = getDB();
+        
+        // Get all settings with 'monitorv2_' prefix
+        $stmt = $db->prepare("
+            SELECT key, value 
+            FROM settings 
+            WHERE key LIKE 'monitorv2_%'
+        ");
+        $stmt->execute();
+        $settings = $stmt->fetchAll(PDO::FETCH_KEY_PAIR);
+        
+        // Get addon status
+        $statusStmt = $db->prepare("
+            SELECT * FROM addon_status 
+            WHERE addon_name = 'monitorv2'
+        ");
+        $statusStmt->execute();
+        $status = $statusStmt->fetch(PDO::FETCH_ASSOC);
+        
+        // Initialize addon status if not exists
+        if (!$status) {
+            $db->prepare("
+                INSERT INTO addon_status (addon_name, is_enabled, is_available, last_check_at)
+                VALUES ('monitorv2', 0, 0, ?)
+            ")->execute([time()]);
+            $status = ['addon_name' => 'monitorv2', 'is_enabled' => 0, 'is_available' => 0];
+        }
+        
+        sendJSON([
+            'config' => [
+                'enabled' => (bool)($settings['monitorv2_enabled'] ?? false),
+                'pgHost' => $settings['monitorv2_pg_host'] ?? 'localhost',
+                'pgPort' => (int)($settings['monitorv2_pg_port'] ?? 5433),
+                'pgDatabase' => $settings['monitorv2_pg_database'] ?? 'zmonitoring',
+                'pgUser' => $settings['monitorv2_pg_user'] ?? 'postgres',
+                // Don't send password back
+                'retentionDays' => (int)($settings['monitorv2_retention_days'] ?? 90),
+                'autoCleanup' => (bool)($settings['monitorv2_auto_cleanup'] ?? true)
+            ],
+            'status' => $status
+        ]);
+        
+    } catch (Exception $e) {
+        sendJSON(['error' => 'Failed to load configuration: ' . $e->getMessage()], 500);
+    }
+}
+
+/**
+ * Check Monitorv2 addon health status
+ */
+function handleCheckMonitorv2Status() {
+    try {
+        $db = getDB();
+        
+        // Check if enabled
+        $stmt = $db->prepare("SELECT value FROM settings WHERE key = 'monitorv2_enabled'");
+        $stmt->execute();
+        $enabled = ($stmt->fetchColumn() === '1');
+        
+        if (!$enabled) {
+            sendJSON([
+                'status' => 'disabled',
+                'message' => 'Monitorv2 addon is disabled'
+            ]);
+            return;
+        }
+        
+        // Try to connect to PostgreSQL
+        $monitorv2DB = getMonitorv2DB();
+        
+        if (!$monitorv2DB) {
+            sendJSON([
+                'status' => 'unavailable',
+                'message' => 'Cannot connect to PostgreSQL database'
+            ]);
+            return;
+        }
+        
+        // Check if required tables exist
+        $stmt = $monitorv2DB->query("
+            SELECT table_name 
+            FROM information_schema.tables 
+            WHERE table_schema = 'zmonitoring' 
+            AND table_name IN ('monitors', 'monitor_checks', 'notification_rules')
+        ");
+        $tables = $stmt->fetchAll(PDO::FETCH_COLUMN);
+        
+        if (count($tables) < 3) {
+            sendJSON([
+                'status' => 'not_configured',
+                'message' => 'Database schema not initialized',
+                'existing_tables' => $tables
+            ]);
+            return;
+        }
+        
+        // Get monitor count
+        $stmt = $monitorv2DB->query("SELECT COUNT(*) FROM zmonitoring.monitors");
+        $monitorCount = $stmt->fetchColumn();
+        
+        $stmt = $monitorv2DB->query("SELECT COUNT(*) FROM zmonitoring.monitor_checks WHERE checked_at >= NOW() - INTERVAL '24 hours'");
+        $checks24h = $stmt->fetchColumn();
+        
+        sendJSON([
+            'status' => 'available',
+            'message' => 'Monitorv2 is operational',
+            'monitors' => (int)$monitorCount,
+            'checks_24h' => (int)$checks24h
+        ]);
+        
+    } catch (Exception $e) {
+        sendJSON([
+            'status' => 'error',
+            'message' => 'Health check failed: ' . $e->getMessage()
+        ], 500);
+    }
+}
+
+/**
+ * Test Monitorv2 PostgreSQL connection
+ */
+function handleTestMonitorv2Connection() {
+    try {
+        $data = getJSONInput();
+        
+        $host = $data['pgHost'] ?? 'localhost';
+        $port = (int)($data['pgPort'] ?? 5433);
+        $database = $data['pgDatabase'] ?? 'zmonitoring';
+        $user = $data['pgUser'] ?? 'postgres';
+        $password = $data['pgPassword'] ?? '';
+        
+        $dbExists = false;
+        $canConnectToDb = false;
+        $pdo = null;
+        
+        try {
+            // First, try to connect to the target database
+            $dsn = "pgsql:host={$host};port={$port};dbname={$database}";
+            $pdo = new PDO($dsn, $user, $password, [
+                PDO::ATTR_ERRMODE => PDO::ERRMODE_EXCEPTION,
+                PDO::ATTR_TIMEOUT => 5
+            ]);
+            $dbExists = true;
+            $canConnectToDb = true;
+        } catch (PDOException $e) {
+            // If connection failed because database doesn't exist
+            if ($e->getCode() == '08006' || strpos($e->getMessage(), 'does not exist') !== false) {
+                $dbExists = false;
+                
+                // Try to connect to 'postgres' database to verify credentials and server reachability
+                try {
+                    $dsnPostgres = "pgsql:host={$host};port={$port};dbname=postgres";
+                    $pdo = new PDO($dsnPostgres, $user, $password, [
+                        PDO::ATTR_ERRMODE => PDO::ERRMODE_EXCEPTION,
+                        PDO::ATTR_TIMEOUT => 5
+                    ]);
+                    $canConnectToDb = true;
+                    
+                    // Double check if database exists using the postgres connection
+                    $stmt = $pdo->prepare("SELECT 1 FROM pg_database WHERE datname = ?");
+                    $stmt->execute([$database]);
+                    if ($stmt->fetch()) {
+                        $dbExists = true;
+                    }
+                } catch (PDOException $e2) {
+                    sendJSON([
+                        'success' => false,
+                        'error' => 'Connection failed: ' . $e2->getMessage(),
+                        'details' => ['db_exists' => false, 'can_connect' => false]
+                    ], 400);
+                    return;
+                }
+            } else {
+                sendJSON([
+                    'success' => false,
+                    'error' => 'Connection failed: ' . $e->getMessage(),
+                    'details' => ['db_exists' => true, 'can_connect' => false]
+                ], 400);
+                return;
+            }
+        }
+        
+        if (!$dbExists) {
+            sendJSON([
+                'success' => false,
+                'message' => "Database '{$database}' does not exist.",
+                'error' => "FATAL: database \"{$database}\" does not exist",
+                'details' => [
+                    'db_exists' => false,
+                    'can_connect' => true,
+                    'postgres_version' => $pdo ? $pdo->getAttribute(PDO::ATTR_SERVER_VERSION) : null
+                ]
+            ]);
+            return;
+        }
+        
+        // If we reach here, we are connected to the target database
+        // Check extensions
+        $stmt = $pdo->query("SELECT name, default_version, installed_version FROM pg_available_extensions WHERE name IN ('timescaledb', 'pg_cron')");
+        $extensions = $stmt->fetchAll(PDO::FETCH_UNIQUE);
+        
+        // Check if schema exists
+        $stmt = $pdo->prepare("SELECT schema_name FROM information_schema.schemata WHERE schema_name = 'zmonitoring'");
+        $stmt->execute();
+        $schemaExists = $stmt->fetch();
+        
+        // Check if tables exist
+        $existingTables = [];
+        if ($schemaExists) {
+            $stmt = $pdo->query("SELECT table_name FROM information_schema.tables WHERE table_schema = 'zmonitoring'");
+            $existingTables = $stmt->fetchAll(PDO::FETCH_COLUMN);
+        }
+        
+        sendJSON([
+            'success' => true,
+            'message' => 'Connection successful',
+            'details' => [
+                'db_exists' => true,
+                'postgres_version' => $pdo->getAttribute(PDO::ATTR_SERVER_VERSION),
+                'timescaledb_version' => $extensions['timescaledb']['default_version'] ?? null,
+                'timescaledb_installed' => !empty($extensions['timescaledb']['installed_version']),
+                'pg_cron_installed' => !empty($extensions['pg_cron']['installed_version']),
+                'schema_exists' => !empty($schemaExists),
+                'tables_exist' => $existingTables,
+                'schema_ready' => in_array('monitors', $existingTables) && in_array('monitor_checks', $existingTables)
+            ]
+        ]);
+        
+    } catch (Exception $e) {
+        sendJSON([
+            'success' => false,
+            'error' => $e->getMessage()
+        ], 500);
+    }
+}
+
+/**
+ * Update Monitorv2 configuration
+ */
+function handleUpdateMonitorv2Config() {
+    try {
+        $db = getDB();
+        $data = getJSONInput();
+        
+        // Validate required fields if enabling
+        if (!empty($data['enabled'])) {
+            if (empty($data['pgHost']) || empty($data['pgDatabase']) || empty($data['pgUser'])) {
+                sendJSON(['error' => 'PostgreSQL connection settings are required when enabling the addon'], 400);
+                return;
+            }
+        }
+        
+        // Prepare settings to update
+        $settings = [
+            'monitorv2_enabled' => !empty($data['enabled']) ? '1' : '0',
+            'monitorv2_pg_host' => $data['pgHost'] ?? 'localhost',
+            'monitorv2_pg_port' => (string)($data['pgPort'] ?? 5433),
+            'monitorv2_pg_database' => $data['pgDatabase'] ?? 'zmonitoring',
+            'monitorv2_pg_user' => $data['pgUser'] ?? 'postgres',
+            'monitorv2_retention_days' => (string)($data['retentionDays'] ?? 90),
+            'monitorv2_auto_cleanup' => !empty($data['autoCleanup']) ? '1' : '0'
+        ];
+        
+        // Update password only if provided
+        if (!empty($data['pgPassword'])) {
+            $settings['monitorv2_pg_password'] = $data['pgPassword'];
+        }
+        
+        // Update all settings
+        $stmt = $db->prepare("
+            INSERT INTO settings (key, value, updated_at) VALUES (?, ?, ?)
+            ON CONFLICT(key) DO UPDATE SET value = excluded.value, updated_at = excluded.updated_at
+        ");
+        
+        $now = time();
+        foreach ($settings as $key => $value) {
+            $stmt->execute([$key, $value, $now]);
+        }
+        
+        // Update addon status
+        $statusStmt = $db->prepare("
+            INSERT INTO addon_status (addon_name, is_enabled, last_check_at)
+            VALUES ('monitorv2', ?, ?)
+            ON CONFLICT(addon_name) DO UPDATE SET is_enabled = excluded.is_enabled, last_check_at = excluded.last_check_at
+        ");
+        $statusStmt->execute([!empty($data['enabled']) ? 1 : 0, $now]);
+        
+        sendJSON([
+            'success' => true,
+            'message' => 'Configuration saved successfully'
+        ]);
+        
+    } catch (Exception $e) {
+        sendJSON(['error' => 'Failed to save configuration: ' . $e->getMessage()], 500);
+    }
+}
+
+/**
+ * Ensure Monitorv2 database exists; create it if missing (connect to postgres, create DB, then retry).
+ * @return bool true if DB exists or was created, false on failure
+ */
+function ensureMonitorv2DatabaseExists(): bool {
+    $params = getMonitorv2ConnectionParams();
+    if (!$params) {
+        return false;
+    }
+    if (getMonitorv2DB() !== null) {
+        return true;
+    }
+    try {
+        $dsn = sprintf('pgsql:host=%s;port=%d;dbname=postgres', $params['host'], $params['port']);
+        $pdo = new PDO($dsn, $params['user'], $params['password'], [
+            PDO::ATTR_ERRMODE => PDO::ERRMODE_EXCEPTION,
+            PDO::ATTR_TIMEOUT => 10
+        ]);
+        $dbName = $params['database'];
+        $stmt = $pdo->prepare('SELECT 1 FROM pg_database WHERE datname = ?');
+        $stmt->execute([$dbName]);
+        if ($stmt->fetch()) {
+            return true;
+        }
+        $safeName = preg_replace('/[^a-z0-9_]/', '', strtolower($dbName));
+        if ($safeName === '') {
+            return false;
+        }
+        $pdo->exec("CREATE DATABASE \"" . str_replace('"', '""', $safeName) . "\" WITH ENCODING 'UTF8'");
+        return true;
+    } catch (Exception $e) {
+        error_log('Monitorv2 ensure DB exists: ' . $e->getMessage());
+        return false;
+    }
+}
+
+/**
+ * Download Monitorv2 schema (DDL) as a .sql file. Contains full DDL for all tables, views, functions, triggers.
+ * Run against the target database after creating it if needed (app can create DB via setup/restore).
+ */
+function handleBackupMonitorv2Schema(): void {
+    $schemaFile = __DIR__ . '/../monitorv2/schema.sql';
+    if (!file_exists($schemaFile) || !is_readable($schemaFile)) {
+        sendJSON(['error' => 'Schema file not found or not readable'], 404);
+        return;
+    }
+    $content = file_get_contents($schemaFile);
+    if ($content === false) {
+        sendJSON(['error' => 'Could not read schema file'], 500);
+        return;
+    }
+    $filename = 'monitorv2_schema_' . date('Ymd-His') . '.sql';
+    while (ob_get_level()) {
+        ob_end_clean();
+    }
+    header('Content-Type: application/sql; charset=utf-8');
+    header('Content-Disposition: attachment; filename="' . $filename . '"');
+    header('Content-Length: ' . strlen($content));
+    echo $content;
+    exit;
+}
+
+/**
+ * Setup Monitorv2 database schema
+ */
+function handleSetupMonitorv2Schema() {
+    try {
+        $schemaFile = __DIR__ . '/../monitorv2/schema.sql';
+        
+        if (!file_exists($schemaFile)) {
+            sendJSON(['error' => 'Schema file not found: ' . $schemaFile], 404);
+            return;
+        }
+        
+        // Ensure database exists (create if not)
+        if (!ensureMonitorv2DatabaseExists()) {
+            sendJSON(['error' => 'Cannot connect to PostgreSQL or create database. Please check connection settings.'], 400);
+            return;
+        }
+        
+        // Get PostgreSQL connection
+        $monitorv2DB = getMonitorv2DB();
+        if (!$monitorv2DB) {
+            sendJSON(['error' => 'Cannot connect to PostgreSQL. Please configure connection settings first.'], 400);
+            return;
+        }
+        
+        // Read and execute schema file
+        $schemaSQL = file_get_contents($schemaFile);
+        
+        // Execute the entire schema at once (PostgreSQL supports this better than SQLite)
+        try {
+            $monitorv2DB->exec($schemaSQL);
+        } catch (PDOException $e) {
+            // Ignore "already exists" errors
+            if (strpos($e->getMessage(), 'already exists') === false && 
+                strpos($e->getMessage(), 'duplicate') === false) {
+                throw $e;
+            }
+        }
+        
+        // Verify tables were created
+        $stmt = $monitorv2DB->query("
+            SELECT table_name 
+            FROM information_schema.tables 
+            WHERE table_schema = 'zmonitoring'
+        ");
+        $tables = $stmt->fetchAll(PDO::FETCH_COLUMN);
+        
+        sendJSON([
+            'success' => true,
+            'message' => 'Schema setup completed',
+            'tables_created' => $tables,
+            'schema_ready' => in_array('monitors', $tables) && in_array('monitor_checks', $tables)
+        ]);
+        
+    } catch (Exception $e) {
+        sendJSON(['error' => 'Schema setup failed: ' . $e->getMessage()], 500);
+    }
+}
+
+/**
+ * Purge Monitorv2 data
+ */
+function handlePurgeMonitorv2Data() {
+    try {
+        $monitorv2DB = getMonitorv2DB();
+        if (!$monitorv2DB) {
+            sendJSON(['error' => 'Cannot connect to PostgreSQL'], 400);
+            return;
+        }
+        
+        // Get confirmation from request
+        $data = getJSONInput();
+        if (empty($data['confirm']) || $data['confirm'] !== 'DELETE_ALL_DATA') {
+            sendJSON(['error' => 'Confirmation required. Send confirm: "DELETE_ALL_DATA"'], 400);
+            return;
+        }
+        
+        // Truncate all tables in zmonitoring schema
+        $tables = [
+            'notification_recipients',
+            'notification_rules',
+            'notification_logs',
+            'monitor_checks',
+            'monitor_hourly_stats',
+            'monitor_daily_stats',
+            'incidents',
+            'maintenance_windows',
+            'user_monitor_permissions',
+            'monitors'
+        ];
+        
+        $truncated = [];
+        foreach ($tables as $table) {
+            try {
+                $monitorv2DB->exec("TRUNCATE TABLE zmonitoring.{$table} CASCADE");
+                $truncated[] = $table;
+            } catch (PDOException $e) {
+                // Table might not exist, that's okay
+            }
+        }
+        
+        sendJSON([
+            'success' => true,
+            'message' => 'Monitorv2 data purged successfully',
+            'tables_truncated' => $truncated
+        ]);
+        
+    } catch (Exception $e) {
+        sendJSON(['error' => 'Purge failed: ' . $e->getMessage()], 500);
+    }
+}
+
+/**
+ * Get Monitorv2 PostgreSQL connection
+ */
+function getMonitorv2DB() {
+    static $db = null;
+    if ($db !== null) return $db;
+    
+    try {
+        $sqlite = getDB();
+        $stmt = $sqlite->prepare("SELECT key, value FROM settings WHERE key LIKE 'monitorv2_%'");
+        $stmt->execute();
+        $settings = $stmt->fetchAll(PDO::FETCH_KEY_PAIR);
+        
+        $host = $settings['monitorv2_pg_host'] ?? 'localhost';
+        $port = (int)($settings['monitorv2_pg_port'] ?? 5433);
+        $database = $settings['monitorv2_pg_database'] ?? 'zmonitoring';
+        $user = $settings['monitorv2_pg_user'] ?? 'postgres';
+        $password = $settings['monitorv2_pg_password'] ?? '';
+        
+        // Decrypt password if needed
+        if (!empty($password) && strpos($password, '.') !== false && substr_count($password, '.') === 2) {
+            try {
+                $password = decryptPassword($password);
+            } catch (Exception $e) {
+                // Keep as-is if decryption fails
+            }
+        }
+        
+        $dsn = "pgsql:host={$host};port={$port};dbname={$database}";
+        $db = new PDO($dsn, $user, $password, [
+            PDO::ATTR_ERRMODE => PDO::ERRMODE_EXCEPTION,
+            PDO::ATTR_DEFAULT_FETCH_MODE => PDO::FETCH_ASSOC,
+            PDO::ATTR_TIMEOUT => 10
+        ]);
+        return $db;
+    } catch (Exception $e) {
+        error_log("Monitorv2 DB connection failed: " . $e->getMessage());
+        return null;
+    }
+}
+
+/**
+ * Create the monitoring database via addons API
+ */
+function handleCreateMonitorv2Database() {
+    $data = getJSONInput();
+    
+    $host = $data['pgHost'] ?? 'localhost';
+    $port = (int)($data['pgPort'] ?? 5433);
+    $database = $data['pgDatabase'] ?? 'zmonitoring';
+    $user = $data['pgUser'] ?? 'postgres';
+    $password = $data['pgPassword'] ?? '';
+    
+    try {
+        // Connect to 'postgres' database to create the new database
+        $dsn = "pgsql:host={$host};port={$port};dbname=postgres";
+        $pdo = new PDO($dsn, $user, $password, [
+            PDO::ATTR_ERRMODE => PDO::ERRMODE_EXCEPTION,
+            PDO::ATTR_TIMEOUT => 10
+        ]);
+        
+        // Check if database already exists
+        $stmt = $pdo->prepare("SELECT 1 FROM pg_database WHERE datname = ?");
+        $stmt->execute([$database]);
+        if ($stmt->fetch()) {
+            sendJSON([
+                'success' => true,
+                'message' => 'Database already exists',
+                'already_exists' => true
+            ]);
+            return;
+        }
+        
+        // Create new database
+        // Note: Cannot use prepared statements for CREATE DATABASE
+        $safeName = preg_replace('/[^a-z0-9_]/', '', strtolower($database));
+        $pdo->exec("CREATE DATABASE \"{$safeName}\" WITH ENCODING 'UTF8'");
+        
+        sendJSON([
+            'success' => true,
+            'message' => "Database '{$safeName}' created successfully",
+            'database_name' => $safeName
+        ]);
+        
+    } catch (PDOException $e) {
+        sendJSON([
+            'success' => false,
+            'error' => 'Failed to create database: ' . $e->getMessage()
+        ], 500);
+    }
+}
+
+/**
+ * Install PostgreSQL extensions via addons API
+ */
+function handleInstallMonitorv2Extensions() {
+    $data = getJSONInput();
+    
+    $host = $data['pgHost'] ?? 'localhost';
+    $port = (int)($data['pgPort'] ?? 5433);
+    $database = $data['pgDatabase'] ?? 'zmonitoring';
+    $user = $data['pgUser'] ?? 'postgres';
+    $password = $data['pgPassword'] ?? '';
+    $extensions = $data['extensions'] ?? ['timescaledb', 'pg_cron'];
+    
+    try {
+        $dsn = "pgsql:host={$host};port={$port};dbname={$database}";
+        $pdo = new PDO($dsn, $user, $password, [
+            PDO::ATTR_ERRMODE => PDO::ERRMODE_EXCEPTION,
+            PDO::ATTR_TIMEOUT => 10
+        ]);
+        
+        $installed = [];
+        $errors = [];
+        
+        foreach ($extensions as $ext) {
+            if (!in_array($ext, ['timescaledb', 'pg_cron'])) {
+                continue;
+            }
+            
+            try {
+                // Check if extension is available
+                $stmt = $pdo->prepare("SELECT 1 FROM pg_available_extensions WHERE name = ?");
+                $stmt->execute([$ext]);
+                if (!$stmt->fetch()) {
+                    $errors[] = "Extension '{$ext}' is not available on this PostgreSQL server";
+                    continue;
+                }
+                
+                // Check if already installed
+                $stmt = $pdo->prepare("SELECT 1 FROM pg_extension WHERE extname = ?");
+                $stmt->execute([$ext]);
+                if ($stmt->fetch()) {
+                    $installed[] = "{$ext} (already installed)";
+                    continue;
+                }
+                
+                // Install extension
+                $pdo->exec("CREATE EXTENSION IF NOT EXISTS {$ext}");
+                $installed[] = $ext;
+                
+            } catch (PDOException $e) {
+                $errors[] = "Failed to install {$ext}: " . $e->getMessage();
+            }
+        }
+        
+        sendJSON([
+            'success' => empty($errors),
+            'message' => count($installed) > 0 ? 'Extensions processed' : 'No extensions were installed',
+            'installed' => $installed,
+            'errors' => $errors
+        ]);
+        
+    } catch (PDOException $e) {
+        sendJSON([
+            'success' => false,
+            'error' => 'Failed to connect to database: ' . $e->getMessage()
+        ], 500);
+    }
+}
+
+/**
+ * System Email (SMTP) add-on — uses shared smtp_servers table
+ */
+
+function systemEmailEnsureAddonStatusRow(PDO $db): void {
+    $stmt = $db->prepare("SELECT addon_name FROM addon_status WHERE addon_name = 'system_email'");
+    $stmt->execute();
+    if (!$stmt->fetch()) {
+        $ins = $db->prepare('INSERT INTO addon_status (addon_name, is_enabled, is_available, last_check_at) VALUES (?, 0, 0, ?)');
+        $ins->execute(['system_email', time()]);
+    }
+}
+
+function systemEmailGetActiveServer(PDO $db): ?array {
+    $stmt = $db->prepare('SELECT id, name, host, port, username, from_email, from_name, encryption, is_active, is_enabled, pause_start, pause_end FROM smtp_servers WHERE is_active = 1 LIMIT 1');
+    $stmt->execute();
+    $server = $stmt->fetch(PDO::FETCH_ASSOC);
+    if (!$server) {
+        $stmt = $db->prepare('SELECT id, name, host, port, username, from_email, from_name, encryption, is_active, is_enabled, pause_start, pause_end FROM smtp_servers ORDER BY id ASC LIMIT 1');
+        $stmt->execute();
+        $server = $stmt->fetch(PDO::FETCH_ASSOC);
+    }
+    if (!$server) {
+        return null;
+    }
+    $server['id'] = (int)$server['id'];
+    $server['port'] = (int)$server['port'];
+    $server['is_active'] = (bool)$server['is_active'];
+    $server['is_enabled'] = (bool)$server['is_enabled'];
+    $server['password'] = '';
+    $server['has_password'] = false;
+    $pwStmt = $db->prepare('SELECT password FROM smtp_servers WHERE id = ?');
+    $pwStmt->execute([$server['id']]);
+    $pw = $pwStmt->fetchColumn();
+    $server['has_password'] = is_string($pw) && $pw !== '';
+    return $server;
+}
+
+function handleGetSystemEmailConfig() {
+    try {
+        $db = getDB();
+        systemEmailEnsureAddonStatusRow($db);
+
+        $statusStmt = $db->prepare("SELECT * FROM addon_status WHERE addon_name = 'system_email'");
+        $statusStmt->execute();
+        $status = $statusStmt->fetch(PDO::FETCH_ASSOC) ?: null;
+
+        $server = systemEmailGetActiveServer($db);
+
+        sendJSON([
+            'config' => [
+                'enabled' => ((string)getSetting('auth_email_enabled', '0')) === '1',
+                'publicUrl' => (string)getSetting('auth_email_public_url', ''),
+                'notifyRegistration' => ((string)getSetting('auth_email_notify_registration', '1')) === '1',
+                'notifyApproval' => ((string)getSetting('auth_email_notify_approval', '1')) === '1',
+                'passwordRecovery' => ((string)getSetting('auth_email_password_recovery', '1')) === '1',
+                'smtp' => $server ? [
+                    'id' => $server['id'],
+                    'name' => $server['name'] ?: 'Primary SMTP',
+                    'host' => $server['host'] ?? '',
+                    'port' => $server['port'] ?? 587,
+                    'username' => $server['username'] ?? '',
+                    'from_email' => $server['from_email'] ?? '',
+                    'from_name' => $server['from_name'] ?? '',
+                    'encryption' => $server['encryption'] ?? 'tls',
+                    'is_enabled' => !empty($server['is_enabled']),
+                    'has_password' => !empty($server['has_password']),
+                ] : [
+                    'id' => null,
+                    'name' => 'Primary SMTP',
+                    'host' => '',
+                    'port' => 587,
+                    'username' => '',
+                    'from_email' => '',
+                    'from_name' => '{app_name}',
+                    'encryption' => 'tls',
+                    'is_enabled' => false,
+                    'has_password' => false,
+                ],
+            ],
+            'status' => $status ? [
+                'addon_name' => $status['addon_name'],
+                'is_enabled' => (bool)$status['is_enabled'],
+                'is_available' => (bool)$status['is_available'],
+                'last_check_at' => (int)($status['last_check_at'] ?? 0),
+                'error_message' => $status['error_message'] ?? null,
+            ] : null,
+            'detectedPublicUrl' => ln_email_public_base_url(),
+        ]);
+    } catch (Throwable $e) {
+        sendJSON(['error' => 'Failed to load System Email config: ' . $e->getMessage()], 500);
+    }
+}
+
+function handleUpdateSystemEmailConfig() {
+    try {
+        $data = getJSONInput();
+        $db = getDB();
+        systemEmailEnsureAddonStatusRow($db);
+
+        $enabled = !empty($data['enabled']);
+        setSetting('auth_email_enabled', $enabled ? '1' : '0');
+        setSetting('auth_email_public_url', trim((string)($data['publicUrl'] ?? '')));
+        setSetting('auth_email_notify_registration', !empty($data['notifyRegistration']) ? '1' : '0');
+        setSetting('auth_email_notify_approval', !empty($data['notifyApproval']) ? '1' : '0');
+        setSetting('auth_email_password_recovery', !empty($data['passwordRecovery']) ? '1' : '0');
+
+        $smtp = is_array($data['smtp'] ?? null) ? $data['smtp'] : [];
+        $host = trim((string)($smtp['host'] ?? ''));
+        $port = (int)($smtp['port'] ?? 587);
+        if ($port <= 0) {
+            $port = 587;
+        }
+        $username = trim((string)($smtp['username'] ?? ''));
+        $fromEmail = trim((string)($smtp['from_email'] ?? ''));
+        if ($fromEmail === '') {
+            $fromEmail = 'noreply@localhost';
+        }
+        $fromName = trim((string)($smtp['from_name'] ?? ''));
+        if ($fromName === '') {
+            $fromName = '{app_name}';
+        }
+        $encryption = strtolower(trim((string)($smtp['encryption'] ?? 'tls')));
+        if (!in_array($encryption, ['none', 'ssl', 'tls'], true)) {
+            $encryption = 'tls';
+        }
+        $smtpEnabled = array_key_exists('is_enabled', $smtp) ? !empty($smtp['is_enabled']) : true;
+        $name = trim((string)($smtp['name'] ?? 'Primary SMTP'));
+        if ($name === '') {
+            $name = 'Primary SMTP';
+        }
+        $password = $smtp['password'] ?? null;
+        $now = time();
+
+        $active = systemEmailGetActiveServer($db);
+        if ($active && !empty($active['id'])) {
+            $fields = [
+                'name' => $name,
+                'host' => $host,
+                'port' => $port,
+                'username' => $username,
+                'from_email' => $fromEmail,
+                'from_name' => $fromName,
+                'encryption' => $encryption,
+                'is_enabled' => $smtpEnabled ? 1 : 0,
+                'is_active' => 1,
+                'updated_at' => $now,
+            ];
+            if (is_string($password) && $password !== '') {
+                $fields['password'] = base64_encode($password);
+            }
+            $sets = [];
+            $vals = [];
+            foreach ($fields as $k => $v) {
+                $sets[] = "$k = ?";
+                $vals[] = $v;
+            }
+            $vals[] = $active['id'];
+            $stmt = $db->prepare('UPDATE smtp_servers SET ' . implode(', ', $sets) . ' WHERE id = ?');
+            $stmt->execute($vals);
+            $db->exec('UPDATE smtp_servers SET is_active = 0 WHERE id != ' . (int)$active['id']);
+        } elseif ($host !== '') {
+            $encodedPw = is_string($password) ? base64_encode($password) : base64_encode('');
+            $db->exec('UPDATE smtp_servers SET is_active = 0');
+            $stmt = $db->prepare('INSERT INTO smtp_servers (name, host, port, username, password, from_email, from_name, encryption, is_active, is_enabled, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, 1, ?, ?, ?)');
+            $stmt->execute([$name, $host, $port, $username, $encodedPw, $fromEmail, $fromName, $encryption, $smtpEnabled ? 1 : 0, $now, $now]);
+        }
+
+        $available = $host !== '' && $smtpEnabled;
+        $upd = $db->prepare('UPDATE addon_status SET is_enabled = ?, is_available = ?, last_check_at = ?, error_message = NULL WHERE addon_name = ?');
+        $upd->execute([$enabled ? 1 : 0, $available ? 1 : 0, $now, 'system_email']);
+
+        handleGetSystemEmailConfig();
+    } catch (Throwable $e) {
+        sendJSON(['error' => 'Failed to save System Email config: ' . $e->getMessage()], 500);
+    }
+}
+
+function handleCheckSystemEmailStatus() {
+    try {
+        $enabled = auth_email_addon_enabled();
+        $smtpReady = auth_email_smtp_ready();
+        $config = getSMTPConfig();
+        $host = trim((string)($config['host'] ?? ''));
+
+        if (!$enabled) {
+            $status = 'disabled';
+            $message = 'System Email add-on is disabled';
+        } elseif ($host === '') {
+            $status = 'not_configured';
+            $message = 'SMTP host is not configured';
+        } elseif (!$smtpReady) {
+            $status = 'unavailable';
+            $message = 'SMTP is configured but not enabled';
+        } else {
+            $status = 'available';
+            $message = 'SMTP ready for auth emails (' . $host . ')';
+        }
+
+        sendJSON([
+            'status' => $status,
+            'message' => $message,
+            'enabled' => $enabled,
+            'smtp_ready' => $smtpReady,
+            'smtp_host' => $host,
+            'notify_registration' => auth_email_flag('auth_email_notify_registration', '1'),
+            'notify_approval' => auth_email_flag('auth_email_notify_approval', '1'),
+            'password_recovery' => auth_email_flag('auth_email_password_recovery', '1'),
+            'public_url' => ln_email_public_base_url(),
+        ]);
+    } catch (Throwable $e) {
+        sendJSON([
+            'status' => 'error',
+            'message' => $e->getMessage(),
+        ], 500);
+    }
+}
+
+function handleTestSystemEmail() {
+    try {
+        $data = getJSONInput();
+        $to = trim((string)($data['to'] ?? $data['email'] ?? ''));
+        if ($to === '') {
+            global $AUTH_USER;
+            $to = trim((string)($AUTH_USER['email'] ?? ''));
+        }
+        if ($to === '' || !isValidEmailLocal($to)) {
+            sendJSON(['success' => false, 'message' => 'A valid recipient email is required'], 400);
+            return;
+        }
+
+        $config = getSMTPConfig();
+        if (empty($config['host'])) {
+            sendJSON(['success' => false, 'message' => 'SMTP is not configured. Save SMTP settings first.'], 400);
+            return;
+        }
+
+        // Force-enabled config for the test send (do not require add-on toggle)
+        $testConfig = $config;
+        $testConfig['enabled'] = '1';
+
+        $appName = getAppName() ?: 'LinkNest';
+        $result = sendEmail(
+            $to,
+            $appName . ' System Email Test',
+            ln_render_auth_smtp_test_email_text($to, $appName),
+            $testConfig,
+            [],
+            [
+                'html' => ln_render_auth_smtp_test_email_html($to, $appName),
+                'text' => ln_render_auth_smtp_test_email_text($to, $appName),
+            ]
+        );
+
+        if ($result === true) {
+            $db = getDB();
+            systemEmailEnsureAddonStatusRow($db);
+            $upd = $db->prepare('UPDATE addon_status SET is_available = 1, last_check_at = ?, error_message = NULL WHERE addon_name = ?');
+            $upd->execute([time(), 'system_email']);
+            sendJSON(['success' => true, 'message' => 'Test email sent successfully to ' . $to]);
+        } else {
+            $db = getDB();
+            systemEmailEnsureAddonStatusRow($db);
+            $msg = is_string($result) ? $result : 'Send failed';
+            $upd = $db->prepare('UPDATE addon_status SET last_check_at = ?, error_message = ? WHERE addon_name = ?');
+            $upd->execute([time(), $msg, 'system_email']);
+            sendJSON(['success' => false, 'message' => 'Failed to send test email: ' . $msg]);
+        }
+    } catch (Throwable $e) {
+        sendJSON(['success' => false, 'message' => 'Error: ' . $e->getMessage()], 500);
+    }
+}

@@ -1,0 +1,12 @@
+{
+  "mcpServers": {
+    "linknest": {
+      "command": "node",
+      "args": ["C:/xampp/htdocs/linknest/mcp/server.mjs"],
+      "env": {
+        "LINKNEST_URL": "http://localhost/linknest",
+        "LINKNEST_TOKEN": "lnmcp_YOUR_TOKEN"
+      }
+    }
+  }
+}

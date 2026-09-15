@@ -94,6 +94,40 @@ function normalizeEmailList($emails) {
     return $deduped;
 }
 
+/**
+ * Build MIME body for text (+ optional HTML).
+ * Never attach CID/related image parts: Outlook treats those as attachments
+ * (paperclip) even when Content-Disposition is inline.
+ * Returns [contentTypeHeaderValue, bodyString].
+ *
+ * @param array $options
+ * @return array{0:string,1:string}
+ */
+function ln_build_multipart_email_body(string $plainBody, array $options = []): array {
+    if (empty($options['html'])) {
+        if (!empty($options['is_html'])) {
+            return ['text/html; charset=UTF-8', $plainBody];
+        }
+        return ['text/plain; charset=UTF-8', $plainBody];
+    }
+
+    $textPart = (string)($options['text'] ?? $plainBody);
+    $htmlPart = (string)$options['html'];
+    $altBoundary = 'ln_alt_' . bin2hex(random_bytes(8));
+    $altBody =
+        "--{$altBoundary}\r\n" .
+        "Content-Type: text/plain; charset=UTF-8\r\n" .
+        "Content-Transfer-Encoding: 8bit\r\n\r\n" .
+        $textPart . "\r\n" .
+        "--{$altBoundary}\r\n" .
+        "Content-Type: text/html; charset=UTF-8\r\n" .
+        "Content-Transfer-Encoding: 8bit\r\n\r\n" .
+        $htmlPart . "\r\n" .
+        "--{$altBoundary}--\r\n";
+
+    return ['multipart/alternative; boundary="' . $altBoundary . '"', $altBody];
+}
+
 function sendEmail($to, $subject, $body, $config = null, $cc = [], $options = []) {
     $toList = normalizeEmailList($to);
     $ccList = normalizeEmailList($cc);
@@ -133,22 +167,7 @@ function sendEmailMulti(array $toList, array $ccList, $subject, $body, $config =
             $contentType = "text/plain; charset=UTF-8";
             $mailBody = (string)$body;
             if (is_array($options)) {
-                if (!empty($options['html'])) {
-                    $boundary = 'ln_' . bin2hex(random_bytes(8));
-                    $contentType = 'multipart/alternative; boundary="' . $boundary . '"';
-                    $textPart = (string)($options['text'] ?? $body);
-                    $htmlPart = (string)$options['html'];
-                    $mailBody =
-                        "--{$boundary}\r\n" .
-                        "Content-Type: text/plain; charset=UTF-8\r\n\r\n" .
-                        $textPart . "\r\n" .
-                        "--{$boundary}\r\n" .
-                        "Content-Type: text/html; charset=UTF-8\r\n\r\n" .
-                        $htmlPart . "\r\n" .
-                        "--{$boundary}--\r\n";
-                } elseif (!empty($options['is_html'])) {
-                    $contentType = "text/html; charset=UTF-8";
-                }
+                [$contentType, $mailBody] = ln_build_multipart_email_body((string)$body, $options);
             }
 
             $headers .= "Content-Type: {$contentType}\r\n";
@@ -283,22 +302,7 @@ function sendEmailMulti(array $toList, array $ccList, $subject, $body, $config =
     $smtpBody = (string)$body;
 
     if (is_array($options)) {
-        if (!empty($options['html'])) {
-            $boundary = 'ln_' . bin2hex(random_bytes(8));
-            $contentType = 'multipart/alternative; boundary="' . $boundary . '"';
-            $textPart = (string)($options['text'] ?? $body);
-            $htmlPart = (string)$options['html'];
-            $smtpBody =
-                "--{$boundary}\r\n" .
-                "Content-Type: text/plain; charset=UTF-8\r\n\r\n" .
-                $textPart . "\r\n" .
-                "--{$boundary}\r\n" .
-                "Content-Type: text/html; charset=UTF-8\r\n\r\n" .
-                $htmlPart . "\r\n" .
-                "--{$boundary}--\r\n";
-        } elseif (!empty($options['is_html'])) {
-            $contentType = "text/html; charset=UTF-8";
-        }
+        [$contentType, $smtpBody] = ln_build_multipart_email_body((string)$body, $options);
     }
 
     // Dot-stuffing (SMTP transparency)

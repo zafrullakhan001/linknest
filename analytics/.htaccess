@@ -1,0 +1,29 @@
+# .htaccess for Analytics Application
+# Handles API routing and CORS
+
+# Enable rewrite engine
+RewriteEngine On
+
+# CORS Headers
+Header always set Access-Control-Allow-Origin "*"
+Header always set Access-Control-Allow-Methods "POST, GET, OPTIONS"
+Header always set Access-Control-Allow-Headers "Content-Type"
+Header always set X-Robots-Tag "noindex, nofollow, noarchive, nosnippet"
+
+# Handle OPTIONS preflight requests
+RewriteCond %{REQUEST_METHOD} OPTIONS
+RewriteRule ^(.*)$ $1 [R=204,L]
+
+# Route API requests
+RewriteCond %{REQUEST_FILENAME} !-f
+RewriteCond %{REQUEST_FILENAME} !-d
+RewriteRule ^api/metrics/collect$ api/metrics/collect.php [L,QSA]
+RewriteRule ^api/metrics/queue-status$ api/metrics/queue-status.php [L,QSA]
+
+# Performance API routes - don't add .php if already present
+RewriteCond %{REQUEST_FILENAME} !-f
+RewriteCond %{REQUEST_URI} !\.php$
+RewriteRule ^api/performance/(.+)$ api/performance/$1.php [L,QSA]
+
+# Serve dashboard/index.html as default
+DirectoryIndex dashboard/index.html

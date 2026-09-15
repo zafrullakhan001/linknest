@@ -1,6 +1,7 @@
 import React, { createContext, useContext, useState, useEffect, useRef, useCallback, useMemo, ReactNode } from 'react';
 import { SpaceStyles, DEFAULT_STYLES, styleService } from '../services/styleService';
 import { useAuth } from './AuthContext';
+import { userPreferencesService } from '../services/userPreferencesService';
 
 interface StyleContextType {
   styles: SpaceStyles;
@@ -11,26 +12,72 @@ interface StyleContextType {
 
 const StyleContext = createContext<StyleContextType | undefined>(undefined);
 
+const USER_PAGE_ZOOM_KEY = 'linknest_user_page_zoom';
+
+function parsePageZoom(value: string | null | undefined): number | null {
+  if (value == null || value === '') return null;
+  const zoomValue = parseInt(String(value), 10);
+  if (!isNaN(zoomValue) && zoomValue >= 10 && zoomValue <= 200) {
+    return zoomValue;
+  }
+  return null;
+}
+
+function readStoredUserZoom(): number | null {
+  try {
+    return parsePageZoom(localStorage.getItem(USER_PAGE_ZOOM_KEY));
+  } catch {
+    return null;
+  }
+}
+
+function persistStoredUserZoom(zoom: number): void {
+  try {
+    localStorage.setItem(USER_PAGE_ZOOM_KEY, String(zoom));
+  } catch {
+    // ignore quota / private mode
+  }
+}
+
+/** Keep the user's page zoom when global Style Manager styles load. */
+function overlayUserPageZoom(loaded: SpaceStyles, current: SpaceStyles, dbZoom: number | null): SpaceStyles {
+  const zoom = dbZoom ?? readStoredUserZoom() ?? current.pageZoom ?? loaded.pageZoom ?? 100;
+  if (loaded.pageZoom === zoom) return loaded;
+  return { ...loaded, pageZoom: zoom };
+}
+
 const StyleProvider: React.FC<{ children: ReactNode }> = ({ children }) => {
-  // Initialize with cached styles if available, otherwise use defaults
+  // Initialize with cached styles if available (including stale cache), otherwise use defaults
   const getInitialStyles = () => {
-    const cached = styleService.getCachedStyles();
-    return cached || DEFAULT_STYLES;
+    const cached = styleService.getCachedStyles(true);
+    const base = cached || DEFAULT_STYLES;
+    const storedZoom = readStoredUserZoom();
+    if (storedZoom === null || base.pageZoom === storedZoom) return base;
+    return { ...base, pageZoom: storedZoom };
   };
+
+  const hasCachedOnMount = styleService.hasCachedStyles(true);
   
   const [styles, setStyles] = useState<SpaceStyles>(getInitialStyles);
-  const [isLoading, setIsLoading] = useState(true);
+  const [isLoading, setIsLoading] = useState(!hasCachedOnMount);
   const { isAuthenticated, loading: authLoading } = useAuth();
+  const isAuthenticatedRef = useRef(isAuthenticated);
   const prevAuthRef = useRef<boolean | undefined>(undefined);
   const initialMountRef = useRef(true);
   const applyingStylesRef = useRef(false);
   const styleTagRef = useRef<HTMLStyleElement | null>(null);
   const stylesRef = useRef<SpaceStyles>(getInitialStyles());
+  const backgroundRetryTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const loadStylesRef = useRef<(options?: { silent?: boolean }) => Promise<void>>();
 
   // Keep styles ref in sync
   useEffect(() => {
     stylesRef.current = styles;
   }, [styles]);
+
+  useEffect(() => {
+    isAuthenticatedRef.current = isAuthenticated;
+  }, [isAuthenticated]);
 
   const applyStyles = useCallback((styleData: SpaceStyles, synchronous: boolean = false) => {
     const apply = () => {
@@ -58,6 +105,9 @@ const StyleProvider: React.FC<{ children: ReactNode }> = ({ children }) => {
         const isDark = document.documentElement.classList.contains('dark');
         const css = styleService.generateCSS(styleData, isDark);
         styleTag.textContent = css;
+        // Clear any temporary inline zoom from the HTML bootstrap script
+        // (stylesheet zoom should own this going forward)
+        document.documentElement.style.removeProperty('zoom');
         
         // Trigger zoom adjustment after styles are applied
         // Use a custom event to notify the zoom adjustment effect
@@ -94,39 +144,83 @@ const StyleProvider: React.FC<{ children: ReactNode }> = ({ children }) => {
     }
   }, []);
 
-  const loadStyles = useCallback(async () => {
-    setIsLoading(true);
+  const scheduleBackgroundStylesRetry = useCallback(() => {
+    if (backgroundRetryTimerRef.current) {
+      clearTimeout(backgroundRetryTimerRef.current);
+    }
+    backgroundRetryTimerRef.current = setTimeout(() => {
+      backgroundRetryTimerRef.current = null;
+      if (styleService.getLastLoadSource() === 'api') {
+        return;
+      }
+      void loadStylesRef.current?.({ silent: true });
+    }, 3000);
+  }, []);
+
+  const loadStyles = useCallback(async (options?: { silent?: boolean }) => {
+    if (!options?.silent) {
+      setIsLoading(true);
+    }
     try {
       const loadedStyles = await styleService.getStyles();
-      setStyles(loadedStyles);
-      stylesRef.current = loadedStyles;
-      // Apply loaded styles immediately
-      applyStyles(loadedStyles, false);
-      // Cache the loaded styles
-      styleService.cacheStyles(loadedStyles);
+      const loadSource = styleService.getLastLoadSource();
+
+      let dbZoom: number | null = null;
+      if (isAuthenticatedRef.current) {
+        try {
+          dbZoom = parsePageZoom(await userPreferencesService.getPreference('page_zoom'));
+          if (dbZoom !== null) {
+            persistStoredUserZoom(dbZoom);
+          }
+        } catch (error) {
+          console.error('Failed to load user zoom preference:', error);
+        }
+      }
+
+      // Do not let global Style Manager zoom replace the zoom already on screen
+      const nextStyles = overlayUserPageZoom(loadedStyles, stylesRef.current, dbZoom);
+      setStyles(nextStyles);
+      stylesRef.current = nextStyles;
+      applyStyles(nextStyles, false);
+      styleService.cacheStyles(nextStyles);
+
+      if (loadSource === 'stale-cache' || loadSource === 'defaults') {
+        scheduleBackgroundStylesRetry();
+      }
     } catch (error) {
       console.error('Failed to load styles:', error);
-      // Try to use cached styles on error
-      const cached = styleService.getCachedStyles();
-      const fallbackStyles = cached || DEFAULT_STYLES;
-      setStyles(fallbackStyles);
-      stylesRef.current = fallbackStyles;
-      applyStyles(fallbackStyles, false);
+      const cached = styleService.getCachedStyles(true);
+      const fallbackBase = cached || DEFAULT_STYLES;
+      const nextStyles = overlayUserPageZoom(fallbackBase, stylesRef.current, readStoredUserZoom());
+      setStyles(nextStyles);
+      stylesRef.current = nextStyles;
+      applyStyles(nextStyles, false);
+      scheduleBackgroundStylesRetry();
     } finally {
-      setIsLoading(false);
+      if (!options?.silent) {
+        setIsLoading(false);
+      }
     }
-  }, [applyStyles]);
+  }, [applyStyles, scheduleBackgroundStylesRetry]);
+
+  useEffect(() => {
+    loadStylesRef.current = loadStyles;
+  }, [loadStyles]);
 
   // Apply styles immediately on mount to prevent flash
   // Apply cached or default styles synchronously before React renders
   useEffect(() => {
     // Get cached styles or defaults
-    const cached = styleService.getCachedStyles();
+    const cached = styleService.getCachedStyles(true);
     const initialStyles = cached || DEFAULT_STYLES;
     
     // Apply synchronously immediately
     const applyInitial = () => {
       applyStyles(initialStyles, true);
+      // Ensure pre-rendered CSS exists for the next page load bootstrap
+      if (cached) {
+        styleService.cacheStyles(initialStyles);
+      }
     };
 
     if (document.readyState === 'loading') {
@@ -154,6 +248,10 @@ const StyleProvider: React.FC<{ children: ReactNode }> = ({ children }) => {
 
     return () => {
       window.removeEventListener('refreshStyles', handleRefresh);
+      if (backgroundRetryTimerRef.current) {
+        clearTimeout(backgroundRetryTimerRef.current);
+        backgroundRetryTimerRef.current = null;
+      }
     };
   }, [loadStyles]);
 
@@ -183,6 +281,61 @@ const StyleProvider: React.FC<{ children: ReactNode }> = ({ children }) => {
     // Apply styles whenever the styles state changes
     applyStyles(styles, false);
   }, [styles, applyStyles]);
+
+  // Preserve user's zoom preference when styles are loaded/reloaded
+  // For registered users: load from database
+  // For guest users: load from localStorage
+  // This prevents backend styles from overwriting user's zoom setting
+  const lastUserZoomRef = useRef<number | null>(null);
+  const zoomCheckInProgressRef = useRef(false);
+  useEffect(() => {
+    if (authLoading || zoomCheckInProgressRef.current) return;
+
+    const preserveZoomPreference = async () => {
+      zoomCheckInProgressRef.current = true;
+
+      try {
+        let savedZoom = readStoredUserZoom();
+
+        if (isAuthenticated) {
+          try {
+            const dbZoom = parsePageZoom(await userPreferencesService.getPreference('page_zoom'));
+            if (dbZoom !== null) {
+              savedZoom = dbZoom;
+            }
+          } catch {
+            // keep localStorage zoom
+          }
+        }
+
+        if (savedZoom !== null) {
+          persistStoredUserZoom(savedZoom);
+        }
+
+        // Only restore if:
+        // 1. Current zoom is different from user's saved preference
+        // 2. The current zoom doesn't match what we last set (not a user change)
+        // This prevents overwriting user-initiated zoom changes
+        if (savedZoom !== null && styles.pageZoom !== savedZoom && lastUserZoomRef.current !== savedZoom) {
+          const updatedStyles = { ...styles, pageZoom: savedZoom };
+          setStyles(updatedStyles);
+          stylesRef.current = updatedStyles;
+          applyStyles(updatedStyles, false);
+          styleService.cacheStyles(updatedStyles);
+          lastUserZoomRef.current = savedZoom;
+        } else if (savedZoom !== null && styles.pageZoom === savedZoom) {
+          lastUserZoomRef.current = savedZoom;
+        }
+      } catch (error) {
+        console.error('Failed to preserve zoom preference:', error);
+      } finally {
+        zoomCheckInProgressRef.current = false;
+      }
+    };
+
+    preserveZoomPreference();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [styles.pageZoom, isAuthenticated, authLoading]); // Only watch pageZoom, not entire styles object
 
   // Handle page zoom to eliminate white space (similar to browser zoom)
   useEffect(() => {
@@ -387,6 +540,13 @@ const StyleProvider: React.FC<{ children: ReactNode }> = ({ children }) => {
   }, [loadStyles]);
 
   const updateStyles = useCallback((newStyles: SpaceStyles) => {
+    // Update the last user zoom ref when styles are updated
+    // This prevents the preservation useEffect from overwriting user-initiated changes
+    if (newStyles.pageZoom !== undefined) {
+      lastUserZoomRef.current = newStyles.pageZoom;
+      persistStoredUserZoom(newStyles.pageZoom);
+    }
+    
     setStyles(newStyles);
     stylesRef.current = newStyles;
     applyStyles(newStyles);

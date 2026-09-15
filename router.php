@@ -1,7 +1,26 @@
 <?php
 // Router script for PHP built-in server
+if (!headers_sent()) {
+    header('X-Robots-Tag: noindex, nofollow, noarchive, nosnippet');
+}
+
 $requestUri = $_SERVER['REQUEST_URI'];
 $path = parse_url($requestUri, PHP_URL_PATH);
+
+if (is_string($path) && preg_match('#/robots\.txt$#', $path)) {
+    $robots = __DIR__ . '/robots.txt';
+    if (!is_file($robots)) {
+        $robots = __DIR__ . '/public/robots.txt';
+    }
+    if (!is_file($robots)) {
+        $robots = __DIR__ . '/dist/robots.txt';
+    }
+    if (is_file($robots)) {
+        header('Content-Type: text/plain; charset=utf-8');
+        readfile($robots);
+        return true;
+    }
+}
 
 // Dynamically detect base path (e.g., /linknest, /myspaces, etc.)
 // Extract base path from REQUEST_URI if present

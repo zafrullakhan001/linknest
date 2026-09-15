@@ -1,36 +1,17 @@
-const API_BASE = import.meta.env.VITE_API_BASE || '/api';
+import { userPreferencesService } from './userPreferencesService';
 
 export const preferenceService = {
     async getPreferences(): Promise<Record<string, string>> {
-        try {
-            const response = await fetch(`${API_BASE}/settings/user-preferences`, {
-                method: 'GET',
-                credentials: 'include'
-            });
-
-            if (!response.ok) {
-                return {};
-            }
-
-            const data = await response.json();
-            return data.preferences || {};
-        } catch (error) {
-            console.error('Failed to load user preferences:', error);
-            return {};
+        const prefs = await userPreferencesService.getPreferences();
+        const out: Record<string, string> = {};
+        for (const [key, value] of Object.entries(prefs)) {
+            if (value == null) continue;
+            out[key] = String(value);
         }
+        return out;
     },
 
     async updatePreferences(preferences: Record<string, any>): Promise<void> {
-        const response = await fetch(`${API_BASE}/settings/user-preferences`, {
-            method: 'PUT',
-            headers: { 'Content-Type': 'application/json' },
-            credentials: 'include',
-            body: JSON.stringify({ preferences })
-        });
-
-        if (!response.ok) {
-            const data = await response.json();
-            throw new Error(data.error || 'Failed to update user preferences');
-        }
+        await userPreferencesService.updatePreferences(preferences);
     }
 };

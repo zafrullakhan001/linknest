@@ -1,0 +1,18 @@
+{
+  "type": "object",
+  "properties": {
+    "allowedOrigins": {
+      "title": "Allowed LinkNest origins",
+      "description": "Exact http(s) origins (scheme + host + port) that may request this browser profile’s bookmarks. Paths are ignored. Empty means fail-closed unless org-branding.json lists origins.",
+      "type": "array",
+      "items": {
+        "type": "string"
+      }
+    },
+    "syncDefaultOn": {
+      "title": "Default Read-only and Read-write On for new profiles",
+      "description": "If true, both Read-only (Sync) and Read-write (OutSync) start On until the user toggles them. Default is false (opt-in).",
+      "type": "boolean"
+    }
+  }
+}

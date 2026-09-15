@@ -1,5 +1,5 @@
 /** @type {import('tailwindcss').Config} */
-module.exports = {
+export default {
   content: [
     "./index.html",
     "./*.{js,ts,jsx,tsx}",
@@ -126,6 +126,8 @@ module.exports = {
       },
       maxWidth: {
         '6xl-plus': '93.6rem', // 30% larger than default 6xl (72rem)
+        // Wider shell for Admin (tables, settings) — keeps home/tile pages on 6xl-plus
+        admin: '120rem',
       }
     },
   },

@@ -1,0 +1,10 @@
+{
+  "mcpServers": {
+    "linknest": {
+      "url": "http://localhost/linknest/api/mcp",
+      "headers": {
+        "Authorization": "Bearer lnmcp_YOUR_TOKEN"
+      }
+    }
+  }
+}

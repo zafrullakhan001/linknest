@@ -1,0 +1,872 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Bookmark Organizer</title>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Oxygen, Ubuntu, sans-serif;
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            min-height: 100vh;
+            padding: 20px;
+        }
+
+        .container {
+            max-width: 1200px;
+            margin: 0 auto;
+            background: white;
+            border-radius: 20px;
+            box-shadow: 0 20px 60px rgba(0,0,0,0.3);
+            overflow: hidden;
+        }
+
+        .header {
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            color: white;
+            padding: 30px;
+            text-align: center;
+        }
+
+        .header h1 {
+            font-size: 2.5rem;
+            margin-bottom: 10px;
+        }
+
+        .header p {
+            opacity: 0.9;
+            font-size: 1.1rem;
+        }
+
+        .content {
+            display: grid;
+            grid-template-columns: 1fr 1fr;
+            gap: 30px;
+            padding: 30px;
+        }
+
+        @media (max-width: 768px) {
+            .content {
+                grid-template-columns: 1fr;
+            }
+        }
+
+        .input-section, .output-section {
+            display: flex;
+            flex-direction: column;
+        }
+
+        .section-title {
+            font-size: 1.5rem;
+            color: #333;
+            margin-bottom: 20px;
+            padding-bottom: 10px;
+            border-bottom: 2px solid #667eea;
+        }
+
+        textarea {
+            flex: 1;
+            padding: 15px;
+            border: 2px solid #e0e0e0;
+            border-radius: 10px;
+            font-family: 'Monaco', 'Menlo', 'Ubuntu Mono', monospace;
+            font-size: 14px;
+            resize: vertical;
+            transition: border-color 0.3s;
+        }
+
+        textarea:focus {
+            outline: none;
+            border-color: #667eea;
+        }
+
+        .buttons {
+            display: flex;
+            gap: 10px;
+            margin-top: 20px;
+        }
+
+        button {
+            padding: 12px 24px;
+            border: none;
+            border-radius: 8px;
+            font-size: 1rem;
+            font-weight: 600;
+            cursor: pointer;
+            transition: all 0.3s;
+            flex: 1;
+        }
+
+        .process-btn {
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            color: white;
+        }
+
+        .process-btn:hover {
+            transform: translateY(-2px);
+            box-shadow: 0 10px 20px rgba(102, 126, 234, 0.3);
+        }
+
+        .export-btn {
+            background: #10b981;
+            color: white;
+        }
+
+        .export-btn:hover {
+            background: #0da271;
+            transform: translateY(-2px);
+        }
+
+        .reset-btn {
+            background: #ef4444;
+            color: white;
+        }
+
+        .reset-btn:hover {
+            background: #dc2626;
+            transform: translateY(-2px);
+        }
+
+        .stats {
+            display: flex;
+            justify-content: space-between;
+            margin-top: 15px;
+            padding: 15px;
+            background: #f8fafc;
+            border-radius: 10px;
+            font-size: 0.9rem;
+            color: #64748b;
+        }
+
+        .stat-item {
+            text-align: center;
+        }
+
+        .stat-value {
+            display: block;
+            font-size: 1.5rem;
+            font-weight: bold;
+            color: #667eea;
+        }
+
+        .preview {
+            margin-top: 20px;
+            padding: 20px;
+            background: #f8fafc;
+            border-radius: 10px;
+            max-height: 300px;
+            overflow-y: auto;
+        }
+
+        .preview-title {
+            font-weight: bold;
+            color: #667eea;
+            margin-bottom: 10px;
+        }
+
+        .category-item {
+            padding: 8px 12px;
+            margin: 5px 0;
+            background: white;
+            border-radius: 6px;
+            border-left: 4px solid #667eea;
+        }
+
+        .modal {
+            display: none;
+            position: fixed;
+            top: 0;
+            left: 0;
+            right: 0;
+            bottom: 0;
+            background: rgba(0,0,0,0.5);
+            z-index: 1000;
+            align-items: center;
+            justify-content: center;
+        }
+
+        .modal-content {
+            background: white;
+            padding: 30px;
+            border-radius: 15px;
+            max-width: 500px;
+            width: 90%;
+            max-height: 80vh;
+            overflow-y: auto;
+        }
+
+        .modal-header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin-bottom: 20px;
+        }
+
+        .modal-title {
+            font-size: 1.5rem;
+            color: #333;
+        }
+
+        .close-btn {
+            background: none;
+            border: none;
+            font-size: 1.5rem;
+            cursor: pointer;
+            color: #64748b;
+        }
+
+        .loading {
+            display: none;
+            text-align: center;
+            padding: 20px;
+            color: #667eea;
+        }
+
+        .spinner {
+            border: 3px solid #f3f3f3;
+            border-top: 3px solid #667eea;
+            border-radius: 50%;
+            width: 40px;
+            height: 40px;
+            animation: spin 1s linear infinite;
+            margin: 0 auto 10px;
+        }
+
+        @keyframes spin {
+            0% { transform: rotate(0deg); }
+            100% { transform: rotate(360deg); }
+        }
+
+        .toast {
+            position: fixed;
+            bottom: 20px;
+            right: 20px;
+            padding: 12px 24px;
+            background: #10b981;
+            color: white;
+            border-radius: 8px;
+            box-shadow: 0 4px 12px rgba(0,0,0,0.1);
+            display: none;
+            z-index: 1001;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <div class="header">
+            <h1>📚 Bookmark Organizer</h1>
+            <p>Automatically organize your browser bookmarks into structured categories</p>
+        </div>
+
+        <div class="content">
+            <div class="input-section">
+                <h2 class="section-title">Input URLs</h2>
+                <textarea id="urlInput" placeholder="Paste your URLs here (one per line)...
+
+Example:
+https://github.com/microsoft/WSL/releases
+https://chat.openai.com/
+https://coinmarketcap.com/
+https://www.adventhealth.com/
+https://www.youtube.com/@IBMTechnology
+https://docs.microsoft.com/"></textarea>
+                
+                <div class="buttons">
+                    <button class="process-btn" onclick="processBookmarks()">🚀 Process Bookmarks</button>
+                    <button class="reset-btn" onclick="resetAll()">🗑️ Reset</button>
+                </div>
+
+                <div class="stats" id="inputStats">
+                    <div class="stat-item">
+                        <span class="stat-value">0</span>
+                        URLs Detected
+                    </div>
+                    <div class="stat-item">
+                        <span class="stat-value">0</span>
+                        Unique Domains
+                    </div>
+                    <div class="stat-item">
+                        <span class="stat-value">0</span>
+                        Local URLs
+                    </div>
+                </div>
+            </div>
+
+            <div class="output-section">
+                <h2 class="section-title">Organization Preview</h2>
+                <div class="preview" id="preview">
+                    <p style="color: #94a3b8; text-align: center; padding: 40px;">
+                        Process URLs to see organized categories
+                    </p>
+                </div>
+                
+                <div class="buttons">
+                    <button class="export-btn" onclick="exportJSON()">📥 Export JSON</button>
+                    <button class="process-btn" onclick="showCategories()">🎨 Edit Categories</button>
+                </div>
+
+                <div class="stats" id="outputStats">
+                    <div class="stat-item">
+                        <span class="stat-value">0</span>
+                        Categories
+                    </div>
+                    <div class="stat-item">
+                        <span class="stat-value">0</span>
+                        Total Links
+                    </div>
+                    <div class="stat-item">
+                        <span class="stat-value">0</span>
+                        Organized
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <div class="loading" id="loading">
+            <div class="spinner"></div>
+            <p>Organizing your bookmarks...</p>
+        </div>
+    </div>
+
+    <div class="modal" id="categoriesModal">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h2 class="modal-title">Category Configuration</h2>
+                <button class="close-btn" onclick="closeModal()">×</button>
+            </div>
+            <div id="categoriesList"></div>
+            <div class="buttons" style="margin-top: 20px;">
+                <button class="process-btn" onclick="saveCategories()">💾 Save & Apply</button>
+            </div>
+        </div>
+    </div>
+
+    <div class="toast" id="toast">Operation completed successfully!</div>
+
+    <script>
+        class BookmarkOrganizer {
+            constructor() {
+                this.categories = {
+                    'development': { emoji: '💻', color: 'blue', keywords: ['github', 'gitlab', 'stackoverflow', 'w3.org', 'npm', 'yarn', 'docker', 'kubernetes', 'terraform', 'aws', 'azure', 'gcp', 'react', 'vue', 'angular', 'node', 'python', 'java', 'php', 'ruby', 'rust', 'go', 'docker', 'k8s', 'dev', 'api', 'docs', 'documentation', 'framework', 'library', 'package'] },
+                    'ai_ml': { emoji: '🤖', color: 'violet', keywords: ['openai', 'chatgpt', 'gpt', 'gemini', 'bard', 'claude', 'anthropic', 'huggingface', 'llama', 'stability', 'midjourney', 'dall-e', 'ai', 'machinelearning', 'deeplearning', 'neural', 'tensorflow', 'pytorch', 'keras', 'scikit', 'jupyter', 'colab', 'kaggle', 'notebooklm', 'perplexity', 'deepseek'] },
+                    'cryptocurrency': { emoji: '💰', color: 'emerald', keywords: ['coinbase', 'binance', 'kraken', 'crypto', 'bitcoin', 'ethereum', 'solana', 'cardano', 'polkadot', 'chainlink', 'uniswap', 'pancakeswap', 'defi', 'nft', 'web3', 'metamask', 'trustwallet', 'ledger', 'trezor', 'staking', 'yield', 'liquidity', 'token', 'coin', 'marketcap', 'coingecko', 'coinmarketcap'] },
+                    'enterprise_architecture': { emoji: '🏛️', color: 'amber', keywords: ['gartner', 'togaf', 'opengroup', 'archimate', 'zachman', 'enterprise', 'architecture', 'framework', 'methodology', 'governance', 'strategy', 'business', 'process', 'modeling', 'uml', 'bpmn', 'soa', 'microservices', 'api', 'integration', 'middleware', 'esb', 'soap', 'rest'] },
+                    'cloud_devops': { emoji: '☁️', color: 'sky', keywords: ['aws', 'azure', 'gcp', 'cloud', 'devops', 'ci/cd', 'jenkins', 'gitlab', 'github-actions', 'terraform', 'ansible', 'puppet', 'chef', 'docker', 'kubernetes', 'helm', 'istio', 'prometheus', 'grafana', 'elk', 'splunk', 'newrelic', 'datadog', 'monitoring', 'logging', 'observability'] },
+                    'healthcare': { emoji: '🏥', color: 'rose', keywords: ['hospital', 'medical', 'health', 'doctor', 'patient', 'pharmacy', 'insurance', 'medicare', 'medicaid', 'healthcare', 'wellness', 'fitness', 'nutrition', 'diet', 'exercise', 'therapy', 'counseling', 'psychology', 'psychiatry', 'neurology', 'cardiology', 'oncology', 'pediatrics', 'obgyn'] },
+                    'education': { emoji: '📚', color: 'yellow', keywords: ['udemy', 'coursera', 'edx', 'khanacademy', 'pluralsight', 'linkedin-learning', 'skillshare', 'codecademy', 'freecodecamp', 'udacity', 'mit', 'harvard', 'stanford', 'coursera', 'mooc', 'tutorial', 'course', 'learning', 'education', 'training', 'certification', 'degree', 'diploma', 'masterclass', 'workshop'] },
+                    'news_media': { emoji: '📰', color: 'orange', keywords: ['cnn', 'bbc', 'nytimes', 'wsj', 'reuters', 'ap', 'bloomberg', 'forbes', 'fortune', 'techcrunch', 'theverge', 'wired', 'arstechnica', 'hackernews', 'producthunt', 'reddit', 'medium', 'substack', 'newsletter', 'blog', 'article', 'press', 'journal', 'magazine', 'publication'] },
+                    'tools_utilities': { emoji: '🛠️', color: 'zinc', keywords: ['google', 'translate', 'calendar', 'drive', 'dropbox', 'onedrive', 'notion', 'evernote', 'trello', 'asana', 'jira', 'slack', 'discord', 'teams', 'zoom', 'meet', 'webex', 'figma', 'sketch', 'adobe', 'photoshop', 'illustrator', 'xd', 'canva', 'convert', 'generator', 'calculator', 'utility'] },
+                    'productivity': { emoji: '📝', color: 'teal', keywords: ['todo', 'task', 'project', 'management', 'planning', 'scheduling', 'calendar', 'reminder', 'note', 'document', 'spreadsheet', 'presentation', 'word', 'excel', 'powerpoint', 'outlook', 'gmail', 'email', 'messaging', 'communication', 'collaboration', 'share', 'sync', 'backup', 'storage'] },
+                    'entertainment': { emoji: '🎬', color: 'pink', keywords: ['youtube', 'netflix', 'hulu', 'disney', 'primevideo', 'hbo', 'spotify', 'apple-music', 'pandora', 'soundcloud', 'twitch', 'tiktok', 'instagram', 'facebook', 'twitter', 'snapchat', 'pinterest', 'game', 'gaming', 'streaming', 'movie', 'music', 'podcast', 'audiobook', 'comic', 'manga'] },
+                    'shopping': { emoji: '🛒', color: 'purple', keywords: ['amazon', 'ebay', 'walmart', 'target', 'bestbuy', 'newegg', 'aliexpress', 'wish', 'etsy', 'shopify', 'woocommerce', 'magento', 'bigcommerce', 'payment', 'checkout', 'cart', 'order', 'shipping', 'delivery', 'return', 'refund', 'coupon', 'discount', 'deal', 'sale', 'offer'] },
+                    'travel': { emoji: '✈️', color: 'indigo', keywords: ['booking', 'expedia', 'orbitz', 'kayak', 'skyscanner', 'airbnb', 'vrbo', 'hotels', 'marriott', 'hilton', 'hyatt', 'delta', 'united', 'american', 'southwest', 'jetblue', 'spirit', 'frontier', 'alaska', 'train', 'bus', 'rental', 'car', 'taxi', 'uber', 'lyft', 'map', 'navigation'] },
+                    'social_media': { emoji: '👥', color: 'cyan', keywords: ['facebook', 'instagram', 'twitter', 'tiktok', 'linkedin', 'pinterest', 'reddit', 'snapchat', 'whatsapp', 'telegram', 'signal', 'discord', 'slack', 'teams', 'zoom', 'meet', 'webex', 'clubhouse', 'tumblr', 'flickr', 'imgur', '9gag', '4chan', 'forum', 'community', 'group'] },
+                    'religion_spirituality': { emoji: '🕌', color: 'lime', keywords: ['quran', 'bible', 'torah', 'gita', 'sutra', 'prayer', 'meditation', 'yoga', 'mindfulness', 'spiritual', 'religion', 'faith', 'belief', 'church', 'temple', 'mosque', 'synagogue', 'gurdwara', 'mandir', 'ashram', 'retreat', 'pilgrimage', 'festival', 'holiday', 'celebration'] },
+                    'internal_servers': { emoji: '🖥️', color: 'slate', keywords: ['localhost', '127.0.0.1', '192.168.', '10.', '172.16.', '172.17.', '172.18.', '172.19.', '172.20.', '172.21.', '172.22.', '172.23.', '172.24.', '172.25.', '172.26.', '172.27.', '172.28.', '172.29.', '172.30.', '172.31.', 'internal', 'intranet', 'vpn', 'proxy'] }
+                };
+                
+                this.organizedData = null;
+                this.urlStats = {
+                    total: 0,
+                    uniqueDomains: 0,
+                    localUrls: 0
+                };
+            }
+
+            parseUrl(url) {
+                try {
+                    // Handle malformed URLs
+                    if (!url.startsWith('http')) {
+                        url = 'http://' + url;
+                    }
+                    
+                    const urlObj = new URL(url);
+                    return {
+                        href: urlObj.href,
+                        protocol: urlObj.protocol,
+                        hostname: urlObj.hostname,
+                        domain: urlObj.hostname.replace('www.', ''),
+                        pathname: urlObj.pathname,
+                        search: urlObj.search,
+                        hash: urlObj.hash,
+                        port: urlObj.port
+                    };
+                } catch (error) {
+                    // Return minimal info for invalid URLs
+                    return {
+                        href: url,
+                        hostname: 'invalid',
+                        domain: 'invalid'
+                    };
+                }
+            }
+
+            categorizeUrl(urlObj) {
+                const urlStr = urlObj.href.toLowerCase();
+                const domain = urlObj.domain.toLowerCase();
+                
+                // Check for internal servers first
+                if (this.categories.internal_servers.keywords.some(keyword => 
+                    urlStr.includes(keyword) || domain.includes(keyword))) {
+                    return 'internal_servers';
+                }
+                
+                // Check all other categories
+                for (const [category, config] of Object.entries(this.categories)) {
+                    if (category === 'internal_servers') continue;
+                    
+                    if (config.keywords.some(keyword => 
+                        urlStr.includes(keyword) || domain.includes(keyword))) {
+                        return category;
+                    }
+                }
+                
+                // Default to tools_utilities
+                return 'tools_utilities';
+            }
+
+            generateId(url, prefix) {
+                // Create a clean, readable ID
+                const cleanUrl = url.replace(/[^a-zA-Z0-9]/g, '_').toLowerCase();
+                const hash = this.simpleHash(url).slice(0, 6);
+                return `${prefix}_${cleanUrl.slice(0, 20)}_${hash}`;
+            }
+
+            simpleHash(str) {
+                let hash = 0;
+                for (let i = 0; i < str.length; i++) {
+                    hash = ((hash << 5) - hash) + str.charCodeAt(i);
+                    hash |= 0;
+                }
+                return Math.abs(hash).toString(36);
+            }
+
+            extractLabel(urlObj) {
+                const domain = urlObj.domain;
+                const path = urlObj.pathname;
+                
+                // Clean up domain
+                let label = domain.replace('.com', '').replace('.org', '').replace('.net', '');
+                label = label.split('.').map(word => 
+                    word.charAt(0).toUpperCase() + word.slice(1)
+                ).join(' ');
+                
+                // Add meaningful path info
+                if (path && path !== '/') {
+                    const pathParts = path.split('/').filter(p => p);
+                    if (pathParts.length > 0) {
+                        const lastPart = pathParts[pathParts.length - 1];
+                        if (lastPart.length < 30) {
+                            label += ` - ${lastPart.replace(/-/g, ' ')}`;
+                        }
+                    }
+                }
+                
+                return label;
+            }
+
+            organize(urls) {
+                const categorizedUrls = {};
+                const domains = new Set();
+                
+                // Reset stats
+                this.urlStats = {
+                    total: urls.length,
+                    uniqueDomains: 0,
+                    localUrls: 0
+                };
+                
+                // Categorize each URL
+                urls.forEach(url => {
+                    const urlObj = this.parseUrl(url.trim());
+                    
+                    // Skip invalid URLs
+                    if (urlObj.hostname === 'invalid') return;
+                    
+                    // Update stats
+                    domains.add(urlObj.hostname);
+                    if (urlObj.hostname.includes('localhost') || urlObj.hostname.match(/^\d+\.\d+\.\d+\.\d+$/)) {
+                        this.urlStats.localUrls++;
+                    }
+                    
+                    const category = this.categorizeUrl(urlObj);
+                    
+                    if (!categorizedUrls[category]) {
+                        categorizedUrls[category] = [];
+                    }
+                    
+                    categorizedUrls[category].push({
+                        url: urlObj.href,
+                        label: this.extractLabel(urlObj),
+                        domain: urlObj.domain
+                    });
+                });
+                
+                this.urlStats.uniqueDomains = domains.size;
+                
+                // Convert to structured JSON
+                return this.createStructuredJSON(categorizedUrls);
+            }
+
+            createStructuredJSON(categorizedUrls) {
+                const timestamp = Math.floor(Date.now() / 1000);
+                const tiles = [];
+                let position = 0;
+                
+                for (const [categoryName, urls] of Object.entries(categorizedUrls)) {
+                    if (urls.length === 0) continue;
+                    
+                    const categoryConfig = this.categories[categoryName] || this.categories.tools_utilities;
+                    
+                    // Group URLs by domain for tabs
+                    const domainGroups = {};
+                    urls.forEach(item => {
+                        if (!domainGroups[item.domain]) {
+                            domainGroups[item.domain] = [];
+                        }
+                        domainGroups[item.domain].push(item);
+                    });
+                    
+                    // Create tabs for top domains
+                    const tabs = [];
+                    const domainEntries = Object.entries(domainGroups);
+                    
+                    if (domainEntries.length <= 3) {
+                        // Create one tab per domain
+                        domainEntries.forEach(([domain, domainUrls], tabIndex) => {
+                            const links = domainUrls.map((item, linkIndex) => ({
+                                id: this.generateId(item.url, 'link'),
+                                label: item.label,
+                                url: item.url,
+                                icon: null,
+                                textColor: null,
+                                visibility: "public",
+                                allowedUsers: [],
+                                notes: null,
+                                tooltip: null,
+                                visibleFrom: null,
+                                expiresAt: null,
+                                browser: null,
+                                isFavorite: false,
+                                hasRoleAccess: false,
+                                position: linkIndex,
+                                health: {
+                                    status: "unknown",
+                                    httpCode: null,
+                                    error: null,
+                                    checkedAt: null
+                                }
+                            }));
+                            
+                            tabs.push({
+                                id: `tab_${domain.replace(/[^a-z0-9]/g, '_')}`,
+                                title: domain.split('.')[0].charAt(0).toUpperCase() + domain.split('.')[0].slice(1),
+                                position: tabIndex,
+                                textColor: null,
+                                visibleFrom: null,
+                                expiresAt: null,
+                                sections: [{
+                                    id: `sec_${domain.replace(/[^a-z0-9]/g, '_')}_main`,
+                                    title: "Links",
+                                    textColor: null,
+                                    visibleFrom: null,
+                                    expiresAt: null,
+                                    forceStackedView: false,
+                                    position: 0,
+                                    links: links,
+                                    richTextContent: []
+                                }]
+                            });
+                        });
+                    } else {
+                        // Group by subcategories or create general tabs
+                        const tabGroups = this.createTabGroups(domainEntries);
+                        tabGroups.forEach((group, tabIndex) => {
+                            const links = group.urls.map((item, linkIndex) => ({
+                                id: this.generateId(item.url, 'link'),
+                                label: item.label,
+                                url: item.url,
+                                icon: null,
+                                textColor: null,
+                                visibility: "public",
+                                allowedUsers: [],
+                                notes: null,
+                                tooltip: null,
+                                visibleFrom: null,
+                                expiresAt: null,
+                                browser: null,
+                                isFavorite: false,
+                                hasRoleAccess: false,
+                                position: linkIndex,
+                                health: {
+                                    status: "unknown",
+                                    httpCode: null,
+                                    error: null,
+                                    checkedAt: null
+                                }
+                            }));
+                            
+                            tabs.push({
+                                id: `tab_${group.name.toLowerCase().replace(/[^a-z0-9]/g, '_')}`,
+                                title: group.name,
+                                position: tabIndex,
+                                textColor: null,
+                                visibleFrom: null,
+                                expiresAt: null,
+                                sections: [{
+                                    id: `sec_${group.name.toLowerCase().replace(/[^a-z0-9]/g, '_')}_main`,
+                                    title: "Links",
+                                    textColor: null,
+                                    visibleFrom: null,
+                                    expiresAt: null,
+                                    forceStackedView: false,
+                                    position: 0,
+                                    links: links,
+                                    richTextContent: []
+                                }]
+                            });
+                        });
+                    }
+                    
+                    // Create the tile
+                    tiles.push({
+                        id: `tile_${categoryName}`,
+                        title: categoryName.split('_').map(word => 
+                            word.charAt(0).toUpperCase() + word.slice(1)
+                        ).join(' '),
+                        description: `${urls.length} ${categoryName.replace('_', ' ')} resources and tools`,
+                        htmlContent: "",
+                        emoji: categoryConfig.emoji,
+                        themeColor: categoryConfig.color,
+                        group: categoryName.split('_').map(word => 
+                            word.charAt(0).toUpperCase() + word.slice(1)
+                        ).join(' '),
+                        createdAt: timestamp,
+                        tabs: tabs,
+                        sections: [],
+                        visibility: "public",
+                        allowedUsers: [],
+                        isFavorite: false,
+                        isHyperlink: false,
+                        openInNewTab: true,
+                        canView: true,
+                        canEdit: true,
+                        canDelete: true
+                    });
+                    
+                    position++;
+                }
+                
+                return {
+                    version: "1.1",
+                    type: "category",
+                    exportedAt: timestamp * 1000,
+                    categoryName: "Personal Dashboard",
+                    tiles: tiles
+                };
+            }
+
+            createTabGroups(domainEntries) {
+                // Simple grouping logic
+                const groups = [];
+                
+                // Group 1: Primary domains (first 3)
+                const primary = domainEntries.slice(0, 3);
+                if (primary.length > 0) {
+                    const urls = primary.flatMap(([domain, domainUrls]) => domainUrls);
+                    groups.push({
+                        name: "Primary",
+                        urls: urls
+                    });
+                }
+                
+                // Group 2: Secondary domains (next 4-6)
+                const secondary = domainEntries.slice(3, 6);
+                if (secondary.length > 0) {
+                    const urls = secondary.flatMap(([domain, domainUrls]) => domainUrls);
+                    groups.push({
+                        name: "Secondary",
+                        urls: urls
+                    });
+                }
+                
+                // Group 3: Others
+                const others = domainEntries.slice(6);
+                if (others.length > 0) {
+                    const urls = others.flatMap(([domain, domainUrls]) => domainUrls);
+                    groups.push({
+                        name: "Others",
+                        urls: urls
+                    });
+                }
+                
+                return groups;
+            }
+
+            updateCategory(category, config) {
+                if (this.categories[category]) {
+                    this.categories[category] = { ...this.categories[category], ...config };
+                }
+            }
+        }
+
+        // Global organizer instance
+        const organizer = new BookmarkOrganizer();
+
+        // DOM Elements
+        const urlInput = document.getElementById('urlInput');
+        const preview = document.getElementById('preview');
+        const inputStats = document.getElementById('inputStats');
+        const outputStats = document.getElementById('outputStats');
+        const loading = document.getElementById('loading');
+        const categoriesModal = document.getElementById('categoriesModal');
+        const categoriesList = document.getElementById('categoriesList');
+        const toast = document.getElementById('toast');
+
+        function showToast(message, type = 'success') {
+            toast.textContent = message;
+            toast.style.background = type === 'error' ? '#ef4444' : '#10b981';
+            toast.style.display = 'block';
+            setTimeout(() => {
+                toast.style.display = 'none';
+            }, 3000);
+        }
+
+        function updateInputStats() {
+            const text = urlInput.value;
+            const urls = text.split('\n').filter(url => url.trim());
+            const domains = new Set();
+            let localUrls = 0;
+            
+            urls.forEach(url => {
+                try {
+                    const urlObj = new URL(url.trim());
+                    domains.add(urlObj.hostname);
+                    if (urlObj.hostname.includes('localhost') || urlObj.hostname.match(/^\d+\.\d+\.\d+\.\d+$/)) {
+                        localUrls++;
+                    }
+                } catch (e) {
+                    // Invalid URL
+                }
+            });
+            
+            const statItems = inputStats.querySelectorAll('.stat-value');
+            statItems[0].textContent = urls.length;
+            statItems[1].textContent = domains.size;
+            statItems[2].textContent = localUrls;
+        }
+
+        function processBookmarks() {
+            const text = urlInput.value;
+            if (!text.trim()) {
+                showToast('Please enter some URLs first!', 'error');
+                return;
+            }
+            
+            const urls = text.split('\n').filter(url => url.trim());
+            
+            // Show loading
+            loading.style.display = 'block';
+            
+            // Process in next tick to allow UI update
+            setTimeout(() => {
+                try {
+                    organizer.organizedData = organizer.organize(urls);
+                    
+                    // Update preview
+                    updatePreview();
+                    
+                    // Update output stats
+                    const statItems = outputStats.querySelectorAll('.stat-value');
+                    statItems[0].textContent = organizer.organizedData.tiles.length;
+                    statItems[1].textContent = urls.length;
+                    statItems[2].textContent = '100%';
+                    
+                    showToast(`Successfully organized ${urls.length} URLs into ${organizer.organizedData.tiles.length} categories!`);
+                } catch (error) {
+                    console.error('Error processing bookmarks:', error);
+                    showToast('Error processing URLs. Please check the format.', 'error');
+                } finally {
+                    loading.style.display = 'none';
+                }
+            }, 100);
+        }
+
+        function updatePreview() {
+            if (!organizer.organizedData) return;
+            
+            preview.innerHTML = '';
+            
+            organizer.organizedData.tiles.forEach(tile => {
+                const categoryDiv = document.createElement('div');
+                categoryDiv.className = 'category-item';
+                categoryDiv.innerHTML = `
+                    <div style="display: flex; align-items: center; gap: 10px;">
+                        <span style="font-size: 1.2em;">${tile.emoji}</span>
+                        <div>
+                            <strong>${tile.title}</strong>
+                            <div style="font-size: 0.9em; color: #64748b;">
+                                ${tile.tabs.length} tabs • ${tile.tabs.reduce((acc, tab) => acc + tab.sections[0].links.length, 0)} links
+                            </div>
+                        </div>
+                        <div style="margin-left: auto; padding: 4px 8px; background: ${tile.themeColor}; color: white; border-radius: 4px; font-size: 0.8em;">
+                            ${tile.themeColor}
+                        </div>
+                    </div>
+                `;
+                preview.appendChild(categoryDiv);
+            });
+            
+            if (organizer.organizedData.tiles.length === 0) {
+                preview.innerHTML = '<p style="color: #94a3b8; text-align: center; padding: 40px;">No categories could be created. Try adding more URLs.</p>';
+            }
+        }
+
+        function exportJSON() {
+            if (!organizer.organizedData) {
+                showToast('Please process URLs first!', 'error');
+                return;
+            }
+            
+            const jsonStr = JSON.stringify(organizer.organizedData, null, 2);
+            const blob = new Blob([jsonStr], { type: 'application/json' });
+            const url = URL.createObjectURL(blob);
+            const a = document.createElement('a');
+            a.href = url;
+            a.download = `bookmarks_organized_${new Date().getTime()}.json`;
+            document.body.appendChild(a);
+            a.click();
+            document.body.removeChild(a);
+            URL.revokeObjectURL(url);
+            
+            showToast('JSON file downloaded successfully!');
+        }
+
+        function showCategories() {
+            categoriesList.innerHTML = '';
+            
+            Object.entries(organizer.categories).forEach(([category, config]) => {
+                const categoryDiv = document.createElement('div');
+                categoryDiv.className = 'category-item';
+                categoryDiv.style.marginBottom = '15px';
+                categoryDiv.innerHTML = `
+                    <div style="display: flex; align-items: center; gap: 15px; margin-bottom: 10px;">
+                        <span style="font-size: 1.5em;">${config.emoji}</span>
+                        <div style="flex: 1;">
+                            <strong>${category.split('_').map(word => word.charAt(0).toUpperCase() + word.slice(1)).join(' ')}</strong>
+                            <div style="font-size: 0.9em; color: #64748b;">
+                                Keywords: ${config.keywords.slice(0, 5).join(', ')}...
+                            </div>
+                        </div>
+                        <div style="display: flex; gap: 10px;">
+                            <select id="emoji_${category}" style="padding: 5px; border-radius: 4px;">
+                                <option value="💻" ${config.emoji === '💻' ? 'selected' : ''}>💻 Dev</option>
+                                <option value="🤖" ${config.emoji === '🤖' ? 'selected' : ''}>🤖 AI</option>
+                                <option value="💰" ${config.emoji === '💰' ? 'selected' : ''}>💰 Finance</option>
+                                <option value="🏛️" ${config.emoji === '🏛

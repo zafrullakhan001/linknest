@@ -1,0 +1,199 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Test Performance Beacon</title>
+    <style>
+        body {
+            font-family: Arial, sans-serif;
+            max-width: 800px;
+            margin: 50px auto;
+            padding: 20px;
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            color: white;
+        }
+        .container {
+            background: rgba(255, 255, 255, 0.1);
+            backdrop-filter: blur(10px);
+            padding: 30px;
+            border-radius: 20px;
+            box-shadow: 0 8px 32px rgba(0, 0, 0, 0.1);
+        }
+        h1 { margin-top: 0; }
+        button {
+            background: white;
+            color: #667eea;
+            border: none;
+            padding: 12px 24px;
+            border-radius: 8px;
+            font-size: 16px;
+            font-weight: bold;
+            cursor: pointer;
+            margin: 10px 5px;
+        }
+        button:hover {
+            transform: scale(1.05);
+        }
+        #status {
+            margin-top: 20px;
+            padding: 15px;
+            background: rgba(0, 0, 0, 0.2);
+            border-radius: 8px;
+            font-family: monospace;
+            font-size: 14px;
+        }
+        .success { color: #10b981; }
+        .error { color: #ef4444; }
+        .info { color: #fbbf24; }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <h1>🧪 Performance Analytics Test</h1>
+        <p>Click the buttons below to send test metrics to the analytics system.</p>
+        
+        <button onclick="sendTestMetric('https://google.com')">Test Google.com</button>
+        <button onclick="sendTestMetric('https://github.com')">Test GitHub.com</button>
+        <button onclick="sendTestMetric('https://example.com')">Test Example.com</button>
+        <button onclick="sendBulkMetrics()">Send 10 Random Metrics</button>
+        <button onclick="checkQueue()">Check Queue Status</button>
+        
+        <div id="status"></div>
+    </div>
+
+    <script>
+        const API_URL = 'http://localhost:9333/api/metrics/collect';
+        
+        function log(message, type = 'info') {
+            const status = document.getElementById('status');
+            const timestamp = new Date().toLocaleTimeString();
+            const className = type === 'error' ? 'error' : type === 'success' ? 'success' : 'info';
+            status.innerHTML += `<div class="${className}">[${timestamp}] ${message}</div>`;
+            status.scrollTop = status.scrollHeight;
+        }
+        
+        async function sendTestMetric(url) {
+            const randomLatency = Math.floor(Math.random() * 300) + 50;
+            const regions = ['US', 'EU', 'ASIA', 'AU', 'SA', 'AF'];
+            
+            const metric = {
+                url: url,
+                measurement_type: 'client',
+                full_response_time: randomLatency,
+                dns_lookup_time: Math.floor(randomLatency * 0.1),
+                tcp_connection_time: Math.floor(randomLatency * 0.15),
+                tls_handshake_time: Math.floor(randomLatency * 0.2),
+                time_to_first_byte: Math.floor(randomLatency * 0.5),
+                download_time: Math.floor(randomLatency * 0.3),
+                http_status_code: 200,
+                device_type: 'desktop',
+                browser_name: 'Chrome',
+                browser_version: '120.0',
+                os_name: 'Windows',
+                screen_resolution: '1920x1080',
+                connection_type: '4g',
+                user_id: 1,
+                session_id: 'test-session-' + Date.now()
+            };
+            
+            log(`Sending metric for ${url} (${randomLatency}ms)...`, 'info');
+            
+            try {
+                const response = await fetch(API_URL, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify(metric)
+                });
+                
+                const result = await response.json();
+                if (response.ok) {
+                    log(`✓ Success! Metric queued for ${url}`, 'success');
+                } else {
+                    log(`✗ Error: ${result.error || 'Unknown error'}`, 'error');
+                }
+            } catch (error) {
+                log(`✗ Network error: ${error.message}`, 'error');
+            }
+        }
+        
+        async function sendBulkMetrics() {
+            const urls = [
+                'https://google.com',
+                'https://github.com',
+                'https://stackoverflow.com',
+                'https://reddit.com',
+                'https://twitter.com',
+                'https://youtube.com',
+                'https://amazon.com',
+                'https://facebook.com',
+                'https://linkedin.com',
+                'https://netflix.com'
+            ];
+            
+            log('Sending 10 random metrics...', 'info');
+            
+            for (const url of urls) {
+                await sendTestMetric(url);
+                await new Promise(resolve => setTimeout(resolve, 200));
+            }
+            
+            log('✓ Bulk send complete!', 'success');
+        }
+        
+        async function checkQueue() {
+            log('Checking queue status...', 'info');
+            
+            try {
+                const response = await fetch('http://localhost:9333/api/metrics/queue-status');
+                
+                if (!response.ok) {
+                    log('✗ Failed to fetch queue status', 'error');
+                    return;
+                }
+                
+                const data = await response.json();
+                
+                if (!data.success) {
+                    log(`✗ Error: ${data.error}`, 'error');
+                    return;
+                }
+                
+                // Display queue statistics
+                log('━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━', 'info');
+                log(`📊 Queue Status: ${data.queue.status.toUpperCase()}`, 'success');
+                log(`   Total Items: ${data.queue.total_items}`, 'info');
+                log(`   ⏳ Pending: ${data.queue.pending}`, 'info');
+                log(`   ✓ Processed: ${data.queue.processed}`, 'success');
+                
+                if (data.queue.estimated_wait_seconds > 0) {
+                    log(`   ⏱ Est. Wait: ${data.queue.estimated_wait_seconds}s`, 'info');
+                }
+                
+                log('', 'info');
+                log('⚡ Processing:', 'info');
+                log(`   Rate: ${data.processing.rate_per_minute} items/min`, 'info');
+                log(`   Last 5 min: ${data.processing.items_last_5min} items`, 'info');
+                
+                log('', 'info');
+                log('📈 Metrics Database:', 'success');
+                log(`   Total Metrics: ${data.metrics.total.toLocaleString()}`, 'info');
+                log(`   Unique URLs: ${data.metrics.unique_urls}`, 'info');
+                log(`   Countries: ${data.metrics.countries}`, 'info');
+                
+                log('', 'info');
+                log('💾 Storage:', 'info');
+                log(`   Metrics Table: ${data.storage.metrics_table}`, 'info');
+                log(`   Queue Table: ${data.storage.queue_table}`, 'info');
+                log(`   Total DB Size: ${data.storage.database}`, 'info');
+                log('━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━', 'info');
+                
+            } catch (error) {
+                log(`✗ Network error: ${error.message}`, 'error');
+            }
+        }
+        
+        log('🚀 Test page loaded. Ready to send metrics!', 'success');
+    </script>
+</body>
+</html>

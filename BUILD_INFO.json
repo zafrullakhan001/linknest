@@ -1,0 +1,11 @@
+{
+    "appVersion": "2.2.0",
+    "releaseTag": null,
+    "gitCommit": "a5779f94074dfaf1120c990c18dae90adf9a825d",
+    "commitMessage": "feat: Improve GitHub token handling in publish-update-release script. Enhance user feedback for missing tokens and provide instructions for creating a Personal Access Token (PAT). Implement secure input for PAT entry, ensuring better security during the publishing process.",
+    "trackBranch": "updater",
+    "updatedVia": "git",
+    "updatedAt": "2026-08-08 13:02:20",
+    "builtAt": "2026-08-08 13:02:20",
+    "buildId": "20260808-130220"
+}

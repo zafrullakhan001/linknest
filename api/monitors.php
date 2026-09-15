@@ -1,9 +1,67 @@
 <?php
 require_once __DIR__ . '/config.php';
 require_once __DIR__ . '/monitor_check.php'; // Include check logic for immediate "check now"
+require_once __DIR__ . '/monitor_check_jobs_lib.php';
+require_once __DIR__ . '/monitor_worker_scheduler_lib.php';
+require_once __DIR__ . '/monitor_suggest.php';
+require_once __DIR__ . '/user_audit_helper.php';
+require_once __DIR__ . '/speedtest_schedules_lib.php';
+require_once __DIR__ . '/database_maintain_lib.php';
+
+if (!defined('MONITOR_EXPORT_LOG_LIMIT')) {
+    define('MONITOR_EXPORT_LOG_LIMIT', 500);
+}
+if (!defined('MONITOR_EXPORT_BUNDLE_VERSION')) {
+    define('MONITOR_EXPORT_BUNDLE_VERSION', 3);
+}
+if (!defined('MONITOR_EXPORT_SPEEDTEST_RESULT_LIMIT')) {
+    define('MONITOR_EXPORT_SPEEDTEST_RESULT_LIMIT', 200);
+}
+if (!defined('MONITOR_EXPORT_AUDIT_LIMIT')) {
+    define('MONITOR_EXPORT_AUDIT_LIMIT', 500);
+}
+
+/** Query flag: include_logs=0 skips uptime/email/speedtest/audit history (smaller export). Default is include. */
+function monitorExportIncludeHistoryLogs(): bool {
+    $raw = $_GET['include_logs'] ?? $_GET['include_history'] ?? $_GET['history'] ?? '1';
+    $raw = strtolower(trim((string)$raw));
+    return !in_array($raw, ['0', 'false', 'no', 'off'], true);
+}
 
 if (session_status() === PHP_SESSION_NONE) {
     session_start();
+}
+
+/**
+ * Write a monitoring-related entry to user_audit_log (never blocks the main action).
+ */
+function logMonitorAudit(string $action, array $details = []): void {
+    logUserAudit($action, ['details' => $details]);
+}
+
+/**
+ * Compact monitor identity for audit details.
+ */
+function monitorAuditIdentity(?array $monitor, $fallbackId = null): array {
+    $id = null;
+    if (is_array($monitor) && isset($monitor['id'])) {
+        $id = (int)$monitor['id'];
+    } elseif ($fallbackId !== null && $fallbackId !== '') {
+        $id = (int)$fallbackId;
+    }
+    $out = [];
+    if ($id !== null && $id > 0) {
+        $out['monitor_id'] = $id;
+    }
+    if (is_array($monitor)) {
+        if (!empty($monitor['name'])) $out['name'] = (string)$monitor['name'];
+        if (!empty($monitor['type'])) $out['type'] = (string)$monitor['type'];
+        if (!empty($monitor['target'])) $out['target'] = (string)$monitor['target'];
+        if (array_key_exists('tab_name', $monitor) && $monitor['tab_name'] !== null && $monitor['tab_name'] !== '') {
+            $out['tab_name'] = (string)$monitor['tab_name'];
+        }
+    }
+    return $out;
 }
 
 $method = $_SERVER['REQUEST_METHOD'];
@@ -25,6 +83,12 @@ switch ($method) {
             handleGetMonitor($matches[1]);
         } elseif (preg_match('/^\/(\d+)\/logs$/', $path, $matches)) {
             handleGetMonitorLogs($matches[1]);
+        } elseif ($path === '/check-jobs/active') {
+            monitorCheckJobsHandleGetActive();
+        } elseif ($path === '/worker-scheduler-status') {
+            monitorWorkerSchedulerHandleStatus();
+        } elseif (preg_match('/^\/check-jobs\/(\d+)$/', $path, $matches)) {
+            monitorCheckJobsHandleGet((int)$matches[1]);
         } else {
             sendJSON(['error' => 'Invalid endpoint'], 404);
         }
@@ -33,18 +97,36 @@ switch ($method) {
     case 'POST':
         if ($path === '' || $path === '/') {
             handleCreateMonitor();
-        } elseif ($path === '/import') {
-            handleImportMonitors();
-        } elseif ($path === '/import-csv') {
-            handleImportCSV();
         } elseif ($path === '/import-bundle') {
             handleImportMonitorsBundle();
         } elseif ($path === '/check-all') {
             handleCheckAllMonitors();
         } elseif (preg_match('/^\/(\d+)\/check$/', $path, $matches)) {
             handleCheckMonitor($matches[1]);
+        } elseif (preg_match('/^\/(\d+)\/logs\/purge$/', $path, $matches)) {
+            handlePurgeMonitorLogs($matches[1]);
+        } elseif ($path === '/logs/purge') {
+            handlePurgeAllMonitorLogs();
         } elseif (preg_match('/^\/(\d+)\/duplicate$/', $path, $matches)) {
             handleDuplicateMonitor($matches[1]);
+        } elseif ($path === '/suggest') {
+            handleMonitorSuggest();
+        } elseif ($path === '/suggest-bulk') {
+            handleMonitorSuggestBulk();
+        } elseif ($path === '/bulk-create') {
+            handleBulkCreateMonitors();
+        } elseif (preg_match('/^\/check-jobs\/(\d+)\/cancel$/', $path, $matches)) {
+            monitorCheckJobsHandleCancel((int)$matches[1]);
+        } elseif ($path === '/worker-scheduler-task') {
+            monitorWorkerSchedulerHandleSetTask();
+        } elseif ($path === '/worker-scheduler-install') {
+            monitorWorkerSchedulerHandleInstall();
+        } elseif ($path === '/worker-scheduler-uninstall') {
+            monitorWorkerSchedulerHandleUninstall();
+        } elseif ($path === '/worker-python-install') {
+            monitorWorkerSchedulerHandleInstallPython();
+        } elseif ($path === '/worker-scheduler-run') {
+            monitorWorkerSchedulerHandleRun();
         } else {
             sendJSON(['error' => 'Invalid endpoint'], 404);
         }
@@ -126,26 +208,88 @@ function normalizeAllowedUserIds($raw): array {
 }
 
 function validateMonitorType($type): bool {
-    return in_array($type, ['url', 'keyword', 'port', 'ping'], true);
+    return in_array($type, ['url', 'headers', 'keyword', 'port', 'ping', 'ssl', 'dns', 'json'], true);
 }
 
-function handleExportMonitor($id) {
-    requireAdmin(); // export is admin-only
-    $db = getDB();
-    $now = time();
-    $monitorId = (int)$id;
-    
-    // Fetch the monitor
-    $stmt = $db->prepare('SELECT * FROM monitors WHERE id = ?');
-    $stmt->execute([$monitorId]);
-    $monitor = $stmt->fetch(PDO::FETCH_ASSOC);
-    
-    if (!$monitor) {
-        sendJSON(['error' => 'Monitor not found'], 404);
-        return;
+/**
+ * Interval is stored in minutes. SSL cert checks are whole days (1–30), default 1 day.
+ */
+function normalizeMonitorTabName(string $type, $tabName): string {
+    $tab = trim((string)$tabName);
+    if ($type === 'ssl') {
+        return 'SSL Certificates';
     }
-    
-    // Notification rules + recipients (preserve custom ordering)
+    if (strcasecmp($tab, 'SSL Certificates') === 0) {
+        return 'General';
+    }
+    return $tab;
+}
+
+function normalizeMonitorInterval(string $type, $interval, int $defaultMinutes = 5): int {
+    $minutes = (int)$interval;
+    if ($type === 'ssl') {
+        if ($minutes < 1) {
+            $minutes = 1440;
+        }
+        $days = (int)round($minutes / 1440);
+        if ($days < 1) {
+            $days = 1;
+        }
+        if ($days > 30) {
+            $days = 30;
+        }
+        return $days * 1440;
+    }
+    if ($minutes < 1) {
+        return $defaultMinutes;
+    }
+    return $minutes;
+}
+
+function validateMonitorTypeFields(array $data): ?string {
+    $type = $data['type'] ?? '';
+    if ($type === 'port') {
+        if (empty($data['port']) || (int)$data['port'] < 1 || (int)$data['port'] > 65535) {
+            return 'Port is required for port monitors (1-65535)';
+        }
+    }
+    if ($type === 'keyword' || $type === 'json') {
+        if (empty(trim((string)($data['keyword'] ?? '')))) {
+            return $type === 'json'
+                ? 'JSON check expression is required (e.g. status:ok)'
+                : 'Keyword is required for keyword monitors';
+        }
+    }
+    if ($type === 'ssl') {
+        $kw = trim((string)($data['keyword'] ?? ''));
+        if ($kw !== '' && (!ctype_digit($kw) || (int)$kw < 1 || (int)$kw > 365)) {
+            return 'SSL warning days must be between 1 and 365';
+        }
+    }
+    if ($type === 'dns') {
+        $target = trim((string)($data['target'] ?? ''));
+        $target = preg_replace('#^https?://#i', '', $target);
+        $target = explode('/', $target)[0];
+        $target = explode(':', $target)[0];
+        if ($target === '' || !preg_match('/^[a-zA-Z0-9]([a-zA-Z0-9\.\-]*[a-zA-Z0-9])?$/', $target)) {
+            return 'DNS monitor target must be a valid hostname';
+        }
+    }
+    return null;
+}
+
+function monitorExportSanitizeMonitorRow(array $monitor): array {
+    unset($monitor['email_rules_count'], $monitor['allowed_user_ids_csv']);
+    return $monitor;
+}
+
+function monitorExportFetchAllowedUserIds(PDO $db, int $monitorId): array {
+    $stmt = $db->prepare('SELECT user_id FROM user_monitor_permissions WHERE monitor_id = ? AND COALESCE(can_view, 0) = 1 ORDER BY user_id ASC');
+    $stmt->execute([$monitorId]);
+    return array_map('intval', $stmt->fetchAll(PDO::FETCH_COLUMN));
+}
+
+function monitorExportFetchRules(PDO $db, int $monitorId): array {
     $stmt = $db->prepare('SELECT * FROM monitor_notification_rules WHERE monitor_id = ? ORDER BY COALESCE(sort_order, 0) ASC, created_at DESC, id DESC');
     $stmt->execute([$monitorId]);
     $rules = $stmt->fetchAll(PDO::FETCH_ASSOC);
@@ -161,72 +305,474 @@ function handleExportMonitor($id) {
         $r['cc'] = $cc;
         $rulesOut[] = $r;
     }
-    
-    // Export format for single monitor (compatible with import)
-    sendJSON([
-        'success' => true,
-        'type' => 'single_monitor',
-        'exported_at' => $now,
+    return $rulesOut;
+}
+
+function monitorExportBuildEntry(PDO $db, array $monitorRow, ?int $logLimit = null, bool $includeLogs = true): array {
+    $logLimit = $logLimit ?? MONITOR_EXPORT_LOG_LIMIT;
+    $monitorId = (int)$monitorRow['id'];
+    $monitor = monitorExportSanitizeMonitorRow($monitorRow);
+    $monitor['allowed_user_ids'] = monitorExportFetchAllowedUserIds($db, $monitorId);
+
+    $monitorLogs = [];
+    $emailLogs = [];
+    if ($includeLogs) {
+        $stmt = $db->prepare('SELECT * FROM monitor_logs WHERE monitor_id = ? ORDER BY checked_at DESC LIMIT ' . (int)$logLimit);
+        $stmt->execute([$monitorId]);
+        $monitorLogs = $stmt->fetchAll(PDO::FETCH_ASSOC);
+
+        $stmt = $db->prepare('SELECT * FROM monitor_notification_logs WHERE monitor_id = ? ORDER BY sent_at DESC LIMIT ' . (int)$logLimit);
+        $stmt->execute([$monitorId]);
+        $emailLogs = $stmt->fetchAll(PDO::FETCH_ASSOC);
+    }
+
+    return [
         'monitor' => $monitor,
-        'notification_rules' => $rulesOut
-    ]);
+        'monitor_logs' => $monitorLogs,
+        'notification_rules' => monitorExportFetchRules($db, $monitorId),
+        'email_logs' => $emailLogs,
+    ];
+}
+
+function monitorExportNotificationSettings(): array {
+    return [
+        'timezone' => (string)getSetting('monitor_notification_timezone', ''),
+        'dst_correction' => getSetting('monitor_notification_dst_correction', '1') === '1',
+        'notifications_paused' => getSetting('notifications_paused', '0') === '1' || getSetting('notifications_paused', '0') === 'true',
+    ];
+}
+
+function monitorExportSpeedtestSettings(): array {
+    $keys = [
+        'speedtest_interactive_max_per_hour',
+        'speedtest_worker_daily_cap_mb',
+        'speedtest_worker_min_interval_minutes',
+        'speedtest_loopback_base_url',
+    ];
+    $out = [];
+    foreach ($keys as $key) {
+        $val = getSetting($key, '');
+        if ($val !== '' && $val !== null) {
+            $out[$key] = (string)$val;
+        }
+    }
+    return $out;
+}
+
+function monitorExportSpeedtestPayload(PDO $db, ?int $resultLimit = null, bool $includeResults = true): array {
+    $resultLimit = $resultLimit ?? MONITOR_EXPORT_SPEEDTEST_RESULT_LIMIT;
+    try {
+        speedtestEnsureSchema($db);
+    } catch (Throwable $e) {
+        error_log('speedtestEnsureSchema during export: ' . $e->getMessage());
+        return ['schedules' => [], 'results' => [], 'settings' => monitorExportSpeedtestSettings()];
+    }
+    $schedules = [];
+    try {
+        $schedules = $db->query('SELECT * FROM speedtest_schedules ORDER BY id ASC')->fetchAll(PDO::FETCH_ASSOC) ?: [];
+    } catch (PDOException $e) {
+        $schedules = [];
+    }
+
+    $results = [];
+    if ($includeResults) {
+        try {
+            $limit = max(1, (int)$resultLimit);
+            $stmt = $db->prepare('SELECT * FROM speedtest_results ORDER BY run_at DESC LIMIT ' . $limit);
+            $stmt->execute();
+            $results = array_reverse($stmt->fetchAll(PDO::FETCH_ASSOC) ?: []);
+        } catch (PDOException $e) {
+            $results = [];
+        }
+    }
+
+    return [
+        'schedules' => $schedules,
+        'results' => $results,
+        'settings' => monitorExportSpeedtestSettings(),
+    ];
+}
+
+function monitorExportAuditLogs(PDO $db, ?int $monitorId = null, ?int $limit = null): array {
+    $limit = $limit ?? MONITOR_EXPORT_AUDIT_LIMIT;
+    ensureUserAuditLogTable($db);
+    $limit = max(1, min(2000, (int)$limit));
+    try {
+        $stmt = $db->prepare("SELECT created_at, actor_id, actor_username, action, details, ip_address
+            FROM user_audit_log
+            WHERE action LIKE 'monitor.%'
+            ORDER BY created_at DESC, id DESC
+            LIMIT " . ($monitorId === null ? $limit : 2000));
+        $stmt->execute();
+        $rows = $stmt->fetchAll(PDO::FETCH_ASSOC) ?: [];
+    } catch (PDOException $e) {
+        return [];
+    }
+
+    if ($monitorId === null) {
+        return $rows;
+    }
+
+    $out = [];
+    foreach ($rows as $row) {
+        $decoded = json_decode((string)($row['details'] ?? ''), true);
+        if (!is_array($decoded)) {
+            continue;
+        }
+        $id = (int)($decoded['monitor_id'] ?? 0);
+        if ($id !== $monitorId) {
+            continue;
+        }
+        $out[] = $row;
+        if (count($out) >= $limit) {
+            break;
+        }
+    }
+    return $out;
+}
+
+function monitorImportApplyNotificationSettings(array $ns): void {
+    $tz = isset($ns['timezone']) ? trim((string)$ns['timezone']) : '';
+    $dst = array_key_exists('dst_correction', $ns) ? (bool)$ns['dst_correction'] : null;
+    if ($tz !== '') {
+        setMonitorNotificationTimezone($tz, $dst);
+    } elseif ($dst !== null) {
+        setSetting('monitor_notification_dst_correction', $dst ? '1' : '0');
+    }
+    if (array_key_exists('notifications_paused', $ns)) {
+        $paused = $ns['notifications_paused'];
+        $isPaused = $paused === true || $paused === 1 || $paused === '1' || $paused === 'true';
+        setSetting('notifications_paused', $isPaused ? '1' : '0');
+    }
+}
+
+function monitorImportApplySpeedtestSettings(array $settings): void {
+    $allowed = [
+        'speedtest_interactive_max_per_hour' => true,
+        'speedtest_worker_daily_cap_mb' => true,
+        'speedtest_worker_min_interval_minutes' => true,
+        'speedtest_loopback_base_url' => true,
+    ];
+    foreach ($settings as $key => $value) {
+        $key = (string)$key;
+        if (!isset($allowed[$key])) {
+            continue;
+        }
+        setSetting($key, (string)$value);
+    }
+}
+
+function monitorImportSpeedtestPayload(PDO $db, $payload, bool $replace): void {
+    if (!is_array($payload)) {
+        return;
+    }
+    speedtestEnsureSchema($db);
+
+    if ($replace) {
+        try { $db->exec('DELETE FROM speedtest_worker_queue'); } catch (PDOException $e) { /* ignore */ }
+        try { $db->exec('DELETE FROM speedtest_results'); } catch (PDOException $e) { /* ignore */ }
+        try { $db->exec('DELETE FROM speedtest_schedules'); } catch (PDOException $e) { /* ignore */ }
+    }
+
+    if (!empty($payload['settings']) && is_array($payload['settings'])) {
+        monitorImportApplySpeedtestSettings($payload['settings']);
+    }
+
+    $schedules = $payload['schedules'] ?? [];
+    if (!is_array($schedules)) {
+        $schedules = [];
+    }
+    $idMap = [];
+
+    $insertWithId = $db->prepare('INSERT INTO speedtest_schedules (
+        id, name, target, profile, executor, owner_user_id, interval_minutes, is_enabled,
+        last_run_at, next_run_at, last_status, last_error, created_at, updated_at, created_by
+    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)');
+    $insertAuto = $db->prepare('INSERT INTO speedtest_schedules (
+        name, target, profile, executor, owner_user_id, interval_minutes, is_enabled,
+        last_run_at, next_run_at, last_status, last_error, created_at, updated_at, created_by
+    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)');
+
+    $nowIso = gmdate('Y-m-d H:i:s');
+    foreach ($schedules as $s) {
+        if (!is_array($s) || empty($s['name']) || empty($s['target']) || empty($s['profile']) || empty($s['executor'])) {
+            continue;
+        }
+        $oldId = isset($s['id']) ? (int)$s['id'] : 0;
+        $preserveId = $replace && $oldId > 0;
+        $row = [
+            (string)$s['name'],
+            (string)$s['target'],
+            (string)$s['profile'],
+            (string)$s['executor'],
+            isset($s['owner_user_id']) ? (int)$s['owner_user_id'] : null,
+            isset($s['interval_minutes']) ? (int)$s['interval_minutes'] : 60,
+            isset($s['is_enabled']) ? (int)$s['is_enabled'] : 1,
+            $s['last_run_at'] ?? null,
+            $s['next_run_at'] ?? null,
+            $s['last_status'] ?? null,
+            $s['last_error'] ?? null,
+            $s['created_at'] ?? $nowIso,
+            $s['updated_at'] ?? $nowIso,
+            isset($s['created_by']) ? (int)$s['created_by'] : null,
+        ];
+        if ($preserveId) {
+            $insertWithId->execute(array_merge([$oldId], $row));
+            $idMap[$oldId] = $oldId;
+        } else {
+            $insertAuto->execute($row);
+            if ($oldId > 0) {
+                $idMap[$oldId] = (int)$db->lastInsertId();
+            }
+        }
+    }
+
+    $results = $payload['results'] ?? [];
+    if (!is_array($results)) {
+        return;
+    }
+    $insertResult = $db->prepare('INSERT INTO speedtest_results (
+        schedule_id, executor, target, profile, run_at, duration_ms, status, result_json,
+        bytes_downloaded, bytes_uploaded, created_by, "trigger"
+    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)');
+    foreach ($results as $r) {
+        if (!is_array($r) || empty($r['executor']) || empty($r['target']) || empty($r['profile'])) {
+            continue;
+        }
+        $oldScheduleId = isset($r['schedule_id']) ? (int)$r['schedule_id'] : 0;
+        $scheduleId = null;
+        if ($oldScheduleId > 0) {
+            if (isset($idMap[$oldScheduleId])) {
+                $scheduleId = $idMap[$oldScheduleId];
+            } elseif ($replace) {
+                $scheduleId = $oldScheduleId;
+            }
+        }
+        $insertResult->execute([
+            $scheduleId,
+            (string)$r['executor'],
+            (string)$r['target'],
+            (string)$r['profile'],
+            $r['run_at'] ?? $nowIso,
+            isset($r['duration_ms']) ? (int)$r['duration_ms'] : null,
+            $r['status'] ?? 'complete',
+            $r['result_json'] ?? null,
+            isset($r['bytes_downloaded']) ? (int)$r['bytes_downloaded'] : 0,
+            isset($r['bytes_uploaded']) ? (int)$r['bytes_uploaded'] : 0,
+            isset($r['created_by']) ? (int)$r['created_by'] : null,
+            $r['trigger'] ?? 'manual',
+        ]);
+    }
+}
+
+function monitorImportAuditLogs(PDO $db, $logs, ?int $remapMonitorId = null): void {
+    if (!is_array($logs) || $logs === []) {
+        return;
+    }
+    ensureUserAuditLogTable($db);
+    $stmt = $db->prepare('INSERT INTO user_audit_log (
+        created_at, actor_id, actor_username, action, details, ip_address
+    ) VALUES (?, ?, ?, ?, ?, ?)');
+    foreach ($logs as $log) {
+        if (!is_array($log)) {
+            continue;
+        }
+        $action = (string)($log['action'] ?? '');
+        if ($action === '' || strncmp($action, 'monitor.', 8) !== 0) {
+            continue;
+        }
+        $details = $log['details'] ?? null;
+        if (is_array($details)) {
+            $decoded = $details;
+        } else {
+            $decoded = json_decode((string)$details, true);
+        }
+        if ($remapMonitorId !== null && is_array($decoded)) {
+            $decoded['monitor_id'] = $remapMonitorId;
+        }
+        if (is_array($decoded)) {
+            $details = json_encode($decoded, JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES);
+        }
+        $stmt->execute([
+            isset($log['created_at']) ? (int)$log['created_at'] : time(),
+            isset($log['actor_id']) && $log['actor_id'] !== '' ? (int)$log['actor_id'] : null,
+            $log['actor_username'] ?? null,
+            $action,
+            $details !== null && $details !== '' ? (string)$details : null,
+            $log['ip_address'] ?? null,
+        ]);
+    }
+}
+
+function monitorImportMonitorRowValues(array $m, int $now): array {
+    $warningThreshold = isset($m['warning_threshold']) ? (int)$m['warning_threshold'] : 1;
+    if (($m['type'] ?? '') === 'ssl') {
+        $warningThreshold = 1;
+    }
+    if ($warningThreshold < 1) {
+        $warningThreshold = 1;
+    }
+    if ($warningThreshold > 20) {
+        $warningThreshold = 20;
+    }
+
+    $timeout = null;
+    if (isset($m['timeout']) && $m['timeout'] !== '' && $m['timeout'] !== null) {
+        $timeout = (int)$m['timeout'];
+        if ($timeout < 1) {
+            $timeout = 1;
+        }
+        if ($timeout > 60) {
+            $timeout = 60;
+        }
+    }
+
+    $permissionsMode = isset($m['permissions_mode']) ? (int)$m['permissions_mode'] : 0;
+    if (!empty($m['allowed_user_ids']) && is_array($m['allowed_user_ids'])) {
+        $permissionsMode = 1;
+    }
+
+    return [
+        $m['name'],
+        $m['type'],
+        $m['target'],
+        isset($m['port']) ? (int)$m['port'] : null,
+        $m['keyword'] ?? null,
+        normalizeMonitorInterval((string)($m['type'] ?? ''), $m['interval'] ?? (($m['type'] ?? '') === 'ssl' ? 1440 : 5), ($m['type'] ?? '') === 'ssl' ? 1440 : 5),
+        $warningThreshold,
+        isset($m['consecutive_failures']) ? (int)$m['consecutive_failures'] : 0,
+        $timeout,
+        $permissionsMode,
+        isset($m['is_active']) ? (int)$m['is_active'] : 1,
+        isset($m['email_notification']) ? (int)$m['email_notification'] : 0,
+        $m['last_notified_status'] ?? null,
+        isset($m['legacy_notify_pending']) ? (int)$m['legacy_notify_pending'] : 0,
+        isset($m['legacy_email_disabled']) ? (int)$m['legacy_email_disabled'] : 0,
+        $m['legacy_email_to'] ?? null,
+        $m['legacy_email_cc'] ?? null,
+        $m['legacy_email_from_name'] ?? null,
+        $m['legacy_email_from_email'] ?? null,
+        $m['legacy_email_subject_template'] ?? null,
+        $m['legacy_email_body_template'] ?? null,
+        isset($m['last_checked_at']) ? (int)$m['last_checked_at'] : null,
+        $m['last_status'] ?? null,
+        isset($m['last_response_time']) ? (int)$m['last_response_time'] : null,
+        isset($m['created_at']) ? (int)$m['created_at'] : $now,
+        isset($m['updated_at']) ? (int)$m['updated_at'] : $now,
+        normalizeMonitorTabName((string)($m['type'] ?? ''), $m['tab_name'] ?? ''),
+        $m['group_name'] ?? null,
+        isset($m['maintenance_start']) ? (int)$m['maintenance_start'] : null,
+        isset($m['maintenance_end']) ? (int)$m['maintenance_end'] : null,
+    ];
+}
+
+function monitorImportRestorePermissions(PDO $db, int $monitorId, array $m, int $now): void {
+    $allowedUserIds = $m['allowed_user_ids'] ?? [];
+    if (!is_array($allowedUserIds)) {
+        return;
+    }
+
+    $permissionsMode = isset($m['permissions_mode']) ? (int)$m['permissions_mode'] : 0;
+    if (!empty($allowedUserIds)) {
+        $permissionsMode = 1;
+    }
+    if ($permissionsMode !== 1 || empty($allowedUserIds)) {
+        return;
+    }
+
+    $permStmt = $db->prepare('INSERT OR REPLACE INTO user_monitor_permissions (user_id, monitor_id, can_view, created_at, updated_at) VALUES (?, ?, 1, ?, ?)');
+    foreach ($allowedUserIds as $uid) {
+        $uid = (int)$uid;
+        if ($uid > 0) {
+            $permStmt->execute([$uid, $monitorId, $now, $now]);
+        }
+    }
+}
+
+function handleExportMonitor($id) {
+    requireAdmin(); // export is admin-only
+    try {
+        $db = getDB();
+        $now = time();
+        $monitorId = (int)$id;
+
+        $stmt = $db->prepare('SELECT * FROM monitors WHERE id = ?');
+        $stmt->execute([$monitorId]);
+        $monitor = $stmt->fetch(PDO::FETCH_ASSOC);
+
+        if (!$monitor) {
+            sendJSON(['error' => 'Monitor not found'], 404);
+            return;
+        }
+
+        $includeLogs = monitorExportIncludeHistoryLogs();
+        $entry = monitorExportBuildEntry($db, $monitor, null, $includeLogs);
+
+        sendJSON([
+            'success' => true,
+            'type' => 'single_monitor',
+            'bundle_version' => MONITOR_EXPORT_BUNDLE_VERSION,
+            'exported_at' => $now,
+            'include_logs' => $includeLogs,
+            'monitor' => $entry['monitor'],
+            'monitor_logs' => $entry['monitor_logs'],
+            'notification_rules' => $entry['notification_rules'],
+            'email_logs' => $entry['email_logs'],
+            'audit_logs' => $includeLogs ? monitorExportAuditLogs($db, $monitorId) : [],
+        ]);
+    } catch (Throwable $e) {
+        error_log('Monitor export failed: ' . $e->getMessage() . ' in ' . $e->getFile() . ':' . $e->getLine());
+        sendJSON(['error' => 'Export failed: ' . $e->getMessage()], 500);
+    }
 }
 
 function handleExportMonitorsBundle() {
     requireAdmin(); // export is admin-only
-    $db = getDB();
-    $now = time();
+    try {
+        $db = getDB();
+        $now = time();
 
-    // Fetch all monitors
-    $stmt = $db->prepare('SELECT * FROM monitors ORDER BY created_at DESC');
-    $stmt->execute();
-    $monitors = $stmt->fetchAll();
+        $includeLogs = monitorExportIncludeHistoryLogs();
 
-    $bundleMonitors = [];
-    foreach ($monitors as $m) {
-        $monitorId = (int)$m['id'];
+        $stmt = $db->prepare('SELECT * FROM monitors ORDER BY created_at DESC');
+        $stmt->execute();
+        $monitors = $stmt->fetchAll(PDO::FETCH_ASSOC);
 
-        // Monitor uptime logs (cap to 500 like UI)
-        $stmt = $db->prepare('SELECT * FROM monitor_logs WHERE monitor_id = ? ORDER BY checked_at DESC LIMIT 500');
-        $stmt->execute([$monitorId]);
-        $monitorLogs = $stmt->fetchAll();
-
-        // Notification rules + recipients (preserve custom ordering)
-        $stmt = $db->prepare('SELECT * FROM monitor_notification_rules WHERE monitor_id = ? ORDER BY COALESCE(sort_order, 0) ASC, created_at DESC, id DESC');
-        $stmt->execute([$monitorId]);
-        $rules = $stmt->fetchAll();
-        $rulesOut = [];
-        foreach ($rules as $r) {
-            $ruleId = (int)$r['id'];
-            $stmt = $db->prepare('SELECT email FROM monitor_notification_recipients WHERE rule_id = ?');
-            $stmt->execute([$ruleId]);
-            $recipients = $stmt->fetchAll(PDO::FETCH_COLUMN);
-            $ccRaw = $r['cc_emails'] ?? null;
-            $cc = (!empty($ccRaw)) ? array_values(array_filter(array_map('trim', explode(',', $ccRaw)))) : [];
-            $r['recipients'] = $recipients;
-            $r['cc'] = $cc;
-            $rulesOut[] = $r;
+        $bundleMonitors = [];
+        foreach ($monitors as $m) {
+            $bundleMonitors[] = monitorExportBuildEntry($db, $m, null, $includeLogs);
         }
 
-        // Email logs (cap to 500 like UI)
-        $stmt = $db->prepare('SELECT * FROM monitor_notification_logs WHERE monitor_id = ? ORDER BY sent_at DESC LIMIT 500');
-        $stmt->execute([$monitorId]);
-        $emailLogs = $stmt->fetchAll();
+        $speedtest = ['schedules' => [], 'results' => [], 'settings' => []];
+        try {
+            $speedtest = monitorExportSpeedtestPayload($db, null, $includeLogs);
+        } catch (Throwable $e) {
+            error_log('Monitor bundle speedtest export skipped: ' . $e->getMessage());
+        }
 
-        $bundleMonitors[] = [
-            'monitor' => $m,
-            'monitor_logs' => $monitorLogs,
-            'notification_rules' => $rulesOut,
-            'email_logs' => $emailLogs
-        ];
+        $auditLogs = [];
+        if ($includeLogs) {
+            try {
+                $auditLogs = monitorExportAuditLogs($db);
+            } catch (Throwable $e) {
+                error_log('Monitor bundle audit export skipped: ' . $e->getMessage());
+            }
+        }
+
+        sendJSON([
+            'success' => true,
+            'bundle_version' => MONITOR_EXPORT_BUNDLE_VERSION,
+            'exported_at' => $now,
+            'include_logs' => $includeLogs,
+            'notification_settings' => monitorExportNotificationSettings(),
+            'speedtest' => $speedtest,
+            'audit_logs' => $auditLogs,
+            'monitors' => $bundleMonitors,
+        ]);
+    } catch (Throwable $e) {
+        error_log('Monitor bundle export failed: ' . $e->getMessage() . ' in ' . $e->getFile() . ':' . $e->getLine());
+        sendJSON(['error' => 'Export failed: ' . $e->getMessage()], 500);
     }
-
-    sendJSON([
-        'success' => true,
-        'bundle_version' => 1,
-        'exported_at' => $now,
-        'monitors' => $bundleMonitors
-    ]);
 }
 
 function handleImportMonitorsBundle() {
@@ -245,9 +791,10 @@ function handleImportMonitorsBundle() {
         $replace = false;
         $bundleMonitors = [[
             'monitor' => $data['monitor'],
-            'monitor_logs' => [],
+            'monitor_logs' => $data['monitor_logs'] ?? [],
             'notification_rules' => $data['notification_rules'] ?? [],
-            'email_logs' => []
+            'email_logs' => $data['email_logs'] ?? [],
+            'audit_logs' => $data['audit_logs'] ?? [],
         ]];
     } else {
         // Bundle import
@@ -269,19 +816,45 @@ function handleImportMonitorsBundle() {
             $db->exec('DELETE FROM monitor_notification_rules');
             $db->exec('DELETE FROM monitor_notification_logs');
             $db->exec('DELETE FROM monitor_logs');
+            $db->exec('DELETE FROM user_monitor_permissions');
             $db->exec('DELETE FROM monitors');
+
+            if (isset($data['notification_settings']) && is_array($data['notification_settings'])) {
+                monitorImportApplyNotificationSettings($data['notification_settings']);
+            }
+            if (!$isSingleMonitor && array_key_exists('audit_logs', $data)) {
+                try {
+                    $db->prepare("DELETE FROM user_audit_log WHERE action LIKE 'monitor.%'")->execute();
+                } catch (PDOException $e) {
+                    /* ignore */
+                }
+            }
         }
 
         // Prepared statements
         $stmtInsertMonitor = $db->prepare('INSERT INTO monitors (
-            id, name, type, target, port, keyword, interval, is_active, email_notification,
+            id, name, type, target, port, keyword, interval,
+            warning_threshold, consecutive_failures, timeout, permissions_mode,
+            is_active, email_notification,
             last_notified_status, legacy_notify_pending,
             legacy_email_disabled,
             legacy_email_to, legacy_email_cc, legacy_email_from_name, legacy_email_from_email,
             legacy_email_subject_template, legacy_email_body_template,
             last_checked_at, last_status, last_response_time,
             created_at, updated_at, tab_name, group_name, maintenance_start, maintenance_end
-        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)');
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)');
+
+        $stmtInsertMonitorAutoId = $db->prepare('INSERT INTO monitors (
+            name, type, target, port, keyword, interval,
+            warning_threshold, consecutive_failures, timeout, permissions_mode,
+            is_active, email_notification,
+            last_notified_status, legacy_notify_pending,
+            legacy_email_disabled,
+            legacy_email_to, legacy_email_cc, legacy_email_from_name, legacy_email_from_email,
+            legacy_email_subject_template, legacy_email_body_template,
+            last_checked_at, last_status, last_response_time,
+            created_at, updated_at, tab_name, group_name, maintenance_start, maintenance_end
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)');
 
         $stmtInsertMonitorLog = $db->prepare('INSERT INTO monitor_logs (monitor_id, status, response_time, details, checked_at) VALUES (?, ?, ?, ?, ?)');
 
@@ -308,76 +881,13 @@ function handleImportMonitorsBundle() {
             // For single monitor imports, always generate new IDs (don't use original IDs)
             $monitorId = ($isSingleMonitor || !isset($m['id'])) ? null : (int)$m['id'];
             if ($monitorId === null) {
-                // If no ID provided, let SQLite assign one (rare: older format)
-                $stmt = $db->prepare('INSERT INTO monitors (
-                    name, type, target, port, keyword, interval, is_active, email_notification,
-                    last_notified_status, legacy_notify_pending,
-                    legacy_email_disabled,
-                    legacy_email_to, legacy_email_cc, legacy_email_from_name, legacy_email_from_email,
-                    legacy_email_subject_template, legacy_email_body_template,
-                    last_checked_at, last_status, last_response_time,
-                    created_at, updated_at, tab_name, group_name, maintenance_start, maintenance_end
-                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)');
-                $stmt->execute([
-                    $m['name'],
-                    $m['type'],
-                    $m['target'],
-                    isset($m['port']) ? (int)$m['port'] : null,
-                    $m['keyword'] ?? null,
-                    isset($m['interval']) ? (int)$m['interval'] : 5,
-                    isset($m['is_active']) ? (int)$m['is_active'] : 1,
-                    isset($m['email_notification']) ? (int)$m['email_notification'] : 0,
-                    $m['last_notified_status'] ?? null,
-                    isset($m['legacy_notify_pending']) ? (int)$m['legacy_notify_pending'] : 0,
-                    isset($m['legacy_email_disabled']) ? (int)$m['legacy_email_disabled'] : 0,
-                    $m['legacy_email_to'] ?? null,
-                    $m['legacy_email_cc'] ?? null,
-                    $m['legacy_email_from_name'] ?? null,
-                    $m['legacy_email_from_email'] ?? null,
-                    $m['legacy_email_subject_template'] ?? null,
-                    $m['legacy_email_body_template'] ?? null,
-                    isset($m['last_checked_at']) ? (int)$m['last_checked_at'] : null,
-                    $m['last_status'] ?? null,
-                    isset($m['last_response_time']) ? (int)$m['last_response_time'] : null,
-                    isset($m['created_at']) ? (int)$m['created_at'] : $now,
-                    isset($m['updated_at']) ? (int)$m['updated_at'] : $now,
-                    $m['tab_name'] ?? null,
-                    $m['group_name'] ?? null,
-                    isset($m['maintenance_start']) ? (int)$m['maintenance_start'] : null,
-                    isset($m['maintenance_end']) ? (int)$m['maintenance_end'] : null
-                ]);
+                $stmtInsertMonitorAutoId->execute(monitorImportMonitorRowValues($m, $now));
                 $monitorId = (int)$db->lastInsertId();
             } else {
-                $stmtInsertMonitor->execute([
-                    $monitorId,
-                    $m['name'],
-                    $m['type'],
-                    $m['target'],
-                    isset($m['port']) ? (int)$m['port'] : null,
-                    $m['keyword'] ?? null,
-                    isset($m['interval']) ? (int)$m['interval'] : 5,
-                    isset($m['is_active']) ? (int)$m['is_active'] : 1,
-                    isset($m['email_notification']) ? (int)$m['email_notification'] : 0,
-                    $m['last_notified_status'] ?? null,
-                    isset($m['legacy_notify_pending']) ? (int)$m['legacy_notify_pending'] : 0,
-                    isset($m['legacy_email_disabled']) ? (int)$m['legacy_email_disabled'] : 0,
-                    $m['legacy_email_to'] ?? null,
-                    $m['legacy_email_cc'] ?? null,
-                    $m['legacy_email_from_name'] ?? null,
-                    $m['legacy_email_from_email'] ?? null,
-                    $m['legacy_email_subject_template'] ?? null,
-                    $m['legacy_email_body_template'] ?? null,
-                    isset($m['last_checked_at']) ? (int)$m['last_checked_at'] : null,
-                    $m['last_status'] ?? null,
-                    isset($m['last_response_time']) ? (int)$m['last_response_time'] : null,
-                    isset($m['created_at']) ? (int)$m['created_at'] : $now,
-                    isset($m['updated_at']) ? (int)$m['updated_at'] : $now,
-                    $m['tab_name'] ?? null,
-                    $m['group_name'] ?? null,
-                    isset($m['maintenance_start']) ? (int)$m['maintenance_start'] : null,
-                    isset($m['maintenance_end']) ? (int)$m['maintenance_end'] : null
-                ]);
+                $stmtInsertMonitor->execute(array_merge([$monitorId], monitorImportMonitorRowValues($m, $now)));
             }
+
+            monitorImportRestorePermissions($db, $monitorId, $m, $now);
 
             // Monitor logs
             $monitorLogs = $entry['monitor_logs'] ?? [];
@@ -482,10 +992,29 @@ function handleImportMonitorsBundle() {
                     ]);
                 }
             }
+
+            if ($isSingleMonitor) {
+                monitorImportAuditLogs($db, $entry['audit_logs'] ?? [], $monitorId);
+            }
+        }
+
+        if (!$isSingleMonitor) {
+            if (array_key_exists('speedtest', $data)) {
+                monitorImportSpeedtestPayload($db, $data['speedtest'], $replace);
+            }
+            if (!empty($data['audit_logs']) && is_array($data['audit_logs'])) {
+                monitorImportAuditLogs($db, $data['audit_logs']);
+            }
         }
 
         $db->commit();
-        sendJSON(['success' => true, 'count' => count($bundleMonitors)]);
+        $importedCount = count($bundleMonitors);
+        logMonitorAudit('monitor.imported', [
+            'count' => $importedCount,
+            'replace' => !empty($replace),
+            'single' => !empty($isSingleMonitor),
+        ]);
+        sendJSON(['success' => true, 'count' => $importedCount]);
     } catch (Exception $e) {
         if ($db->inTransaction()) $db->rollBack();
         sendJSON(['error' => 'Import failed: ' . $e->getMessage()], 500);
@@ -505,7 +1034,8 @@ function handleGetMonitors() {
                     FROM monitor_notification_rules r 
                     WHERE r.monitor_id = m.id AND r.is_enabled = 1
                 ), 0) AS email_rules_count,
-                (SELECT GROUP_CONCAT(user_id) FROM user_monitor_permissions ump WHERE ump.monitor_id = m.id AND COALESCE(ump.can_view, 0) = 1) AS allowed_user_ids_csv
+                (SELECT GROUP_CONCAT(user_id) FROM user_monitor_permissions ump WHERE ump.monitor_id = m.id AND COALESCE(ump.can_view, 0) = 1) AS allowed_user_ids_csv,
+                (SELECT details FROM monitor_logs ml WHERE ml.monitor_id = m.id ORDER BY ml.checked_at DESC LIMIT 1) AS last_details
             FROM monitors m
             ORDER BY m.created_at DESC
         ');
@@ -518,7 +1048,8 @@ function handleGetMonitors() {
                     SELECT COUNT(*) 
                     FROM monitor_notification_rules r 
                     WHERE r.monitor_id = m.id AND r.is_enabled = 1
-                ), 0) AS email_rules_count
+                ), 0) AS email_rules_count,
+                (SELECT details FROM monitor_logs ml WHERE ml.monitor_id = m.id ORDER BY ml.checked_at DESC LIMIT 1) AS last_details
             FROM monitors m
             LEFT JOIN user_monitor_permissions ump
               ON ump.monitor_id = m.id AND ump.user_id = ?
@@ -528,6 +1059,40 @@ function handleGetMonitors() {
         $stmt->execute([(int)$user['id']]);
     }
     $monitors = $stmt->fetchAll();
+
+    // Fetch history for sparklines (last 24h)
+    $stmtHistory = $db->prepare('SELECT status, response_time, checked_at FROM monitor_logs WHERE monitor_id = ? AND checked_at >= ? ORDER BY checked_at DESC LIMIT 72');
+    $oneDayAgo = time() - 86400;
+
+    foreach ($monitors as &$m) {
+        $stmtHistory->execute([(int)$m['id'], $oneDayAgo]);
+        $rows = $stmtHistory->fetchAll(PDO::FETCH_ASSOC);
+        
+        // Downsample to max ~72 points (approx 1 per 20 mins if 1440 pts) to keep payload light
+        $count = count($rows);
+        $maxPoints = 72;
+        $history = [];
+        
+        if ($count <= $maxPoints) {
+            $history = $rows;
+        } else {
+            $step = $count / $maxPoints;
+            for ($i = 0; $i < $maxPoints; $i++) {
+                $index = (int)($i * $step);
+                if (isset($rows[$index])) {
+                    $history[] = $rows[$index];
+                }
+            }
+        }
+        
+        // Ensure numeric types for JSON and chronological order (Oldest -> Newest)
+        $m['history'] = array_map(function($h) {
+            $h['response_time'] = (int)$h['response_time'];
+            $h['checked_at'] = (int)$h['checked_at'];
+            return $h;
+        }, array_reverse($history));
+    }
+    unset($m);
 
     // Normalize allowed user list for admins (UI convenience)
     if (!empty($user['is_admin'])) {
@@ -546,6 +1111,13 @@ function handleGetMonitors() {
         }
         unset($m);
     }
+
+    $pendingIds = monitorCheckJobsGetPendingMonitorIds($db);
+    $pendingLookup = array_fill_keys($pendingIds, true);
+    foreach ($monitors as &$m) {
+        $m['check_pending'] = !empty($pendingLookup[(int)$m['id']]) ? 1 : 0;
+    }
+    unset($m);
     
     sendJSON(['monitors' => $monitors]);
 }
@@ -566,6 +1138,10 @@ function handleGetMonitor($id) {
     $stmt->execute([(int)$monitor['id']]);
     $monitor['email_rules_count'] = (int)$stmt->fetchColumn();
 
+    $stmt = $db->prepare('SELECT details FROM monitor_logs WHERE monitor_id = ? ORDER BY checked_at DESC LIMIT 1');
+    $stmt->execute([(int)$monitor['id']]);
+    $monitor['last_details'] = $stmt->fetchColumn() ?: null;
+
     // For admins, include allowed user ids
     if (!empty($user['is_admin'])) {
         $stmt = $db->prepare('SELECT user_id FROM user_monitor_permissions WHERE monitor_id = ? AND COALESCE(can_view, 0) = 1 ORDER BY user_id ASC');
@@ -579,24 +1155,49 @@ function handleGetMonitor($id) {
 function handleCreateMonitor() {
     requireAdmin(); // Only admins can create monitors
     $data = getJSONInput();
-    
-    // Validation
-    if (empty($data['name']) || empty($data['type']) || empty($data['target'])) {
-        sendJSON(['error' => 'Name, type, and target are required'], 400);
-        return;
+
+    $db = getDB();
+    try {
+        $db->beginTransaction();
+        $result = insertMonitorFromPayload($db, $data);
+        if (isset($result['error'])) {
+            $db->rollBack();
+            sendJSON(['error' => $result['error']], 400);
+            return;
+        }
+        $db->commit();
+        logMonitorAudit('monitor.created', monitorAuditIdentity($result['monitor'] ?? null));
+        sendJSON(['success' => true, 'monitor' => $result['monitor']]);
+    } catch (PDOException $e) {
+        if ($db->inTransaction()) $db->rollBack();
+        sendJSON(['error' => 'Database error: ' . $e->getMessage()], 500);
     }
-    
-    if (!validateMonitorType($data['type'])) {
-        sendJSON(['error' => 'Invalid type. Must be url, keyword, port, or ping'], 400);
-        return;
+}
+
+/**
+ * Insert one monitor row. Returns ['monitor' => ...] or ['error' => string].
+ */
+function insertMonitorFromPayload(PDO $db, array $data): array {
+    if (empty($data['name']) || empty($data['type']) || empty($data['target'])) {
+        return ['error' => 'Name, type, and target are required'];
     }
 
-    // Warning threshold
+    if (!validateMonitorType($data['type'])) {
+        return ['error' => 'Invalid type. Must be url, keyword, port, ping, ssl, dns, or json'];
+    }
+
+    $fieldErr = validateMonitorTypeFields($data);
+    if ($fieldErr !== null) {
+        return ['error' => $fieldErr];
+    }
+
     $warningThreshold = isset($data['warning_threshold']) ? (int)$data['warning_threshold'] : 1;
+    if (($data['type'] ?? '') === 'ssl') {
+        $warningThreshold = 1;
+    }
     if ($warningThreshold < 1) $warningThreshold = 1;
     if ($warningThreshold > 20) $warningThreshold = 20;
 
-    // Timeout (seconds) - used for url/keyword primarily
     $timeout = isset($data['timeout']) && $data['timeout'] !== '' ? (int)$data['timeout'] : null;
     if ($timeout !== null) {
         if ($timeout < 1) $timeout = 1;
@@ -605,90 +1206,138 @@ function handleCreateMonitor() {
 
     $allowedUserIds = normalizeAllowedUserIds($data['allowed_user_ids'] ?? []);
     $permissionsMode = !empty($allowedUserIds) ? 1 : 0;
-    
+
+    $intervalDefault = ($data['type'] ?? '') === 'ssl' ? 1440 : 5;
+    $interval = normalizeMonitorInterval((string)$data['type'], $data['interval'] ?? $intervalDefault, $intervalDefault);
+
+    $stmt = $db->prepare('INSERT INTO monitors (
+        name, type, target, port, keyword, interval,
+        warning_threshold, consecutive_failures, timeout, permissions_mode,
+        is_active, email_notification, created_at, updated_at,
+        tab_name, group_name, maintenance_start, maintenance_end,
+        legacy_notify_pending, legacy_email_disabled, legacy_email_to, legacy_email_cc, legacy_email_from_name, legacy_email_from_email,
+        legacy_email_subject_template, legacy_email_body_template
+    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)');
+
+    $now = time();
+    $stmt->execute([
+        $data['name'],
+        $data['type'],
+        $data['target'],
+        isset($data['port']) ? (int)$data['port'] : null,
+        $data['keyword'] ?? null,
+        $interval,
+        $warningThreshold,
+        0,
+        $timeout,
+        $permissionsMode,
+        isset($data['is_active']) ? (int)$data['is_active'] : 1,
+        isset($data['email_notification']) ? (int)$data['email_notification'] : 0,
+        $now,
+        $now,
+        normalizeMonitorTabName((string)$data['type'], $data['tab_name'] ?? ''),
+        $data['group_name'] ?? null,
+        isset($data['maintenance_start']) ? (int)$data['maintenance_start'] : null,
+        isset($data['maintenance_end']) ? (int)$data['maintenance_end'] : null,
+        (isset($data['email_notification']) && (int)$data['email_notification'] === 1) ? 1 : 0,
+        isset($data['legacy_email_disabled']) ? (int)$data['legacy_email_disabled'] : 0,
+        $data['legacy_email_to'] ?? null,
+        $data['legacy_email_cc'] ?? null,
+        $data['legacy_email_from_name'] ?? null,
+        $data['legacy_email_from_email'] ?? null,
+        $data['legacy_email_subject_template'] ?? null,
+        $data['legacy_email_body_template'] ?? null
+    ]);
+
+    $id = (int)$db->lastInsertId();
+
+    if ($permissionsMode === 1) {
+        $permStmt = $db->prepare('INSERT INTO user_monitor_permissions (user_id, monitor_id, can_view, created_at, updated_at) VALUES (?, ?, 1, ?, ?)');
+        foreach ($allowedUserIds as $uid) {
+            $permStmt->execute([(int)$uid, $id, $now, $now]);
+        }
+    }
+
+    $stmt = $db->prepare('
+        SELECT 
+            m.*,
+            COALESCE((
+                SELECT COUNT(*) 
+                FROM monitor_notification_rules r 
+                WHERE r.monitor_id = m.id AND r.is_enabled = 1
+            ), 0) AS email_rules_count
+        FROM monitors m
+        WHERE m.id = ?
+    ');
+    $stmt->execute([$id]);
+    $monitor = $stmt->fetch(PDO::FETCH_ASSOC);
+
+    if ($permissionsMode === 1) {
+        $monitor['allowed_user_ids'] = $allowedUserIds;
+    } else {
+        $monitor['allowed_user_ids'] = [];
+    }
+
+    return ['monitor' => $monitor];
+}
+
+function handleBulkCreateMonitors(): void {
+    requireAdmin();
+    $data = getJSONInput();
+    $monitors = $data['monitors'] ?? null;
+    if (!is_array($monitors) || count($monitors) === 0) {
+        sendJSON(['error' => 'monitors array is required'], 400);
+        return;
+    }
+    if (count($monitors) > 100) {
+        sendJSON(['error' => 'Maximum 100 monitors per batch'], 400);
+        return;
+    }
+
     $db = getDB();
-    
+    $created = [];
+    $errors = [];
+
     try {
         $db->beginTransaction();
-
-        $stmt = $db->prepare('INSERT INTO monitors (
-            name, type, target, port, keyword, interval,
-            warning_threshold, consecutive_failures, timeout, permissions_mode,
-            is_active, email_notification, created_at, updated_at,
-            tab_name, group_name, maintenance_start, maintenance_end,
-            legacy_notify_pending, legacy_email_disabled, legacy_email_to, legacy_email_cc, legacy_email_from_name, legacy_email_from_email,
-            legacy_email_subject_template, legacy_email_body_template
-        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)');
-        
-        $now = time();
-        $stmt->execute([
-            $data['name'],
-            $data['type'],
-            $data['target'],
-            isset($data['port']) ? (int)$data['port'] : null,
-            $data['keyword'] ?? null,
-            isset($data['interval']) ? (int)$data['interval'] : 5,
-            $warningThreshold,
-            0,
-            $timeout,
-            $permissionsMode,
-            isset($data['is_active']) ? (int)$data['is_active'] : 1,
-            isset($data['email_notification']) ? (int)$data['email_notification'] : 0,
-            $now,
-            $now,
-            $data['tab_name'] ?? null,
-            $data['group_name'] ?? null,
-            isset($data['maintenance_start']) ? (int)$data['maintenance_start'] : null,
-            isset($data['maintenance_end']) ? (int)$data['maintenance_end'] : null,
-            // legacy_notify_pending: if user enables email immediately, allow one alert if monitor is already down later
-            (isset($data['email_notification']) && (int)$data['email_notification'] === 1) ? 1 : 0,
-            isset($data['legacy_email_disabled']) ? (int)$data['legacy_email_disabled'] : 0,
-            $data['legacy_email_to'] ?? null,
-            $data['legacy_email_cc'] ?? null,
-            $data['legacy_email_from_name'] ?? null,
-            $data['legacy_email_from_email'] ?? null,
-            $data['legacy_email_subject_template'] ?? null,
-            $data['legacy_email_body_template'] ?? null
-        ]);
-        
-        $id = $db->lastInsertId();
-
-        // Save permissions if restricted
-        if ($permissionsMode === 1) {
-            $permStmt = $db->prepare('INSERT INTO user_monitor_permissions (user_id, monitor_id, can_view, created_at, updated_at) VALUES (?, ?, 1, ?, ?)');
-            foreach ($allowedUserIds as $uid) {
-                $permStmt->execute([(int)$uid, (int)$id, $now, $now]);
+        foreach ($monitors as $index => $payload) {
+            if (!is_array($payload)) {
+                $errors[] = ['index' => $index, 'error' => 'Invalid monitor payload'];
+                continue;
             }
+            $result = insertMonitorFromPayload($db, $payload);
+            if (isset($result['error'])) {
+                $errors[] = [
+                    'index' => $index,
+                    'name' => $payload['name'] ?? null,
+                    'target' => $payload['target'] ?? null,
+                    'error' => $result['error'],
+                ];
+                continue;
+            }
+            $created[] = $result['monitor'];
         }
-        
-        // Fetch created monitor
-        $stmt = $db->prepare('
-            SELECT 
-                m.*,
-                COALESCE((
-                    SELECT COUNT(*) 
-                    FROM monitor_notification_rules r 
-                    WHERE r.monitor_id = m.id AND r.is_enabled = 1
-                ), 0) AS email_rules_count
-            FROM monitors m
-            WHERE m.id = ?
-        ');
-        $stmt->execute([$id]);
-        $monitor = $stmt->fetch();
-
-        if ($permissionsMode === 1) {
-            $monitor['allowed_user_ids'] = $allowedUserIds;
-        } else {
-            $monitor['allowed_user_ids'] = [];
-        }
-
         $db->commit();
-        
-        sendJSON(['success' => true, 'monitor' => $monitor], 201);
-        
-    } catch (PDOException $e) {
+        if (count($created) > 0) {
+            $summaries = [];
+            foreach (array_slice($created, 0, 25) as $m) {
+                $summaries[] = monitorAuditIdentity(is_array($m) ? $m : null);
+            }
+            logMonitorAudit('monitor.bulk_created', [
+                'count' => count($created),
+                'error_count' => count($errors),
+                'monitors' => $summaries,
+            ]);
+        }
+        sendJSON([
+            'success' => true,
+            'count' => count($created),
+            'created' => $created,
+            'errors' => $errors,
+        ]);
+    } catch (Exception $e) {
         if ($db->inTransaction()) $db->rollBack();
-        sendJSON(['error' => 'Database error: ' . $e->getMessage()], 500);
+        sendJSON(['error' => 'Bulk create failed: ' . $e->getMessage()], 500);
     }
 }
 
@@ -838,6 +1487,11 @@ function handleDuplicateMonitor($id) {
         }
         
         $db->commit();
+
+        $dupDetails = monitorAuditIdentity($newMonitor);
+        $dupDetails['source_monitor_id'] = (int)$id;
+        $dupDetails['source_name'] = (string)($original['name'] ?? '');
+        logMonitorAudit('monitor.duplicated', $dupDetails);
         
         sendJSON(['success' => true, 'monitor' => $newMonitor], 201);
         
@@ -853,9 +1507,9 @@ function handleUpdateMonitor($id) {
     $db = getDB();
     
     // Check if exists
-    $stmt = $db->prepare('SELECT id, email_notification FROM monitors WHERE id = ?');
+    $stmt = $db->prepare('SELECT * FROM monitors WHERE id = ?');
     $stmt->execute([$id]);
-    $existing = $stmt->fetch();
+    $existing = $stmt->fetch(PDO::FETCH_ASSOC);
     if (!$existing) {
         sendJSON(['error' => 'Monitor not found'], 404);
         return;
@@ -877,19 +1531,38 @@ function handleUpdateMonitor($id) {
             'legacy_email_cc',
             'legacy_email_subject_template', 'legacy_email_body_template'
         ];
+        $nullableTextFields = [
+            'legacy_email_to', 'legacy_email_cc', 'legacy_email_from_name', 'legacy_email_from_email',
+            'legacy_email_subject_template', 'legacy_email_body_template', 'group_name', 'keyword',
+        ];
         foreach ($allowedFields as $field) {
-            if (isset($data[$field])) {
-                if ($field === 'type') {
+            $isNullableText = in_array($field, $nullableTextFields, true);
+            if ($isNullableText) {
+                if (!array_key_exists($field, $data)) {
+                    continue;
+                }
+            } elseif (!isset($data[$field])) {
+                continue;
+            }
+            if ($field === 'type') {
                     if (!validateMonitorType($data[$field])) {
-                        sendJSON(['error' => 'Invalid type. Must be url, keyword, port, or ping'], 400);
+                        sendJSON(['error' => 'Invalid type. Must be url, keyword, port, ping, ssl, dns, or json'], 400);
+                        return;
                     }
                 }
                 if ($field === 'warning_threshold') {
-                    $v = (int)$data[$field];
+                    $typeForWt = isset($data['type']) ? (string)$data['type'] : (string)($existing['type'] ?? 'url');
+                    $v = $typeForWt === 'ssl' ? 1 : (int)$data[$field];
                     if ($v < 1) $v = 1;
                     if ($v > 20) $v = 20;
                     $fields[] = "$field = ?";
                     $values[] = $v;
+                    continue;
+                }
+                if ($field === 'interval') {
+                    $typeForInterval = isset($data['type']) ? (string)$data['type'] : (string)($existing['type'] ?? 'url');
+                    $fields[] = "$field = ?";
+                    $values[] = normalizeMonitorInterval($typeForInterval, $data[$field]);
                     continue;
                 }
                 if ($field === 'timeout') {
@@ -907,8 +1580,53 @@ function handleUpdateMonitor($id) {
                     continue;
                 }
 
+                if ($field === 'tab_name') {
+                    $typeForTab = isset($data['type']) ? (string)$data['type'] : (string)($existing['type'] ?? 'url');
+                    $fields[] = "$field = ?";
+                    $values[] = normalizeMonitorTabName($typeForTab, $data[$field]);
+                    continue;
+                }
+
+                if ($isNullableText) {
+                    $v = $data[$field];
+                    $fields[] = "$field = ?";
+                    $values[] = ($v === null || $v === '') ? null : $v;
+                    continue;
+                }
+
                 $fields[] = "$field = ?";
                 $values[] = $data[$field];
+        }
+
+        $typeAfter = isset($data['type']) ? (string)$data['type'] : (string)($existing['type'] ?? '');
+        if ($typeAfter === 'ssl') {
+            if (!isset($data['interval'])) {
+                $fields[] = 'interval = ?';
+                $values[] = normalizeMonitorInterval('ssl', $existing['interval'] ?? 1440);
+            }
+            if (!isset($data['warning_threshold'])) {
+                $fields[] = 'warning_threshold = ?';
+                $values[] = 1;
+            }
+            if (!isset($data['tab_name'])) {
+                $fields[] = 'tab_name = ?';
+                $values[] = 'SSL Certificates';
+            }
+        }
+
+        // Validate type-specific fields when relevant fields are updated
+        if (isset($data['type']) || isset($data['port']) || isset($data['keyword']) || isset($data['target'])) {
+            $stmtFull = $db->prepare('SELECT * FROM monitors WHERE id = ?');
+            $stmtFull->execute([(int)$id]);
+            $fullExisting = $stmtFull->fetch(PDO::FETCH_ASSOC) ?: [];
+            $merged = array_merge($fullExisting, $data);
+            if (!empty($merged['type'])) {
+                $fieldErr = validateMonitorTypeFields($merged);
+                if ($fieldErr !== null) {
+                    $db->rollBack();
+                    sendJSON(['error' => $fieldErr], 400);
+                    return;
+                }
             }
         }
 
@@ -978,6 +1696,19 @@ function handleUpdateMonitor($id) {
         $monitor['allowed_user_ids'] = array_map('intval', $stmt->fetchAll(PDO::FETCH_COLUMN));
 
         $db->commit();
+
+        $changedFields = [];
+        foreach ($allowedFields as $field) {
+            if (isset($data[$field])) {
+                $changedFields[] = $field;
+            }
+        }
+        if (isset($data['allowed_user_ids'])) {
+            $changedFields[] = 'allowed_user_ids';
+        }
+        $updateDetails = monitorAuditIdentity($monitor);
+        $updateDetails['changed_fields'] = array_values(array_unique($changedFields));
+        logMonitorAudit('monitor.updated', $updateDetails);
         
         sendJSON(['success' => true, 'monitor' => $monitor]);
         
@@ -992,9 +1723,10 @@ function handleDeleteMonitor($id) {
     $db = getDB();
     
     // Check if exists
-    $stmt = $db->prepare('SELECT id FROM monitors WHERE id = ?');
+    $stmt = $db->prepare('SELECT id, name, type, target, tab_name FROM monitors WHERE id = ?');
     $stmt->execute([$id]);
-    if (!$stmt->fetch()) {
+    $existing = $stmt->fetch(PDO::FETCH_ASSOC);
+    if (!$existing) {
         sendJSON(['error' => 'Monitor not found'], 404);
         return;
     }
@@ -1002,9 +1734,204 @@ function handleDeleteMonitor($id) {
     try {
         $stmt = $db->prepare('DELETE FROM monitors WHERE id = ?');
         $stmt->execute([$id]);
+
+        logMonitorAudit('monitor.deleted', monitorAuditIdentity($existing, $id));
         
         sendJSON(['success' => true]);
         
+    } catch (PDOException $e) {
+        sendJSON(['error' => 'Database error: ' . $e->getMessage()], 500);
+    }
+}
+
+function handlePurgeAllMonitorLogs() {
+    requireAdmin();
+    $db = getDB();
+
+    $data = json_decode(file_get_contents('php://input'), true);
+    if (!is_array($data)) {
+        $data = [];
+    }
+    $keepDays = isset($data['keep_days']) ? (int)$data['keep_days'] : -1;
+    $allowed = [0, 1, 7, 30, 365];
+    if (!in_array($keepDays, $allowed, true)) {
+        sendJSON(['error' => 'keep_days must be one of: 0, 1, 7, 30, 365'], 400);
+        return;
+    }
+
+    $doReindex = !empty($data['reindex']);
+    $doRunChecks = !empty($data['run_checks']);
+    $doVacuum = !empty($data['vacuum']);
+
+    // Maintenance after a large purge can take a while on big SQLite files.
+    @set_time_limit(600);
+
+    try {
+        if ($keepDays === 0) {
+            $deletedCount = (int)$db->exec('DELETE FROM monitor_logs');
+        } else {
+            $cutoff = time() - ($keepDays * 24 * 60 * 60);
+            $del = $db->prepare('DELETE FROM monitor_logs WHERE checked_at < ?');
+            $del->execute([$cutoff]);
+            $deletedCount = (int)$del->rowCount();
+        }
+
+        $maintenance = monitorPurgeRunMaintenance($db, $doReindex, $doRunChecks, $doVacuum);
+
+        sendJSON([
+            'deleted_count' => $deletedCount,
+            'keep_days' => $keepDays,
+            'maintenance' => $maintenance,
+        ]);
+    } catch (PDOException $e) {
+        sendJSON(['error' => 'Database error: ' . $e->getMessage()], 500);
+    }
+}
+
+/**
+ * Rebuild monitor_logs indexes, run integrity checks, and optionally VACUUM to reclaim space.
+ *
+ * @return array{reindex:?array,checks:?array,vacuum:?array}
+ */
+function monitorPurgeRunMaintenance(PDO $db, bool $reindex, bool $runChecks, bool $vacuum = false): array {
+    $out = [
+        'reindex' => null,
+        'checks' => null,
+        'vacuum' => null,
+    ];
+
+    if ($reindex) {
+        $started = microtime(true);
+        $indexes = [];
+        $indexDefs = [
+            'idx_monitor_logs_monitor_id' => 'CREATE INDEX IF NOT EXISTS idx_monitor_logs_monitor_id ON monitor_logs(monitor_id)',
+            'idx_monitor_logs_checked_at' => 'CREATE INDEX IF NOT EXISTS idx_monitor_logs_checked_at ON monitor_logs(checked_at)',
+            'idx_monitor_logs_monitor_checked' => 'CREATE INDEX IF NOT EXISTS idx_monitor_logs_monitor_checked ON monitor_logs(monitor_id, checked_at)',
+        ];
+        foreach ($indexDefs as $name => $createSql) {
+            try {
+                $db->exec("DROP INDEX IF EXISTS {$name}");
+                $db->exec($createSql);
+                $indexes[] = $name;
+            } catch (PDOException $e) {
+                error_log("monitorPurgeRunMaintenance reindex {$name}: " . $e->getMessage());
+            }
+        }
+
+        $analyzed = [];
+        foreach (['monitor_logs', 'monitors'] as $table) {
+            try {
+                $db->exec("ANALYZE {$table}");
+                $analyzed[] = $table;
+            } catch (PDOException $e) {
+                error_log("monitorPurgeRunMaintenance ANALYZE {$table}: " . $e->getMessage());
+            }
+        }
+
+        try {
+            $db->exec('PRAGMA optimize');
+        } catch (PDOException $e) {
+            // ignore
+        }
+
+        $checkpoint = null;
+        try {
+            $row = $db->query('PRAGMA wal_checkpoint(TRUNCATE)')->fetch(PDO::FETCH_NUM);
+            if (is_array($row)) {
+                $checkpoint = [
+                    'busy' => (int)($row[0] ?? 0),
+                    'log' => (int)($row[1] ?? 0),
+                    'checkpointed' => (int)($row[2] ?? 0),
+                ];
+            }
+        } catch (PDOException $e) {
+            // ignore
+        }
+
+        $out['reindex'] = [
+            'ok' => true,
+            'indexes' => $indexes,
+            'analyzed' => $analyzed,
+            'checkpoint' => $checkpoint,
+            'elapsed_ms' => round((microtime(true) - $started) * 1000, 1),
+        ];
+    }
+
+    if ($runChecks) {
+        $started = microtime(true);
+        // quick_check is enough after purge and much faster than full integrity_check
+        $integrity = linknestMaintainIntegrity($db, false);
+        $out['checks'] = [
+            'ok' => (bool)$integrity['ok'],
+            'quick_check' => $integrity['quick_check'] ?? 'unknown',
+            'result' => $integrity['result'] ?? [],
+            'elapsed_ms' => round((microtime(true) - $started) * 1000, 1),
+        ];
+    }
+
+    if ($vacuum) {
+        $started = microtime(true);
+        try {
+            $result = linknestMaintainRunVacuum($db);
+            $out['vacuum'] = [
+                'ok' => !empty($result['success']),
+                'message' => (string)($result['message'] ?? 'Vacuum completed.'),
+                'reclaimed' => $result['reclaimed'] ?? null,
+                'before' => $result['before'] ?? null,
+                'after' => $result['after'] ?? null,
+                'elapsed_ms' => round((microtime(true) - $started) * 1000, 1),
+            ];
+        } catch (Throwable $e) {
+            error_log('monitorPurgeRunMaintenance vacuum: ' . $e->getMessage());
+            $out['vacuum'] = [
+                'ok' => false,
+                'message' => 'Vacuum failed: ' . $e->getMessage(),
+                'elapsed_ms' => round((microtime(true) - $started) * 1000, 1),
+            ];
+        }
+    }
+
+    return $out;
+}
+
+function handlePurgeMonitorLogs($id) {
+    requireAdmin();
+    $db = getDB();
+    $id = (int)$id;
+
+    $stmt = $db->prepare('SELECT id, name FROM monitors WHERE id = ?');
+    $stmt->execute([$id]);
+    $monitor = $stmt->fetch(PDO::FETCH_ASSOC);
+    if (!$monitor) {
+        sendJSON(['error' => 'Monitor not found'], 404);
+        return;
+    }
+
+    $data = json_decode(file_get_contents('php://input'), true);
+    if (!is_array($data)) {
+        $data = [];
+    }
+    $keepDays = isset($data['keep_days']) ? (int)$data['keep_days'] : -1;
+    $allowed = [0, 1, 7, 30, 365];
+    if (!in_array($keepDays, $allowed, true)) {
+        sendJSON(['error' => 'keep_days must be one of: 0, 1, 7, 30, 365'], 400);
+        return;
+    }
+
+    try {
+        if ($keepDays === 0) {
+            $del = $db->prepare('DELETE FROM monitor_logs WHERE monitor_id = ?');
+            $del->execute([$id]);
+        } else {
+            $cutoff = time() - ($keepDays * 24 * 60 * 60);
+            $del = $db->prepare('DELETE FROM monitor_logs WHERE monitor_id = ? AND checked_at < ?');
+            $del->execute([$id, $cutoff]);
+        }
+        $deletedCount = (int)$del->rowCount();
+        sendJSON([
+            'deleted_count' => $deletedCount,
+            'keep_days' => $keepDays,
+        ]);
     } catch (PDOException $e) {
         sendJSON(['error' => 'Database error: ' . $e->getMessage()], 500);
     }
@@ -1019,12 +1946,6 @@ function handleGetMonitorLogs($id) {
     if (!$monitor) {
         sendJSON(['error' => 'Monitor not found'], 404);
         return;
-    }
-    
-    // Clean up old logs (keep last 30 days)
-    $thirtyDaysAgo = time() - (30 * 24 * 60 * 60);
-    if (rand(1, 100) <= 5) {
-        $db->exec("DELETE FROM monitor_logs WHERE checked_at < $thirtyDaysAgo");
     }
     
     $days = isset($_GET['days']) ? (int)$_GET['days'] : null;
@@ -1091,37 +2012,31 @@ function handleCheckMonitor($id) {
 function handleCheckAllMonitors() {
     error_log("[MONITOR] handleCheckAllMonitors called");
     try {
-        // Set execution time limit to prevent hanging on multiple checks
-        // Allow more time for multiple monitors - calculate based on number of monitors
         $db = getDB();
         if (!$db) {
             throw new Exception("Failed to get database connection");
         }
-        
-        error_log("[MONITOR] Getting active monitor count");
+
         $user = getAuthUserFromGlobals();
-        if (!empty($user['is_admin'])) {
-            $stmt = $db->prepare('SELECT COUNT(*) FROM monitors WHERE is_active = 1');
-            $stmt->execute();
-            $monitorCount = (int)$stmt->fetchColumn();
-        } else {
-            $stmt = $db->prepare('
-                SELECT COUNT(*)
-                FROM monitors m
-                LEFT JOIN user_monitor_permissions ump
-                  ON ump.monitor_id = m.id AND ump.user_id = ?
-                WHERE m.is_active = 1 AND COALESCE(ump.can_view, 0) = 1
-            ');
-            $stmt->execute([(int)$user['id']]);
-            $monitorCount = (int)$stmt->fetchColumn();
+        $input = getJSONInput();
+        if (!is_array($input)) {
+            $input = [];
         }
-        error_log("[MONITOR] Found $monitorCount active monitors");
-        
-        // Calculate time limit: allow for retry confirmation on failures (up to ~20s per monitor), min 60s, max 300s
-        $timeLimit = max(60, min(300, $monitorCount * 20));
-        set_time_limit($timeLimit);
-        error_log("[MONITOR] Set time limit to $timeLimit seconds");
-        
+
+        $engine = strtolower(trim((string)($input['engine'] ?? $_GET['engine'] ?? 'php')));
+        if (!in_array($engine, ['php', 'python'], true)) {
+            $engine = 'php';
+        }
+
+        $forceNotifyRules = false;
+        if (isset($input['force_notify_rules'])) {
+            $v = strtolower(trim((string)$input['force_notify_rules']));
+            $forceNotifyRules = in_array($v, ['1', 'true', 'yes', 'on'], true);
+        } elseif (isset($_GET['force_notify_rules'])) {
+            $v = strtolower(trim((string)$_GET['force_notify_rules']));
+            $forceNotifyRules = in_array($v, ['1', 'true', 'yes', 'on'], true);
+        }
+
         if (!empty($user['is_admin'])) {
             $stmt = $db->prepare('SELECT * FROM monitors WHERE is_active = 1');
             $stmt->execute();
@@ -1137,6 +2052,39 @@ function handleCheckAllMonitors() {
             $stmt->execute([(int)$user['id']]);
             $monitors = $stmt->fetchAll();
         }
+
+        $requestedIds = [];
+        if (isset($input['monitor_ids']) && is_array($input['monitor_ids'])) {
+            foreach ($input['monitor_ids'] as $rawId) {
+                $v = (int)$rawId;
+                if ($v > 0) {
+                    $requestedIds[$v] = true;
+                }
+            }
+        }
+        if ($requestedIds !== []) {
+            $monitors = array_values(array_filter($monitors, static function ($m) use ($requestedIds) {
+                return isset($requestedIds[(int)($m['id'] ?? 0)]);
+            }));
+            if ($monitors === []) {
+                sendJSON(['error' => 'No matching monitors to check'], 400);
+                return;
+            }
+        }
+
+        if ($engine === 'python') {
+            monitorCheckJobsHandleEnqueueAll($user, $monitors, $forceNotifyRules);
+            return;
+        }
+
+        $monitorCount = count($monitors);
+        error_log("[MONITOR] Found $monitorCount active monitors (engine=php)");
+        
+        // Calculate time limit: allow for retry confirmation on failures (up to ~20s per monitor), min 60s, max 300s
+        $timeLimit = max(60, min(300, $monitorCount * 20));
+        set_time_limit($timeLimit);
+        error_log("[MONITOR] Set time limit to $timeLimit seconds");
+        
         error_log("[MONITOR] Retrieved " . count($monitors) . " monitors to check");
         
         $results = [];
@@ -1204,7 +2152,8 @@ function handleCheckAllMonitors() {
         error_log("[MONITOR] Check complete - Total: $totalCount, Checked: $checkedCount, UP: $upCount, DOWN: $downCount, Errors: $errorCount");
         
         sendJSON([
-            'success' => true, 
+            'success' => true,
+            'engine' => 'php',
             'count' => $checkedCount, 
             'total' => $totalCount, 
             'up_count' => $upCount,
@@ -1260,142 +2209,13 @@ function handleDeleteAllMonitors() {
     requireAdmin(); // Only admins can delete all monitors
     $db = getDB();
     try {
+        $count = (int)$db->query('SELECT COUNT(*) FROM monitors')->fetchColumn();
         $db->exec('DELETE FROM monitors');
         $db->exec('DELETE FROM monitor_logs'); // Also clear logs
+        logMonitorAudit('monitor.deleted_all', ['count' => $count]);
         sendJSON(['success' => true]);
     } catch (PDOException $e) {
         sendJSON(['error' => 'Database error: ' . $e->getMessage()], 500);
-    }
-}
-
-function handleImportMonitors() {
-    requireAdmin(); // Only admins can import monitors
-    $data = getJSONInput();
-    if (!isset($data['monitors']) || !is_array($data['monitors'])) {
-        sendJSON(['error' => 'Invalid import data format'], 400);
-        return;
-    }
-    
-    $monitors = $data['monitors'];
-    $db = getDB();
-    $now = time();
-    $count = 0;
-    
-    try {
-        $db->beginTransaction();
-        
-        $stmt = $db->prepare('INSERT INTO monitors (
-            name, type, target, port, keyword, interval, 
-            is_active, email_notification, created_at, updated_at,
-            tab_name, group_name, maintenance_start, maintenance_end
-        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)');
-        
-        foreach ($monitors as $m) {
-            $stmt->execute([
-                $m['name'] ?? 'Imported Monitor',
-                $m['type'] ?? 'url',
-                $m['target'] ?? '',
-                isset($m['port']) ? (int)$m['port'] : null,
-                $m['keyword'] ?? null,
-                isset($m['interval']) ? (int)$m['interval'] : 5,
-                isset($m['is_active']) ? (int)$m['is_active'] : 1,
-                isset($m['email_notification']) ? (int)$m['email_notification'] : 0,
-                $now,
-                $now,
-                $m['tab_name'] ?? null,
-                $m['group_name'] ?? null,
-                isset($m['maintenance_start']) ? (int)$m['maintenance_start'] : null,
-                isset($m['maintenance_end']) ? (int)$m['maintenance_end'] : null
-            ]);
-            $count++;
-        }
-        
-        $db->commit();
-        sendJSON(['success' => true, 'count' => $count]);
-        
-    } catch (Exception $e) {
-        if ($db->inTransaction()) $db->rollBack();
-        sendJSON(['error' => 'Import failed: ' . $e->getMessage()], 500);
-    }
-}
-
-function handleImportCSV() {
-    requireAdmin(); // Only admins can import monitors
-    $data = getJSONInput();
-    if (!isset($data['csv']) || !is_string($data['csv'])) {
-        sendJSON(['error' => 'Invalid CSV data'], 400);
-        return;
-    }
-    
-    $lines = preg_split('/\r\n|\r|\n/', trim($data['csv']));
-    if (empty($lines)) {
-        sendJSON(['count' => 0]);
-        return;
-    }
-    
-    // Header row is optional, but if present, we skip it
-    $header = str_getcsv($lines[0]);
-    $startIndex = 0;
-    if (strtolower($header[0] ?? '') === 'name' || strtolower($header[0] ?? '') === 'monitor name') {
-        $startIndex = 1;
-    }
-    
-    $monitors = [];
-    for ($i = $startIndex; $i < count($lines); $i++) {
-        $row = str_getcsv($lines[$i]);
-        if (count($row) < 3) continue; // Minimal requirement: name, type, target
-        
-        $monitors[] = [
-            'name' => $row[0] ?? 'Imported',
-            'type' => strtolower($row[1] ?? 'url'),
-            'target' => $row[2] ?? '',
-            'port' => isset($row[3]) && is_numeric($row[3]) ? (int)$row[3] : null,
-            'keyword' => $row[4] ?? null,
-            'interval' => isset($row[5]) && is_numeric($row[5]) ? (int)$row[5] : 5,
-            'tab_name' => $row[6] ?? 'General',
-            'group_name' => $row[7] ?? 'Other'
-        ];
-    }
-    
-    $db = getDB();
-    $now = time();
-    $count = 0;
-    
-    try {
-        $db->beginTransaction();
-        
-        $stmt = $db->prepare('INSERT INTO monitors (
-            name, type, target, port, keyword, interval, 
-            is_active, email_notification, created_at, updated_at,
-            tab_name, group_name, maintenance_start, maintenance_end
-        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)');
-        
-        foreach ($monitors as $m) {
-            $stmt->execute([
-                $m['name'],
-                $m['type'],
-                $m['target'],
-                $m['port'],
-                $m['keyword'],
-                $m['interval'],
-                1, // is_active
-                0, // email_notification
-                $now,
-                $now,
-                $m['tab_name'],
-                $m['group_name'],
-                null, // maintenance_start
-                null  // maintenance_end
-            ]);
-            $count++;
-        }
-        
-        $db->commit();
-        sendJSON(['success' => true, 'count' => $count]);
-        
-    } catch (Exception $e) {
-        if ($db->inTransaction()) $db->rollBack();
-        sendJSON(['error' => 'Import failed: ' . $e->getMessage()], 500);
     }
 }
 
@@ -1411,6 +2231,12 @@ function handleUpdateTabName() {
     try {
         $stmt = $db->prepare("UPDATE monitors SET tab_name = ? WHERE tab_name = ?");
         $stmt->execute([$data['new_name'], $data['old_name']]);
+        $affected = (int)$stmt->rowCount();
+        logMonitorAudit('monitor.tab_renamed', [
+            'from' => (string)$data['old_name'],
+            'to' => (string)$data['new_name'],
+            'affected' => $affected,
+        ]);
         sendJSON(['success' => true]);
     } catch (PDOException $e) {
         sendJSON(['error' => 'Database error: ' . $e->getMessage()], 500);
@@ -1429,6 +2255,13 @@ function handleUpdateGroupName() {
     try {
         $stmt = $db->prepare("UPDATE monitors SET group_name = ? WHERE tab_name = ? AND group_name = ?");
         $stmt->execute([$data['new_name'], $data['tab_name'], $data['old_name']]);
+        $affected = (int)$stmt->rowCount();
+        logMonitorAudit('monitor.group_renamed', [
+            'tab_name' => (string)$data['tab_name'],
+            'from' => (string)$data['old_name'],
+            'to' => (string)$data['new_name'],
+            'affected' => $affected,
+        ]);
         sendJSON(['success' => true]);
     } catch (PDOException $e) {
         sendJSON(['error' => 'Database error: ' . $e->getMessage()], 500);

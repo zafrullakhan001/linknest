@@ -207,9 +207,10 @@ export const FloatingClock: React.FC<{
         {/* Drag handle (bigger + easier to grab, doesn't change clock layout) */}
         <button
           type="button"
-          className={`absolute -top-3 left-1/2 -translate-x-1/2 w-16 h-7 rounded-full shadow-md border border-blue-300/70 dark:border-blue-600/60 bg-blue-500/90 dark:bg-blue-600/90 backdrop-blur flex items-center justify-center text-white ${
+          className={`absolute -top-3 left-1/2 -translate-x-1/2 w-16 h-7 rounded-full shadow-md border border-blue-300/70 dark:border-blue-600/60 bg-blue-500/90 dark:bg-blue-600/90 backdrop-blur flex items-center justify-center text-white z-50 ${
             isDragging ? 'cursor-grabbing' : 'cursor-grab'
           }`}
+          style={{ zIndex: 50 }}
           onPointerDown={startDrag}
           title="Drag clock (grab here)"
           aria-label="Drag clock"
@@ -217,7 +218,9 @@ export const FloatingClock: React.FC<{
           <span className="text-[16px] leading-none tracking-widest flex items-center">⋮⋮⋮</span>
         </button>
 
-        {children}
+        <div className="pt-4">
+          {children}
+        </div>
       </div>
     </div>
   );

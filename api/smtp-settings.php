@@ -11,7 +11,8 @@ $method = $_SERVER['REQUEST_METHOD'];
 $path = $_SERVER['PATH_INFO'] ?? $_SERVER['REDIRECT_PATH_INFO'] ?? '';
 
 // Require authentication
-requireAuth();
+$AUTH_USER = requireAuth();
+$GLOBALS['AUTH_USER'] = $AUTH_USER;
 
 switch ($method) {
     case 'GET':
@@ -342,6 +343,8 @@ function handleTestConnection() {
     $data = getJSONInput();
     
     try {
+        $toOverride = trim((string)($data['to'] ?? $data['email'] ?? ''));
+
         // If testing an existing server by ID
         if (isset($data['server_id'])) {
             $db = getDB();
@@ -375,25 +378,16 @@ function handleTestConnection() {
                 }
             }
         }
-        
-        // Get current admin email as recipient
-        $db = getDB();
-        $stmt = $db->prepare('SELECT email FROM users WHERE is_admin = 1 LIMIT 1');
-        $stmt->execute();
-        $admin = $stmt->fetch();
-        
-        if (!$admin || empty($admin['email'])) {
-            throw new Exception("No admin email found to send test to");
+
+        // Recipient: optional override, else logged-in user email
+        $testEmail = $toOverride;
+        if ($testEmail === '') {
+            global $AUTH_USER;
+            $testEmail = trim((string)($AUTH_USER['email'] ?? ''));
         }
-        
-        // For Mercury mail server, convert email domain to 'localhost' if it ends with '.com' or other extensions
-        // Mercury typically accepts @localhost by default
-        $testEmail = $admin['email'];
-        if (preg_match('/^(.+)@(.+)\.(.+)$/', $testEmail, $matches)) {
-            // If email has a domain extension, try using just 'localhost' instead
-            // This works better with Mercury's default configuration
-            $username = $matches[1];
-            $testEmail = $username . '@localhost';
+        if ($testEmail === '' || !isValidEmailLocal($testEmail)) {
+            sendJSON(['success' => false, 'message' => 'A valid recipient email is required'], 400);
+            return;
         }
         
         // Get app_name from settings
@@ -412,14 +406,9 @@ function handleTestConnection() {
         );
         
         if ($result === true) {
-            sendJSON(['success' => true, 'message' => 'Test email sent successfully to ' . $testEmail . ' (converted from ' . $admin['email'] . ' for Mercury compatibility)']);
+            sendJSON(['success' => true, 'message' => 'Test email sent successfully to ' . $testEmail]);
         } else {
-            // If localhost conversion failed, provide helpful error message
-            $errorMsg = 'Failed to send email: ' . $result;
-            if (strpos($result, '550') !== false) {
-                $errorMsg .= ' | Tip: For Mercury mail server, use email addresses with @localhost domain (e.g., ' . $username . '@localhost) or add the user to Mercury via its web interface.';
-            }
-            sendJSON(['success' => false, 'message' => $errorMsg]);
+            sendJSON(['success' => false, 'message' => 'Failed to send email: ' . $result]);
         }
         
     } catch (Exception $e) {

@@ -4,18 +4,31 @@
     Deny from all
 </FilesMatch>
 
-# Allow only image files
-<FilesMatch "\.(jpg|jpeg|png|gif|svg|webp)$">
+# Media library: images, documents, audio, video
+<FilesMatch "\.(jpg|jpeg|png|gif|svg|webp|pdf|mp3|wav|ogg|m4a|mp4|webm|ogv|mov)$">
     Order Allow,Deny
     Allow from all
 </FilesMatch>
 
-# Set proper content types
+<IfModule mod_authz_core.c>
+    <FilesMatch "\.(jpg|jpeg|png|gif|svg|webp|pdf|mp3|wav|ogg|m4a|mp4|webm|ogv|mov)$">
+        Require all granted
+    </FilesMatch>
+</IfModule>
+
 <IfModule mod_mime.c>
     AddType image/jpeg .jpg .jpeg
     AddType image/png .png
     AddType image/gif .gif
     AddType image/svg+xml .svg
     AddType image/webp .webp
+    AddType application/pdf .pdf
+    AddType audio/mpeg .mp3
+    AddType audio/wav .wav
+    AddType audio/ogg .ogg
+    AddType audio/mp4 .m4a
+    AddType video/mp4 .mp4
+    AddType video/webm .webm
+    AddType video/ogg .ogv
+    AddType video/quicktime .mov
 </IfModule>
-

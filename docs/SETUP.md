@@ -8,19 +8,13 @@
 npm install
 ```
 
-### 2. Start Development Servers
+### 2. Start the app
 
-You need to run two servers:
-
-**Terminal 1 - PHP Backend:**
-```bash
-php -S localhost:8000 -t .
-```
-
-**Terminal 2 - Frontend (Vite):**
 ```bash
 npm run dev
 ```
+
+This starts Vite on port 3000 and PHP's built-in server on port 8000 (API + uploads). Apache is not required.
 
 ### 3. Access the Application
 
@@ -75,11 +69,30 @@ chmod 644 data/*.db
 Make sure the `data/` directory is writable for session storage.
 
 ### API Not Working
-- Check that PHP server is running on port 8000
-- Check browser console for CORS errors
+- `npm run dev` starts PHP on port 8000 automatically — check the terminal for `[linknest-php]`
+- Check browser console for CORS or 404 errors
 - Verify `.htaccess` is being read (Apache) or configure Nginx properly
 
 ## Production Deployment
 
 See `README_BACKEND.md` for production setup instructions.
+
+## Vanilla Apache + PHP 8.5 (Windows, not XAMPP)
+
+After a stock Apache install at `D:\Apache` and PHP 8.5 Thread Safe at `D:\php`, the files to change (`httpd.conf`, `php.ini`, DLLs, ACLs) are listed in [VANILLA_APACHE_PHP85_WINDOWS.md](VANILLA_APACHE_PHP85_WINDOWS.md).
+
+## Upgrade PHP on Windows XAMPP
+
+Official XAMPP packages may ship an older PHP (for example 8.2) while LinkNest runs well on newer releases such as **PHP 8.5**.
+
+Use the PowerShell upgrader (elevated when Apache is a Windows service):
+
+```powershell
+cd C:\xampp\htdocs\linknest
+.\scripts\upgrade-xampp-php-run-elevated.ps1 -Version 8.5 -RestartApache
+```
+
+The script downloads the official Thread Safe x64 build, verifies SHA256, checks **LDAP** before swapping, and keeps a `php-backup-*` folder for rollback.
+
+Full guide (also in Help → Guides): [XAMPP_PHP_UPGRADE.md](XAMPP_PHP_UPGRADE.md).
 

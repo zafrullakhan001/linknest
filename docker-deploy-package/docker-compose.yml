@@ -1,0 +1,56 @@
+# LinkNest Self-Deploying Docker Configuration
+# Single container deployment - everything (PHP, Apache, SQLite) in one container
+services:
+  linknest:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: linknest
+    ports:
+      - "8090:80"   # HTTP
+      - "8443:443"  # HTTPS
+    # Timezone: Automatically use host system timezone
+    # On Windows: Set TZ environment variable or it will use UTC
+    # On Linux/Mac: Will automatically detect from /etc/timezone or /etc/localtime if mounted
+    volumes:
+      - /etc/localtime:/etc/localtime:ro
+      - /etc/timezone:/etc/timezone:ro
+    environment:
+      # Timezone: Set TZ environment variable to match your system timezone
+      # Examples: TZ=America/New_York, TZ=Europe/London, TZ=Asia/Tokyo, TZ=UTC
+      # If not set, will try to detect from mounted /etc/timezone or use UTC
+      - TZ=${TZ:-America/New_York}
+      - APACHE_DOCUMENT_ROOT=/var/www/html
+      - PHP_MEMORY_LIMIT=256M
+      - PHP_MAX_EXECUTION_TIME=300
+      - PHP_UPLOAD_MAX_FILESIZE=10M
+      - PHP_POST_MAX_SIZE=10M
+      # In-container monitoring + email workers (Python)
+      - LINKNEST_WORKERS_ENABLED=1
+      - LINKNEST_WORKER_INTERVAL_SECONDS=60
+      - LINKNEST_DB_PATH=/var/www/html/data/linknest.db
+      - LINKNEST_WORKER_MAX_WORKERS=10
+      - LINKNEST_EMAIL_LIMIT=50
+      # Disable duplicate suppression by default (send every transition)
+      - LINKNEST_EMAIL_DEDUPE_WINDOW_SECONDS=0
+    depends_on:
+      - mailpit
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "curl", "-f", "-k", "https://localhost/api/settings"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 40s
+
+  # Dev/pilot SMTP server (no external mail provider required)
+  # Mailpit provides:
+  # - SMTP on port 1025
+  # - Web UI on port 8025
+  mailpit:
+    image: axllent/mailpit:latest
+    container_name: linknest-mailpit
+    ports:
+      - "1025:1025"  # SMTP
+      - "8025:8025"  # Web UI
+    restart: unless-stopped

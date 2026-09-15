@@ -114,8 +114,49 @@ switch ($method) {
         sendJSON(['error' => 'Method not allowed'], 405);
 }
 
+/**
+ * Normalize host for clone URL (fix common typos like locahost -> localhost).
+ * @param string $host HTTP_HOST value (e.g. "localhost", "locahost", "localhost:8000")
+ * @return string Normalized host
+ */
+function normalizeCloneHost($host) {
+    $host = trim($host);
+    if (strpos($host, ':') !== false) {
+        $parts = explode(':', $host, 2);
+        $parts[0] = normalizeCloneHost($parts[0]);
+        return $parts[0] . ':' . $parts[1];
+    }
+    $typos = ['locahost' => 'localhost', 'localhos' => 'localhost', 'localhot' => 'localhost', '127.0.0.1' => 'localhost'];
+    $lower = strtolower($host);
+    return $typos[$lower] ?? $host;
+}
+
+/**
+ * Abort with 403 when folder clone is not allowed on this runtime (WSL, or Docker without Node).
+ */
+function refuseCloneIfNotHost() {
+    $env = linknestGetCloneRuntimeEnvironment();
+    if (!$env['cloneAllowed']) {
+        sendJSON([
+            'error' => $env['message'],
+            'runtime' => $env['runtime'],
+            'cloneAllowed' => false,
+        ], 403);
+    }
+}
+
+function linknestCloneUnixWorkerCommand(string $scriptPath, $cloneId): string
+{
+    $cmd = 'nohup php ' . escapeshellarg($scriptPath) . ' ' . escapeshellarg((string) $cloneId) . ' > /dev/null 2>&1 &';
+    if (function_exists('linknestCloneIsDocker') && linknestCloneIsDocker()) {
+        $cmd = 'HOME=/var/www npm_config_strict_ssl=false NODE_TLS_REJECT_UNAUTHORIZED=0 LINKNEST_DOCKER=1 ' . $cmd;
+    }
+    return $cmd;
+}
+
 function handleClone() {
     requireAdmin();
+    refuseCloneIfNotHost();
     
     try {
         $data = getJSONInput();
@@ -131,12 +172,22 @@ function handleClone() {
         if (preg_match('/[<>:"|?*\/\\\\]/', $folderName)) {
             sendJSON(['error' => 'Invalid folder name. Cannot contain path separators or special characters'], 400);
         }
+        if (!preg_match('/^[A-Za-z0-9][A-Za-z0-9_-]*$/', $folderName)) {
+            sendJSON(['error' => 'Folder name must start with a letter or number and use only letters, numbers, hyphen, or underscore'], 400);
+        }
+        if (in_array(strtolower($folderName), linknestCloneReservedFolderNames(), true)) {
+            sendJSON(['error' => 'That folder name is reserved by the application'], 400);
+        }
         
         // Get paths
         $sourcePath = !empty($data['sourcePath']) ? trim($data['sourcePath']) : null;
         $targetPath = !empty($data['targetPath']) ? trim($data['targetPath']) : null;
         $copyAssets = isset($data['copyAssets']) && $data['copyAssets'] === true;
         $copyDatabase = isset($data['copyDatabase']) && $data['copyDatabase'] === true;
+        $preset = linknestNormalizeClonePreset($data['preset'] ?? null, $copyAssets, $copyDatabase);
+        $presetOpts = linknestClonePresetOptions($preset);
+        $copyAssets = $presetOpts['copyAssets'];
+        $copyDatabase = $presetOpts['copyDatabase'];
         $customUrl = !empty($data['url']) ? trim($data['url']) : null;
         
         // Default to project root if source not specified
@@ -153,7 +204,15 @@ function handleClone() {
         }
         
         // Default target path
-        if (!$targetPath) {
+        if (linknestCloneIsDocker()) {
+            $targetPath = linknestCloneDockerInstancesRoot();
+            if (!is_dir($targetPath)) {
+                @mkdir($targetPath, 0775, true);
+            }
+            if (!is_dir($targetPath) || !is_writable($targetPath)) {
+                sendJSON(['error' => 'Docker clone directory is not writable: ' . $targetPath], 500);
+            }
+        } elseif (!$targetPath) {
             $targetPath = dirname($sourcePath);
         } else {
             $targetPath = realpath($targetPath);
@@ -174,18 +233,28 @@ function handleClone() {
             if (!filter_var($customUrl, FILTER_VALIDATE_URL)) {
                 sendJSON(['error' => 'Invalid URL format'], 400);
             }
-            // Ensure URL ends with /
-            $url = rtrim($customUrl, '/') . '/';
+            // Normalize host in URL (fix typos like locahost -> localhost)
+            $parsed = parse_url($customUrl);
+            if (!empty($parsed['host'])) {
+                $fixedHost = normalizeCloneHost($parsed['host']);
+                $scheme = $parsed['scheme'] ?? 'http';
+                $port = isset($parsed['port']) ? ':' . $parsed['port'] : '';
+                $path = isset($parsed['path']) ? $parsed['path'] : '/';
+                $path = rtrim($path, '/') . '/';
+                $url = $scheme . '://' . $fixedHost . $port . $path;
+            } else {
+                $url = rtrim($customUrl, '/') . '/';
+            }
         } else {
-            // Default to localhost with folder name if not provided
-            $protocol = (!empty($_SERVER['HTTPS']) && $_SERVER['HTTPS'] !== 'off') ? 'https' : 'http';
-            $host = $_SERVER['HTTP_HOST'] ?? 'localhost';
-            $url = "$protocol://$host/$folderName/";
+            $url = function_exists('linknestClonePublicUrl')
+                ? linknestClonePublicUrl($folderName)
+                : (((!empty($_SERVER['HTTPS']) && $_SERVER['HTTPS'] !== 'off') ? 'https' : 'http')
+                    . '://' . normalizeCloneHost($_SERVER['HTTP_HOST'] ?? 'localhost') . "/$folderName/");
         }
         
         // Create clone record
         $db = getDB();
-        $stmt = $db->prepare('INSERT INTO clones (folder_name, source_path, target_path, full_path, url, status, progress, copy_assets, copy_database, created_at, created_by) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)');
+        $stmt = $db->prepare('INSERT INTO clones (folder_name, source_path, target_path, full_path, url, status, progress, copy_assets, copy_database, clone_preset, created_at, created_by) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)');
         
         $stmt->execute([
             $folderName,
@@ -197,6 +266,7 @@ function handleClone() {
             0,
             $copyAssets ? 1 : 0,
             $copyDatabase ? 1 : 0,
+            $preset,
             time(),
             $createdBy
         ]);
@@ -216,9 +286,8 @@ function handleClone() {
             pclose(popen($command, 'r'));
         } else {
             // Linux/Unix: Use nohup
-            $phpPath = PHP_BINARY;
             $scriptPath = __DIR__ . '/clone_worker.php';
-            $command = 'nohup php ' . escapeshellarg($scriptPath) . ' ' . escapeshellarg($cloneId) . ' > /dev/null 2>&1 &';
+            $command = linknestCloneUnixWorkerCommand($scriptPath, $cloneId);
             exec($command);
         }
         
@@ -272,33 +341,95 @@ function handleGetStatus() {
 }
 
 function handleGetCloneStatus($cloneId) {
-    requireAdmin();
-    
     $cloneId = (int)$cloneId;
-    $service = new CloneService($cloneId);
-    $status = $service->getStatus();
-    
-    if (!$status) {
-        // Try to get from database
+    $status = null;
+
+    try {
+        requireAdmin();
+    } catch (Throwable $e) {
+        // Auth failure: let it propagate (401/403)
+        throw $e;
+    }
+
+    // Try to get status from file first (avoids DB locks during cloning)
+    try {
+        if (class_exists('CloneService')) {
+            $service = new CloneService($cloneId, false);
+            $fileStatus = $service->getStatus();
+            if ($fileStatus && isset($fileStatus['step'])) {
+                $status = $fileStatus;
+                $status['id'] = $cloneId;
+            }
+        }
+    } catch (Throwable $e) {
+        // Ignore file read errors, fall back to DB (no 500)
+    }
+
+    if ($status) {
+        sendJSON($status);
+        return;
+    }
+
+    // Fallback to database; never return 500 so polling does not spam console
+    try {
         $db = getDB();
         $stmt = $db->prepare('SELECT * FROM clones WHERE id = ?');
         $stmt->execute([$cloneId]);
-        $clone = $stmt->fetch();
-        
+        $clone = $stmt->fetch(PDO::FETCH_ASSOC);
+
         if (!$clone) {
-            sendJSON(['error' => 'Clone not found'], 404);
+            // Clone not in DB (e.g. deleted): return complete so client stops polling
+            sendJSON([
+                'id' => $cloneId,
+                'step' => 'complete',
+                'progress' => 100,
+                'message' => 'Clone no longer available.',
+                'logs' => [],
+                'timestamp' => time()
+            ]);
+            return;
         }
-        
+
         $status = [
+            'id' => (int)$clone['id'],
             'step' => $clone['status'],
             'progress' => (int)$clone['progress'],
-            'message' => $clone['error_message'] ?? 'Processing...',
+            'message' => $clone['error_message'] ?? ($clone['status'] === 'completed' ? 'Clone completed successfully!' : 'Processing...'),
             'logs' => [],
             'timestamp' => $clone['completed_at'] ?? $clone['created_at']
         ];
+        sendJSON($status);
+    } catch (PDOException $dbError) {
+        if (strpos($dbError->getMessage(), 'locked') !== false || $dbError->getCode() === 'HY000') {
+            sendJSON([
+                'id' => $cloneId,
+                'step' => 'processing',
+                'progress' => 0,
+                'message' => 'Database is busy, retrying...',
+                'logs' => [['time' => date('H:i:s'), 'message' => 'Waiting for database lock...']]
+            ]);
+        } else {
+            error_log('Clone status DB error: ' . $dbError->getMessage());
+            sendJSON([
+                'id' => $cloneId,
+                'step' => 'processing',
+                'progress' => 0,
+                'message' => 'Checking status...',
+                'logs' => [['time' => date('H:i:s'), 'message' => 'Database busy, retrying...']],
+                'timestamp' => time()
+            ]);
+        }
+    } catch (Throwable $e) {
+        error_log('Clone status error: ' . $e->getMessage());
+        sendJSON([
+            'id' => $cloneId,
+            'step' => 'processing',
+            'progress' => 0,
+            'message' => 'Checking status...',
+            'logs' => [],
+            'timestamp' => time()
+        ]);
     }
-    
-    sendJSON($status);
 }
 
 function handleGetCloneList() {
@@ -341,7 +472,9 @@ function handleGetCloneList() {
                 $formatted[] = [
                     'id' => (int)$clone['id'],
                     'folderName' => $clone['folder_name'],
-                    'url' => $clone['url'],
+                    'url' => (function_exists('linknestRewriteDockerCloneUrl')
+                        ? linknestRewriteDockerCloneUrl((string) ($clone['url'] ?? ''), (string) ($clone['folder_name'] ?? ''))
+                        : $clone['url']),
                     'status' => $clone['status'],
                     'progress' => (int)$clone['progress'],
                     'createdAt' => (int)$clone['created_at'],
@@ -349,6 +482,7 @@ function handleGetCloneList() {
                     'errorMessage' => $clone['error_message'],
                     'copyAssets' => (bool)$clone['copy_assets'],
                     'copyDatabase' => (bool)$clone['copy_database'],
+                    'preset' => linknestNormalizeClonePreset($clone['clone_preset'] ?? null, (bool)$clone['copy_assets'], (bool)$clone['copy_database']),
                     'sourcePath' => $clone['source_path'],
                     'targetPath' => $clone['target_path']
                 ];
@@ -422,7 +556,9 @@ function handleGetCurrentPath() {
         }
         
         $targetPath = dirname($currentPath);
-        if (!$targetPath || $targetPath === $currentPath) {
+        if (function_exists('linknestCloneIsDocker') && linknestCloneIsDocker()) {
+            $targetPath = linknestCloneDockerInstancesRoot();
+        } elseif (!$targetPath || $targetPath === $currentPath) {
             // Fallback to common XAMPP structure
             $targetPath = 'C:\\xampp\\htdocs';
             error_log("handleGetCurrentPath: Using fallback target path: $targetPath");
@@ -430,10 +566,14 @@ function handleGetCurrentPath() {
         
         error_log("handleGetCurrentPath: currentPath=$currentPath, targetPath=$targetPath");
         
+        $runtimeEnv = linknestGetCloneRuntimeEnvironment();
         sendJSON([
             'currentPath' => $currentPath,
             'sourcePath' => $currentPath,
-            'targetPath' => $targetPath
+            'targetPath' => $targetPath,
+            'runtime' => $runtimeEnv['runtime'],
+            'cloneAllowed' => $runtimeEnv['cloneAllowed'],
+            'message' => $runtimeEnv['message'],
         ]);
     } catch (Exception $e) {
         $errorMsg = 'Failed to get current path: ' . $e->getMessage();
@@ -486,11 +626,14 @@ function handleGetClone($cloneId) {
         'folderName' => $clone['folder_name'],
         'sourcePath' => $clone['source_path'],
         'targetPath' => $clone['target_path'],
-        'url' => $clone['url'],
+        'url' => (function_exists('linknestRewriteDockerCloneUrl')
+            ? linknestRewriteDockerCloneUrl((string) ($clone['url'] ?? ''), (string) ($clone['folder_name'] ?? ''))
+            : $clone['url']),
         'status' => $clone['status'],
         'progress' => (int)$clone['progress'],
         'copyAssets' => (bool)$clone['copy_assets'],
         'copyDatabase' => (bool)$clone['copy_database'],
+        'preset' => linknestNormalizeClonePreset($clone['clone_preset'] ?? null, (bool)$clone['copy_assets'], (bool)$clone['copy_database']),
         'createdAt' => (int)$clone['created_at'],
         'completedAt' => $clone['completed_at'] ? (int)$clone['completed_at'] : null,
         'errorMessage' => $clone['error_message']
@@ -533,14 +676,19 @@ function handleUpdateClone($cloneId) {
         $params[] = trim($data['targetPath']);
     }
     
-    if (isset($data['copyAssets'])) {
+    if (isset($data['preset']) || isset($data['copyAssets']) || isset($data['copyDatabase'])) {
+        $preset = linknestNormalizeClonePreset(
+            $data['preset'] ?? ($clone['clone_preset'] ?? null),
+            isset($data['copyAssets']) ? (bool)$data['copyAssets'] : (bool)$clone['copy_assets'],
+            isset($data['copyDatabase']) ? (bool)$data['copyDatabase'] : (bool)$clone['copy_database']
+        );
+        $presetOpts = linknestClonePresetOptions($preset);
+        $updates[] = 'clone_preset = ?';
+        $params[] = $preset;
         $updates[] = 'copy_assets = ?';
-        $params[] = $data['copyAssets'] ? 1 : 0;
-    }
-    
-    if (isset($data['copyDatabase'])) {
+        $params[] = $presetOpts['copyAssets'] ? 1 : 0;
         $updates[] = 'copy_database = ?';
-        $params[] = $data['copyDatabase'] ? 1 : 0;
+        $params[] = $presetOpts['copyDatabase'] ? 1 : 0;
     }
     
     if (isset($data['url'])) {
@@ -561,9 +709,10 @@ function handleUpdateClone($cloneId) {
     
     // Update URL if folder name changed (only if URL not explicitly provided)
     if (isset($data['folderName']) && !isset($data['url'])) {
-        $protocol = (!empty($_SERVER['HTTPS']) && $_SERVER['HTTPS'] !== 'off') ? 'https' : 'http';
-        $host = $_SERVER['HTTP_HOST'] ?? 'localhost';
-        $newUrl = "$protocol://$host/" . trim($data['folderName']) . "/";
+        $newUrl = function_exists('linknestClonePublicUrl')
+            ? linknestClonePublicUrl(trim($data['folderName']))
+            : (( (!empty($_SERVER['HTTPS']) && $_SERVER['HTTPS'] !== 'off') ? 'https' : 'http')
+                . '://' . normalizeCloneHost($_SERVER['HTTP_HOST'] ?? 'localhost') . '/' . trim($data['folderName']) . '/');
         $updates[] = 'url = ?';
         $params[] = $newUrl;
     }
@@ -759,6 +908,7 @@ function handleDeleteClone($cloneId) {
 
 function handleRerunClone($cloneId) {
     requireAdmin();
+    refuseCloneIfNotHost();
     
     $cloneId = (int)$cloneId;
     $db = getDB();
@@ -789,9 +939,8 @@ function handleRerunClone($cloneId) {
         $command = 'start /B php ' . escapeshellarg($scriptPath) . ' ' . escapeshellarg($cloneId) . ' > NUL 2>&1';
         pclose(popen($command, 'r'));
     } else {
-        $phpPath = PHP_BINARY;
         $scriptPath = __DIR__ . '/clone_worker.php';
-        $command = 'nohup php ' . escapeshellarg($scriptPath) . ' ' . escapeshellarg($cloneId) . ' > /dev/null 2>&1 &';
+        $command = linknestCloneUnixWorkerCommand($scriptPath, $cloneId);
         exec($command);
     }
     
@@ -805,9 +954,33 @@ function handleRerunClone($cloneId) {
 function handlePrechecks() {
     requireAdmin();
     
+    $runtimeEnv = linknestGetCloneRuntimeEnvironment();
     $results = [
-        'allGood' => true,
+        'allGood' => $runtimeEnv['cloneAllowed'],
+        'runtime' => $runtimeEnv['runtime'],
+        'cloneAllowed' => $runtimeEnv['cloneAllowed'],
+        'message' => $runtimeEnv['message'],
         'checks' => []
+    ];
+
+    $runtimeLabel = $runtimeEnv['runtime'] === 'host'
+        ? 'Host'
+        : ($runtimeEnv['runtime'] === 'docker' ? 'Docker' : 'WSL');
+    $results['checks'][] = [
+        'category' => 'Runtime Environment',
+        'items' => [[
+            'name' => 'Clone availability',
+            'value' => $runtimeLabel,
+            'status' => $runtimeEnv['cloneAllowed'] ? 'pass' : 'fail',
+            'message' => $runtimeEnv['cloneAllowed']
+                ? ($runtimeEnv['runtime'] === 'docker'
+                    ? 'Docker — clones are served at /{folder}/ from /var/www/clones'
+                    : 'Host instance — folder clone is available')
+                : ($runtimeEnv['message'] ?? linknestCloneUnavailableMessage()),
+            'description' => $runtimeEnv['runtime'] === 'docker'
+                ? 'Folder clone writes to /var/www/clones and is served on the same HTTP port'
+                : 'Folder clone is supported on host installs and Docker (with Node.js); not WSL',
+        ]],
     ];
     
     // PHP Configuration

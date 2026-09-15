@@ -8,6 +8,8 @@ switch ($method) {
     case 'GET':
         if ($path === '' || $path === '/') {
             handleGetPermissions();
+        } elseif (preg_match('#^/batch$#', $path)) {
+            handleGetBatchPermissions();
         } elseif (preg_match('#^/tile/([^/]+)$#', $path, $matches)) {
             handleGetTilePermissions($matches[1]);
         } elseif (preg_match('#^/user/(\d+)$#', $path, $matches)) {
@@ -20,6 +22,8 @@ switch ($method) {
     case 'POST':
         if ($path === '' || $path === '/') {
             handleSetPermission();
+        } elseif ($path === '/transfer-ownership') {
+            handleTransferOwnership();
         } else {
             sendJSON(['error' => 'Invalid endpoint'], 404);
         }
@@ -56,6 +60,17 @@ function handleGetPermissions() {
             utp.can_view,
             utp.can_edit,
             utp.can_delete,
+            utp.can_add_links,
+            utp.can_add_sections,
+            utp.can_add_tabs,
+            utp.can_edit_links,
+            utp.can_delete_links,
+            utp.can_delete_sections,
+            utp.can_delete_tabs,
+            utp.can_change_visibility,
+            utp.can_change_browser,
+            utp.can_clone_tile,
+            utp.can_view_tile_info,
             utp.created_at,
             utp.updated_at,
             u.username,
@@ -76,6 +91,17 @@ function handleGetPermissions() {
             'canView' => (bool)$row['can_view'],
             'canEdit' => (bool)$row['can_edit'],
             'canDelete' => (bool)$row['can_delete'],
+            'canAddLinks' => isset($row['can_add_links']) ? (bool)$row['can_add_links'] : (bool)$row['can_edit'],
+            'canAddSections' => isset($row['can_add_sections']) ? (bool)$row['can_add_sections'] : (bool)$row['can_edit'],
+            'canAddTabs' => isset($row['can_add_tabs']) ? (bool)$row['can_add_tabs'] : (bool)$row['can_edit'],
+            'canEditLinks' => isset($row['can_edit_links']) ? (bool)$row['can_edit_links'] : (bool)$row['can_edit'],
+            'canDeleteLinks' => isset($row['can_delete_links']) ? (bool)$row['can_delete_links'] : false,
+            'canDeleteSections' => isset($row['can_delete_sections']) ? (bool)$row['can_delete_sections'] : false,
+            'canDeleteTabs' => isset($row['can_delete_tabs']) ? (bool)$row['can_delete_tabs'] : false,
+            'canChangeVisibility' => isset($row['can_change_visibility']) ? (bool)$row['can_change_visibility'] : false,
+            'canChangeBrowser' => isset($row['can_change_browser']) ? (bool)$row['can_change_browser'] : false,
+            'canCloneTile' => isset($row['can_clone_tile']) ? (bool)$row['can_clone_tile'] : false,
+            'canViewTileInfo' => isset($row['can_view_tile_info']) ? (bool)$row['can_view_tile_info'] : true,
             'createdAt' => (int)$row['created_at'],
             'updatedAt' => (int)$row['updated_at'],
             'username' => $row['username'],
@@ -85,6 +111,82 @@ function handleGetPermissions() {
     }
     
     sendJSON($permissions);
+}
+
+function handleGetBatchPermissions() {
+    requireAdmin();
+    $db = getDB();
+    
+    // Get all tile permissions in a single optimized query, grouped by tile_id
+    $stmt = $db->prepare('
+        SELECT 
+            utp.tile_id,
+            utp.user_id,
+            utp.can_view,
+            utp.can_edit,
+            utp.can_delete,
+            utp.can_add_links,
+            utp.can_add_sections,
+            utp.can_add_tabs,
+            utp.can_edit_links,
+            utp.can_delete_links,
+            utp.can_delete_sections,
+            utp.can_delete_tabs,
+            utp.can_change_visibility,
+            utp.can_change_browser,
+            utp.can_clone_tile,
+            utp.can_view_tile_info,
+            utp.created_at,
+            utp.updated_at,
+            u.username,
+            u.email,
+            t.title as tile_title
+        FROM user_tile_permissions utp
+        INNER JOIN users u ON utp.user_id = u.id
+        INNER JOIN tiles t ON utp.tile_id = t.id
+        ORDER BY utp.tile_id, u.username
+    ');
+    $stmt->execute();
+    
+    // Group permissions by tile_id
+    $permissionsByTile = [];
+    while ($row = $stmt->fetch()) {
+        $tileId = $row['tile_id'];
+        if (!isset($permissionsByTile[$tileId])) {
+            $permissionsByTile[$tileId] = [
+                'tileId' => $tileId,
+                'tileTitle' => $row['tile_title'],
+                'permissions' => []
+            ];
+        }
+        
+        $permissionsByTile[$tileId]['permissions'][] = [
+            'userId' => (int)$row['user_id'],
+            'canView' => (bool)$row['can_view'],
+            'canEdit' => (bool)$row['can_edit'],
+            'canDelete' => (bool)$row['can_delete'],
+            'canAddLinks' => isset($row['can_add_links']) ? (bool)$row['can_add_links'] : (bool)$row['can_edit'],
+            'canAddSections' => isset($row['can_add_sections']) ? (bool)$row['can_add_sections'] : (bool)$row['can_edit'],
+            'canAddTabs' => isset($row['can_add_tabs']) ? (bool)$row['can_add_tabs'] : (bool)$row['can_edit'],
+            'canEditLinks' => isset($row['can_edit_links']) ? (bool)$row['can_edit_links'] : (bool)$row['can_edit'],
+            'canDeleteLinks' => isset($row['can_delete_links']) ? (bool)$row['can_delete_links'] : false,
+            'canDeleteSections' => isset($row['can_delete_sections']) ? (bool)$row['can_delete_sections'] : false,
+            'canDeleteTabs' => isset($row['can_delete_tabs']) ? (bool)$row['can_delete_tabs'] : false,
+            'canChangeVisibility' => isset($row['can_change_visibility']) ? (bool)$row['can_change_visibility'] : false,
+            'canChangeBrowser' => isset($row['can_change_browser']) ? (bool)$row['can_change_browser'] : false,
+            'canCloneTile' => isset($row['can_clone_tile']) ? (bool)$row['can_clone_tile'] : false,
+            'canViewTileInfo' => isset($row['can_view_tile_info']) ? (bool)$row['can_view_tile_info'] : true,
+            'createdAt' => (int)$row['created_at'],
+            'updatedAt' => (int)$row['updated_at'],
+            'username' => $row['username'],
+            'email' => $row['email']
+        ];
+    }
+    
+    // Convert to array format for JSON response
+    $result = array_values($permissionsByTile);
+    
+    sendJSON($result);
 }
 
 function handleGetTilePermissions($tileId) {
@@ -106,6 +208,18 @@ function handleGetTilePermissions($tileId) {
             utp.can_view,
             utp.can_edit,
             utp.can_delete,
+            utp.can_add_links,
+            utp.can_add_sections,
+            utp.can_add_tabs,
+            utp.can_edit_links,
+            utp.can_delete_links,
+            utp.can_delete_sections,
+            utp.can_delete_tabs,
+            utp.can_change_visibility,
+            utp.can_change_browser,
+            utp.can_clone_tile,
+            utp.can_view_tile_info,
+            utp.can_edit_tile,
             utp.created_at,
             utp.updated_at,
             u.username,
@@ -124,6 +238,18 @@ function handleGetTilePermissions($tileId) {
             'canView' => (bool)$row['can_view'],
             'canEdit' => (bool)$row['can_edit'],
             'canDelete' => (bool)$row['can_delete'],
+            'canAddLinks' => isset($row['can_add_links']) ? (bool)$row['can_add_links'] : (bool)$row['can_edit'],
+            'canAddSections' => isset($row['can_add_sections']) ? (bool)$row['can_add_sections'] : (bool)$row['can_edit'],
+            'canAddTabs' => isset($row['can_add_tabs']) ? (bool)$row['can_add_tabs'] : (bool)$row['can_edit'],
+            'canEditLinks' => isset($row['can_edit_links']) ? (bool)$row['can_edit_links'] : (bool)$row['can_edit'],
+            'canDeleteLinks' => isset($row['can_delete_links']) ? (bool)$row['can_delete_links'] : false,
+            'canDeleteSections' => isset($row['can_delete_sections']) ? (bool)$row['can_delete_sections'] : false,
+            'canDeleteTabs' => isset($row['can_delete_tabs']) ? (bool)$row['can_delete_tabs'] : false,
+            'canChangeVisibility' => isset($row['can_change_visibility']) ? (bool)$row['can_change_visibility'] : false,
+            'canChangeBrowser' => isset($row['can_change_browser']) ? (bool)$row['can_change_browser'] : false,
+            'canCloneTile' => isset($row['can_clone_tile']) ? (bool)$row['can_clone_tile'] : false,
+            'canViewTileInfo' => isset($row['can_view_tile_info']) ? (bool)$row['can_view_tile_info'] : true,
+            'canEditTile' => isset($row['can_edit_tile']) ? (bool)$row['can_edit_tile'] : true,
             'createdAt' => (int)$row['created_at'],
             'updatedAt' => (int)$row['updated_at'],
             'username' => $row['username'],
@@ -157,6 +283,18 @@ function handleGetUserPermissions($userId) {
             utp.can_view,
             utp.can_edit,
             utp.can_delete,
+            utp.can_add_links,
+            utp.can_add_sections,
+            utp.can_add_tabs,
+            utp.can_edit_links,
+            utp.can_delete_links,
+            utp.can_delete_sections,
+            utp.can_delete_tabs,
+            utp.can_change_visibility,
+            utp.can_change_browser,
+            utp.can_clone_tile,
+            utp.can_view_tile_info,
+            utp.can_edit_tile,
             utp.created_at,
             utp.updated_at,
             t.title as tile_title
@@ -174,6 +312,18 @@ function handleGetUserPermissions($userId) {
             'canView' => (bool)$row['can_view'],
             'canEdit' => (bool)$row['can_edit'],
             'canDelete' => (bool)$row['can_delete'],
+            'canAddLinks' => isset($row['can_add_links']) ? (bool)$row['can_add_links'] : (bool)$row['can_edit'],
+            'canAddSections' => isset($row['can_add_sections']) ? (bool)$row['can_add_sections'] : (bool)$row['can_edit'],
+            'canAddTabs' => isset($row['can_add_tabs']) ? (bool)$row['can_add_tabs'] : (bool)$row['can_edit'],
+            'canEditLinks' => isset($row['can_edit_links']) ? (bool)$row['can_edit_links'] : (bool)$row['can_edit'],
+            'canDeleteLinks' => isset($row['can_delete_links']) ? (bool)$row['can_delete_links'] : false,
+            'canDeleteSections' => isset($row['can_delete_sections']) ? (bool)$row['can_delete_sections'] : false,
+            'canDeleteTabs' => isset($row['can_delete_tabs']) ? (bool)$row['can_delete_tabs'] : false,
+            'canChangeVisibility' => isset($row['can_change_visibility']) ? (bool)$row['can_change_visibility'] : false,
+            'canChangeBrowser' => isset($row['can_change_browser']) ? (bool)$row['can_change_browser'] : false,
+            'canCloneTile' => isset($row['can_clone_tile']) ? (bool)$row['can_clone_tile'] : false,
+            'canViewTileInfo' => isset($row['can_view_tile_info']) ? (bool)$row['can_view_tile_info'] : true,
+            'canEditTile' => isset($row['can_edit_tile']) ? (bool)$row['can_edit_tile'] : true,
             'createdAt' => (int)$row['created_at'],
             'updatedAt' => (int)$row['updated_at'],
             'tileTitle' => $row['tile_title']
@@ -202,6 +352,20 @@ function handleSetPermission() {
     $canEdit = isset($data['canEdit']) ? (int)(bool)$data['canEdit'] : 0;
     $canDelete = isset($data['canDelete']) ? (int)(bool)$data['canDelete'] : 0;
     
+    // Granular permissions (defaults for tile admins)
+    $canAddLinks = isset($data['canAddLinks']) ? (int)(bool)$data['canAddLinks'] : ($canEdit ? 1 : 0);
+    $canAddSections = isset($data['canAddSections']) ? (int)(bool)$data['canAddSections'] : ($canEdit ? 1 : 0);
+    $canAddTabs = isset($data['canAddTabs']) ? (int)(bool)$data['canAddTabs'] : ($canEdit ? 1 : 0);
+    $canEditLinks = isset($data['canEditLinks']) ? (int)(bool)$data['canEditLinks'] : ($canEdit ? 1 : 0);
+    $canDeleteLinks = isset($data['canDeleteLinks']) ? (int)(bool)$data['canDeleteLinks'] : 0;
+    $canDeleteSections = isset($data['canDeleteSections']) ? (int)(bool)$data['canDeleteSections'] : 0;
+    $canDeleteTabs = isset($data['canDeleteTabs']) ? (int)(bool)$data['canDeleteTabs'] : 0;
+    $canChangeVisibility = isset($data['canChangeVisibility']) ? (int)(bool)$data['canChangeVisibility'] : 0;
+    $canChangeBrowser = isset($data['canChangeBrowser']) ? (int)(bool)$data['canChangeBrowser'] : 0;
+    $canCloneTile = isset($data['canCloneTile']) ? (int)(bool)$data['canCloneTile'] : 0;
+    $canViewTileInfo = isset($data['canViewTileInfo']) ? (int)(bool)$data['canViewTileInfo'] : ($canEdit ? 1 : 0);
+    $canEditTile = isset($data['canEditTile']) ? (int)(bool)$data['canEditTile'] : ($canEdit ? 1 : 0);
+    
     $db = getDB();
     
     // Verify user exists
@@ -228,17 +392,39 @@ function handleSetPermission() {
         // Update existing permission
         $stmt = $db->prepare('
             UPDATE user_tile_permissions 
-            SET can_view = ?, can_edit = ?, can_delete = ?, updated_at = ?
+            SET can_view = ?, can_edit = ?, can_delete = ?,
+                can_add_links = ?, can_add_sections = ?, can_add_tabs = ?,
+                can_edit_links = ?, can_delete_links = ?, can_delete_sections = ?, can_delete_tabs = ?,
+                can_change_visibility = ?, can_change_browser = ?, can_clone_tile = ?, can_view_tile_info = ?, can_edit_tile = ?,
+                updated_at = ?
             WHERE user_id = ? AND tile_id = ?
         ');
-        $stmt->execute([$canView, $canEdit, $canDelete, $currentTime, $userId, $tileId]);
+        $stmt->execute([
+            $canView, $canEdit, $canDelete,
+            $canAddLinks, $canAddSections, $canAddTabs,
+            $canEditLinks, $canDeleteLinks, $canDeleteSections, $canDeleteTabs,
+            $canChangeVisibility, $canChangeBrowser, $canCloneTile, $canViewTileInfo, $canEditTile,
+            $currentTime, $userId, $tileId
+        ]);
     } else {
         // Insert new permission
         $stmt = $db->prepare('
-            INSERT INTO user_tile_permissions (user_id, tile_id, can_view, can_edit, can_delete, created_at, updated_at)
-            VALUES (?, ?, ?, ?, ?, ?, ?)
+            INSERT INTO user_tile_permissions (
+                user_id, tile_id, can_view, can_edit, can_delete,
+                can_add_links, can_add_sections, can_add_tabs,
+                can_edit_links, can_delete_links, can_delete_sections, can_delete_tabs,
+                can_change_visibility, can_change_browser, can_clone_tile, can_view_tile_info, can_edit_tile,
+                created_at, updated_at
+            )
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
         ');
-        $stmt->execute([$userId, $tileId, $canView, $canEdit, $canDelete, $currentTime, $currentTime]);
+        $stmt->execute([
+            $userId, $tileId, $canView, $canEdit, $canDelete,
+            $canAddLinks, $canAddSections, $canAddTabs,
+            $canEditLinks, $canDeleteLinks, $canDeleteSections, $canDeleteTabs,
+            $canChangeVisibility, $canChangeBrowser, $canCloneTile, $canViewTileInfo, $canEditTile,
+            $currentTime, $currentTime
+        ]);
     }
     
     sendJSON(['success' => true]);
@@ -261,15 +447,39 @@ function handleUpdatePermission($permissionId) {
     $canEdit = isset($data['canEdit']) ? (int)(bool)$data['canEdit'] : 0;
     $canDelete = isset($data['canDelete']) ? (int)(bool)$data['canDelete'] : 0;
     
+    // Granular permissions
+    $canAddLinks = isset($data['canAddLinks']) ? (int)(bool)$data['canAddLinks'] : ($canEdit ? 1 : 0);
+    $canAddSections = isset($data['canAddSections']) ? (int)(bool)$data['canAddSections'] : ($canEdit ? 1 : 0);
+    $canAddTabs = isset($data['canAddTabs']) ? (int)(bool)$data['canAddTabs'] : ($canEdit ? 1 : 0);
+    $canEditLinks = isset($data['canEditLinks']) ? (int)(bool)$data['canEditLinks'] : ($canEdit ? 1 : 0);
+    $canDeleteLinks = isset($data['canDeleteLinks']) ? (int)(bool)$data['canDeleteLinks'] : 0;
+    $canDeleteSections = isset($data['canDeleteSections']) ? (int)(bool)$data['canDeleteSections'] : 0;
+    $canDeleteTabs = isset($data['canDeleteTabs']) ? (int)(bool)$data['canDeleteTabs'] : 0;
+    $canChangeVisibility = isset($data['canChangeVisibility']) ? (int)(bool)$data['canChangeVisibility'] : 0;
+    $canChangeBrowser = isset($data['canChangeBrowser']) ? (int)(bool)$data['canChangeBrowser'] : 0;
+    $canCloneTile = isset($data['canCloneTile']) ? (int)(bool)$data['canCloneTile'] : 0;
+    $canViewTileInfo = isset($data['canViewTileInfo']) ? (int)(bool)$data['canViewTileInfo'] : ($canEdit ? 1 : 0);
+    $canEditTile = isset($data['canEditTile']) ? (int)(bool)$data['canEditTile'] : ($canEdit ? 1 : 0);
+    
     $db = getDB();
     $currentTime = time();
     
     $stmt = $db->prepare('
         UPDATE user_tile_permissions 
-        SET can_view = ?, can_edit = ?, can_delete = ?, updated_at = ?
+        SET can_view = ?, can_edit = ?, can_delete = ?,
+            can_add_links = ?, can_add_sections = ?, can_add_tabs = ?,
+            can_edit_links = ?, can_delete_links = ?, can_delete_sections = ?, can_delete_tabs = ?,
+            can_change_visibility = ?, can_change_browser = ?, can_clone_tile = ?, can_view_tile_info = ?, can_edit_tile = ?,
+            updated_at = ?
         WHERE user_id = ? AND tile_id = ?
     ');
-    $stmt->execute([$canView, $canEdit, $canDelete, $currentTime, $userId, $tileId]);
+    $stmt->execute([
+        $canView, $canEdit, $canDelete,
+        $canAddLinks, $canAddSections, $canAddTabs,
+        $canEditLinks, $canDeleteLinks, $canDeleteSections, $canDeleteTabs,
+        $canChangeVisibility, $canChangeBrowser, $canCloneTile, $canViewTileInfo, $canEditTile,
+        $currentTime, $userId, $tileId
+    ]);
     
     if ($stmt->rowCount() === 0) {
         sendJSON(['error' => 'Permission not found'], 404);
@@ -302,5 +512,134 @@ function handleDeletePermission($permissionId) {
     sendJSON(['success' => true]);
 }
 
+/**
+ * System-admin only: transfer space ownership to another user.
+ * Optionally keeps the previous owner as a space editor.
+ */
+function handleTransferOwnership() {
+    requireAdmin();
+    $data = getJSONInput();
+
+    $tileId = isset($data['tileId']) ? trim((string)$data['tileId']) : '';
+    $newOwnerUserId = isset($data['newOwnerUserId']) ? (int)$data['newOwnerUserId'] : 0;
+    $keepPreviousOwnerAsEditor = !isset($data['keepPreviousOwnerAsEditor']) || (bool)$data['keepPreviousOwnerAsEditor'];
+
+    if ($tileId === '' || $newOwnerUserId <= 0) {
+        sendJSON(['error' => 'tileId and newOwnerUserId are required'], 400);
+    }
+
+    $db = getDB();
+
+    $tileStmt = $db->prepare('SELECT id, user_id, visibility, allowed_users FROM tiles WHERE id = ? AND deleted_at IS NULL');
+    $tileStmt->execute([$tileId]);
+    $tile = $tileStmt->fetch(PDO::FETCH_ASSOC);
+    if (!$tile) {
+        sendJSON(['error' => 'Tile not found'], 404);
+    }
+
+    $userStmt = $db->prepare('SELECT id, username FROM users WHERE id = ?');
+    $userStmt->execute([$newOwnerUserId]);
+    $newOwner = $userStmt->fetch(PDO::FETCH_ASSOC);
+    if (!$newOwner) {
+        sendJSON(['error' => 'New owner user not found'], 404);
+    }
+
+    $previousOwnerId = isset($tile['user_id']) ? (int)$tile['user_id'] : null;
+    if ($previousOwnerId === $newOwnerUserId) {
+        sendJSON(['error' => 'User is already the owner of this space'], 400);
+    }
+
+    $now = time();
+    $startedTx = false;
+    if (!$db->inTransaction()) {
+        $db->beginTransaction();
+        $startedTx = true;
+    }
+
+    try {
+        $upd = $db->prepare('UPDATE tiles SET user_id = ? WHERE id = ?');
+        $upd->execute([$newOwnerUserId, $tileId]);
+
+        // Ensure new owner has full editor permissions
+        $checkNew = $db->prepare('SELECT user_id FROM user_tile_permissions WHERE user_id = ? AND tile_id = ?');
+        $checkNew->execute([$newOwnerUserId, $tileId]);
+        if ($checkNew->fetch()) {
+            $fullUpd = $db->prepare('
+                UPDATE user_tile_permissions SET
+                    can_view = 1, can_edit = 1, can_delete = 1,
+                    can_add_links = 1, can_add_sections = 1, can_add_tabs = 1,
+                    can_edit_links = 1, can_delete_links = 1, can_delete_sections = 1, can_delete_tabs = 1,
+                    can_change_visibility = 1, can_change_browser = 1, can_clone_tile = 1,
+                    can_view_tile_info = 1, can_edit_tile = 1, updated_at = ?
+                WHERE user_id = ? AND tile_id = ?
+            ');
+            $fullUpd->execute([$now, $newOwnerUserId, $tileId]);
+        } else {
+            $fullIns = $db->prepare('
+                INSERT INTO user_tile_permissions (
+                    user_id, tile_id, can_view, can_edit, can_delete,
+                    can_add_links, can_add_sections, can_add_tabs,
+                    can_edit_links, can_delete_links, can_delete_sections, can_delete_tabs,
+                    can_change_visibility, can_change_browser, can_clone_tile, can_view_tile_info, can_edit_tile,
+                    created_at, updated_at
+                ) VALUES (?, ?, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, ?, ?)
+            ');
+            $fullIns->execute([$newOwnerUserId, $tileId, $now, $now]);
+        }
+
+        // Private spaces: ensure new owner is in allowed_users
+        if (($tile['visibility'] ?? 'public') === 'private') {
+            $allowed = $tile['allowed_users'] ? json_decode($tile['allowed_users'], true) : [];
+            if (!is_array($allowed)) {
+                $allowed = [];
+            }
+            $allowedInts = array_map('intval', $allowed);
+            if (!in_array($newOwnerUserId, $allowedInts, true)) {
+                $allowedInts[] = $newOwnerUserId;
+            }
+            $allowedStmt = $db->prepare('UPDATE tiles SET allowed_users = ? WHERE id = ?');
+            $allowedStmt->execute([json_encode(array_values(array_unique($allowedInts))), $tileId]);
+        }
+
+        if ($previousOwnerId && !$keepPreviousOwnerAsEditor) {
+            $delPrev = $db->prepare('DELETE FROM user_tile_permissions WHERE user_id = ? AND tile_id = ?');
+            $delPrev->execute([$previousOwnerId, $tileId]);
+        } elseif ($previousOwnerId) {
+            // Keep previous owner as an editor if they already have a row; otherwise create default editor perms
+            $checkPrev = $db->prepare('SELECT user_id FROM user_tile_permissions WHERE user_id = ? AND tile_id = ?');
+            $checkPrev->execute([$previousOwnerId, $tileId]);
+            if (!$checkPrev->fetch()) {
+                $prevIns = $db->prepare('
+                    INSERT INTO user_tile_permissions (
+                        user_id, tile_id, can_view, can_edit, can_delete,
+                        can_add_links, can_add_sections, can_add_tabs,
+                        can_edit_links, can_delete_links, can_delete_sections, can_delete_tabs,
+                        can_change_visibility, can_change_browser, can_clone_tile, can_view_tile_info, can_edit_tile,
+                        created_at, updated_at
+                    ) VALUES (?, ?, 1, 1, 0, 1, 1, 1, 1, 0, 0, 0, 0, 0, 0, 1, 1, ?, ?)
+                ');
+                $prevIns->execute([$previousOwnerId, $tileId, $now, $now]);
+            }
+        }
+
+        if ($startedTx) {
+            $db->commit();
+        }
+    } catch (Exception $e) {
+        if ($startedTx && $db->inTransaction()) {
+            $db->rollBack();
+        }
+        sendJSON(['error' => 'Failed to transfer ownership: ' . $e->getMessage()], 500);
+    }
+
+    sendJSON([
+        'success' => true,
+        'tileId' => $tileId,
+        'previousOwnerUserId' => $previousOwnerId,
+        'newOwnerUserId' => $newOwnerUserId,
+        'newOwnerUsername' => $newOwner['username'],
+        'keepPreviousOwnerAsEditor' => $keepPreviousOwnerAsEditor
+    ]);
+}
 
 

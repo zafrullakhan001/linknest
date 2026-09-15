@@ -1,0 +1,4 @@
+username,email,dn,displayName
+john.doe,john.doe@example.com,"CN=John Doe,OU=Users,DC=example,DC=com",John Doe
+jane.smith,jane.smith@example.com,"CN=Jane Smith,OU=Users,DC=example,DC=com",Jane Smith
+admin.user,admin.user@example.com,"CN=Admin User,OU=Users,DC=example,DC=com",Admin User

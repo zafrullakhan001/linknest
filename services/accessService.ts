@@ -6,6 +6,18 @@ export interface TilePermission {
   canView: boolean;
   canEdit: boolean;
   canDelete: boolean;
+  canAddLinks?: boolean;
+  canAddSections?: boolean;
+  canAddTabs?: boolean;
+  canEditLinks?: boolean;
+  canDeleteLinks?: boolean;
+  canDeleteSections?: boolean;
+  canDeleteTabs?: boolean;
+  canChangeVisibility?: boolean;
+  canChangeBrowser?: boolean;
+  canCloneTile?: boolean;
+  canViewTileInfo?: boolean;
+  canEditTile?: boolean;
   createdAt: number;
   updatedAt: number;
   username?: string;
@@ -49,6 +61,33 @@ export interface SetPermissionRequest {
   canView?: boolean;
   canEdit?: boolean;
   canDelete?: boolean;
+  canAddLinks?: boolean;
+  canAddSections?: boolean;
+  canAddTabs?: boolean;
+  canEditLinks?: boolean;
+  canDeleteLinks?: boolean;
+  canDeleteSections?: boolean;
+  canDeleteTabs?: boolean;
+  canChangeVisibility?: boolean;
+  canChangeBrowser?: boolean;
+  canCloneTile?: boolean;
+  canViewTileInfo?: boolean;
+  canEditTile?: boolean;
+}
+
+export interface BatchTilePermissionsResponse {
+  tileId: string;
+  tileTitle: string;
+  permissions: Array<{
+    userId: number;
+    canView: boolean;
+    canEdit: boolean;
+    canDelete: boolean;
+    createdAt: number;
+    updatedAt: number;
+    username: string;
+    email: string;
+  }>;
 }
 
 export const accessService = {
@@ -61,6 +100,20 @@ export const accessService = {
     if (!response.ok) {
       const data = await response.json();
       throw new Error(data.error || 'Failed to fetch permissions');
+    }
+
+    return response.json();
+  },
+
+  async getBatchPermissions(): Promise<BatchTilePermissionsResponse[]> {
+    const response = await fetch(`${API_BASE}/access/batch`, {
+      method: 'GET',
+      credentials: 'include',
+    });
+
+    if (!response.ok) {
+      const data = await response.json();
+      throw new Error(data.error || 'Failed to fetch batch permissions');
     }
 
     return response.json();
@@ -113,14 +166,33 @@ export const accessService = {
     tileId: string,
     canView: boolean,
     canEdit: boolean,
-    canDelete: boolean
+    canDelete: boolean,
+    granularPermissions?: {
+      canAddLinks?: boolean;
+      canAddSections?: boolean;
+      canAddTabs?: boolean;
+      canEditLinks?: boolean;
+      canDeleteLinks?: boolean;
+      canDeleteSections?: boolean;
+      canDeleteTabs?: boolean;
+      canChangeVisibility?: boolean;
+      canChangeBrowser?: boolean;
+      canCloneTile?: boolean;
+      canViewTileInfo?: boolean;
+      canEditTile?: boolean;
+    }
   ): Promise<void> {
     const permissionId = `${userId}_${tileId}`;
     const response = await fetch(`${API_BASE}/access/${permissionId}`, {
       method: 'PUT',
       headers: { 'Content-Type': 'application/json' },
       credentials: 'include',
-      body: JSON.stringify({ canView, canEdit, canDelete }),
+      body: JSON.stringify({ 
+        canView, 
+        canEdit, 
+        canDelete,
+        ...granularPermissions
+      }),
     });
 
     if (!response.ok) {
@@ -140,6 +212,36 @@ export const accessService = {
       const data = await response.json();
       throw new Error(data.error || 'Failed to delete permission');
     }
+  },
+
+  async removePermission(userId: number, tileId: string): Promise<void> {
+    return this.deletePermission(userId, tileId);
+  },
+
+  async transferOwnership(
+    tileId: string,
+    newOwnerUserId: number,
+    keepPreviousOwnerAsEditor: boolean = true
+  ): Promise<{
+    success: boolean;
+    tileId: string;
+    previousOwnerUserId: number | null;
+    newOwnerUserId: number;
+    newOwnerUsername: string;
+    keepPreviousOwnerAsEditor: boolean;
+  }> {
+    const response = await fetch(`${API_BASE}/access/transfer-ownership`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      credentials: 'include',
+      body: JSON.stringify({ tileId, newOwnerUserId, keepPreviousOwnerAsEditor }),
+    });
+
+    const data = await response.json().catch(() => ({}));
+    if (!response.ok) {
+      throw new Error((data && data.error) || 'Failed to transfer ownership');
+    }
+    return data;
   },
 };
 

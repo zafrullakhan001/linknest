@@ -1,0 +1,434 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>LinkNest Bookmark Sync</title>
+  <style>
+    :root { color-scheme: light dark; }
+    body {
+      margin: 0;
+      width: 320px;
+      font: 13px/1.45 system-ui, Segoe UI, sans-serif;
+      color: #0f172a;
+      background: #f8fafc;
+    }
+    @media (prefers-color-scheme: dark) {
+      body { color: #e2e8f0; background: #0f172a; }
+      .muted { color: #94a3b8 !important; }
+      .card, .tabs { background: #1e293b; border-color: #334155; }
+      .stats { border-top-color: #334155; }
+      .switch-stack .switch-row + .switch-row { border-top-color: #334155; }
+      .stat-label { color: #94a3b8 !important; }
+      .tab { color: #94a3b8; }
+      .tab.active { background: #0f172a; color: #e2e8f0; }
+      .slider { background: #475569; }
+      .help-body h2, .help-body h3 { color: #e2e8f0; }
+      button.primary { background: #0284c7; }
+      button.secondary {
+        background: transparent;
+        color: #e2e8f0;
+        border-color: #334155;
+      }
+      input[type="text"],
+      input[type="url"] {
+        background: #0f172a;
+        border-color: #334155;
+        color: #e2e8f0;
+      }
+      .app-link.is-link { color: #38bdf8; }
+      .slider { background: #475569; }
+      .help h2 { color: #e2e8f0; }
+      .help p, .help li { color: #94a3b8; }
+      .off-note { background: #1e293b; color: #cbd5e1; }
+      .help code { background: #334155; }
+    }
+    header {
+      display: flex;
+      gap: 10px;
+      align-items: center;
+      padding: 12px 14px 8px;
+    }
+    header img {
+      width: 32px;
+      height: 32px;
+      border-radius: 8px;
+      object-fit: cover;
+      background: #e2e8f0;
+    }
+    h1 { margin: 0; font-size: 14px; overflow-wrap: anywhere; }
+    .muted { margin: 2px 0 0; color: #64748b; font-size: 12px; }
+    .tabs {
+      display: flex;
+      gap: 4px;
+      margin: 0 12px 10px;
+      padding: 3px;
+      border: 1px solid #e2e8f0;
+      border-radius: 10px;
+      background: #fff;
+    }
+    .tab {
+      flex: 1;
+      margin: 0;
+      width: auto;
+      padding: 6px 8px;
+      border: 0;
+      border-radius: 8px;
+      background: transparent;
+      color: #64748b;
+      font-weight: 600;
+      font-size: 12px;
+    }
+    .tab.active { background: #f1f5f9; color: #0f172a; }
+    .card {
+      margin: 0 12px 12px;
+      padding: 10px 12px;
+      border: 1px solid #e2e8f0;
+      border-radius: 10px;
+      background: #fff;
+    }
+    .count { font-size: 22px; font-weight: 700; }
+    .stats {
+      display: grid;
+      grid-template-columns: 1fr 1fr 1fr;
+      gap: 8px;
+      margin-top: 10px;
+      padding-top: 10px;
+      border-top: 1px solid #e2e8f0;
+    }
+    .stat-value { font-size: 15px; font-weight: 700; }
+    .stat-heading { margin: 0 0 2px; font-size: 12px; font-weight: 700; }
+    .stats-caption { margin: 0 0 8px; }
+    .switch-stack .switch-row + .switch-row {
+      margin-top: 10px;
+      padding-top: 10px;
+      border-top: 1px solid #e2e8f0;
+    }
+    ol { margin: 0; padding-left: 18px; }
+    li { margin: 4px 0; }
+    label {
+      display: block;
+      font-weight: 600;
+      margin-bottom: 6px;
+    }
+    input[type="text"],
+    input[type="url"] {
+      width: 100%;
+      box-sizing: border-box;
+      padding: 7px 8px;
+      border: 1px solid #e2e8f0;
+      border-radius: 8px;
+      font: inherit;
+    }
+    .app-link {
+      color: inherit;
+      font-weight: 700;
+      text-decoration: none;
+      pointer-events: none;
+    }
+    .app-link.is-link {
+      color: #0284c7;
+      text-decoration: underline;
+      pointer-events: auto;
+      cursor: pointer;
+    }
+    .logo-row {
+      display: flex;
+      gap: 10px;
+      align-items: center;
+    }
+    #brand-preview {
+      width: 48px;
+      height: 48px;
+      border-radius: 10px;
+      object-fit: cover;
+      background: #e2e8f0;
+      flex-shrink: 0;
+    }
+    .logo-actions { display: flex; flex-direction: column; gap: 6px; min-width: 0; }
+    .logo-actions button {
+      width: auto;
+      margin: 0;
+      padding: 6px 8px;
+      font-size: 12px;
+    }
+    button {
+      display: block;
+      width: calc(100% - 24px);
+      margin: 0 12px 10px;
+      padding: 8px 10px;
+      border: 0;
+      border-radius: 8px;
+      background: #0284c7;
+      color: #fff;
+      font-weight: 600;
+      cursor: pointer;
+    }
+    button.primary { background: #0284c7; color: #fff; }
+    button.secondary {
+      background: #fff;
+      color: #334155;
+      border: 1px solid #e2e8f0;
+    }
+    button:disabled { opacity: .55; cursor: default; }
+    .switch-row {
+      display: flex;
+      gap: 10px;
+      align-items: center;
+      justify-content: space-between;
+    }
+    .switch-row > div { min-width: 0; }
+    .switch {
+      position: relative;
+      width: 40px;
+      height: 22px;
+      flex-shrink: 0;
+      margin: 0;
+    }
+    .switch input {
+      opacity: 0;
+      width: 0;
+      height: 0;
+    }
+    .slider {
+      position: absolute;
+      inset: 0;
+      background: #cbd5e1;
+      border-radius: 999px;
+      cursor: pointer;
+    }
+    .slider:before {
+      content: '';
+      position: absolute;
+      height: 18px;
+      width: 18px;
+      left: 2px;
+      top: 2px;
+      background: #fff;
+      border-radius: 50%;
+      transition: transform .15s;
+    }
+    .switch input:checked + .slider { background: #0284c7; }
+    .switch input:checked + .slider:before { transform: translateX(18px); }
+    .off-note {
+      margin: 0 12px 12px;
+      padding: 8px 10px;
+      border-radius: 8px;
+      background: #f1f5f9;
+      color: #334155;
+      font-size: 12px;
+    }
+    .help {
+      margin: 0 12px 12px;
+      max-height: 340px;
+      overflow: auto;
+      padding-right: 2px;
+    }
+    .help h2 {
+      margin: 0 0 8px;
+      font-size: 13px;
+    }
+    .help p, .help li { font-size: 12px; color: #475569; }
+    .help ul, .help ol { margin: 0 0 10px; padding-left: 18px; }
+    .help code {
+      font-size: 11px;
+      background: #e2e8f0;
+      padding: 0 4px;
+      border-radius: 4px;
+    }
+    .ok { color: #047857; }
+    .err { color: #b91c1c; }
+    [hidden] { display: none !important; }
+  </style>
+</head>
+<body>
+  <header>
+    <img id="header-logo" src="icons/icon48.png" alt="">
+    <div>
+      <h1 id="header-name">LinkNest Bookmark Sync</h1>
+      <p class="muted" id="version">v1.8.5 · sync off</p>
+    </div>
+  </header>
+
+  <nav class="tabs" aria-label="Popup sections">
+    <button type="button" class="tab active" data-tab="sync">Sync</button>
+    <button type="button" class="tab" data-tab="branding">Branding</button>
+    <button type="button" class="tab" data-tab="help">Help</button>
+  </nav>
+
+  <section id="panel-sync">
+    <div class="card switch-stack">
+      <div class="switch-row">
+        <div>
+          <label for="sync-read-enabled" style="margin:0">Read-only</label>
+          <p class="muted" id="read-toggle-hint">Off — Sync cannot pull bookmarks from this profile.</p>
+        </div>
+        <label class="switch" title="Enable or disable read-only Sync">
+          <input id="sync-read-enabled" type="checkbox">
+          <span class="slider"></span>
+        </label>
+      </div>
+      <div class="switch-row">
+        <div>
+          <label for="sync-write-enabled" style="margin:0">Read-write</label>
+          <p class="muted" id="write-toggle-hint">Off — OutSync cannot add bookmarks in this profile.</p>
+        </div>
+        <label class="switch" title="Enable or disable read-write OutSync">
+          <input id="sync-write-enabled" type="checkbox">
+          <span class="slider"></span>
+        </label>
+      </div>
+    </div>
+    <p class="off-note" id="read-off-note">
+      Read-only starts off. Turn it on so <strong>Sync</strong> can pull <strong>this browser profile’s</strong> bookmarks into LinkNest. The app cannot read your tree while this is off.
+    </p>
+    <p class="off-note" id="write-off-note">
+      Read-write starts off. Turn it on so <strong>OutSync</strong> can add new bookmarks in this profile. A renamed bookmark (same URL, new name) is added as a copy. Existing names are never overwritten. The app cannot write Chrome bookmarks while this is off. Nothing is deleted.
+    </p>
+    <p class="muted" id="allowlist-hint" style="margin: 0 14px 10px;"></p>
+    <div class="card">
+      <div class="count" id="count">…</div>
+      <p class="muted" id="status">Reading bookmarks…</p>
+    </div>
+    <div class="card">
+      <p class="stat-heading">Read-only (Sync)</p>
+      <p class="muted stats-caption" id="read-stats-note">Browser → app</p>
+      <div class="stats">
+        <div>
+          <div class="stat-value" id="read-times">0</div>
+          <p class="stat-label">Times synced</p>
+        </div>
+        <div>
+          <div class="stat-value" id="read-last">—</div>
+          <p class="stat-label">Last duration</p>
+        </div>
+        <div>
+          <div class="stat-value" id="read-avg">—</div>
+          <p class="stat-label">Average</p>
+        </div>
+      </div>
+    </div>
+    <div class="card">
+      <p class="stat-heading">Read-write (OutSync)</p>
+      <p class="muted stats-caption" id="write-stats-note">App → browser</p>
+      <div class="stats">
+        <div>
+          <div class="stat-value" id="write-times">0</div>
+          <p class="stat-label">Times synced</p>
+        </div>
+        <div>
+          <div class="stat-value" id="write-last">—</div>
+          <p class="stat-label">Last duration</p>
+        </div>
+        <div>
+          <div class="stat-value" id="write-avg">—</div>
+          <p class="stat-label">Average</p>
+        </div>
+      </div>
+    </div>
+    <div class="card">
+      <ol>
+        <li>Open <a id="app-name-label" class="app-link">LinkNest</a> in this browser</li>
+        <li>Favorites → Your Bookmarks</li>
+        <li>Click <strong>Sync</strong> (into the app) or <strong>OutSync</strong> (into this browser)</li>
+      </ol>
+    </div>
+    <button type="button" class="primary" id="refresh">Refresh count</button>
+  </section>
+
+  <section id="panel-branding" hidden>
+    <div class="card" id="org-lock-card" hidden>
+      <p class="muted" style="margin:0" id="org-lock-text">
+        Branding is set by your organisation in org-branding.json.
+      </p>
+    </div>
+    <div class="card">
+      <label for="brand-name">Display name</label>
+      <input id="brand-name" type="text" maxlength="48" placeholder="Any name you want" autocomplete="off">
+    </div>
+    <div class="card">
+      <label for="brand-app-name">App name in instructions</label>
+      <input id="brand-app-name" type="text" maxlength="48" placeholder="LinkNest" autocomplete="off">
+      <p class="muted" style="margin:6px 0 0">Shown as “Open <em>this name</em> in this browser”.</p>
+    </div>
+    <div class="card">
+      <label for="brand-app-url">App link (optional)</label>
+      <input id="brand-app-url" type="url" maxlength="500" placeholder="https://intranet.example.com/linknest" autocomplete="off">
+      <p class="muted" style="margin:6px 0 0">Makes the name a clickable link so people do not have to guess the URL.</p>
+    </div>
+    <div class="card">
+      <label>Logo</label>
+      <div class="logo-row">
+        <img id="brand-preview" src="icons/icon48.png" alt="Logo preview">
+        <div class="logo-actions">
+          <button type="button" class="secondary" id="pick-logo">Choose image…</button>
+          <button type="button" class="secondary" id="clear-logo">Remove logo</button>
+          <input id="logo-file" type="file" accept="image/*" hidden>
+        </div>
+      </div>
+    </div>
+    <p class="muted" style="margin: 0 14px 10px;" id="brand-help">
+      Used in this popup and the toolbar icon. Chrome’s extensions page still shows the packaged name. For mass deployment, edit org-branding.json in this extension folder.
+    </p>
+    <button type="button" class="primary" id="save-brand">Save branding</button>
+    <button type="button" class="secondary" id="reset-brand">Reset to default</button>
+    <p class="muted" id="brand-msg" style="margin: 0 14px 12px;"></p>
+  </section>
+
+  <section id="panel-help" hidden>
+    <div class="help">
+      <h2>Security (v1.8)</h2>
+      <p>
+        Bookmark lists and OutSync writes are sent only to sites on the organisation <strong>allowlist</strong>
+        (<code>allowedOrigins</code> in <code>org-branding.json</code>, plus the App link origin when branding is on).
+        Other websites get no reply. <strong>Read-only</strong> (Sync) and <strong>Read-write</strong> (OutSync) start
+        <strong>Off</strong> until you turn each one on here.
+      </p>
+      <h2>This profile only — not other people</h2>
+      <p>
+        Chrome and Edge store bookmarks <strong>per browser profile</strong> on this PC.
+        This extension can only read and write <strong>your</strong> bookmarks in <strong>this</strong> profile.
+        It cannot reach another employee’s PC, another Windows login, or another Chrome/Edge profile.
+        Guest Your Bookmarks stay in this browser; nothing is uploaded by the extension. OutSync never deletes Chrome bookmarks.
+      </p>
+      <p>
+        Do not share a signed-in Chrome profile or an unlocked session. Anyone using this profile can click Sync or OutSync and import or write <em>this</em> profile’s bookmarks from the LinkNest page they have open.
+      </p>
+      <h2>How the Sync button talks to this extension</h2>
+      <p>
+        The app name you type in Branding is <strong>only a label</strong>.
+        It does <strong>not</strong> connect Sync. Chrome’s extensions page name does not matter either.
+      </p>
+      <p>What actually makes Sync work:</p>
+      <ol>
+        <li>This extension is installed in <strong>your</strong> Chrome/Edge profile, with the <strong>bookmarks</strong> permission allowed.</li>
+        <li><strong>Read-only</strong> and/or <strong>Read-write</strong> on the Sync tab is <strong>on</strong>. An OFF badge means both are disabled.</li>
+        <li>You open the organisation LinkNest URL (that origin must be allowlisted). <code>file://</code> pages never work.</li>
+        <li>You click <strong>Sync</strong> or <strong>OutSync</strong> on Favorites → Your Bookmarks (or Fetch in Favorites Organizer).</li>
+      </ol>
+      <h2>The handshake (not the name)</h2>
+      <p>
+        The page posts a window message <code>BROWSER_LAUNCHER_GET_BOOKMARKS</code> to its own origin.
+        This extension replies with <code>BROWSER_LAUNCHER_BOOKMARKS_LIST</code> only if the site is allowlisted and <strong>Read-only</strong> is on.
+        OutSync posts <code>BROWSER_LAUNCHER_PREVIEW_PUSH_BOOKMARKS</code> first (preview, no writes), then optionally <code>BROWSER_LAUNCHER_BACKUP_BOOKMARKS</code> (v1.8.2+, Read-only or Read-write) before <code>BROWSER_LAUNCHER_PUSH_BOOKMARKS</code> when you Apply — only if <strong>Read-write</strong> is on. Nested folders (v1.8.3+) are created under Other Bookmarks → LinkNest → named folder → space. A bookmark is skipped only if that destination folder already has the same URL <em>and</em> the same name (v1.8.6+). A new name for an existing URL is added as a copy; existing names are never overwritten.
+      </p>
+      <h2>Mass deploy (IT)</h2>
+      <ul>
+        <li>Edit <code>org-branding.json</code>: set <code>enabled</code> true, your name/logo, <code>appUrl</code>, and <code>allowedOrigins</code> to <strong>only</strong> your LinkNest origin(s). Remove localhost for production.</li>
+        <li>Force-install a packed CRX (or Edge add-on) per user via Intune / GPO. Do not rely on Developer mode.</li>
+        <li>Each user keeps their own Windows account and Chrome profile so they can only sync their own bookmarks.</li>
+      </ul>
+      <h2>If Sync or OutSync fails</h2>
+      <ul>
+        <li>Reload this extension, then <strong>refresh the app page</strong>. Renamed bookmarks (same URL, new name) need v1.8.6+ so Sync keeps your name and OutSync does not overwrite it. Nested folder OutSync (named folder + space subfolders) needs v1.8.3+. OutSync preview needs v1.8.1+; bookmark backup before Apply needs v1.8.2+. Incognito / InPrivate open needs v1.8.4+ and <strong>Allow in Incognito</strong> enabled for this extension. Full browser window (tabs, toolbar, menus) needs v1.8.5+.</li>
+        <li>Turn Read-only on for Sync, and Read-write on for OutSync. Confirm the site origin is in <code>allowedOrigins</code>.</li>
+        <li>Or use Import HTML / Merge / Export HTML in Your Bookmarks.</li>
+      </ul>
+      <p class="muted">Full guide in the app: Help → Guides → Bookmark Sync Extension.</p>
+    </div>
+  </section>
+
+  <script src="branding.js"></script>
+  <script src="popup.js"></script>
+</body>
+</html>

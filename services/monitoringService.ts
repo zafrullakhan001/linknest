@@ -1,7 +1,9 @@
+export type MonitorType = 'url' | 'headers' | 'keyword' | 'port' | 'ping' | 'ssl' | 'dns' | 'json';
+
 export interface Monitor {
     id: number;
     name: string;
-    type: 'url' | 'keyword' | 'port' | 'ping';
+    type: MonitorType;
     target: string;
     port?: number;
     keyword?: string;
@@ -25,12 +27,196 @@ export interface Monitor {
     last_checked_at: number;
     last_status: 'up' | 'down' | 'warning' | 'unknown' | null;
     last_response_time: number;
+    last_details?: string | null;
     created_at: number;
     updated_at: number;
     tab_name?: string;
     group_name?: string;
     maintenance_start?: number | null;
     maintenance_end?: number | null;
+    history?: { status: 'up' | 'down' | 'warning'; response_time: number; checked_at: number }[];
+    check_pending?: number;
+}
+
+export type MonitorForceEngine = 'php' | 'python';
+
+export interface MonitorWorkerSchedulerTaskProperty {
+    name: string;
+    value: string;
+    ok: boolean;
+}
+
+export interface MonitorWorkerSchedulerTask {
+    name: string;
+    exists: boolean;
+    enabled: boolean;
+    state: string;
+    status: string;
+    next_run?: string | null;
+    last_run?: string | null;
+    last_result?: number | null;
+    last_result_label?: string | null;
+    run_as?: string | null;
+    logon_mode?: string | null;
+    logon_type?: string | null;
+    run_level?: string | null;
+    start_in?: string | null;
+    task_to_run?: string | null;
+    interval_minutes?: number | null;
+    interval_iso?: string | null;
+    start_when_available?: boolean | null;
+    allow_start_on_batteries?: boolean | null;
+    dont_stop_on_batteries?: boolean | null;
+    multiple_instances?: string | null;
+    wake_to_run?: boolean | null;
+    execution_time_limit?: string | null;
+    runs_without_logon?: boolean;
+    unattended_summary?: string | null;
+    properties?: MonitorWorkerSchedulerTaskProperty[];
+    never_run?: boolean;
+    needs_logged_on_user?: boolean;
+}
+
+export type MonitorWorkerSchedulerTaskKey = 'monitor_runner' | 'email_sender';
+
+export type MonitorWorkerPythonSource = 'bundled' | 'system' | 'configured' | 'missing';
+
+export interface MonitorWorkerPythonCheck {
+    id: string;
+    ok: boolean;
+    label: string;
+    detail: string;
+}
+
+export interface MonitorWorkerPythonHealth {
+    available: boolean;
+    meets_min: boolean;
+    min_version: string;
+    version: string | null;
+    path: string | null;
+    source: MonitorWorkerPythonSource;
+    scripts_ready: boolean;
+    scripts: {
+        monitor_runner?: boolean;
+        email_sender?: boolean;
+        lib?: boolean;
+    };
+    can_install: boolean;
+    install_url?: string;
+    winget_command?: string;
+    message: string;
+    checks: MonitorWorkerPythonCheck[];
+}
+
+export interface MonitorWorkerSchedulerDatabase {
+    engine: 'sqlite' | string;
+    path: string;
+    php_path?: string | null;
+    exists: boolean;
+    source: 'scheduled_task' | 'php' | string;
+    mismatch?: boolean;
+    message: string;
+}
+
+export interface MonitorWorkerSchedulerPlaceholder {
+    token: string;
+    source: string;
+    value: string;
+    ok: boolean;
+}
+
+export interface MonitorWorkerSchedulerOsEnv {
+    name: string;
+    value: string;
+}
+
+export interface MonitorWorkerSchedulerWorkerEnv {
+    app_name: string;
+    app_name_configured: boolean;
+    notifications_paused: boolean;
+    working_directory?: string | null;
+    python_path?: string | null;
+    db_path?: string | null;
+    smtp?: {
+        enabled: boolean;
+        host?: string | null;
+        from_email?: string | null;
+        from_name_raw?: string | null;
+        from_name_resolved?: string | null;
+        source?: string;
+    };
+    placeholders: MonitorWorkerSchedulerPlaceholder[];
+    os_env: MonitorWorkerSchedulerOsEnv[];
+    message: string;
+}
+
+export interface MonitorWorkerSchedulerStatus {
+    platform: 'windows' | 'linux' | 'docker' | 'unknown';
+    scheduler_applicable: boolean;
+    python_ready: boolean | null;
+    python?: MonitorWorkerPythonHealth;
+    database?: MonitorWorkerSchedulerDatabase;
+    worker_env?: MonitorWorkerSchedulerWorkerEnv;
+    status: 'ok' | 'not_installed' | 'disabled' | 'partial' | 'unavailable' | 'python_missing' | 'not_running';
+    message: string;
+    tasks: {
+        monitor_runner: MonitorWorkerSchedulerTask;
+        email_sender: MonitorWorkerSchedulerTask;
+    };
+    install_hint?: string | null;
+    docker?: {
+        interval_seconds?: number;
+        runtime_control?: boolean;
+    };
+}
+
+export interface MonitorCheckJobItem {
+    id: number;
+    name: string;
+    status: 'pending' | 'checking' | 'up' | 'down' | 'error' | 'skipped' | string;
+    response_ms?: number | null;
+    http_code?: number | null;
+    details?: string | null;
+    seq?: number;
+}
+
+export interface MonitorCheckJob {
+    id: number;
+    status: 'queued' | 'running' | 'done' | 'error' | 'cancelled';
+    created_at?: number | null;
+    started_at?: number | null;
+    finished_at?: number | null;
+    scope?: string;
+    force_notify_rules?: boolean;
+    worker_kicked?: boolean;
+    awaiting_pickup?: boolean;
+    checked_count: number;
+    total_count: number;
+    up_count: number;
+    down_count: number;
+    error_count: number;
+    last_error?: string | null;
+    items?: MonitorCheckJobItem[];
+}
+
+export interface MonitorCheckAllPhpResult {
+    engine: 'php';
+    count: number;
+    total: number;
+    up_count: number;
+    down_count: number;
+    error_count: number;
+}
+
+export interface MonitorCheckAllPythonResult {
+    engine: 'python';
+    queued: true;
+    job_id: number;
+    kicked: boolean;
+    coalesced?: boolean;
+    total: number;
+    message?: string;
+    job?: MonitorCheckJob;
 }
 
 export interface MonitorLog {
@@ -40,6 +226,66 @@ export interface MonitorLog {
     response_time: number;
     details: string;
     checked_at: number;
+}
+
+export interface MonitorSuggestion {
+    type: MonitorType;
+    confidence: number;
+    reason: string;
+    recommended?: boolean;
+    suggested_name?: string;
+    suggested_group?: string;
+    config: Partial<Monitor>;
+}
+
+export interface MonitorSuggestResult {
+    input: string;
+    parsed: {
+        host?: string | null;
+        scheme?: string | null;
+        port?: number | null;
+        pattern?: string | null;
+    };
+    probe_summary: {
+        http_code?: number | null;
+        content_type?: string | null;
+        open_ports?: number[];
+        ping?: string | null;
+        ssl_days_remaining?: number | null;
+        dns_a?: string[];
+        dns_aaaa?: string[];
+    };
+    suggestions: MonitorSuggestion[];
+}
+
+export interface MonitorBulkDraft {
+    input: string;
+    selected: boolean;
+    error: string | null;
+    confidence: number | null;
+    reason: string | null;
+    monitor: Partial<Monitor> | null;
+    alternatives: MonitorSuggestion[];
+    probe_summary?: MonitorSuggestResult['probe_summary'];
+}
+
+export interface MonitorBulkSuggestResult {
+    success: boolean;
+    drafts: MonitorBulkDraft[];
+    summary: {
+        total: number;
+        ready: number;
+        failed: number;
+        fast_mode: boolean;
+        default_tab: string;
+    };
+}
+
+export interface MonitorBulkCreateResult {
+    success: boolean;
+    count: number;
+    created: Monitor[];
+    errors: Array<{ index: number; name?: string | null; target?: string | null; error: string }>;
 }
 
 export const monitoringService = {
@@ -95,9 +341,13 @@ export const monitoringService = {
         return data.monitor;
     },
 
-    async exportMonitor(id: number): Promise<any> {
-        const response = await fetch(`api/monitors.php/${id}/export`);
-        if (!response.ok) throw new Error('Failed to export monitor');
+    async exportMonitor(id: number, includeLogs: boolean = true): Promise<any> {
+        const qs = includeLogs ? '' : '?include_logs=0';
+        const response = await fetch(`api/monitors.php/${id}/export${qs}`);
+        if (!response.ok) {
+            const err = await response.json().catch(() => ({}));
+            throw new Error(err.error || 'Failed to export monitor');
+        }
         return await response.json();
     },
 
@@ -117,6 +367,50 @@ export const monitoringService = {
         return data.logs;
     },
 
+    async purgeMonitorLogs(id: number, keepDays: 0 | 1 | 7 | 30 | 365): Promise<{ deleted_count: number; keep_days: number }> {
+        const response = await fetch(`api/monitors.php/${id}/logs/purge`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            credentials: 'include',
+            body: JSON.stringify({ keep_days: keepDays }),
+        });
+        if (!response.ok) {
+            const err = await response.json().catch(() => ({}));
+            throw new Error((err as { error?: string }).error || 'Failed to purge monitor logs');
+        }
+        return await response.json();
+    },
+
+    async purgeAllMonitorLogs(
+        keepDays: 0 | 1 | 7 | 30 | 365,
+        options?: { reindex?: boolean; runChecks?: boolean; vacuum?: boolean }
+    ): Promise<{
+        deleted_count: number;
+        keep_days: number;
+        maintenance?: {
+            reindex?: unknown;
+            checks?: unknown;
+            vacuum?: unknown;
+        };
+    }> {
+        const response = await fetch('api/monitors.php/logs/purge', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            credentials: 'include',
+            body: JSON.stringify({
+                keep_days: keepDays,
+                reindex: !!options?.reindex,
+                run_checks: !!options?.runChecks,
+                vacuum: !!options?.vacuum,
+            }),
+        });
+        if (!response.ok) {
+            const err = await response.json().catch(() => ({}));
+            throw new Error((err as { error?: string }).error || 'Failed to purge all monitor logs');
+        }
+        return await response.json();
+    },
+
     async checkMonitor(id: number, options?: { forceNotifyRules?: boolean }): Promise<any> {
         const qs = options?.forceNotifyRules ? '?force_notify_rules=1' : '';
         const response = await fetch(`api/monitors.php/${id}/check${qs}`, {
@@ -127,12 +421,26 @@ export const monitoringService = {
         return data.result;
     },
 
-    async checkAllMonitors(): Promise<{ count: number; total: number; up_count: number; down_count: number; error_count: number }> {
+    async checkAllMonitors(options?: {
+        engine?: MonitorForceEngine;
+        forceNotifyRules?: boolean;
+        monitorIds?: number[];
+    }): Promise<MonitorCheckAllPhpResult | MonitorCheckAllPythonResult> {
         try {
+            const engine = options?.engine ?? 'php';
+            const payload: Record<string, unknown> = {
+                engine,
+                force_notify_rules: options?.forceNotifyRules ? 1 : 0,
+            };
+            if (options?.monitorIds && options.monitorIds.length > 0) {
+                payload.monitor_ids = options.monitorIds;
+            }
             const response = await fetch('api/monitors.php/check-all', {
-                method: 'POST'
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify(payload),
             });
-            
+
             if (!response.ok) {
                 let errorMessage = 'Failed to check all monitors';
                 try {
@@ -143,30 +451,197 @@ export const monitoringService = {
                         errorMessage = errorData.message;
                     }
                 } catch (e) {
-                    // If response isn't JSON, use status text
                     errorMessage = `HTTP ${response.status}: ${response.statusText}`;
                 }
                 throw new Error(errorMessage);
             }
-            
+
             const data = await response.json();
-            
-            // Check if the response indicates failure
+
             if (data.success === false) {
                 throw new Error(data.error || 'Failed to check all monitors');
             }
-            
+
+            if (data.queued && data.engine === 'python') {
+                return {
+                    engine: 'python',
+                    queued: true,
+                    job_id: data.job_id,
+                    kicked: !!data.kicked,
+                    coalesced: !!data.coalesced,
+                    total: data.total || 0,
+                    message: data.message,
+                    job: data.job,
+                };
+            }
+
             return {
+                engine: 'php',
                 count: data.count || 0,
                 total: data.total || 0,
                 up_count: data.up_count || 0,
                 down_count: data.down_count || 0,
-                error_count: data.error_count || 0
+                error_count: data.error_count || 0,
             };
         } catch (error: any) {
             console.error('Error in checkAllMonitors:', error);
             throw error;
         }
+    },
+
+    async getWorkerSchedulerStatus(): Promise<MonitorWorkerSchedulerStatus> {
+        const response = await fetch('api/monitors.php/worker-scheduler-status');
+        if (!response.ok) throw new Error('Failed to fetch worker scheduler status');
+        const data = await response.json();
+        if (!data.scheduler) throw new Error('Scheduler status missing from response');
+        return data.scheduler as MonitorWorkerSchedulerStatus;
+    },
+
+    async setWorkerSchedulerTaskEnabled(
+        task: MonitorWorkerSchedulerTaskKey,
+        enabled: boolean
+    ): Promise<{ scheduler: MonitorWorkerSchedulerStatus; message: string; already?: boolean }> {
+        const response = await fetch('api/monitors.php/worker-scheduler-task', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ task, enabled }),
+        });
+        const data = await response.json().catch(() => ({}));
+        if (!response.ok) {
+            throw new Error(data.error || 'Failed to update Task Scheduler job');
+        }
+        if (!data.scheduler) {
+            throw new Error('Scheduler status missing from response');
+        }
+        return {
+            scheduler: data.scheduler as MonitorWorkerSchedulerStatus,
+            message: data.message || (enabled ? 'Task enabled.' : 'Task disabled.'),
+            already: data.already,
+        };
+    },
+
+    async installWorkerSchedulerTasks(opts?: {
+        intervalMinutes?: number;
+        maxWorkers?: number;
+    }): Promise<{ scheduler: MonitorWorkerSchedulerStatus; message: string }> {
+        const response = await fetch('api/monitors.php/worker-scheduler-install', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+                interval_minutes: opts?.intervalMinutes,
+                max_workers: opts?.maxWorkers,
+            }),
+        });
+        const data = await response.json().catch(() => ({}));
+        if (!response.ok) {
+            throw new Error(data.error || 'Failed to install Task Scheduler jobs');
+        }
+        if (!data.scheduler) {
+            throw new Error('Scheduler status missing from response');
+        }
+        return {
+            scheduler: data.scheduler as MonitorWorkerSchedulerStatus,
+            message: data.message || 'Scheduler tasks installed.',
+        };
+    },
+
+    async uninstallWorkerSchedulerTasks(): Promise<{
+        scheduler: MonitorWorkerSchedulerStatus;
+        message: string;
+        already?: boolean;
+    }> {
+        const response = await fetch('api/monitors.php/worker-scheduler-uninstall', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({}),
+        });
+        const data = await response.json().catch(() => ({}));
+        if (!response.ok) {
+            throw new Error(data.error || 'Failed to uninstall worker scheduler jobs');
+        }
+        if (!data.scheduler) {
+            throw new Error('Scheduler status missing from response');
+        }
+        return {
+            scheduler: data.scheduler as MonitorWorkerSchedulerStatus,
+            message: data.message || 'Scheduler tasks removed.',
+            already: data.already,
+        };
+    },
+
+    async installWorkerPythonRuntime(): Promise<{
+        scheduler: MonitorWorkerSchedulerStatus;
+        message: string;
+        already?: boolean;
+    }> {
+        const response = await fetch('api/monitors.php/worker-python-install', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({}),
+        });
+        const data = await response.json().catch(() => ({}));
+        if (!response.ok) {
+            throw new Error(data.error || 'Failed to install Python runtime');
+        }
+        if (!data.scheduler) {
+            throw new Error('Scheduler status missing from response');
+        }
+        return {
+            scheduler: data.scheduler as MonitorWorkerSchedulerStatus,
+            message: data.message || 'Python runtime installed.',
+            already: data.already,
+        };
+    },
+
+    async runWorkerSchedulerTask(task: MonitorWorkerSchedulerTaskKey = 'monitor_runner'): Promise<{
+        scheduler: MonitorWorkerSchedulerStatus;
+        message: string;
+    }> {
+        const response = await fetch('api/monitors.php/worker-scheduler-run', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ task }),
+        });
+        const data = await response.json().catch(() => ({}));
+        if (!response.ok) {
+            throw new Error(data.error || 'Failed to start Task Scheduler job');
+        }
+        if (!data.scheduler) {
+            throw new Error('Scheduler status missing from response');
+        }
+        return {
+            scheduler: data.scheduler as MonitorWorkerSchedulerStatus,
+            message: data.message || 'Task started.',
+        };
+    },
+
+    async getCheckJob(jobId: number): Promise<MonitorCheckJob> {
+        const response = await fetch(`api/monitors.php/check-jobs/${jobId}`);
+        if (!response.ok) throw new Error('Failed to fetch check job status');
+        const data = await response.json();
+        if (!data.job) throw new Error('Check job not found');
+        return data.job as MonitorCheckJob;
+    },
+
+    async getActiveCheckJob(): Promise<MonitorCheckJob | null> {
+        const response = await fetch('api/monitors.php/check-jobs/active');
+        if (!response.ok) throw new Error('Failed to fetch active check job');
+        const data = await response.json();
+        return data.job ?? null;
+    },
+
+    async cancelCheckJob(jobId: number): Promise<MonitorCheckJob> {
+        const response = await fetch(`api/monitors.php/check-jobs/${jobId}/cancel`, {
+            method: 'POST',
+        });
+        const data = await response.json().catch(() => ({}));
+        if (!response.ok) {
+            throw new Error(data.error || 'Failed to cancel check job');
+        }
+        if (!data.job) {
+            throw new Error('Cancel response missing job');
+        }
+        return data.job as MonitorCheckJob;
     },
 
     async deleteAllMonitors(): Promise<void> {
@@ -176,20 +651,13 @@ export const monitoringService = {
         if (!response.ok) throw new Error('Failed to delete all monitors');
     },
 
-    async importMonitors(monitors: Partial<Monitor>[]): Promise<number> {
-        const response = await fetch('api/monitors.php/import', {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ monitors })
-        });
-        if (!response.ok) throw new Error('Failed to import monitors');
-        const data = await response.json();
-        return data.count;
-    },
-
-    async exportMonitorsBundle(): Promise<any> {
-        const response = await fetch('api/monitors.php/export-bundle');
-        if (!response.ok) throw new Error('Failed to export monitors bundle');
+    async exportMonitorsBundle(includeLogs: boolean = true): Promise<any> {
+        const qs = includeLogs ? '' : '?include_logs=0';
+        const response = await fetch(`api/monitors.php/export-bundle${qs}`);
+        if (!response.ok) {
+            const err = await response.json().catch(() => ({}));
+            throw new Error(err.error || 'Failed to export monitors bundle');
+        }
         return await response.json();
     },
 
@@ -205,17 +673,6 @@ export const monitoringService = {
         }
         const data = await response.json();
         return data.count || 0;
-    },
-
-    async importMonitorsFromCSV(csvData: string): Promise<number> {
-        const response = await fetch('api/monitors.php/import-csv', {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ csv: csvData })
-        });
-        if (!response.ok) throw new Error('Failed to import monitors from CSV');
-        const data = await response.json();
-        return data.count;
     },
 
     async updateTabName(oldName: string, newName: string): Promise<void> {
@@ -234,5 +691,50 @@ export const monitoringService = {
             body: JSON.stringify({ tab_name: tabName, old_name: oldName, new_name: newName })
         });
         if (!response.ok) throw new Error('Failed to update group name');
-    }
+    },
+
+    async suggestMonitor(target: string): Promise<MonitorSuggestResult> {
+        const response = await fetch('api/monitors.php/suggest', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ target: target.trim() })
+        });
+        const data = await response.json().catch(() => ({}));
+        if (!response.ok) {
+            throw new Error(data.error || 'Failed to analyze target');
+        }
+        return data as MonitorSuggestResult;
+    },
+
+    async suggestMonitorsBulk(options: {
+        text?: string;
+        targets?: string[];
+        tab_name?: string;
+        fast?: boolean;
+        exclude_ssl?: boolean;
+    }): Promise<MonitorBulkSuggestResult> {
+        const response = await fetch('api/monitors.php/suggest-bulk', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify(options),
+        });
+        const data = await response.json().catch(() => ({}));
+        if (!response.ok) {
+            throw new Error(data.error || 'Failed to analyze targets');
+        }
+        return data as MonitorBulkSuggestResult;
+    },
+
+    async bulkCreateMonitors(monitors: Partial<Monitor>[]): Promise<MonitorBulkCreateResult> {
+        const response = await fetch('api/monitors.php/bulk-create', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ monitors }),
+        });
+        const data = await response.json().catch(() => ({}));
+        if (!response.ok) {
+            throw new Error(data.error || 'Failed to create monitors');
+        }
+        return data as MonitorBulkCreateResult;
+    },
 };

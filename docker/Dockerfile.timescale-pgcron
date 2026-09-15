@@ -1,0 +1,26 @@
+# TimescaleDB (PostgreSQL 18) with pg_cron extension
+# Extends the official image and builds pg_cron from source.
+ARG BASE_IMAGE=timescale/timescaledb:latest-pg18
+FROM ${BASE_IMAGE}
+
+USER root
+
+# Build pg_cron from source (need PostgreSQL dev headers; Alpine edge has postgresql18-dev)
+RUN set -ex; \
+    echo "https://dl-cdn.alpinelinux.org/alpine/edge/main" >> /etc/apk/repositories; \
+    apk update; \
+    apk add --no-cache build-base git postgresql18-dev; \
+    git clone --depth 1 --branch v1.6.7 https://github.com/citusdata/pg_cron.git /tmp/pg_cron; \
+    cd /tmp/pg_cron; \
+    make; \
+    make install; \
+    cd /; \
+    rm -rf /tmp/pg_cron; \
+    apk del --purge build-base git postgresql18-dev
+
+# Run CREATE EXTENSION pg_cron on first init (when data dir is empty)
+COPY init-timescale-pgcron/02-pgcron.sql /docker-entrypoint-initdb.d/
+
+USER postgres
+
+# pg_cron must be in shared_preload_libraries (set in docker-compose via postgres -c)

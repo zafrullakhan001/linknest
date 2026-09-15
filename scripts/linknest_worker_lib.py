@@ -13,6 +13,7 @@ import datetime as _dt
 import email.utils
 import html as _html
 import json
+import math
 import os
 import sys
 import re
@@ -20,7 +21,9 @@ import socket
 import sqlite3
 import ssl
 import subprocess
+import tempfile
 import time
+import urllib.error
 import urllib.request
 from dataclasses import dataclass
 from email.message import EmailMessage
@@ -34,14 +37,65 @@ def now_ts() -> int:
     return int(time.time())
 
 
+DEFAULT_MONITOR_MAX_WORKERS = 20
+MONITOR_MAX_WORKERS_CEILING = 64
+
+
 def open_db(db_path: str, timeout_seconds: int = 10) -> sqlite3.Connection:
     conn = sqlite3.connect(db_path, timeout=timeout_seconds)
     conn.row_factory = sqlite3.Row
     with contextlib.suppress(Exception):
         conn.execute("PRAGMA busy_timeout = 5000")
     with contextlib.suppress(Exception):
+        conn.execute("PRAGMA journal_mode = WAL")
+    with contextlib.suppress(Exception):
         conn.execute("PRAGMA foreign_keys = OFF")
     return conn
+
+
+def read_setting(conn: sqlite3.Connection, key: str, default: str = "") -> str:
+    try:
+        row = conn.execute("SELECT value FROM settings WHERE key = ? LIMIT 1", (key,)).fetchone()
+        if row is None:
+            return default
+        val = row["value"] if isinstance(row, sqlite3.Row) else row[0]
+        return str(val).strip() if val is not None else default
+    except Exception:
+        return default
+
+
+def resolve_app_name(conn: Optional[sqlite3.Connection] = None, default: str = "LinkNest") -> str:
+    """App display name for {app_name} tokens. SQLite settings first; optional OS override."""
+    env = (os.environ.get("LINKNEST_APP_NAME") or os.environ.get("APP_NAME") or "").strip()
+    if env:
+        return env
+    if conn is not None:
+        name = read_setting(conn, "app_name", "").strip()
+        if name:
+            return name
+    return default
+
+
+def expand_app_placeholders(text: Optional[str], app_name: str) -> str:
+    """Replace {app_name} the same way PHP mailer does (not a Windows env var)."""
+    if text is None:
+        return ""
+    return str(text).replace("{app_name}", app_name)
+
+
+def clamp_monitor_max_workers(value: Any, default: int = DEFAULT_MONITOR_MAX_WORKERS) -> int:
+    try:
+        n = int(value)
+    except (TypeError, ValueError):
+        n = int(default)
+    return max(1, min(MONITOR_MAX_WORKERS_CEILING, n))
+
+
+def resolve_monitor_max_workers(conn: sqlite3.Connection, cli_value: Optional[int] = None) -> int:
+    if cli_value is not None:
+        return clamp_monitor_max_workers(cli_value)
+    setting = read_setting(conn, "monitor_worker_max_workers", str(DEFAULT_MONITOR_MAX_WORKERS))
+    return clamp_monitor_max_workers(setting)
 
 
 def ensure_outbox_schema(conn: sqlite3.Connection) -> None:
@@ -125,6 +179,38 @@ def ensure_monitors_schema(conn: sqlite3.Connection) -> None:
         conn.execute("CREATE INDEX IF NOT EXISTS idx_user_monitor_permissions_monitor_id ON user_monitor_permissions(monitor_id)")
     with contextlib.suppress(Exception):
         conn.execute("CREATE INDEX IF NOT EXISTS idx_user_monitor_permissions_user_id ON user_monitor_permissions(user_id)")
+
+
+def ensure_monitor_check_jobs_schema(conn: sqlite3.Connection) -> None:
+    conn.execute(
+        """
+        CREATE TABLE IF NOT EXISTS monitor_check_jobs (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            created_at INTEGER NOT NULL,
+            started_at INTEGER,
+            finished_at INTEGER,
+            requested_by INTEGER,
+            scope TEXT NOT NULL DEFAULT 'all',
+            monitor_ids TEXT NOT NULL,
+            force_notify_rules INTEGER DEFAULT 0,
+            status TEXT NOT NULL DEFAULT 'queued',
+            checked_count INTEGER DEFAULT 0,
+            total_count INTEGER DEFAULT 0,
+            up_count INTEGER DEFAULT 0,
+            down_count INTEGER DEFAULT 0,
+            error_count INTEGER DEFAULT 0,
+            last_error TEXT,
+            worker_kicked INTEGER DEFAULT 0
+        )
+        """
+    )
+    with contextlib.suppress(Exception):
+        conn.execute("ALTER TABLE monitor_check_jobs ADD COLUMN worker_kicked INTEGER DEFAULT 0")
+    with contextlib.suppress(Exception):
+        conn.execute("ALTER TABLE monitor_check_jobs ADD COLUMN progress_json TEXT")
+    with contextlib.suppress(Exception):
+        conn.execute("CREATE INDEX IF NOT EXISTS idx_monitor_check_jobs_status ON monitor_check_jobs(status)")
+        conn.execute("CREATE INDEX IF NOT EXISTS idx_monitor_check_jobs_created_at ON monitor_check_jobs(created_at)")
 
 
 def normalize_email_list(raw: Any) -> List[str]:
@@ -326,11 +412,107 @@ def day_of_week_active(days_csv: Optional[str], now_local: Optional[_dt.datetime
     return php_dow in active
 
 
+def get_monitor_notification_dst_enabled(conn: Optional[sqlite3.Connection] = None) -> bool:
+    if conn is None:
+        return True
+    with contextlib.suppress(Exception):
+        row = conn.execute(
+            "SELECT value FROM settings WHERE key = 'monitor_notification_dst_correction' LIMIT 1"
+        ).fetchone()
+        if row and str(row[0]).strip() == "0":
+            return False
+    return True
+
+
+def _standard_offset_seconds(tz_name: str, year: int) -> int:
+    from zoneinfo import ZoneInfo
+
+    zi = ZoneInfo(tz_name)
+    offsets: List[int] = []
+    for month in (1, 4, 7, 10):
+        dt = _dt.datetime(year, month, 15, 12, 0, tzinfo=zi)
+        off = dt.utcoffset()
+        offsets.append(int(off.total_seconds()) if off is not None else 0)
+    return min(offsets)
+
+
+def get_monitor_notification_timezone(conn: Optional[sqlite3.Connection] = None) -> str:
+    tz = ""
+    if conn is not None:
+        with contextlib.suppress(Exception):
+            row = conn.execute(
+                "SELECT value FROM settings WHERE key = 'monitor_notification_timezone' LIMIT 1"
+            ).fetchone()
+            if row and row[0]:
+                tz = str(row[0]).strip()
+    if tz:
+        try:
+            from zoneinfo import ZoneInfo
+            ZoneInfo(tz)
+            return tz
+        except Exception:
+            pass
+    local = _dt.datetime.now().astimezone()
+    key = getattr(local.tzinfo, "key", None)
+    if key:
+        return str(key)
+    return "UTC"
+
+
+def monitor_notification_now(conn: Optional[sqlite3.Connection] = None) -> _dt.datetime:
+    tz_name = get_monitor_notification_timezone(conn)
+    try:
+        from zoneinfo import ZoneInfo
+
+        zi = ZoneInfo(tz_name)
+        utc = _dt.datetime.now(_dt.timezone.utc)
+        if conn is not None and not get_monitor_notification_dst_enabled(conn):
+            std = _standard_offset_seconds(tz_name, utc.year)
+            local_naive = utc + _dt.timedelta(seconds=std)
+            return local_naive.replace(tzinfo=None)
+        return utc.astimezone(zi)
+    except Exception:
+        return _dt.datetime.now()
+
+
+def normalize_http_code(value: Any) -> Optional[int]:
+    try:
+        code = int(value)
+    except Exception:
+        return None
+    if 100 <= code <= 599:
+        return code
+    return None
+
+
+def parse_http_code(details: Optional[str]) -> Optional[int]:
+    if not details:
+        return None
+    matches = re.findall(r"(?:HTTP(?:\s+Error)?)\s+(\d{3})\b", str(details), flags=re.I)
+    if not matches:
+        return None
+    return normalize_http_code(matches[-1])
+
+
+def _http_error_result(exc: BaseException) -> Optional[Tuple[str, str]]:
+    if not isinstance(exc, urllib.error.HTTPError):
+        return None
+    code = normalize_http_code(getattr(exc, "code", None) or getattr(exc, "status", None))
+    with contextlib.suppress(Exception):
+        exc.close()
+    if code is None:
+        return None
+    if 200 <= code < 400:
+        return "up", f"HTTP {code}"
+    return "down", f"HTTP {code}"
+
+
 @dataclass
 class CheckResult:
     status: str
     details: str
     response_ms: int
+    http_code: Optional[int] = None
 
 
 def _ssl_context(verify_ssl: bool) -> ssl.SSLContext:
@@ -354,6 +536,118 @@ def check_url_head(url: str, timeout: float, verify_ssl: bool, app_name: str = "
                 return "up", f"HTTP {code}"
             return "down", f"HTTP {code}"
     except Exception as e:
+        http_res = _http_error_result(e)
+        if http_res:
+            return http_res
+        msg = str(e) or e.__class__.__name__
+        if "timed out" in msg.lower():
+            return "down", "Connection timeout"
+        return "down", f"Connection failed: {msg}"
+
+
+class _HeaderResponse:
+    def __init__(self, fp, headers, code: int):
+        self.fp = fp
+        self.headers = headers
+        self.status = int(code)
+        self.code = int(code)
+
+    def close(self):
+        if self.fp is not None:
+            with contextlib.suppress(Exception):
+                self.fp.close()
+
+
+class _NoRedirect(urllib.request.HTTPRedirectHandler):
+    def http_error_302(self, req, fp, code, msg, headers):
+        return _HeaderResponse(fp, headers, code)
+
+    http_error_301 = http_error_302
+    http_error_303 = http_error_302
+    http_error_307 = http_error_302
+    http_error_308 = http_error_302
+
+
+def _http_headers_open(url: str, method: str, timeout: float, verify_ssl: bool, app_name: str):
+    ua = f"{app_name} Monitor/1.0"
+    req = urllib.request.Request(url, method=method, headers={"User-Agent": ua, "Accept": "*/*", "Connection": "close"})
+    opener = urllib.request.build_opener(
+        urllib.request.HTTPSHandler(context=_ssl_context(verify_ssl)),
+        _NoRedirect(),
+    )
+    try:
+        return opener.open(req, timeout=timeout)
+    except urllib.error.HTTPError as e:
+        return e
+
+
+def _http_headers_details(code: int, headers, method: str) -> Tuple[str, str]:
+    interesting = ("location", "server", "content-type", "www-authenticate", "cache-control")
+    parts = [f"HTTP {code}"]
+    raw_lines = []
+    seen = set()
+    if headers is not None:
+        for key, value in headers.items():
+            raw_lines.append(f"{key}: {value}")
+            lk = str(key).lower()
+            if lk in interesting and lk not in seen:
+                seen.add(lk)
+                val = str(value)
+                if len(val) > 180:
+                    val = val[:177] + "..."
+                parts.append(f"{key}: {val}")
+    if str(method).upper() == "GET":
+        parts.append("GET fallback")
+    return " | ".join(parts), "\n".join(raw_lines)
+
+
+def check_http_headers(
+    url: str,
+    keyword: str,
+    timeout: float,
+    verify_ssl: bool,
+    app_name: str = "LinkNest",
+) -> Tuple[str, str]:
+    if not re.match(r"^https?://", url, re.I):
+        return "down", "Invalid URL"
+    needle = (keyword or "").strip()
+
+    def probe(method: str):
+        resp = _http_headers_open(url, method, timeout, verify_ssl, app_name)
+        try:
+            code = int(getattr(resp, "status", None) or getattr(resp, "code", None) or 0)
+            headers = getattr(resp, "headers", None)
+            return code, headers, None
+        finally:
+            fp = getattr(resp, "fp", None) or getattr(resp, "raw", None)
+            if fp is not None:
+                with contextlib.suppress(Exception):
+                    fp.close()
+            with contextlib.suppress(Exception):
+                resp.close()
+
+    try:
+        code, headers, _err = probe("HEAD")
+        used_method = "HEAD"
+        if code in (0, 405, 501):
+            code, headers, _err = probe("GET")
+            used_method = "GET"
+        details, raw = _http_headers_details(code, headers, used_method)
+        if needle:
+            if needle.lower() not in raw.lower() and needle.lower() not in details.lower():
+                return "down", f"Header '{needle}' not found ({details})"
+            if 200 <= code < 400:
+                return "up", f"Header match ({details})"
+            return "down", details
+        if 200 <= code < 400:
+            return "up", details
+        if code == 0:
+            return "down", "Connection failed: no HTTP response"
+        return "down", details
+    except Exception as e:
+        http_res = _http_error_result(e)
+        if http_res:
+            return http_res
         msg = str(e) or e.__class__.__name__
         if "timed out" in msg.lower():
             return "down", "Connection timeout"
@@ -379,8 +673,11 @@ def check_keyword(url: str, keyword: str, timeout: float, verify_ssl: bool, max_
                 text = str(data)
             if keyword.lower() in text.lower():
                 return "up", f"Keyword found (HTTP {code})"
-            return "down", f"Keyword '{keyword}' not found"
+            return "down", f"Keyword '{keyword}' not found (HTTP {code})"
     except Exception as e:
+        http_res = _http_error_result(e)
+        if http_res:
+            return http_res
         msg = str(e) or e.__class__.__name__
         if "timed out" in msg.lower():
             return "down", "Connection timeout"
@@ -473,6 +770,253 @@ def check_ping(target: str, timeout_ms: int = 1000) -> Tuple[str, str]:
     return "down", f"Ping failed: {err}"
 
 
+def _asn1_read_len(data: bytes, i: int) -> Tuple[int, int]:
+    if i >= len(data):
+        raise ValueError("truncated ASN.1 length")
+    first = data[i]
+    i += 1
+    if first < 0x80:
+        return first, i
+    n = first & 0x7F
+    if n == 0 or n > 4 or i + n > len(data):
+        raise ValueError("bad ASN.1 length")
+    ln = int.from_bytes(data[i : i + n], "big")
+    return ln, i + n
+
+
+def _parse_x509_time(data: bytes, i: int) -> Tuple[_dt.datetime, int]:
+    tag = data[i]
+    ln, j = _asn1_read_len(data, i + 1)
+    raw = data[j : j + ln].decode("ascii")
+    j += ln
+    if tag == 0x17 and raw.endswith("Z") and len(raw) >= 13:
+        yy = int(raw[0:2])
+        year = 2000 + yy if yy < 50 else 1900 + yy
+        return _dt.datetime.strptime(f"{year:04d}{raw[2:12]}", "%Y%m%d%H%M%S"), j
+    if tag == 0x18 and raw.endswith("Z") and len(raw) >= 15:
+        return _dt.datetime.strptime(raw[:14], "%Y%m%d%H%M%S"), j
+    raise ValueError("unsupported certificate time")
+
+
+def _ssl_not_after_from_der(der: bytes) -> Optional[_dt.datetime]:
+    """Parse notAfter from a DER X.509 cert (stdlib only; works with CERT_NONE)."""
+    try:
+        if not der or der[0] != 0x30:
+            return None
+        _, i = _asn1_read_len(der, 1)
+        if i >= len(der) or der[i] != 0x30:
+            return None
+        tbs_len, i = _asn1_read_len(der, i + 1)
+        tbs_end = min(len(der), i + tbs_len)
+        if i < tbs_end and der[i] == 0xA0:
+            vlen, i = _asn1_read_len(der, i + 1)
+            i += vlen
+        if i < tbs_end and der[i] == 0x02:
+            slen, i = _asn1_read_len(der, i + 1)
+            i += slen
+        if i < tbs_end and der[i] == 0x30:
+            slen, i = _asn1_read_len(der, i + 1)
+            i += slen
+        if i < tbs_end and der[i] == 0x30:
+            slen, i = _asn1_read_len(der, i + 1)
+            i += slen
+        if i >= tbs_end or der[i] != 0x30:
+            return None
+        _vlen, i = _asn1_read_len(der, i + 1)
+        _not_before, i = _parse_x509_time(der, i)
+        not_after, _ = _parse_x509_time(der, i)
+        return not_after
+    except Exception:
+        return None
+
+
+def _ssl_not_after_from_dict(not_after: Any) -> Optional[_dt.datetime]:
+    if not not_after:
+        return None
+    try:
+        return _dt.datetime.strptime(str(not_after), "%b %d %H:%M:%S %Y %Z")
+    except Exception:
+        return None
+
+
+def _ssl_cert_not_after(ssock: ssl.SSLSocket, cert_bin: Optional[bytes]) -> Optional[_dt.datetime]:
+    """Read certificate notAfter. CERT_NONE often yields an empty getpeercert() dict, so parse DER."""
+    cert = ssock.getpeercert() or {}
+    expiry = _ssl_not_after_from_dict(cert.get("notAfter") if isinstance(cert, dict) else None)
+    if expiry is not None:
+        return expiry
+    if cert_bin:
+        expiry = _ssl_not_after_from_der(cert_bin)
+        if expiry is not None:
+            return expiry
+        pem = ssl.DER_cert_to_PEM_cert(cert_bin)
+        decode = getattr(getattr(ssl, "_ssl", None), "_test_decode_cert", None)
+        if callable(decode) and pem:
+            fd, path = tempfile.mkstemp(suffix=".pem")
+            try:
+                os.write(fd, pem.encode("ascii"))
+                os.close(fd)
+                fd = None
+                info = decode(path) or {}
+                expiry = _ssl_not_after_from_dict(info.get("notAfter") if isinstance(info, dict) else None)
+            finally:
+                if fd is not None:
+                    with contextlib.suppress(Exception):
+                        os.close(fd)
+                with contextlib.suppress(Exception):
+                    os.unlink(path)
+    return expiry
+
+
+def _ssl_days_remaining(expiry: _dt.datetime) -> int:
+    """Whole days remaining, matching PHP floor((validTo_time_t - time()) / 86400)."""
+    if expiry.tzinfo is None:
+        expiry_ts = expiry.replace(tzinfo=_dt.timezone.utc).timestamp()
+    else:
+        expiry_ts = expiry.timestamp()
+    return int(math.floor((expiry_ts - time.time()) / 86400.0))
+
+
+def check_ssl(target: str, warn_days_raw: Optional[str], timeout: float = 8.0) -> Tuple[str, str]:
+    host = (target or "").strip()
+    port = 443
+
+    m = re.match(r"^https?://([^/]+)", host, re.I)
+    if m:
+        host_part = m.group(1)
+        host_part = host_part.split("@")[-1]
+        if ":" in host_part:
+            h, p = host_part.rsplit(":", 1)
+            if p.isdigit():
+                host, port = h, int(p)
+            else:
+                host = host_part
+        else:
+            host = host_part
+    else:
+        host = re.sub(r"^https?://", "", host, flags=re.I)
+        host = host.split("/")[0]
+        if ":" in host:
+            h, p = host.rsplit(":", 1)
+            if p.isdigit():
+                host, port = h, int(p)
+
+    if not host or not re.match(r"^[a-zA-Z0-9\.\-:]+$", host):
+        return "down", "Invalid host for SSL check"
+
+    warn_days = 30
+    if warn_days_raw is not None and str(warn_days_raw).strip() != "":
+        try:
+            warn_days = max(1, min(365, int(warn_days_raw)))
+        except Exception:
+            warn_days = 30
+
+    ctx = ssl.create_default_context()
+    ctx.check_hostname = False
+    ctx.verify_mode = ssl.CERT_NONE
+
+    try:
+        with socket.create_connection((host, port), timeout=timeout) as sock:
+            with ctx.wrap_socket(sock, server_hostname=host) as ssock:
+                cert_bin = ssock.getpeercert(binary_form=True)
+                expiry = _ssl_cert_not_after(ssock, cert_bin)
+        if not cert_bin:
+            return "down", "Could not read SSL certificate"
+        if expiry is None:
+            return "down", "Invalid certificate data"
+        days_remaining = _ssl_days_remaining(expiry)
+        # Amber WARNING when inside the warn window; red DOWN only after expiry / TLS failure.
+        if days_remaining < 0:
+            return "down", f"Certificate expired {abs(days_remaining)} days ago"
+        if days_remaining <= warn_days:
+            return "warning", f"Certificate expires in {days_remaining} days (threshold: {warn_days})"
+        return "up", f"Certificate valid ({days_remaining} days remaining)"
+    except Exception as e:
+        msg = str(e) or e.__class__.__name__
+        return "down", f"SSL connection failed: {msg}"
+
+
+def check_dns(target: str, expected: Optional[str] = None) -> Tuple[str, str]:
+    host = (target or "").strip()
+    host = re.sub(r"^https?://", "", host, flags=re.I)
+    host = host.split("/")[0].split(":")[0]
+
+    if not host or not re.match(r"^[a-zA-Z0-9]([a-zA-Z0-9\.\-]*[a-zA-Z0-9])?$", host):
+        return "down", "Invalid hostname for DNS check"
+
+    try:
+        import ipaddress
+        ipaddress.ip_address(host)
+        return "up", "Target is an IP address (DNS lookup skipped)"
+    except Exception:
+        pass
+
+    try:
+        infos = socket.getaddrinfo(host, None)
+    except socket.gaierror as e:
+        return "down", f"No DNS records found: {e}"
+
+    ips = list(dict.fromkeys([x[4][0] for x in infos if x and x[4]]))
+    if not ips:
+        return "down", "No DNS records found"
+
+    exp = (expected or "").strip()
+    if exp:
+        found = any(ip == exp or exp.lower() in ip.lower() for ip in ips)
+        if not found:
+            return "down", f"Expected '{exp}' not in DNS ({', '.join(ips[:4])})"
+        return "up", f"DNS matches expected ({exp})"
+
+    return "up", "DNS resolved: " + ", ".join(ips[:4])
+
+
+def check_json(url: str, keyword: str, timeout: float, verify_ssl: bool, app_name: str = "LinkNest") -> Tuple[str, str]:
+    if not re.match(r"^https?://", url, re.I):
+        return "down", "Invalid URL"
+    expr = (keyword or "").strip()
+    if not expr:
+        return "down", "No JSON check expression specified"
+
+    ua = f"{app_name} Monitor/1.0"
+    req = urllib.request.Request(url, method="GET", headers={"User-Agent": ua, "Accept": "application/json, */*", "Connection": "close"})
+    try:
+        with urllib.request.urlopen(req, timeout=timeout, context=_ssl_context(verify_ssl)) as resp:
+            code = getattr(resp, "status", None) or resp.getcode()
+            if not (200 <= int(code) < 400):
+                return "down", f"HTTP {code}"
+            body = resp.read(1024 * 1024)
+    except Exception as e:
+        http_res = _http_error_result(e)
+        if http_res:
+            return http_res
+        msg = str(e) or e.__class__.__name__
+        if "timed out" in msg.lower():
+            return "down", "Connection timeout"
+        return "down", f"Connection failed: {msg}"
+
+    try:
+        text = body.decode("utf-8", errors="ignore")
+        data = json.loads(text)
+    except Exception:
+        return "down", f"Response is not valid JSON (HTTP {code})"
+
+    if isinstance(data, dict) and ":" in expr:
+        key, expected = expr.split(":", 1)
+        key, expected = key.strip(), expected.strip()
+        actual = data.get(key)
+        if actual is None:
+            return "down", f"JSON key '{key}' not found (HTTP {code})"
+        actual_str = str(actual).lower() if not isinstance(actual, bool) else ("true" if actual else "false")
+        if actual_str == expected.lower() or str(actual) == expected:
+            return "up", f"JSON {key}={actual} (HTTP {code})"
+        return "down", f"JSON {key}={actual}, expected {expected} (HTTP {code})"
+
+    haystack = json.dumps(data).lower()
+    if expr.lower() in haystack:
+        return "up", f"JSON contains '{expr}' (HTTP {code})"
+    return "down", f"JSON value '{expr}' not found (HTTP {code})"
+
+
 def send_smtp_email(
     *,
     smtp_cfg: Dict[str, Any],
@@ -484,6 +1028,8 @@ def send_smtp_email(
     from_name: Optional[str],
     from_email: Optional[str],
     timeout_seconds: int = 20,
+    db_conn: Optional[sqlite3.Connection] = None,
+    app_name: Optional[str] = None,
 ) -> Tuple[bool, Optional[str]]:
     enabled = str(smtp_cfg.get("enabled", "")).strip().lower()
     if enabled not in ("1", "true"):
@@ -497,10 +1043,14 @@ def send_smtp_email(
     username = str(smtp_cfg.get("username", "") or "")
     password = str(smtp_cfg.get("password", "") or "")
 
-    fe = (from_email or smtp_cfg.get("from_email") or "").strip()
-    fn = (from_name or smtp_cfg.get("from_name") or "Monitor").strip()
+    resolved_app = (app_name or "").strip() or resolve_app_name(db_conn)
+    fe = expand_app_placeholders(from_email or smtp_cfg.get("from_email") or "", resolved_app).strip()
+    fn_raw = from_name if from_name is not None else smtp_cfg.get("from_name")
+    fn = expand_app_placeholders(fn_raw or f"{resolved_app} Monitor", resolved_app).strip()
     if not fe:
         return False, "Missing from_email"
+
+    subject = expand_app_placeholders(subject, resolved_app)
 
     all_rcpt = list(dict.fromkeys([*(to_list or []), *(cc_list or [])]))
     if not all_rcpt:
@@ -515,7 +1065,8 @@ def send_smtp_email(
     msg["Subject"] = subject
     msg.set_content(body or "")
     if html_body:
-        # Provide an HTML alternative (many clients prefer this), while keeping the plain-text fallback.
+        # HTML alternative only — do not CID-attach the logo. Outlook shows a
+        # paperclip for related image parts even when they are inline.
         msg.add_alternative(str(html_body), subtype="html")
 
     try:
@@ -563,45 +1114,162 @@ def _ln_nl2br_escaped(text: str) -> str:
     return _ln_html_escape(text).replace("\r\n", "\n").replace("\r", "\n").replace("\n", "<br/>")
 
 
-def ln_email_base_layout(title: str, subtitle: str, accent_hex: str, inner_html: str, preheader: str = "", app_name: str = "LinkNest") -> str:
+def _setting_value(conn: Optional[sqlite3.Connection], key: str) -> str:
+    if conn is None:
+        try:
+            with open_db(DEFAULT_DB_PATH) as c:
+                row = c.execute("SELECT value FROM settings WHERE key = ? LIMIT 1", (key,)).fetchone()
+                return str(row["value"]) if row and row["value"] is not None else ""
+        except Exception:
+            return ""
+    try:
+        row = conn.execute("SELECT value FROM settings WHERE key = ? LIMIT 1", (key,)).fetchone()
+        return str(row["value"]) if row and row["value"] is not None else ""
+    except Exception:
+        return ""
+
+
+def resolve_brand_logo_filesystem_path(conn: Optional[sqlite3.Connection] = None) -> Optional[str]:
+    """Map header/logo setting to uploads/<file> on disk."""
+    raw = ""
+    for key in ("header_logo_image", "logo_image", "favicon"):
+        raw = (_setting_value(conn, key) or "").strip()
+        if raw:
+            break
+    if not raw or raw.startswith("http://") or raw.startswith("https://") or raw.startswith("data:"):
+        return None
+    normalized = re.sub(r"^/[^/]+/uploads/", "/uploads/", raw)
+    if not normalized.startswith("/uploads/"):
+        return None
+    filename = os.path.basename(normalized)
+    if not re.match(r"^[a-zA-Z0-9._-]+$", filename):
+        return None
+    disk = os.path.normpath(os.path.join(os.path.dirname(__file__), "..", "uploads", filename))
+    return disk if os.path.isfile(disk) else None
+
+
+def resolve_email_public_base_url(conn: Optional[sqlite3.Connection] = None) -> str:
+    """Public origin for hosted email images (no trailing slash)."""
+    setting = (_setting_value(conn, "auth_email_public_url") or "").strip().rstrip("/")
+    if setting:
+        return setting
+    env = (os.environ.get("LINKNEST_PUBLIC_URL") or os.environ.get("LINKNEST_URL") or "").strip().rstrip("/")
+    return env
+
+
+def resolve_brand_logo_url(conn: Optional[sqlite3.Connection] = None) -> str:
+    """Hosted logo URL for HTML email (never cid: — that creates a paperclip in Outlook)."""
+    raw = ""
+    for key in ("header_logo_image", "logo_image", "favicon"):
+        raw = (_setting_value(conn, key) or "").strip()
+        if raw:
+            break
+    if not raw:
+        return ""
+    if re.match(r"^https?://", raw, re.I) or raw.startswith("data:"):
+        return raw
+    normalized = re.sub(r"^/[^/]+/uploads/", "/uploads/", raw)
+    if not normalized.startswith("/uploads/"):
+        if raw.startswith("/uploads/"):
+            normalized = raw
+        else:
+            return ""
+    base = resolve_email_public_base_url(conn)
+    if not base:
+        return ""
+    return base + normalized
+
+
+def ln_email_base_layout(
+    title: str,
+    subtitle: str,
+    accent_hex: str,
+    inner_html: str,
+    preheader: str = "",
+    app_name: str = "LinkNest",
+    footer_label: Optional[str] = None,
+    db_conn: Optional[sqlite3.Connection] = None,
+) -> str:
+    """Outlook-safe table layout (mirrors api/email_templates.php)."""
     accent = accent_hex if re.match(r"^#[0-9a-fA-F]{6}$", accent_hex or "") else "#4f46e5"
     safe_title = _ln_html_escape(title)
     safe_subtitle = _ln_html_escape(subtitle)
     safe_preheader = _ln_html_escape(preheader)
     safe_app_name = _ln_html_escape(app_name)
-    # Table-based layout for wide email client support (mirrors PHP template styling)
+    foot = footer_label or f"Sent by {app_name} Monitoring"
+    safe_foot = _ln_html_escape(foot)
+    now_s = _ln_html_escape(_dt.datetime.now().strftime("%Y-%m-%d %H:%M:%S"))
+
+    logo_row = ""
+    logo_src = resolve_brand_logo_url(db_conn)
+    if logo_src and not logo_src.lower().startswith("cid:"):
+        safe_logo = _ln_html_escape(logo_src)
+        logo_row = f"""
+          <tr>
+            <td bgcolor="#ffffff" style="background-color:#ffffff;padding:18px 24px 12px 24px;border-bottom:1px solid #e2e8f0;">
+              <img src="{safe_logo}" alt="{safe_app_name}" width="180" border="0" style="display:block;border:0;outline:none;text-decoration:none;height:auto;max-width:180px;width:180px;" />
+            </td>
+          </tr>"""
+
     return f"""<!doctype html>
-<html>
+<html xmlns="http://www.w3.org/1999/xhtml" xmlns:o="urn:schemas-microsoft-com:office:office" xmlns:v="urn:schemas-microsoft-com:vml">
 <head>
   <meta http-equiv="Content-Type" content="text/html; charset=UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <meta name="x-apple-disable-message-reformatting" />
+  <!--[if mso]>
+  <style type="text/css">
+    table, td, div, span, a {{ font-family: Arial, Helvetica, sans-serif !important; }}
+  </style>
+  <![endif]-->
   <title>{safe_title}</title>
+  <style type="text/css">
+    body, table, td, a {{ -webkit-text-size-adjust: 100%; -ms-text-size-adjust: 100%; }}
+    table, td {{ mso-table-lspace: 0pt; mso-table-rspace: 0pt; border-collapse: collapse !important; }}
+    img {{ -ms-interpolation-mode: bicubic; border: 0; outline: none; text-decoration: none; }}
+  </style>
 </head>
-<body style="margin:0;padding:0;background:#f6f7fb;">
-  <div style="display:none;max-height:0;overflow:hidden;opacity:0;color:transparent;">{safe_preheader}</div>
-  <table role="presentation" cellpadding="0" cellspacing="0" width="100%" style="background:#f6f7fb;padding:24px 0;">
+<body style="margin:0;padding:0;background-color:#f1f5f9;width:100% !important;">
+  <div style="display:none;font-size:1px;line-height:1px;max-height:0;max-width:0;opacity:0;overflow:hidden;mso-hide:all;">{safe_preheader}</div>
+  <table role="presentation" cellpadding="0" cellspacing="0" border="0" width="100%" bgcolor="#f1f5f9" style="background-color:#f1f5f9;width:100%;">
     <tr>
-      <td align="center">
-        <table role="presentation" cellpadding="0" cellspacing="0" width="600" style="width:600px;max-width:100%;background:#ffffff;border-radius:18px;overflow:hidden;box-shadow:0 10px 25px rgba(15,23,42,0.06);">
+      <td align="center" style="padding:24px 12px;">
+        <!--[if mso]>
+        <table role="presentation" cellpadding="0" cellspacing="0" border="0" width="600"><tr><td>
+        <![endif]-->
+        <table role="presentation" cellpadding="0" cellspacing="0" border="0" width="600" style="width:100%;max-width:600px;background-color:#ffffff;">
+          {logo_row}
           <tr>
-            <td style="background:{accent};padding:28px 28px 22px 28px;">
-              <div style="font-family:Segoe UI,Arial,sans-serif;color:#ffffff;font-size:20px;font-weight:800;letter-spacing:0.2px;line-height:1.2;">{safe_title}</div>
-              <div style="font-family:Segoe UI,Arial,sans-serif;color:rgba(255,255,255,0.9);font-size:13px;font-weight:600;margin-top:6px;line-height:1.4;">{safe_subtitle}</div>
+            <td bgcolor="{accent}" style="background-color:{accent};padding:22px 24px;">
+              <table role="presentation" cellpadding="0" cellspacing="0" border="0" width="100%">
+                <tr>
+                  <td style="font-family:Arial,Helvetica,sans-serif;color:#ffffff;font-size:11px;font-weight:700;letter-spacing:1px;text-transform:uppercase;padding:0 0 8px 0;">{safe_app_name}</td>
+                </tr>
+                <tr>
+                  <td style="font-family:Arial,Helvetica,sans-serif;color:#ffffff;font-size:22px;font-weight:700;line-height:28px;padding:0 0 6px 0;">{safe_title}</td>
+                </tr>
+                <tr>
+                  <td style="font-family:Arial,Helvetica,sans-serif;color:#ffffff;font-size:14px;font-weight:600;line-height:20px;">{safe_subtitle}</td>
+                </tr>
+              </table>
             </td>
           </tr>
           <tr>
-            <td style="padding:24px 28px 10px 28px;">
+            <td bgcolor="#ffffff" style="background-color:#ffffff;padding:24px;">
               {inner_html}
             </td>
           </tr>
           <tr>
-            <td style="padding:18px 28px 24px 28px;border-top:1px solid #eef2ff;">
-              <div style="font-family:Segoe UI,Arial,sans-serif;color:#64748b;font-size:12px;line-height:1.4;">
-                Sent by {safe_app_name} Monitoring • {_ln_html_escape(_dt.datetime.now().strftime("%Y-%m-%d %H:%M:%S"))}
-              </div>
+            <td bgcolor="#f8fafc" style="background-color:#f8fafc;padding:16px 24px;border-top:1px solid #e2e8f0;">
+              <p style="margin:0;font-family:Arial,Helvetica,sans-serif;color:#64748b;font-size:12px;line-height:18px;text-align:center;">
+                {safe_foot} &bull; {now_s}
+              </p>
             </td>
           </tr>
         </table>
+        <!--[if mso]>
+        </td></tr></table>
+        <![endif]-->
       </td>
     </tr>
   </table>
@@ -609,66 +1277,123 @@ def ln_email_base_layout(title: str, subtitle: str, accent_hex: str, inner_html:
 </html>"""
 
 
+def _ln_ensure_monitor_email_subject_has_status(subject: str, status: str, monitor_name: Optional[str] = None) -> str:
+    subject = (subject or "").strip()
+    status_label = (status or "").strip().upper()
+    if not subject or status_label in ("", "UNKNOWN", "BOTH"):
+        return subject
+    if re.search(r"\s-\s" + re.escape(status_label) + r"\s*$", subject, re.I):
+        return subject
+
+    prefix = ""
+    name_part = subject
+    m = re.match(r"^(\[[^\]]+\]\s*)(.*)$", subject)
+    if m:
+        prefix = m.group(1)
+        name_part = m.group(2).strip()
+
+    name_part = re.sub(r"\s+Status(\s+Update)?\s*$", "", name_part, flags=re.I)
+    name_part = re.sub(r"^(UP|DOWN|WARNING):\s*", "", name_part, flags=re.I)
+    name_part = re.sub(r"\s+Status:\s*(UP|DOWN|WARNING)\s*$", "", name_part, flags=re.I)
+    name_part = re.sub(r"\s-\s(UP|DOWN|WARNING)\s*$", "", name_part, flags=re.I)
+    name_part = name_part.strip()
+
+    if monitor_name and str(monitor_name).strip():
+        name_part = str(monitor_name).strip()
+    if not name_part:
+        name_part = "Monitor"
+
+    return f"{prefix}{name_part} - {status_label}"
+
+
+def _monitor_email_details_from_body(body: str) -> str:
+    """Short details line for HTML (avoid duplicating full plain-text body)."""
+    text = (body or "").strip()
+    if not text:
+        return "N/A"
+    for line in text.splitlines():
+        stripped = line.strip()
+        if stripped.lower().startswith("details:"):
+            return stripped.split(":", 1)[1].strip() or stripped
+    first = next((ln.strip() for ln in text.splitlines() if ln.strip()), text)
+    return first
+
+
 def ln_render_monitor_notification_html(
     *,
     monitor_name: str,
     target: str,
     status: str,
-    subject: str,
-    message_text: str,
+    details: str,
     response_time_ms: Optional[object] = None,
     app_name: str = "LinkNest",
+    db_conn: Optional[sqlite3.Connection] = None,
 ) -> str:
     """
-    Render a styled HTML email similar to the PHP legacy template.
-    Works for both legacy and rule-based notifications by placing the template-rendered message
-    into a "Message" section.
+    Render Outlook-safe HTML similar to the PHP monitor status template.
     """
     status_label = (status or "").strip().upper() or "UNKNOWN"
     accent = _ln_accent_for_status(status)
     pill_bg = accent
 
-    safe_message = _ln_nl2br_escaped(message_text or "")
-    safe_subject = _ln_html_escape(subject)
+    safe_details = _ln_nl2br_escaped(details or "N/A")
+    safe_target = _ln_html_escape(target or "N/A")
+    target_cell = safe_target
+    if re.match(r"^https?://", target or "", re.I):
+        target_cell = f'<a href="{safe_target}" style="color:#2563eb;text-decoration:underline;">{safe_target}</a>'
+    rt = _ln_html_escape(str(response_time_ms) if response_time_ms not in (None, "") else "N/A")
+    now_s = _ln_html_escape(_dt.datetime.now().strftime("%Y-%m-%d %H:%M:%S"))
 
-    # Basic "details card" with monitor metadata + message block
     inner = f"""
-      <div style="font-family:Segoe UI,Arial,sans-serif;color:#0f172a;">
-        <div style="display:flex;align-items:center;justify-content:space-between;gap:12px;flex-wrap:wrap;">
-          <div style="font-size:18px;font-weight:900;margin:0;">{_ln_html_escape(monitor_name or "Monitor")}</div>
-          <div>
-            <span style="display:inline-block;background:{pill_bg};color:#fff;padding:6px 12px;border-radius:999px;font-weight:900;font-size:12px;letter-spacing:0.6px;">{_ln_html_escape(status_label)}</span>
-          </div>
-        </div>
-
-        <div style="margin-top:14px;background:#f8fafc;border:1px solid #e2e8f0;border-radius:16px;padding:14px 16px;">
-          <table role="presentation" cellpadding="0" cellspacing="0" width="100%">
-            <tr>
-              <td style="font-size:13px;color:#334155;padding:4px 0;"><strong>Target</strong></td>
-              <td style="font-size:13px;color:#334155;padding:4px 0;" align="right">{_ln_html_escape(target or "N/A")}</td>
-            </tr>
-            <tr>
-              <td style="font-size:13px;color:#334155;padding:4px 0;"><strong>Response time</strong></td>
-              <td style="font-size:13px;color:#334155;padding:4px 0;" align="right">{_ln_html_escape(str(response_time_ms) if response_time_ms not in (None, "") else "N/A")}</td>
-            </tr>
-            <tr>
-              <td style="font-size:13px;color:#334155;padding:4px 0;"><strong>Time</strong></td>
-              <td style="font-size:13px;color:#334155;padding:4px 0;" align="right">{_ln_html_escape(_dt.datetime.now().strftime("%Y-%m-%d %H:%M:%S"))}</td>
-            </tr>
-          </table>
-        </div>
-
-        <div style="margin-top:16px;">
-          <div style="font-size:13px;font-weight:900;color:#0f172a;margin-bottom:8px;">Subject</div>
-          <div style="background:#ffffff;border:1px solid #e2e8f0;border-left:5px solid {accent};border-radius:14px;padding:12px 14px;font-size:13px;line-height:1.6;color:#334155;">{safe_subject}</div>
-        </div>
-
-        <div style="margin-top:16px;">
-          <div style="font-size:13px;font-weight:900;color:#0f172a;margin-bottom:8px;">Message</div>
-          <div style="background:#ffffff;border:1px solid #e2e8f0;border-radius:14px;padding:12px 14px;font-family:ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;font-size:12px;line-height:1.6;color:#0f172a;">{safe_message}</div>
-        </div>
-      </div>
+      <table role="presentation" cellpadding="0" cellspacing="0" border="0" width="100%">
+        <tr>
+          <td style="font-family:Arial,Helvetica,sans-serif;font-size:18px;font-weight:700;color:#0f172a;padding:0 0 10px 0;">{_ln_html_escape(monitor_name or "Monitor")}</td>
+        </tr>
+        <tr>
+          <td style="padding:0 0 14px 0;">
+            <table role="presentation" cellpadding="0" cellspacing="0" border="0">
+              <tr>
+                <td bgcolor="{pill_bg}" style="background-color:{pill_bg};color:#ffffff;font-family:Arial,Helvetica,sans-serif;font-size:12px;font-weight:700;letter-spacing:0.6px;padding:6px 14px;">{_ln_html_escape(status_label)}</td>
+              </tr>
+            </table>
+          </td>
+        </tr>
+        <tr>
+          <td bgcolor="#f8fafc" style="background-color:#f8fafc;border:1px solid #e2e8f0;padding:0;">
+            <table role="presentation" cellpadding="0" cellspacing="0" border="0" width="100%">
+              <tr>
+                <td width="34%" style="font-family:Arial,Helvetica,sans-serif;font-size:13px;color:#334155;padding:10px 14px;border-bottom:1px solid #e2e8f0;"><strong>Target</strong></td>
+                <td width="66%" align="right" style="font-family:Arial,Helvetica,sans-serif;font-size:13px;color:#334155;padding:10px 14px;border-bottom:1px solid #e2e8f0;word-break:break-all;">{target_cell}</td>
+              </tr>
+              <tr>
+                <td style="font-family:Arial,Helvetica,sans-serif;font-size:13px;color:#334155;padding:10px 14px;border-bottom:1px solid #e2e8f0;"><strong>Response time</strong></td>
+                <td align="right" style="font-family:Arial,Helvetica,sans-serif;font-size:13px;color:#334155;padding:10px 14px;border-bottom:1px solid #e2e8f0;">{rt}</td>
+              </tr>
+              <tr>
+                <td style="font-family:Arial,Helvetica,sans-serif;font-size:13px;color:#334155;padding:10px 14px;"><strong>Time</strong></td>
+                <td align="right" style="font-family:Arial,Helvetica,sans-serif;font-size:13px;color:#334155;padding:10px 14px;">{now_s}</td>
+              </tr>
+            </table>
+          </td>
+        </tr>
+        <tr>
+          <td style="font-family:Arial,Helvetica,sans-serif;font-size:13px;font-weight:700;color:#0f172a;padding:16px 0 8px 0;">Details</td>
+        </tr>
+        <tr>
+          <td bgcolor="#ffffff" style="background-color:#ffffff;border:1px solid #e2e8f0;border-left:4px solid {accent};padding:12px 14px;font-family:Arial,Helvetica,sans-serif;font-size:13px;line-height:1.6;color:#334155;">{safe_details}</td>
+        </tr>
+      </table>
     """
+
     pre = f"{status_label} - {monitor_name}"
-    return ln_email_base_layout("Monitor Status Update", "Rule-based notification email", accent, inner, preheader=pre, app_name=app_name)
+    return ln_email_base_layout(
+        "Monitor Status Update",
+        "Real-time status change notification",
+        accent,
+        inner,
+        preheader=pre,
+        app_name=app_name,
+        footer_label=f"Sent by {app_name} Monitoring",
+        db_conn=db_conn,
+    )
 

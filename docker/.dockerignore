@@ -1,21 +1,29 @@
+# NOTE: compose build context is the project root (`context: ..`).
+# The authoritative ignore file is /.dockerignore — this copy is only used if
+# you `docker build` from docker/ with this directory as context.
 node_modules
 dist
 .git
 .gitignore
-*.md
-README*
 .vscode
 .idea
 *.log
+# Never bake local DB overrides / secrets into the image
+config/database.local.php
+**/*.local.php
+**/*.local.ts
 npm-debug.log*
 yarn-debug.log*
 yarn-error.log*
 .DS_Store
 Thumbs.db
-data/*.db
+# Allow database files to be copied into container (for isolated container setup)
+# data/*.db - commented out to allow copying database
 data/*.db-journal
-uploads/*
-!uploads/.htaccess
+# Allow uploads folder to be copied (contains logo images and branding data)
+# uploads/* - commented out to allow copying uploads
+uploads/*.tmp
+uploads/*.temp
 .env
 .env.local
 *.swp

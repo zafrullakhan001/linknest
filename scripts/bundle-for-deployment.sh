@@ -93,6 +93,19 @@ done
     MISSING_SOURCE+=("services/")
 }
 
+# hooks / utils / docs (rebuild + App Updates)
+mkdir -p "$BUNDLE_DIR/hooks" "$BUNDLE_DIR/utils" "$BUNDLE_DIR/docs"
+[ -d "$PROJECT_ROOT/hooks" ] && cp -r "$PROJECT_ROOT/hooks/"* "$BUNDLE_DIR/hooks/" 2>/dev/null || true
+if [ -d "$PROJECT_ROOT/utils" ]; then
+    cp -r "$PROJECT_ROOT/utils/"* "$BUNDLE_DIR/utils/"
+    echo -e "${GREEN}✓ utils/ copied${NC}"
+else
+    echo -e "${RED}✗ ERROR: utils directory not found!${NC}"
+    MISSING_SOURCE+=("utils/")
+fi
+[ -d "$PROJECT_ROOT/docs" ] && cp -r "$PROJECT_ROOT/docs/"* "$BUNDLE_DIR/docs/" 2>/dev/null && echo -e "${GREEN}✓ docs/ copied${NC}" || true
+[ -f "$PROJECT_ROOT/AGENTS.md" ] && cp "$PROJECT_ROOT/AGENTS.md" "$BUNDLE_DIR/" || true
+
 if [ ${#MISSING_SOURCE[@]} -gt 0 ]; then
     echo -e "${RED}✗ ERROR: Missing required source files! Bundle creation failed.${NC}"
     exit 1
@@ -337,12 +350,23 @@ The deployment scripts will:
 ## Directory Structure
 
 - `docker/` - Docker configuration files
-- `api/` - PHP API files
-- `components/` - React components
+- `api/` - PHP API files (includes in-app updater: `updater.php`, `updater_lib.php`, `updater_apply_cli.php`)
+- `components/` - React components (includes `UpdatesDialog.tsx`)
 - `contexts/` - React contexts
-- `services/` - Service files
+- `services/` - Service files (includes `updaterService.ts`)
+- `utils/` - Shared frontend utilities (required for Vite rebuild)
+- `docs/` - Operator docs (`APP_UPDATES.md` for in-app updates)
+- `hooks/` - React hooks
+- `scripts/` - Deploy helpers (`publish-update-release.ps1` for GitHub Releases)
 - `data/` - Database storage (persistent)
 - `uploads/` - File uploads (persistent)
+
+For XAMPP packaging with `dist/` + updater asset naming, prefer:
+
+```bash
+# From project root (Windows)
+.\package-for-deployment.ps1
+```
 
 ## Manual Deployment
 

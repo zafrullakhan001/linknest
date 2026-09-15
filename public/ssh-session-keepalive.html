@@ -1,0 +1,178 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <meta name="robots" content="noindex, nofollow, noarchive, nosnippet" />
+    <title>LinkNest SSH session keeper</title>
+    <style>
+      html,
+      body {
+        margin: 0;
+        height: 100%;
+        background: #0f172a;
+        color: #94a3b8;
+        font: 12px/1.4 system-ui, sans-serif;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        text-align: center;
+      }
+      .box {
+        max-width: 280px;
+        padding: 12px;
+      }
+      strong {
+        color: #e2e8f0;
+      }
+      code {
+        color: #7dd3fc;
+      }
+    </style>
+  </head>
+  <body>
+    <div class="box">
+      <strong>SSH session keeper</strong>
+      <p>
+        You can <strong>minimize</strong> this window — just don’t close it.<br />
+        It keeps live SSH sessions alive across page refresh.<br />
+        Closing the SSH widget closes this helper.
+      </p>
+      <p id="status">Connecting…</p>
+    </div>
+    <script>
+      (function () {
+        var statusEl = document.getElementById('status');
+        function setStatus(text) {
+          if (statusEl) statusEl.textContent = text;
+        }
+
+        // Prefer staying in the background so the main app keeps focus.
+        function goBackground() {
+          try {
+            window.blur();
+          } catch (e) {
+            /* ignore */
+          }
+          try {
+            if (window.opener && !window.opener.closed) window.opener.focus();
+          } catch (e) {
+            /* ignore */
+          }
+        }
+        goBackground();
+        setTimeout(goBackground, 100);
+        setTimeout(goBackground, 350);
+
+        function candidateUrls() {
+          var origin = location.origin;
+          var path = location.pathname || '/';
+          var dir = path.endsWith('/') ? path : path.replace(/\/[^/]*$/, '/');
+          var list = [
+            new URL('ssh-session-shared-worker.js', location.href).href,
+            new URL('dist/ssh-session-shared-worker.js', location.href).href,
+            origin + dir + 'ssh-session-shared-worker.js',
+            origin + dir + 'dist/ssh-session-shared-worker.js',
+          ];
+          var m = path.match(/^(\/[^/]+)\//);
+          if (m) {
+            list.push(origin + m[1] + '/dist/ssh-session-shared-worker.js');
+            list.push(origin + m[1] + '/ssh-session-shared-worker.js');
+          }
+          return list.filter(function (u, i, a) {
+            return u && a.indexOf(u) === i;
+          });
+        }
+
+        function looksLikeWorker(text, contentType) {
+          var ct = (contentType || '').toLowerCase();
+          if (ct.indexOf('text/html') !== -1) return false;
+          var t = (text || '').trimStart();
+          if (t.indexOf('<!') === 0 || t.toLowerCase().indexOf('<html') === 0) return false;
+          return (
+            text.indexOf('self.onconnect') !== -1 ||
+            text.indexOf('onconnect') !== -1
+          );
+        }
+
+        function pickWorkerUrl() {
+          var urls = candidateUrls();
+          var i = 0;
+          function next() {
+            if (i >= urls.length) return Promise.resolve(null);
+            var url = urls[i++];
+            return fetch(url, { credentials: 'same-origin', cache: 'no-store' })
+              .then(function (res) {
+                if (!res.ok) return next();
+                return res.text().then(function (text) {
+                  if (looksLikeWorker(text, res.headers.get('content-type'))) return url;
+                  return next();
+                });
+              })
+              .catch(function () {
+                return next();
+              });
+          }
+          return next();
+        }
+
+        if (typeof SharedWorker === 'undefined') {
+          setStatus('SharedWorker not supported in this browser.');
+          return;
+        }
+
+        pickWorkerUrl().then(function (workerUrl) {
+          if (!workerUrl) {
+            setStatus('Worker script not found.');
+            return;
+          }
+          try {
+            var worker = new SharedWorker(workerUrl, {
+              name: 'linknest-ssh-sessions',
+              type: 'classic',
+            });
+            worker.port.onmessage = function (ev) {
+              if (ev.data && ev.data.type === 'hello-ok') {
+                var n = (ev.data.sessions && ev.data.sessions.length) || 0;
+                setStatus(
+                  'Holding ' + n + ' live session(s). You can minimize this window — don’t close it.'
+                );
+              }
+            };
+            worker.port.start();
+            worker.port.postMessage({ type: 'hello' });
+            setStatus('Keeper connected.');
+
+            // Refresh session count periodically
+            setInterval(function () {
+              try {
+                worker.port.postMessage({ type: 'list' });
+              } catch (e) {
+                /* ignore */
+              }
+            }, 5000);
+
+            window.addEventListener('message', function (ev) {
+              if (!ev || !ev.data || ev.data.source !== 'linknest-ssh') return;
+              if (ev.data.type === 'close-keeper') {
+                window.close();
+              }
+              if (ev.data.type === 'go-background') {
+                goBackground();
+              }
+              if (ev.data.type === 'ping') {
+                try {
+                  ev.source && ev.source.postMessage({ source: 'linknest-ssh-keeper', type: 'pong' }, '*');
+                } catch (e) {
+                  /* ignore */
+                }
+              }
+            });
+          } catch (err) {
+            setStatus('Failed to start keeper: ' + (err && err.message ? err.message : err));
+          }
+        });
+      })();
+    </script>
+  </body>
+</html>

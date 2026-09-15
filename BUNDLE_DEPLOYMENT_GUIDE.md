@@ -40,11 +40,20 @@ chmod +x deploy.sh
 
 A deployment bundle is a self-contained package that includes everything needed to deploy LinkNest:
 
-- ✅ All source code (frontend and backend)
-- ✅ Docker configuration files
-- ✅ Build configuration files
-- ✅ Deployment scripts
-- ✅ Documentation
+- All source code (frontend and backend), including `utils/` and in-app updater API (`api/updater*.php`)
+- Docker configuration files
+- Build configuration files
+- Deployment scripts (`scripts/publish-update-release.ps1` for GitHub update packages)
+- Operator docs (`docs/APP_UPDATES.md`)
+
+**Preferred XAMPP shipping path:** run [`package-for-deployment.ps1`](package-for-deployment.ps1) (or double-click `package-for-deployment.bat`) from the project root. That produces:
+
+- `linknest-deploy-YYYYMMDD_HHMMSS.zip` — full XAMPP deploy/update package
+- `linknest-update-vX.Y.Z.zip` — asset for Admin → App Updates
+
+The package includes production `dist/`, `vendor/`, SQLite XAMPP runtime, in-app updater APIs, and **`bin/`** (ttyd + vendored websockify) for SSH/VNC Easy remote widgets. On the target PC install **Python 3** and **OpenSSH Client**; see [`docs/REMOTE_WIDGETS_SETUP.md`](docs/REMOTE_WIDGETS_SETUP.md).
+
+See [`docs/APP_UPDATES.md`](docs/APP_UPDATES.md) for in-app updates.
 
 **No repository access required!** The bundle can be copied to any server and deployed independently.
 

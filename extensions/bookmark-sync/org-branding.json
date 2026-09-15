@@ -1,0 +1,24 @@
+{
+  "_comment": "Mass-deployment. Copy this folder to each PC (or force-install a packed CRX). Set enabled to true for branding. allowedOrigins is the security allowlist (scheme+host+port only) — pages not listed never receive bookmarks. appUrl’s origin is also allowed. Include Docker https://localhost:8443 and http://localhost:8090 for local containers. syncDefaultOn false = users must turn Bookmark sync On in the popup. locked:true applies org branding and disables the Branding tab. For production, list only your LinkNest origin(s) and remove localhost.",
+  "enabled": false,
+  "name": "Your Organisation Bookmark Sync",
+  "appName": "Your Organisation",
+  "appUrl": "https://intranet.example.com/linknest",
+  "logo": "branding/logo.png",
+  "locked": true,
+  "allowedOrigins": [
+    "http://localhost",
+    "http://localhost:3000",
+    "http://localhost:8000",
+    "http://localhost:8080",
+    "http://localhost:8090",
+    "https://localhost:8443",
+    "http://127.0.0.1",
+    "http://127.0.0.1:3000",
+    "http://127.0.0.1:8000",
+    "http://127.0.0.1:8080",
+    "http://127.0.0.1:8090",
+    "https://127.0.0.1:8443"
+  ],
+  "syncDefaultOn": false
+}
