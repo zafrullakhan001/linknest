@@ -1,8 +1,7 @@
 import React, { useCallback, useEffect, useState } from 'react';
 import { createPortal } from 'react-dom';
 import {
-  isSecureContextForPasskeys,
-  isWebAuthnSupported,
+  getPasskeySupportStatus,
   webauthnService,
   type PasskeyCredential,
 } from '../services/webauthnService';
@@ -65,8 +64,8 @@ export const PasskeyManagerDialog: React.FC<PasskeyManagerDialogProps> = ({ isOp
 
   if (!isOpen) return null;
 
-  const supportOk = isWebAuthnSupported();
-  const secureOk = isSecureContextForPasskeys();
+  const passkeySupport = getPasskeySupportStatus();
+  const supportOk = passkeySupport.supported;
 
   const handleAdd = async () => {
     setBusy(true);
@@ -159,12 +158,8 @@ export const PasskeyManagerDialog: React.FC<PasskeyManagerDialogProps> = ({ isOp
         <div className="p-5 space-y-4">
           {!supportOk && (
             <div className="rounded-xl border border-amber-200 dark:border-amber-800 bg-amber-50 dark:bg-amber-950/40 px-3 py-2.5 text-sm text-amber-900 dark:text-amber-100">
-              This browser does not support passkeys.
-            </div>
-          )}
-          {supportOk && !secureOk && (
-            <div className="rounded-xl border border-amber-200 dark:border-amber-800 bg-amber-50 dark:bg-amber-950/40 px-3 py-2.5 text-sm text-amber-900 dark:text-amber-100">
-              Passkeys require HTTPS (or localhost). Open LinkNest over a secure connection to add or use passkeys.
+              <p className="font-semibold">Passkeys are unavailable</p>
+              <p className="mt-1 text-xs leading-relaxed">{passkeySupport.message}</p>
             </div>
           )}
 
@@ -190,13 +185,13 @@ export const PasskeyManagerDialog: React.FC<PasskeyManagerDialogProps> = ({ isOp
                 onChange={(e) => setNickname(e.target.value)}
                 maxLength={64}
                 placeholder="e.g. Work laptop"
-                disabled={busy || !supportOk || !secureOk}
+                disabled={busy || !supportOk}
                 className="flex-1 px-3 py-2 text-sm rounded-lg border border-slate-300 dark:border-slate-600 bg-white dark:bg-slate-900 text-slate-900 dark:text-white"
               />
               <button
                 type="button"
                 onClick={() => void handleAdd()}
-                disabled={busy || !supportOk || !secureOk}
+                disabled={busy || !supportOk}
                 className="px-3 py-2 text-sm font-semibold rounded-lg bg-violet-600 hover:bg-violet-500 text-white disabled:opacity-50 whitespace-nowrap"
               >
                 {busy ? 'Wait…' : 'Add passkey'}

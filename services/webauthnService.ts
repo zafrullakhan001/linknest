@@ -68,20 +68,88 @@ function revivePublicKeyOptions<T extends Record<string, unknown>>(options: T): 
   return clone as T;
 }
 
-export function isWebAuthnSupported(): boolean {
-  return (
-    typeof window !== 'undefined' &&
-    typeof window.PublicKeyCredential !== 'undefined' &&
-    typeof navigator.credentials?.create === 'function' &&
-    typeof navigator.credentials?.get === 'function'
-  );
-}
-
 export function isSecureContextForPasskeys(): boolean {
   if (typeof window === 'undefined') return false;
   if (window.isSecureContext) return true;
   const host = window.location.hostname;
   return host === 'localhost' || host === '127.0.0.1' || host === '[::1]';
+}
+
+export interface PasskeySupportStatus {
+  supported: boolean;
+  reason:
+    | 'available'
+    | 'server-rendering'
+    | 'insecure-context'
+    | 'public-key-credential-unavailable'
+    | 'credentials-api-unavailable'
+    | 'registration-api-unavailable'
+    | 'authentication-api-unavailable';
+  message: string;
+}
+
+/**
+ * Return the first concrete reason passkeys cannot be used.
+ * Secure context is checked first because browsers may hide WebAuthn APIs on HTTP.
+ */
+export function getPasskeySupportStatus(): PasskeySupportStatus {
+  if (typeof window === 'undefined') {
+    return {
+      supported: false,
+      reason: 'server-rendering',
+      message: 'Passkey support can only be checked in a browser.',
+    };
+  }
+
+  if (!isSecureContextForPasskeys()) {
+    return {
+      supported: false,
+      reason: 'insecure-context',
+      message: `Passkeys are unavailable because this page uses an insecure connection (${window.location.protocol}//${window.location.host}). Open LinkNest over HTTPS, or use localhost for local testing.`,
+    };
+  }
+
+  if (typeof window.PublicKeyCredential === 'undefined') {
+    return {
+      supported: false,
+      reason: 'public-key-credential-unavailable',
+      message: 'The browser did not provide the WebAuthn API. Update the browser, open LinkNest in a full browser instead of an embedded webview, and check whether browser or device policy disables passkeys.',
+    };
+  }
+
+  if (!navigator.credentials) {
+    return {
+      supported: false,
+      reason: 'credentials-api-unavailable',
+      message: 'The browser Credential Management API is unavailable. Update the browser or check whether browser or device policy disables credential access.',
+    };
+  }
+
+  if (typeof navigator.credentials.create !== 'function') {
+    return {
+      supported: false,
+      reason: 'registration-api-unavailable',
+      message: 'This browser can’t create passkeys because the credential registration API is unavailable. Update the browser or try a full, non-embedded browser.',
+    };
+  }
+
+  if (typeof navigator.credentials.get !== 'function') {
+    return {
+      supported: false,
+      reason: 'authentication-api-unavailable',
+      message: 'This browser can’t use passkeys because the credential authentication API is unavailable. Update the browser or try a full, non-embedded browser.',
+    };
+  }
+
+  return {
+    supported: true,
+    reason: 'available',
+    message: 'Passkeys are supported.',
+  };
+}
+
+export function isWebAuthnSupported(): boolean {
+  return getPasskeySupportStatus().supported;
 }
 
 async function parseError(response: Response): Promise<string> {
@@ -138,11 +206,9 @@ export const webauthnService = {
   },
 
   async registerPasskey(nickname?: string): Promise<PasskeyCredential> {
-    if (!isWebAuthnSupported()) {
-      throw new Error('This browser does not support passkeys');
-    }
-    if (!isSecureContextForPasskeys()) {
-      throw new Error('Passkeys require HTTPS (or localhost). Open LinkNest over a secure connection.');
+    const support = getPasskeySupportStatus();
+    if (!support.supported) {
+      throw new Error(support.message);
     }
     const publicKey = await this.beginRegistration();
     const credential = (await navigator.credentials.create({ publicKey })) as PublicKeyCredential | null;
@@ -190,11 +256,9 @@ export const webauthnService = {
   },
 
   async loginWithPasskey(rememberMe = false): Promise<User> {
-    if (!isWebAuthnSupported()) {
-      throw new Error('This browser does not support passkeys');
-    }
-    if (!isSecureContextForPasskeys()) {
-      throw new Error('Passkeys require HTTPS (or localhost). Open LinkNest over a secure connection.');
+    const support = getPasskeySupportStatus();
+    if (!support.supported) {
+      throw new Error(support.message);
     }
     const publicKey = await this.beginLogin();
     const credential = (await navigator.credentials.get({ publicKey })) as PublicKeyCredential | null;
