@@ -171,6 +171,8 @@ realpath_cache_ttl=600
 
 After the install is stable you can set `opcache.validate_timestamps=0` and restart Apache on each deploy.
 
+From the admin Apache monitoring dashboard (footer **online now**), **Enable OPcache in php.ini** writes these keys into the loaded ini and **Restart Apache** locates `httpd.exe` (running process, `ServerRoot`, Windows service, PATH, or folders next to DocumentRoot / php.ini — any drive or install path) and schedules `httpd -k restart` (or `apachectl graceful` on Linux). Optional override: `LINKNEST_APACHE_HTTPD=D:\path\to\httpd.exe`.
+
 ### 1.4 Limits and production flags
 
 ```ini
@@ -259,7 +261,10 @@ Apache must accept loopback on the same listen port (`Listen 443` is fine; `List
 
 ```text
 LINKNEST_APACHE_STATUS_URL=http://127.0.0.1/server-status?auto
+LINKNEST_APACHE_HTTPD=D:\Apache\bin\httpd.exe
 ```
+
+`LINKNEST_APACHE_HTTPD` is optional. Restart Apache already discovers the binary from the running `httpd.exe` process, Apache `SERVER_ROOT`, the Windows service ImagePath, PATH, and folders next to DocumentRoot / php.ini (XAMPP, vanilla, WAMP, Laragon, any drive). Set the variable only if discovery cannot see that install.
 
 Leave these **commented** until the optional HTTPS / WSS section:
 

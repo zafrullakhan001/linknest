@@ -1,4 +1,4 @@
-import React, { useCallback, useEffect, useMemo, useState } from 'react';
+import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
 import {
   Bar,
@@ -18,8 +18,10 @@ import {
 import { useDraggableResizableDialog } from '../hooks/useDraggableResizableDialog';
 import { useMobile } from '../hooks/useMobile';
 import {
+  enableApacheMonitorOpcache,
   fetchApacheMonitorDashboard,
   purgeApacheMonitorLogs,
+  restartApacheMonitorServer,
   type ApacheMonitorDashboard,
   type ApacheMonitorLogFile,
   type ApacheMonitorRequestRow,
@@ -315,6 +317,8 @@ export const ApacheMonitoringDashboard: React.FC<{
   const [isMaximized, setIsMaximized] = useState(false);
   const [purging, setPurging] = useState<'apache' | 'php' | null>(null);
   const [purgeMessage, setPurgeMessage] = useState<string | null>(null);
+  const [actionBusy, setActionBusy] = useState<'opcache' | 'restart' | null>(null);
+  const cooldownUntilRef = useRef(0);
 
   const {
     modalRef,
@@ -411,6 +415,50 @@ export const ApacheMonitoringDashboard: React.FC<{
     [data, load]
   );
 
+  const handleEnableOpcache = useCallback(async () => {
+    const ini = data?.actions?.phpIniPath || 'the loaded php.ini';
+    if (
+      !window.confirm(
+        `Write recommended OPcache settings to ${ini}? A backup is saved as php.ini.linknest.bak if one does not already exist. Restart Apache afterwards for this to take effect.`
+      )
+    ) {
+      return;
+    }
+    setActionBusy('opcache');
+    setPurgeMessage(null);
+    try {
+      const result = await enableApacheMonitorOpcache();
+      setPurgeMessage(result.message);
+      await load({ silent: true, fresh: true });
+    } catch (err) {
+      setPurgeMessage(err instanceof Error ? err.message : 'Failed to update php.ini.');
+    } finally {
+      setActionBusy(null);
+    }
+  }, [data, load]);
+
+  const handleRestartApache = useCallback(async () => {
+    const bin = data?.actions?.apacheBinary || 'Apache';
+    if (
+      !window.confirm(
+        `Restart Apache (${bin})? The site will drop for a few seconds. This dashboard may disconnect, then recover.`
+      )
+    ) {
+      return;
+    }
+    setActionBusy('restart');
+    setPurgeMessage(null);
+    try {
+      const result = await restartApacheMonitorServer();
+      cooldownUntilRef.current = Date.now() + 12000;
+      setPurgeMessage(result.message);
+    } catch (err) {
+      setPurgeMessage(err instanceof Error ? err.message : 'Failed to restart Apache.');
+    } finally {
+      setActionBusy(null);
+    }
+  }, [data]);
+
   useEffect(() => {
     if (!isOpen) return;
 
@@ -436,6 +484,11 @@ export const ApacheMonitoringDashboard: React.FC<{
     const tick = async (silent: boolean) => {
       if (cancelled) return;
       if (typeof document !== 'undefined' && document.visibilityState === 'hidden') {
+        return;
+      }
+      const wait = cooldownUntilRef.current - Date.now();
+      if (wait > 0) {
+        schedule(Math.min(wait, 5000));
         return;
       }
       controller?.abort();
@@ -528,6 +581,7 @@ export const ApacheMonitoringDashboard: React.FC<{
   const php = data?.php;
   const sqlite = data?.sqlite;
   const disk = data?.disk;
+  const actions = data?.actions;
   const apacheLogs = data?.logs?.apache ?? [];
   const phpLogs = data?.logs?.php ?? [];
   const systemLoad =
@@ -876,6 +930,46 @@ export const ApacheMonitoringDashboard: React.FC<{
 
               <SectionTitle>PHP</SectionTitle>
               <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-3 sm:gap-4">
+                <Card title="Fix php.ini / restart Apache" className="md:col-span-2 xl:col-span-3">
+                  <p className="text-xs text-slate-600 dark:text-slate-300 mb-3">
+                    Enable OPcache in the php.ini Apache is using, then restart the web server so the change loads.
+                    {actions?.phpIniPath ? (
+                      <>
+                        {' '}
+                        Loaded ini: <span className="break-all font-medium">{actions.phpIniPath}</span>
+                      </>
+                    ) : (
+                      ' Could not detect php.ini.'
+                    )}
+                  </p>
+                  <div className="flex flex-wrap gap-2">
+                    <button
+                      type="button"
+                      onClick={() => void handleEnableOpcache()}
+                      disabled={actionBusy !== null || !actions?.canEnableOpcache}
+                      className="px-3 py-1.5 rounded-lg text-xs font-semibold bg-amber-50 dark:bg-amber-950/40 text-amber-800 dark:text-amber-200 hover:bg-amber-100 dark:hover:bg-amber-900/50 disabled:opacity-50 disabled:cursor-not-allowed"
+                    >
+                      {actionBusy === 'opcache' ? 'Updating php.ini…' : 'Enable OPcache in php.ini'}
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => void handleRestartApache()}
+                      disabled={actionBusy !== null || !actions?.canRestartApache}
+                      className="px-3 py-1.5 rounded-lg text-xs font-semibold bg-slate-100 dark:bg-slate-700 text-slate-700 dark:text-slate-200 hover:bg-slate-200 dark:hover:bg-slate-600 disabled:opacity-50 disabled:cursor-not-allowed"
+                    >
+                      {actionBusy === 'restart' ? 'Scheduling restart…' : 'Restart Apache'}
+                    </button>
+                  </div>
+                  <p className="text-[11px] text-slate-400 mt-2">
+                    {actions?.canRestartApache
+                      ? `Restart uses ${actions.apacheBinary || 'the local Apache binary'} after a short delay so this request can finish.`
+                      : 'Apache binary was not found. Discovery looks at the running process, ServerRoot, Windows service, PATH, and nearby folders. Set LINKNEST_APACHE_HTTPD to the full httpd.exe / apachectl path if it still cannot be located.'}
+                    {!actions?.phpIniWritable && actions?.phpIniPath
+                      ? ' php.ini is not writable by the Apache account.'
+                      : ''}
+                  </p>
+                </Card>
+
                 <Card title="PHP memory">
                   <p className="text-xs text-slate-400 mb-1">
                     {php?.sapi} · {php?.version}

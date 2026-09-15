@@ -312,11 +312,24 @@ function apacheMonitorIsDocker(): bool
 
 function apacheMonitorIsXampp(): bool
 {
-    $root = (string) ($_SERVER['DOCUMENT_ROOT'] ?? '');
-    if (stripos($root, 'xampp') !== false) {
-        return true;
+    $needles = [
+        (string) ($_SERVER['DOCUMENT_ROOT'] ?? ''),
+        (string) ($_SERVER['SCRIPT_FILENAME'] ?? ''),
+    ];
+    $ini = apacheMonitorPhpIniPath();
+    if (is_string($ini) && $ini !== '') {
+        $needles[] = $ini;
     }
-    return is_dir('C:/xampp/apache') || is_dir('C:\\xampp\\apache');
+    $httpd = apacheMonitorFindHttpd();
+    if (is_array($httpd) && !empty($httpd['bin'])) {
+        $needles[] = (string) $httpd['bin'];
+    }
+    foreach ($needles as $path) {
+        if ($path !== '' && stripos($path, 'xampp') !== false) {
+            return true;
+        }
+    }
+    return false;
 }
 
 function apacheMonitorRequestIsHttps(): bool
@@ -570,6 +583,13 @@ function apacheMonitorAccessLogCandidates(): array
     $sapi = (string) php_sapi_name();
     $docRoot = (string) ($_SERVER['DOCUMENT_ROOT'] ?? '');
     $serverRootHints = [];
+    $logDirsEarly = [];
+
+    foreach (apacheMonitorDiscoveredLogDirs() as $dir) {
+        $serverRootHints[] = $dir . '/access.log';
+        $serverRootHints[] = $dir . '/access_log';
+        $logDirsEarly[] = $dir;
+    }
 
     if ($docRoot !== '') {
         $serverRootHints[] = $docRoot . '/../apache/logs/access.log';
@@ -596,13 +616,13 @@ function apacheMonitorAccessLogCandidates(): array
         '/opt/lampp/logs/access_log',
     ]);
 
-    $logDirs = [
+    $logDirs = array_merge($logDirsEarly ?? [], [
         'C:/xampp/apache/logs',
         'D:/Apache/logs',
         'C:/Apache24/logs',
         '/var/log/apache2',
         '/var/log/httpd',
-    ];
+    ]);
     if ($docRoot !== '') {
         $logDirs[] = $docRoot . '/../logs';
         $logDirs[] = $docRoot . '/../../logs';
@@ -1280,6 +1300,7 @@ function apacheMonitorBuildDashboard(PDO $db, bool $fresh = false): array
         'logs' => apacheMonitorTtlCache('logs', $slowTtl, static function () {
             return apacheMonitorCollectLogInventory();
         }),
+        'actions' => apacheMonitorCollectActions(),
         'instance' => (string) ($_SERVER['SERVER_NAME'] ?? 'instance-1'),
     ];
 
@@ -1574,5 +1595,926 @@ function apacheMonitorCollectDisk(): array
         'totalHuman' => apacheMonitorFormatBytes($total),
         'freeHuman' => apacheMonitorFormatBytes($free),
         'usedHuman' => apacheMonitorFormatBytes($used),
+    ];
+}
+
+function apacheMonitorPhpIniPath(): ?string
+{
+    $loaded = php_ini_loaded_file();
+    if (!is_string($loaded) || $loaded === '') {
+        $loaded = (string) get_cfg_var('cfg_file_path');
+    }
+    $loaded = trim($loaded);
+    if ($loaded === '') {
+        return null;
+    }
+    $real = realpath($loaded);
+    if ($real === false || !is_file($real)) {
+        return null;
+    }
+    $base = strtolower(basename($real));
+    if (!preg_match('/^php.*\.ini$/i', $base)) {
+        return null;
+    }
+    return $real;
+}
+
+function apacheMonitorIniSetKey(string $content, string $key, string $value): array
+{
+    $nl = strpos($content, "\r\n") !== false ? "\r\n" : "\n";
+    $line = $key . '=' . $value;
+    $pattern = '/^[ \t]*;?[ \t]*' . preg_quote($key, '/') . '[ \t]*=[ \t]*.*$/m';
+    if (preg_match($pattern, $content, $m)) {
+        if (trim($m[0]) === $line) {
+            return [$content, false];
+        }
+        return [preg_replace($pattern, $line, $content, 1), true];
+    }
+    if (preg_match('/^[ \t]*\[opcache\][ \t]*$/m', $content)) {
+        return [preg_replace('/^([ \t]*\[opcache\][ \t]*)$/m', '$1' . $nl . $line, $content, 1), true];
+    }
+    return [rtrim($content) . $nl . $line . $nl, true];
+}
+
+function apacheMonitorOpcacheDllPath(): ?string
+{
+    $dir = trim((string) ini_get('extension_dir'));
+    if ($dir === '') {
+        return null;
+    }
+    if (!preg_match('#[\\\\/]#', $dir)) {
+        $ini = apacheMonitorPhpIniPath();
+        if ($ini) {
+            $dir = dirname($ini) . DIRECTORY_SEPARATOR . 'ext';
+        }
+    }
+    $name = PHP_OS_FAMILY === 'Windows' ? 'php_opcache.dll' : 'opcache.so';
+    $full = rtrim($dir, "\\/") . DIRECTORY_SEPARATOR . $name;
+    return is_file($full) ? $full : null;
+}
+
+function apacheMonitorEnvValue(string $key): string
+{
+    $v = getenv($key);
+    if (is_string($v) && trim($v) !== '') {
+        return trim($v);
+    }
+    $v = $_SERVER[$key] ?? $_ENV[$key] ?? '';
+    return is_string($v) ? trim($v) : '';
+}
+
+function apacheMonitorIsSafeBinPath(string $path): bool
+{
+    return $path !== '' && !preg_match('/["&|<>%\r\n]/', $path);
+}
+
+/**
+ * @param list<string> $basenames
+ */
+function apacheMonitorAcceptBin(string $path, array $basenames): ?string
+{
+    $path = trim($path);
+    if ($path === '') {
+        return null;
+    }
+    if (($path[0] === '"' || $path[0] === "'") && strlen($path) >= 2) {
+        $path = trim($path, "\"'");
+    }
+    if (!apacheMonitorIsSafeBinPath($path)) {
+        return null;
+    }
+    $real = realpath($path);
+    if ($real === false || !is_file($real)) {
+        return null;
+    }
+    $want = [];
+    foreach ($basenames as $name) {
+        $want[strtolower($name)] = true;
+    }
+    if (!isset($want[strtolower(basename($real))])) {
+        return null;
+    }
+    return $real;
+}
+
+function apacheMonitorSanitizeServiceName(string $name): ?string
+{
+    $name = trim($name);
+    if ($name === '' || !preg_match('/^[A-Za-z0-9_\-]{1,64}$/', $name)) {
+        return null;
+    }
+    return $name;
+}
+
+function apacheMonitorExtractQuotedExe(string $pathName): ?string
+{
+    $pathName = trim($pathName);
+    if ($pathName === '') {
+        return null;
+    }
+    if ($pathName[0] === '"') {
+        $end = strpos($pathName, '"', 1);
+        if ($end !== false) {
+            return substr($pathName, 1, $end - 1);
+        }
+    }
+    if (preg_match('/^(.+?\.exe)(?:\s|$)/i', $pathName, $m)) {
+        return $m[1];
+    }
+    return $pathName;
+}
+
+/**
+ * @return list<string>
+ */
+function apacheMonitorAncestorDirs(string $start, int $maxLevels = 12): array
+{
+    $dirs = [];
+    $dir = $start;
+    $realStart = realpath($start);
+    if ($realStart !== false) {
+        $dir = is_file($realStart) ? dirname($realStart) : $realStart;
+    } elseif (is_file($dir)) {
+        $dir = dirname($dir);
+    }
+    for ($i = 0; $i < $maxLevels && is_string($dir) && $dir !== ''; $i++) {
+        $resolved = realpath($dir);
+        $use = $resolved !== false ? $resolved : $dir;
+        $dirs[] = $use;
+        $parent = dirname($use);
+        if ($parent === $use) {
+            break;
+        }
+        $dir = $parent;
+    }
+    return $dirs;
+}
+
+/**
+ * @return list<string>
+ */
+function apacheMonitorHttpdRelativeFragments(): array
+{
+    if (PHP_OS_FAMILY === 'Windows') {
+        return [
+            '/bin/httpd.exe',
+            '/apache/bin/httpd.exe',
+            '/Apache/bin/httpd.exe',
+            '/Apache24/bin/httpd.exe',
+            '/apache24/bin/httpd.exe',
+            '/Apache2.4/bin/httpd.exe',
+            '/httpd/bin/httpd.exe',
+            '/xampp/apache/bin/httpd.exe',
+        ];
+    }
+    return [
+        '/bin/httpd',
+        '/bin/apachectl',
+        '/bin/apache2ctl',
+        '/bin/apache2',
+        '/sbin/httpd',
+        '/sbin/apachectl',
+        '/sbin/apache2ctl',
+        '/sbin/apache2',
+    ];
+}
+
+/**
+ * @return list<string>
+ */
+function apacheMonitorWindowsHttpdBasenames(): array
+{
+    return ['httpd.exe'];
+}
+
+/**
+ * @return list<string>
+ */
+function apacheMonitorUnixServerBasenames(): array
+{
+    return ['apache2ctl', 'apachectl', 'httpd', 'apache2'];
+}
+
+function apacheMonitorHttpdKindFromBasename(string $path): string
+{
+    $base = strtolower(basename($path));
+    if ($base === 'apache2ctl' || $base === 'apachectl') {
+        return 'ctl';
+    }
+    return 'httpd';
+}
+
+/**
+ * @param array{bin:string,kind:string,label:string,service:?string,source:string} $found
+ */
+function apacheMonitorHttpdResult(string $bin, string $kind, string $source, ?string $service = null): array
+{
+    return [
+        'bin' => $bin,
+        'kind' => $kind,
+        'label' => $bin,
+        'service' => $service,
+        'source' => $source,
+    ];
+}
+
+function apacheMonitorPreferUnixCtl(string $bin, string $source): array
+{
+    $base = strtolower(basename($bin));
+    if ($base === 'apache2' || $base === 'httpd') {
+        foreach (['/usr/sbin/apache2ctl', '/usr/sbin/apachectl', '/usr/local/sbin/apachectl'] as $ctl) {
+            $ok = apacheMonitorAcceptBin($ctl, ['apache2ctl', 'apachectl']);
+            if ($ok !== null) {
+                return apacheMonitorHttpdResult($ok, 'ctl', $source);
+            }
+        }
+    }
+    return apacheMonitorHttpdResult($bin, apacheMonitorHttpdKindFromBasename($bin), $source);
+}
+
+/**
+ * @return list<string>
+ */
+function apacheMonitorWalkHttpdCandidates(array $starts): array
+{
+    $out = [];
+    $fragments = apacheMonitorHttpdRelativeFragments();
+    $seen = [];
+    foreach ($starts as $start) {
+        if (!is_string($start) || $start === '') {
+            continue;
+        }
+        foreach (apacheMonitorAncestorDirs($start) as $dir) {
+            foreach ($fragments as $rel) {
+                $path = $dir . str_replace('/', DIRECTORY_SEPARATOR, $rel);
+                $key = strtolower($path);
+                if (isset($seen[$key])) {
+                    continue;
+                }
+                $seen[$key] = true;
+                $out[] = $path;
+            }
+        }
+    }
+    return $out;
+}
+
+function apacheMonitorApacheGetenvServerRoot(): ?string
+{
+    if (!function_exists('apache_getenv')) {
+        return null;
+    }
+    foreach ([false, true] as $walk) {
+        try {
+            $sr = trim((string) apache_getenv('SERVER_ROOT', $walk));
+        } catch (Throwable $e) {
+            continue;
+        }
+        if ($sr === '') {
+            continue;
+        }
+        $real = realpath($sr);
+        if ($real !== false && is_dir($real)) {
+            return $real;
+        }
+    }
+    return null;
+}
+
+function apacheMonitorLinuxReadlinkExe(int $pid): ?string
+{
+    $link = '/proc/' . $pid . '/exe';
+    $target = @readlink($link);
+    if (!is_string($target) || $target === '') {
+        return null;
+    }
+    $target = preg_replace('/ \(deleted\)$/', '', $target);
+    return is_string($target) && $target !== '' ? $target : null;
+}
+
+function apacheMonitorLinuxPpid(int $pid): ?int
+{
+    $status = @file_get_contents('/proc/' . $pid . '/status');
+    if (!is_string($status) || $status === '') {
+        return null;
+    }
+    if (preg_match('/^PPid:\s*(\d+)/m', $status, $m)) {
+        return (int) $m[1];
+    }
+    return null;
+}
+
+function apacheMonitorLinuxRunningServer(): ?array
+{
+    $pid = (int) getmypid();
+    $allowed = apacheMonitorUnixServerBasenames();
+    $guard = 0;
+    while ($pid > 1 && $guard++ < 24) {
+        $exe = apacheMonitorLinuxReadlinkExe($pid);
+        if ($exe !== null) {
+            $ok = apacheMonitorAcceptBin($exe, $allowed);
+            if ($ok !== null) {
+                return apacheMonitorPreferUnixCtl($ok, 'process');
+            }
+        }
+        $ppid = apacheMonitorLinuxPpid($pid);
+        if ($ppid === null || $ppid === $pid || $ppid < 1) {
+            break;
+        }
+        $pid = $ppid;
+    }
+    return null;
+}
+
+function apacheMonitorWindowsWmi(): ?object
+{
+    if (!class_exists('COM')) {
+        return null;
+    }
+    try {
+        $wmi = new COM('winmgmts://./root/cimv2');
+        return is_object($wmi) ? $wmi : null;
+    } catch (Throwable $e) {
+        return null;
+    }
+}
+
+function apacheMonitorWindowsRunningHttpd(): ?array
+{
+    $wmi = apacheMonitorWindowsWmi();
+    $paths = [];
+    if ($wmi !== null) {
+        try {
+            $pid = (int) getmypid();
+            $guard = 0;
+            while ($pid > 0 && $guard++ < 24) {
+                $q = $wmi->ExecQuery(
+                    'SELECT ProcessId, ParentProcessId, Name, ExecutablePath FROM Win32_Process WHERE ProcessId = ' . $pid
+                );
+                $found = false;
+                foreach ($q as $row) {
+                    $found = true;
+                    $name = strtolower((string) $row->Name);
+                    $exe = trim((string) $row->ExecutablePath);
+                    if ($name === 'httpd.exe' && $exe !== '') {
+                        $ok = apacheMonitorAcceptBin($exe, apacheMonitorWindowsHttpdBasenames());
+                        if ($ok !== null) {
+                            return apacheMonitorHttpdResult($ok, 'httpd', 'process');
+                        }
+                    }
+                    $pid = (int) $row->ParentProcessId;
+                    break;
+                }
+                if (!$found) {
+                    break;
+                }
+            }
+            $q = $wmi->ExecQuery("SELECT ExecutablePath FROM Win32_Process WHERE Name = 'httpd.exe'");
+            foreach ($q as $row) {
+                $ok = apacheMonitorAcceptBin((string) $row->ExecutablePath, apacheMonitorWindowsHttpdBasenames());
+                if ($ok !== null) {
+                    $paths[$ok] = true;
+                }
+            }
+        } catch (Throwable $e) {
+            $paths = [];
+        }
+    }
+    if ($paths === []) {
+        $out = [];
+        @exec('wmic process where "name=\'httpd.exe\'" get ExecutablePath /VALUE 2>NUL', $out);
+        foreach ($out as $line) {
+            $line = trim((string) $line);
+            if (stripos($line, 'ExecutablePath=') !== 0) {
+                continue;
+            }
+            $ok = apacheMonitorAcceptBin(trim(substr($line, strlen('ExecutablePath='))), apacheMonitorWindowsHttpdBasenames());
+            if ($ok !== null) {
+                $paths[$ok] = true;
+            }
+        }
+    }
+    if ($paths === []) {
+        return null;
+    }
+    $keys = array_keys($paths);
+    if (count($keys) === 1) {
+        return apacheMonitorHttpdResult($keys[0], 'httpd', 'process');
+    }
+    $hint = strtolower((string) ($_SERVER['DOCUMENT_ROOT'] ?? ''));
+    $ini = apacheMonitorPhpIniPath();
+    if (is_string($ini)) {
+        $hint .= ' ' . strtolower($ini);
+    }
+    foreach ($keys as $path) {
+        $dir = strtolower(dirname(dirname($path)));
+        if ($hint !== '' && $dir !== '' && strpos($hint, $dir) !== false) {
+            return apacheMonitorHttpdResult($path, 'httpd', 'process');
+        }
+        if ($hint !== '' && strpos(strtolower($path), $dir) !== false) {
+            return apacheMonitorHttpdResult($path, 'httpd', 'process');
+        }
+    }
+    return apacheMonitorHttpdResult($keys[0], 'httpd', 'process');
+}
+
+function apacheMonitorWindowsServiceHttpd(): ?array
+{
+    static $done = false;
+    static $cached = null;
+    if ($done) {
+        return $cached;
+    }
+    $done = true;
+    $wmi = apacheMonitorWindowsWmi();
+    if ($wmi === null) {
+        return null;
+    }
+    $running = null;
+    $any = null;
+    try {
+        $q = $wmi->ExecQuery(
+            "SELECT Name, PathName, State FROM Win32_Service WHERE PathName LIKE '%httpd.exe%'"
+        );
+        foreach ($q as $row) {
+            $pathName = (string) $row->PathName;
+            if (stripos($pathName, 'httpd.exe') === false) {
+                continue;
+            }
+            $exe = apacheMonitorExtractQuotedExe($pathName);
+            $ok = $exe !== null ? apacheMonitorAcceptBin($exe, apacheMonitorWindowsHttpdBasenames()) : null;
+            if ($ok === null) {
+                continue;
+            }
+            $svc = apacheMonitorSanitizeServiceName((string) $row->Name);
+            $item = apacheMonitorHttpdResult($ok, 'httpd', 'service', $svc);
+            $state = strtolower((string) $row->State);
+            if ($state === 'running') {
+                $running = $item;
+                break;
+            }
+            if ($any === null) {
+                $any = $item;
+            }
+        }
+    } catch (Throwable $e) {
+        return null;
+    }
+    $cached = $running ?? $any;
+    return $cached;
+}
+
+/**
+ * @return list<string>
+ */
+function apacheMonitorPathLookup(array $names): array
+{
+    $found = [];
+    if (PHP_OS_FAMILY === 'Windows') {
+        foreach ($names as $name) {
+            $out = [];
+            @exec('where.exe ' . escapeshellarg($name) . ' 2>NUL', $out);
+            foreach ($out as $line) {
+                $ok = apacheMonitorAcceptBin(trim((string) $line), $names);
+                if ($ok !== null) {
+                    $found[$ok] = true;
+                }
+            }
+        }
+        return array_keys($found);
+    }
+    foreach ($names as $name) {
+        $out = [];
+        @exec('command -v ' . escapeshellarg($name) . ' 2>/dev/null', $out);
+        foreach ($out as $line) {
+            $ok = apacheMonitorAcceptBin(trim((string) $line), $names);
+            if ($ok !== null) {
+                $found[$ok] = true;
+            }
+        }
+    }
+    return array_keys($found);
+}
+
+/**
+ * @return list<string>
+ */
+function apacheMonitorConventionalHttpdCandidates(): array
+{
+    $paths = [];
+    if (PHP_OS_FAMILY === 'Windows') {
+        $relatives = [
+            'Apache/bin/httpd.exe',
+            'Apache24/bin/httpd.exe',
+            'Apache2.4/bin/httpd.exe',
+            'xampp/apache/bin/httpd.exe',
+            'httpd/bin/httpd.exe',
+            'Program Files/Apache Software Foundation/Apache2.4/bin/httpd.exe',
+            'Program Files/Apache Software Foundation/Apache24/bin/httpd.exe',
+            'Program Files (x86)/Apache Software Foundation/Apache2.4/bin/httpd.exe',
+            'Program Files/Apache Group/Apache2/bin/httpd.exe',
+        ];
+        foreach (range('C', 'Z') as $letter) {
+            $root = $letter . ':\\';
+            if (!@is_dir($root)) {
+                continue;
+            }
+            foreach ($relatives as $rel) {
+                $paths[] = $letter . ':/' . $rel;
+            }
+            $stacks = [
+                $letter . ':/laragon/bin/apache/*/bin/httpd.exe',
+                $letter . ':/wamp64/bin/apache/*/bin/httpd.exe',
+                $letter . ':/wamp/bin/apache/*/bin/httpd.exe',
+                $letter . ':/Bitnami/*/apache2/bin/httpd.exe',
+            ];
+            foreach ($stacks as $pattern) {
+                $parent = dirname(str_replace('\\', '/', $pattern));
+                while (strpos($parent, '*') !== false) {
+                    $parent = dirname($parent);
+                }
+                if (!is_dir(str_replace('/', DIRECTORY_SEPARATOR, $parent))) {
+                    continue;
+                }
+                foreach (glob($pattern) ?: [] as $hit) {
+                    $paths[] = $hit;
+                }
+            }
+        }
+        return $paths;
+    }
+    return [
+        '/usr/sbin/apache2ctl',
+        '/usr/sbin/apachectl',
+        '/usr/sbin/httpd',
+        '/usr/sbin/apache2',
+        '/usr/local/sbin/apachectl',
+        '/usr/local/apache2/bin/httpd',
+        '/usr/local/apache2/bin/apachectl',
+        '/opt/apache2/bin/httpd',
+        '/opt/lampp/bin/httpd',
+        '/opt/bitnami/apache/bin/httpd',
+    ];
+}
+
+/**
+ * @return list<string>
+ */
+function apacheMonitorDiscoveredLogDirs(): array
+{
+    $dirs = [];
+    $root = apacheMonitorApacheGetenvServerRoot();
+    if ($root === null) {
+        $httpd = apacheMonitorFindHttpd();
+        if (is_array($httpd) && !empty($httpd['bin'])) {
+            $maybe = realpath(dirname((string) $httpd['bin']) . DIRECTORY_SEPARATOR . '..');
+            if ($maybe !== false && is_dir($maybe)) {
+                $root = $maybe;
+            }
+        }
+    }
+    if (is_string($root) && $root !== '') {
+        $dirs[] = $root . DIRECTORY_SEPARATOR . 'logs';
+        $dirs[] = $root . DIRECTORY_SEPARATOR . 'log';
+    }
+    return $dirs;
+}
+
+/**
+ * Locate the Apache binary that is serving this request, wherever it is installed.
+ *
+ * @return array{bin:string,kind:string,label:string,service:?string,source:string}|null
+ */
+function apacheMonitorFindHttpd(): ?array
+{
+    static $cached = false;
+    static $result = null;
+    if ($cached) {
+        return $result;
+    }
+    $cached = true;
+
+    $env = apacheMonitorEnvValue('LINKNEST_APACHE_HTTPD');
+    if ($env !== '') {
+        if (PHP_OS_FAMILY === 'Windows') {
+            $ok = apacheMonitorAcceptBin($env, apacheMonitorWindowsHttpdBasenames());
+            if ($ok !== null) {
+                $result = apacheMonitorHttpdResult($ok, 'httpd', 'env');
+                return $result;
+            }
+        } else {
+            $ok = apacheMonitorAcceptBin($env, apacheMonitorUnixServerBasenames());
+            if ($ok !== null) {
+                $result = apacheMonitorPreferUnixCtl($ok, 'env');
+                return $result;
+            }
+        }
+    }
+
+    if (PHP_OS_FAMILY === 'Windows') {
+        $running = apacheMonitorWindowsRunningHttpd();
+        if ($running !== null) {
+            $result = $running;
+            return $result;
+        }
+
+        $serverRoot = apacheMonitorApacheGetenvServerRoot();
+        $starts = [];
+        if ($serverRoot !== null) {
+            $starts[] = $serverRoot;
+        }
+        $starts[] = (string) ($_SERVER['DOCUMENT_ROOT'] ?? '');
+        $starts[] = (string) ($_SERVER['SCRIPT_FILENAME'] ?? '');
+        $ini = apacheMonitorPhpIniPath();
+        if (is_string($ini)) {
+            $starts[] = $ini;
+        }
+        $starts[] = __DIR__;
+        $starts[] = dirname(__DIR__);
+
+        foreach (apacheMonitorWalkHttpdCandidates($starts) as $path) {
+            $ok = apacheMonitorAcceptBin($path, apacheMonitorWindowsHttpdBasenames());
+            if ($ok !== null) {
+                $result = apacheMonitorHttpdResult($ok, 'httpd', 'layout');
+                return $result;
+            }
+        }
+
+        $svc = apacheMonitorWindowsServiceHttpd();
+        if ($svc !== null) {
+            $result = $svc;
+            return $result;
+        }
+
+        foreach (apacheMonitorPathLookup(apacheMonitorWindowsHttpdBasenames()) as $path) {
+            $result = apacheMonitorHttpdResult($path, 'httpd', 'path');
+            return $result;
+        }
+
+        foreach (apacheMonitorConventionalHttpdCandidates() as $path) {
+            $ok = apacheMonitorAcceptBin($path, apacheMonitorWindowsHttpdBasenames());
+            if ($ok !== null) {
+                $result = apacheMonitorHttpdResult($ok, 'httpd', 'fallback');
+                return $result;
+            }
+        }
+
+        $result = null;
+        return $result;
+    }
+
+    $running = apacheMonitorLinuxRunningServer();
+    if ($running !== null) {
+        $result = $running;
+        return $result;
+    }
+
+    $serverRoot = apacheMonitorApacheGetenvServerRoot();
+    $starts = [];
+    if ($serverRoot !== null) {
+        $starts[] = $serverRoot;
+    }
+    $starts[] = (string) ($_SERVER['DOCUMENT_ROOT'] ?? '');
+    $starts[] = (string) ($_SERVER['SCRIPT_FILENAME'] ?? '');
+    $ini = apacheMonitorPhpIniPath();
+    if (is_string($ini)) {
+        $starts[] = $ini;
+    }
+    $starts[] = __DIR__;
+    $starts[] = dirname(__DIR__);
+
+    foreach (apacheMonitorWalkHttpdCandidates($starts) as $path) {
+        $ok = apacheMonitorAcceptBin($path, apacheMonitorUnixServerBasenames());
+        if ($ok !== null) {
+            $result = apacheMonitorPreferUnixCtl($ok, 'layout');
+            return $result;
+        }
+    }
+
+    foreach (apacheMonitorConventionalHttpdCandidates() as $path) {
+        $ok = apacheMonitorAcceptBin($path, apacheMonitorUnixServerBasenames());
+        if ($ok !== null) {
+            $result = apacheMonitorPreferUnixCtl($ok, 'fallback');
+            return $result;
+        }
+    }
+
+    foreach (apacheMonitorPathLookup(apacheMonitorUnixServerBasenames()) as $path) {
+        $result = apacheMonitorPreferUnixCtl($path, 'path');
+        return $result;
+    }
+
+    $result = null;
+    return $result;
+}
+
+function apacheMonitorCollectActions(): array
+{
+    $ini = apacheMonitorPhpIniPath();
+    $httpd = apacheMonitorFindHttpd();
+    $opcacheActive = false;
+    try {
+        $op = apacheMonitorCollectOpcache();
+        $opcacheActive = !empty($op['active']);
+    } catch (Throwable $e) {
+        $opcacheActive = false;
+    }
+
+    return [
+        'phpIniPath' => $ini,
+        'phpIniWritable' => $ini !== null && is_writable($ini),
+        'opcacheActive' => $opcacheActive,
+        'canEnableOpcache' => $ini !== null && is_writable($ini),
+        'canRestartApache' => $httpd !== null,
+        'apacheBinary' => $httpd['label'] ?? null,
+        'apacheBinarySource' => $httpd['source'] ?? null,
+        'layout' => apacheMonitorIsDocker() ? 'docker' : (apacheMonitorIsXampp() ? 'xampp' : 'vanilla'),
+    ];
+}
+
+/**
+ * @return array{ok:bool,phpIni:?string,backup:?string,changed:list<string>,message:string}
+ */
+function apacheMonitorEnableOpcache(): array
+{
+    $ini = apacheMonitorPhpIniPath();
+    if ($ini === null) {
+        throw new RuntimeException('Could not locate the php.ini Apache is using.');
+    }
+    if (!is_writable($ini)) {
+        throw new RuntimeException('php.ini is not writable: ' . $ini);
+    }
+
+    $raw = @file_get_contents($ini);
+    if (!is_string($raw) || $raw === '') {
+        throw new RuntimeException('Could not read php.ini: ' . $ini);
+    }
+
+    $content = $raw;
+    $changed = [];
+    $dll = apacheMonitorOpcacheDllPath();
+    $loaded = extension_loaded('Zend OPcache');
+
+    if ($dll !== null) {
+        $zendLine = 'zend_extension=opcache';
+        $zendPattern = '/^[ \t]*;?[ \t]*zend_extension[ \t]*=[ \t]*.*opcache.*$/mi';
+        if (preg_match($zendPattern, $content, $m)) {
+            if (trim($m[0]) !== $zendLine) {
+                $content = preg_replace($zendPattern, $zendLine, $content, 1) ?? $content;
+                $changed[] = 'zend_extension';
+            }
+        } else {
+            $nl = strpos($content, "\r\n") !== false ? "\r\n" : "\n";
+            $content = rtrim($content) . $nl . $zendLine . $nl;
+            $changed[] = 'zend_extension';
+        }
+    } elseif (!$loaded && PHP_OS_FAMILY !== 'Windows') {
+        $zendPattern = '/^[ \t]*;?[ \t]*zend_extension[ \t]*=[ \t]*.*opcache.*$/mi';
+        if (!preg_match($zendPattern, $content)) {
+            $nl = strpos($content, "\r\n") !== false ? "\r\n" : "\n";
+            $content = rtrim($content) . $nl . 'zend_extension=opcache' . $nl;
+            $changed[] = 'zend_extension';
+        }
+    }
+
+    $settings = [
+        'opcache.enable' => '1',
+        'opcache.enable_cli' => '0',
+        'opcache.memory_consumption' => '256',
+        'opcache.interned_strings_buffer' => '32',
+        'opcache.max_accelerated_files' => '20000',
+        'opcache.max_wasted_percentage' => '10',
+        'opcache.validate_timestamps' => '1',
+        'opcache.revalidate_freq' => '60',
+        'opcache.enable_file_override' => '1',
+        'opcache.save_comments' => '1',
+        'realpath_cache_size' => '4096K',
+        'realpath_cache_ttl' => '600',
+    ];
+    foreach ($settings as $key => $value) {
+        [$content, $did] = apacheMonitorIniSetKey($content, $key, $value);
+        if ($did) {
+            $changed[] = $key;
+        }
+    }
+
+    $backup = null;
+    if ($content !== $raw) {
+        $backup = $ini . '.linknest.bak';
+        if (!is_file($backup)) {
+            if (@copy($ini, $backup) === false) {
+                throw new RuntimeException('Could not write php.ini backup: ' . $backup);
+            }
+        }
+        if (@file_put_contents($ini, $content, LOCK_EX) === false) {
+            throw new RuntimeException('Could not write php.ini: ' . $ini);
+        }
+    }
+
+    return [
+        'ok' => true,
+        'phpIni' => $ini,
+        'backup' => $backup,
+        'changed' => array_values(array_unique($changed)),
+        'message' => $changed === []
+            ? 'php.ini already has the recommended OPcache settings. Restart Apache if OPcache is still inactive.'
+            : 'Updated php.ini OPcache settings. Restart Apache for them to take effect.',
+    ];
+}
+
+function apacheMonitorSpawnDelayedRestart(array $httpd): void
+{
+    ignore_user_abort(true);
+    if (($httpd['kind'] ?? '') === 'ctl') {
+        $bin = (string) $httpd['bin'];
+        $script = 'sleep 2; ' . escapeshellarg($bin) . ' graceful >/dev/null 2>&1';
+        @proc_open(
+            ['sh', '-c', $script],
+            [
+                0 => ['file', '/dev/null', 'r'],
+                1 => ['file', '/dev/null', 'a'],
+                2 => ['file', '/dev/null', 'a'],
+            ],
+            $pipes,
+            null,
+            null,
+            ['bypass_shell' => true]
+        );
+        return;
+    }
+
+    $bin = str_replace('/', '\\', (string) $httpd['bin']);
+    $svcRaw = $httpd['service'] ?? null;
+    $svc = is_string($svcRaw) ? apacheMonitorSanitizeServiceName($svcRaw) : null;
+    $restart = '"' . $bin . '" -k restart';
+    if ($svc !== null) {
+        $restart = '"' . $bin . '" -k restart -n ' . $svc;
+    }
+    $bat = sys_get_temp_dir() . DIRECTORY_SEPARATOR . 'linknest-apache-restart.cmd';
+    $body = '@echo off' . "\r\n"
+        . 'ping 127.0.0.1 -n 3 >nul' . "\r\n"
+        . $restart . "\r\n"
+        . 'if errorlevel 1 (' . "\r\n"
+        . '  "' . $bin . '" -k stop' . "\r\n"
+        . '  ping 127.0.0.1 -n 2 >nul' . "\r\n"
+        . '  start "" "' . $bin . '"' . "\r\n"
+        . ')' . "\r\n";
+    if ($svc !== null) {
+        $body .= 'if errorlevel 1 (' . "\r\n"
+            . '  net stop ' . $svc . "\r\n"
+            . '  ping 127.0.0.1 -n 2 >nul' . "\r\n"
+            . '  net start ' . $svc . "\r\n"
+            . ')' . "\r\n";
+    }
+    @file_put_contents($bat, $body);
+    $comspec = getenv('ComSpec');
+    if (!is_string($comspec) || $comspec === '') {
+        $comspec = 'cmd.exe';
+    }
+    @pclose(@popen('"' . $comspec . '" /c start "" /B "' . $bat . '"', 'r'));
+}
+
+function apacheMonitorAttachWindowsService(array $httpd): array
+{
+    if (PHP_OS_FAMILY !== 'Windows' || ($httpd['kind'] ?? '') !== 'httpd') {
+        return $httpd;
+    }
+    if (is_string($httpd['service'] ?? null) && $httpd['service'] !== '') {
+        return $httpd;
+    }
+    $svc = apacheMonitorWindowsServiceHttpd();
+    if (is_array($svc) && ($svc['bin'] ?? '') === ($httpd['bin'] ?? '')) {
+        $httpd['service'] = $svc['service'] ?? null;
+    }
+    return $httpd;
+}
+
+/**
+ * @return array{ok:bool,method:string,binary:?string,message:string}
+ */
+function apacheMonitorRestartApache(): array
+{
+    $httpd = apacheMonitorFindHttpd();
+    if ($httpd === null) {
+        throw new RuntimeException(
+            'Could not find httpd.exe / apachectl. Set LINKNEST_APACHE_HTTPD to the full path of the Apache binary, or start Apache from its service / control panel and retry.'
+        );
+    }
+    $httpd = apacheMonitorAttachWindowsService($httpd);
+
+    register_shutdown_function(static function () use ($httpd) {
+        try {
+            apacheMonitorSpawnDelayedRestart($httpd);
+        } catch (Throwable $e) {
+            error_log('apacheMonitorSpawnDelayedRestart: ' . $e->getMessage());
+        }
+    });
+
+    $method = ($httpd['kind'] ?? '') === 'ctl' ? 'apachectl graceful' : 'httpd -k restart';
+    return [
+        'ok' => true,
+        'method' => $method,
+        'binary' => $httpd['label'] ?? null,
+        'message' => 'Apache restart is scheduled in about 2 seconds. This page may disconnect briefly.',
     ];
 }

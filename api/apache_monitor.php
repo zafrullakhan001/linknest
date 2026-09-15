@@ -2,7 +2,9 @@
 /**
  * Apache monitoring dashboard API (admin only).
  * GET  /api/apache-monitor
- * POST /api/apache-monitor/purge-logs  { target: "apache"|"php"|"all", confirm: true }
+ * POST /api/apache-monitor/purge-logs       { target: "apache"|"php"|"all", confirm: true }
+ * POST /api/apache-monitor/enable-opcache   { confirm: true }
+ * POST /api/apache-monitor/restart-apache   { confirm: true }
  */
 
 require_once __DIR__ . '/config.php';
@@ -23,12 +25,17 @@ if (function_exists('linknestReleaseSessionLock')) {
     linknestReleaseSessionLock();
 }
 
-if ($method === 'POST' && ($sub === '/purge-logs' || $sub === 'purge-logs')) {
-    $input = getJSONInput();
+function apacheMonitorRequireConfirm(array $input, string $error): void
+{
     $confirm = $input['confirm'] ?? false;
     if ($confirm !== true && $confirm !== 1 && $confirm !== 'true' && $confirm !== '1') {
-        sendJSON(['error' => 'Set confirm to true to empty log files.'], 400);
+        sendJSON(['error' => $error], 400);
     }
+}
+
+if ($method === 'POST' && ($sub === '/purge-logs' || $sub === 'purge-logs')) {
+    $input = getJSONInput();
+    apacheMonitorRequireConfirm($input, 'Set confirm to true to empty log files.');
     $target = strtolower(trim((string) ($input['target'] ?? '')));
     if (!in_array($target, ['apache', 'php', 'all'], true)) {
         sendJSON(['error' => 'target must be apache, php, or all'], 400);
@@ -54,6 +61,56 @@ if ($method === 'POST' && ($sub === '/purge-logs' || $sub === 'purge-logs')) {
                         'ok' => !empty($row['ok']),
                     ];
                 }, $result['purged'] ?? []),
+            ],
+        ]);
+    }
+
+    sendJSON(['success' => true] + $result);
+}
+
+if ($method === 'POST' && ($sub === '/enable-opcache' || $sub === 'enable-opcache')) {
+    $input = getJSONInput();
+    apacheMonitorRequireConfirm($input, 'Set confirm to true to update php.ini.');
+
+    try {
+        $result = apacheMonitorEnableOpcache();
+    } catch (RuntimeException $e) {
+        sendJSON(['error' => $e->getMessage()], 400);
+    } catch (Throwable $e) {
+        error_log('apache_monitor enable-opcache failed: ' . $e->getMessage());
+        sendJSON(['error' => 'Failed to update php.ini'], 500);
+    }
+
+    if (function_exists('logUserAudit')) {
+        logUserAudit('apache_monitor.opcache_enabled', [
+            'details' => [
+                'phpIni' => $result['phpIni'] ?? null,
+                'changed' => $result['changed'] ?? [],
+            ],
+        ]);
+    }
+
+    sendJSON(['success' => true] + $result);
+}
+
+if ($method === 'POST' && ($sub === '/restart-apache' || $sub === 'restart-apache')) {
+    $input = getJSONInput();
+    apacheMonitorRequireConfirm($input, 'Set confirm to true to restart Apache.');
+
+    try {
+        $result = apacheMonitorRestartApache();
+    } catch (RuntimeException $e) {
+        sendJSON(['error' => $e->getMessage()], 400);
+    } catch (Throwable $e) {
+        error_log('apache_monitor restart-apache failed: ' . $e->getMessage());
+        sendJSON(['error' => 'Failed to restart Apache'], 500);
+    }
+
+    if (function_exists('logUserAudit')) {
+        logUserAudit('apache_monitor.apache_restarted', [
+            'details' => [
+                'method' => $result['method'] ?? null,
+                'binary' => $result['binary'] ?? null,
             ],
         ]);
     }

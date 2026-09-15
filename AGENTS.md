@@ -15,7 +15,7 @@ LinkNest is a **link and space organization platform** built with a React fronte
 - MCP interface so LLMs can list, search, and edit spaces and links (admin-scoped tokens can also manage users, roles, LDAP/SAML, Device Presets, and database export/import)
 - Email notifications and broadcast messaging
 - Browser integration for direct link opening
-- Admin Apache monitoring dashboard (footer “online now” click; `mod_status`, access logs, OPcache, PHP memory, SQLite, disk; admins can purge Apache/PHP logs). Work runs only while the dashboard window is open. Works on vanilla Apache and XAMPP (loopback `/server-status`, not Docker `:8090` unless running in Docker).
+- Admin Apache monitoring dashboard (footer “online now” click; `mod_status`, access logs, OPcache, PHP memory, SQLite, disk; admins can purge Apache/PHP logs, enable OPcache in php.ini, and restart Apache). Work runs only while the dashboard window is open. Locates Apache from the running process / ServerRoot / service / PATH (any install path; optional `LINKNEST_APACHE_HTTPD`). Loopback `/server-status` uses this host’s scheme and port (not Docker `:8090` unless running in Docker).
 
 ---
 

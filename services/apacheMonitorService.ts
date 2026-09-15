@@ -142,6 +142,17 @@ export type ApacheMonitorDisk = {
   usedHuman: string;
 };
 
+export type ApacheMonitorActions = {
+  phpIniPath: string | null;
+  phpIniWritable: boolean;
+  opcacheActive: boolean;
+  canEnableOpcache: boolean;
+  canRestartApache: boolean;
+  apacheBinary: string | null;
+  apacheBinarySource?: string | null;
+  layout: 'docker' | 'xampp' | 'vanilla';
+};
+
 export type ApacheMonitorDashboard = {
   available: boolean;
   availabilityPercent: number | null;
@@ -192,6 +203,7 @@ export type ApacheMonitorDashboard = {
   sqlite: ApacheMonitorSqlite | null;
   disk: ApacheMonitorDisk | null;
   logs: ApacheMonitorLogs | null;
+  actions: ApacheMonitorActions | null;
 };
 
 export async function fetchApacheMonitorDashboard(options?: {
@@ -278,4 +290,77 @@ export async function purgeApacheMonitorLogs(
   }
 
   return payload as ApacheMonitorPurgeResult;
+}
+
+async function apacheMonitorPostJson<T>(
+  path: string,
+  body: Record<string, unknown>,
+  unauthorized: string,
+  forbidden: string
+): Promise<T> {
+  const response = await fetch(`${API_BASE}/apache-monitor/${path}`, {
+    method: 'POST',
+    credentials: 'include',
+    cache: 'no-store',
+    headers: { Accept: 'application/json', 'Content-Type': 'application/json' },
+    body: JSON.stringify(body),
+  });
+
+  let payload: unknown = null;
+  try {
+    payload = await response.json();
+  } catch {
+    payload = null;
+  }
+
+  if (response.status === 401) {
+    throw new Error(unauthorized);
+  }
+  if (response.status === 403) {
+    throw new Error(forbidden);
+  }
+  if (!response.ok) {
+    const err =
+      payload && typeof payload === 'object' && 'error' in payload
+        ? String((payload as { error?: unknown }).error || '')
+        : '';
+    throw new Error(err || `Request failed (${response.status})`);
+  }
+
+  return payload as T;
+}
+
+export type ApacheMonitorOpcacheFixResult = {
+  success: boolean;
+  ok: boolean;
+  phpIni: string | null;
+  backup: string | null;
+  changed: string[];
+  message: string;
+};
+
+export async function enableApacheMonitorOpcache(): Promise<ApacheMonitorOpcacheFixResult> {
+  return apacheMonitorPostJson<ApacheMonitorOpcacheFixResult>(
+    'enable-opcache',
+    { confirm: true },
+    'Sign in as an administrator to update php.ini.',
+    'Updating php.ini is limited to administrators.'
+  );
+}
+
+export type ApacheMonitorRestartResult = {
+  success: boolean;
+  ok: boolean;
+  method: string;
+  binary: string | null;
+  message: string;
+};
+
+export async function restartApacheMonitorServer(): Promise<ApacheMonitorRestartResult> {
+  return apacheMonitorPostJson<ApacheMonitorRestartResult>(
+    'restart-apache',
+    { confirm: true },
+    'Sign in as an administrator to restart Apache.',
+    'Restarting Apache is limited to administrators.'
+  );
 }

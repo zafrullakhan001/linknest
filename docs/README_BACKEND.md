@@ -68,8 +68,10 @@ location / {
 - `GET /api/tiles/{id}/presence` - Who is currently viewing or editing this space
 - `POST /api/tiles/{id}/presence` - Heartbeat (`{ mode: "viewing"|"editing" }`) or leave (`{ action: "leave" }`); requires authentication
 - `DELETE /api/tiles/{id}/presence` - Clear your presence on this space (requires authentication)
-- `GET /api/apache-monitor` - Realtime Apache dashboard (admin): `mod_status` workers/uptime, access-log top paths, OPcache, PHP memory, SQLite size, disk. Polled only while the admin dashboard window is open (`?fresh=1` bypasses the short log/disk cache). Works on vanilla Apache and XAMPP; probes this host's scheme/port on loopback (not Docker `:8090` unless the process is Docker).
+- `GET /api/apache-monitor` - Realtime Apache dashboard (admin): `mod_status` workers/uptime, access-log top paths, OPcache, PHP memory, SQLite size, disk. Polled only while the admin dashboard window is open (`?fresh=1` bypasses the short log/disk cache). Works wherever Apache is installed (vanilla, XAMPP, WAMP, Laragon, Docker); probes this host's scheme/port on loopback (not Docker `:8090` unless the process is Docker).
 - `POST /api/apache-monitor/purge-logs` - Empty Apache and/or PHP log files in place (admin; `{ target: "apache"|"php"|"all", confirm: true }`)
+- `POST /api/apache-monitor/enable-opcache` - Write recommended OPcache keys into the loaded `php.ini` (admin; `{ confirm: true }`; backs up to `php.ini.linknest.bak`)
+- `POST /api/apache-monitor/restart-apache` - Schedule a delayed Apache restart (`httpd -k restart` / `apachectl graceful`) (admin; `{ confirm: true }`). Locates `httpd.exe` / `apachectl` from the running process, `ServerRoot`, Windows service, PATH, or nearby folders. Override with `LINKNEST_APACHE_HTTPD`.
 
 ### MCP (LLM tools)
 
@@ -87,7 +89,10 @@ Create a `.env` file in the root directory:
 ```
 VITE_API_BASE=/api
 GEMINI_API_KEY=your_gemini_api_key_here
+LINKNEST_APACHE_HTTPD=D:\Apache\bin\httpd.exe
 ```
+
+`LINKNEST_APACHE_HTTPD` is optional. Apache monitor restart discovers `httpd.exe` / `apachectl` from the running process, ServerRoot, Windows service, PATH, and folders next to DocumentRoot / php.ini.
 
 ## Security Notes
 
