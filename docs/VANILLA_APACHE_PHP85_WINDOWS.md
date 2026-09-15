@@ -238,13 +238,28 @@ LoadModule status_module modules/mod_status.so
 
 `authz_core_module` is already on in a stock Apache 2.4 install (`Require all granted` needs it).
 
-For the admin Apache monitoring dashboard (footer **online now**), also uncomment:
+For the admin Apache monitoring dashboard (footer **online now**), Apache does **not** have to be XAMPP. Enable `mod_status` on this host:
 
 ```apache
+LoadModule status_module modules/mod_status.so
 Include conf/extra/httpd-info.conf
 ```
 
-and keep `/server-status` limited to `Require local`. If `httpd-info.conf` is not present, copy [`apache/linknest-server-status.conf`](../apache/linknest-server-status.conf) to `conf/extra/` and include that instead.
+Keep `/server-status` limited to `Require local`. If `httpd-info.conf` is not present, copy [`apache/linknest-server-status.conf`](../apache/linknest-server-status.conf) to `conf/extra/` and include that instead.
+
+Then restart Apache. PHP probes the **current** scheme and port on `127.0.0.1` (HTTPS vhosts included). It does not assume XAMPP port 80 or Docker 8090.
+
+If a vhost forces HTTP → HTTPS, exclude the status URL:
+
+```apache
+RewriteCond %{REQUEST_URI} !^/server-status
+```
+
+Apache must accept loopback on the same listen port (`Listen 443` is fine; `Listen 10.x.x.x:443` only is not). Optional override:
+
+```text
+LINKNEST_APACHE_STATUS_URL=http://127.0.0.1/server-status?auto
+```
 
 Leave these **commented** until the optional HTTPS / WSS section:
 

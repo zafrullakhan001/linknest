@@ -652,7 +652,7 @@ export const ApacheMonitoringDashboard: React.FC<{
           ) : (
             <>
               {data?.setupHint ? (
-                <div className="mb-4 rounded-xl border border-amber-200 dark:border-amber-900/60 bg-amber-50 dark:bg-amber-950/30 px-4 py-3 text-sm text-amber-900 dark:text-amber-200">
+                <div className="mb-4 rounded-xl border border-amber-200 dark:border-amber-900/60 bg-amber-50 dark:bg-amber-950/30 px-4 py-3 text-sm text-amber-900 dark:text-amber-200 whitespace-pre-line">
                   {data.setupHint}
                 </div>
               ) : null}
@@ -680,8 +680,14 @@ export const ApacheMonitoringDashboard: React.FC<{
                 </Card>
 
                 <Card title="Availability">
-                  <p className={`text-4xl font-bold tabular-nums ${availabilityClass(data?.availabilityPercent ?? 0)}`}>
-                    {formatNumber(data?.availabilityPercent ?? 0, 2)}%
+                  <p
+                    className={`text-4xl font-bold tabular-nums ${
+                      data?.availabilityPercent == null
+                        ? 'text-slate-400 dark:text-slate-500'
+                        : availabilityClass(data.availabilityPercent)
+                    }`}
+                  >
+                    {data?.availabilityPercent == null ? '—' : `${formatNumber(data.availabilityPercent, 2)}%`}
                   </p>
                   <p className="text-xs text-slate-500 dark:text-slate-400 mt-2">{data?.instance || 'instance-1'}</p>
                 </Card>

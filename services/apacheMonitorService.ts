@@ -144,7 +144,7 @@ export type ApacheMonitorDisk = {
 
 export type ApacheMonitorDashboard = {
   available: boolean;
-  availabilityPercent: number;
+  availabilityPercent: number | null;
   lastUpdated: number;
   pollIntervalMs: number;
   statusUrl: string | null;

@@ -298,53 +298,150 @@ function apacheMonitorIsLocalStatusUrl(string $url): bool
         return false;
     }
     $host = strtolower((string) ($parts['host'] ?? ''));
-    if ($host === 'localhost' || $host === '127.0.0.1' || $host === '::1') {
+    return $host === 'localhost' || $host === '127.0.0.1' || $host === '::1';
+}
+
+function apacheMonitorIsDocker(): bool
+{
+    if (is_file('/.dockerenv')) {
         return true;
     }
-    return false;
+    $marker = strtolower(trim((string) getenv('LINKNEST_IN_DOCKER')));
+    return $marker === '1' || $marker === 'true' || $marker === 'yes';
+}
+
+function apacheMonitorIsXampp(): bool
+{
+    $root = (string) ($_SERVER['DOCUMENT_ROOT'] ?? '');
+    if (stripos($root, 'xampp') !== false) {
+        return true;
+    }
+    return is_dir('C:/xampp/apache') || is_dir('C:\\xampp\\apache');
+}
+
+function apacheMonitorRequestIsHttps(): bool
+{
+    $https = $_SERVER['HTTPS'] ?? '';
+    if (is_string($https) && $https !== '' && strcasecmp($https, 'off') !== 0) {
+        return true;
+    }
+    if ((int) ($_SERVER['SERVER_PORT'] ?? 0) === 443) {
+        return true;
+    }
+    return strtolower((string) ($_SERVER['HTTP_X_FORWARDED_PROTO'] ?? '')) === 'https';
+}
+
+function apacheMonitorRequestHost(): string
+{
+    $raw = trim((string) ($_SERVER['HTTP_HOST'] ?? $_SERVER['SERVER_NAME'] ?? ''));
+    if ($raw === '') {
+        return '';
+    }
+    if ($raw[0] === '[') {
+        $end = strpos($raw, ']');
+        return $end !== false ? strtolower(substr($raw, 1, $end - 1)) : strtolower($raw);
+    }
+    if (substr_count($raw, ':') === 1) {
+        return strtolower(explode(':', $raw, 2)[0]);
+    }
+    return strtolower($raw);
+}
+
+function apacheMonitorRequestPort(): int
+{
+    $port = (int) ($_SERVER['SERVER_PORT'] ?? 0);
+    if ($port > 0) {
+        return $port;
+    }
+    return apacheMonitorRequestIsHttps() ? 443 : 80;
+}
+
+function apacheMonitorStatusUrl(string $scheme, string $host, int $port): string
+{
+    $default = ($scheme === 'https' && $port === 443) || ($scheme === 'http' && $port === 80);
+    return $scheme . '://' . $host . ($default ? '' : ':' . $port) . '/server-status?auto';
 }
 
 /**
- * @return list<string>
+ * @param array<string,array{url:string,resolve:list<string>}> $out
+ */
+function apacheMonitorPushStatusCandidate(array &$out, string $url, array $resolve = []): void
+{
+    $key = $url . "\0" . implode(',', $resolve);
+    if (isset($out[$key])) {
+        return;
+    }
+    $out[$key] = ['url' => $url, 'resolve' => $resolve];
+}
+
+/**
+ * Probe this Apache, not a canned XAMPP/Docker port list.
+ *
+ * @return list<array{url:string,resolve:list<string>}>
  */
 function apacheMonitorStatusUrlCandidates(): array
 {
-    $urls = [];
+    $ordered = [];
+
     $env = trim((string) getenv('LINKNEST_APACHE_STATUS_URL'));
     if ($env !== '' && apacheMonitorIsLocalStatusUrl($env)) {
-        $urls[] = $env;
+        apacheMonitorPushStatusCandidate($ordered, $env);
     }
 
-    $port = (int) ($_SERVER['SERVER_PORT'] ?? 0);
-    $bases = ['http://127.0.0.1', 'http://localhost', 'http://[::1]'];
-    $ports = [];
-    if ($port > 0 && $port !== 80 && $port !== 443) {
-        $ports[] = $port;
-    }
-    $ports[] = 80;
-    $ports[] = 8080;
-    $ports[] = 8090;
+    $https = apacheMonitorRequestIsHttps();
+    $port = apacheMonitorRequestPort();
+    $host = apacheMonitorRequestHost();
+    $scheme = $https ? 'https' : 'http';
 
-    foreach ($bases as $base) {
-        $urls[] = $base . '/server-status?auto';
-        foreach ($ports as $p) {
-            $urls[] = $base . ':' . $p . '/server-status?auto';
+    // Named HTTPS vhost: connect to 127.0.0.1 but keep Host/SNI so the right vhost answers,
+    // and Apache still sees a loopback client for Require local.
+    if (
+        $host !== ''
+        && $host !== '127.0.0.1'
+        && $host !== 'localhost'
+        && $host !== '::1'
+        && strpos($host, ':') === false
+    ) {
+        apacheMonitorPushStatusCandidate(
+            $ordered,
+            apacheMonitorStatusUrl($scheme, $host, $port),
+            [$host . ':' . $port . ':127.0.0.1']
+        );
+        if ($https && $port !== 80) {
+            apacheMonitorPushStatusCandidate(
+                $ordered,
+                apacheMonitorStatusUrl('http', $host, 80),
+                [$host . ':80:127.0.0.1']
+            );
         }
     }
 
-    $unique = [];
-    foreach ($urls as $url) {
-        if (!isset($unique[$url])) {
-            $unique[$url] = true;
+    $ports = [$port];
+    $ports[] = $https ? 443 : 80;
+    $ports[] = $https ? 80 : 443;
+    if (apacheMonitorIsDocker()) {
+        $ports[] = 8080;
+        $ports[] = 8090;
+    }
+    $ports = array_values(array_unique(array_filter($ports, static fn ($p) => $p > 0)));
+
+    $schemes = $https ? ['https', 'http'] : ['http', 'https'];
+    foreach (['127.0.0.1', 'localhost'] as $loopHost) {
+        foreach ($schemes as $sch) {
+            foreach ($ports as $p) {
+                apacheMonitorPushStatusCandidate($ordered, apacheMonitorStatusUrl($sch, $loopHost, $p));
+            }
         }
     }
-    return array_keys($unique);
+
+    return array_values($ordered);
 }
 
 /**
  * @return array{ok:bool,body:string,httpCode:int,error:string,url:string}
+ * @param list<string> $resolve CURLOPT_RESOLVE entries such as host:443:127.0.0.1
  */
-function apacheMonitorHttpGet(string $url): array
+function apacheMonitorHttpGet(string $url, array $resolve = []): array
 {
     $result = [
         'ok' => false,
@@ -363,8 +460,8 @@ function apacheMonitorHttpGet(string $url): array
         curl_setopt_array($ch, [
             CURLOPT_RETURNTRANSFER => true,
             CURLOPT_FOLLOWLOCATION => false,
-            CURLOPT_CONNECTTIMEOUT => 2,
-            CURLOPT_TIMEOUT => 3,
+            CURLOPT_CONNECTTIMEOUT => 1,
+            CURLOPT_TIMEOUT => 2,
             CURLOPT_HTTPHEADER => [
                 'Accept: text/plain,*/*',
                 'Connection: close',
@@ -373,6 +470,9 @@ function apacheMonitorHttpGet(string $url): array
             CURLOPT_SSL_VERIFYPEER => false,
             CURLOPT_SSL_VERIFYHOST => 0,
         ]);
+        if ($resolve !== []) {
+            curl_setopt($ch, CURLOPT_RESOLVE, $resolve);
+        }
         if (strpos($url, '[::1]') === false) {
             curl_setopt($ch, CURLOPT_IPRESOLVE, CURL_IPRESOLVE_V4);
         }
@@ -398,7 +498,7 @@ function apacheMonitorHttpGet(string $url): array
     $ctx = stream_context_create([
         'http' => [
             'method' => 'GET',
-            'timeout' => 3,
+            'timeout' => 2,
             'header' => "Accept: text/plain,*/*\r\nConnection: close\r\nUser-Agent: LinkNest-ApacheMonitor/1.0\r\n",
             'ignore_errors' => true,
         ],
@@ -426,13 +526,21 @@ function apacheMonitorHttpGet(string $url): array
 }
 
 /**
- * @return array{status:?array,url:?string,error:?string}
+ * @return array{status:?array,url:?string,error:?string,attempts:list<array{url:string,ok:bool,httpCode:int,error:string}>}
  */
 function apacheMonitorFetchStatus(): array
 {
+    $attempts = [];
     $lastError = 'Apache /server-status was not reachable from PHP.';
-    foreach (apacheMonitorStatusUrlCandidates() as $url) {
-        $fetch = apacheMonitorHttpGet($url);
+    foreach (apacheMonitorStatusUrlCandidates() as $candidate) {
+        $url = (string) $candidate['url'];
+        $fetch = apacheMonitorHttpGet($url, $candidate['resolve'] ?? []);
+        $attempts[] = [
+            'url' => $url,
+            'ok' => $fetch['ok'],
+            'httpCode' => $fetch['httpCode'],
+            'error' => $fetch['error'],
+        ];
         if (!$fetch['ok']) {
             $lastError = $fetch['error'] !== '' ? $fetch['error'] : ('HTTP ' . $fetch['httpCode']);
             continue;
@@ -442,10 +550,10 @@ function apacheMonitorFetchStatus(): array
             $lastError = 'Unexpected /server-status response (is ExtendedStatus/mod_status enabled?)';
             continue;
         }
-        return ['status' => $parsed, 'url' => $url, 'error' => null];
+        return ['status' => $parsed, 'url' => $url, 'error' => null, 'attempts' => $attempts];
     }
 
-    return ['status' => null, 'url' => null, 'error' => $lastError];
+    return ['status' => null, 'url' => null, 'error' => $lastError, 'attempts' => $attempts];
 }
 
 /**
@@ -480,12 +588,37 @@ function apacheMonitorAccessLogCandidates(): array
         'C:\\xampp\\apache\\logs\\access.log',
         'D:/Apache/logs/access.log',
         'D:\\Apache\\logs\\access.log',
+        'C:/Apache24/logs/access.log',
         '/var/log/apache2/access.log',
         '/var/log/apache2/other_vhosts_access.log',
         '/var/log/httpd/access_log',
         '/usr/local/apache2/logs/access_log',
         '/opt/lampp/logs/access_log',
     ]);
+
+    $logDirs = [
+        'C:/xampp/apache/logs',
+        'D:/Apache/logs',
+        'C:/Apache24/logs',
+        '/var/log/apache2',
+        '/var/log/httpd',
+    ];
+    if ($docRoot !== '') {
+        $logDirs[] = $docRoot . '/../logs';
+        $logDirs[] = $docRoot . '/../../logs';
+        $logDirs[] = $docRoot . '/../apache/logs';
+    }
+    foreach ($logDirs as $dir) {
+        $resolved = realpath($dir);
+        if ($resolved === false || !is_dir($resolved)) {
+            continue;
+        }
+        foreach (glob($resolved . DIRECTORY_SEPARATOR . '*access*') ?: [] as $found) {
+            if (is_file($found)) {
+                $paths[] = $found;
+            }
+        }
+    }
 
     unset($sapi);
     return $paths;
@@ -508,6 +641,7 @@ function apacheMonitorErrorLogCandidates(): array
     }
     $paths[] = 'C:/xampp/apache/logs/error.log';
     $paths[] = 'D:/Apache/logs/error.log';
+    $paths[] = 'C:/Apache24/logs/error.log';
     $paths[] = '/var/log/apache2/error.log';
     $paths[] = '/var/log/httpd/error_log';
     return $paths;
@@ -523,6 +657,7 @@ function apacheMonitorSslLogCandidates(): array
         $paths[] = dirname($access) . DIRECTORY_SEPARATOR . 'ssl_request.log';
     }
     $paths[] = 'C:/xampp/apache/logs/ssl_request.log';
+    $paths[] = 'D:/Apache/logs/ssl_request.log';
     return $paths;
 }
 
@@ -561,10 +696,14 @@ function apacheMonitorPhpLogCandidates(): array
 function apacheMonitorIsAllowedLogBasename(string $name): bool
 {
     $name = strtolower($name);
-    return (bool) preg_match(
+    if (preg_match(
         '/^(access|error|other_vhosts_access|ssl_request|php[_-]?errors?)(\.log|_log)?(\.\d+|\.old|-old)?$|^php_error_log(\.\d+)?$/',
         $name
-    );
+    )) {
+        return true;
+    }
+    // Vanilla / vhost CustomLog names: erpland-access.log, site_error.log
+    return (bool) preg_match('/(^|[._-])(access|error|ssl.?request)(\.log|_log)?(\.\d+)?$/', $name);
 }
 
 function apacheMonitorLogLabel(string $path): string
@@ -874,6 +1013,7 @@ function apacheMonitorPruneSamples(PDO $db, int $now): void
     try {
         $stmt = $db->prepare('DELETE FROM apache_monitor_samples WHERE sampled_at < ?');
         $stmt->execute([$cutoff]);
+        $db->exec('DELETE FROM apache_monitor_samples WHERE available = 0');
     } catch (PDOException $e) {
         error_log('apacheMonitorPruneSamples warning: ' . $e->getMessage());
     }
@@ -984,13 +1124,41 @@ function apacheMonitorLoadHistory(PDO $db, int $now): array
     return $out;
 }
 
-function apacheMonitorSetupHint(?string $error): string
+function apacheMonitorSetupHint(?string $error, array $attempts = []): string
 {
-    return 'Apache monitoring reads http://127.0.0.1/server-status?auto (mod_status, Require local). '
-        . 'On XAMPP this is usually already enabled via conf/extra/httpd-info.conf. '
-        . 'On Docker, the image enables a2enmod status. '
-        . 'On vanilla Apache, load status_module and include apache/linknest-server-status.conf. '
-        . ($error ? 'Last error: ' . $error : '');
+    if (apacheMonitorIsDocker()) {
+        $intro = 'Docker: PHP reads /server-status?auto on loopback inside the container (a2enmod status).';
+    } elseif (apacheMonitorIsXampp()) {
+        $intro = 'XAMPP: Include conf/extra/httpd-info.conf from httpd.conf and keep Require local on /server-status.';
+    } else {
+        $intro = 'Vanilla Apache: LoadModule status_module, copy apache/linknest-server-status.conf to conf/extra/, Include it from httpd.conf, then restart Apache. '
+            . 'If HTTP redirects to HTTPS, skip /server-status in that rewrite. '
+            . 'Optional override: set LINKNEST_APACHE_STATUS_URL to a loopback URL such as http://127.0.0.1/server-status?auto.';
+    }
+
+    $bits = [$intro];
+    if ($error) {
+        $bits[] = 'Last error: ' . $error;
+    }
+    $tried = [];
+    foreach ($attempts as $row) {
+        if (!empty($row['ok'])) {
+            continue;
+        }
+        $url = (string) ($row['url'] ?? '');
+        $why = (string) ($row['error'] ?? '');
+        if ($url === '') {
+            continue;
+        }
+        $tried[] = $url . ($why !== '' ? ' → ' . $why : '');
+        if (count($tried) >= 4) {
+            break;
+        }
+    }
+    if ($tried) {
+        $bits[] = 'Tried: ' . implode('; ', $tried);
+    }
+    return implode("\n", $bits);
 }
 
 function apacheMonitorBuildDashboard(PDO $db, bool $fresh = false): array
@@ -1005,7 +1173,15 @@ function apacheMonitorBuildDashboard(PDO $db, bool $fresh = false): array
     $status = $fetched['status'];
     $available = is_array($status);
 
-    apacheMonitorStoreSample($db, $now, $available, $available ? $status : null);
+    if ($available) {
+        apacheMonitorStoreSample($db, $now, true, $status);
+    } else {
+        try {
+            $db->exec('DELETE FROM apache_monitor_samples WHERE available = 0');
+        } catch (PDOException $e) {
+            error_log('apacheMonitor clear failed samples: ' . $e->getMessage());
+        }
+    }
     apacheMonitorPruneSamplesThrottled($db, $now);
     $historyFull = apacheMonitorLoadHistory($db, $now);
     $history = apacheMonitorDownsampleHistory(
@@ -1022,7 +1198,7 @@ function apacheMonitorBuildDashboard(PDO $db, bool $fresh = false): array
     }
     $availabilityPercent = $totalCount > 0
         ? round(100.0 * $upCount / $totalCount, 2)
-        : ($available ? 100.0 : 0.0);
+        : ($available ? 100.0 : null);
 
     $presence = ['count' => 0, 'guests' => 0, 'signedIn' => 0];
     if (function_exists('countAppPresence')) {
@@ -1087,7 +1263,7 @@ function apacheMonitorBuildDashboard(PDO $db, bool $fresh = false): array
         'pollIntervalMs' => 5000,
         'statusUrl' => $fetched['url'],
         'error' => $available ? null : $fetched['error'],
-        'setupHint' => $available ? null : apacheMonitorSetupHint($fetched['error']),
+        'setupHint' => $available ? null : apacheMonitorSetupHint($fetched['error'], $fetched['attempts'] ?? []),
         'server' => $server,
         'current' => $current,
         'history' => $history,
