@@ -1671,7 +1671,162 @@ function contentEmojiFromInput($data): ?string {
     return sanitizeContentEmoji($data['emoji'] ?? null);
 }
 
-/** Ensure tabs.emoji and sections.emoji exist even when user_version already matches SCHEMA_VERSION. */
+/**
+ * Normalize optional hex color (#RGB / #RRGGBB) for tab/section background_color.
+ * Rejects non-hex values so arbitrary CSS cannot be persisted.
+ */
+function normalizeHexColor($value): ?string {
+    if ($value === null) {
+        return null;
+    }
+    $trimmed = trim((string)$value);
+    if ($trimmed === '') {
+        return null;
+    }
+    if ($trimmed[0] !== '#') {
+        $trimmed = '#' . $trimmed;
+    }
+    if (preg_match('/^#([0-9A-Fa-f]{3}|[0-9A-Fa-f]{6})$/', $trimmed) !== 1) {
+        return null;
+    }
+    if (strlen($trimmed) === 4) {
+        $r = $trimmed[1];
+        $g = $trimmed[2];
+        $b = $trimmed[3];
+        $trimmed = '#' . $r . $r . $g . $g . $b . $b;
+    }
+    return strtoupper($trimmed);
+}
+
+/** Read backgroundColor from a DB row (snake_case) or API payload (camelCase). */
+function backgroundColorFromRowOrInput($data): ?string {
+    if (!is_array($data)) {
+        return null;
+    }
+    if (array_key_exists('backgroundColor', $data)) {
+        return normalizeHexColor($data['backgroundColor']);
+    }
+    if (array_key_exists('background_color', $data)) {
+        return normalizeHexColor($data['background_color']);
+    }
+    return null;
+}
+
+/**
+ * Encode tab/section gradient decoration to JSON for background_style column.
+ * Returns null when no gradient is configured (solid color uses background_color only).
+ */
+function encodeBackgroundStyleJson($data): ?string {
+    if (!is_array($data)) {
+        return null;
+    }
+    // Pass through existing DB JSON when cloning rows that only have snake_case columns.
+    if (
+        empty($data['backgroundGradientEnabled'])
+        && !array_key_exists('backgroundGradientColors', $data)
+        && !empty($data['background_style'])
+        && is_string($data['background_style'])
+    ) {
+        $existing = json_decode($data['background_style'], true);
+        return is_array($existing) ? $data['background_style'] : null;
+    }
+    $enabled = !empty($data['backgroundGradientEnabled']);
+    $colorsRaw = $data['backgroundGradientColors'] ?? null;
+    $colors = [];
+    if (is_array($colorsRaw)) {
+        foreach ($colorsRaw as $c) {
+            $hex = normalizeHexColor($c);
+            if ($hex !== null) {
+                $colors[] = $hex;
+            }
+        }
+    }
+    if (!$enabled || count($colors) < 2) {
+        return null;
+    }
+    $type = ($data['backgroundGradientType'] ?? 'linear') === 'radial' ? 'radial' : 'linear';
+    $direction = isset($data['backgroundGradientDirection']) ? (int)$data['backgroundGradientDirection'] : 135;
+    if ($direction < 0) {
+        $direction = 0;
+    }
+    if ($direction > 360) {
+        $direction = 360;
+    }
+    $positions = [];
+    $posRaw = $data['backgroundGradientColorPositions'] ?? null;
+    if (is_array($posRaw) && count($posRaw) === count($colors)) {
+        foreach ($posRaw as $p) {
+            $n = is_numeric($p) ? (float)$p : 0;
+            $positions[] = max(0, min(100, $n));
+        }
+    } else {
+        $count = count($colors);
+        for ($i = 0; $i < $count; $i++) {
+            $positions[] = $count > 1 ? ($i / ($count - 1)) * 100 : 0;
+        }
+    }
+    return json_encode([
+        'gradientEnabled' => true,
+        'colors' => $colors,
+        'direction' => $direction,
+        'type' => $type,
+        'positions' => $positions,
+    ], JSON_UNESCAPED_SLASHES);
+}
+
+/**
+ * Decode background_style JSON (+ background_color) into camelCase fields for API payloads.
+ *
+ * @return array{backgroundColor:?string,backgroundGradientEnabled:?bool,backgroundGradientColors:?array,backgroundGradientDirection:?int,backgroundGradientType:?string,backgroundGradientColorPositions:?array}
+ */
+function backgroundDecorationFromRow($row): array {
+    $color = null;
+    if (is_array($row)) {
+        $color = backgroundColorFromRowOrInput($row);
+    }
+    $out = [
+        'backgroundColor' => $color,
+        'backgroundGradientEnabled' => null,
+        'backgroundGradientColors' => null,
+        'backgroundGradientDirection' => null,
+        'backgroundGradientType' => null,
+        'backgroundGradientColorPositions' => null,
+    ];
+    if (!is_array($row) || empty($row['background_style'])) {
+        return $out;
+    }
+    $decoded = json_decode((string)$row['background_style'], true);
+    if (!is_array($decoded) || empty($decoded['gradientEnabled'])) {
+        return $out;
+    }
+    $colors = [];
+    if (!empty($decoded['colors']) && is_array($decoded['colors'])) {
+        foreach ($decoded['colors'] as $c) {
+            $hex = normalizeHexColor($c);
+            if ($hex !== null) {
+                $colors[] = $hex;
+            }
+        }
+    }
+    if (count($colors) < 2) {
+        return $out;
+    }
+    $out['backgroundGradientEnabled'] = true;
+    $out['backgroundGradientColors'] = $colors;
+    $out['backgroundGradientType'] = (($decoded['type'] ?? 'linear') === 'radial') ? 'radial' : 'linear';
+    $out['backgroundGradientDirection'] = isset($decoded['direction']) ? (int)$decoded['direction'] : 135;
+    if (!empty($decoded['positions']) && is_array($decoded['positions']) && count($decoded['positions']) === count($colors)) {
+        $out['backgroundGradientColorPositions'] = array_map(static function ($p) {
+            return max(0, min(100, is_numeric($p) ? (float)$p : 0));
+        }, $decoded['positions']);
+    }
+    if ($out['backgroundColor'] === null && !empty($colors[0])) {
+        $out['backgroundColor'] = $colors[0];
+    }
+    return $out;
+}
+
+/** Ensure tabs.emoji / sections.emoji and background_color / background_style exist. */
 function ensureTabSectionEmojiColumns(PDO $db): void {
     static $ensured = false;
     if ($ensured) {
@@ -1687,6 +1842,12 @@ function ensureTabSectionEmojiColumns(PDO $db): void {
             $names = array_column($columns, 'name');
             if (!in_array('emoji', $names, true)) {
                 $db->exec("ALTER TABLE {$table} ADD COLUMN emoji TEXT");
+            }
+            if (!in_array('background_color', $names, true)) {
+                $db->exec("ALTER TABLE {$table} ADD COLUMN background_color TEXT");
+            }
+            if (!in_array('background_style', $names, true)) {
+                $db->exec("ALTER TABLE {$table} ADD COLUMN background_style TEXT");
             }
         }
         $ensured = true;
@@ -2805,6 +2966,20 @@ function initDatabase() {
         } catch (PDOException $e) {
             error_log('Tabs migration warning: ' . $e->getMessage());
         }
+
+        // Migrate tabs table to add background_color column if it doesn't exist
+        try {
+            $columns = $db->query("PRAGMA table_info(tabs)")->fetchAll();
+            $columnNames = array_column($columns, 'name');
+            if (!in_array('background_color', $columnNames, true)) {
+                $db->exec('ALTER TABLE tabs ADD COLUMN background_color TEXT');
+            }
+            if (!in_array('background_style', $columnNames, true)) {
+                $db->exec('ALTER TABLE tabs ADD COLUMN background_style TEXT');
+            }
+        } catch (PDOException $e) {
+            error_log('Tabs background_color migration warning: ' . $e->getMessage());
+        }
         
         // Migrate tabs table to add visibility columns if they don't exist
         try {
@@ -2906,6 +3081,20 @@ function initDatabase() {
             }
         } catch (PDOException $e) {
             error_log('Sections text_color migration warning: ' . $e->getMessage());
+        }
+
+        // Migrate sections table to add background_color column if it doesn't exist
+        try {
+            $columns = $db->query("PRAGMA table_info(sections)")->fetchAll();
+            $columnNames = array_column($columns, 'name');
+            if (!in_array('background_color', $columnNames, true)) {
+                $db->exec('ALTER TABLE sections ADD COLUMN background_color TEXT');
+            }
+            if (!in_array('background_style', $columnNames, true)) {
+                $db->exec('ALTER TABLE sections ADD COLUMN background_style TEXT');
+            }
+        } catch (PDOException $e) {
+            error_log('Sections background_color migration warning: ' . $e->getMessage());
         }
 
         // Migrate existing sections table to add emoji column if it doesn't exist

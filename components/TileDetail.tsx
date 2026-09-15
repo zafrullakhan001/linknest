@@ -71,6 +71,13 @@ import { LinkMaintenanceVideoField } from './LinkMaintenanceVideoField';
 import { LinkMaintenanceBadge } from './LinkMaintenanceBadge';
 import { isLinkInMaintenance } from '../utils/linkMaintenance';
 import { hasVisibleRichText, prepareViewerHtml } from '../utils/richTextDisplay';
+import {
+    normalizeHexColor,
+    resolveSectionBackgroundDecoration,
+    softBackgroundStyleFromDecoration,
+    type SectionBackgroundDecoration,
+} from '../utils/sectionBackgroundColor';
+import { SectionBackgroundPicker } from './SectionBackgroundPicker';
 import { isInfoContentEnabled, isInfoOpenLinkShown, isNotesTooltipEnabled, shouldOpenInfoDialog, shouldShowLinkNotes } from '../utils/linkFeatureToggles';
 import { shouldPromptInfoDialog } from '../utils/linkInfoDismiss';
 import { LinkNotesDialog } from './LinkNotesDialog';
@@ -718,6 +725,12 @@ const cloneSectionItem = (
         title: opts?.appendCopyTitle ? `${section.title} (Copy)` : section.title,
         emoji: section.emoji,
         textColor: section.textColor,
+        backgroundColor: section.backgroundColor,
+        backgroundGradientEnabled: section.backgroundGradientEnabled,
+        backgroundGradientColors: section.backgroundGradientColors,
+        backgroundGradientDirection: section.backgroundGradientDirection,
+        backgroundGradientType: section.backgroundGradientType,
+        backgroundGradientColorPositions: section.backgroundGradientColorPositions,
         visibility: section.visibility,
         published: section.published,
         allowedUsers: section.allowedUsers ? [...section.allowedUsers] : undefined,
@@ -746,6 +759,12 @@ const cloneTabItem = (
         title: opts?.appendCopyTitle === false ? tab.title : `${tab.title} (Copy)`,
         emoji: tab.emoji,
         textColor: tab.textColor,
+        backgroundColor: tab.backgroundColor,
+        backgroundGradientEnabled: tab.backgroundGradientEnabled,
+        backgroundGradientColors: tab.backgroundGradientColors,
+        backgroundGradientDirection: tab.backgroundGradientDirection,
+        backgroundGradientType: tab.backgroundGradientType,
+        backgroundGradientColorPositions: tab.backgroundGradientColorPositions,
         visibility: tab.visibility,
         published: tab.published,
         allowedUsers: tab.allowedUsers ? [...tab.allowedUsers] : undefined,
@@ -1121,6 +1140,19 @@ export const TileDetail: React.FC<TileDetailProps> = ({
             }
         }
     }, [selectedTabId, tile.id]);
+
+    // Track dark mode so custom section colors are cleared immediately when theme toggles
+    const [isDarkMode, setIsDarkMode] = useState(() =>
+        typeof document !== 'undefined' && document.documentElement.classList.contains('dark')
+    );
+    useEffect(() => {
+        const root = document.documentElement;
+        const sync = () => setIsDarkMode(root.classList.contains('dark'));
+        sync();
+        const observer = new MutationObserver(sync);
+        observer.observe(root, { attributes: true, attributeFilter: ['class'] });
+        return () => observer.disconnect();
+    }, []);
 
     // Reload selected tab from URL or localStorage when tile changes (when viewing a different tile)
     // This needs to run before the tab initialization useEffect
@@ -3517,6 +3549,17 @@ export const TileDetail: React.FC<TileDetailProps> = ({
         setEditTabs(editTabs.map(t => t.id === tabId ? { ...t, textColor: normalizedColor } : t));
     };
 
+    const handleUpdateTabBackgroundColor = (tabId: string, backgroundColor: string) => {
+        const normalizedColor = normalizeHexColor(backgroundColor) ?? undefined;
+        setEditTabs(editTabs.map(t => t.id === tabId ? { ...t, backgroundColor: normalizedColor, backgroundGradientEnabled: false } : t));
+    };
+
+    const handleUpdateTabBackgroundDecoration = (tabId: string, decoration: SectionBackgroundDecoration) => {
+        setEditTabs((prev) =>
+            prev.map((t) => (t.id === tabId ? { ...t, ...decoration } : t))
+        );
+    };
+
     const handleUpdateTabEmoji = (tabId: string, emoji: string) => {
         const normalized = emoji.trim() || undefined;
         setEditTabs(editTabs.map(t => t.id === tabId ? { ...t, emoji: normalized } : t));
@@ -3546,6 +3589,37 @@ export const TileDetail: React.FC<TileDetailProps> = ({
                 )
             };
         }));
+    };
+
+    const handleUpdateSectionBackgroundColor = (tabId: string, sectionId: string, backgroundColor: string) => {
+        const normalizedColor = normalizeHexColor(backgroundColor) ?? undefined;
+        setEditTabs(editTabs.map(t => {
+            if (t.id !== tabId) return t;
+            return {
+                ...t,
+                sections: t.sections.map(s =>
+                    s.id === sectionId
+                        ? { ...s, backgroundColor: normalizedColor, backgroundGradientEnabled: false }
+                        : s
+                )
+            };
+        }));
+    };
+
+    const handleUpdateSectionBackgroundDecoration = (
+        tabId: string,
+        sectionId: string,
+        decoration: SectionBackgroundDecoration
+    ) => {
+        setEditTabs((prev) =>
+            prev.map((t) => {
+                if (t.id !== tabId) return t;
+                return {
+                    ...t,
+                    sections: t.sections.map((s) => (s.id === sectionId ? { ...s, ...decoration } : s)),
+                };
+            })
+        );
     };
 
     const handleToggleForceStacked = (tabId: string, sectionId: string, value: boolean) => {
@@ -8739,6 +8813,11 @@ export const TileDetail: React.FC<TileDetailProps> = ({
                                                         ? 'space-y-4'
                                                         : 'linknest-content-link-grid';
 
+                                    const sectionSoftBg = softBackgroundStyleFromDecoration(
+                                        resolveSectionBackgroundDecoration(section, activeViewTab),
+                                        isDarkMode
+                                    );
+
                                     return (
                                         <ViewModeSortable
                                             key={section.id}
@@ -8750,7 +8829,11 @@ export const TileDetail: React.FC<TileDetailProps> = ({
                                             data-view-layout={sectionLinkLayout}
                                             data-qr-print-section={isQrLayout ? section.id : undefined}
                                             data-qr-print-title={isQrLayout ? (`${section.emoji ? `${section.emoji} ` : ''}${section.title || ''}`) : undefined}
-                                            className={`linknest-content-section bg-white/80 dark:bg-slate-800/60 backdrop-blur-sm rounded-2xl border border-slate-200/80 dark:border-slate-700/50 shadow-sm relative ${
+                                            className={`linknest-content-section ${
+                                                sectionSoftBg
+                                                    ? 'backdrop-blur-sm rounded-2xl border shadow-sm relative'
+                                                    : 'bg-white/80 dark:bg-slate-800/60 backdrop-blur-sm rounded-2xl border border-slate-200/80 dark:border-slate-700/50 shadow-sm relative'
+                                            } ${
                                                 isQrLayout
                                                     ? 'p-4 overflow-hidden col-span-full'
                                                     : sectionLinkLayout === 'compact'
@@ -8765,7 +8848,10 @@ export const TileDetail: React.FC<TileDetailProps> = ({
                                                         ? getTileAnimationClass(tile.pageAnimation as TileAnimation)
                                                         : 'animate-in fade-in slide-in-from-bottom-2'
                                             }`}
-                                            style={{ animationDelay: isQrLayout || canReorderSections ? undefined : `${sectionIndex * 120}ms` }}
+                                            style={{
+                                                animationDelay: isQrLayout || canReorderSections ? undefined : `${sectionIndex * 120}ms`,
+                                                ...(sectionSoftBg ? sectionSoftBg.cssVars : {}),
+                                            }}
                                         >
                                             {({ attributes: sectionDragAttrs, listeners: sectionDragListeners }) => (
                                             <>
@@ -8782,8 +8868,14 @@ export const TileDetail: React.FC<TileDetailProps> = ({
                                                 )}
                                                 {section.title || canQuickEditTitles ? (
                                                     <h3
-                                                        className={`linknest-content-section-title font-bold flex items-center gap-2 min-w-0 ${sectionLinkLayout === 'compact' ? 'text-base' : 'text-lg'} ${!section.textColor ? 'text-slate-800 dark:text-white' : ''}`}
-                                                        style={section.textColor ? { color: section.textColor } : undefined}
+                                                        className={`linknest-content-section-title font-bold flex items-center gap-2 min-w-0 ${sectionLinkLayout === 'compact' ? 'text-base' : 'text-lg'} ${!section.textColor && !sectionSoftBg ? 'text-slate-800 dark:text-white' : ''}`}
+                                                        style={
+                                                            section.textColor
+                                                                ? { color: section.textColor }
+                                                                : sectionSoftBg
+                                                                    ? { color: sectionSoftBg.color }
+                                                                    : undefined
+                                                        }
                                                     >
                                                         <span className={`w-1.5 rounded-full shrink-0 ${styles.base} shadow-sm ${sectionLinkLayout === 'compact' ? 'h-5' : 'h-7'}`}></span>
                                                         {section.emoji ? (
@@ -11643,8 +11735,10 @@ export const TileDetail: React.FC<TileDetailProps> = ({
                                                 onMoveSection={handleMoveSection}
                                                 onMoveItem={handleMoveItem}
                                                 onUpdateTabColor={handleUpdateTabColor}
+                                                onUpdateTabBackgroundDecoration={handleUpdateTabBackgroundDecoration}
                                                 onUpdateTabEmoji={handleUpdateTabEmoji}
                                                 onUpdateSectionColor={handleUpdateSectionColor}
+                                                onUpdateSectionBackgroundDecoration={handleUpdateSectionBackgroundDecoration}
                                                 onUpdateSectionEmoji={handleUpdateSectionEmoji}
                                                 onToggleForceStacked={handleToggleForceStacked}
                                                 onImportTab={openTabJsonImport}
@@ -11822,6 +11916,21 @@ export const TileDetail: React.FC<TileDetailProps> = ({
                                                             </button>
                                                         )}
                                                     </div>
+                                                    {/* Background for section cards in this tab (presets + gradient; light mode only) */}
+                                                    <SectionBackgroundPicker
+                                                        label="Bg"
+                                                        value={{
+                                                            backgroundColor: tab.backgroundColor,
+                                                            backgroundGradientEnabled: tab.backgroundGradientEnabled,
+                                                            backgroundGradientColors: tab.backgroundGradientColors,
+                                                            backgroundGradientDirection: tab.backgroundGradientDirection,
+                                                            backgroundGradientType: tab.backgroundGradientType,
+                                                            backgroundGradientColorPositions: tab.backgroundGradientColorPositions,
+                                                        }}
+                                                        onChange={(decoration) =>
+                                                            handleUpdateTabBackgroundDecoration(tab.id, decoration)
+                                                        }
+                                                    />
                                                     <button
                                                         onClick={() => handleCloneTab(tab.id)}
                                                         className="text-slate-400 hover:text-brand-600 dark:hover:text-brand-400 p-2"
@@ -11953,11 +12062,38 @@ export const TileDetail: React.FC<TileDetailProps> = ({
                                                         ];
                                                         const sectionColorClass = borderColors[colorIndex];
                                                         const sectionBgClass = bgColors[colorIndex];
+                                                        const editSectionSoftBg = softBackgroundStyleFromDecoration(
+                                                            resolveSectionBackgroundDecoration(section, tab),
+                                                            isDarkMode
+                                                        );
 
                                                         return (
-                                                            <div key={section.id} className={`bg-slate-50 dark:bg-slate-900/50 border-2 border-l-2 border-t-2 border-b-2 border-slate-200 dark:border-slate-700 ${sectionColorClass} rounded-xl overflow-hidden shadow-sm`}>
+                                                            <div
+                                                                key={section.id}
+                                                                className={`bg-slate-50 dark:bg-slate-900/50 border-2 border-l-2 border-t-2 border-b-2 border-slate-200 dark:border-slate-700 ${sectionColorClass} rounded-xl overflow-hidden shadow-sm`}
+                                                                style={
+                                                                    editSectionSoftBg
+                                                                        ? editSectionSoftBg.cssVars
+                                                                        : undefined
+                                                                }
+                                                            >
                                                                 {/* Section Header */}
-                                                                <div className={`p-4 ${expandedSections.has(section.id) ? 'border-b-2 border-slate-200 dark:border-slate-700' : ''} bg-white dark:bg-slate-800 ${sectionBgClass} flex flex-wrap gap-x-3 gap-y-2 items-center`}>
+                                                                <div
+                                                                    className={`p-4 ${expandedSections.has(section.id) ? 'border-b-2 border-slate-200 dark:border-slate-700' : ''} ${editSectionSoftBg ? '' : `bg-white dark:bg-slate-800 ${sectionBgClass}`} flex flex-wrap gap-x-3 gap-y-2 items-center`}
+                                                                    style={
+                                                                        editSectionSoftBg
+                                                                            ? editSectionSoftBg.isGradient
+                                                                                ? {
+                                                                                      background: editSectionSoftBg.cssVars.background,
+                                                                                      color: editSectionSoftBg.color,
+                                                                                  }
+                                                                                : {
+                                                                                      backgroundColor: editSectionSoftBg.backgroundColor,
+                                                                                      color: editSectionSoftBg.color,
+                                                                                  }
+                                                                            : undefined
+                                                                    }
+                                                                >
                                                                     <div className="flex items-center gap-3 min-w-[10rem] grow">
                                                                     {/* Collapse Toggle */}
                                                                     <button
@@ -12140,6 +12276,48 @@ export const TileDetail: React.FC<TileDetailProps> = ({
                                                                             </button>
                                                                         )}
                                                                     </div>
+                                                                    {/* Background override for this section card (presets + gradient; light mode only) */}
+                                                                    <SectionBackgroundPicker
+                                                                        label={
+                                                                            section.backgroundColor ||
+                                                                            section.backgroundGradientEnabled
+                                                                                ? 'Bg'
+                                                                                : tab.backgroundColor ||
+                                                                                    tab.backgroundGradientEnabled
+                                                                                    ? 'Bg*'
+                                                                                    : 'Bg'
+                                                                        }
+                                                                        inheritedHint={
+                                                                            !(
+                                                                                section.backgroundColor ||
+                                                                                section.backgroundGradientEnabled
+                                                                            ) &&
+                                                                            (tab.backgroundColor ||
+                                                                                tab.backgroundGradientEnabled)
+                                                                                ? 'Inheriting tab background — pick a color to override'
+                                                                                : undefined
+                                                                        }
+                                                                        value={{
+                                                                            backgroundColor: section.backgroundColor,
+                                                                            backgroundGradientEnabled:
+                                                                                section.backgroundGradientEnabled,
+                                                                            backgroundGradientColors:
+                                                                                section.backgroundGradientColors,
+                                                                            backgroundGradientDirection:
+                                                                                section.backgroundGradientDirection,
+                                                                            backgroundGradientType:
+                                                                                section.backgroundGradientType,
+                                                                            backgroundGradientColorPositions:
+                                                                                section.backgroundGradientColorPositions,
+                                                                        }}
+                                                                        onChange={(decoration) =>
+                                                                            handleUpdateSectionBackgroundDecoration(
+                                                                                tab.id,
+                                                                                section.id,
+                                                                                decoration
+                                                                            )
+                                                                        }
+                                                                    />
                                                                     {/* Force Stacked View Checkbox */}
                                                                     <div className="flex items-center gap-1">
                                                                         <label className="flex items-center gap-1.5 cursor-pointer p-1.5 rounded hover:bg-slate-100 dark:hover:bg-slate-700 transition-colors" title="Force stacked view for this section">
@@ -12259,7 +12437,16 @@ export const TileDetail: React.FC<TileDetailProps> = ({
 
                                                                 {/* Section Links */}
                                                                 {expandedSections.has(section.id) && (
-                                                                <div className="p-4 bg-white dark:bg-slate-800">
+                                                                <div
+                                                                    className={`p-4 ${editSectionSoftBg ? '' : 'bg-white dark:bg-slate-800'}`}
+                                                                    style={
+                                                                        editSectionSoftBg
+                                                                            ? editSectionSoftBg.isGradient
+                                                                                ? { background: editSectionSoftBg.cssVars.background }
+                                                                                : { backgroundColor: editSectionSoftBg.backgroundColor }
+                                                                            : undefined
+                                                                    }
+                                                                >
                                                                     <div className="space-y-2 mb-4">
                                                                         {/* Merged Content Rendering */}
                                                                         {(() => {

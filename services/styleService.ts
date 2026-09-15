@@ -2397,6 +2397,14 @@ function generateContentPageCSS(styles: SpaceStyles, isDark: boolean): string {
       break;
   }
 
+  // Top accent follows card border-radius via inset shadow (no straight ::before bar).
+  const sectionTopBarInset = styles.contentSectionTopBarEnabled
+    ? `inset 0 ${Math.max(1, Number(styles.contentSectionTopBarHeight) || 4)}px 0 0 ${styles.contentSectionTopBarColor || '#3b82f6'}`
+    : '';
+  const sectionBoxShadow = [sectionShadow && sectionShadow !== 'none' ? sectionShadow : '', sectionTopBarInset]
+    .filter(Boolean)
+    .join(', ') || 'none';
+
   // Rich Text styles
   let richTextBackground = '';
   let richTextBorder = '';
@@ -2613,34 +2621,16 @@ function generateContentPageCSS(styles: SpaceStyles, isDark: boolean): string {
       font-style: ${styles.contentTitleFontStyle || 'normal'} !important;
     }
     
-    /* Content Sections */
+    /* Content Sections — --ln-section-card-* lets per-tab/section colors override theme */
     .linknest-content-section {
-      background: ${sectionBackground} !important;
+      background: var(--ln-section-card-bg, ${sectionBackground}) !important;
       border: ${sectionBorder} !important;
+      ${sectionBorder !== 'none' ? `border-color: var(--ln-section-card-border-color, ${isDark ? 'rgba(51, 65, 85, 0.5)' : (styles.contentSectionBorderColor || '#e2e8f0')}) !important;` : ''}
       border-radius: ${styles.contentSectionBorderRadius}px !important;
-      box-shadow: ${sectionShadow} !important;
+      box-shadow: ${sectionBoxShadow} !important;
       margin-bottom: ${styles.contentSectionVerticalSpacing || 32}px !important;
       padding: ${styles.contentSectionSpacing}px !important;
-      ${styles.contentSectionTopBarEnabled ? 'position: relative; overflow: hidden;' : ''}
     }
-    
-    ${styles.contentSectionTopBarEnabled ? `
-    .linknest-content-section::before {
-      content: '';
-      position: absolute;
-      top: 0;
-      left: 0;
-      right: 0;
-      height: ${styles.contentSectionTopBarHeight}px;
-      background: ${styles.contentSectionTopBarColor};
-      border-radius: ${styles.contentSectionBorderRadius}px ${styles.contentSectionBorderRadius}px 0 0;
-      z-index: 0;
-    }
-    .linknest-content-section > * {
-      position: relative;
-      z-index: 1;
-    }
-    ` : ''}
     
     .linknest-content-section:last-child {
       margin-bottom: 0 !important;

@@ -1,4 +1,5 @@
 import { Link, LinkSection, RichTextContent, Tab } from '../types';
+import { pickSectionBackgroundDecoration } from '../utils/sectionBackgroundColor';
 
 const generateId = () => Math.random().toString(36).substring(2, 9);
 
@@ -53,7 +54,14 @@ export const exportSectionLinksToFile = (section: LinkSection) => {
 };
 
 export const exportTabToFile = (tab: Tab) => {
-  const tabCopy: Tab = JSON.parse(JSON.stringify(tab)) as Tab;
+  const background = pickSectionBackgroundDecoration(tab as unknown as Record<string, unknown>);
+  const sections = Array.isArray(tab.sections)
+    ? tab.sections.map((section) => ({
+        ...section,
+        ...pickSectionBackgroundDecoration(section as unknown as Record<string, unknown>),
+      }))
+    : [];
+  const tabCopy: Tab = JSON.parse(JSON.stringify({ ...tab, ...background, sections })) as Tab;
   const payload: TabExportFile = {
     version: '1.0',
     type: 'tab',
@@ -186,6 +194,7 @@ function normalizeImportedSection(raw: unknown, index: number): LinkSection {
     title: String(s.title ?? `Section ${index + 1}`),
     position: typeof s.position === 'number' ? s.position : index,
     textColor: typeof s.textColor === 'string' ? s.textColor : undefined,
+    ...pickSectionBackgroundDecoration(s),
     emoji: typeof s.emoji === 'string' ? s.emoji : undefined,
     forceStackedView: typeof s.forceStackedView === 'boolean' ? s.forceStackedView : undefined,
     visibility:
@@ -229,6 +238,7 @@ export const parseTabExport = (data: unknown): Tab => {
     title: String(t.title ?? 'Imported Tab'),
     position: typeof t.position === 'number' ? t.position : 0,
     textColor: typeof t.textColor === 'string' ? t.textColor : undefined,
+    ...pickSectionBackgroundDecoration(t),
     emoji: typeof t.emoji === 'string' ? t.emoji : undefined,
     visibility:
       t.visibility === 'authenticated' || t.visibility === 'private' || t.visibility === 'public'

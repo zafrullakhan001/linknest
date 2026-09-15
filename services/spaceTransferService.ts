@@ -1,6 +1,7 @@
-import { Tile, LinkSection, Link } from '../types';
+import { Tile, LinkSection, Link, Tab } from '../types';
 import { generateUuid } from './idService';
 import { normalizeLinkTooltipStyle } from '../utils/linkTooltipPreference';
+import { pickSectionBackgroundDecoration } from '../utils/sectionBackgroundColor';
 import {
   uploadTileEmojiImage,
   uploadTileHeaderImage
@@ -9,9 +10,10 @@ import {
 export type SpaceExportType = 'tile' | 'category' | 'all_categories';
 
 export interface SpaceExportFile {
+  // 1.4: tab/section backgroundColor + gradient decoration fields
   // 1.3: logos embedded in assets, position, category order, show* flags
   // 1.2: decorations, messages (celebration + url/urlLabel), pageAnimation, linksAnimation, link animation, allowedGroups
-  version: '1.2' | '1.3';
+  version: '1.2' | '1.3' | '1.4';
   type: SpaceExportType;
   exportedAt: number;
   tile?: Tile;
@@ -406,11 +408,16 @@ const normalizeImportedSection = (section: any): LinkSection => {
     ? section.richTextContent.map(normalizeRichTextContent)
     : undefined;
 
+  const background = pickSectionBackgroundDecoration(
+    section && typeof section === 'object' ? (section as Record<string, unknown>) : undefined
+  );
+
   return {
     id: generateId(),
     title: String(section.title || ''),
     position: typeof section.position === 'number' ? section.position : undefined,
     textColor: typeof section.textColor === 'string' ? section.textColor : undefined,
+    ...background,
     emoji: typeof section.emoji === 'string' ? section.emoji : undefined,
     forceStackedView:
       typeof section.forceStackedView === 'boolean' ? section.forceStackedView : undefined,
@@ -422,6 +429,29 @@ const normalizeImportedSection = (section: any): LinkSection => {
     links,
     richTextContent
   };
+};
+
+/** Ensure tab/section background decoration is explicit and normalized in export JSON. */
+const prepareTabForExport = (tab: Tab): Tab => {
+  const background = pickSectionBackgroundDecoration(tab as unknown as Record<string, unknown>);
+  const sections = Array.isArray(tab.sections)
+    ? tab.sections.map((section) => {
+        const sectionBg = pickSectionBackgroundDecoration(section as unknown as Record<string, unknown>);
+        return { ...section, ...sectionBg };
+      })
+    : tab.sections;
+  return { ...tab, ...background, sections };
+};
+
+const prepareTileForExport = (tile: Tile): Tile => {
+  const tabs = Array.isArray(tile.tabs) ? tile.tabs.map(prepareTabForExport) : tile.tabs;
+  const sections = Array.isArray(tile.sections)
+    ? tile.sections.map((section) => ({
+        ...section,
+        ...pickSectionBackgroundDecoration(section as unknown as Record<string, unknown>),
+      }))
+    : tile.sections;
+  return { ...tile, tabs, sections };
 };
 
 const asOptionalBoolean = (value: unknown): boolean | undefined => {
@@ -437,10 +467,10 @@ const asOptionalNumber = (value: unknown): number | undefined =>
 /** Export a single space/tile to a JSON file (sync; no asset embed). Prefer exportTileToFileAsync. */
 export const exportTileToFile = (tile: Tile) => {
   const payload: SpaceExportFile = {
-    version: '1.3',
+    version: '1.4',
     type: 'tile',
     exportedAt: Date.now(),
-    tile
+    tile: prepareTileForExport(tile)
   };
 
   const filename = `linknest-space-${slugify(tile.title)}.json`;
@@ -449,15 +479,16 @@ export const exportTileToFile = (tile: Tile) => {
 
 /** Export a single space with embedded logo assets. */
 export const exportTileToFileAsync = async (tile: Tile) => {
-  const assets = await collectSpaceExportAssets([tile]);
+  const prepared = prepareTileForExport(tile);
+  const assets = await collectSpaceExportAssets([prepared]);
   const payload: SpaceExportFile = {
-    version: '1.3',
+    version: '1.4',
     type: 'tile',
     exportedAt: Date.now(),
-    tile,
+    tile: prepared,
     ...(Object.keys(assets).length > 0 ? { assets } : {})
   };
-  const filename = `linknest-space-${slugify(tile.title)}.json`;
+  const filename = `linknest-space-${slugify(prepared.title)}.json`;
   triggerDownload(payload, filename);
 };
 
@@ -466,7 +497,7 @@ export const exportCategoryToFile = (categoryName: string, tiles: Tile[]) => {
   const categoryTiles = sortTilesByCategoryAndPosition(
     tiles.filter((t) => (t.group || 'General') === categoryName),
     [categoryName]
-  );
+  ).map(prepareTileForExport);
 
   if (categoryTiles.length === 0) {
     alert(`No spaces found in category "${categoryName}".`);
@@ -474,7 +505,7 @@ export const exportCategoryToFile = (categoryName: string, tiles: Tile[]) => {
   }
 
   const payload: SpaceExportFile = {
-    version: '1.3',
+    version: '1.4',
     type: 'category',
     exportedAt: Date.now(),
     categoryName,
@@ -490,7 +521,7 @@ export const exportCategoryToFileAsync = async (categoryName: string, tiles: Til
   const categoryTiles = sortTilesByCategoryAndPosition(
     tiles.filter((t) => (t.group || 'General') === categoryName),
     [categoryName]
-  );
+  ).map(prepareTileForExport);
 
   if (categoryTiles.length === 0) {
     alert(`No spaces found in category "${categoryName}".`);
@@ -499,7 +530,7 @@ export const exportCategoryToFileAsync = async (categoryName: string, tiles: Til
 
   const assets = await collectSpaceExportAssets(categoryTiles);
   const payload: SpaceExportFile = {
-    version: '1.3',
+    version: '1.4',
     type: 'category',
     exportedAt: Date.now(),
     categoryName,
@@ -518,10 +549,10 @@ export const exportAllCategoriesToFile = (tiles: Tile[], categoryOrder: string[]
   }
 
   const categories = resolveExportCategories(tiles, categoryOrder);
-  const orderedTiles = sortTilesByCategoryAndPosition(tiles, categories);
+  const orderedTiles = sortTilesByCategoryAndPosition(tiles, categories).map(prepareTileForExport);
 
   const payload: SpaceExportFile = {
-    version: '1.3',
+    version: '1.4',
     type: 'all_categories',
     exportedAt: Date.now(),
     tiles: orderedTiles,
@@ -532,7 +563,7 @@ export const exportAllCategoriesToFile = (tiles: Tile[], categoryOrder: string[]
   triggerDownload(payload, filename);
 };
 
-/** Export all spaces with full order + embedded logo assets (v1.3). */
+/** Export all spaces with full order + embedded logo assets (v1.4). */
 export const exportAllCategoriesToFileAsync = async (
   tiles: Tile[],
   categoryOrder: string[] | undefined
@@ -543,11 +574,11 @@ export const exportAllCategoriesToFileAsync = async (
   }
 
   const categories = resolveExportCategories(tiles, categoryOrder);
-  const orderedTiles = sortTilesByCategoryAndPosition(tiles, categories);
+  const orderedTiles = sortTilesByCategoryAndPosition(tiles, categories).map(prepareTileForExport);
   const assets = await collectSpaceExportAssets(orderedTiles);
 
   const payload: SpaceExportFile = {
-    version: '1.3',
+    version: '1.4',
     type: 'all_categories',
     exportedAt: Date.now(),
     tiles: orderedTiles,
@@ -565,12 +596,13 @@ export const parseSpaceExportObject = (data: any): ParsedSpaceImport => {
     throw new Error('Invalid file: expected a JSON object.');
   }
 
-  // Support 1.0–1.3 for backward compatibility
+  // Support 1.0–1.4 for backward compatibility
   if (
     data.version !== '1.0' &&
     data.version !== '1.1' &&
     data.version !== '1.2' &&
-    data.version !== '1.3'
+    data.version !== '1.3' &&
+    data.version !== '1.4'
   ) {
     console.warn('Unknown space export version, proceeding anyway:', data.version);
   }
@@ -636,11 +668,16 @@ export const normalizeImportedTiles = (
 
     // Handle tabs structure (new structure)
     const tabs = Array.isArray(src.tabs) && src.tabs.length > 0
-      ? src.tabs.map((tab: any) => ({
+      ? src.tabs.map((tab: any) => {
+          const background = pickSectionBackgroundDecoration(
+            tab && typeof tab === 'object' ? (tab as Record<string, unknown>) : undefined
+          );
+          return {
           id: generateId(),
           title: String(tab.title || 'New Tab'),
           position: typeof tab.position === 'number' ? tab.position : 0,
           textColor: typeof tab.textColor === 'string' ? tab.textColor : undefined,
+          ...background,
           emoji: typeof tab.emoji === 'string' ? tab.emoji : undefined,
           visibility: tab.visibility || 'public',
           allowedUsers: asNumberArray(tab.allowedUsers),
@@ -651,7 +688,8 @@ export const normalizeImportedTiles = (
           sections: Array.isArray(tab.sections)
             ? tab.sections.map(normalizeImportedSection)
             : []
-        }))
+          };
+        })
       : [];
 
     // Handle sections structure (backward compatibility)

@@ -344,6 +344,14 @@ export interface LinkSection {
   links: Link[];
   richTextContent?: RichTextContent[]; // Rich text content items in this section
   textColor?: string; // Optional custom text color for section title (hex color code)
+  /** Optional custom background for this section card (hex). Overrides the parent tab background when set. */
+  backgroundColor?: string;
+  /** When true, use gradient fill for this section card (overrides solid backgroundColor fill). */
+  backgroundGradientEnabled?: boolean;
+  backgroundGradientColors?: string[];
+  backgroundGradientDirection?: number;
+  backgroundGradientType?: 'linear' | 'radial';
+  backgroundGradientColorPositions?: number[];
   visibility?: LinkVisibility; // Visibility setting: 'public', 'authenticated', or 'private'
   published?: boolean; // When false, hidden from everyone except platform admins (overrides visibility)
   allowedUsers?: number[]; // Array of user IDs for private sections
@@ -369,6 +377,14 @@ export interface Tab {
   position: number;
   sections: LinkSection[];
   textColor?: string; // Optional custom text color for tab title (hex color code)
+  /** Optional default background for section cards in this tab (hex). Sections may override. */
+  backgroundColor?: string;
+  /** When true, use gradient fill as the default for section cards in this tab. */
+  backgroundGradientEnabled?: boolean;
+  backgroundGradientColors?: string[];
+  backgroundGradientDirection?: number;
+  backgroundGradientType?: 'linear' | 'radial';
+  backgroundGradientColorPositions?: number[];
   visibility?: LinkVisibility; // Visibility setting: 'public', 'authenticated', or 'private'
   published?: boolean; // When false, hidden from everyone except platform admins (overrides visibility)
   allowedUsers?: number[]; // Array of user IDs for private tabs

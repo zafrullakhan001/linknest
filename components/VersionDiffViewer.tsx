@@ -230,10 +230,10 @@ export const VersionDiffViewer: React.FC<VersionDiffViewerProps> = ({
 
         // Recursive comparison function for Tabs
         const compareTabs = (tabA: Tab, tabB: Tab): DiffResult<Tab> => {
-            const fieldDiffs = diffObjects(tabA, tabB, ['title', 'position', 'textColor', 'visibility', 'allowedUsers', 'visibleFrom', 'expiresAt']);
+            const fieldDiffs = diffObjects(tabA, tabB, ['title', 'position', 'textColor', 'backgroundColor', 'backgroundGradientEnabled', 'backgroundGradientColors', 'backgroundGradientDirection', 'backgroundGradientType', 'backgroundGradientColorPositions', 'visibility', 'allowedUsers', 'visibleFrom', 'expiresAt']);
 
             // Compare Sections
-            const sectionsDiff = diffArray(tabA.sections || [], tabB.sections || [], ['title', 'position', 'textColor', 'visibility', 'allowedUsers', 'visibleFrom', 'expiresAt', 'forceStackedView'], (secA, secB) => {
+            const sectionsDiff = diffArray(tabA.sections || [], tabB.sections || [], ['title', 'position', 'textColor', 'backgroundColor', 'backgroundGradientEnabled', 'backgroundGradientColors', 'backgroundGradientDirection', 'backgroundGradientType', 'backgroundGradientColorPositions', 'visibility', 'allowedUsers', 'visibleFrom', 'expiresAt', 'forceStackedView'], (secA, secB) => {
                 // Compare Links
                 const linksDiff = diffArray(
                     secA.links || [],
@@ -261,7 +261,7 @@ export const VersionDiffViewer: React.FC<VersionDiffViewerProps> = ({
             };
         };
 
-        const tabsDiff = diffArray(tabsA, tabsB, ['title', 'position', 'textColor', 'visibility', 'allowedUsers', 'visibleFrom', 'expiresAt'], compareTabs, 'tab');
+        const tabsDiff = diffArray(tabsA, tabsB, ['title', 'position', 'textColor', 'backgroundColor', 'backgroundGradientEnabled', 'backgroundGradientColors', 'backgroundGradientDirection', 'backgroundGradientType', 'backgroundGradientColorPositions', 'visibility', 'allowedUsers', 'visibleFrom', 'expiresAt'], compareTabs, 'tab');
 
         const messagesDiff = diffArray(
             normalizedOriginal.messages || [],

@@ -925,6 +925,12 @@ function handleGetTiles() {
                         'emoji' => contentEmojiFromRow($tabRow),
                         'position' => (int)($tabRow['position'] ?? 0),
                         'textColor' => (!empty($tabRow['text_color']) && trim($tabRow['text_color']) !== '') ? trim($tabRow['text_color']) : null,
+                        'backgroundColor' => backgroundColorFromRowOrInput($tabRow),
+                        'backgroundGradientEnabled' => backgroundDecorationFromRow($tabRow)['backgroundGradientEnabled'],
+                        'backgroundGradientColors' => backgroundDecorationFromRow($tabRow)['backgroundGradientColors'],
+                        'backgroundGradientDirection' => backgroundDecorationFromRow($tabRow)['backgroundGradientDirection'],
+                        'backgroundGradientType' => backgroundDecorationFromRow($tabRow)['backgroundGradientType'],
+                        'backgroundGradientColorPositions' => backgroundDecorationFromRow($tabRow)['backgroundGradientColorPositions'],
                         'inheritShortUrls' => mapInheritShortUrlsFromRow($tabRow),
                         'visibleFrom' => $tabRow['visible_from'] ?? null,
                         'expiresAt' => $tabRow['expires_at'] ?? null,
@@ -950,6 +956,12 @@ function handleGetTiles() {
                                 'title' => $sectionRow['title'],
                                 'emoji' => contentEmojiFromRow($sectionRow),
                                 'textColor' => (!empty($sectionRow['text_color']) && trim($sectionRow['text_color']) !== '') ? trim($sectionRow['text_color']) : null,
+                                'backgroundColor' => backgroundColorFromRowOrInput($sectionRow),
+                                'backgroundGradientEnabled' => backgroundDecorationFromRow($sectionRow)['backgroundGradientEnabled'],
+                                'backgroundGradientColors' => backgroundDecorationFromRow($sectionRow)['backgroundGradientColors'],
+                                'backgroundGradientDirection' => backgroundDecorationFromRow($sectionRow)['backgroundGradientDirection'],
+                                'backgroundGradientType' => backgroundDecorationFromRow($sectionRow)['backgroundGradientType'],
+                                'backgroundGradientColorPositions' => backgroundDecorationFromRow($sectionRow)['backgroundGradientColorPositions'],
                                 'visibleFrom' => $sectionRow['visible_from'] ?? null,
                                 'expiresAt' => $sectionRow['expires_at'] ?? null,
                                 'forceStackedView' => isset($sectionRow['force_stacked_view']) && $sectionRow['force_stacked_view'] == 1 ? true : false,
@@ -1074,6 +1086,12 @@ function handleGetTiles() {
                         'title' => $sectionRow['title'],
                                 'emoji' => contentEmojiFromRow($sectionRow),
                         'textColor' => (!empty($sectionRow['text_color']) && trim($sectionRow['text_color']) !== '') ? trim($sectionRow['text_color']) : null,
+                        'backgroundColor' => backgroundColorFromRowOrInput($sectionRow),
+                        'backgroundGradientEnabled' => backgroundDecorationFromRow($sectionRow)['backgroundGradientEnabled'],
+                        'backgroundGradientColors' => backgroundDecorationFromRow($sectionRow)['backgroundGradientColors'],
+                        'backgroundGradientDirection' => backgroundDecorationFromRow($sectionRow)['backgroundGradientDirection'],
+                        'backgroundGradientType' => backgroundDecorationFromRow($sectionRow)['backgroundGradientType'],
+                        'backgroundGradientColorPositions' => backgroundDecorationFromRow($sectionRow)['backgroundGradientColorPositions'],
                         'forceStackedView' => isset($sectionRow['force_stacked_view']) && $sectionRow['force_stacked_view'] == 1 ? true : false,
                                 'inheritShortUrls' => mapInheritShortUrlsFromRow($sectionRow),
                         'visibility' => $sectionRow['visibility'] ?? 'public',
@@ -1498,6 +1516,12 @@ function handleGetTile($tileId) {
                         'emoji' => contentEmojiFromRow($tabRow),
             'position' => (int)($tabRow['position'] ?? 0),
             'textColor' => $tabColor,
+            'backgroundColor' => backgroundColorFromRowOrInput($tabRow),
+            'backgroundGradientEnabled' => backgroundDecorationFromRow($tabRow)['backgroundGradientEnabled'],
+            'backgroundGradientColors' => backgroundDecorationFromRow($tabRow)['backgroundGradientColors'],
+            'backgroundGradientDirection' => backgroundDecorationFromRow($tabRow)['backgroundGradientDirection'],
+            'backgroundGradientType' => backgroundDecorationFromRow($tabRow)['backgroundGradientType'],
+            'backgroundGradientColorPositions' => backgroundDecorationFromRow($tabRow)['backgroundGradientColorPositions'],
             'inheritShortUrls' => mapInheritShortUrlsFromRow($tabRow),
             'visibleFrom' => $tabRow['visible_from'] ?? null,
             'expiresAt' => $tabRow['expires_at'] ?? null,
@@ -1525,6 +1549,12 @@ function handleGetTile($tileId) {
                 'title' => $sectionRow['title'],
                                 'emoji' => contentEmojiFromRow($sectionRow),
                 'textColor' => (!empty($sectionRow['text_color']) && trim($sectionRow['text_color']) !== '') ? trim($sectionRow['text_color']) : null,
+                'backgroundColor' => backgroundColorFromRowOrInput($sectionRow),
+                'backgroundGradientEnabled' => backgroundDecorationFromRow($sectionRow)['backgroundGradientEnabled'],
+                'backgroundGradientColors' => backgroundDecorationFromRow($sectionRow)['backgroundGradientColors'],
+                'backgroundGradientDirection' => backgroundDecorationFromRow($sectionRow)['backgroundGradientDirection'],
+                'backgroundGradientType' => backgroundDecorationFromRow($sectionRow)['backgroundGradientType'],
+                'backgroundGradientColorPositions' => backgroundDecorationFromRow($sectionRow)['backgroundGradientColorPositions'],
                 'visibleFrom' => $sectionRow['visible_from'] ?? null,
                 'expiresAt' => $sectionRow['expires_at'] ?? null,
                 'forceStackedView' => isset($sectionRow['force_stacked_view']) && $sectionRow['force_stacked_view'] == 1 ? true : false,
@@ -1662,6 +1692,12 @@ function handleGetTile($tileId) {
                     'title' => $sectionRow['title'],
                                 'emoji' => contentEmojiFromRow($sectionRow),
                     'textColor' => (!empty($sectionRow['text_color']) && trim($sectionRow['text_color']) !== '') ? trim($sectionRow['text_color']) : null,
+                    'backgroundColor' => backgroundColorFromRowOrInput($sectionRow),
+                    'backgroundGradientEnabled' => backgroundDecorationFromRow($sectionRow)['backgroundGradientEnabled'],
+                    'backgroundGradientColors' => backgroundDecorationFromRow($sectionRow)['backgroundGradientColors'],
+                    'backgroundGradientDirection' => backgroundDecorationFromRow($sectionRow)['backgroundGradientDirection'],
+                    'backgroundGradientType' => backgroundDecorationFromRow($sectionRow)['backgroundGradientType'],
+                    'backgroundGradientColorPositions' => backgroundDecorationFromRow($sectionRow)['backgroundGradientColorPositions'],
                     'forceStackedView' => isset($sectionRow['force_stacked_view']) && $sectionRow['force_stacked_view'] == 1 ? true : false,
                                 'inheritShortUrls' => mapInheritShortUrlsFromRow($sectionRow),
                     'visibility' => $sectionRow['visibility'] ?? 'public',
@@ -2042,13 +2078,15 @@ function handleCreateTile() {
             $tabAllowedUsers = isset($tab['allowedUsers']) && is_array($tab['allowedUsers']) ? json_encode($tab['allowedUsers']) : null;
             $tabAllowedGroups = isset($tab['allowedGroups']) && is_array($tab['allowedGroups']) ? json_encode($tab['allowedGroups']) : null;
             $tabPublished = resolvePublishedFlag($tab, $user, true);
-            $tabStmt = $db->prepare('INSERT INTO tabs (id, tile_id, title, position, text_color, emoji, visible_from, expires_at, visibility, allowed_users, allowed_groups, published, access_restrictions) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)');
+            $tabStmt = $db->prepare('INSERT INTO tabs (id, tile_id, title, position, text_color, background_color, background_style, emoji, visible_from, expires_at, visibility, allowed_users, allowed_groups, published, access_restrictions) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)');
             $tabStmt->execute([
                 $tabId,
                 $tileId,
                 $tab['title'] ?? 'New Tab',
                 $tab['position'] ?? $tabIndex,
                 $tabColor,
+                backgroundColorFromRowOrInput($tab),
+                encodeBackgroundStyleJson($tab),
                 contentEmojiFromInput($tab),
                 $tab['visibleFrom'] ?? null,
                 $tab['expiresAt'] ?? null,
@@ -2069,13 +2107,15 @@ function handleCreateTile() {
                     $secAllowedUsers = isset($section['allowedUsers']) && is_array($section['allowedUsers']) ? json_encode($section['allowedUsers']) : null;
                     $secAllowedGroups = isset($section['allowedGroups']) && is_array($section['allowedGroups']) ? json_encode($section['allowedGroups']) : null;
                     $secPublished = resolvePublishedFlag($section, $user, true);
-                    $sectionStmt = $db->prepare('INSERT INTO sections (id, tile_id, tab_id, title, text_color, emoji, visible_from, expires_at, force_stacked_view, position, visibility, allowed_users, allowed_groups, published) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)');
+                    $sectionStmt = $db->prepare('INSERT INTO sections (id, tile_id, tab_id, title, text_color, background_color, background_style, emoji, visible_from, expires_at, force_stacked_view, position, visibility, allowed_users, allowed_groups, published) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)');
                     $sectionStmt->execute([
                         $sectionId,
                         $tileId,
                         $tabId,
                         $section['title'] ?? '',
                         $section['textColor'] ?? null,
+                        backgroundColorFromRowOrInput($section),
+                        encodeBackgroundStyleJson($section),
                         contentEmojiFromInput($section),
                         $section['visibleFrom'] ?? null,
                         $section['expiresAt'] ?? null,
@@ -2200,13 +2240,15 @@ function handleCreateTile() {
             $secVisibility = $section['visibility'] ?? 'public';
             $secAllowedUsers = isset($section['allowedUsers']) && is_array($section['allowedUsers']) ? json_encode($section['allowedUsers']) : null;
             $secAllowedGroups = isset($section['allowedGroups']) && is_array($section['allowedGroups']) ? json_encode($section['allowedGroups']) : null;
-            $sectionStmt = $db->prepare('INSERT INTO sections (id, tile_id, tab_id, title, text_color, emoji, visible_from, expires_at, force_stacked_view, position, visibility, allowed_users, allowed_groups) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)');
+            $sectionStmt = $db->prepare('INSERT INTO sections (id, tile_id, tab_id, title, text_color, background_color, background_style, emoji, visible_from, expires_at, force_stacked_view, position, visibility, allowed_users, allowed_groups) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)');
             $sectionStmt->execute([
                 $sectionId,
                 $tileId,
                 $defaultTabId,
                 $section['title'] ?? '',
                 $section['textColor'] ?? null,
+                backgroundColorFromRowOrInput($section),
+                encodeBackgroundStyleJson($section),
                 contentEmojiFromInput($section),
                 $section['visibleFrom'] ?? null,
                 $section['expiresAt'] ?? null,
@@ -2599,13 +2641,15 @@ function cloneTileLinksAndRichText(PDO $db, string $sourceSectionId, string $new
 function cloneTileSectionRow(PDO $db, array $section, string $newTileId, string $newTabId, int $sectionIndex): void {
     $newSectionId = uniqid('section_', true);
     $sectionPosition = isset($section['position']) ? (int)$section['position'] : $sectionIndex;
-    $sectionInsertStmt = $db->prepare('INSERT INTO sections (id, tile_id, tab_id, title, text_color, emoji, visible_from, expires_at, force_stacked_view, position, visibility, allowed_users, allowed_groups, published) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)');
+    $sectionInsertStmt = $db->prepare('INSERT INTO sections (id, tile_id, tab_id, title, text_color, background_color, background_style, emoji, visible_from, expires_at, force_stacked_view, position, visibility, allowed_users, allowed_groups, published) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)');
     $sectionInsertStmt->execute([
         $newSectionId,
         $newTileId,
         $newTabId,
         $section['title'],
         isset($section['text_color']) ? $section['text_color'] : null,
+        backgroundColorFromRowOrInput($section),
+        encodeBackgroundStyleJson($section),
         contentEmojiFromRow($section),
         $section['visible_from'] ?? null,
         $section['expires_at'] ?? null,
@@ -2763,12 +2807,14 @@ function cloneTileRecordAndContents(PDO $db, array $originalTile, string $newTil
 
         if (!empty($legacySections)) {
             $defaultTabId = uniqid('tab_', true);
-            $tabInsertStmt = $db->prepare('INSERT INTO tabs (id, tile_id, title, position, text_color, visibility, published) VALUES (?, ?, ?, ?, ?, ?, ?)');
+            $tabInsertStmt = $db->prepare('INSERT INTO tabs (id, tile_id, title, position, text_color, background_color, background_style, visibility, published) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)');
             $tabInsertStmt->execute([
                 $defaultTabId,
                 $newTileId,
                 'Default',
                 0,
+                null,
+                null,
                 null,
                 'public',
                 1
@@ -2781,13 +2827,15 @@ function cloneTileRecordAndContents(PDO $db, array $originalTile, string $newTil
     } else {
         foreach ($tabs as $tab) {
             $newTabId = uniqid('tab_', true);
-            $tabInsertStmt = $db->prepare('INSERT INTO tabs (id, tile_id, title, position, text_color, emoji, visible_from, expires_at, visibility, allowed_users, allowed_groups, published, access_restrictions) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)');
+            $tabInsertStmt = $db->prepare('INSERT INTO tabs (id, tile_id, title, position, text_color, background_color, background_style, emoji, visible_from, expires_at, visibility, allowed_users, allowed_groups, published, access_restrictions) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)');
             $tabInsertStmt->execute([
                 $newTabId,
                 $newTileId,
                 $tab['title'],
                 $tab['position'] ?? 0,
                 (!empty($tab['text_color']) && trim($tab['text_color']) !== '') ? trim($tab['text_color']) : null,
+                backgroundColorFromRowOrInput($tab),
+                encodeBackgroundStyleJson($tab),
                 contentEmojiFromRow($tab),
                 $tab['visible_from'] ?? null,
                 $tab['expires_at'] ?? null,
@@ -3347,12 +3395,14 @@ function handleBulkImport() {
                     $sectionIndex = 0;
                     foreach ($tabData['sections'] as $sectionTitle => $links) {
                         $sectionId = uniqid('section_', true);
-                        $sectionStmt = $db->prepare('INSERT INTO sections (id, tile_id, tab_id, title, text_color, force_stacked_view, position) VALUES (?, ?, ?, ?, ?, ?, ?)');
+                        $sectionStmt = $db->prepare('INSERT INTO sections (id, tile_id, tab_id, title, text_color, background_color, background_style, force_stacked_view, position) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)');
                         $sectionStmt->execute([
                             $sectionId,
                             $tileId,
                             $tabId, // Now associated with the tab
                             $sectionTitle,
+                            null,
+                            null,
                             null,
                             0,
                             $sectionIndex++
@@ -4480,6 +4530,12 @@ function handleGetRecycleBin() {
                         'emoji' => contentEmojiFromRow($tabRow),
                 'position' => (int)($tabRow['position'] ?? 0),
                 'textColor' => (!empty($tabRow['text_color']) && trim($tabRow['text_color']) !== '') ? trim($tabRow['text_color']) : null,
+                'backgroundColor' => backgroundColorFromRowOrInput($tabRow),
+                'backgroundGradientEnabled' => backgroundDecorationFromRow($tabRow)['backgroundGradientEnabled'],
+                'backgroundGradientColors' => backgroundDecorationFromRow($tabRow)['backgroundGradientColors'],
+                'backgroundGradientDirection' => backgroundDecorationFromRow($tabRow)['backgroundGradientDirection'],
+                'backgroundGradientType' => backgroundDecorationFromRow($tabRow)['backgroundGradientType'],
+                'backgroundGradientColorPositions' => backgroundDecorationFromRow($tabRow)['backgroundGradientColorPositions'],
                 'inheritShortUrls' => mapInheritShortUrlsFromRow($tabRow),
                 'visibleFrom' => $tabRow['visible_from'] ?? null,
                 'expiresAt' => $tabRow['expires_at'] ?? null,
@@ -4500,6 +4556,12 @@ function handleGetRecycleBin() {
                     'title' => $sectionRow['title'],
                                 'emoji' => contentEmojiFromRow($sectionRow),
                     'textColor' => (!empty($sectionRow['text_color']) && trim($sectionRow['text_color']) !== '') ? trim($sectionRow['text_color']) : null,
+                    'backgroundColor' => backgroundColorFromRowOrInput($sectionRow),
+                    'backgroundGradientEnabled' => backgroundDecorationFromRow($sectionRow)['backgroundGradientEnabled'],
+                    'backgroundGradientColors' => backgroundDecorationFromRow($sectionRow)['backgroundGradientColors'],
+                    'backgroundGradientDirection' => backgroundDecorationFromRow($sectionRow)['backgroundGradientDirection'],
+                    'backgroundGradientType' => backgroundDecorationFromRow($sectionRow)['backgroundGradientType'],
+                    'backgroundGradientColorPositions' => backgroundDecorationFromRow($sectionRow)['backgroundGradientColorPositions'],
                     'visibleFrom' => $sectionRow['visible_from'] ?? null,
                     'expiresAt' => $sectionRow['expires_at'] ?? null,
                     'forceStackedView' => isset($sectionRow['force_stacked_view']) && $sectionRow['force_stacked_view'] == 1 ? true : false,
@@ -4876,6 +4938,12 @@ function handleGetArchive() {
                         'emoji' => contentEmojiFromRow($tabRow),
                     'position' => isset($tabRow['position']) ? (int)$tabRow['position'] : 0,
                     'textColor' => (!empty($tabRow['text_color']) && trim($tabRow['text_color']) !== '') ? trim($tabRow['text_color']) : null,
+                'backgroundColor' => backgroundColorFromRowOrInput($tabRow),
+                'backgroundGradientEnabled' => backgroundDecorationFromRow($tabRow)['backgroundGradientEnabled'],
+                'backgroundGradientColors' => backgroundDecorationFromRow($tabRow)['backgroundGradientColors'],
+                'backgroundGradientDirection' => backgroundDecorationFromRow($tabRow)['backgroundGradientDirection'],
+                'backgroundGradientType' => backgroundDecorationFromRow($tabRow)['backgroundGradientType'],
+                'backgroundGradientColorPositions' => backgroundDecorationFromRow($tabRow)['backgroundGradientColorPositions'],
                 'inheritShortUrls' => mapInheritShortUrlsFromRow($tabRow),
                     'visibleFrom' => $tabRow['visible_from'] ?? null,
                     'expiresAt' => $tabRow['expires_at'] ?? null,
@@ -4896,6 +4964,12 @@ function handleGetArchive() {
                         'title' => $sectionRow['title'],
                                 'emoji' => contentEmojiFromRow($sectionRow),
                         'textColor' => (!empty($sectionRow['text_color']) && trim($sectionRow['text_color']) !== '') ? trim($sectionRow['text_color']) : null,
+                        'backgroundColor' => backgroundColorFromRowOrInput($sectionRow),
+                        'backgroundGradientEnabled' => backgroundDecorationFromRow($sectionRow)['backgroundGradientEnabled'],
+                        'backgroundGradientColors' => backgroundDecorationFromRow($sectionRow)['backgroundGradientColors'],
+                        'backgroundGradientDirection' => backgroundDecorationFromRow($sectionRow)['backgroundGradientDirection'],
+                        'backgroundGradientType' => backgroundDecorationFromRow($sectionRow)['backgroundGradientType'],
+                        'backgroundGradientColorPositions' => backgroundDecorationFromRow($sectionRow)['backgroundGradientColorPositions'],
                         'visibleFrom' => $sectionRow['visible_from'] ?? null,
                         'expiresAt' => $sectionRow['expires_at'] ?? null,
                         'forceStackedView' => isset($sectionRow['force_stacked_view']) && $sectionRow['force_stacked_view'] == 1 ? true : false,
@@ -5426,6 +5500,12 @@ function getTileForVersion($tileId, $db) {
                         'emoji' => contentEmojiFromRow($tabRow),
             'position' => (int)($tabRow['position'] ?? 0),
             'textColor' => (!empty($tabRow['text_color']) && trim($tabRow['text_color']) !== '') ? trim($tabRow['text_color']) : null,
+                'backgroundColor' => backgroundColorFromRowOrInput($tabRow),
+                'backgroundGradientEnabled' => backgroundDecorationFromRow($tabRow)['backgroundGradientEnabled'],
+                'backgroundGradientColors' => backgroundDecorationFromRow($tabRow)['backgroundGradientColors'],
+                'backgroundGradientDirection' => backgroundDecorationFromRow($tabRow)['backgroundGradientDirection'],
+                'backgroundGradientType' => backgroundDecorationFromRow($tabRow)['backgroundGradientType'],
+                'backgroundGradientColorPositions' => backgroundDecorationFromRow($tabRow)['backgroundGradientColorPositions'],
                 'inheritShortUrls' => mapInheritShortUrlsFromRow($tabRow),
             'visibleFrom' => $tabRow['visible_from'] ?? null,
             'expiresAt' => $tabRow['expires_at'] ?? null,
@@ -5448,6 +5528,12 @@ function getTileForVersion($tileId, $db) {
                 'title' => $sectionRow['title'],
                                 'emoji' => contentEmojiFromRow($sectionRow),
                     'textColor' => (!empty($sectionRow['text_color']) && trim($sectionRow['text_color']) !== '') ? trim($sectionRow['text_color']) : null,
+                'backgroundColor' => backgroundColorFromRowOrInput($sectionRow),
+                'backgroundGradientEnabled' => backgroundDecorationFromRow($sectionRow)['backgroundGradientEnabled'],
+                'backgroundGradientColors' => backgroundDecorationFromRow($sectionRow)['backgroundGradientColors'],
+                'backgroundGradientDirection' => backgroundDecorationFromRow($sectionRow)['backgroundGradientDirection'],
+                'backgroundGradientType' => backgroundDecorationFromRow($sectionRow)['backgroundGradientType'],
+                'backgroundGradientColorPositions' => backgroundDecorationFromRow($sectionRow)['backgroundGradientColorPositions'],
                 'visibleFrom' => $sectionRow['visible_from'] ?? null,
                 'expiresAt' => $sectionRow['expires_at'] ?? null,
                 'forceStackedView' => isset($sectionRow['force_stacked_view']) && $sectionRow['force_stacked_view'] == 1 ? true : false,
@@ -6325,13 +6411,15 @@ function updateTileInternal($tileId, $data, $db, $user, $isRestore = false, $isF
                 $tabAllowedUsers = isset($tab['allowedUsers']) && is_array($tab['allowedUsers']) ? json_encode($tab['allowedUsers']) : null;
                 $tabAllowedGroups = isset($tab['allowedGroups']) && is_array($tab['allowedGroups']) ? json_encode($tab['allowedGroups']) : null;
                 $tabPublished = resolvePublishedFlag($tab, $user, true);
-                $tabStmt = $db->prepare('INSERT INTO tabs (id, tile_id, title, position, text_color, emoji, visible_from, expires_at, visibility, allowed_users, allowed_groups, published, access_restrictions) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)');
+                $tabStmt = $db->prepare('INSERT INTO tabs (id, tile_id, title, position, text_color, background_color, background_style, emoji, visible_from, expires_at, visibility, allowed_users, allowed_groups, published, access_restrictions) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)');
                 $tabStmt->execute([
                     $tabId,
                     $tileId,
                     $tab['title'] ?? 'New Tab',
                     $tab['position'] ?? $tabIndex,
                     $tabColor,
+                    backgroundColorFromRowOrInput($tab),
+                    encodeBackgroundStyleJson($tab),
                     contentEmojiFromInput($tab),
                     $tab['visibleFrom'] ?? null,
                     $tab['expiresAt'] ?? null,
@@ -6351,13 +6439,15 @@ function updateTileInternal($tileId, $data, $db, $user, $isRestore = false, $isF
                         $secAllowedUsers = isset($section['allowedUsers']) && is_array($section['allowedUsers']) ? json_encode($section['allowedUsers']) : null;
                         $secAllowedGroups = isset($section['allowedGroups']) && is_array($section['allowedGroups']) ? json_encode($section['allowedGroups']) : null;
                         $secPublished = resolvePublishedFlag($section, $user, true);
-                        $sectionStmt = $db->prepare('INSERT INTO sections (id, tile_id, tab_id, title, text_color, emoji, visible_from, expires_at, force_stacked_view, position, visibility, allowed_users, allowed_groups, published) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)');
+                        $sectionStmt = $db->prepare('INSERT INTO sections (id, tile_id, tab_id, title, text_color, background_color, background_style, emoji, visible_from, expires_at, force_stacked_view, position, visibility, allowed_users, allowed_groups, published) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)');
                         $sectionStmt->execute([
                             $sectionId,
                             $tileId,
                             $tabId,
                             $section['title'] ?? '',
                             $section['textColor'] ?? null,
+                            backgroundColorFromRowOrInput($section),
+                            encodeBackgroundStyleJson($section),
                             contentEmojiFromInput($section),
                             $section['visibleFrom'] ?? null,
                             $section['expiresAt'] ?? null,
@@ -6436,13 +6526,15 @@ function updateTileInternal($tileId, $data, $db, $user, $isRestore = false, $isF
             foreach ($data['sections'] as $sectionIndex => $section) {
                 $sectionId = $section['id'] ?? uniqid('section_', true);
                 $sectionPosition = isset($section['position']) ? (int)$section['position'] : $sectionIndex;
-                $sectionStmt = $db->prepare('INSERT INTO sections (id, tile_id, tab_id, title, text_color, emoji, force_stacked_view, position) VALUES (?, ?, ?, ?, ?, ?, ?, ?)');
+                $sectionStmt = $db->prepare('INSERT INTO sections (id, tile_id, tab_id, title, text_color, background_color, background_style, emoji, force_stacked_view, position) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)');
                 $sectionStmt->execute([
                     $sectionId,
                     $tileId,
                     $defaultTabId,
                     $section['title'] ?? '',
                     $section['textColor'] ?? null,
+                    backgroundColorFromRowOrInput($section),
+                    encodeBackgroundStyleJson($section),
                     contentEmojiFromInput($section),
                     isset($section['forceStackedView']) && $section['forceStackedView'] === true ? 1 : 0,
                     $sectionPosition

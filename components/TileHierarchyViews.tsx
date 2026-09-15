@@ -3,6 +3,8 @@ import { Tab, LinkSection, Link, RichTextContent } from '../types';
 import { exportSectionLinksToFile, exportTabToFile } from '../services/sectionTabTransferService';
 import { TitleEmojiPicker } from './TitleEmojiPicker';
 import { AddLinkMenu } from './AddLinkMenu';
+import { SectionBackgroundPicker } from './SectionBackgroundPicker';
+import { clearBackgroundDecoration } from '../utils/sectionBackgroundColor';
 
 export type HierarchyViewMode = 'cards' | 'tree' | 'compact';
 
@@ -317,8 +319,14 @@ export interface TileHierarchyViewsProps {
   onMoveSection: (tabId: string, sectionId: string, direction: 'up' | 'down') => void;
   onMoveItem: (tabId: string, sectionId: string, itemId: string, direction: 'up' | 'down') => void;
   onUpdateTabColor: (tabId: string, color: string) => void;
+  onUpdateTabBackgroundDecoration: (tabId: string, decoration: import('../utils/sectionBackgroundColor').SectionBackgroundDecoration) => void;
   onUpdateTabEmoji: (tabId: string, emoji: string) => void;
   onUpdateSectionColor: (tabId: string, sectionId: string, color: string) => void;
+  onUpdateSectionBackgroundDecoration: (
+    tabId: string,
+    sectionId: string,
+    decoration: import('../utils/sectionBackgroundColor').SectionBackgroundDecoration
+  ) => void;
   onUpdateSectionEmoji: (tabId: string, sectionId: string, emoji: string) => void;
   onToggleForceStacked: (tabId: string, sectionId: string, value: boolean) => void;
   onImportTab: (afterTabId: string) => void;
@@ -408,8 +416,10 @@ const TabNode: React.FC<
   onMoveSection,
   onMoveItem,
   onUpdateTabColor,
+  onUpdateTabBackgroundDecoration,
   onUpdateTabEmoji,
   onUpdateSectionColor,
+  onUpdateSectionBackgroundDecoration,
   onUpdateSectionEmoji,
   onToggleForceStacked,
   onImportTab,
@@ -498,9 +508,24 @@ const TabNode: React.FC<
           value={tab.textColor && tab.textColor.trim() ? tab.textColor : '#000000'}
           onChange={(e) => onUpdateTabColor(tab.id, e.target.value)}
           className="w-6 h-6 rounded border border-slate-200 dark:border-slate-600 cursor-pointer shrink-0"
-          title="Tab color"
+          title="Tab title color"
           onClick={(e) => e.stopPropagation()}
         />
+        <div onClick={(e) => e.stopPropagation()}>
+          <SectionBackgroundPicker
+            compact
+            label="Bg"
+            value={{
+              backgroundColor: tab.backgroundColor,
+              backgroundGradientEnabled: tab.backgroundGradientEnabled,
+              backgroundGradientColors: tab.backgroundGradientColors,
+              backgroundGradientDirection: tab.backgroundGradientDirection,
+              backgroundGradientType: tab.backgroundGradientType,
+              backgroundGradientColorPositions: tab.backgroundGradientColorPositions,
+            }}
+            onChange={(decoration) => onUpdateTabBackgroundDecoration(tab.id, decoration)}
+          />
+        </div>
         <OverflowMenu
           label="Tab actions"
           items={[
@@ -512,7 +537,12 @@ const TabNode: React.FC<
             { id: 'export', label: 'Export tab (JSON)', onClick: () => exportTabToFile(tab) },
             { id: 'schedule', label: 'Schedule…', onClick: () => onScheduleTab(tab.id) },
             { id: 'visibility', label: 'Visibility…', onClick: () => onVisibilityTab(tab.id) },
-            { id: 'clear-color', label: 'Clear color', onClick: () => onUpdateTabColor(tab.id, '') },
+            { id: 'clear-color', label: 'Clear title color', onClick: () => onUpdateTabColor(tab.id, '') },
+            {
+              id: 'clear-bg',
+              label: 'Clear section background',
+              onClick: () => onUpdateTabBackgroundDecoration(tab.id, clearBackgroundDecoration()),
+            },
             {
               id: 'delete',
               label: 'Delete tab',
@@ -548,6 +578,7 @@ const TabNode: React.FC<
               onMoveSection={onMoveSection}
               onMoveItem={onMoveItem}
               onUpdateSectionColor={onUpdateSectionColor}
+              onUpdateSectionBackgroundDecoration={onUpdateSectionBackgroundDecoration}
               onUpdateSectionEmoji={onUpdateSectionEmoji}
               onToggleForceStacked={onToggleForceStacked}
               onImportSection={onImportSection}
@@ -604,7 +635,16 @@ const SectionNode: React.FC<{
   onRemoveLink: (tabId: string, sectionId: string, linkId: string) => void;
   onMoveSection: (tabId: string, sectionId: string, direction: 'up' | 'down') => void;
   onMoveItem: (tabId: string, sectionId: string, itemId: string, direction: 'up' | 'down') => void;
-  onUpdateSectionColor: (tabId: string, sectionId: string, color: string) => void;
+  onUpdateSectionColor: (
+    tabId: string,
+    sectionId: string,
+    color: string
+  ) => void;
+  onUpdateSectionBackgroundDecoration: (
+    tabId: string,
+    sectionId: string,
+    decoration: import('../utils/sectionBackgroundColor').SectionBackgroundDecoration
+  ) => void;
   onUpdateSectionEmoji: (tabId: string, sectionId: string, emoji: string) => void;
   onToggleForceStacked: (tabId: string, sectionId: string, value: boolean) => void;
   onImportSection: (tabId: string, sectionId: string) => void;
@@ -642,6 +682,7 @@ const SectionNode: React.FC<{
   onMoveSection,
   onMoveItem,
   onUpdateSectionColor,
+  onUpdateSectionBackgroundDecoration,
   onUpdateSectionEmoji,
   onToggleForceStacked,
   onImportSection,
@@ -713,9 +754,26 @@ const SectionNode: React.FC<{
           value={section.textColor && section.textColor.trim() ? section.textColor : '#000000'}
           onChange={(e) => onUpdateSectionColor(tab.id, section.id, e.target.value)}
           className="w-5 h-5 rounded border border-slate-200 dark:border-slate-600 cursor-pointer shrink-0"
-          title="Section color"
+          title="Section title color"
           onClick={(e) => e.stopPropagation()}
         />
+        <div onClick={(e) => e.stopPropagation()}>
+          <SectionBackgroundPicker
+            compact
+            label="Bg"
+            value={{
+              backgroundColor: section.backgroundColor,
+              backgroundGradientEnabled: section.backgroundGradientEnabled,
+              backgroundGradientColors: section.backgroundGradientColors,
+              backgroundGradientDirection: section.backgroundGradientDirection,
+              backgroundGradientType: section.backgroundGradientType,
+              backgroundGradientColorPositions: section.backgroundGradientColorPositions,
+            }}
+            onChange={(decoration) =>
+              onUpdateSectionBackgroundDecoration(tab.id, section.id, decoration)
+            }
+          />
+        </div>
         <OverflowMenu
           label="Section actions"
           items={[
@@ -744,8 +802,14 @@ const SectionNode: React.FC<{
             },
             {
               id: 'clear-color',
-              label: 'Clear color',
+              label: 'Clear title color',
               onClick: () => onUpdateSectionColor(tab.id, section.id, ''),
+            },
+            {
+              id: 'clear-bg',
+              label: 'Clear background (inherit tab)',
+              onClick: () =>
+                onUpdateSectionBackgroundDecoration(tab.id, section.id, clearBackgroundDecoration()),
             },
             {
               id: 'delete',
