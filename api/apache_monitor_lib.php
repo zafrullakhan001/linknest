@@ -1307,16 +1307,48 @@ function apacheMonitorLoadHistory(PDO $db, int $now): array
     return $out;
 }
 
+function apacheMonitorRedirectTargetPath(?string $error, array $attempts): string
+{
+    $blobs = [];
+    if (is_string($error) && $error !== '') {
+        $blobs[] = $error;
+    }
+    foreach ($attempts as $row) {
+        $blobs[] = (string) ($row['error'] ?? '');
+    }
+    foreach ($blobs as $blob) {
+        if (!preg_match('#HTTP 3\d\d → (https?://\S+)#', $blob, $m)) {
+            continue;
+        }
+        $url = rtrim($m[1], '.;,');
+        $path = (string) (parse_url($url, PHP_URL_PATH) ?? '');
+        if ($path === '' || $path === '/' || apacheMonitorUrlIsServerStatus($url)) {
+            continue;
+        }
+        return $path;
+    }
+    return '';
+}
+
 function apacheMonitorSetupHint(?string $error, array $attempts = []): string
 {
+    $redirectPath = apacheMonitorRedirectTargetPath($error, $attempts);
     if (apacheMonitorIsDocker()) {
         $intro = 'Docker: PHP reads /server-status?auto on loopback inside the container (a2enmod status).';
     } elseif (apacheMonitorIsXampp()) {
         $intro = 'XAMPP: Include conf/extra/httpd-info.conf from httpd.conf and keep Require local on /server-status.';
     } else {
-        $intro = 'Vanilla Apache: LoadModule status_module, copy apache/linknest-server-status.conf to conf/extra/, Include it from httpd.conf, then restart Apache. '
-            . 'HTTP 302 means a RewriteRule/Redirect (HTTP→HTTPS, canonical host, or app path) is catching /server-status — add RewriteCond %{REQUEST_URI} !^/server-status before that rule. '
-            . 'Optional override: set LINKNEST_APACHE_STATUS_URL to http://127.0.0.1/server-status?auto.';
+        $intro = 'Vanilla Apache: LoadModule status_module, copy apache/linknest-server-status.conf to conf/extra/, Include it from httpd.conf, then restart Apache.';
+    }
+    if ($redirectPath !== '') {
+        $intro .= ' This host redirects /server-status to ' . $redirectPath . '.'
+            . ' In the vhost or .htaccess that sends traffic there, add RewriteCond %{REQUEST_URI} !^/server-status immediately above that rule.'
+            . ' Or copy apache/linknest-server-status-loopback.conf to conf/extra/, Include it from httpd.conf (so 127.0.0.1:80 serves mod_status without the app rewrite), then restart Apache.';
+    } elseif (!apacheMonitorIsDocker() && !apacheMonitorIsXampp()) {
+        $intro .= ' HTTP 302 means a RewriteRule/Redirect is catching /server-status — add RewriteCond %{REQUEST_URI} !^/server-status before that rule, or Include conf/extra/linknest-server-status-loopback.conf.';
+    }
+    if (!apacheMonitorIsDocker()) {
+        $intro .= ' Optional override: set LINKNEST_APACHE_STATUS_URL to http://127.0.0.1/server-status?auto.';
     }
 
     $bits = [$intro];

@@ -251,15 +251,19 @@ Keep `/server-status` limited to `Require local`. If `httpd-info.conf` is not pr
 
 Then restart Apache. PHP probes `http://127.0.0.1/server-status?auto` first, then this host’s scheme/port on loopback (HTTPS vhosts included). It does not assume XAMPP port 80 or Docker 8090, and it does not mix HTTPS with port 80.
 
-If a vhost forces HTTP → HTTPS, canonical host, or the app path, **exclude** `/server-status` or PHP will see HTTP 302 instead of `mod_status`:
+If a vhost forces HTTP → HTTPS, canonical host, or an app path (this host sends `/server-status` to `/iSynergy/`), **exclude** `/server-status` **in that same vhost or .htaccess**, immediately above the catch-all:
 
 ```apache
 RewriteEngine On
 RewriteCond %{REQUEST_URI} !^/server-status
-RewriteRule ^ https://erpland.example.com%{REQUEST_URI} [L,R=301]
+RewriteRule ^ /iSynergy/ [L,R=302]
 ```
 
-Do not use a blanket `Redirect / https://…/` — that redirects `/server-status` too. After the change, restart Apache. PHP probes `http://127.0.0.1/server-status?auto` first (loopback, `Require local`). Optional override:
+Do not use a blanket `Redirect / /iSynergy/` — that redirects `/server-status` too.
+
+If you cannot change the iSynergy rule, copy [`apache/linknest-server-status-loopback.conf`](../apache/linknest-server-status-loopback.conf) to `conf/extra/` and Include it from `httpd.conf`. That adds a `127.0.0.1:80` vhost so `http://127.0.0.1/server-status?auto` never hits the app rewrite. Then restart Apache.
+
+Optional override:
 
 ```text
 LINKNEST_APACHE_STATUS_URL=http://127.0.0.1/server-status?auto
