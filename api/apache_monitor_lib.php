@@ -375,6 +375,99 @@ function apacheMonitorStatusUrl(string $scheme, string $host, int $port): string
     return $scheme . '://' . $host . ($default ? '' : ':' . $port) . '/server-status?auto';
 }
 
+function apacheMonitorUrlIsServerStatus(string $url): bool
+{
+    $path = (string) (parse_url($url, PHP_URL_PATH) ?? '');
+    return $path === '/server-status' || str_starts_with($path, '/server-status/');
+}
+
+function apacheMonitorEnsureStatusAuto(string $url): string
+{
+    $query = (string) (parse_url($url, PHP_URL_QUERY) ?? '');
+    if ($query === '') {
+        return $url . (str_contains($url, '?') ? 'auto' : '?auto');
+    }
+    parse_str($query, $params);
+    if (!isset($params['auto'])) {
+        return $url . '&auto';
+    }
+    return $url;
+}
+
+function apacheMonitorResolveRedirect(string $base, string $location): ?string
+{
+    $location = trim($location);
+    if ($location === '' || preg_match('/[\r\n]/', $location)) {
+        return null;
+    }
+    if (preg_match('#^https?://#i', $location) === 1) {
+        return $location;
+    }
+    $b = parse_url($base);
+    if (!is_array($b)) {
+        return null;
+    }
+    $scheme = strtolower((string) ($b['scheme'] ?? ''));
+    $host = (string) ($b['host'] ?? '');
+    if (($scheme !== 'http' && $scheme !== 'https') || $host === '') {
+        return null;
+    }
+    $port = isset($b['port']) ? ':' . (int) $b['port'] : '';
+    if (str_starts_with($location, '//')) {
+        return $scheme . ':' . $location;
+    }
+    if (str_starts_with($location, '/')) {
+        return $scheme . '://' . $host . $port . $location;
+    }
+    $basePath = (string) ($b['path'] ?? '/');
+    $dir = preg_replace('#/[^/]*$#', '/', $basePath);
+    if (!is_string($dir) || $dir === '') {
+        $dir = '/';
+    }
+    return $scheme . '://' . $host . $port . $dir . $location;
+}
+
+/**
+ * @return list<string>
+ */
+function apacheMonitorStatusResolveForUrl(string $url): array
+{
+    $parts = parse_url($url);
+    if (!is_array($parts)) {
+        return [];
+    }
+    $host = strtolower((string) ($parts['host'] ?? ''));
+    if ($host === '' || $host === '127.0.0.1' || $host === 'localhost' || $host === '::1') {
+        return [];
+    }
+    if (strpos($host, ':') !== false) {
+        return [];
+    }
+    $scheme = strtolower((string) ($parts['scheme'] ?? 'http'));
+    $port = (int) ($parts['port'] ?? 0);
+    if ($port < 1) {
+        $port = $scheme === 'https' ? 443 : 80;
+    }
+    return [$host . ':' . $port . ':127.0.0.1'];
+}
+
+function apacheMonitorSchemePortAllowed(string $scheme, int $port, string $requestScheme, int $requestPort): bool
+{
+    if ($port < 1 || $port > 65535) {
+        return false;
+    }
+    if ($scheme === $requestScheme && $port === $requestPort) {
+        return true;
+    }
+    if ($scheme === 'https' && $port === 80) {
+        return false;
+    }
+    if ($scheme === 'http' && $port === 443) {
+        return false;
+    }
+    return true;
+}
+
 /**
  * @param array<string,array{url:string,resolve:list<string>}> $out
  */
@@ -396,7 +489,7 @@ function apacheMonitorStatusUrlCandidates(): array
 {
     $ordered = [];
 
-    $env = trim((string) getenv('LINKNEST_APACHE_STATUS_URL'));
+    $env = apacheMonitorEnvValue('LINKNEST_APACHE_STATUS_URL');
     if ($env !== '' && apacheMonitorIsLocalStatusUrl($env)) {
         apacheMonitorPushStatusCandidate($ordered, $env);
     }
@@ -406,8 +499,17 @@ function apacheMonitorStatusUrlCandidates(): array
     $host = apacheMonitorRequestHost();
     $scheme = $https ? 'https' : 'http';
 
-    // Named HTTPS vhost: connect to 127.0.0.1 but keep Host/SNI so the right vhost answers,
-    // and Apache still sees a loopback client for Require local.
+    $push = static function (string $sch, string $h, int $p, array $resolve = []) use (&$ordered, $scheme, $port): void {
+        if (!apacheMonitorSchemePortAllowed($sch, $p, $scheme, $port)) {
+            return;
+        }
+        apacheMonitorPushStatusCandidate($ordered, apacheMonitorStatusUrl($sch, $h, $p), $resolve);
+    };
+
+    // HTTP loopback first: Require local, no TLS, no canonical-host vhost.
+    $push('http', '127.0.0.1', 80);
+    $push('http', 'localhost', 80);
+
     if (
         $host !== ''
         && $host !== '127.0.0.1'
@@ -415,43 +517,33 @@ function apacheMonitorStatusUrlCandidates(): array
         && $host !== '::1'
         && strpos($host, ':') === false
     ) {
-        apacheMonitorPushStatusCandidate(
-            $ordered,
-            apacheMonitorStatusUrl($scheme, $host, $port),
-            [$host . ':' . $port . ':127.0.0.1']
-        );
-        if ($https && $port !== 80) {
-            apacheMonitorPushStatusCandidate(
-                $ordered,
-                apacheMonitorStatusUrl('http', $host, 80),
-                [$host . ':80:127.0.0.1']
-            );
-        }
-    }
-
-    $ports = [$port];
-    $ports[] = $https ? 443 : 80;
-    $ports[] = $https ? 80 : 443;
-    if (apacheMonitorIsDocker()) {
-        $ports[] = 8080;
-        $ports[] = 8090;
-    }
-    $ports = array_values(array_unique(array_filter($ports, static fn ($p) => $p > 0)));
-
-    $schemes = $https ? ['https', 'http'] : ['http', 'https'];
-    foreach (['127.0.0.1', 'localhost'] as $loopHost) {
-        foreach ($schemes as $sch) {
-            foreach ($ports as $p) {
-                apacheMonitorPushStatusCandidate($ordered, apacheMonitorStatusUrl($sch, $loopHost, $p));
+        $push($scheme, $host, $port, [$host . ':' . $port . ':127.0.0.1']);
+        if ($https) {
+            $push('http', $host, 80, [$host . ':80:127.0.0.1']);
+            if ($port !== 443) {
+                $push('https', $host, 443, [$host . ':443:127.0.0.1']);
             }
         }
+    }
+
+    $push($scheme, '127.0.0.1', $port);
+    $push($scheme, 'localhost', $port);
+    $push('https', '127.0.0.1', 443);
+    $push('https', 'localhost', 443);
+    if ($port !== 80 && $port !== 443) {
+        $push('http', '127.0.0.1', $port);
+    }
+
+    if (apacheMonitorIsDocker()) {
+        $push('http', '127.0.0.1', 8080);
+        $push('http', '127.0.0.1', 8090);
     }
 
     return array_values($ordered);
 }
 
 /**
- * @return array{ok:bool,body:string,httpCode:int,error:string,url:string}
+ * @return array{ok:bool,body:string,httpCode:int,error:string,url:string,location:string}
  * @param list<string> $resolve CURLOPT_RESOLVE entries such as host:443:127.0.0.1
  */
 function apacheMonitorHttpGet(string $url, array $resolve = []): array
@@ -462,6 +554,7 @@ function apacheMonitorHttpGet(string $url, array $resolve = []): array
         'httpCode' => 0,
         'error' => '',
         'url' => $url,
+        'location' => '',
     ];
 
     if (function_exists('curl_init')) {
@@ -470,6 +563,7 @@ function apacheMonitorHttpGet(string $url, array $resolve = []): array
             $result['error'] = 'curl_init failed';
             return $result;
         }
+        $location = '';
         curl_setopt_array($ch, [
             CURLOPT_RETURNTRANSFER => true,
             CURLOPT_FOLLOWLOCATION => false,
@@ -482,6 +576,12 @@ function apacheMonitorHttpGet(string $url, array $resolve = []): array
             CURLOPT_USERAGENT => 'LinkNest-ApacheMonitor/1.0',
             CURLOPT_SSL_VERIFYPEER => false,
             CURLOPT_SSL_VERIFYHOST => 0,
+            CURLOPT_HEADERFUNCTION => static function ($ch, string $header) use (&$location): int {
+                if (stripos($header, 'Location:') === 0) {
+                    $location = trim(substr($header, 9));
+                }
+                return strlen($header);
+            },
         ]);
         if ($resolve !== []) {
             curl_setopt($ch, CURLOPT_RESOLVE, $resolve);
@@ -493,7 +593,14 @@ function apacheMonitorHttpGet(string $url, array $resolve = []): array
         $errno = curl_errno($ch);
         $error = curl_error($ch);
         $code = (int) curl_getinfo($ch, CURLINFO_HTTP_CODE);
+        if ($location === '') {
+            $redir = curl_getinfo($ch, CURLINFO_REDIRECT_URL);
+            if (is_string($redir) && $redir !== '') {
+                $location = $redir;
+            }
+        }
         curl_close($ch);
+        $result['location'] = $location;
         if ($body === false || $errno !== 0) {
             $result['error'] = $error !== '' ? $error : ('curl errno ' . $errno);
             $result['httpCode'] = $code;
@@ -503,7 +610,7 @@ function apacheMonitorHttpGet(string $url, array $resolve = []): array
         $result['httpCode'] = $code;
         $result['ok'] = $code >= 200 && $code < 300 && $result['body'] !== '';
         if (!$result['ok'] && $result['error'] === '') {
-            $result['error'] = 'HTTP ' . $code;
+            $result['error'] = apacheMonitorHttpStatusError($code, $location);
         }
         return $result;
     }
@@ -512,6 +619,8 @@ function apacheMonitorHttpGet(string $url, array $resolve = []): array
         'http' => [
             'method' => 'GET',
             'timeout' => 2,
+            'follow_location' => 0,
+            'max_redirects' => 0,
             'header' => "Accept: text/plain,*/*\r\nConnection: close\r\nUser-Agent: LinkNest-ApacheMonitor/1.0\r\n",
             'ignore_errors' => true,
         ],
@@ -522,10 +631,20 @@ function apacheMonitorHttpGet(string $url, array $resolve = []): array
     ]);
     $body = @file_get_contents($url, false, $ctx);
     $code = 0;
-    if (isset($http_response_header[0]) && preg_match('/\s(\d{3})\s/', $http_response_header[0], $m)) {
-        $code = (int) $m[1];
+    $location = '';
+    if (isset($http_response_header) && is_array($http_response_header)) {
+        foreach ($http_response_header as $headerLine) {
+            $headerLine = (string) $headerLine;
+            if ($code === 0 && preg_match('/\s(\d{3})\s/', $headerLine, $m)) {
+                $code = (int) $m[1];
+            }
+            if (stripos($headerLine, 'Location:') === 0) {
+                $location = trim(substr($headerLine, 9));
+            }
+        }
     }
     $result['httpCode'] = $code;
+    $result['location'] = $location;
     if ($body === false) {
         $result['error'] = 'file_get_contents failed';
         return $result;
@@ -533,9 +652,53 @@ function apacheMonitorHttpGet(string $url, array $resolve = []): array
     $result['body'] = (string) $body;
     $result['ok'] = $code >= 200 && $code < 300 && $result['body'] !== '';
     if (!$result['ok']) {
-        $result['error'] = 'HTTP ' . $code;
+        $result['error'] = apacheMonitorHttpStatusError($code, $location);
     }
     return $result;
+}
+
+function apacheMonitorHttpStatusError(int $code, string $location): string
+{
+    if ($code >= 300 && $code < 400 && $location !== '') {
+        return 'HTTP ' . $code . ' → ' . $location;
+    }
+    return $code > 0 ? ('HTTP ' . $code) : 'HTTP 0';
+}
+
+/**
+ * @param list<string> $resolve
+ * @return array{ok:bool,body:string,httpCode:int,error:string,url:string,location:string}
+ */
+function apacheMonitorHttpGetStatus(string $url, array $resolve = []): array
+{
+    $current = $url;
+    $currentResolve = $resolve;
+    $last = null;
+    for ($hop = 0; $hop < 5; $hop++) {
+        $fetch = apacheMonitorHttpGet($current, $currentResolve);
+        $fetch['url'] = $current;
+        $last = $fetch;
+        if ($fetch['ok']) {
+            return $fetch;
+        }
+        $code = (int) $fetch['httpCode'];
+        $location = trim((string) ($fetch['location'] ?? ''));
+        if ($code < 300 || $code >= 400 || $location === '') {
+            return $fetch;
+        }
+        $next = apacheMonitorResolveRedirect($current, $location);
+        if ($next === null || $next === $current) {
+            return $fetch;
+        }
+        if (!apacheMonitorUrlIsServerStatus($next)) {
+            $fetch['error'] = 'HTTP ' . $code . ' → ' . $next
+                . ' (not /server-status; exclude this path from HTTPS/canonical/SSO rewrites)';
+            return $fetch;
+        }
+        $current = apacheMonitorEnsureStatusAuto($next);
+        $currentResolve = $resolve !== [] ? $resolve : apacheMonitorStatusResolveForUrl($current);
+    }
+    return is_array($last) ? $last : apacheMonitorHttpGet($url, $resolve);
 }
 
 /**
@@ -547,9 +710,9 @@ function apacheMonitorFetchStatus(): array
     $lastError = 'Apache /server-status was not reachable from PHP.';
     foreach (apacheMonitorStatusUrlCandidates() as $candidate) {
         $url = (string) $candidate['url'];
-        $fetch = apacheMonitorHttpGet($url, $candidate['resolve'] ?? []);
+        $fetch = apacheMonitorHttpGetStatus($url, $candidate['resolve'] ?? []);
         $attempts[] = [
-            'url' => $url,
+            'url' => (string) ($fetch['url'] ?? $url),
             'ok' => $fetch['ok'],
             'httpCode' => $fetch['httpCode'],
             'error' => $fetch['error'],
@@ -1152,8 +1315,8 @@ function apacheMonitorSetupHint(?string $error, array $attempts = []): string
         $intro = 'XAMPP: Include conf/extra/httpd-info.conf from httpd.conf and keep Require local on /server-status.';
     } else {
         $intro = 'Vanilla Apache: LoadModule status_module, copy apache/linknest-server-status.conf to conf/extra/, Include it from httpd.conf, then restart Apache. '
-            . 'If HTTP redirects to HTTPS, skip /server-status in that rewrite. '
-            . 'Optional override: set LINKNEST_APACHE_STATUS_URL to a loopback URL such as http://127.0.0.1/server-status?auto.';
+            . 'HTTP 302 means a RewriteRule/Redirect (HTTP→HTTPS, canonical host, or app path) is catching /server-status — add RewriteCond %{REQUEST_URI} !^/server-status before that rule. '
+            . 'Optional override: set LINKNEST_APACHE_STATUS_URL to http://127.0.0.1/server-status?auto.';
     }
 
     $bits = [$intro];

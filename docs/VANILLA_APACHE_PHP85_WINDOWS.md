@@ -249,19 +249,20 @@ Include conf/extra/httpd-info.conf
 
 Keep `/server-status` limited to `Require local`. If `httpd-info.conf` is not present, copy [`apache/linknest-server-status.conf`](../apache/linknest-server-status.conf) to `conf/extra/` and include that instead.
 
-Then restart Apache. PHP probes the **current** scheme and port on `127.0.0.1` (HTTPS vhosts included). It does not assume XAMPP port 80 or Docker 8090.
+Then restart Apache. PHP probes `http://127.0.0.1/server-status?auto` first, then this host’s scheme/port on loopback (HTTPS vhosts included). It does not assume XAMPP port 80 or Docker 8090, and it does not mix HTTPS with port 80.
 
-If a vhost forces HTTP → HTTPS, exclude the status URL:
+If a vhost forces HTTP → HTTPS, canonical host, or the app path, **exclude** `/server-status` or PHP will see HTTP 302 instead of `mod_status`:
 
 ```apache
+RewriteEngine On
 RewriteCond %{REQUEST_URI} !^/server-status
+RewriteRule ^ https://erpland.example.com%{REQUEST_URI} [L,R=301]
 ```
 
-Apache must accept loopback on the same listen port (`Listen 443` is fine; `Listen 10.x.x.x:443` only is not). Optional override:
+Do not use a blanket `Redirect / https://…/` — that redirects `/server-status` too. After the change, restart Apache. PHP probes `http://127.0.0.1/server-status?auto` first (loopback, `Require local`). Optional override:
 
 ```text
 LINKNEST_APACHE_STATUS_URL=http://127.0.0.1/server-status?auto
-LINKNEST_APACHE_HTTPD=D:\Apache\bin\httpd.exe
 ```
 
 `LINKNEST_APACHE_HTTPD` is optional. Restart Apache already discovers the binary from the running `httpd.exe` process, Apache `SERVER_ROOT`, the Windows service ImagePath, PATH, and folders next to DocumentRoot / php.ini (XAMPP, vanilla, WAMP, Laragon, any drive). Set the variable only if discovery cannot see that install.
