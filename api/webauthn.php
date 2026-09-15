@@ -56,10 +56,7 @@ try {
 function handleWebauthnRegisterOptions(): void
 {
     webauthnRequirePasskeyEnabled();
-    $user = requireAuth();
-    if (!empty($user['is_system'])) {
-        sendJSON(['error' => 'System token cannot register passkeys'], 403);
-    }
+    $user = webauthnRequireBrowserSessionUser();
     if (!webauthnLibraryAvailable()) {
         sendJSON(['error' => 'WebAuthn library is not installed on this server'], 503);
     }
@@ -107,10 +104,7 @@ function handleWebauthnRegisterOptions(): void
 function handleWebauthnRegisterVerify(): void
 {
     webauthnRequirePasskeyEnabled();
-    $user = requireAuth();
-    if (!empty($user['is_system'])) {
-        sendJSON(['error' => 'System token cannot register passkeys'], 403);
-    }
+    $user = webauthnRequireBrowserSessionUser();
     if (!webauthnLibraryAvailable()) {
         sendJSON(['error' => 'WebAuthn library is not installed on this server'], 503);
     }
@@ -219,20 +213,14 @@ function handleWebauthnRegisterVerify(): void
 
 function handleWebauthnListCredentials(): void
 {
-    $user = requireAuth();
-    if (!empty($user['is_system'])) {
-        sendJSON(['error' => 'System token cannot list passkeys'], 403);
-    }
+    $user = webauthnRequireBrowserSessionUser();
     $db = getDB();
     sendJSON(['credentials' => webauthnListCredentialsForUser($db, (int)$user['id'])]);
 }
 
 function handleWebauthnRenameCredential(int $credentialDbId): void
 {
-    $user = requireAuth();
-    if (!empty($user['is_system'])) {
-        sendJSON(['error' => 'System token cannot rename passkeys'], 403);
-    }
+    $user = webauthnRequireBrowserSessionUser();
     $data = getJSONInput();
     $nickname = isset($data['nickname']) && is_string($data['nickname']) ? trim($data['nickname']) : '';
     if ($nickname === '') {
@@ -254,10 +242,7 @@ function handleWebauthnRenameCredential(int $credentialDbId): void
 
 function handleWebauthnDeleteCredential(int $credentialDbId): void
 {
-    $user = requireAuth();
-    if (!empty($user['is_system'])) {
-        sendJSON(['error' => 'System token cannot delete passkeys'], 403);
-    }
+    $user = webauthnRequireBrowserSessionUser();
     $db = getDB();
     ensureWebauthnCredentialsTable($db);
     $stmt = $db->prepare('DELETE FROM webauthn_credentials WHERE id = ? AND user_id = ?');

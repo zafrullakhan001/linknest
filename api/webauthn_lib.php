@@ -110,6 +110,33 @@ function webauthnRequirePasskeyEnabled(): void
     }
 }
 
+/**
+ * Credential management must only use a real, non-impersonated browser session.
+ *
+ * requireAuth() also accepts system and MCP bearer tokens. Those credentials
+ * must never be exchangeable for a durable interactive passkey.
+ *
+ * @return array<string, mixed>
+ */
+function webauthnRequireBrowserSessionUser(): array
+{
+    $user = requireAuth();
+
+    if (!empty($user['is_system']) || isset($user['_mcp_token_id'])) {
+        sendJSON([
+            'error' => 'Passkey management requires an interactive browser session',
+        ], 403);
+    }
+
+    if (!empty($user['impersonating'])) {
+        sendJSON([
+            'error' => 'Passkeys cannot be managed while impersonating another user',
+        ], 403);
+    }
+
+    return $user;
+}
+
 function webauthnStoreChallenge(string $purpose, ?int $userId = null): void
 {
     if (session_status() === PHP_SESSION_NONE) {
