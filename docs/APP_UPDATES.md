@@ -245,6 +245,8 @@ Env (optional): `GITHUB_TOKEN` / `GH_TOKEN`.
 | `Failed writing scripts/data/` | Empty ZIP folder entry on Windows; fixed in **v2.3.5**. Do not retry v2.3.4 — apply **Release v2.3.5** |
 | `Failed writing scripts/__pycache__/*.pyc` | Python bytecode in the zip, often root-owned in Docker. Updater now skips `__pycache__`; retry the update. |
 | UI still old | Ctrl+F5; check `BUILD_INFO.json` and that `dist/assets/*.js` timestamps changed |
+| Publish stops with `no oauth token found for github.com` or `gh : release not found` | `gh` is installed but **not logged in**; its stderr aborted the run. Fixed in `scripts/publish-update-release.ps1` (detects unauthenticated `gh` and falls back to the REST API using `GITHUB_TOKEN` / `gh auth login` / Git Credential Manager). Re-run with `publish-base-release.bat -Version X.Y.Z` |
+| Tag pushed, but the GitHub Release/asset is missing | The run stopped between tagging and publishing. Re-run the publish step only and reuse the built ZIP: `.\scripts\publish-update-release.ps1 -Version X.Y.Z -SkipPackage` (needs `%GITHUB_TOKEN%` or a logged-in `gh`) |
 
 ---
 

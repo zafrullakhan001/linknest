@@ -88,6 +88,36 @@ function Get-GitHubTokenFromGitCredential {
     return ""
 }
 
+<#
+.SYNOPSIS
+    Run the GitHub CLI without letting its stderr abort this script.
+
+.DESCRIPTION
+    gh writes diagnostics (for example "no oauth token found for github.com" when
+    it is installed but not logged in) to stderr. With $ErrorActionPreference =
+    "Stop" that raises a NativeCommandError and kills the publish run before the
+    REST fallback can happen. This helper keeps stderr out of the error stream,
+    returns the merged output, and surfaces gh's exit code instead.
+#>
+function Invoke-GhCommand {
+    param([string[]]$Arguments)
+
+    $previousPreference = $ErrorActionPreference
+    $ErrorActionPreference = "Continue"
+    try {
+        $merged = & gh @Arguments 2>&1 | ForEach-Object {
+            if ($_ -is [System.Management.Automation.ErrorRecord]) { $_.ToString() } else { $_ }
+        }
+        $exit = $LASTEXITCODE
+        return [pscustomobject]@{
+            Output   = (($merged | Out-String).Trim())
+            ExitCode = $exit
+        }
+    } finally {
+        $ErrorActionPreference = $previousPreference
+    }
+}
+
 function Get-GitHubToken {
     param([string]$Explicit)
     if (-not [string]::IsNullOrWhiteSpace($Explicit)) { return $Explicit.Trim() }
@@ -95,9 +125,9 @@ function Get-GitHubToken {
     if (-not [string]::IsNullOrWhiteSpace($env:GH_TOKEN)) { return $env:GH_TOKEN.Trim() }
     $gh = Get-Command gh -ErrorAction SilentlyContinue
     if ($gh) {
-        $fromGh = & gh auth token 2>$null
-        if ($LASTEXITCODE -eq 0 -and -not [string]::IsNullOrWhiteSpace($fromGh)) {
-            return ([string]$fromGh).Trim()
+        $ghToken = Invoke-GhCommand @("auth", "token")
+        if ($ghToken.ExitCode -eq 0 -and -not [string]::IsNullOrWhiteSpace($ghToken.Output)) {
+            return ([string]$ghToken.Output).Trim()
         }
     }
     $fromGit = Get-GitHubTokenFromGitCredential
@@ -508,21 +538,29 @@ if (-not $UpdateNotesOnly) {
 }
 
 $gh = Get-Command gh -ErrorAction SilentlyContinue
+$ghUsable = $false
 if ($gh) {
+    $ghAuth = Invoke-GhCommand @("auth", "status")
+    $ghUsable = ($ghAuth.ExitCode -eq 0)
+    if (-not $ghUsable) {
+        Write-Host "  GitHub CLI (gh) found but not authenticated - using REST API" -ForegroundColor Yellow
+    }
+}
+if ($ghUsable) {
     Write-Host "  Using GitHub CLI (gh)" -ForegroundColor Cyan
     if ($UpdateNotesOnly) {
         $tmpNotes = Join-Path $env:TEMP "linknest-release-notes-$Tag.md"
         Set-Content -Path $tmpNotes -Value $ReleaseNotes -Encoding UTF8
-        gh release edit $Tag --repo $RepoSlug --title "LinkNest $Tag" --notes-file $tmpNotes
+        $null = Invoke-GhCommand @("release", "edit", $Tag, "--repo", $RepoSlug, "--title", "LinkNest $Tag", "--notes-file", $tmpNotes)
         Remove-Item $tmpNotes -Force -ErrorAction SilentlyContinue
     } else {
-        $existing = gh release view $Tag --repo $RepoSlug 2>$null
+        $existing = Invoke-GhCommand @("release", "view", $Tag, "--repo", $RepoSlug)
         $tmpNotes = Join-Path $env:TEMP "linknest-release-notes-$Tag.md"
         Set-Content -Path $tmpNotes -Value $ReleaseNotes -Encoding UTF8
-        if ($LASTEXITCODE -eq 0) {
+        if ($existing.ExitCode -eq 0) {
             Write-Host "  Release $Tag exists - updating notes + asset" -ForegroundColor Cyan
-            gh release edit $Tag --repo $RepoSlug --title "LinkNest $Tag" --notes-file $tmpNotes
-            gh release upload $Tag $AssetPath --repo $RepoSlug --clobber
+            $null = Invoke-GhCommand @("release", "edit", $Tag, "--repo", $RepoSlug, "--title", "LinkNest $Tag", "--notes-file", $tmpNotes)
+            $null = Invoke-GhCommand @("release", "upload", $Tag, $AssetPath, "--repo", $RepoSlug, "--clobber")
         } else {
             $releaseArgs = @(
                 "release", "create", $Tag,
@@ -533,12 +571,12 @@ if ($gh) {
             )
             if ($Draft) { $releaseArgs += "--draft" }
             Write-Host "  Creating GitHub Release $Tag" -ForegroundColor Cyan
-            & gh @releaseArgs
+            $null = Invoke-GhCommand $releaseArgs
         }
         Remove-Item $tmpNotes -Force -ErrorAction SilentlyContinue
     }
 } else {
-    Write-Host "  GitHub CLI (gh) not found - using REST API" -ForegroundColor Yellow
+    Write-Host "  GitHub CLI (gh) unavailable - using REST API" -ForegroundColor Yellow
     if ([string]::IsNullOrWhiteSpace($AuthToken)) {
         Write-Host ""
         Write-Host "  No GITHUB_TOKEN / GH_TOKEN / -Token found." -ForegroundColor Yellow
