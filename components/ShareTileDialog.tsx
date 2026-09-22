@@ -37,7 +37,7 @@ function UserPickRow({
         <div className="min-w-0 flex-1">
           {/* Login id first, email right beside it so the right account is easy to identify. */}
           <div className="flex items-center gap-2 flex-wrap">
-            <span className={`text-sm font-medium truncate ${selected ? 'text-brand-700 dark:text-brand-300' : 'text-slate-900 dark:text-white'}`}>
+            <span className={`min-w-0 text-sm font-medium truncate ${selected ? 'text-brand-700 dark:text-brand-300' : 'text-slate-900 dark:text-white'}`}>
               {userItem.username}
             </span>
             <AuthSourceBadge source={userItem.auth_source} />
@@ -47,7 +47,7 @@ function UserPickRow({
               </span>
             ) : null}
             {userItem.email ? (
-              <span className="text-xs text-slate-500 dark:text-slate-400 truncate" title={userItem.email}>
+              <span className="min-w-0 text-xs text-slate-500 dark:text-slate-400 truncate" title={userItem.email}>
                 · {userItem.email}
               </span>
             ) : (
@@ -210,10 +210,10 @@ export const ShareTileDialog: React.FC<ShareTileDialogProps> = ({ tile, onClose,
                       <div className="min-w-0">
                         {/* Login id with the email beside it, matching the picker above. */}
                         <div className="flex items-center gap-2 flex-wrap">
-                          <span className="text-slate-800 dark:text-slate-200 font-medium truncate">{s.receiverUsername}</span>
+                          <span className="min-w-0 text-slate-800 dark:text-slate-200 font-medium truncate">{s.receiverUsername}</span>
                           {shareUser ? <AuthSourceBadge source={shareUser.auth_source} /> : null}
                           {shareUser?.email ? (
-                            <span className="text-xs text-slate-500 dark:text-slate-400 truncate" title={shareUser.email}>
+                            <span className="min-w-0 text-xs text-slate-500 dark:text-slate-400 truncate" title={shareUser.email}>
                               · {shareUser.email}
                             </span>
                           ) : null}
@@ -288,10 +288,10 @@ export const ShareTileDialog: React.FC<ShareTileDialogProps> = ({ tile, onClose,
             )}
             {selectedUser && !dropdownOpen && (
               <div className="mt-2 flex items-center gap-2 flex-wrap">
-                <span className="text-xs font-medium text-slate-700 dark:text-slate-200 truncate">{selectedUser.username}</span>
+                <span className="min-w-0 text-xs font-medium text-slate-700 dark:text-slate-200 truncate">{selectedUser.username}</span>
                 <AuthSourceBadge source={selectedUser.auth_source} />
                 {selectedUser.email ? (
-                  <span className="text-xs text-slate-500 dark:text-slate-400 truncate" title={selectedUser.email}>
+                  <span className="min-w-0 text-xs text-slate-500 dark:text-slate-400 truncate" title={selectedUser.email}>
                     · {selectedUser.email}
                   </span>
                 ) : (
