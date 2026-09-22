@@ -85,7 +85,7 @@ sequenceDiagram
     MR->>DB: Incremental UPDATE monitors + job progress
   end
   alt Status changed and notifications not paused
-    MR->>DB: INSERT email_outbox
+    MR->>DB: INSERT email_outbox (recovery mail stores outage_seconds / outage_started_at)
   end
 ```
 
@@ -238,6 +238,36 @@ ON CONFLICT(key) DO UPDATE SET value = excluded.value;
 python scripts\email_sender.py --verbose
 python scripts\email_sender.py --db data\linknest.db --limit 50 --smtp-timeout 30 --verbose
 ```
+
+---
+
+## Monitor notification emails
+
+The Python workers (`email_sender.py`) and the PHP check path (`api/monitor_check.php` → `api/email_templates.php`) render the same **Monitor Status Update** HTML email, worded `Sent by <App Name> Monitoring`. Both paths were kept in sync.
+
+### Recovery (UP) emails show how long the target was down
+
+When a monitor returns to `up` after a `down`/`warning` check, the email includes how long it was down before it started responding again:
+
+| Row | Example | Meaning |
+|-----|---------|---------|
+| **Down for** | `1 hr 12 mins` | Time between the first failed check and the first successful check |
+| **Down since** | `2026-09-21 20:31:05` | Timestamp of the first failed check |
+
+The same information is appended to the Details text — `UP: <target> is back online after 1 hr 12 mins (down since 2026-09-21 20:31:05).` — and is available to custom subjects/bodies in the admin UI:
+
+| Token | Value |
+|-------|-------|
+| `{downtime}` | `1 hr 12 mins` (`N/A` on down/warning emails) |
+| `{down_since}` | `2026-09-21 20:31:05` (`N/A` on down/warning emails) |
+
+Notes:
+
+- The duration is derived from `monitor_logs` (the contiguous `down`/`warning` run before the recovery check), so it is accurate to **± one check interval**: the target may have gone down at any point between the last successful check and the first failed one.
+- `ssl` monitors recovering from an expiry `warning` intentionally show **no** downtime row (certificate approaching expiry is not an outage).
+- If the scan window (1000 log rows) ends mid-outage the value is prefixed with `≥` (long outage with a short interval).
+- If history was pruned (monitor log retention) the rows are simply omitted.
+- Implemented in `scripts/linknest_worker_lib.py` (`find_last_monitor_outage`, `format_downtime_duration`) and mirrored in `api/monitor_check.php` (`findMonitorLastOutage`) so PHP-run checks behave identically. `email_outbox.outage_seconds` / `outage_started_at` carry the queue-time snapshot from `monitor_runner.py` to `email_sender.py`, so a later outage cannot mislabel a pending recovery email.
 
 ---
 

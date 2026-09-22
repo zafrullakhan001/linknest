@@ -46,6 +46,8 @@ from linknest_worker_lib import (
     ensure_monitor_check_jobs_schema,
     ensure_monitors_schema,
     ensure_outbox_schema,
+    find_last_monitor_outage,
+    format_downtime_duration,
     is_in_maintenance_window,
     monitor_notification_now,
     normalize_email_list,
@@ -62,6 +64,27 @@ from linknest_worker_lib import (
 )
 
 JOB_STALE_SECONDS = 300
+
+
+def outage_email_values(outage: Optional[Dict[str, Any]]) -> Tuple[Optional[str], Optional[str]]:
+    """
+    Format a find_last_monitor_outage() result for emails.
+
+    Returns (downtime_text, down_since_text), e.g. ("1 hr 12 mins", "2026-09-21 20:31:05").
+    Both are None when no outage information is available.
+    """
+    if not outage:
+        return None, None
+    seconds = int(outage.get("seconds") or 0)
+    duration = str(outage.get("duration_text") or format_downtime_duration(seconds) or "").strip()
+    if not duration:
+        return None, None
+    if outage.get("truncated"):
+        # Scan window ended mid-outage: the real downtime is at least this long.
+        duration = f"≥ {duration}"
+    started_at = int(outage.get("started_at") or 0)
+    since = time.strftime("%Y-%m-%d %H:%M:%S", time.localtime(started_at)) if started_at > 0 else None
+    return duration, since
 
 
 def parse_args() -> argparse.Namespace:
@@ -440,6 +463,7 @@ def queue_advanced_notifications(
     verbose: bool,
     app_name: str = "LinkNest",
     force_notify_rules: bool = False,
+    outage: Optional[Dict[str, Any]] = None,
 ) -> int:
     triggers: List[str] = []
     norm_prev = None if prev_status in (None, "", False) else str(prev_status)
@@ -476,6 +500,20 @@ def queue_advanced_notifications(
         (int(monitor_row["id"]), *triggers),
     ).fetchall()
 
+    # Recovery emails: how long the target was down before it responded again.
+    downtime_text, down_since_text = outage_email_values(outage)
+    extra_vars: Dict[str, Any] = {}
+    if downtime_text:
+        extra_vars["downtime"] = downtime_text
+    if down_since_text:
+        extra_vars["down_since"] = down_since_text
+    outage_seconds = int(outage.get("seconds")) if outage else None
+    outage_started_at = int(outage.get("started_at")) if outage else None
+    details_for_email = details
+    if norm_new == "up" and downtime_text:
+        details_for_email = f"{details} (recovered after {downtime_text}"
+        details_for_email += f"; down since {down_since_text})" if down_since_text else ")"
+
     queued = 0
     now_local = monitor_notification_now(conn)
     for r in rules:
@@ -493,8 +531,24 @@ def queue_advanced_notifications(
         if not to_list and not cc_list:
             continue
 
-        subject = replace_template_vars(r["subject_template"], monitor_row, new_status, details, response_ms, app_name=app_name)
-        body = replace_template_vars(r["body_template"], monitor_row, new_status, details, response_ms, app_name=app_name)
+        subject = replace_template_vars(
+            r["subject_template"],
+            monitor_row,
+            new_status,
+            details_for_email,
+            response_ms,
+            app_name=app_name,
+            extra_vars=extra_vars,
+        )
+        body = replace_template_vars(
+            r["body_template"],
+            monitor_row,
+            new_status,
+            details_for_email,
+            response_ms,
+            app_name=app_name,
+            extra_vars=extra_vars,
+        )
         from_name = (r["from_name"] or f"{app_name} Monitor").strip() if r["from_name"] is not None else f"{app_name} Monitor"
         from_name = expand_app_placeholders(from_name, app_name)
         from_email = (r["from_email"] or "").strip() if r["from_email"] is not None else None
@@ -505,8 +559,9 @@ def queue_advanced_notifications(
             """
             INSERT INTO email_outbox (
               created_at, send_after, monitor_id, rule_id, status_trigger,
-              to_emails, cc_emails, subject, body, from_name, from_email
-            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+              to_emails, cc_emails, subject, body, from_name, from_email,
+              outage_seconds, outage_started_at
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
             """,
             (
                 now_ts(),
@@ -520,6 +575,8 @@ def queue_advanced_notifications(
                 body,
                 from_name,
                 from_email,
+                outage_seconds,
+                outage_started_at,
             ),
         )
         queued += 1
@@ -529,7 +586,17 @@ def queue_advanced_notifications(
     return queued
 
 
-def queue_legacy_notification(conn, monitor_row, new_status: str, prev_status: Optional[str], details: str, response_ms: int, verbose: bool, app_name: str = "LinkNest") -> int:
+def queue_legacy_notification(
+    conn,
+    monitor_row,
+    new_status: str,
+    prev_status: Optional[str],
+    details: str,
+    response_ms: int,
+    verbose: bool,
+    app_name: str = "LinkNest",
+    outage: Optional[Dict[str, Any]] = None,
+) -> int:
     try:
         if int(monitor_row["legacy_email_disabled"] or 0) == 1:
             return 0
@@ -546,6 +613,14 @@ def queue_legacy_notification(conn, monitor_row, new_status: str, prev_status: O
 
     norm_prev = None if prev_status in (None, "", False) else str(prev_status).strip().lower()
     norm_new = str(new_status).strip().lower()
+
+    # Recovery emails: how long the target was down before it responded again.
+    downtime_text, down_since_text = outage_email_values(outage)
+    extra_vars: Dict[str, Any] = {}
+    if downtime_text:
+        extra_vars["downtime"] = downtime_text
+    if down_since_text:
+        extra_vars["down_since"] = down_since_text
 
     trigger = None
     subject_status = "both"
@@ -565,7 +640,15 @@ def queue_legacy_notification(conn, monitor_row, new_status: str, prev_status: O
     elif norm_prev in ("down", "warning") and norm_new == "up":
         trigger = "up"
         subject_status = "up"
-        message_details = f"UP: {monitor_row['name']} is back online."
+        if downtime_text and down_since_text:
+            message_details = (
+                f"UP: {monitor_row['name']} is back online after {downtime_text} "
+                f"(down since {down_since_text})."
+            )
+        elif downtime_text:
+            message_details = f"UP: {monitor_row['name']} is back online after {downtime_text}."
+        else:
+            message_details = f"UP: {monitor_row['name']} is back online."
     else:
         return 0
 
@@ -592,9 +675,25 @@ def queue_legacy_notification(conn, monitor_row, new_status: str, prev_status: O
     subject_tpl = (monitor_row["legacy_email_subject_template"] or "").strip() or default_subject_tpl
     body_tpl = (monitor_row["legacy_email_body_template"] or "").strip() or default_body_tpl
 
-    subject = replace_template_vars(subject_tpl, monitor_row, subject_status, message_details or "", int(response_ms), app_name=app_name)
+    subject = replace_template_vars(
+        subject_tpl,
+        monitor_row,
+        subject_status,
+        message_details or "",
+        int(response_ms),
+        app_name=app_name,
+        extra_vars=extra_vars,
+    )
     subject = _ln_ensure_monitor_email_subject_has_status(subject, subject_status, str(monitor_row["name"] or ""))
-    body = replace_template_vars(body_tpl, monitor_row, subject_status, message_details or "", int(response_ms), app_name=app_name)
+    body = replace_template_vars(
+        body_tpl,
+        monitor_row,
+        subject_status,
+        message_details or "",
+        int(response_ms),
+        app_name=app_name,
+        extra_vars=extra_vars,
+    )
 
     from_name = (monitor_row["legacy_email_from_name"] or "").strip() or None
     if from_name:
@@ -611,8 +710,9 @@ def queue_legacy_notification(conn, monitor_row, new_status: str, prev_status: O
         INSERT INTO email_outbox (
           created_at, send_after, monitor_id, rule_id, status_trigger,
           to_emails, cc_emails, subject, body, from_name, from_email,
-          legacy_clear_pending, legacy_update_last_notified_status
-        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+          legacy_clear_pending, legacy_update_last_notified_status,
+          outage_seconds, outage_started_at
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
         """,
         (
             now_ts(),
@@ -628,6 +728,8 @@ def queue_legacy_notification(conn, monitor_row, new_status: str, prev_status: O
             from_email,
             legacy_clear_pending,
             legacy_update_last_notified_status,
+            int(outage.get("seconds")) if outage else None,
+            int(outage.get("started_at")) if outage else None,
         ),
     )
 
@@ -697,6 +799,16 @@ def persist_monitor_result(
 
     changed = status_changed(prev, eff_status)
     queued_emails = 0
+    # Recovery transition: measure how long the target was down before this check
+    # brought it back up (used by both legacy and rule-based "up" emails).
+    outage: Optional[Dict[str, Any]] = None
+    if str(eff_status).strip().lower() == "up" and str(prev or "").strip().lower() in ("down", "warning"):
+        outage = find_last_monitor_outage(
+            conn,
+            mid,
+            prev_status=prev,
+            monitor_type=str(monitor_row["type"] or ""),
+        )
     try:
         if (changed or force_notify_rules) and (not paused) and (not is_in_maintenance_window(monitor_row)):
             queued_emails += queue_advanced_notifications(
@@ -709,9 +821,20 @@ def persist_monitor_result(
                 verbose,
                 app_name=app_name,
                 force_notify_rules=force_notify_rules,
+                outage=outage,
             )
         if (not paused) and (not is_in_maintenance_window(monitor_row)):
-            queued_emails += queue_legacy_notification(conn, monitor_row, eff_status, prev, eff_details, r.response_ms, verbose, app_name=app_name)
+            queued_emails += queue_legacy_notification(
+                conn,
+                monitor_row,
+                eff_status,
+                prev,
+                eff_details,
+                r.response_ms,
+                verbose,
+                app_name=app_name,
+                outage=outage,
+            )
     except Exception as e:
         if verbose:
             print(f"[WARN] email queueing failed; continuing. monitor={mid} err={e}")

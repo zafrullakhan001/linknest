@@ -63,7 +63,7 @@ export const MONITOR_RUNNER_SEQ = `sequenceDiagram
   end
   MR->>DB: UPDATE monitors + INSERT monitor_logs
   alt Status changed and notifications not paused
-    MR->>DB: INSERT email_outbox
+    MR->>DB: INSERT email_outbox (recovery mail stores outage_seconds / outage_started_at)
   end
   Note over DB: Dashboard reads the same tables`;
 

@@ -121,7 +121,11 @@ def ensure_outbox_schema(conn: sqlite3.Connection) -> None:
             sent_at INTEGER,
             success INTEGER,
             legacy_clear_pending INTEGER DEFAULT 0,
-            legacy_update_last_notified_status TEXT
+            legacy_update_last_notified_status TEXT,
+            -- recovery-notification helpers: how long the target was down
+            -- before it started responding again (snapshot taken when queued)
+            outage_seconds INTEGER,
+            outage_started_at INTEGER
         )
         """
     )
@@ -129,6 +133,11 @@ def ensure_outbox_schema(conn: sqlite3.Connection) -> None:
         conn.execute("CREATE INDEX IF NOT EXISTS idx_email_outbox_sent_at ON email_outbox(sent_at)")
         conn.execute("CREATE INDEX IF NOT EXISTS idx_email_outbox_created_at ON email_outbox(created_at)")
         conn.execute("CREATE INDEX IF NOT EXISTS idx_email_outbox_monitor_id ON email_outbox(monitor_id)")
+    # Older DBs predate the downtime columns; add them in place (safe to repeat).
+    with contextlib.suppress(Exception):
+        conn.execute("ALTER TABLE email_outbox ADD COLUMN outage_seconds INTEGER")
+    with contextlib.suppress(Exception):
+        conn.execute("ALTER TABLE email_outbox ADD COLUMN outage_started_at INTEGER")
 
 
 def ensure_monitors_schema(conn: sqlite3.Connection) -> None:
@@ -350,7 +359,142 @@ def is_in_maintenance_window(monitor_row: sqlite3.Row) -> bool:
         return False
 
 
-def replace_template_vars(template: str, monitor_row: sqlite3.Row, status: str, details: str, response_ms: Optional[int], app_name: str = "LinkNest") -> str:
+def format_downtime_duration(seconds: Optional[int]) -> str:
+    """Human duration used in monitor emails: '45 secs', '12 mins', '1 hr 12 mins'."""
+    try:
+        total = int(seconds)  # type: ignore[arg-type]
+    except (TypeError, ValueError):
+        return ""
+    if total <= 0:
+        return "0 secs"
+    hours, rem = divmod(total, 3600)
+    minutes, secs = divmod(rem, 60)
+    if hours and minutes:
+        return f"{hours} hr{'s' if hours != 1 else ''} {minutes} min{'s' if minutes != 1 else ''}"
+    if hours:
+        return f"{hours} hr{'s' if hours != 1 else ''}"
+    if minutes:
+        return f"{minutes} min{'s' if minutes != 1 else ''}"
+    return f"{secs} sec{'s' if secs != 1 else ''}"
+
+
+def find_last_monitor_outage(
+    conn: sqlite3.Connection,
+    monitor_id: int,
+    *,
+    scan_limit: int = 1000,
+    prev_status: Optional[str] = None,
+    monitor_type: Optional[str] = None,
+) -> Optional[Dict[str, Any]]:
+    """
+    Downtime window that just ended, derived from monitor_logs.
+
+    Walks the newest checks backwards: skips the trailing 'up' rows (the check that
+    detected the recovery), then measures the contiguous 'down'/'warning' run
+    before it. Call it right after the recovery log row was inserted.
+
+    Returns None when no outage streak can be found (no logs, or history pruned by
+    retention) and for SSL certificate warnings, which are not outages (an expiring
+    certificate that gets renewed would otherwise report a bogus multi-day "down").
+
+    The result is a dict:
+      started_at      unix ts of the first failed check (outage detected)
+      recovered_at    unix ts of the first successful check after the outage
+      seconds         recovered_at - started_at (accurate to +/- one check interval)
+      duration_text   human text, e.g. '1 hr 12 mins'
+      failing_checks  number of consecutive down/warning checks
+      saw_down        True when at least one check was a hard 'down'
+      truncated       True when the scan window ended mid-outage (duration is a floor)
+    """
+    mtype = str(monitor_type or "").strip().lower()
+    prev = str(prev_status or "").strip().lower()
+    if mtype == "ssl" and prev == "warning":
+        return None
+
+    try:
+        limit = max(10, min(20000, int(scan_limit)))
+    except (TypeError, ValueError):
+        limit = 1000
+
+    try:
+        rows = conn.execute(
+            """
+            SELECT status, checked_at
+            FROM monitor_logs
+            WHERE monitor_id = ?
+            ORDER BY checked_at DESC, id DESC
+            LIMIT ?
+            """,
+            (int(monitor_id), limit),
+        ).fetchall()
+    except Exception:
+        return None
+    if not rows:
+        return None
+
+    def _status(row: Any) -> str:
+        try:
+            return str(row["status"] or "").strip().lower()
+        except Exception:
+            return ""
+
+    def _ts(row: Any) -> int:
+        try:
+            return int(row["checked_at"] or 0)
+        except Exception:
+            return 0
+
+    i = 0
+    recovered_at: Optional[int] = None
+    while i < len(rows) and _status(rows[i]) == "up":
+        # Newest first, so the last value assigned is the *oldest* 'up' of the run,
+        # i.e. the first successful check after the outage.
+        recovered_at = _ts(rows[i])
+        i += 1
+    if i >= len(rows):
+        return None  # no failure found inside the scanned window
+
+    first_failed_at: Optional[int] = None
+    failing_checks = 0
+    saw_down = False
+    while i < len(rows):
+        row_status = _status(rows[i])
+        if row_status not in ("down", "warning"):
+            break
+        if row_status == "down":
+            saw_down = True
+        first_failed_at = _ts(rows[i])
+        failing_checks += 1
+        i += 1
+    if first_failed_at is None or failing_checks == 0:
+        return None
+
+    truncated = i >= limit
+    if not recovered_at or recovered_at <= 0:
+        # No trailing 'up' row (unexpected, e.g. logs written out of order):
+        # fall back to the newest log row time so the duration stays sane.
+        recovered_at = _ts(rows[0])
+    seconds = max(0, int(recovered_at) - int(first_failed_at))
+    return {
+        "started_at": int(first_failed_at),
+        "recovered_at": int(recovered_at),
+        "seconds": seconds,
+        "duration_text": format_downtime_duration(seconds),
+        "failing_checks": failing_checks,
+        "saw_down": saw_down,
+        "truncated": truncated,
+    }
+
+
+def replace_template_vars(
+    template: str,
+    monitor_row: sqlite3.Row,
+    status: str,
+    details: str,
+    response_ms: Optional[int],
+    app_name: str = "LinkNest",
+    extra_vars: Optional[Dict[str, Any]] = None,
+) -> str:
     if template is None:
         template = ""
     rep = {
@@ -364,7 +508,17 @@ def replace_template_vars(template: str, monitor_row: sqlite3.Row, status: str, 
         "{date}": _dt.datetime.now().strftime("%Y-%m-%d"),
         "{timestamp}": str(now_ts()),
         "{app_name}": app_name,
+        # Recovery (UP) notifications: how long the target was down before it
+        # started responding again. "N/A" is used on down/warning emails.
+        "{downtime}": "N/A",
+        "{down_since}": "N/A",
     }
+    if extra_vars:
+        for key, value in extra_vars.items():
+            if value is None:
+                continue
+            token = key if str(key).startswith("{") else "{" + str(key) + "}"
+            rep[token] = str(value)
     out = template
     for k, v in rep.items():
         out = out.replace(k, v)
@@ -1328,9 +1482,14 @@ def ln_render_monitor_notification_html(
     response_time_ms: Optional[object] = None,
     app_name: str = "LinkNest",
     db_conn: Optional[sqlite3.Connection] = None,
+    downtime_text: Optional[str] = None,
+    down_since_text: Optional[str] = None,
 ) -> str:
     """
     Render Outlook-safe HTML similar to the PHP monitor status template.
+
+    downtime_text / down_since_text are optional and, when provided, add a
+    "Down for" / "Down since" row to the details grid (used by recovery emails).
     """
     status_label = (status or "").strip().upper() or "UNKNOWN"
     accent = _ln_accent_for_status(status)
@@ -1343,6 +1502,21 @@ def ln_render_monitor_notification_html(
         target_cell = f'<a href="{safe_target}" style="color:#2563eb;text-decoration:underline;">{safe_target}</a>'
     rt = _ln_html_escape(str(response_time_ms) if response_time_ms not in (None, "") else "N/A")
     now_s = _ln_html_escape(_dt.datetime.now().strftime("%Y-%m-%d %H:%M:%S"))
+
+    # Recovery notifications: how long the target was down before it responded again.
+    outage_rows = ""
+    if downtime_text:
+        outage_rows += f"""
+              <tr>
+                <td style="font-family:Arial,Helvetica,sans-serif;font-size:13px;color:#334155;padding:10px 14px;border-bottom:1px solid #e2e8f0;"><strong>Down for</strong></td>
+                <td align="right" style="font-family:Arial,Helvetica,sans-serif;font-size:13px;color:#334155;padding:10px 14px;border-bottom:1px solid #e2e8f0;">{_ln_html_escape(downtime_text)}</td>
+              </tr>"""
+    if down_since_text:
+        outage_rows += f"""
+              <tr>
+                <td style="font-family:Arial,Helvetica,sans-serif;font-size:13px;color:#334155;padding:10px 14px;border-bottom:1px solid #e2e8f0;"><strong>Down since</strong></td>
+                <td align="right" style="font-family:Arial,Helvetica,sans-serif;font-size:13px;color:#334155;padding:10px 14px;border-bottom:1px solid #e2e8f0;">{_ln_html_escape(down_since_text)}</td>
+              </tr>"""
 
     inner = f"""
       <table role="presentation" cellpadding="0" cellspacing="0" border="0" width="100%">
@@ -1368,7 +1542,7 @@ def ln_render_monitor_notification_html(
               <tr>
                 <td style="font-family:Arial,Helvetica,sans-serif;font-size:13px;color:#334155;padding:10px 14px;border-bottom:1px solid #e2e8f0;"><strong>Response time</strong></td>
                 <td align="right" style="font-family:Arial,Helvetica,sans-serif;font-size:13px;color:#334155;padding:10px 14px;border-bottom:1px solid #e2e8f0;">{rt}</td>
-              </tr>
+              </tr>{outage_rows}
               <tr>
                 <td style="font-family:Arial,Helvetica,sans-serif;font-size:13px;color:#334155;padding:10px 14px;"><strong>Time</strong></td>
                 <td align="right" style="font-family:Arial,Helvetica,sans-serif;font-size:13px;color:#334155;padding:10px 14px;">{now_s}</td>

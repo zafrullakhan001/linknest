@@ -186,6 +186,14 @@ function performMonitorCheck($monitor, $options = []) {
     // Log result
     $stmt = $db->prepare('INSERT INTO monitor_logs (monitor_id, status, response_time, details, checked_at) VALUES (?, ?, ?, ?, ?)');
     $stmt->execute([$monitor['id'], $status, $responseTime, $details, $now]);
+
+    // Recovery transition (DOWN/WARNING -> UP): how long was the target down before
+    // this check brought it back? Derived from the monitor_logs rows written above.
+    $outage = null;
+    if ($normalizedStatus === 'up' && ($normalizedPrevStatus === 'down' || $normalizedPrevStatus === 'warning')) {
+        $outage = findMonitorLastOutage($db, $monitor['id'], $normalizedPrevStatus, $monitor['type'] ?? null);
+    }
+    $outageTexts = monitorOutageEmailTexts($outage);
     
     // Send notifications using the new advanced notification system
     // Default: only notify on status transitions (prevents force-check spam).
@@ -196,7 +204,7 @@ function performMonitorCheck($monitor, $options = []) {
         // Skip notifications if in maintenance window or if global notifications are paused
         if (!isNotificationPaused() && !isInMaintenanceWindow($monitor)) {
             error_log("[EMAIL] Triggering advanced notifications for monitor {$monitor['id']}");
-            sendAdvancedNotifications($monitor, $status, $prevStatus, $details, $responseTime, $forceNotifyRules);
+            sendAdvancedNotifications($monitor, $status, $prevStatus, $details, $responseTime, $forceNotifyRules, $outage);
         } else {
             error_log("[EMAIL] Advanced notifications skipped - paused: " . (isNotificationPaused() ? 'YES' : 'NO') . ", maintenance: " . (isInMaintenanceWindow($monitor) ? 'YES' : 'NO'));
         }
@@ -245,7 +253,15 @@ function performMonitorCheck($monitor, $options = []) {
             // WARNING is a down-like transitional state (below threshold), so treat WARNING->UP as recovery too.
             elseif (($normalizedPrevStatus === 'down' || $normalizedPrevStatus === 'warning') && $normalizedStatus === 'up') {
                 error_log("[EMAIL] Triggering UP notification for monitor {$monitor['id']} - Previous: " . ($prevStatus ?? 'null') . ", Current: $status");
-                sendNotification($monitor, "UP: {$monitor['name']} is back online.", 'up', $responseTime, $now);
+                $upMessage = "UP: {$monitor['name']} is back online";
+                if (!empty($outageTexts['downtime'])) {
+                    $upMessage .= " after {$outageTexts['downtime']}";
+                    if (!empty($outageTexts['down_since'])) {
+                        $upMessage .= " (down since {$outageTexts['down_since']})";
+                    }
+                }
+                $upMessage .= '.';
+                sendNotification($monitor, $upMessage, 'up', $responseTime, $now, $outage);
             } else {
                 error_log("[EMAIL] Legacy notification condition not met - normalized status: $normalizedStatus, normalized prevStatus: " . ($normalizedPrevStatus ?? 'null') . " (no notification sent)");
             }
@@ -830,7 +846,7 @@ function checkJson($url, $keyword, $opts = []) {
 /**
  * Send notifications using the advanced notification system
  */
-function sendAdvancedNotifications($monitor, $newStatus, $prevStatus, $details, $responseTime, $forceNotifyRules = false) {
+function sendAdvancedNotifications($monitor, $newStatus, $prevStatus, $details, $responseTime, $forceNotifyRules = false, $outage = null) {
     error_log("[EMAIL] sendAdvancedNotifications called - monitor ID: {$monitor['id']}, status: $prevStatus -> $newStatus");
 
     // Safety guard: never send if notifications are paused or monitor is in maintenance
@@ -847,6 +863,21 @@ function sendAdvancedNotifications($monitor, $newStatus, $prevStatus, $details, 
     // Normalize status values for reliable comparison
     $newStatus = strtolower(trim((string)$newStatus));
     $normalizedPrevStatus = ($prevStatus === '' || $prevStatus === false || $prevStatus === null) ? null : strtolower(trim((string)$prevStatus));
+
+    // Recovery notifications: how long the target was down before it responded again.
+    $outageTexts = monitorOutageEmailTexts($outage);
+    $extraVars = [];
+    if (!empty($outageTexts['downtime'])) {
+        $extraVars['downtime'] = $outageTexts['downtime'];
+    }
+    if (!empty($outageTexts['down_since'])) {
+        $extraVars['down_since'] = $outageTexts['down_since'];
+    }
+    $detailsForEmail = $details;
+    if ($newStatus === 'up' && $normalizedPrevStatus !== 'up' && !empty($outageTexts['downtime'])) {
+        $detailsForEmail = $details . ' (recovered after ' . $outageTexts['downtime']
+            . (!empty($outageTexts['down_since']) ? '; down since ' . $outageTexts['down_since'] . ')' : ')');
+    }
     
     // Force-notify mode: evaluate rules based on current status even if it did not change.
     if ($forceNotifyRules) {
@@ -939,9 +970,9 @@ function sendAdvancedNotifications($monitor, $newStatus, $prevStatus, $details, 
         }
         
         // Prepare email content with template variables
-        $subject = replaceTemplateVariables($rule['subject_template'], $monitor, $newStatus, $details, $responseTime);
+        $subject = replaceTemplateVariables($rule['subject_template'], $monitor, $newStatus, $detailsForEmail, $responseTime, $extraVars);
         $subject = ln_ensure_monitor_email_subject_has_status($subject, (string)$newStatus, (string)($monitor['name'] ?? ''));
-        $body = replaceTemplateVariables($rule['body_template'], $monitor, $newStatus, $details, $responseTime);
+        $body = replaceTemplateVariables($rule['body_template'], $monitor, $newStatus, $detailsForEmail, $responseTime, $extraVars);
         
         error_log("[EMAIL] Rule {$rule['id']} - Prepared email - subject: $subject");
         error_log("[EMAIL] Rule {$rule['id']} - Recipients: " . implode(', ', $recipients));
@@ -957,7 +988,7 @@ function sendAdvancedNotifications($monitor, $newStatus, $prevStatus, $details, 
 
         // Send ONE email per rule with multiple To + CC (prevents CC getting duplicates)
         error_log("[EMAIL] Rule {$rule['id']} - Calling sendEmailMultiWithRuleFromOverride...");
-        $result = sendEmailMultiWithRuleFromOverride($recipients, $ccList, $subject, $body, $fromName, $fromEmail, $monitor, $newStatus, $details, $responseTime, $appName);
+        $result = sendEmailMultiWithRuleFromOverride($recipients, $ccList, $subject, $body, $fromName, $fromEmail, $monitor, $newStatus, $detailsForEmail, $responseTime, $appName, $outage);
         $success = ($result === true) ? 1 : 0;
         $errorMsg = ($result === true) ? null : $result;
         
@@ -989,7 +1020,7 @@ function sendAdvancedNotifications($monitor, $newStatus, $prevStatus, $details, 
     }
 }
 
-function sendEmailMultiWithRuleFromOverride(array $toList, array $ccList, $subject, $body, $fromName = null, $fromEmail = null, $monitor = null, $status = null, $details = null, $responseTime = null, $appName = 'LinkNest') {
+function sendEmailMultiWithRuleFromOverride(array $toList, array $ccList, $subject, $body, $fromName = null, $fromEmail = null, $monitor = null, $status = null, $details = null, $responseTime = null, $appName = 'LinkNest', $outage = null) {
     // Load SMTP settings from DB (supports new smtp_servers table)
     $config = getSMTPConfig();
 
@@ -1012,6 +1043,9 @@ function sendEmailMultiWithRuleFromOverride(array $toList, array $ccList, $subje
     $status = $status ?: 'both';
     $details = $details ?? (string)$body;
 
+    // Recovery notifications: "Down for" / "Down since" rows in the HTML mail.
+    $outageTexts = monitorOutageEmailTexts($outage);
+
     $html = ln_render_monitor_status_email_html(
         $mName,
         $target,
@@ -1020,7 +1054,9 @@ function sendEmailMultiWithRuleFromOverride(array $toList, array $ccList, $subje
         $responseTime,
         time(),
         null,
-        $appName
+        $appName,
+        $outageTexts['downtime'],
+        $outageTexts['down_since']
     );
 
     return sendEmailMulti($toList, $ccList, $subject, $body, $config, [
@@ -1083,9 +1119,115 @@ function isDayOfWeekActive($rule, $currentDayOfWeek) {
 }
 
 /**
- * Replace template variables in email content
+ * Downtime window that just ended, derived from monitor_logs.
+ *
+ * Mirrors scripts/linknest_worker_lib.py::find_last_monitor_outage(): walks the
+ * newest checks backwards, skips the trailing 'up' rows (the check that detected
+ * the recovery), then measures the contiguous 'down'/'warning' run before it.
+ * Call it right after the recovery log row was inserted.
+ *
+ * Returns null when no outage streak can be found (no logs, or history pruned by
+ * retention) and for SSL certificate warnings, which are not outages (a renewed
+ * certificate would otherwise report a bogus multi-day "down").
+ *
+ * Keys: started_at, recovered_at, seconds, duration_text, failing_checks, saw_down, truncated.
  */
-function replaceTemplateVariables($template, $monitor, $status, $details, $responseTime) {
+function findMonitorLastOutage($db, $monitorId, $prevStatus = null, $monitorType = null, $scanLimit = 1000) {
+    if (strtolower(trim((string)$monitorType)) === 'ssl' && strtolower(trim((string)$prevStatus)) === 'warning') {
+        return null;
+    }
+    $limit = max(10, min(20000, (int)$scanLimit));
+    try {
+        $stmt = $db->prepare('SELECT status, checked_at FROM monitor_logs WHERE monitor_id = ? ORDER BY checked_at DESC, id DESC LIMIT ' . $limit);
+        $stmt->execute([(int)$monitorId]);
+        $rows = $stmt->fetchAll(PDO::FETCH_ASSOC);
+    } catch (Exception $e) {
+        return null;
+    }
+    if (!$rows) {
+        return null;
+    }
+
+    $count = count($rows);
+    $i = 0;
+    $recoveredAt = null;
+    while ($i < $count && strtolower(trim((string)($rows[$i]['status'] ?? ''))) === 'up') {
+        // Newest first, so the last value assigned is the *oldest* 'up' of the run,
+        // i.e. the first successful check after the outage.
+        $recoveredAt = (int)($rows[$i]['checked_at'] ?? 0);
+        $i++;
+    }
+    if ($i >= $count) {
+        return null; // no failure found inside the scanned window
+    }
+
+    $firstFailedAt = null;
+    $failingChecks = 0;
+    $sawDown = false;
+    while ($i < $count) {
+        $status = strtolower(trim((string)($rows[$i]['status'] ?? '')));
+        if ($status !== 'down' && $status !== 'warning') {
+            break;
+        }
+        if ($status === 'down') {
+            $sawDown = true;
+        }
+        $firstFailedAt = (int)($rows[$i]['checked_at'] ?? 0);
+        $failingChecks++;
+        $i++;
+    }
+    if ($failingChecks === 0 || $firstFailedAt === null) {
+        return null;
+    }
+
+    if (!$recoveredAt) {
+        $recoveredAt = (int)($rows[0]['checked_at'] ?? 0);
+    }
+    $seconds = max(0, $recoveredAt - $firstFailedAt);
+    return [
+        'started_at' => $firstFailedAt,
+        'recovered_at' => $recoveredAt,
+        'seconds' => $seconds,
+        'duration_text' => ln_format_downtime_duration($seconds),
+        'failing_checks' => $failingChecks,
+        'saw_down' => $sawDown,
+        'truncated' => $i >= $limit,
+    ];
+}
+
+/**
+ * Format a findMonitorLastOutage() result for emails.
+ * Returns ['downtime' => '1 hr 12 mins'|null, 'down_since' => '2026-09-21 20:31:05'|null].
+ */
+function monitorOutageEmailTexts($outage) {
+    $empty = ['downtime' => null, 'down_since' => null];
+    if (!is_array($outage)) {
+        return $empty;
+    }
+    $duration = trim((string)($outage['duration_text'] ?? ''));
+    if ($duration === '') {
+        $duration = trim(ln_format_downtime_duration($outage['seconds'] ?? null));
+    }
+    if ($duration === '') {
+        return $empty;
+    }
+    if (!empty($outage['truncated'])) {
+        // Scan window ended mid-outage: the real downtime is at least this long.
+        $duration = '≥ ' . $duration;
+    }
+    $startedAt = (int)($outage['started_at'] ?? 0);
+    return [
+        'downtime' => $duration,
+        'down_since' => $startedAt > 0 ? date('Y-m-d H:i:s', $startedAt) : null,
+    ];
+}
+
+/**
+ * Replace template variables in email content
+ *
+ * $extra adds/overrides tokens, e.g. ['downtime' => '1 hr 12 mins'] for recovery emails.
+ */
+function replaceTemplateVariables($template, $monitor, $status, $details, $responseTime, $extra = []) {
     $rt = null;
     if ($responseTime !== null && $responseTime !== '' && is_numeric($responseTime)) {
         $rt = (int)round((float)$responseTime);
@@ -1100,9 +1242,23 @@ function replaceTemplateVariables($template, $monitor, $status, $details, $respo
         '{time}' => date('Y-m-d H:i:s'),
         '{date}' => date('Y-m-d'),
         '{timestamp}' => time(),
-        '{app_name}' => getAppName() ?: 'LinkNest'
+        '{app_name}' => getAppName() ?: 'LinkNest',
+        // Recovery (UP) notifications: how long the target was down before it
+        // started responding again. "N/A" is used on down/warning emails.
+        '{downtime}' => 'N/A',
+        '{down_since}' => 'N/A'
     ];
-    
+
+    if (is_array($extra)) {
+        foreach ($extra as $key => $value) {
+            if ($value === null) {
+                continue;
+            }
+            $token = (strpos((string)$key, '{') === 0) ? (string)$key : '{' . (string)$key . '}';
+            $replacements[$token] = (string)$value;
+        }
+    }
+
     return str_replace(array_keys($replacements), array_values($replacements), $template);
 }
 
@@ -1123,7 +1279,7 @@ function sendNotificationEmail($to, $subject, $body, $fromName = null, $fromEmai
     return $result;
 }
 
-function sendNotification($monitor, $message, $statusTrigger = 'both', $responseTime = null, $checkedAt = null) {
+function sendNotification($monitor, $message, $statusTrigger = 'both', $responseTime = null, $checkedAt = null, $outage = null) {
     error_log("[EMAIL] sendNotification called for monitor ID: {$monitor['id']}, name: {$monitor['name']}");
 
     // Safety guard: never send if notifications are paused or monitor is in maintenance
@@ -1210,9 +1366,20 @@ function sendNotification($monitor, $message, $statusTrigger = 'both', $response
 
         $effectiveStatus = ($statusTrigger === 'up' || $statusTrigger === 'down') ? $statusTrigger : 'both';
         $detailsForTemplate = $message; // includes "DOWN/UP: ..." plus error; good fallback for {details}
-        $subject = replaceTemplateVariables($subjectTpl, $monitor, $effectiveStatus, $detailsForTemplate, $responseTime);
+
+        // Recovery notifications: downtime tokens for custom subject/body templates.
+        $outageTexts = monitorOutageEmailTexts($outage);
+        $extraVars = [];
+        if (!empty($outageTexts['downtime'])) {
+            $extraVars['downtime'] = $outageTexts['downtime'];
+        }
+        if (!empty($outageTexts['down_since'])) {
+            $extraVars['down_since'] = $outageTexts['down_since'];
+        }
+
+        $subject = replaceTemplateVariables($subjectTpl, $monitor, $effectiveStatus, $detailsForTemplate, $responseTime, $extraVars);
         $subject = ln_ensure_monitor_email_subject_has_status($subject, $effectiveStatus, (string)($monitor['name'] ?? ''));
-        $bodyText = replaceTemplateVariables($bodyTpl, $monitor, $effectiveStatus, $detailsForTemplate, $responseTime);
+        $bodyText = replaceTemplateVariables($bodyTpl, $monitor, $effectiveStatus, $detailsForTemplate, $responseTime, $extraVars);
 
         $ts = is_int($checkedAt) ? $checkedAt : time();
         $target = (string)($monitor['target'] ?? '');
@@ -1227,7 +1394,9 @@ function sendNotification($monitor, $message, $statusTrigger = 'both', $response
             $responseTime,
             $ts,
             null,
-            $appName
+            $appName,
+            $outageTexts['downtime'],
+            $outageTexts['down_since']
         );
 
         // Optional from overrides (override SMTP from_name/from_email)

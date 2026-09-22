@@ -16,6 +16,7 @@ from __future__ import annotations
 import argparse
 import os
 import sys
+import time
 from typing import List, Optional, Sequence, Tuple
 
 # Embeddable CPython (bin/python + python*._pth) does not put this script's
@@ -29,6 +30,7 @@ from linknest_worker_lib import (
     day_of_week_active,
     ensure_outbox_schema,
     ensure_monitors_schema,
+    format_downtime_duration,
     get_smtp_config,
     is_in_maintenance_window,
     monitor_notification_now,
@@ -324,6 +326,32 @@ def main() -> int:
                 if mrow is not None:
                     rt = mrow["last_response_time"]
                 body_text = str(r["body"] or "")
+                # Recovery notifications carry how long the target was down on the
+                # outbox row itself (snapshot taken by monitor_runner.py when the
+                # up-mail was queued, so a later outage cannot mislabel this one).
+                downtime_text = None
+                down_since_text = None
+                if str(status_trigger or "").strip().lower() == "up":
+                    try:
+                        outage_seconds = r["outage_seconds"]
+                    except (IndexError, KeyError):
+                        outage_seconds = None
+                    try:
+                        outage_started_at = r["outage_started_at"]
+                    except (IndexError, KeyError):
+                        outage_started_at = None
+                    if outage_seconds not in (None, "", False):
+                        try:
+                            downtime_text = format_downtime_duration(int(outage_seconds)) or None
+                        except (TypeError, ValueError):
+                            downtime_text = None
+                    if outage_started_at not in (None, "", False):
+                        try:
+                            down_since_text = time.strftime(
+                                "%Y-%m-%d %H:%M:%S", time.localtime(int(outage_started_at))
+                            )
+                        except (TypeError, ValueError, OSError):
+                            down_since_text = None
                 html_body = ln_render_monitor_notification_html(
                     monitor_name=monitor_name,
                     target=target,
@@ -332,6 +360,8 @@ def main() -> int:
                     response_time_ms=(f"{int(rt)} ms" if rt not in (None, "", False) else None),
                     app_name=app_name,
                     db_conn=conn,
+                    downtime_text=downtime_text,
+                    down_since_text=down_since_text,
                 )
             except Exception:
                 # Never fail sending because of HTML rendering issues; plain-text fallback will still send.

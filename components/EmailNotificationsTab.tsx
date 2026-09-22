@@ -1042,7 +1042,7 @@ const NotificationRuleForm: React.FC<NotificationRuleFormProps> = ({ rule, onSav
                     className="w-full bg-white border border-gray-300 rounded-lg px-3 py-2 text-gray-900 outline-none focus:border-blue-500 focus:ring-2 focus:ring-blue-200"
                     required
                 />
-                <FieldHelp text="Available variables: {monitor_name}, {status}, {time}, {date}, {details}, {response_time}, {app_name}" />
+                <FieldHelp text="Available variables: {monitor_name}, {status}, {time}, {date}, {details}, {response_time}, {downtime}, {down_since}, {app_name}. {downtime}/{down_since} are filled on recovery (UP) emails only." />
             </div>
 
             <div>
@@ -1056,7 +1056,7 @@ const NotificationRuleForm: React.FC<NotificationRuleFormProps> = ({ rule, onSav
                     rows={6}
                     required
                 />
-                <FieldHelp text="Available variables: {monitor_name}, {status}, {time}, {date}, {details}, {response_time}, {monitor_type}, {monitor_target}, {app_name}" />
+                <FieldHelp text="Available variables: {monitor_name}, {status}, {time}, {date}, {details}, {response_time}, {monitor_type}, {monitor_target}, {downtime}, {down_since}, {app_name}. {downtime}/{down_since} are filled on recovery (UP) emails only." />
             </div>
 
             <div className="grid grid-cols-2 gap-4">

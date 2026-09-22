@@ -1153,6 +1153,36 @@ function ensureLinkForceShortUrlColumn(PDO $db): void {
     }
 }
 
+/**
+ * Recovery-email helper columns on email_outbox: how long a monitor was down
+ * before it responded again. Snapshot is written by monitor_runner.py and
+ * rendered by email_sender.py; added here too so every install has the columns
+ * without having to run the Python workers first.
+ */
+function ensureEmailOutboxOutageColumns(PDO $db): void {
+    static $ensured = false;
+    if ($ensured) {
+        return;
+    }
+    try {
+        $exists = $db->query("SELECT name FROM sqlite_master WHERE type='table' AND name='email_outbox'")->fetchColumn();
+        if (!$exists) {
+            return;
+        }
+        $columns = $db->query('PRAGMA table_info(email_outbox)')->fetchAll(PDO::FETCH_ASSOC);
+        $names = array_column($columns, 'name');
+        if (!in_array('outage_seconds', $names, true)) {
+            $db->exec('ALTER TABLE email_outbox ADD COLUMN outage_seconds INTEGER');
+        }
+        if (!in_array('outage_started_at', $names, true)) {
+            $db->exec('ALTER TABLE email_outbox ADD COLUMN outage_started_at INTEGER');
+        }
+        $ensured = true;
+    } catch (PDOException $e) {
+        error_log('ensureEmailOutboxOutageColumns warning: ' . $e->getMessage());
+    }
+}
+
 /** Max length for per-link custom "Broken" badge text. */
 if (!defined('LINK_BROKEN_STATUS_LABEL_MAX_LEN')) {
     define('LINK_BROKEN_STATUS_LABEL_MAX_LEN', 48);
@@ -2304,6 +2334,7 @@ function initDatabase() {
             ensureLinkMobilePreviewEmulationColumn($db);
             ensureLinkOpenInEmulationColumn($db);
             ensureLinkForceShortUrlColumn($db);
+            ensureEmailOutboxOutageColumns($db);
             ensureMcpTokensTable($db);
             ensureCategoryVisibilityPresetsTable($db);
             ensureTilesVideoColumns($db);
@@ -2359,6 +2390,7 @@ function initDatabase() {
             ensureLinkMobilePreviewEmulationColumn($db);
             ensureLinkOpenInEmulationColumn($db);
             ensureLinkForceShortUrlColumn($db);
+            ensureEmailOutboxOutageColumns($db);
             ensureMcpTokensTable($db);
             ensureCategoryVisibilityPresetsTable($db);
             ensureTilesVideoColumns($db);
@@ -3401,6 +3433,8 @@ function initDatabase() {
         ensureLinkOpenTargetColumn($db);
         ensureLinkMobilePreviewEmulationColumn($db);
         ensureLinkOpenInEmulationColumn($db);
+        ensureEmailOutboxOutageColumns($db);
+
         ensureLinkForceShortUrlColumn($db);
         
         // Create rich_text_content table
@@ -4322,8 +4356,23 @@ function initDatabase() {
             success INTEGER,
             -- legacy-only helpers (applied by sender after an attempt)
             legacy_clear_pending INTEGER DEFAULT 0,
-            legacy_update_last_notified_status TEXT
+            legacy_update_last_notified_status TEXT,
+            -- recovery emails: how long the target was down before it responded
+            -- again (snapshot written by monitor_runner.py, rendered by email_sender.py)
+            outage_seconds INTEGER,
+            outage_started_at INTEGER
         )');
+
+        // Add the recovery-email columns to databases created before they existed.
+        try {
+            $outboxColumns = $db->query('PRAGMA table_info(email_outbox)')->fetchAll(PDO::FETCH_COLUMN, 1);
+            if (!in_array('outage_seconds', $outboxColumns, true)) {
+                $db->exec('ALTER TABLE email_outbox ADD COLUMN outage_seconds INTEGER');
+            }
+            if (!in_array('outage_started_at', $outboxColumns, true)) {
+                $db->exec('ALTER TABLE email_outbox ADD COLUMN outage_started_at INTEGER');
+            }
+        } catch (PDOException $e) { /* ignore */ }
 
         // Queue for force-all monitor checks handed off to Python (monitor_runner.py).
         $db->exec('CREATE TABLE IF NOT EXISTS monitor_check_jobs (

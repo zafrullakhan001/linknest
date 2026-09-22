@@ -1447,7 +1447,7 @@ export const MonitorForm: React.FC<MonitorFormProps> = ({ monitor, onSave, onCan
                                                             onChange={(e) => setLegacyEmailSubjectTemplate(e.target.value)}
                                                             className={inputClass}
                                                         />
-                                                        <FieldHelp text="Supports variables like {monitor_name}, {status}, {details}, {time}." />
+                                                        <FieldHelp text="Supports variables like {monitor_name}, {status}, {details}, {time}, {downtime}, {down_since}. {downtime}/{down_since} are filled on recovery (UP) emails only." />
                                                     </div>
 
                                                     <div>
@@ -1460,7 +1460,7 @@ export const MonitorForm: React.FC<MonitorFormProps> = ({ monitor, onSave, onCan
                                                             className="w-full bg-white border border-gray-300 rounded-lg px-3 py-2 text-gray-900 outline-none focus:border-blue-500 focus:ring-2 focus:ring-blue-200 transition-colors font-mono text-xs"
                                                             rows={6}
                                                         />
-                                                        <FieldHelp text="Supports variables like {monitor_target}, {response_time}, {details}. One email is sent per recipient." />
+                                                        <FieldHelp text="Supports variables like {monitor_target}, {response_time}, {details}, {downtime}, {down_since}. One email is sent per recipient." />
                                                     </div>
                                                 </>
                                             )}

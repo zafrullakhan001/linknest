@@ -56,6 +56,32 @@ function ln_format_response_time($ms): string {
     return (string)(int)round((float)$ms) . ' ms';
 }
 
+/**
+ * Human downtime duration for monitor emails: '45 secs', '12 mins', '1 hr 12 mins'.
+ */
+function ln_format_downtime_duration($seconds): string {
+    if ($seconds === null || $seconds === '' || !is_numeric($seconds)) {
+        return '';
+    }
+    $total = (int)round((float)$seconds);
+    if ($total <= 0) {
+        return '0 secs';
+    }
+    $hours = intdiv($total, 3600);
+    $minutes = intdiv($total % 3600, 60);
+    $secs = $total % 60;
+    if ($hours > 0 && $minutes > 0) {
+        return $hours . ' hr' . ($hours === 1 ? '' : 's') . ' ' . $minutes . ' min' . ($minutes === 1 ? '' : 's');
+    }
+    if ($hours > 0) {
+        return $hours . ' hr' . ($hours === 1 ? '' : 's');
+    }
+    if ($minutes > 0) {
+        return $minutes . ' min' . ($minutes === 1 ? '' : 's');
+    }
+    return $secs . ' sec' . ($secs === 1 ? '' : 's');
+}
+
 function ln_format_datetime(?int $ts = null): string {
     $ts = $ts ?? time();
     return date('Y-m-d H:i:s', $ts);
@@ -554,7 +580,7 @@ function ln_render_password_reset_email_text(string $username, string $resetUrl,
         "If you did not request this, ignore this email.\n";
 }
 
-function ln_render_monitor_status_email_html(string $monitorName, string $target, string $status, string $details, $responseTimeMs, ?int $ts = null, ?string $customMessageText = null, string $appName = 'LinkNest'): string {
+function ln_render_monitor_status_email_html(string $monitorName, string $target, string $status, string $details, $responseTimeMs, ?int $ts = null, ?string $customMessageText = null, string $appName = 'LinkNest', ?string $downtimeText = null, ?string $downSinceText = null): string {
     $ts = $ts ?? time();
     $statusLabel = ln_format_status_label($status);
 
@@ -589,6 +615,23 @@ function ln_render_monitor_status_email_html(string $monitorName, string $target
            </table>'
         : '';
 
+    // Recovery notifications: how long the target was down before it responded again.
+    $outageRows = '';
+    if ($downtimeText !== null && trim($downtimeText) !== '') {
+        $outageRows .= '
+              <tr>
+                <td style="font-family:Arial,Helvetica,sans-serif;font-size:13px;color:#334155;padding:10px 14px;border-bottom:1px solid #e2e8f0;"><strong>Down for</strong></td>
+                <td align="right" style="font-family:Arial,Helvetica,sans-serif;font-size:13px;color:#334155;padding:10px 14px;border-bottom:1px solid #e2e8f0;">' . ln_html_escape($downtimeText) . '</td>
+              </tr>';
+    }
+    if ($downSinceText !== null && trim($downSinceText) !== '') {
+        $outageRows .= '
+              <tr>
+                <td style="font-family:Arial,Helvetica,sans-serif;font-size:13px;color:#334155;padding:10px 14px;border-bottom:1px solid #e2e8f0;"><strong>Down since</strong></td>
+                <td align="right" style="font-family:Arial,Helvetica,sans-serif;font-size:13px;color:#334155;padding:10px 14px;border-bottom:1px solid #e2e8f0;">' . ln_html_escape($downSinceText) . '</td>
+              </tr>';
+    }
+
     $inner = '
       <table role="presentation" cellpadding="0" cellspacing="0" border="0" width="100%">
         <tr>
@@ -617,7 +660,7 @@ function ln_render_monitor_status_email_html(string $monitorName, string $target
               <tr>
                 <td style="font-family:Arial,Helvetica,sans-serif;font-size:13px;color:#334155;padding:10px 14px;border-bottom:1px solid #e2e8f0;"><strong>Response time</strong></td>
                 <td align="right" style="font-family:Arial,Helvetica,sans-serif;font-size:13px;color:#334155;padding:10px 14px;border-bottom:1px solid #e2e8f0;">' . ln_html_escape(ln_format_response_time($responseTimeMs)) . '</td>
-              </tr>
+              </tr>' . $outageRows . '
               <tr>
                 <td style="font-family:Arial,Helvetica,sans-serif;font-size:13px;color:#334155;padding:10px 14px;"><strong>Time</strong></td>
                 <td align="right" style="font-family:Arial,Helvetica,sans-serif;font-size:13px;color:#334155;padding:10px 14px;">' . ln_html_escape(date('Y-m-d H:i:s', $ts)) . '</td>
@@ -658,12 +701,18 @@ function ln_render_smtp_test_email_text(?string $toEmail = null, string $appName
         "Your SMTP email configuration is working correctly. This test message confirms that {$appName} can connect and send mail.\n";
 }
 
-function ln_render_monitor_status_email_text(string $monitorName, string $target, string $status, string $details, $responseTimeMs, ?int $ts = null, ?string $customMessageText = null): string {
+function ln_render_monitor_status_email_text(string $monitorName, string $target, string $status, string $details, $responseTimeMs, ?int $ts = null, ?string $customMessageText = null, ?string $downtimeText = null, ?string $downSinceText = null): string {
     $ts = $ts ?? time();
     $lines = [];
     $lines[] = ln_format_status_label($status) . ': ' . $monitorName;
     $lines[] = 'Target: ' . $target;
     $lines[] = 'Response: ' . ln_format_response_time($responseTimeMs);
+    if ($downtimeText !== null && trim($downtimeText) !== '') {
+        $lines[] = 'Down for: ' . $downtimeText;
+    }
+    if ($downSinceText !== null && trim($downSinceText) !== '') {
+        $lines[] = 'Down since: ' . $downSinceText;
+    }
     $lines[] = 'Time: ' . date('Y-m-d H:i:s', $ts);
     $lines[] = '';
     $lines[] = 'Details:';
