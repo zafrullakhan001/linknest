@@ -20,6 +20,9 @@ import { SpaceHeaderDock } from './SpaceHeaderDock';
 
 const TileInfoDialog = lazy(() => import('./TileInfoDialog').then((m) => ({ default: m.TileInfoDialog })));
 const ShareTileDialog = lazy(() => import('./ShareTileDialog').then((m) => ({ default: m.ShareTileDialog })));
+const DeleteSharedSpaceDialog = lazy(() =>
+  import('./DeleteSharedSpaceDialog').then((m) => ({ default: m.DeleteSharedSpaceDialog }))
+);
 const SpaceAiAnalysisDialog = lazy(() =>
   import('./SpaceAiAnalysisDialog').then((m) => ({ default: m.SpaceAiAnalysisDialog }))
 );
@@ -73,6 +76,8 @@ export const SpaceViewHeaderActions: React.FC<SpaceViewHeaderActionsProps> = ({
   const [showInfo, setShowInfo] = useState(false);
   const [showShare, setShowShare] = useState(false);
   const [showAi, setShowAi] = useState(false);
+  /** Delete confirmation for a space that is shared with other users. */
+  const [showDeleteShared, setShowDeleteShared] = useState(false);
   const [guestFavorite, setGuestFavorite] = useState(() => isPublicFavorite(tile.id));
 
   useEffect(() => {
@@ -85,6 +90,13 @@ export const SpaceViewHeaderActions: React.FC<SpaceViewHeaderActionsProps> = ({
   const canInfo = tile.canViewTileInfo !== false && (tile.canViewTileInfo === true || tile.canView === true);
   const canShare = canEdit && !tile.sharedWithMeInvitationId;
   const canDelete = tile.canDelete === true;
+  /**
+   * Deleting a space that other users can still open needs an explicit decision about their
+   * access. `shareCount` covers share invitations (pending + accepted); `allowedUsers` also
+   * covers legacy recipients without an invitation row.
+   */
+  const isSharedWithOthers = !tile.sharedWithMeInvitationId &&
+    ((tile.shareCount ?? 0) > 0 || (tile.visibility === 'private' && (tile.allowedUsers?.length ?? 0) > 1));
   const isFavorited = isAuthenticated ? !!tile.isFavorite : guestFavorite;
   const animOption = getAnimationOption((tile.pageAnimation as TileAnimation) || 'none');
 
@@ -131,6 +143,12 @@ export const SpaceViewHeaderActions: React.FC<SpaceViewHeaderActionsProps> = ({
       onAuthRequired?.();
       return;
     }
+    // A space shared with other users asks what should happen to their access first
+    // (revoke & delete, or delete without revoking) — docs/PRIVATE_SPACE_SHARING.md
+    if (isSharedWithOthers) {
+      setShowDeleteShared(true);
+      return;
+    }
     if (!confirm('Are you sure you want to delete this space? It will be moved to the recycle bin.')) return;
     try {
       await deleteTile(tile.id);
@@ -140,7 +158,15 @@ export const SpaceViewHeaderActions: React.FC<SpaceViewHeaderActionsProps> = ({
       console.error('Failed to delete tile:', error);
       alert(error instanceof Error ? error.message : 'Failed to delete space.');
     }
-  }, [allTiles, isAuthenticated, onAuthRequired, onUpdateTiles, tile.id]);
+  }, [allTiles, isAuthenticated, isSharedWithOthers, onAuthRequired, onUpdateTiles, tile.id]);
+
+  /** Runs after the shared-space dialog: the delete itself (recipients already handled). */
+  const handleDeleteSharedSpace = useCallback(async () => {
+    await deleteTile(tile.id);
+    onUpdateTiles(allTiles.filter((t) => t.id !== tile.id));
+    setShowDeleteShared(false);
+    window.location.hash = '#/';
+  }, [allTiles, onUpdateTiles, tile.id]);
 
   const handleArchive = useCallback(async () => {
     if (!isAuthenticated) {
@@ -588,6 +614,15 @@ export const SpaceViewHeaderActions: React.FC<SpaceViewHeaderActionsProps> = ({
             onShared={() => {
               getTiles().then((t) => onUpdateTiles(t, false));
             }}
+          />
+        </Suspense>
+      )}
+      {showDeleteShared && (
+        <Suspense fallback={null}>
+          <DeleteSharedSpaceDialog
+            tile={tile}
+            onClose={() => setShowDeleteShared(false)}
+            onDelete={handleDeleteSharedSpace}
           />
         </Suspense>
       )}

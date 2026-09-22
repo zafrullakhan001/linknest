@@ -104,6 +104,8 @@ const transformTile = (apiTile: any): Tile => {
     linkCount: typeof apiTile.linkCount === 'number' ? apiTile.linkCount : undefined,
     searchLinks: Array.isArray(apiTile.searchLinks) ? apiTile.searchLinks : undefined,
     searchTags: Array.isArray(apiTile.searchTags) ? apiTile.searchTags : undefined,
+    // Recipients the space is shared with (owner/admin only) — shown as a card badge
+    shareCount: typeof apiTile.shareCount === 'number' ? apiTile.shareCount : undefined,
     // Shared-with-me: when tile was shared by another user and receiver accepted
     sharedWithMeInvitationId: apiTile.sharedWithMeInvitationId ?? undefined,
     sharedWithMeSharer: apiTile.sharedWithMeSharer ?? undefined

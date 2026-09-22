@@ -129,6 +129,7 @@ const MonitoringOverview = lazy(() => import('./MonitoringOverview').then(m => (
 const RecycleBinOverview = lazy(() => import('./RecycleBinOverview').then(m => ({ default: m.RecycleBinOverview })));
 const TileInfoDialog = lazy(() => import('./TileInfoDialog').then(m => ({ default: m.TileInfoDialog })));
 const ShareTileDialog = lazy(() => import('./ShareTileDialog').then(m => ({ default: m.ShareTileDialog })));
+const DeleteSharedSpaceDialog = lazy(() => import('./DeleteSharedSpaceDialog').then(m => ({ default: m.DeleteSharedSpaceDialog })));
 const SpaceCompareDialog = lazy(() => import('./SpaceCompareDialog').then(m => ({ default: m.SpaceCompareDialog })));
 
 
@@ -157,6 +158,19 @@ const includeUserInAllowedList = (users: number[], userId: number | null | undef
   const id = toNumericUserId(userId);
   if (id == null) return users;
   return users.some((existing) => Number(existing) === id) ? users : [...users, id];
+};
+
+/**
+ * True when the current user's space is shared with somebody else, so deleting it needs an
+ * explicit decision about the recipients (docs/PRIVATE_SPACE_SHARING.md):
+ * `shareCount` covers share invitations (pending + accepted), `allowedUsers` also covers
+ * legacy rows that have no invitation on file. Spaces shared *with* me (sharedWithMe*) are
+ * not my share list, so they are excluded.
+ */
+const isSpaceSharedWithOthers = (tile: Tile): boolean => {
+  if (tile.sharedWithMeInvitationId) return false;
+  if ((tile.shareCount ?? 0) > 0) return true;
+  return tile.visibility === 'private' && (tile.allowedUsers?.length ?? 0) > 1;
 };
 
 function getColorStyles(color: string | ThemeColor | undefined) {
@@ -2048,6 +2062,30 @@ const SortableTile: React.FC<SortableTileProps> = ({
     return uniqueLinks.size;
   })());
 
+  // Share badge: how many users this space is shared with (owner/admin view, see
+  // docs/PRIVATE_SPACE_SHARING.md). Clicking it opens the share dialog so the recipients
+  // can be reviewed without leaving the grid; hidden for spaces that were shared *with* me.
+  const shareCount = tile.sharedWithMeInvitationId ? 0 : (tile.shareCount ?? 0);
+  const shareBadge = shareCount > 0 ? (
+    <button
+      type="button"
+      onClick={(e) => {
+        e.preventDefault();
+        e.stopPropagation();
+        onShareTile?.(tile);
+      }}
+      disabled={!onShareTile}
+      className={`inline-flex items-center gap-1 rounded-full px-1.5 py-0.5 text-[10px] font-semibold leading-none bg-blue-50 text-blue-600 dark:bg-blue-500/15 dark:text-blue-300 ${onShareTile ? 'hover:bg-blue-100 dark:hover:bg-blue-500/25 cursor-pointer' : 'cursor-default'}`}
+      title={`Shared with ${shareCount} user${shareCount === 1 ? '' : 's'} — click to manage sharing`}
+      aria-label={`Shared with ${shareCount} user${shareCount === 1 ? '' : 's'}`}
+    >
+      <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor" className="w-3 h-3" aria-hidden="true">
+        <path d="M7 8a3 3 0 100-6 3 3 0 000 6zM14.5 9a2.5 2.5 0 100-5 2.5 2.5 0 000 5zM1.615 16.428a1.224 1.224 0 01-.569-1.175 6.002 6.002 0 0111.908 0c.058.467-.172.92-.57 1.174A9.953 9.953 0 017 18a9.953 9.953 0 01-5.385-1.572zM14.5 16h-.106c.07-.297.088-.611.048-.933a7.47 7.47 0 00-1.588-3.755 4.502 4.502 0 015.874 2.636.818.818 0 01-.36.98A7.465 7.465 0 0114.5 16z" />
+      </svg>
+      <span>{shareCount}</span>
+    </button>
+  ) : null;
+
   const activeMessages = (tile.messages?.filter(m => m.isActive && (!m.startDate || new Date(m.startDate) <= new Date()) && (!m.endDate || new Date(m.endDate) >= new Date()) && (m.displayLocation === 'tile' || m.displayLocation === 'both' || !m.displayLocation)) || []).sort((a, b) => (a.priority || 0) - (b.priority || 0));
 
   // Helper function to get animation class based on animation type
@@ -2864,6 +2902,7 @@ const SortableTile: React.FC<SortableTileProps> = ({
               <path d="M11.603 7.963a.75.75 0 00-.977 1.138 2.5 2.5 0 01-.142 3.667l-3 3a2.5 2.5 0 01-3.536-3.536l1.225-1.224a.75.75 0 00-1.061-1.06l-1.224 1.224a4 4 0 105.656 5.656l3-3a4 4 0 00-.225-5.865z" />
             </svg>
             <span>{linkCount}</span>
+            {shareBadge}
           </div>
         )}
         {(tile.isHyperlink || tile.isVideo) && (
@@ -2876,6 +2915,7 @@ const SortableTile: React.FC<SortableTileProps> = ({
                 <span>Video</span>
               </>
             ) : null}
+            {shareBadge}
           </div>
         )}
 
@@ -3337,6 +3377,8 @@ export const TileGrid: React.FC<TileGridProps> = ({
   const [linkMaintenanceDialog, setLinkMaintenanceDialog] = useState<{ link: Link } | null>(null);
   const [tileInfoDialog, setTileInfoDialog] = useState<{ tile?: Tile; categoryInfo?: { categoryName: string; tiles: Tile[] } } | null>(null);
   const [shareTileDialog, setShareTileDialog] = useState<Tile | null>(null);
+  /** Space awaiting a delete decision because it is shared with other users. */
+  const [sharedDeleteTile, setSharedDeleteTile] = useState<Tile | null>(null);
   const [compareTileId, setCompareTileId] = useState<string | null>(null);
   const [favNotesDialogState, setFavNotesDialogState] = useState<{ linkId: string; notes: string; notesVideoUrl?: string; linkLabel: string } | null>(null);
   const [stagingTiles, setStagingTiles] = useState<Tile[]>([]);
@@ -6439,6 +6481,51 @@ You may also wrap the array in an object: { "messages": [ ... ] }.
     setCategoryExpiresAt('');
   });
 
+  /**
+   * Move a space to the recycle bin and refresh every list that shows it (grid / staging,
+   * recycle-bin counter, archive). Shared by the plain confirm flow and the shared-space
+   * dialog so both behave identically.
+   */
+  const performDeleteTile = async (id: string) => {
+    const isFromArchive = activeTab === 'archive';
+
+    if (!onDeleteTile) {
+      if (activeTab === 'staging') {
+        setStagingTiles(prev => prev.filter(t => t.id !== id));
+      } else {
+        onUpdateTiles(tiles.filter(t => t.id !== id));
+      }
+      // Still refresh recycle bin even if using local state
+      try {
+        const updatedRecycleBin = await getRecycleBin();
+        setRecycleBinTiles(updatedRecycleBin);
+      } catch (error) {
+        console.error('Failed to refresh recycle bin:', error);
+      }
+      return;
+    }
+
+    await onDeleteTile(id);
+    // Reload tiles to reflect the deletion (staging vs main list)
+    if (activeTab === 'staging') {
+      const updatedStaging = await getTiles({ sourceTab: 'staging' });
+      setStagingTiles(updatedStaging);
+    } else {
+      const updatedTiles = await getTiles();
+      onUpdateTiles(updatedTiles);
+    }
+
+    // Always reload recycle bin to update the counter (tile was moved to recycle bin)
+    const updatedRecycleBin = await getRecycleBin();
+    setRecycleBinTiles(updatedRecycleBin);
+
+    // If deleting from archive, also reload archive
+    if (isFromArchive) {
+      const updatedArchive = await getArchive();
+      setArchiveTiles(updatedArchive);
+    }
+  };
+
   const handleDeleteTile = async (e: React.MouseEvent, id: string) => {
     e.preventDefault();
     e.stopPropagation();
@@ -6448,52 +6535,41 @@ You may also wrap the array in an object: { "messages": [ ... ] }.
       return;
     }
 
+    // A space shared with other users needs an explicit decision about their access before
+    // it is deleted (revoke & delete, or delete without revoking) — see
+    // docs/PRIVATE_SPACE_SHARING.md.
+    const listingTiles = activeTab === 'staging' ? stagingTiles : tiles;
+    const targetTile = listingTiles.find(t => t.id === id);
+    if (targetTile && isSpaceSharedWithOthers(targetTile)) {
+      setSharedDeleteTile(targetTile);
+      return;
+    }
+
     const isFromArchive = activeTab === 'archive';
     const confirmMessage = isFromArchive
       ? "Are you sure you want to delete this space from archive? It will be moved to the recycle bin."
       : "Are you sure you want to delete this space? It will be moved to the recycle bin.";
 
-    if (confirm(confirmMessage)) {
-      if (onDeleteTile) {
-        try {
-          await onDeleteTile(id);
-          // Reload tiles to reflect the deletion (staging vs main list)
-          if (activeTab === 'staging') {
-            const updatedStaging = await getTiles({ sourceTab: 'staging' });
-            setStagingTiles(updatedStaging);
-          } else {
-            const updatedTiles = await getTiles();
-            onUpdateTiles(updatedTiles);
-          }
+    if (!confirm(confirmMessage)) return;
 
-          // Always reload recycle bin to update the counter (tile was moved to recycle bin)
-          const updatedRecycleBin = await getRecycleBin();
-          setRecycleBinTiles(updatedRecycleBin);
+    try {
+      await performDeleteTile(id);
+    } catch (error) {
+      console.error('Failed to delete tile:', error);
+      const msg = error instanceof Error ? error.message : 'Failed to delete space. Please try again.';
+      alert(msg);
+    }
+  };
 
-          // If deleting from archive, also reload archive
-          if (isFromArchive) {
-            const updatedArchive = await getArchive();
-            setArchiveTiles(updatedArchive);
-          }
-        } catch (error) {
-          console.error('Failed to delete tile:', error);
-          const msg = error instanceof Error ? error.message : 'Failed to delete space. Please try again.';
-          alert(msg);
-        }
-      } else {
-        if (activeTab === 'staging') {
-          setStagingTiles(prev => prev.filter(t => t.id !== id));
-        } else {
-          onUpdateTiles(tiles.filter(t => t.id !== id));
-        }
-        // Still refresh recycle bin even if using local state
-        try {
-          const updatedRecycleBin = await getRecycleBin();
-          setRecycleBinTiles(updatedRecycleBin);
-        } catch (error) {
-          console.error('Failed to refresh recycle bin:', error);
-        }
-      }
+  /** Called by the shared-space dialog once the recipients have been dealt with. */
+  const handleDeleteSharedSpace = async (tile: Tile) => {
+    try {
+      await performDeleteTile(tile.id);
+      setSharedDeleteTile(null);
+    } catch (error) {
+      console.error('Failed to delete shared space:', error);
+      // Rethrown so the dialog can show the failure and keep the recipients list visible
+      throw error;
     }
   };
 
@@ -14901,6 +14977,17 @@ You may also wrap the array in an object: { "messages": [ ... ] }.
             tile={shareTileDialog}
             onClose={() => setShareTileDialog(null)}
             onShared={() => { getTiles().then(t => onUpdateTiles(t, false)); }}
+          />
+        </Suspense>
+      )}
+
+      {/* Deleting a shared space: revoke the recipients' access first, or delete as-is */}
+      {sharedDeleteTile && (
+        <Suspense fallback={null}>
+          <DeleteSharedSpaceDialog
+            tile={sharedDeleteTile}
+            onClose={() => setSharedDeleteTile(null)}
+            onDelete={() => handleDeleteSharedSpace(sharedDeleteTile)}
           />
         </Suspense>
       )}

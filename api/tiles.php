@@ -253,6 +253,8 @@ function handleGetTiles() {
     $userRoleIds = [];
     $userGroupIds = [];
     $acceptedSharedTiles = [];
+    // tile_id => number of recipients a space is shared with (pending + accepted), for the card badge
+    $tileShareCounts = [];
     
     if ($user) {
         // Get user role IDs once
@@ -317,6 +319,14 @@ function handleGetTiles() {
                 'sharerUserId' => (int)$s['sharer_user_id'],
                 'sharerUsername' => $s['sharer_username']
             ];
+        }
+
+        // Batch fetch how many users each space is shared with (pending + accepted invitations).
+        // Used by the home grid card badge so a shared space is recognisable at a glance
+        // (see docs/PRIVATE_SPACE_SHARING.md). Only surfaced to the owner / admins.
+        $shareCountStmt = $db->query("SELECT tile_id, COUNT(DISTINCT receiver_user_id) AS recipient_count FROM tile_share_invitations WHERE status IN ('pending', 'accepted') GROUP BY tile_id");
+        while ($shareRow = $shareCountStmt->fetch(PDO::FETCH_ASSOC)) {
+            $tileShareCounts[$shareRow['tile_id']] = (int)$shareRow['recipient_count'];
         }
     }
     
@@ -570,6 +580,10 @@ function handleGetTiles() {
             'showDescription' => !(isset($row['show_description']) && ((int)$row['show_description'] === 0 || $row['show_description'] === '0' || $row['show_description'] === false)),
             'showShortUrls' => mapShowShortUrlsFromRow($row),
             'tabs' => [],
+            // Recipients this space is shared with (pending + accepted) — owner/admin view only
+            'shareCount' => ($user && ((int)($row['user_id'] ?? 0) === (int)$user['id'] || !empty($user['is_admin'])))
+                ? ($tileShareCounts[$row['id']] ?? 0)
+                : 0,
             'sharedWithMeInvitationId' => isset($acceptedSharedTiles[$row['id']]) ? $acceptedSharedTiles[$row['id']]['invitationId'] : null,
             'sharedWithMeSharer' => isset($acceptedSharedTiles[$row['id']]) ? ['userId' => $acceptedSharedTiles[$row['id']]['sharerUserId'], 'username' => $acceptedSharedTiles[$row['id']]['sharerUsername']] : null
         ];
@@ -1379,6 +1393,15 @@ function handleGetTile($tileId) {
     if ($user && !$canView) {
         sendJSON(['error' => 'Access denied. You do not have permission to view this tile.'], 403);
     }
+
+    // Recipients this space is shared with (pending + accepted) — owner/admin view only.
+    // Powers the "shared" badge on the space card and the revoke-before-delete prompt.
+    $shareCount = 0;
+    if ($user && ((int)($row['user_id'] ?? 0) === (int)$user['id'] || !empty($user['is_admin']))) {
+        $shareCountStmt = $db->prepare("SELECT COUNT(DISTINCT receiver_user_id) FROM tile_share_invitations WHERE tile_id = ? AND status IN ('pending', 'accepted')");
+        $shareCountStmt->execute([$row['id']]);
+        $shareCount = (int)$shareCountStmt->fetchColumn();
+    }
     
     // Load tile decoration fields
     $tileGradientColors = null;
@@ -1449,6 +1472,7 @@ function handleGetTile($tileId) {
             'showDescription' => !(isset($row['show_description']) && ((int)$row['show_description'] === 0 || $row['show_description'] === '0' || $row['show_description'] === false)),
             'showShortUrls' => mapShowShortUrlsFromRow($row),
         'tabs' => [],
+        'shareCount' => $shareCount,
         'sharedWithMeInvitationId' => null,
         'sharedWithMeSharer' => null
     ];

@@ -130,15 +130,29 @@ function handleListByTile(): void {
         sendJSON(['error' => 'You can only list shares for tiles you own'], 403);
     }
 
-    $stmt = $db->prepare("
-        SELECT tsi.id, tsi.tile_id, tsi.sharer_user_id, tsi.receiver_user_id, tsi.status, tsi.created_at,
-               u.username as receiver_username
-        FROM tile_share_invitations tsi
-        JOIN users u ON u.id = tsi.receiver_user_id
-        WHERE tsi.tile_id = ? AND tsi.sharer_user_id = ? AND tsi.status IN ('pending', 'accepted')
-        ORDER BY tsi.status ASC, tsi.created_at DESC
-    ");
-    $stmt->execute([$tileId, $user['id']]);
+    // Admins may manage every share of the space (they can also delete spaces they did not share),
+    // while owners only see the shares they created themselves.
+    if ($user['is_admin']) {
+        $stmt = $db->prepare("
+            SELECT tsi.id, tsi.tile_id, tsi.sharer_user_id, tsi.receiver_user_id, tsi.status, tsi.created_at,
+                   u.username as receiver_username
+            FROM tile_share_invitations tsi
+            JOIN users u ON u.id = tsi.receiver_user_id
+            WHERE tsi.tile_id = ? AND tsi.status IN ('pending', 'accepted')
+            ORDER BY tsi.status ASC, tsi.created_at DESC
+        ");
+        $stmt->execute([$tileId]);
+    } else {
+        $stmt = $db->prepare("
+            SELECT tsi.id, tsi.tile_id, tsi.sharer_user_id, tsi.receiver_user_id, tsi.status, tsi.created_at,
+                   u.username as receiver_username
+            FROM tile_share_invitations tsi
+            JOIN users u ON u.id = tsi.receiver_user_id
+            WHERE tsi.tile_id = ? AND tsi.sharer_user_id = ? AND tsi.status IN ('pending', 'accepted')
+            ORDER BY tsi.status ASC, tsi.created_at DESC
+        ");
+        $stmt->execute([$tileId, $user['id']]);
+    }
     $rows = $stmt->fetchAll(PDO::FETCH_ASSOC);
 
     $shares = [];
@@ -163,8 +177,15 @@ function handleRevokeBySharer(int $invitationId): void {
     $user = requireAuth();
     $db = getDB();
 
-    $stmt = $db->prepare('SELECT * FROM tile_share_invitations WHERE id = ? AND sharer_user_id = ? AND status IN (\'pending\', \'accepted\')');
-    $stmt->execute([$invitationId, $user['id']]);
+    // Owners revoke their own shares; admins may revoke any share (e.g. before deleting a
+    // shared space that was shared by somebody else).
+    if ($user['is_admin']) {
+        $stmt = $db->prepare('SELECT * FROM tile_share_invitations WHERE id = ? AND status IN (\'pending\', \'accepted\')');
+        $stmt->execute([$invitationId]);
+    } else {
+        $stmt = $db->prepare('SELECT * FROM tile_share_invitations WHERE id = ? AND sharer_user_id = ? AND status IN (\'pending\', \'accepted\')');
+        $stmt->execute([$invitationId, $user['id']]);
+    }
     $inv = $stmt->fetch(PDO::FETCH_ASSOC);
     if (!$inv) {
         sendJSON(['error' => 'Share not found or you cannot revoke it'], 404);

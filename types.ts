@@ -512,6 +512,11 @@ export interface Tile {
    * Present when tabs/sections are omitted so search can still match labels/URLs.
    */
   searchLinks?: Link[];
+  /**
+   * Recipients this space is shared with (pending + accepted share invitations).
+   * Only returned for the owner / admins; 0 or omitted otherwise.
+   */
+  shareCount?: number;
   // Shared-with-me: when tile was shared by another user and receiver accepted
   sharedWithMeInvitationId?: number | null;
   sharedWithMeSharer?: { userId: number; username: string } | null;
