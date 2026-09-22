@@ -137,8 +137,15 @@ if (!defined('SYSTEM_TOKEN')) {
 }
 
 // Bump when schema/migrations in initDatabase() change. Enables fast-path getDB().
+// 106 = LinkNest 3.0.0 (schema_releases audit registry).
 if (!defined('LINKNEST_SCHEMA_VERSION')) {
-    define('LINKNEST_SCHEMA_VERSION', 105);
+    define('LINKNEST_SCHEMA_VERSION', 106);
+}
+
+// Shipped application version, recorded in schema_releases so admins can audit
+// which release migrated this install. Bump together with package.json.
+if (!defined('LINKNEST_APP_VERSION')) {
+    define('LINKNEST_APP_VERSION', '3.0.0');
 }
 
 function getSchemaPatchFlagPath(): string {
@@ -2225,6 +2232,46 @@ function ensureClonesPresetColumn(PDO $db): void {
     }
 }
 
+/**
+ * Schema release registry (v106 / LinkNest 3.0.0).
+ *
+ * Audit trail of every schema version applied to this install — which app
+ * release migrated it, when, and from which SAPI. Additive + idempotent, so it
+ * is safe on the getDB() fast path and during full bootstrap.
+ */
+function ensureSchemaReleaseRegistry(PDO $db): void {
+    static $ensured = false;
+    if ($ensured) {
+        return;
+    }
+    try {
+        $db->exec('CREATE TABLE IF NOT EXISTS schema_releases (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            schema_version INTEGER NOT NULL,
+            app_version TEXT,
+            applied_at INTEGER NOT NULL,
+            source TEXT
+        )');
+        $db->exec('CREATE UNIQUE INDEX IF NOT EXISTS idx_schema_releases_version ON schema_releases(schema_version)');
+
+        $schemaVersion = (int)LINKNEST_SCHEMA_VERSION;
+        $existing = $db->prepare('SELECT id FROM schema_releases WHERE schema_version = ? LIMIT 1');
+        $existing->execute([$schemaVersion]);
+        if ($existing->fetchColumn() === false) {
+            $insert = $db->prepare('INSERT INTO schema_releases (schema_version, app_version, applied_at, source) VALUES (?, ?, ?, ?)');
+            $insert->execute([
+                $schemaVersion,
+                defined('LINKNEST_APP_VERSION') ? LINKNEST_APP_VERSION : null,
+                time(),
+                php_sapi_name() === 'cli' ? 'cli' : 'web',
+            ]);
+        }
+        $ensured = true;
+    } catch (PDOException $e) {
+        error_log('ensureSchemaReleaseRegistry warning: ' . $e->getMessage());
+    }
+}
+
 // Initialize database
 function initDatabase() {
     $initLock = null;
@@ -2285,6 +2332,7 @@ function initDatabase() {
                 ensureRoleLinkActionBookmarkGrant($db);
                 ensureUserAuditLogTable($db);
                 ensureClonesPresetColumn($db);
+                ensureSchemaReleaseRegistry($db);
                 markSchemaPatchesApplied();
             }
             return $db;
@@ -2339,6 +2387,7 @@ function initDatabase() {
                 ensureRoleLinkActionBookmarkGrant($db);
                 ensureUserAuditLogTable($db);
                 ensureClonesPresetColumn($db);
+                ensureSchemaReleaseRegistry($db);
                 markSchemaPatchesApplied();
             }
             releaseDatabaseInitLock($initLock);
@@ -4679,6 +4728,8 @@ function initDatabase() {
         ensureUrlSafetySchema($db);
         ensureWebauthnCredentialsTable($db);
         
+        ensureSchemaReleaseRegistry($db);
+
         // Create indexes for optimal performance
         createDatabaseIndexes($db);
 

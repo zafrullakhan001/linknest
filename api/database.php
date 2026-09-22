@@ -114,6 +114,7 @@ function handleGetDatabaseInfo() {
                     'category_visibility_presets',
                     'clones',
                     'user_audit_log',
+                    'schema_releases',
                 ];
                 $tableCounts = [];
                 foreach ($tables as $table) {
@@ -125,6 +126,25 @@ function handleGetDatabaseInfo() {
                     }
                 }
                 $stats['table_counts'] = $tableCounts;
+
+                // Schema release audit trail (v106+): which app release migrated this install
+                $stats['schema_releases'] = [];
+                try {
+                    $releaseRows = $db->query(
+                        'SELECT schema_version, app_version, applied_at, source FROM schema_releases ORDER BY schema_version DESC LIMIT 10'
+                    )->fetchAll(PDO::FETCH_ASSOC);
+                    foreach ($releaseRows as $releaseRow) {
+                        $stats['schema_releases'][] = [
+                            'schema_version' => (int)$releaseRow['schema_version'],
+                            'app_version' => $releaseRow['app_version'],
+                            'applied_at' => (int)$releaseRow['applied_at'],
+                            'applied_at_iso' => date('c', (int)$releaseRow['applied_at']),
+                            'source' => $releaseRow['source'],
+                        ];
+                    }
+                } catch (PDOException $e) {
+                    $stats['schema_releases'] = [];
+                }
             } catch (PDOException $e) {
                 $stats = ['error' => 'Could not read database: ' . $e->getMessage()];
             }

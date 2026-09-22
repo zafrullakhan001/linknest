@@ -3,6 +3,16 @@
 ## Overview
 The Help & About dialog has been comprehensively updated to reflect all new features added to LinkNest.
 
+## Latest: LinkNest 3.0.0 major release (2026-09)
+
+- Database: `LINKNEST_SCHEMA_VERSION` **105 → 106** with new additive `schema_releases` audit registry (`api/config.php` → `ensureSchemaReleaseRegistry()`)
+- Release notes: [`docs/RELEASE_NOTES_3.0.0.md`](../docs/RELEASE_NOTES_3.0.0.md) (schema v106, DB snapshot/rollback, apply steps)
+- About tab: **What's New in 3.0.0** (passkeys, Apache monitoring dashboard, private space sharing + LDAP display names, tab/section backgrounds, URL Safety Intelligence, emulation/open-target modes)
+- Help fallback version string `2.2.0` → `3.0.0` (About always prefers live `BUILD_INFO.json` / updater status)
+- Publisher example refreshed to `-Version 3.0.0`; App Updates guide cross-links the release notes
+
+---
+
 ## Latest: Your Bookmarks & Rewrite tools (2026-08)
 
 - Added writable guide: [`docs/YOUR_BOOKMARKS.md`](../docs/YOUR_BOOKMARKS.md)

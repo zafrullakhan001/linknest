@@ -364,6 +364,7 @@ Default credentials:
 - `docs/ADMIN_LOCKOUT_RECOVERY.md` - Re-enable Local auth and reset local admin password (`scripts/reset_admin_password.php`); unlock Fingerprint-only access (`scripts/unlock_fingerprint_lock.php`) or login allowlist (`scripts/unlock_login_allowlist.php`) when locked out
 - `docs/MEDIA_LIBRARY.md` - Shared media library (images, PDF, audio, video; Admin + floating widget + RTE picker)
 - `docs/APP_UPDATES.md` - In-app App Updates (portable Releases for ArchLinks / ERP3)
+- `docs/RELEASE_NOTES_3.0.0.md` - LinkNest 3.0.0 major release (schema v106 `schema_releases` registry, DB snapshot/rollback, apply steps)
 - `docs/PYTHON_WORKERS.md` - Monitoring + email Python workers; Windows Task Scheduler (`scripts/schedule-monitor-workers.bat`) and Docker entrypoint loop; also documents **scheduled worker speed tests** (host path vs browser path)
 - `docs/SETUP.md` - Detailed setup instructions
 - `docs/VANILLA_APACHE_PHP85_WINDOWS.md` - Vanilla Apache + PHP 8.5 on Windows (`D:\Apache` + `D:\php`, post-install `httpd.conf` / `php.ini`)
@@ -405,6 +406,8 @@ Default credentials:
 ## In-app updates
 
 See [`docs/APP_UPDATES.md`](docs/APP_UPDATES.md). Double-click [`publish-base-release.bat`](publish-base-release.bat) to publish a portable GitHub Release from the current branch, then apply it from Admin → App Updates.
+
+Current major release: **v3.0.0** — `LINKNEST_SCHEMA_VERSION` **106** (`schema_releases` audit registry, additive/idempotent) with pre-release SQLite snapshots via `php api/snapshot.php`. See [`docs/RELEASE_NOTES_3.0.0.md`](docs/RELEASE_NOTES_3.0.0.md).
 
 ## Vanilla Apache + PHP 8.5 (Windows)
 

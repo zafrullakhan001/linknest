@@ -24,7 +24,7 @@ export const HelpAboutDialog: React.FC<HelpAboutDialogProps> = ({
   const { settings } = useSettings();
   const appName = settings?.app_name || 'LinkNest';
   const [activeTab, setActiveTab] = useState<TabType>(initialTab);
-  const [appVersion, setAppVersion] = useState<string>('2.2.0');
+  const [appVersion, setAppVersion] = useState<string>('3.0.0');
 
   type WindowGeom = { x: number; y: number; width: number; height: number };
   const [geom, setGeom] = useState<WindowGeom>({ x: 0, y: 0, width: 1200, height: 800 });
@@ -949,7 +949,7 @@ export const HelpAboutDialog: React.FC<HelpAboutDialogProps> = ({
                       <li>
                         On the <strong>build PC</strong>, push your branch (e.g. <code className="bg-white dark:bg-slate-800 px-1 rounded text-xs">updater</code>), then:
                         <pre className="mt-1 p-2 text-[11px] font-mono bg-white dark:bg-slate-900 rounded border border-emerald-200 dark:border-emerald-800 overflow-x-auto whitespace-pre-wrap">{`$env:GITHUB_TOKEN = 'ghp_…'
-.\\scripts\\publish-update-release.ps1 -Version 2.3.2
+.\\scripts\\publish-update-release.ps1 -Version 3.0.0
 # default BasePath = relative (portable) — do NOT use /linknest`}</pre>
                       </li>
                       <li>
@@ -2098,9 +2098,17 @@ php scripts/reset_admin_password.php admin 'NewStrongPass1!'`}</pre>
               </section>
 
               <section>
-                <h3 className="text-xl font-semibold text-slate-900 dark:text-white mb-3">What&apos;s New in 2.2.0</h3>
+                <h3 className="text-xl font-semibold text-slate-900 dark:text-white mb-3">What&apos;s New in 3.0.0</h3>
                 <div className="bg-emerald-50 dark:bg-emerald-900/20 rounded-lg p-4 space-y-2 text-sm text-slate-700 dark:text-slate-300">
                   <ul className="list-disc list-inside space-y-1 ml-2">
+                    <li><strong>Major release 3.0.0 (database schema 106):</strong> new <code className="text-xs bg-slate-200 dark:bg-slate-800 px-1 rounded">schema_releases</code> audit registry records which schema and app version migrated this install — admins can read it from <code className="text-xs bg-slate-200 dark:bg-slate-800 px-1 rounded">GET /api/database/info</code> → <code className="text-xs bg-slate-200 dark:bg-slate-800 px-1 rounded">stats.schema_releases</code>. Existing data, uploads, and settings are untouched; see the release notes in <code className="text-xs bg-slate-200 dark:bg-slate-800 px-1 rounded">docs/RELEASE_NOTES_3.0.0.md</code></li>
+                    <li><strong>Passkeys (WebAuthn):</strong> Sign in with a device passkey, manage authenticators from the profile menu → Passkeys, with browser-session validation and lockout recovery scripts for admin access</li>
+                    <li><strong>Apache monitoring dashboard:</strong> Click <em>online now</em> in the footer for realtime <code className="text-xs bg-slate-200 dark:bg-slate-800 px-1 rounded">mod_status</code> workers/uptime, access-log top paths, OPcache, PHP memory, SQLite, and disk — admins can purge Apache/PHP logs, enable OPcache in <code className="text-xs bg-slate-200 dark:bg-slate-800 px-1 rounded">php.ini</code>, and restart Apache</li>
+                    <li><strong>Private space sharing:</strong> Share a private space with individual users, they accept or reject from notifications, the space editor lists everyone it is shared with, and unchecking revokes access — Help → Private space sharing</li>
+                    <li><strong>LDAP display names:</strong> Admin → Users can sync <code className="text-xs bg-slate-200 dark:bg-slate-800 px-1 rounded">displayName</code> / <code className="text-xs bg-slate-200 dark:bg-slate-800 px-1 rounded">cn</code> so full names appear next to login ids across the UI</li>
+                    <li><strong>Space editor backgrounds:</strong> Customize tab and section backgrounds (colors, gradients, patterns) independently of the space theme</li>
+                    <li><strong>Link safety &amp; media:</strong> URL Safety Intelligence (WAF + reputation grading), video support in link info dialogs, and per-status link-health colors/shapes</li>
+                    <li><strong>Open in emulation:</strong> Open a link in a device emulation window, plus granular open targets (same window, new tab, compact popup, full window, InPrivate/Incognito)</li>
                     <li><strong>Sign-in methods &amp; lockout recovery:</strong> Toggle Local / LDAP / SAML under Admin → Settings → Access → Sign-in (at least one stays on). If Local auth is off or the admin password is lost, <code className="text-xs bg-slate-200 dark:bg-slate-800 px-1 rounded">scripts/reset_admin_password.php</code> re-enables Local auth and resets the password — Help → Admin password &amp; lockout recovery / Guides → Admin Password &amp; Lockout Recovery</li>
                     <li><strong>MCP / AI:</strong> Admin tokens let Cursor, Claude Desktop, and other MCP clients list spaces, search links, create or edit bookmarks, and (with admin scope) manage users, roles, LDAP/SAML, Device Presets, and database export/import. Copy-ready statements: Admin → MCP / AI → Example prompts — Help → MCP / AI / Guides → MCP / AI</li>
                     <li><strong>Mobile Link Preview:</strong> Phone action on Quick Links opens an in-app device mockup (phone / tablet / watch) or a device-sized window for DevTools testing</li>
