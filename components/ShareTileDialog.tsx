@@ -1,4 +1,6 @@
 import React, { useState, useEffect, useRef, useMemo } from 'react';
+import { createPortal } from 'react-dom';
+
 import { Tile } from '../types';
 import { shareTile, getTileShares, revokeShare, TileShareRecord } from '../services/tileShareService';
 import { authService, UserListItem } from '../services/authService';
@@ -33,6 +35,7 @@ function UserPickRow({
           {(userItem.username || '?').charAt(0).toUpperCase()}
         </div>
         <div className="min-w-0 flex-1">
+          {/* Login id first, email right beside it so the right account is easy to identify. */}
           <div className="flex items-center gap-2 flex-wrap">
             <span className={`text-sm font-medium truncate ${selected ? 'text-brand-700 dark:text-brand-300' : 'text-slate-900 dark:text-white'}`}>
               {userItem.username}
@@ -43,12 +46,14 @@ function UserPickRow({
                 Admin
               </span>
             ) : null}
+            {userItem.email ? (
+              <span className="text-xs text-slate-500 dark:text-slate-400 truncate" title={userItem.email}>
+                · {userItem.email}
+              </span>
+            ) : (
+              <span className="text-xs text-slate-400 dark:text-slate-500">· No email on file</span>
+            )}
           </div>
-          {userItem.email ? (
-            <div className="text-xs text-slate-500 dark:text-slate-400 truncate mt-0.5">{userItem.email}</div>
-          ) : (
-            <div className="text-xs text-slate-400 dark:text-slate-500 mt-0.5">No email on file</div>
-          )}
         </div>
       </div>
     </button>
@@ -174,8 +179,10 @@ export const ShareTileDialog: React.FC<ShareTileDialogProps> = ({ tile, onClose,
     ? `${selectedUser.username}${selectedUser.email ? ` · ${selectedUser.email}` : ''}`
     : '';
 
-  return (
-    <div className="fixed inset-0 z-[9999] flex items-center justify-center bg-black/50" onClick={onClose}>
+  // Rendered in a portal on document.body: the space header uses `isolate`, which creates a
+  // stacking context and would otherwise trap this overlay behind later page layers.
+  return createPortal(
+    <div className="fixed inset-0 z-[100000] flex items-center justify-center bg-black/50" onClick={onClose}>
       <div
         ref={containerRef}
         className="bg-white dark:bg-slate-800 rounded-xl shadow-xl max-w-lg w-full mx-4"
@@ -201,15 +208,16 @@ export const ShareTileDialog: React.FC<ShareTileDialogProps> = ({ tile, onClose,
                   return (
                     <li key={s.id} className="flex items-center justify-between gap-2 px-3 py-2 text-sm">
                       <div className="min-w-0">
+                        {/* Login id with the email beside it, matching the picker above. */}
                         <div className="flex items-center gap-2 flex-wrap">
                           <span className="text-slate-800 dark:text-slate-200 font-medium truncate">{s.receiverUsername}</span>
                           {shareUser ? <AuthSourceBadge source={shareUser.auth_source} /> : null}
+                          {shareUser?.email ? (
+                            <span className="text-xs text-slate-500 dark:text-slate-400 truncate" title={shareUser.email}>
+                              · {shareUser.email}
+                            </span>
+                          ) : null}
                         </div>
-                        {shareUser?.email ? (
-                          <div className="text-xs text-slate-500 dark:text-slate-400 truncate">
-                            {shareUser.email}
-                          </div>
-                        ) : null}
                       </div>
                       <span className="shrink-0 flex items-center gap-2">
                         <span className={`text-xs px-2 py-0.5 rounded ${s.status === 'accepted' ? 'bg-green-100 dark:bg-green-900/40 text-green-700 dark:text-green-300' : 'bg-amber-100 dark:bg-amber-900/40 text-amber-700 dark:text-amber-300'}`}>
@@ -280,10 +288,15 @@ export const ShareTileDialog: React.FC<ShareTileDialogProps> = ({ tile, onClose,
             )}
             {selectedUser && !dropdownOpen && (
               <div className="mt-2 flex items-center gap-2 flex-wrap">
+                <span className="text-xs font-medium text-slate-700 dark:text-slate-200 truncate">{selectedUser.username}</span>
                 <AuthSourceBadge source={selectedUser.auth_source} />
                 {selectedUser.email ? (
-                  <span className="text-xs text-slate-500 dark:text-slate-400 truncate">{selectedUser.email}</span>
-                ) : null}
+                  <span className="text-xs text-slate-500 dark:text-slate-400 truncate" title={selectedUser.email}>
+                    · {selectedUser.email}
+                  </span>
+                ) : (
+                  <span className="text-xs text-slate-400 dark:text-slate-500">· No email on file</span>
+                )}
               </div>
             )}
             <p className="text-xs text-slate-500 dark:text-slate-400 mt-1">Press Esc to close</p>
@@ -307,6 +320,7 @@ export const ShareTileDialog: React.FC<ShareTileDialogProps> = ({ tile, onClose,
           </div>
         </div>
       </div>
-    </div>
+    </div>,
+    document.body
   );
 };
