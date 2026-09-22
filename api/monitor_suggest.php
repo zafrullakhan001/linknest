@@ -6,6 +6,9 @@
 
 const MONITOR_SUGGEST_COMMON_PORTS = [22, 80, 443, 3306, 5432, 6379, 8080, 8443];
 
+/** Seconds allowed for the common-port sweep on a bare host/IP before it is truncated. */
+const MONITOR_SUGGEST_PORT_SCAN_BUDGET = 8.0;
+
 const MONITOR_SCHEME_PORTS = [
     'ssh' => 22,
     'mysql' => 3306,
@@ -74,11 +77,15 @@ function analyzeMonitorTarget(string $input): array {
     }
 
     $host = $parsed['host'];
-    if (!monitorSuggestHostAllowed($host)) {
-        return ['error' => 'Target resolves to a private or reserved address and cannot be probed'];
-    }
+    // Internal / reserved targets are legitimate monitoring subjects (intranet sites,
+    // NAS, databases, lab gear). All monitor checks — URL, HTTP headers, JSON, keyword,
+    // ping and port — run from this LinkNest host without an address-scope restriction,
+    // and this endpoint is admin-only, so the analyzer probes them instead of refusing.
+    // The scope is reported back so the UI can explain where the probe ran.
+    $targetScope = monitorSuggestTargetScope($host);
 
     $probeSummary = [
+        'target_scope' => $targetScope,
         'http_code' => null,
         'content_type' => null,
         'open_ports' => [],
@@ -210,22 +217,44 @@ function monitorSuggestValidHost(string $host): bool {
     return (bool)preg_match('/^[a-zA-Z0-9]([a-zA-Z0-9\.\-]*[a-zA-Z0-9])?$/', $host);
 }
 
-function monitorSuggestHostAllowed(string $host): bool {
+/**
+ * Classify a target for probe reporting: 'private' (internal / reserved address or
+ * internal-only name), 'public' (resolves to a routable address), or 'unknown'
+ * (name did not resolve — probes may still succeed via local DNS/search domains).
+ *
+ * This never blocks analysis: private targets are analyzed and probed normally.
+ */
+function monitorSuggestTargetScope(string $host): string {
     if (filter_var($host, FILTER_VALIDATE_IP, FILTER_FLAG_IPV4 | FILTER_FLAG_IPV6)) {
-        return !monitorSuggestIsPrivateIp($host);
+        return monitorSuggestIsPrivateIp($host) ? 'private' : 'public';
     }
+
+    $lower = strtolower(rtrim($host, '.'));
+    if ($lower === 'localhost'
+        || str_ends_with($lower, '.localhost')
+        || str_ends_with($lower, '.local')
+        || str_ends_with($lower, '.internal')
+        || str_ends_with($lower, '.lan')
+    ) {
+        return 'private';
+    }
+    // Single-label names (intranet, nas, gitlab) only resolve through local DNS.
+    if (!str_contains($lower, '.')) {
+        return 'private';
+    }
+
     $records = @dns_get_record($host, DNS_A + DNS_AAAA);
     if (!is_array($records) || count($records) === 0) {
-        // Allow probe if DNS fails — may still work for ping/port on hostname
-        return true;
+        // Hostname did not resolve for us — still allow probing (local DNS, hosts file).
+        return 'unknown';
     }
     foreach ($records as $rec) {
         $ip = $rec['ip'] ?? $rec['ipv6'] ?? null;
-        if ($ip && monitorSuggestIsPrivateIp($ip)) {
-            return false;
+        if ($ip && monitorSuggestIsPrivateIp((string)$ip)) {
+            return 'private';
         }
     }
-    return true;
+    return 'public';
 }
 
 function monitorSuggestIsPrivateIp(string $ip): bool {
@@ -287,7 +316,15 @@ function analyzeHttpMonitorTarget(string $input, array $parsed, array &$probeSum
         || (stripos((string)$head['content_type'], 'json') !== false)
         || preg_match('#/(health|status|ready|alive|ping|api)#i', $parsed['path'] ?? '');
 
-    if ($needGet || ($head['http_code'] ?? 0) === 0) {
+    // Cheap TCP reachability gate: probing an unreachable/firewalled host (typical for an
+    // internal target that is down) costs a full curl timeout per request — skip the body
+    // download when nothing is listening, and fall back to header/URL suggestions.
+    $portReachable = probeTcpPort($host, (int)($parsed['port'] ?? (($parsed['scheme'] ?? 'http') === 'https' ? 443 : 80)), 2);
+    if (!$portReachable) {
+        $probeSummary['unreachable'] = true;
+    }
+
+    if (($needGet || ($head['http_code'] ?? 0) === 0) && $portReachable) {
         $getBody = probeHttpGetSnippet($url);
         if ($getBody['http_code']) {
             $probeSummary['http_code'] = $getBody['http_code'];
@@ -298,7 +335,11 @@ function analyzeHttpMonitorTarget(string $input, array $parsed, array &$probeSum
     }
 
     if (($parsed['scheme'] ?? '') === 'https') {
-        $sslInfo = probeSslCertificate($host, (int)($parsed['port'] ?? 443));
+        // Only negotiate TLS when the port is actually listening — a closed/filtered port
+        // otherwise stalls the handshake for the full socket timeout.
+        $sslInfo = $portReachable
+            ? probeSslCertificate($host, (int)($parsed['port'] ?? 443))
+            : ['days_remaining' => null, 'skipped' => true];
         if ($sslInfo['days_remaining'] !== null) {
             $probeSummary['ssl_days_remaining'] = $sslInfo['days_remaining'];
             $suggestions[] = buildMonitorSuggestion('ssl', 78, false,
@@ -380,8 +421,13 @@ function analyzeHttpMonitorTarget(string $input, array $parsed, array &$probeSum
     }
 
     if (empty($suggestions)) {
+        $reachNote = $portReachable
+            ? ''
+            : ' (no response from '
+                . $host . ':' . (int)($parsed['port'] ?? (($parsed['scheme'] ?? 'http') === 'https' ? 443 : 80))
+                . ' — the LinkNest server, not your browser, must be able to reach it)';
         $suggestions[] = buildMonitorSuggestion('headers', 72, true,
-            'HTTP URL — HTTP Headers check verifies up/down from response headers (curl -I)',
+            'HTTP URL — HTTP Headers check verifies up/down from response headers (curl -I)' . $reachNote,
             $host, [
                 'target' => $url,
                 'timeout' => 5,
@@ -389,7 +435,7 @@ function analyzeHttpMonitorTarget(string $input, array $parsed, array &$probeSum
             ], 'Web Servers'
         );
         $suggestions[] = buildMonitorSuggestion('url', 70, false,
-            'HTTP URL — use URL check to verify availability',
+            'HTTP URL — use URL check to verify availability' . $reachNote,
             $host, [
                 'target' => $url,
                 'timeout' => 5,
@@ -452,7 +498,14 @@ function analyzeHostMonitorTarget(string $input, array $parsed, array &$probeSum
         );
     }
 
+    // Bounded port sweep: an unreachable host burns the full timeout on every port, so stop
+    // after the budget and report the truncation instead of stalling the Analyze request.
+    $scanStarted = microtime(true);
     foreach (MONITOR_SUGGEST_COMMON_PORTS as $port) {
+        if (microtime(true) - $scanStarted > MONITOR_SUGGEST_PORT_SCAN_BUDGET) {
+            $probeSummary['port_scan_truncated'] = true;
+            break;
+        }
         if (probeTcpPort($host, $port, 1)) {
             $probeSummary['open_ports'][] = $port;
             $suggestions[] = buildMonitorSuggestion('port', 80, false,
@@ -467,8 +520,16 @@ function analyzeHostMonitorTarget(string $input, array $parsed, array &$probeSum
     }
 
     if (empty($suggestions)) {
+        $reachNotes = [];
+        if (($probeSummary['ping'] ?? '') === 'down') {
+            $reachNotes[] = 'no ICMP reply from the LinkNest server';
+        }
+        if (!empty($probeSummary['port_scan_truncated'])) {
+            $reachNotes[] = 'port sweep stopped after the time budget — some ports may not have been tested';
+        }
+        $reachNote = $reachNotes ? ' (' . implode('; ', $reachNotes) . ')' : '';
         $suggestions[] = buildMonitorSuggestion('ping', 65, true,
-            'Host or IP — ping check verifies basic reachability',
+            'Host or IP — ping check verifies basic reachability' . $reachNote,
             $host, [
                 'target' => $host,
                 'interval' => 5,
@@ -492,6 +553,7 @@ function finalizeSuggestResponse(string $input, array $parsed, array $probeSumma
     }
     return [
         'input' => $input,
+        'target_scope' => $probeSummary['target_scope'] ?? null,
         'parsed' => [
             'host' => $parsed['host'] ?? null,
             'scheme' => $parsed['scheme'] ?? null,

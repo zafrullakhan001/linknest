@@ -1,5 +1,12 @@
 export type MonitorType = 'url' | 'headers' | 'keyword' | 'port' | 'ping' | 'ssl' | 'dns' | 'json';
 
+/**
+ * Address scope of an analyzed monitor target.
+ * `private` = internal/reserved address (intranet site, host:port, lab gear) —
+ * the backend still probes it from the LinkNest host; `unknown` = name did not resolve.
+ */
+export type MonitorTargetScope = 'public' | 'private' | 'unknown';
+
 export interface Monitor {
     id: number;
     name: string;
@@ -240,6 +247,8 @@ export interface MonitorSuggestion {
 
 export interface MonitorSuggestResult {
     input: string;
+    /** Probe scope: private targets are internal/reserved and are probed from the LinkNest host. */
+    target_scope?: MonitorTargetScope;
     parsed: {
         host?: string | null;
         scheme?: string | null;
@@ -247,6 +256,7 @@ export interface MonitorSuggestResult {
         pattern?: string | null;
     };
     probe_summary: {
+        target_scope?: MonitorTargetScope;
         http_code?: number | null;
         content_type?: string | null;
         open_ports?: number[];

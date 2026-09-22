@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useLayoutEffect, useRef, useMemo, useCallback } from 'react';
-import { Monitor, MonitorSuggestion, monitoringService } from '../services/monitoringService';
+import { Monitor, MonitorSuggestion, MonitorTargetScope, monitoringService } from '../services/monitoringService';
 import { EmailNotificationsTab } from './EmailNotificationsTab';
 import { EmailLogsTab } from './EmailLogsTab';
 import { useAuth } from '../contexts/AuthContext';
@@ -266,6 +266,7 @@ export const MonitorForm: React.FC<MonitorFormProps> = ({ monitor, onSave, onCan
     const [suggestions, setSuggestions] = useState<MonitorSuggestion[]>([]);
     const [isAnalyzing, setIsAnalyzing] = useState(false);
     const [analyzeError, setAnalyzeError] = useState<string | null>(null);
+    const [analyzeScope, setAnalyzeScope] = useState<MonitorTargetScope | null>(null);
     const [showSmartSetup, setShowSmartSetup] = useState(!monitor?.id && isAddingNew);
     const [activeTab, setActiveTab] = useState<'settings' | 'notifications' | 'logs'>('settings');
     const [pendingSubmitAfterTabSwitch, setPendingSubmitAfterTabSwitch] = useState(false);
@@ -470,10 +471,12 @@ export const MonitorForm: React.FC<MonitorFormProps> = ({ monitor, onSave, onCan
         }
         setIsAnalyzing(true);
         setAnalyzeError(null);
+        setAnalyzeScope(null);
         setSuggestions([]);
         try {
             const result = await monitoringService.suggestMonitor(trimmed);
             setSuggestions(result.suggestions || []);
+            setAnalyzeScope(result.target_scope ?? result.probe_summary?.target_scope ?? null);
             if (!result.suggestions?.length) {
                 setAnalyzeError('No monitoring suggestions could be generated for this target.');
             }
@@ -809,6 +812,18 @@ export const MonitorForm: React.FC<MonitorFormProps> = ({ monitor, onSave, onCan
                                     )}
                                     {analyzeError && (
                                         <p className="text-xs text-red-600 mb-2">{analyzeError}</p>
+                                    )}
+                                    {analyzeScope === 'private' && (
+                                        <p className="text-xs text-sky-700 bg-sky-50 border border-sky-200 rounded-lg px-2 py-1.5 mb-2">
+                                            Internal / private address — probes ran from the LinkNest server, so intranet
+                                            targets are analyzed normally. Make sure the server itself can reach this host.
+                                        </p>
+                                    )}
+                                    {analyzeScope === 'unknown' && (
+                                        <p className="text-xs text-amber-700 bg-amber-50 border border-amber-200 rounded-lg px-2 py-1.5 mb-2">
+                                            Host did not resolve from the LinkNest server — suggestions are based on the
+                                            input only. Verify the name resolves on the server (DNS search domain or hosts file).
+                                        </p>
                                     )}
                                     {isAnalyzing && (
                                         <div className="flex items-center gap-2 text-sm text-gray-600 py-2">
