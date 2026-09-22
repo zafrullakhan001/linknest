@@ -113,7 +113,7 @@ import { TileStars } from './TileStars';
 import { TileRainbow } from './TileRainbow';
 import { SharedTileNotifications } from './SharedTileNotifications';
 import { BlockedUsersSection } from './BlockedUsersSection';
-import { removeSharedTile, blockUser, getPendingInvitations, getBlockedUsers } from '../services/tileShareService';
+import { removeSharedTile, blockUser, getPendingInvitations, getBlockedUsers, getTileShares, revokeShare } from '../services/tileShareService';
 
 const LinkInfoDialog = lazy(() => import('./LinkInfoDialog').then(m => ({ default: m.LinkInfoDialog })));
 const LinkMaintenanceDialog = lazy(() => import('./LinkMaintenanceDialog').then(m => ({ default: m.LinkMaintenanceDialog })));
@@ -3607,6 +3607,98 @@ export const TileGrid: React.FC<TileGridProps> = ({
     setNewAllowedUsers((prev) => includeUserInAllowedList(prev, id));
   }, [isEditModalOpen, editingTile?.userId, user?.id]);
 
+  // ---- Private space sharing -------------------------------------------------------------
+  // Recipients of a private space live in two places (docs/PRIVATE_SPACE_SHARING.md):
+  // tiles.allowed_users holds the owner + everyone who accepted, while tile_share_invitations
+  // holds the outstanding (pending/accepted) shares. The invitation list is loaded when the
+  // editor opens so every recipient stays checked, and unchecking one revokes it.
+  const [sharedUserStatus, setSharedUserStatus] = useState<Record<number, 'pending' | 'accepted'>>({});
+  const [sharedInvitationIds, setSharedInvitationIds] = useState<Record<number, number>>({});
+  const shareLoadTileIdRef = useRef<string | null>(null);
+
+  /** Refresh the share list for a space (sharer/admin only — falls back to allowed_users). */
+  const loadTileShares = useCallback(async (tileId: string) => {
+    shareLoadTileIdRef.current = tileId;
+    try {
+      const shares = await getTileShares(tileId);
+      if (shareLoadTileIdRef.current !== tileId) return; // a newer load superseded this one
+
+      const statusMap: Record<number, 'pending' | 'accepted'> = {};
+      const invitationIds: Record<number, number> = {};
+      const recipientIds: number[] = [];
+      (Array.isArray(shares) ? shares : []).forEach((share) => {
+        const receiverId = Number(share.receiverUserId);
+        if (!Number.isFinite(receiverId)) return;
+        statusMap[receiverId] = share.status === 'accepted' ? 'accepted' : 'pending';
+        invitationIds[receiverId] = share.id;
+        recipientIds.push(receiverId);
+      });
+
+      setSharedUserStatus(statusMap);
+      setSharedInvitationIds(invitationIds);
+      // Pending recipients are not in allowed_users yet — merge them in so they stay checked
+      if (recipientIds.length > 0) {
+        setNewAllowedUsers((prev) => Array.from(new Set([...prev, ...recipientIds])));
+      }
+    } catch {
+      // Not the sharer (or the endpoint is unavailable) — fall back to tiles.allowed_users
+      if (shareLoadTileIdRef.current !== tileId) return;
+      setSharedUserStatus({});
+      setSharedInvitationIds({});
+    }
+  }, []);
+
+  useEffect(() => {
+    if (!isAuthenticated || !isEditModalOpen || !editingTile?.id) {
+      shareLoadTileIdRef.current = null;
+      setSharedUserStatus({});
+      setSharedInvitationIds({});
+      return;
+    }
+    void loadTileShares(editingTile.id);
+  }, [isAuthenticated, isEditModalOpen, editingTile?.id, loadTileShares]);
+
+  /**
+   * Revoke access for recipients unchecked in the share list: the invitation is marked
+   * removed, which also drops the user from tiles.allowed_users — so the space disappears for
+   * them right away instead of lingering in their Private tab or pending notifications.
+   */
+  const revokeShareAccess = useCallback(async (userIds: number[]) => {
+    for (const userId of userIds) {
+      const invitationId = sharedInvitationIds[userId];
+      if (!invitationId) continue; // No invitation on file — the tile save drops them from allowed_users
+
+      try {
+        await revokeShare(invitationId);
+        setSharedInvitationIds((prev) => {
+          const next = { ...prev };
+          delete next[userId];
+          return next;
+        });
+        setSharedUserStatus((prev) => {
+          const next = { ...prev };
+          delete next[userId];
+          return next;
+        });
+      } catch (error) {
+        console.error('Failed to revoke share:', error);
+        alert('Could not remove access for that user. Please check your connection and try again.');
+        // Keep the checkbox truthful: access was not revoked after all
+        setNewAllowedUsers((prev) => (prev.includes(userId) ? prev : [...prev, userId]));
+      }
+    }
+  }, [sharedInvitationIds]);
+
+  /** Check/uncheck a user in the private share list (unchecking revokes their access). */
+  const setUserShareAccess = useCallback((userId: number, allowed: boolean) => {
+    if (allowed) {
+      setNewAllowedUsers((prev) => (prev.includes(userId) ? prev : [...prev, userId]));
+      return;
+    }
+    setNewAllowedUsers((prev) => prev.filter((id) => id !== userId));
+    void revokeShareAccess([userId]);
+  }, [revokeShareAccess]);
+
   // Hyperlink / video space state
   const [tileType, setTileType] = useState<'space' | 'hyperlink' | 'video'>('space');
   const [hyperlinkUrl, setHyperlinkUrl] = useState('');
@@ -6736,6 +6828,9 @@ You may also wrap the array in an object: { "messages": [ ... ] }.
       setNewAllowedUsers(allowedUsers);
     }
     setNewAllowedGroups(allowedGroups);
+    // Share list for this space is (re)loaded by the sharing effect once the modal is open
+    setSharedUserStatus({});
+    setSharedInvitationIds({});
     // Convert ISO date strings to datetime-local format (YYYY-MM-DDTHH:mm)
     setVisibleFrom(tile.visibleFrom ? new Date(tile.visibleFrom).toISOString().slice(0, 16) : '');
     setExpiresAt(tile.expiresAt ? new Date(tile.expiresAt).toISOString().slice(0, 16) : '');
@@ -7023,6 +7118,11 @@ You may also wrap the array in an object: { "messages": [ ... ] }.
       // Save first so a subsequent list reload cannot wipe headerImage with stale data
       if (isAuthenticated) {
         await saveTile(updatedTile);
+        // Saving can create pending invitations for newly checked users — refresh the share
+        // list so unchecking one of them later revokes it right away (see revokeShareAccess).
+        if (newVisibility === 'private') {
+          void loadTileShares(updatedTile.id);
+        }
       }
 
       // Staging uses local state; public list goes through App (skipReload avoids stale overwrite)
@@ -10725,11 +10825,7 @@ You may also wrap the array in an object: { "messages": [ ... ] }.
                                               disabled={isCurrentUserOwner}
                                               onChange={(e) => {
                                                 if (isCurrentUserOwner) return;
-                                                if (e.target.checked) {
-                                                  setNewAllowedUsers([...newAllowedUsers, u.id]);
-                                                } else {
-                                                  setNewAllowedUsers(newAllowedUsers.filter(id => id !== u.id));
-                                                }
+                                                setUserShareAccess(u.id, e.target.checked);
                                               }}
                                               className={`w-4 h-4 text-brand-600 focus:ring-brand-500 focus:ring-2 rounded ${isCurrentUserOwner ? 'opacity-50 cursor-not-allowed' : ''
                                                 }`}
@@ -10748,6 +10844,11 @@ You may also wrap the array in an object: { "messages": [ ... ] }.
                                             {isCurrentUserOwner && (
                                               <span className="px-2 py-0.5 rounded-full bg-amber-100 dark:bg-amber-500/30 text-amber-800 dark:text-amber-300 text-[10px] font-semibold uppercase">
                                                 Owner (You)
+                                              </span>
+                                            )}
+                                            {sharedUserStatus[u.id] === 'pending' && (
+                                              <span className="px-2 py-0.5 rounded-full bg-amber-100 dark:bg-amber-500/30 text-amber-800 dark:text-amber-300 text-[10px] font-semibold uppercase" title="Invitation sent — access starts once they accept it">
+                                                Pending
                                               </span>
                                             )}
                                             {u.auth_source && u.auth_source !== 'local' && (
@@ -11550,11 +11651,7 @@ You may also wrap the array in an object: { "messages": [ ... ] }.
                                             disabled={isCurrentUserOwner}
                                             onChange={(e) => {
                                               if (isCurrentUserOwner) return;
-                                              if (e.target.checked) {
-                                                setNewAllowedUsers([...newAllowedUsers, u.id]);
-                                              } else {
-                                                setNewAllowedUsers(newAllowedUsers.filter(id => id !== u.id));
-                                              }
+                                              setUserShareAccess(u.id, e.target.checked);
                                             }}
                                             className={`w-4 h-4 text-brand-600 focus:ring-brand-500 focus:ring-2 rounded ${isCurrentUserOwner ? 'opacity-50 cursor-not-allowed' : ''
                                               }`}
@@ -11573,6 +11670,11 @@ You may also wrap the array in an object: { "messages": [ ... ] }.
                                           {isCurrentUserOwner && (
                                             <span className="px-2 py-0.5 rounded-full bg-amber-100 dark:bg-amber-500/30 text-amber-800 dark:text-amber-300 text-[10px] font-semibold uppercase">
                                               Owner (You)
+                                            </span>
+                                          )}
+                                          {sharedUserStatus[u.id] === 'pending' && (
+                                            <span className="px-2 py-0.5 rounded-full bg-amber-100 dark:bg-amber-500/30 text-amber-800 dark:text-amber-300 text-[10px] font-semibold uppercase" title="Invitation sent — access starts once they accept it">
+                                              Pending
                                             </span>
                                           )}
                                           {u.auth_source && u.auth_source !== 'local' && (
@@ -13043,11 +13145,7 @@ You may also wrap the array in an object: { "messages": [ ... ] }.
                                               disabled={isOwner}
                                               onChange={(e) => {
                                                 if (isOwner) return;
-                                                if (e.target.checked) {
-                                                  setNewAllowedUsers([...newAllowedUsers, u.id]);
-                                                } else {
-                                                  setNewAllowedUsers(newAllowedUsers.filter(id => id !== u.id));
-                                                }
+                                                setUserShareAccess(u.id, e.target.checked);
                                               }}
                                               className={`w-4 h-4 text-brand-600 focus:ring-brand-500 focus:ring-2 rounded ${isOwner ? 'opacity-50 cursor-not-allowed' : ''
                                                 }`}
@@ -13066,6 +13164,11 @@ You may also wrap the array in an object: { "messages": [ ... ] }.
                                             {isOwner && (
                                               <span className="px-2 py-0.5 rounded-full bg-amber-100 dark:bg-amber-500/30 text-amber-800 dark:text-amber-300 text-[10px] font-semibold uppercase">
                                                 Owner
+                                              </span>
+                                            )}
+                                            {sharedUserStatus[u.id] === 'pending' && (
+                                              <span className="px-2 py-0.5 rounded-full bg-amber-100 dark:bg-amber-500/30 text-amber-800 dark:text-amber-300 text-[10px] font-semibold uppercase" title="Invitation sent — access starts once they accept it">
+                                                Pending
                                               </span>
                                             )}
                                             {u.auth_source && u.auth_source !== 'local' && (
@@ -13140,6 +13243,10 @@ You may also wrap the array in an object: { "messages": [ ... ] }.
                               )}
                             </div>
 
+                          {/* Unchecking a user revokes the share server-side, so access ends right away. */}
+                          <p className="px-3 pb-2 text-[11px] text-slate-500 dark:text-slate-400">
+                            Unchecking a user removes their access to this space immediately. Recipients who have not accepted yet are marked <span className="font-semibold uppercase">Pending</span>.
+                          </p>
                           {newVisibility === 'private' && !hasPrivateAudience && (
                               <p className="mt-2 text-xs text-amber-600 dark:text-amber-400 px-3 py-2 bg-amber-50 dark:bg-amber-900/20 rounded border border-amber-200 dark:border-amber-700">
                                 Please select at least one user or group for private hyperlinks or videos
@@ -13283,11 +13390,7 @@ You may also wrap the array in an object: { "messages": [ ... ] }.
                                               disabled={isOwner}
                                               onChange={(e) => {
                                                 if (isOwner) return;
-                                                if (e.target.checked) {
-                                                  setNewAllowedUsers([...newAllowedUsers, u.id]);
-                                                } else {
-                                                  setNewAllowedUsers(newAllowedUsers.filter(id => id !== u.id));
-                                                }
+                                                setUserShareAccess(u.id, e.target.checked);
                                               }}
                                               className={`w-4 h-4 text-brand-600 focus:ring-brand-500 focus:ring-2 rounded ${isOwner ? 'opacity-50 cursor-not-allowed' : ''
                                                 }`}
@@ -13306,6 +13409,11 @@ You may also wrap the array in an object: { "messages": [ ... ] }.
                                             {isOwner && (
                                               <span className="px-2 py-0.5 rounded-full bg-amber-100 dark:bg-amber-500/30 text-amber-800 dark:text-amber-300 text-[10px] font-semibold uppercase">
                                                 Owner
+                                              </span>
+                                            )}
+                                            {sharedUserStatus[u.id] === 'pending' && (
+                                              <span className="px-2 py-0.5 rounded-full bg-amber-100 dark:bg-amber-500/30 text-amber-800 dark:text-amber-300 text-[10px] font-semibold uppercase" title="Invitation sent — access starts once they accept it">
+                                                Pending
                                               </span>
                                             )}
                                             {u.auth_source && u.auth_source !== 'local' && (
@@ -13380,6 +13488,10 @@ You may also wrap the array in an object: { "messages": [ ... ] }.
                               )}
                             </div>
 
+                          {/* Unchecking a user revokes the share server-side, so access ends right away. */}
+                          <p className="px-3 pb-2 text-[11px] text-slate-500 dark:text-slate-400">
+                            Unchecking a user removes their access to this space immediately. Recipients who have not accepted yet are marked <span className="font-semibold uppercase">Pending</span>.
+                          </p>
                           {newVisibility === 'private' && !hasPrivateAudience && (
                               <p className="mt-2 text-xs text-amber-600 dark:text-amber-400 px-3 py-2 bg-amber-50 dark:bg-amber-900/20 rounded border border-amber-200 dark:border-amber-700">
                                 Please select at least one user or group for private spaces

@@ -34,7 +34,7 @@ A `pending` invitation grants **no** access yet; it only appears in the receiver
 ## Showing the current share list in the editor (#2)
 
 Because pending recipients are not in `allowed_users`, the editor would show their
-checkboxes unchecked. To fix that, `TileDetail` loads the outstanding invitations for the
+checkboxes unchecked. To fix that, the editors below load the outstanding invitations for the
 space when the edit panel opens:
 
 - `GET /api/tile-shares/by-tile?tile_id=…` (owner or admin) →
@@ -43,7 +43,11 @@ space when the edit panel opens:
   “Users (n)” counter reflect *everyone the space is shared with*;
 - each recipient shows a **Pending** badge until they accept (chips + list rows);
 - full names are shown next to the login id (`utils/userDisplay.ts`,
-  `display_name` → name from email → username).
+  `display_name` → name from email → username);
+- this runs in `TileDetail` (space page editor) and `MobileTileEdit`, and in the grid
+  “Edit Space” dialog (`components/TileGrid.tsx` → `loadTileShares`, the picker with the
+  Users/Groups tabs). The grid dialog also refreshes the list right after a save so
+  invitations created by that save (newly checked users) can be revoked straight away.
 
 ## Unchecking a recipient (#3)
 
@@ -53,6 +57,9 @@ Unchecking a user in the share panel is treated as an explicit revoke:
   `POST /api/tile-shares/{id}/revoke` (`handleRevokeBySharer`), which
   - marks the invitation `removed` (so it disappears from the receiver's pending list), and
   - removes the receiver from `tiles.allowed_users` (immediate loss of access);
+- the grid “Edit Space” dialog does the same (`setUserShareAccess` → `revokeShareAccess` in
+  `components/TileGrid.tsx`): unchecking a recipient revokes their share right away, and
+  checking one back in re-invites them on the next save;
 - if the revoke call fails, the checkbox is restored and the user is alerted, so the panel
   never claims access was removed when it was not;
 - the normal tile save then persists the reduced `allowed_users` list.
