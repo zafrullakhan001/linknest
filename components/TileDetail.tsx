@@ -11209,17 +11209,23 @@ export const TileDetail: React.FC<TileDetailProps> = ({
                                                                                 className={`rounded border-slate-300 dark:border-slate-600 text-brand-600 focus:ring-brand-500 w-4 h-4 ${isOwner ? 'opacity-50 cursor-not-allowed' : ''
                                                                                     }`}
                                                                             />
-                                                                            <span className={`text-sm font-medium flex-1 min-w-0 flex items-baseline gap-1.5 flex-wrap ${isOwner
-                                                                                ? 'text-amber-800 dark:text-amber-200'
-                                                                                : 'text-slate-700 dark:text-slate-300'
-                                                                                }`}>
-                                                                                <span className="truncate">{user.username}</span>
-                                                                                {showFullName && (
-                                                                                    <span className="text-xs font-normal text-slate-500 dark:text-slate-400 truncate" title={fullName}>
-                                                                                        {fullName}
-                                                                                    </span>
-                                                                                )}
-                                                                            </span>
+                                                                            <div className="flex-1 min-w-0">
+                                                                                <span className={`flex items-baseline gap-1.5 flex-wrap text-sm font-medium ${isOwner
+                                                                                    ? 'text-amber-800 dark:text-amber-200'
+                                                                                    : 'text-slate-700 dark:text-slate-300'
+                                                                                    }`}>
+                                                                                    <span className="truncate">{user.username}</span>
+                                                                                    {showFullName && (
+                                                                                        <span className="text-xs font-normal text-slate-500 dark:text-slate-400 truncate" title={fullName}>
+                                                                                            {fullName}
+                                                                                        </span>
+                                                                                    )}
+                                                                                </span>
+                                                                                {/* Email under the login id so shared users are easy to tell apart. */}
+                                                                                <span className="block text-[11px] text-slate-500 dark:text-slate-400 truncate" title={user.email || undefined}>
+                                                                                    {user.email || 'No email on file'}
+                                                                                </span>
+                                                                            </div>
                                                                             {isOwner && (
                                                                                 <span className="px-2 py-0.5 rounded-full bg-amber-100 dark:bg-amber-500/30 text-amber-800 dark:text-amber-300 text-[10px] font-semibold uppercase">
                                                                                     Owner
@@ -13146,7 +13152,13 @@ export const TileDetail: React.FC<TileDetailProps> = ({
                                                                                                         return filtered.map(user => (
                                                                                                             <label key={user.id} className="flex items-center gap-2 p-1.5 hover:bg-slate-50 dark:hover:bg-slate-700/50 rounded cursor-pointer">
                                                                                                                 <input type="checkbox" checked={newLinkState[section.id]?.allowedUsers?.includes(user.id) || false} onChange={() => toggleUserSelection(section.id, user.id)} className="rounded w-3.5 h-3.5" />
-                                                                                                                <span className="text-xs font-medium">{user.username}</span>
+                                                                                                                <span className="min-w-0 flex-1 flex flex-col">
+                                                                                                                    {/* Login id first, email underneath so the right account is easy to identify. */}
+                                                                                                                    <span className="text-xs font-medium truncate">{user.username}</span>
+                                                                                                                    <span className="text-[10px] text-slate-500 dark:text-slate-400 truncate" title={user.email || undefined}>
+                                                                                                                        {user.email || 'No email on file'}
+                                                                                                                    </span>
+                                                                                                                </span>
                                                                                                                 <AuthSourceBadge source={user.auth_source} />
                                                                                                             </label>
                                                                                                         ));
@@ -13900,7 +13912,12 @@ export const TileDetail: React.FC<TileDetailProps> = ({
                                                                     }}
                                                                     className="rounded"
                                                                 />
-                                                                <span className="text-sm">{user.username}</span>
+                                                                <span className="min-w-0 flex-1 flex flex-col">
+                                                                    <span className="text-sm truncate">{user.username}</span>
+                                                                    <span className="text-[11px] text-slate-500 dark:text-slate-400 truncate" title={user.email || undefined}>
+                                                                        {user.email || 'No email on file'}
+                                                                    </span>
+                                                                </span>
                                                                 <AuthSourceBadge source={user.auth_source} />
                                                             </label>
                                                         ))}
@@ -14088,7 +14105,12 @@ export const TileDetail: React.FC<TileDetailProps> = ({
                                                                     }}
                                                                     className="rounded"
                                                                 />
-                                                                <span className="text-sm">{user.username}</span>
+                                                                <span className="min-w-0 flex-1 flex flex-col">
+                                                                    <span className="text-sm truncate">{user.username}</span>
+                                                                    <span className="text-[11px] text-slate-500 dark:text-slate-400 truncate" title={user.email || undefined}>
+                                                                        {user.email || 'No email on file'}
+                                                                    </span>
+                                                                </span>
                                                                 <AuthSourceBadge source={user.auth_source} />
                                                             </label>
                                                         ))}

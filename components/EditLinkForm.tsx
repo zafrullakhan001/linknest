@@ -791,7 +791,13 @@ export const EditLinkForm: React.FC<EditLinkFormProps> = (props) => {
                     return filtered.map((u) => (
                       <label key={u.id} className="flex items-center gap-2 p-1.5 hover:bg-slate-50 dark:hover:bg-slate-700/50 rounded cursor-pointer">
                         <input type="checkbox" checked={draft.allowedUsers?.includes(u.id) || false} onChange={() => onToggleUser(u.id)} className="rounded w-3.5 h-3.5" />
-                        <span className="text-xs font-medium">{u.username}</span>
+                        <span className="min-w-0 flex-1 flex flex-col">
+                          {/* Login id first, email underneath so the right account is easy to identify. */}
+                          <span className="text-xs font-medium truncate">{u.username}</span>
+                          <span className="text-[10px] text-slate-500 dark:text-slate-400 truncate" title={u.email || undefined}>
+                            {u.email || 'No email on file'}
+                          </span>
+                        </span>
                         <AuthSourceBadge source={u.auth_source} />
                       </label>
                     ));

@@ -1104,7 +1104,7 @@ const CategoryPresetSwitcher: React.FC<{
 interface CategoryVisibilityDialogProps {
   categoryName: string;
   tiles: Tile[];
-  users: Array<{ id: number; username: string }>;
+  users: Array<{ id: number; username: string; email?: string }>;
   onClose: () => void;
   onSave: (changes: Record<string, { visibility: TileVisibility; allowedUsers: number[] }>) => Promise<void>;
 }
@@ -1349,7 +1349,12 @@ const CategoryVisibilityDialog: React.FC<CategoryVisibilityDialogProps> = ({
                               onChange={() => handleBulkUserToggle(user.id)}
                               className="rounded border-slate-300 dark:border-slate-600 text-red-600 focus:ring-red-500"
                             />
-                            <span>{user.username}</span>
+                            <span className="min-w-0 flex-1 flex flex-col">
+                              <span className="truncate">{user.username}</span>
+                              <span className="text-[10px] text-slate-500 dark:text-slate-400 truncate" title={user.email || undefined}>
+                                {user.email || 'No email on file'}
+                              </span>
+                            </span>
                           </label>
                         ))}
                       </div>
@@ -1395,7 +1400,12 @@ const CategoryVisibilityDialog: React.FC<CategoryVisibilityDialogProps> = ({
                               onChange={() => handleUserToggle(tile.id, user.id)}
                               className="rounded border-slate-300 dark:border-slate-600 text-red-600 focus:ring-red-500"
                             />
-                            <span>{user.username}</span>
+                            <span className="min-w-0 flex-1 flex flex-col">
+                              <span className="truncate">{user.username}</span>
+                              <span className="text-[10px] text-slate-500 dark:text-slate-400 truncate" title={user.email || undefined}>
+                                {user.email || 'No email on file'}
+                              </span>
+                            </span>
                           </label>
                         ))}
                       </div>
@@ -4760,7 +4770,7 @@ You may also wrap the array in an object: { "messages": [ ... ] }.
   const [categoryVisibleFrom, setCategoryVisibleFrom] = useState<string>('');
   const [categoryExpiresAt, setCategoryExpiresAt] = useState<string>('');
   const [editingCategoryVisibility, setEditingCategoryVisibility] = useState<string | null>(null);
-  const [visibilityUsers, setVisibilityUsers] = useState<Array<{ id: number; username: string }>>([]);
+  const [visibilityUsers, setVisibilityUsers] = useState<Array<{ id: number; username: string; email?: string }>>([]);
 
   // Load global category arrangement on mount (works for all users)
   useEffect(() => {
@@ -8146,7 +8156,7 @@ You may also wrap the array in an object: { "messages": [ ... ] }.
     try {
       // Load users list
       const users = await authService.getUsers();
-      setVisibilityUsers(users.map(u => ({ id: u.id, username: u.username })));
+      setVisibilityUsers(users.map(u => ({ id: u.id, username: u.username, email: u.email })));
       setEditingCategoryVisibility(categoryName);
     } catch (error) {
       console.error('Failed to load users:', error);
@@ -10724,12 +10734,17 @@ You may also wrap the array in an object: { "messages": [ ... ] }.
                                               className={`w-4 h-4 text-brand-600 focus:ring-brand-500 focus:ring-2 rounded ${isCurrentUserOwner ? 'opacity-50 cursor-not-allowed' : ''
                                                 }`}
                                             />
-                                            <span className={`text-sm flex-1 ${isCurrentUserOwner
-                                              ? 'text-amber-800 dark:text-amber-200 font-medium'
-                                              : 'text-slate-700 dark:text-slate-300'
-                                              }`}>
-                                              {u.username}
-                                            </span>
+                                            <div className="flex-1 min-w-0">
+                                              <span className={`block text-sm truncate ${isCurrentUserOwner
+                                                ? 'text-amber-800 dark:text-amber-200 font-medium'
+                                                : 'text-slate-700 dark:text-slate-300'
+                                                }`}>
+                                                {u.username}
+                                              </span>
+                                              <span className="block text-[11px] text-slate-500 dark:text-slate-400 truncate" title={u.email || undefined}>
+                                                {u.email || 'No email on file'}
+                                              </span>
+                                            </div>
                                             {isCurrentUserOwner && (
                                               <span className="px-2 py-0.5 rounded-full bg-amber-100 dark:bg-amber-500/30 text-amber-800 dark:text-amber-300 text-[10px] font-semibold uppercase">
                                                 Owner (You)
@@ -11544,12 +11559,17 @@ You may also wrap the array in an object: { "messages": [ ... ] }.
                                             className={`w-4 h-4 text-brand-600 focus:ring-brand-500 focus:ring-2 rounded ${isCurrentUserOwner ? 'opacity-50 cursor-not-allowed' : ''
                                               }`}
                                           />
-                                          <span className={`text-sm flex-1 ${isCurrentUserOwner
-                                            ? 'text-amber-800 dark:text-amber-200 font-medium'
-                                            : 'text-slate-700 dark:text-slate-300'
-                                            }`}>
-                                            {u.username}
-                                          </span>
+                                          <div className="flex-1 min-w-0">
+                                            <span className={`block text-sm truncate ${isCurrentUserOwner
+                                              ? 'text-amber-800 dark:text-amber-200 font-medium'
+                                              : 'text-slate-700 dark:text-slate-300'
+                                              }`}>
+                                              {u.username}
+                                            </span>
+                                            <span className="block text-[11px] text-slate-500 dark:text-slate-400 truncate" title={u.email || undefined}>
+                                              {u.email || 'No email on file'}
+                                            </span>
+                                          </div>
                                           {isCurrentUserOwner && (
                                             <span className="px-2 py-0.5 rounded-full bg-amber-100 dark:bg-amber-500/30 text-amber-800 dark:text-amber-300 text-[10px] font-semibold uppercase">
                                               Owner (You)
@@ -13032,12 +13052,17 @@ You may also wrap the array in an object: { "messages": [ ... ] }.
                                               className={`w-4 h-4 text-brand-600 focus:ring-brand-500 focus:ring-2 rounded ${isOwner ? 'opacity-50 cursor-not-allowed' : ''
                                                 }`}
                                             />
-                                            <span className={`text-sm flex-1 ${isOwner
-                                              ? 'text-amber-800 dark:text-amber-200 font-medium'
-                                              : 'text-slate-700 dark:text-slate-300'
-                                              }`}>
-                                              {u.username}
-                                            </span>
+                                            <div className="flex-1 min-w-0">
+                                              <span className={`block text-sm truncate ${isOwner
+                                                ? 'text-amber-800 dark:text-amber-200 font-medium'
+                                                : 'text-slate-700 dark:text-slate-300'
+                                                }`}>
+                                                {u.username}
+                                              </span>
+                                              <span className="block text-[11px] text-slate-500 dark:text-slate-400 truncate" title={u.email || undefined}>
+                                                {u.email || 'No email on file'}
+                                              </span>
+                                            </div>
                                             {isOwner && (
                                               <span className="px-2 py-0.5 rounded-full bg-amber-100 dark:bg-amber-500/30 text-amber-800 dark:text-amber-300 text-[10px] font-semibold uppercase">
                                                 Owner
@@ -13267,12 +13292,17 @@ You may also wrap the array in an object: { "messages": [ ... ] }.
                                               className={`w-4 h-4 text-brand-600 focus:ring-brand-500 focus:ring-2 rounded ${isOwner ? 'opacity-50 cursor-not-allowed' : ''
                                                 }`}
                                             />
-                                            <span className={`text-sm flex-1 ${isOwner
-                                              ? 'text-amber-800 dark:text-amber-200 font-medium'
-                                              : 'text-slate-700 dark:text-slate-300'
-                                              }`}>
-                                              {u.username}
-                                            </span>
+                                            <div className="flex-1 min-w-0">
+                                              <span className={`block text-sm truncate ${isOwner
+                                                ? 'text-amber-800 dark:text-amber-200 font-medium'
+                                                : 'text-slate-700 dark:text-slate-300'
+                                                }`}>
+                                                {u.username}
+                                              </span>
+                                              <span className="block text-[11px] text-slate-500 dark:text-slate-400 truncate" title={u.email || undefined}>
+                                                {u.email || 'No email on file'}
+                                              </span>
+                                            </div>
                                             {isOwner && (
                                               <span className="px-2 py-0.5 rounded-full bg-amber-100 dark:bg-amber-500/30 text-amber-800 dark:text-amber-300 text-[10px] font-semibold uppercase">
                                                 Owner
