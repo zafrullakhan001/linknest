@@ -390,6 +390,7 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({ onUserApproved }) => {
   const [ldapUserDetailError, setLdapUserDetailError] = useState('');
   const [ldapDirectoryExpanded, setLdapDirectoryExpanded] = useState(false);
   const [autoDetecting, setAutoDetecting] = useState(false);
+  const [syncingLdapNames, setSyncingLdapNames] = useState(false);
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
   const [adminNavSearch, setAdminNavSearch] = useState('');
   const adminNavSearchRef = useRef<HTMLInputElement>(null);
@@ -1223,6 +1224,24 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({ onUserApproved }) => {
       setError(err.message || 'Failed to auto-detect auth sources');
     } finally {
       setAutoDetecting(false);
+    }
+  };
+
+  const handleSyncLdapDisplayNames = async () => {
+    if (!confirm('Look up every LDAP user that has no display name in the directory and store their full name (displayName attribute, or cn as a fallback).\n\nNames are only written when the directory returns one. This can take a moment for large directories.\n\nContinue?')) {
+      return;
+    }
+
+    setSyncingLdapNames(true);
+    setError('');
+    try {
+      const result = await authService.syncLdapDisplayNames();
+      alert(result.message);
+      await loadAllUsers(); // Refresh the user list with the new display names
+    } catch (err: any) {
+      setError(err.message || 'Failed to sync LDAP display names');
+    } finally {
+      setSyncingLdapNames(false);
     }
   };
 
@@ -5233,6 +5252,30 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({ onUserApproved }) => {
                               <path fillRule="evenodd" d="M9 3.5a5.5 5.5 0 100 11 5.5 5.5 0 000-11zM2 9a7 7 0 1112.452 4.391l3.328 3.329a.75.75 0 11-1.06 1.06l-3.329-3.328A7 7 0 012 9z" clipRule="evenodd" />
                             </svg>
                             Auto-Detect Auth Sources
+                          </>
+                        )}
+                      </button>
+                      <button
+                        onClick={handleSyncLdapDisplayNames}
+                        disabled={syncingLdapNames}
+                        className={`${isMobile ? 'px-3 py-2 text-xs' : 'px-4 py-2 text-sm'} bg-sky-600 hover:bg-sky-500 disabled:opacity-50 disabled:cursor-not-allowed text-white rounded-lg font-medium transition-colors flex items-center gap-2 touch-manipulation`}
+                        style={isMobile ? { minHeight: '44px' } : {}}
+                        title="Store the directory full name (displayName / cn) for LDAP users that have none yet"
+                      >
+                        {syncingLdapNames ? (
+                          <>
+                            <svg className="animate-spin h-4 w-4" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
+                              <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle>
+                              <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
+                            </svg>
+                            Syncing...
+                          </>
+                        ) : (
+                          <>
+                            <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor" className="w-4 h-4">
+                              <path d="M10 8a3 3 0 100-6 3 3 0 000 6zM3.465 14.493a1.23 1.23 0 00.41 1.412A9.957 9.957 0 0010 18c2.31 0 4.438-.784 6.131-2.1.43-.333.604-.903.408-1.41a7.002 7.002 0 00-13.074.003z" />
+                            </svg>
+                            Sync LDAP Names
                           </>
                         )}
                       </button>

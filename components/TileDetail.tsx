@@ -39,7 +39,8 @@ import { cloneTile, createTile, getTiles, saveTile, toggleLinkFavorite, createTe
 import { useTilePresence } from '../hooks/useTilePresence';
 import { TilePresence } from './TilePresence';
 import { generateUuid } from '../services/idService';
-import { removeSharedTile } from '../services/tileShareService';
+import { removeSharedTile, getTileShares, revokeShare } from '../services/tileShareService';
+import { formatUserLabel, getUserDisplayName } from '../utils/userDisplay';
 import { useSettings } from '../contexts/SettingsContext';
 import { useAuth } from '../contexts/AuthContext';
 import { useAccessRestrictionGate } from '../contexts/AccessRestrictionContext';
@@ -1107,6 +1108,10 @@ export const TileDetail: React.FC<TileDetailProps> = ({
     // Users list for private link selection
     const [usersList, setUsersList] = useState<UserListItem[]>([]);
     const [loadingUsers, setLoadingUsers] = useState(false);
+    /** Invitation status per recipient (from tile_share_invitations) so shared users stay checked */
+    const [sharedUserStatus, setSharedUserStatus] = useState<Record<number, 'pending' | 'accepted'>>({});
+    /** Outstanding invitation id per recipient — used to revoke access when a user is unchecked */
+    const [sharedInvitationIds, setSharedInvitationIds] = useState<Record<number, number>>({});
     const [showUserPicker, setShowUserPicker] = useState<Record<string, boolean>>({});
     const [linkUserSearch, setLinkUserSearch] = useState<Record<string, string>>({});
     const [linkGroupSearch, setLinkGroupSearch] = useState<Record<string, string>>({});
@@ -2084,6 +2089,102 @@ export const TileDetail: React.FC<TileDetailProps> = ({
             loadGroups();
         }
     }, [isEditing, isAuthenticated, tile.canEdit, viewQuickEdit]);
+
+    // Private sharing: load outstanding share invitations so recipients the space was
+    // already shared with stay checked (they are only added to tiles.allowed_users once
+    // they accept, so the invitation list is the source of truth while they are pending).
+    useEffect(() => {
+        if (!isAuthenticated || !tile.canEdit || !isEditing) {
+            return;
+        }
+
+        let cancelled = false;
+        const loadShares = async () => {
+            try {
+                const shares = await getTileShares(tile.id);
+                if (cancelled) return;
+
+                const statusMap: Record<number, 'pending' | 'accepted'> = {};
+                const invitationIds: Record<number, number> = {};
+                const recipientIds: number[] = [];
+                shares.forEach((share) => {
+                    const receiverId = Number(share.receiverUserId);
+                    if (!Number.isFinite(receiverId)) return;
+                    statusMap[receiverId] = share.status === 'accepted' ? 'accepted' : 'pending';
+                    invitationIds[receiverId] = share.id;
+                    recipientIds.push(receiverId);
+                });
+
+                setSharedUserStatus(statusMap);
+                setSharedInvitationIds(invitationIds);
+                if (recipientIds.length > 0) {
+                    setEditAllowedUsers((prev) => Array.from(new Set([...prev, ...recipientIds])));
+                }
+            } catch (error) {
+                // Not the owner (or the endpoint is unavailable) — fall back to tiles.allowed_users only
+                if (!cancelled) {
+                    setSharedUserStatus({});
+                    setSharedInvitationIds({});
+                }
+            }
+        };
+
+        loadShares();
+        return () => {
+            cancelled = true;
+        };
+    }, [tile.id, tile.canEdit, isEditing, isAuthenticated]);
+
+    /**
+     * Revoke access for recipients that were unchecked in the share panel.
+     * Outstanding invitations (pending or accepted) are marked as removed, which also drops
+     * the user from tiles.allowed_users — so the space disappears for them right away instead
+     * of lingering in their Private tab or pending notifications.
+     */
+    const revokeShareAccess = useCallback(async (userIds: number[]) => {
+        if (userIds.length === 0) return;
+
+        for (const userId of userIds) {
+            const invitationId = sharedInvitationIds[userId];
+            if (!invitationId) continue; // No invitation on file — the tile save removes them from allowed_users
+
+            try {
+                await revokeShare(invitationId);
+                setSharedInvitationIds((prev) => {
+                    const next = { ...prev };
+                    delete next[userId];
+                    return next;
+                });
+                setSharedUserStatus((prev) => {
+                    const next = { ...prev };
+                    delete next[userId];
+                    return next;
+                });
+            } catch (error) {
+                console.error('Failed to revoke share:', error);
+                alert('Could not remove access for that user. Please check your connection and try again.');
+                // Keep the checkbox truthful: access was not revoked after all
+                setEditAllowedUsers((prev) => (prev.includes(userId) ? prev : [...prev, userId]));
+            }
+        }
+    }, [sharedInvitationIds]);
+
+    /** Check/uncheck a user in the private share list (revokes the share when unchecked). */
+    const setUserShareAccess = useCallback((userId: number, allowed: boolean) => {
+        if (allowed) {
+            setEditAllowedUsers((prev) => (prev.includes(userId) ? prev : [...prev, userId]));
+            return;
+        }
+        setEditAllowedUsers((prev) => prev.filter((id) => id !== userId));
+        void revokeShareAccess([userId]);
+    }, [revokeShareAccess, setEditAllowedUsers]);
+
+    /** Mobile editor hands us the whole list — diff it so unchecked users lose access. */
+    const handleAllowedUsersChange = useCallback((nextUsers: number[]) => {
+        const removed = editAllowedUsers.filter((id) => !nextUsers.includes(id));
+        setEditAllowedUsers(nextUsers);
+        void revokeShareAccess(removed);
+    }, [editAllowedUsers, revokeShareAccess, setEditAllowedUsers]);
 
     // Load available browsers from database when feature is enabled (auth required)
     useEffect(() => {
@@ -10515,7 +10616,7 @@ export const TileDetail: React.FC<TileDetailProps> = ({
                         onColorChange={setEditColor}
                         onVisibilityChange={setEditVisibility}
                         onPublishedChange={setEditPublished}
-                        onAllowedUsersChange={setEditAllowedUsers}
+                        onAllowedUsersChange={handleAllowedUsersChange}
                         onAccessRestrictionsChange={setEditAccessRestrictions}
                         onTabsChange={setEditTabs}
                         onSave={(tabs) => handleSaveChanges(tabs)}
@@ -10989,6 +11090,9 @@ export const TileDetail: React.FC<TileDetailProps> = ({
                                                         {editAllowedUsers.map(userId => {
                                                             const user = usersList.find(u => u.id === userId);
                                                             const isOwner = tile.userId && userId === (typeof tile.userId === 'string' ? parseInt(tile.userId, 10) : tile.userId);
+                                                            const fullName = user ? getUserDisplayName(user) : '';
+                                                            const showFullName = !!fullName && fullName.toLowerCase() !== (user?.username || '').toLowerCase();
+                                                            const isPendingShare = !isOwner && sharedUserStatus[userId] === 'pending';
                                                             return (
                                                                 <span
                                                                     key={`user-${userId}`}
@@ -10997,14 +11101,29 @@ export const TileDetail: React.FC<TileDetailProps> = ({
                                                                         : 'bg-brand-100 dark:bg-brand-900/40 text-brand-700 dark:text-brand-300 border-brand-200 dark:border-brand-800'
                                                                         }`}
                                                                 >
-                                                                    {user?.username || `User ${userId}`}
+                                                                    <span className="truncate max-w-[16rem]" title={user ? formatUserLabel(user) : `User ${userId}`}>
+                                                                        {user?.username || `User ${userId}`}
+                                                                        {showFullName && (
+                                                                            <span className={`ml-1 font-normal ${isOwner ? 'text-amber-700 dark:text-amber-300' : 'text-brand-600/80 dark:text-brand-300/80'}`}>
+                                                                                · {fullName}
+                                                                            </span>
+                                                                        )}
+                                                                    </span>
                                                                     {isOwner && (
                                                                         <span className="text-[9px] font-bold uppercase">Owner</span>
+                                                                    )}
+                                                                    {isPendingShare && (
+                                                                        <span
+                                                                            className="text-[9px] font-bold uppercase px-1.5 py-0.5 rounded bg-amber-100 dark:bg-amber-500/30 text-amber-800 dark:text-amber-300"
+                                                                            title="Invitation sent — access starts once they accept it"
+                                                                        >
+                                                                            Pending
+                                                                        </span>
                                                                     )}
                                                                     {!isOwner && (
                                                                         <button
                                                                             type="button"
-                                                                            onClick={() => setEditAllowedUsers(editAllowedUsers.filter(id => id !== userId))}
+                                                                            onClick={() => setUserShareAccess(userId, false)}
                                                                             className="hover:text-red-600 dark:hover:text-red-400 transition-colors"
                                                                             title="Remove user"
                                                                         >
@@ -11063,10 +11182,14 @@ export const TileDetail: React.FC<TileDetailProps> = ({
                                                                 .filter(u => {
                                                                     const searchLower = visibilitySearchTerm.toLowerCase();
                                                                     return u.username.toLowerCase().includes(searchLower) ||
-                                                                        u.email?.toLowerCase().includes(searchLower);
+                                                                        u.email?.toLowerCase().includes(searchLower) ||
+                                                                        (u.display_name || '').toLowerCase().includes(searchLower);
                                                                 })
                                                                 .map(user => {
                                                                     const isOwner = tile.userId && user.id === (typeof tile.userId === 'string' ? parseInt(tile.userId, 10) : tile.userId);
+                                                                    const fullName = getUserDisplayName(user);
+                                                                    const showFullName = !!fullName && fullName.toLowerCase() !== user.username.toLowerCase();
+                                                                    const isPendingShare = !isOwner && sharedUserStatus[user.id] === 'pending';
                                                                     return (
                                                                         <label
                                                                             key={user.id}
@@ -11080,25 +11203,34 @@ export const TileDetail: React.FC<TileDetailProps> = ({
                                                                                 checked={editAllowedUsers.includes(user.id) || isOwner}
                                                                                 onChange={(e) => {
                                                                                     if (isOwner) return;
-                                                                                    if (e.target.checked) {
-                                                                                        setEditAllowedUsers([...editAllowedUsers, user.id]);
-                                                                                    } else {
-                                                                                        setEditAllowedUsers(editAllowedUsers.filter(id => id !== user.id));
-                                                                                    }
+                                                                                    setUserShareAccess(user.id, e.target.checked);
                                                                                 }}
                                                                                 disabled={isOwner}
                                                                                 className={`rounded border-slate-300 dark:border-slate-600 text-brand-600 focus:ring-brand-500 w-4 h-4 ${isOwner ? 'opacity-50 cursor-not-allowed' : ''
                                                                                     }`}
                                                                             />
-                                                                            <span className={`text-sm font-medium flex-1 ${isOwner
+                                                                            <span className={`text-sm font-medium flex-1 min-w-0 flex items-baseline gap-1.5 flex-wrap ${isOwner
                                                                                 ? 'text-amber-800 dark:text-amber-200'
                                                                                 : 'text-slate-700 dark:text-slate-300'
                                                                                 }`}>
-                                                                                {user.username}
+                                                                                <span className="truncate">{user.username}</span>
+                                                                                {showFullName && (
+                                                                                    <span className="text-xs font-normal text-slate-500 dark:text-slate-400 truncate" title={fullName}>
+                                                                                        {fullName}
+                                                                                    </span>
+                                                                                )}
                                                                             </span>
                                                                             {isOwner && (
                                                                                 <span className="px-2 py-0.5 rounded-full bg-amber-100 dark:bg-amber-500/30 text-amber-800 dark:text-amber-300 text-[10px] font-semibold uppercase">
                                                                                     Owner
+                                                                                </span>
+                                                                            )}
+                                                                            {isPendingShare && (
+                                                                                <span
+                                                                                    className="px-2 py-0.5 rounded-full bg-amber-100 dark:bg-amber-500/30 text-amber-800 dark:text-amber-300 text-[10px] font-semibold uppercase"
+                                                                                    title="Invitation sent — access starts once they accept it"
+                                                                                >
+                                                                                    Pending
                                                                                 </span>
                                                                             )}
                                                                             <AuthSourceBadge source={user.auth_source} />
@@ -11108,7 +11240,8 @@ export const TileDetail: React.FC<TileDetailProps> = ({
                                                             {usersList.filter(u => {
                                                                 const searchLower = visibilitySearchTerm.toLowerCase();
                                                                 return u.username.toLowerCase().includes(searchLower) ||
-                                                                    u.email?.toLowerCase().includes(searchLower);
+                                                                    u.email?.toLowerCase().includes(searchLower) ||
+                                                                    (u.display_name || '').toLowerCase().includes(searchLower);
                                                             }).length === 0 && (
                                                                     <div className="text-sm text-slate-500 dark:text-slate-400 text-center py-8">No users found</div>
                                                                 )}

@@ -67,6 +67,8 @@ switch ($method) {
             handleBulkImportSamlUsers();
         } elseif ($path === '/auto-detect-auth-sources') {
             handleAutoDetectAuthSources();
+        } elseif ($path === '/sync-ldap-display-names') {
+            handleSyncLdapDisplayNames();
         } elseif ($path === '/bulk-set-auth-source') {
             handleBulkSetAuthSource();
         } elseif (preg_match('#^/impersonate/(\d+)$#', $path, $matches)) {
@@ -939,13 +941,21 @@ function handleLogin() {
             // We don't update password hash because we don't have the plain password to hash (we verified it via LDAP)
             // But we could potentially store a dummy hash or keep the old one.
             // Actually, if we want to allow local fallback for this user later, we'd need to know the password, but we don't want to store it if we can avoid it.
-            // For now, just update email and auth_source.
+            // For now, just update email, auth_source and the directory display name.
             $updateFields = [];
             $updateValues = [];
             
             if ($user['email'] !== $ldapUser['email']) {
                 $updateFields[] = 'email = ?';
                 $updateValues[] = $ldapUser['email'];
+            }
+            
+            // Keep the directory full name in sync so pickers can show it next to the login id
+            $ldapDisplayName = trim((string)($ldapUser['display_name'] ?? ''));
+            $storedDisplayName = trim((string)($user['display_name'] ?? ''));
+            if ($ldapDisplayName !== '' && $ldapDisplayName !== $storedDisplayName) {
+                $updateFields[] = 'display_name = ?';
+                $updateValues[] = $ldapDisplayName;
             }
             
             // Always update auth_source to 'ldap' for LDAP-authenticated users
@@ -983,8 +993,9 @@ function handleLogin() {
                 $ldapUser['email'] = 'duplicate_' . time() . '_' . $ldapUser['email'];
             }
             
-            $stmt = $db->prepare('INSERT INTO users (username, email, password_hash, is_admin, is_approved, auth_source, uuid, created_at) VALUES (?, ?, ?, 0, 0, ?, ?, ?)');
-            if ($stmt->execute([$username, $ldapUser['email'], $passwordHash, 'ldap', generateUuid(), time()])) {
+            $stmt = $db->prepare('INSERT INTO users (username, email, password_hash, is_admin, is_approved, auth_source, uuid, display_name, created_at) VALUES (?, ?, ?, 0, 0, ?, ?, ?, ?)');
+            $newDisplayName = trim((string)($ldapUser['display_name'] ?? ''));
+            if ($stmt->execute([$username, $ldapUser['email'], $passwordHash, 'ldap', generateUuid(), $newDisplayName !== '' ? $newDisplayName : null, time()])) {
                 $user = [
                     'id' => $db->lastInsertId(),
                     'username' => $username,
@@ -3443,9 +3454,9 @@ function handleAddLdapUser() {
         $randomPass = bin2hex(random_bytes(16));
         $passwordHash = password_hash($randomPass, PASSWORD_DEFAULT);
         
-        $stmt = $db->prepare('INSERT INTO users (username, email, password_hash, is_admin, is_approved, auth_source, uuid, notes, created_at) VALUES (?, ?, ?, 0, 0, ?, ?, ?, ?)');
+        $stmt = $db->prepare('INSERT INTO users (username, email, password_hash, is_admin, is_approved, auth_source, uuid, notes, display_name, created_at) VALUES (?, ?, ?, 0, 0, ?, ?, ?, ?, ?)');
         
-        if ($stmt->execute([$username, $email, $passwordHash, 'ldap', generateUuid(), $notes, time()])) {
+        if ($stmt->execute([$username, $email, $passwordHash, 'ldap', generateUuid(), $notes, $displayName !== '' ? $displayName : null, time()])) {
             $userId = $db->lastInsertId();
             logUserAudit('user.created', [
                 'target_user_id' => (int) $userId,
@@ -4119,13 +4130,23 @@ function handleBulkImportLdapUsers() {
                 continue;
             }
             
+            // Prefer the pasted display name, otherwise take it from the directory entry
+            if ($displayName === '') {
+                $ldapEntry = $entries[0];
+                if (isset($ldapEntry['displayname']) && is_array($ldapEntry['displayname']) && isset($ldapEntry['displayname'][0])) {
+                    $displayName = trim((string)$ldapEntry['displayname'][0]);
+                } elseif (isset($ldapEntry['cn'][0])) {
+                    $displayName = trim((string)$ldapEntry['cn'][0]);
+                }
+            }
+
             // Create user in database
             $randomPass = bin2hex(random_bytes(16));
             $passwordHash = password_hash($randomPass, PASSWORD_DEFAULT);
             
-            $stmt = $db->prepare('INSERT INTO users (username, email, password_hash, is_admin, is_approved, auth_source, uuid, created_at) VALUES (?, ?, ?, 0, 0, ?, ?, ?)');
+            $stmt = $db->prepare('INSERT INTO users (username, email, password_hash, is_admin, is_approved, auth_source, uuid, display_name, created_at) VALUES (?, ?, ?, 0, 0, ?, ?, ?, ?)');
             
-            if ($stmt->execute([$username, $email, $passwordHash, 'ldap', generateUuid(), time()])) {
+            if ($stmt->execute([$username, $email, $passwordHash, 'ldap', generateUuid(), $displayName !== '' ? $displayName : null, time()])) {
                 $results['success'][] = [
                     'index' => $index + 1,
                     'id' => (int) $db->lastInsertId(),
@@ -4972,10 +4993,21 @@ function ldapDirectoryEntryMatchesAppUser(array $entry, array $user, $emailAttr 
  * @param array $ldapBinds Results from ldapConnectAndServiceBind()
  */
 function lookupUserInLdapDirectory(array $user, array $ldapBinds): bool {
+    return searchLdapEntryForUser($user, $ldapBinds) !== null;
+}
+
+/**
+ * Search the connected LDAP servers for an app user and return the matched
+ * directory entry (plus the server config it came from).
+ *
+ * @param array $ldapBinds Results from ldapConnectAndServiceBind()
+ * @return array{entry: array, server_config: array, email_attr: ?string}|null
+ */
+function searchLdapEntryForUser(array $user, array $ldapBinds): ?array {
     $username = trim((string)($user['username'] ?? ''));
     $email = trim((string)($user['email'] ?? ''));
     if ($username === '' && $email === '') {
-        return false;
+        return null;
     }
 
     $emailDomain = emailDomainFromAddress($email);
@@ -5025,9 +5057,13 @@ function lookupUserInLdapDirectory(array $user, array $ldapBinds): bool {
         $filter = count($clauses) === 1 ? $clauses[0] : '(|' . implode('', $clauses) . ')';
 
         $emailAttr = !empty($serverConfig['email_attribute']) ? $serverConfig['email_attribute'] : null;
-        $attributes = ['sAMAccountName', 'mail', 'userPrincipalName', 'cn', 'dn'];
+        $displayNameAttr = !empty($serverConfig['display_name_attribute']) ? $serverConfig['display_name_attribute'] : null;
+        $attributes = ['sAMAccountName', 'mail', 'userPrincipalName', 'cn', 'displayName', 'dn'];
         if ($emailAttr && !in_array($emailAttr, $attributes, true)) {
             $attributes[] = $emailAttr;
+        }
+        if ($displayNameAttr && !in_array($displayNameAttr, $attributes, true)) {
+            $attributes[] = $displayNameAttr;
         }
 
         $searchScope = strtolower((string)($serverConfig['search_scope'] ?? 'sub'));
@@ -5053,11 +5089,15 @@ function lookupUserInLdapDirectory(array $user, array $ldapBinds): bool {
             rememberLdapMailDomainsFromEmails($ldapEmail);
         }
         if (ldapDirectoryEntryMatchesAppUser($entry, $user, $emailAttr)) {
-            return true;
+            return [
+                'entry' => $entry,
+                'server_config' => $serverConfig,
+                'email_attr' => $emailAttr,
+            ];
         }
     }
 
-    return false;
+    return null;
 }
 
 /**
@@ -5242,6 +5282,160 @@ function handleAutoDetectAuthSources() {
     } catch (Throwable $e) {
         error_log('Auto-detect auth sources throwable error: ' . $e->getMessage() . ' | Trace: ' . $e->getTraceAsString());
         sendJSON(['error' => 'Auto-detection failed: An unexpected error occurred'], 500);
+    }
+}
+
+/**
+ * Backfill directory display names for LDAP users that have none yet.
+ * The name is taken from the configured Display Name attribute (defaults to
+ * displayName, then cn) so pickers can show the full name next to the login id.
+ */
+function handleSyncLdapDisplayNames() {
+    try {
+        // Clean any output before starting
+        if (ob_get_level() > 0) {
+            ob_clean();
+        }
+
+        requireAdmin(); // Only admins can sync directory names
+
+        $settings = ldapLoadSettingsFromDb();
+
+        if (empty($settings['ldap_enabled']) || $settings['ldap_enabled'] != '1') {
+            sendJSON(['error' => 'LDAP is not enabled'], 400);
+            return;
+        }
+        if (!extension_loaded('ldap')) {
+            sendJSON(['error' => 'LDAP extension is not loaded'], 500);
+            return;
+        }
+
+        $ldapServers = getLdapServers($settings);
+        if (empty($ldapServers)) {
+            sendJSON(['error' => 'No LDAP servers configured'], 400);
+            return;
+        }
+
+        $db = getDB();
+
+        $stmt = $db->prepare("SELECT id, username, email, display_name FROM users WHERE auth_source = 'ldap' AND (display_name IS NULL OR TRIM(display_name) = '') ORDER BY username ASC");
+        $stmt->execute();
+        $users = $stmt->fetchAll(PDO::FETCH_ASSOC);
+
+        $results = [
+            'total' => count($users),
+            'updated' => 0,
+            'unchanged' => 0,
+            'errors' => 0,
+            'details' => [],
+        ];
+
+        if (empty($users)) {
+            sendJSON([
+                'success' => true,
+                'message' => 'All LDAP users already have a display name.',
+                'results' => $results,
+            ]);
+            return;
+        }
+
+        // Bind once per configured server and reuse the connections for every lookup
+        $ldapBinds = [];
+        foreach ($ldapServers as $serverConfig) {
+            try {
+                $conn = ldapConnectAndServiceBind($serverConfig);
+                if (!empty($conn['ok']) && !empty($conn['ldap'])) {
+                    $ldapBinds[] = $conn;
+                }
+            } catch (Exception $e) {
+                error_log('LDAP name sync bind skipped: ' . $e->getMessage());
+            }
+        }
+
+        if (empty($ldapBinds)) {
+            sendJSON(['error' => 'Could not connect to any configured LDAP server'], 502);
+            return;
+        }
+
+        try {
+            foreach ($users as $user) {
+                try {
+                    $match = searchLdapEntryForUser($user, $ldapBinds);
+                    if ($match === null) {
+                        $results['errors']++;
+                        $results['details'][] = [
+                            'user_id' => (int)$user['id'],
+                            'username' => $user['username'],
+                            'reason' => 'Not found in LDAP directory',
+                        ];
+                        continue;
+                    }
+
+                    $serverConfig = $match['server_config'];
+                    $mapped = ldapMapUserEntryForImport(
+                        $match['entry'],
+                        !empty($serverConfig['email_attribute']) ? $serverConfig['email_attribute'] : null,
+                        !empty($serverConfig['display_name_attribute']) ? $serverConfig['display_name_attribute'] : null
+                    );
+                    $displayName = trim((string)($mapped['displayName'] ?? ''));
+
+                    if ($displayName === '') {
+                        $results['unchanged']++;
+                        $results['details'][] = [
+                            'user_id' => (int)$user['id'],
+                            'username' => $user['username'],
+                            'reason' => 'Directory entry has no display name',
+                        ];
+                        continue;
+                    }
+
+                    $upd = $db->prepare('UPDATE users SET display_name = ? WHERE id = ?');
+                    $upd->execute([$displayName, $user['id']]);
+
+                    $results['updated']++;
+                    $results['details'][] = [
+                        'user_id' => (int)$user['id'],
+                        'username' => $user['username'],
+                        'display_name' => $displayName,
+                    ];
+                } catch (Exception $e) {
+                    $results['errors']++;
+                    $results['details'][] = [
+                        'user_id' => (int)$user['id'],
+                        'username' => $user['username'],
+                        'reason' => $e->getMessage(),
+                    ];
+                    error_log("LDAP name sync error for {$user['id']} ({$user['username']}): " . $e->getMessage());
+                }
+            }
+        } finally {
+            foreach ($ldapBinds as $conn) {
+                if (!empty($conn['ldap'])) {
+                    @ldap_close($conn['ldap']);
+                }
+            }
+        }
+
+        logUserAudit('user.ldap_display_names_synced', [
+            'details' => [
+                'updated' => $results['updated'],
+                'unchanged' => $results['unchanged'],
+                'errors' => $results['errors'],
+                'total' => $results['total'],
+            ],
+        ]);
+
+        sendJSON([
+            'success' => true,
+            'message' => "LDAP name sync complete. {$results['updated']} names updated, {$results['unchanged']} unchanged, {$results['errors']} not resolved.",
+            'results' => $results,
+        ]);
+    } catch (Exception $e) {
+        error_log('LDAP name sync error: ' . $e->getMessage());
+        sendJSON(['error' => 'LDAP name sync failed: ' . $e->getMessage()], 500);
+    } catch (Throwable $e) {
+        error_log('LDAP name sync fatal error: ' . $e->getMessage());
+        sendJSON(['error' => 'LDAP name sync failed: An unexpected error occurred'], 500);
     }
 }
 

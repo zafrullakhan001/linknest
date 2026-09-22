@@ -10,6 +10,7 @@ LinkNest is a **link and space organization platform** built with a React fronte
 - Link health monitoring and analytics
 - User authentication (Local, LDAP, SAML, and optional Passkeys / WebAuthn)
 - Role-based access control and user groups
+- Private spaces shared with individual users (invite → accept → revoke); the space editor lists everyone a space is shared with, and Admin → Users can sync LDAP display names (`displayName` / `cn`) so users show full names next to their login id (see `docs/PRIVATE_SPACE_SHARING.md`)
 - Floating widgets (clock, weather, calculator, notes, media library, etc.)
 - AI-powered content generation via Google Gemini
 - MCP interface so LLMs can list, search, and edit spaces and links (admin-scoped tokens can also manage users, roles, LDAP/SAML, Device Presets, and database export/import)
@@ -359,6 +360,7 @@ Default credentials:
 - `docs/YOUR_BOOKMARKS.md` - Guest Your Bookmarks, Favorite Links compact view, Rewrite tools
 - `docs/BOOKMARK_SYNC_EXTENSION.md` - LinkNest Bookmark Sync extension (handshake, origin allowlist, per-profile sync, mass deploy)
 - `docs/MCP.md` - MCP / AI: LLMs (Cursor, Claude Desktop) list spaces, search links, create or edit bookmarks, and (admin tokens) manage users, roles, Device Presets, and database export/import
+- `docs/PRIVATE_SPACE_SHARING.md` - Private space sharing: `allowed_users` + `tile_share_invitations`, pending/accepted flow, keeping shared users checked in the space editor, revoke on uncheck, and LDAP full-name capture/sync
 - `docs/ADMIN_LOCKOUT_RECOVERY.md` - Re-enable Local auth and reset local admin password (`scripts/reset_admin_password.php`); unlock Fingerprint-only access (`scripts/unlock_fingerprint_lock.php`) or login allowlist (`scripts/unlock_login_allowlist.php`) when locked out
 - `docs/MEDIA_LIBRARY.md` - Shared media library (images, PDF, audio, video; Admin + floating widget + RTE picker)
 - `docs/APP_UPDATES.md` - In-app App Updates (portable Releases for ArchLinks / ERP3)

@@ -454,6 +454,21 @@ export const authService = {
     return { message: data.message, results: data.results };
   },
 
+  async syncLdapDisplayNames(): Promise<{ message: string; results: any }> {
+    const response = await fetch(`${API_BASE}/auth/sync-ldap-display-names`, {
+      method: 'POST',
+      credentials: 'include'
+    });
+
+    const data = await response.json();
+
+    if (!response.ok) {
+      throw new Error(data.error || 'Failed to sync LDAP display names');
+    }
+
+    return { message: data.message, results: data.results };
+  },
+
   async searchLdapUsers(searchTerm: string, ldapServerIndex?: number): Promise<Array<{ username: string; email: string; displayName: string; dn: string }>> {
     const body: { search: string; ldap_server_index?: number } = { search: searchTerm };
     if (ldapServerIndex !== undefined && ldapServerIndex !== null) {

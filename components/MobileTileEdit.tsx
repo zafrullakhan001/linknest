@@ -16,6 +16,7 @@ import { LinkTooltipStyleToggle } from './LinkTooltipStyleToggle';
 import { HoverTooltipEditor } from './HoverTooltipEditor';
 import { normalizeLinkTooltipStyle, type LinkTooltipStyle } from '../utils/linkTooltipPreference';
 import { LINK_OPEN_TARGET_OPTIONS, normalizeLinkOpenTarget } from '../utils/openLinkUrl';
+import { formatUserLabel, getUserDisplayName } from '../utils/userDisplay';
 
 interface MobileTileEditProps {
     tile: Tile;
@@ -44,7 +45,7 @@ interface MobileTileEditProps {
     onSave: (tabs?: Tab[]) => void;
     onCancel: () => void;
     isAuthenticated?: boolean;
-    usersList?: Array<{ id: number; username: string; email: string; auth_source?: string }>;
+    usersList?: Array<{ id: number; username: string; email: string; auth_source?: string; display_name?: string | null }>;
     loadingUsers?: boolean;
     showEmojiPicker: boolean;
     setShowEmojiPicker: (show: boolean) => void;
@@ -953,12 +954,20 @@ export const MobileTileEdit: React.FC<MobileTileEditProps> = ({
                                             <div className="flex flex-wrap gap-2 mb-3">
                                                 {editAllowedUsers.map(userId => {
                                                     const user = usersList.find(u => u.id === userId);
+                                                    const fullName = user ? getUserDisplayName(user) : '';
+                                                    const showFullName = !!fullName && fullName.toLowerCase() !== (user?.username || '').toLowerCase();
                                                     return (
                                                         <span
                                                             key={userId}
                                                             className="inline-flex items-center gap-1.5 px-3 py-1.5 bg-brand-100 dark:bg-brand-900/40 text-brand-700 dark:text-brand-300 rounded-lg text-xs font-medium"
+                                                            title={user ? formatUserLabel(user) : `User ${userId}`}
                                                         >
-                                                            {user?.username || `User ${userId}`}
+                                                            <span className="truncate max-w-[12rem]">
+                                                                {user?.username || `User ${userId}`}
+                                                                {showFullName && (
+                                                                    <span className="ml-1 font-normal text-brand-600/80 dark:text-brand-300/80">· {fullName}</span>
+                                                                )}
+                                                            </span>
                                                             <button
                                                                 type="button"
                                                                 onClick={() => onAllowedUsersChange(editAllowedUsers.filter(id => id !== userId))}
@@ -1000,8 +1009,17 @@ export const MobileTileEdit: React.FC<MobileTileEditProps> = ({
                                                                 }}
                                                                 className="rounded border-slate-300 dark:border-slate-600 text-brand-600 focus:ring-brand-500 w-4 h-4"
                                                             />
-                                                            <span className="text-sm font-medium text-slate-700 dark:text-slate-300 flex-1">
-                                                                {user.username}
+                                                            <span className="text-sm font-medium text-slate-700 dark:text-slate-300 flex-1 min-w-0 flex items-baseline gap-1.5 flex-wrap">
+                                                                <span className="truncate">{user.username}</span>
+                                                                {(() => {
+                                                                    const fullName = getUserDisplayName(user);
+                                                                    const showFullName = !!fullName && fullName.toLowerCase() !== user.username.toLowerCase();
+                                                                    return showFullName ? (
+                                                                        <span className="text-xs font-normal text-slate-500 dark:text-slate-400 truncate" title={formatUserLabel(user)}>
+                                                                            {fullName}
+                                                                        </span>
+                                                                    ) : null;
+                                                                })()}
                                                             </span>
                                                         </label>
                                                     ))
