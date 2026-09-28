@@ -38,6 +38,7 @@ import {
 import { cloneTile, createTile, getTiles, saveTile, toggleLinkFavorite, createTempVersion, updateTilePageAnimation, recordTileVisit } from '../services/storageService';
 import { useTilePresence } from '../hooks/useTilePresence';
 import { TilePresence } from './TilePresence';
+import { TileMessageBanner } from './TileMessageBanner';
 import { generateUuid } from '../services/idService';
 import { removeSharedTile, getTileShares, revokeShare } from '../services/tileShareService';
 import { formatUserLabel, getUserDisplayName } from '../utils/userDisplay';
@@ -1433,14 +1434,6 @@ export const TileDetail: React.FC<TileDetailProps> = ({
         ) || []).sort((a, b) => (a.priority || 0) - (b.priority || 0));
     };
 
-    // Helper function to strip formatting characters for plain text display
-    const stripFormatting = (content: string): string => {
-        let plainText = content.replace(/\*\*(.*?)\*\*/g, '$1');
-        plainText = plainText.replace(/\*([^*]+)\*/g, '$1');
-        plainText = plainText.replace(/_([^_]+)_/g, '$1');
-        return plainText;
-    };
-
     // Helper function to strip HTML tags from content for plain text display
     const stripHtmlTags = (content: string): string => {
         if (!content) return '';
@@ -1452,115 +1445,11 @@ export const TileDetail: React.FC<TileDetailProps> = ({
         return tempDiv.textContent || tempDiv.innerText || '';
     };
 
-    // Helper function to parse URLs and render clickable links with formatting
-    const renderMessageContent = (content: string) => {
-        const urlPattern = /(https?:\/\/[^\s]+)/g;
-        const boldPattern = /(\*\*)(.*?)\1/g;
-        const italicPattern = /(?<!\*)_([^_]+)_(?!\*)/g;
-
-        let processedContent = content;
-        processedContent = processedContent.replace(boldPattern, '<strong>$2</strong>');
-        processedContent = processedContent.replace(italicPattern, '<em>$1</em>');
-
-        const parts = processedContent.split(urlPattern);
-
-        return parts.map((part, index) => {
-            if (urlPattern.test(part)) {
-                return (
-                    <a
-                        key={index}
-                        href={part}
-                        target="_blank"
-                        rel="noopener noreferrer"
-                        className="underline font-semibold hover:opacity-80 transition-opacity inherit"
-                        style={{ color: 'inherit' }}
-                        onClick={(e) => e.stopPropagation()}
-                    >
-                        {part}
-                    </a>
-                );
-            }
-            return <span key={index} dangerouslySetInnerHTML={{ __html: part }} />;
-        });
-    };
-
     const activeMessages = getActiveMessages();
-    const [currentMessageIndex, setCurrentMessageIndex] = useState(0);
-
-    // Helper function to get animation class based on animation type
-    const getMessageAnimationClass = (animationType?: string) => {
-        if (!animationType || animationType === 'rollover' || animationType === 'still') return '';
-        return `message-animate-${animationType}`;
-    };
-
-    // Get animation duration in seconds based on animation type
-    const getAnimationDuration = (animationType?: string): number => {
-        if (animationType === 'still') return 0; // No animation duration for still
-        const durations: Record<string, number> = {
-            'flash': 1.5,
-            'flip-horizontal': 2,
-            'flip-vertical': 2,
-            'bounce': 2,
-            'pulse': 2,
-            'shake': 1,
-            'fade': 2,
-            'slide': 3
-        };
-        return durations[animationType || ''] || 2;
-    };
-
-    // Cycle through messages sequentially for non-rollover animations
-    useEffect(() => {
-        if (activeMessages.length <= 1) {
-            setCurrentMessageIndex(0);
-            return;
-        }
-
-        // Check if any message uses non-rollover animation
-        const hasNonRollover = activeMessages.some(msg => msg.animationType && msg.animationType !== 'rollover');
-        if (!hasNonRollover) {
-            // All messages are rollover - don't cycle
-            setCurrentMessageIndex(0);
-            return;
-        }
-
-        // Get current message
-        const currentMsg = activeMessages[currentMessageIndex];
-        if (!currentMsg || currentMessageIndex >= activeMessages.length) {
-            setCurrentMessageIndex(0);
-            return;
-        }
-
-        const animationType = currentMsg.animationType || 'rollover';
-
-        // Calculate duration: animation duration + delay before next message
-        const animationDuration = animationType === 'rollover' ? 0 : getAnimationDuration(animationType);
-        const delayBefore = currentMsg.delayBefore || 0;
-        // For 'still' messages with no delay, use a default display duration (3 seconds)
-        const displayDuration = animationType === 'still' && delayBefore === 0 ? 3 : (animationDuration + delayBefore);
-        const totalDuration = displayDuration * 1000; // Convert to milliseconds
-
-        // Only set timer if we have a duration (non-rollover)
-        if (animationType === 'rollover' && totalDuration <= 0) {
-            // Skip rollover messages immediately
-            setCurrentMessageIndex((prevIndex) => {
-                const nextIndex = (prevIndex + 1) % activeMessages.length;
-                return nextIndex;
-            });
-            return;
-        }
-
-        const timer = setTimeout(() => {
-            setCurrentMessageIndex((prevIndex) => (prevIndex + 1) % activeMessages.length);
-        }, totalDuration);
-
-        return () => clearTimeout(timer);
-    }, [currentMessageIndex, activeMessages]);
-
-    // Tab-scoped messages appear/disappear with the active tab — restart the rotation.
-    useEffect(() => {
-        setCurrentMessageIndex(0);
-    }, [selectedTabId]);
+    // Banners render above the tab strip by default; messages flagged with placement: 'below'
+    // render at the top of the content area instead (see TileMessageBanner).
+    const aboveTabsMessages = activeMessages.filter(m => (m.placement ?? 'above') !== 'below');
+    const belowTabsMessages = activeMessages.filter(m => m.placement === 'below');
 
     // Sync state when tile changes, but only when not editing to prevent losing unsaved changes.
     // IMPORTANT: We only depend on `tile` and `isEditing` so that local edits
@@ -7766,121 +7655,12 @@ export const TileDetail: React.FC<TileDetailProps> = ({
                         </div>
                     </div>
 
-                    {/* Rolling Messages Display - Below Search Bar */}
-                    {activeMessages.length > 0 && (
-                        <div className="mb-2 w-full group/message relative cursor-help">
-                            {/* Custom Instant Tooltip - Optimized for Large Detail View */}
-                            <div
-                                className="tooltip-force-black absolute left-1/2 -translate-x-1/2 bottom-full mb-2 px-3 py-2 bg-yellow-400 text-[10px] rounded-lg shadow-xl opacity-0 translate-y-2 group-hover/message:opacity-100 group-hover/message:translate-y-0 transition-all duration-200 pointer-events-none z-[100] border border-yellow-500 w-max max-w-[400px] text-left"
-                            >
-                                {activeMessages.map((m, idx) => (
-                                    <div key={m.id} className="last:mb-0 mb-1 leading-tight">
-                                        {activeMessages.length > 1 && <span className="opacity-50 mr-1">{idx + 1}.</span>}
-                                        {stripFormatting(m.content)}
-                                    </div>
-                                ))}
-                                <div className="absolute top-full left-1/2 -translate-x-1/2 -mt-1 border-4 border-transparent border-t-yellow-400"></div>
-                            </div>
-
-                            <div className={`relative h-6 flex items-center overflow-hidden ${!activeMessages[0].textColor ? (
-                                activeMessages[0].type === 'alert' ? 'text-amber-600 dark:text-amber-400' :
-                                    activeMessages[0].type === 'warning' ? 'text-amber-600 dark:text-amber-400' :
-                                        activeMessages[0].type === 'celebration' ? 'text-pink-600 dark:text-pink-400' :
-                                            'text-brand-600 dark:text-brand-400'
-                            ) : ''}`}
-                                style={activeMessages[0].textColor ? {
-                                    // Only set color on parent if custom color is set, to override tile text color
-                                    color: activeMessages[0].textColor
-                                } : undefined}
-                            >
-                                {(() => {
-                                    // Check if all messages use rollover animation
-                                    const allRollover = activeMessages.length > 0 && activeMessages.every(msg => !msg.animationType || msg.animationType === 'rollover');
-
-                                    if (allRollover) {
-                                        // Rollover animation - stock ticker style: single copy, right-to-left, pause when fully gone
-                                        return (
-                                            <div className="animate-rolling-detail flex items-center gap-10 text-sm font-semibold">
-                                                {activeMessages.map((msg, idx) => (
-                                                    <div
-                                                        key={`${msg.id}-${idx}`}
-                                                        className="flex items-center gap-2 shrink-0"
-                                                        style={{
-                                                            ...(msg.textColor ? { '--message-text-color': msg.textColor, color: msg.textColor } : {}),
-                                                            fontStyle: msg.fontStyle === 'italic' || msg.fontStyle === 'bold italic' ? 'italic' : undefined,
-                                                            fontWeight: msg.fontStyle === 'bold' || msg.fontStyle === 'bold italic' ? 'bold' : undefined
-                                                        } as React.CSSProperties}
-                                                        data-message-color={msg.textColor || ''}
-                                                    >
-                                                        {renderMessageContent(msg.content)}
-                                                        {msg.url && (
-                                                            <a
-                                                                href={msg.url}
-                                                                target="_blank"
-                                                                rel="noopener noreferrer"
-                                                                className="inline-flex items-center gap-0.5 ml-1 px-1.5 py-0.5 text-[10px] font-medium text-slate-800 dark:text-brand-400 bg-transparent hover:bg-slate-200/50 dark:hover:bg-brand-900/30 rounded transition-colors"
-                                                                onClick={(e) => e.stopPropagation()}
-                                                                title={msg.urlLabel || 'Click for more info'}
-                                                            >
-                                                                <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor" className="w-3 h-3">
-                                                                    <path d="M12.232 4.232a2.5 2.5 0 013.536 3.536l-1.225 1.224a.75.75 0 001.061 1.06l1.224-1.224a4 4 0 00-5.656-5.656l-3 3a4 4 0 00.225 5.865.75.75 0 00.977-1.138 2.5 2.5 0 01-.142-3.667l3-3z" />
-                                                                    <path d="M11.603 7.963a.75.75 0 00-.977 1.138 2.5 2.5 0 01.142 3.667l-3 3a2.5 2.5 0 01-3.536-3.536l1.225-1.224a.75.75 0 00-1.061-1.06l-1.224 1.224a4 4 0 105.656 5.656l3-3a4 4 0 00-.225-5.865z" />
-                                                                </svg>
-                                                                {msg.urlLabel || 'Info'}
-                                                            </a>
-                                                        )}
-                                                    </div>
-                                                ))}
-                                            </div>
-                                        );
-                                    } else {
-                                        // Other animations - show one message at a time, cycle through them
-                                        const currentMsg = activeMessages[currentMessageIndex] || activeMessages[0];
-
-                                        if (!currentMsg) {
-                                            return null;
-                                        }
-
-                                        const currentAnimationType = currentMsg.animationType || 'rollover';
-                                        const animationClass = getMessageAnimationClass(currentAnimationType);
-
-                                        return (
-                                            <div className={`flex items-center gap-2 text-sm font-semibold ${animationClass}`}>
-                                                <div
-                                                    key={`${currentMsg.id}-current`}
-                                                    className="flex items-center gap-1"
-                                                    style={{
-                                                        ...(currentMsg.textColor ? { '--message-text-color': currentMsg.textColor, color: currentMsg.textColor } : {}),
-                                                        fontStyle: currentMsg.fontStyle === 'italic' || currentMsg.fontStyle === 'bold italic' ? 'italic' : undefined,
-                                                        fontWeight: currentMsg.fontStyle === 'bold' || currentMsg.fontStyle === 'bold italic' ? 'bold' : undefined
-                                                    } as React.CSSProperties}
-                                                    data-message-color={currentMsg.textColor || ''}
-                                                >
-                                                    {renderMessageContent(currentMsg.content)}
-                                                    {currentMsg.url && (
-                                                        <a
-                                                            href={currentMsg.url}
-                                                            target="_blank"
-                                                            rel="noopener noreferrer"
-                                                            className="inline-flex items-center gap-0.5 ml-1 px-1.5 py-0.5 text-[10px] font-medium text-slate-800 dark:text-brand-400 bg-transparent hover:bg-slate-200/50 dark:hover:bg-brand-900/30 rounded transition-colors"
-                                                            onClick={(e) => e.stopPropagation()}
-                                                            title={currentMsg.urlLabel || 'Click for more info'}
-                                                        >
-                                                            <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor" className="w-3 h-3">
-                                                                <path d="M12.232 4.232a2.5 2.5 0 013.536 3.536l-1.225 1.224a.75.75 0 001.061 1.06l1.224-1.224a4 4 0 00-5.656-5.656l-3 3a4 4 0 00.225 5.865.75.75 0 00.977-1.138 2.5 2.5 0 01-.142-3.667l3-3z" />
-                                                                <path d="M11.603 7.963a.75.75 0 00-.977 1.138 2.5 2.5 0 01.142 3.667l-3 3a2.5 2.5 0 01-3.536-3.536l1.225-1.224a.75.75 0 00-1.061-1.06l-1.224 1.224a4 4 0 105.656 5.656l3-3a4 4 0 00-.225-5.865z" />
-                                                            </svg>
-                                                            {currentMsg.urlLabel || 'Info'}
-                                                        </a>
-                                                    )}
-                                                </div>
-                                            </div>
-                                        );
-                                    }
-                                })()}
-                            </div>
-                        </div>
-                    )}
+                    {/* Rolling messages above the tab strip (placement: 'above', the default) */}
+                    <TileMessageBanner
+                        key={`above-${selectedTabId ?? 'all'}`}
+                        messages={aboveTabsMessages}
+                        slot="above"
+                    />
 
                     {/* Space HTML stays full-width above the tabs/sections row */}
                     {tile.htmlContent && (
@@ -7902,7 +7682,7 @@ export const TileDetail: React.FC<TileDetailProps> = ({
 
                     {/* Vertical menu outside section cards — aligned with section start */}
                     <div
-                        className={useVerticalTabsDocked ? 'flex flex-row gap-6 items-start w-full' : 'flex flex-col gap-8'}
+                        className={useVerticalTabsDocked ? 'flex flex-row flex-wrap gap-6 items-start w-full' : 'flex flex-col gap-8'}
                         data-tab-nav-layout={useVerticalTabsDocked ? 'vertical' : (useVerticalTabs && verticalTabsFloating ? 'vertical-floating' : (useMobileTabHamburger ? 'hamburger' : 'horizontal'))}
                     >
                     {useVerticalTabs && displayTabs.length > 0 && (() => {
@@ -8873,6 +8653,17 @@ export const TileDetail: React.FC<TileDetailProps> = ({
                                         )}
                                     </div>
                                 </div>
+                        )}
+
+                        {/* Messages with placement: 'below' render at the top of the content area */}
+                        {belowTabsMessages.length > 0 && (
+                            <div className="w-full basis-full">
+                                <TileMessageBanner
+                                    key={`below-${selectedTabId ?? 'all'}`}
+                                    messages={belowTabsMessages}
+                                    slot="below"
+                                />
+                            </div>
                         )}
 
                         {filteredSections.length === 0 ? (

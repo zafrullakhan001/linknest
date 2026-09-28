@@ -53,6 +53,10 @@
                 "displayLocation": "both | tile | detail",
                 "tabIds": ["tab_unique_id"],
                 "showOnCard": true,
+                "placement": "above | below",
+                "fontFamily": "georgia | arial | ...",
+                "fontSize": 14,
+                "marqueeSeconds": 45,
                 "animationType": "rollover | fade | slide",
                 "delayBefore": 2.5
             }
@@ -186,6 +190,10 @@
                     "displayLocation": "both",
                     "tabIds": ["tab_001"],
                     "showOnCard": true,
+                    "placement": "above",
+                    "fontFamily": "georgia",
+                    "fontSize": 14,
+                    "marqueeSeconds": 45,
                     "animationType": "rollover",
                     "delayBefore": 0
                 }

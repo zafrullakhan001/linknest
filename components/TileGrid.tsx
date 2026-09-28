@@ -1,6 +1,8 @@
 import React, { useState, useMemo, useCallback, useEffect, useRef, lazy, Suspense } from 'react';
 import { createPortal } from 'react-dom';
 import { Tile, Tab, LinkSection, ThemeColor, THEME_COLORS, COLOR_STYLES, TileVisibility, TileMessage, Link, CelebrationConfig, AccessRestrictions } from '../types';
+import { MESSAGE_FONT_FAMILIES, MESSAGE_FONT_SIZE_MIN, MESSAGE_FONT_SIZE_MAX, MESSAGE_MARQUEE_SECONDS_MIN, MESSAGE_MARQUEE_SECONDS_MAX } from '../types';
+import { buildMessageTextStyle, messageMarqueeStyle, messageFontFamilyLabel, MARQUEE_SECONDS_CARD, MARQUEE_SECONDS_DETAIL } from '../utils/messageStyle';
 import { useSettings } from '../contexts/SettingsContext';
 import { useStyles } from '../contexts/StyleContext';
 import { applyCategoryTextCase, buildCategoryCaseRenameMap } from '../services/styleService';
@@ -2962,16 +2964,15 @@ const SortableTile: React.FC<SortableTileProps> = ({
                 // Rollover animation - stock ticker style: single copy, right-to-left, pause when fully gone
                 return (
                   <div className="overflow-hidden">
-                    <div className="animate-rolling-tile flex items-center gap-10 text-[10px] sm:text-xs font-semibold">
+                    <div
+                      className="animate-rolling-tile flex items-center gap-10 text-[10px] sm:text-xs font-semibold"
+                      style={messageMarqueeStyle(activeMessages, MARQUEE_SECONDS_CARD)}
+                    >
                       {activeMessages.map((msg, idx) => (
                         <div
                           key={`${msg.id}-${idx}`}
                           className="flex items-center gap-2 shrink-0"
-                          style={{
-                            ...(msg.textColor ? { '--message-text-color': msg.textColor, color: msg.textColor } : {}),
-                            fontStyle: msg.fontStyle === 'italic' || msg.fontStyle === 'bold italic' ? 'italic' : undefined,
-                            fontWeight: msg.fontStyle === 'bold' || msg.fontStyle === 'bold italic' ? 'bold' : undefined
-                          } as React.CSSProperties}
+                          style={buildMessageTextStyle(msg)}
                           data-message-color={msg.textColor || ''}
                         >
                           {renderMessageContent(msg.content)}
@@ -3012,11 +3013,7 @@ const SortableTile: React.FC<SortableTileProps> = ({
                     <div
                       key={`${currentMsg.id}-current`}
                       className="flex items-center gap-1"
-                      style={{
-                        ...(currentMsg.textColor ? { '--message-text-color': currentMsg.textColor, color: currentMsg.textColor } : {}),
-                        fontStyle: currentMsg.fontStyle === 'italic' || currentMsg.fontStyle === 'bold italic' ? 'italic' : undefined,
-                        fontWeight: currentMsg.fontStyle === 'bold' || currentMsg.fontStyle === 'bold italic' ? 'bold' : undefined
-                      } as React.CSSProperties}
+                      style={buildMessageTextStyle(currentMsg)}
                       data-message-color={currentMsg.textColor || ''}
                     >
                       {renderMessageContent(currentMsg.content)}
@@ -4280,11 +4277,19 @@ export const TileGrid: React.FC<TileGridProps> = ({
   const [messagePriority, setMessagePriority] = useState<number>(0);
   const [messageTextColor, setMessageTextColor] = useState<string>('');
   const [messageFontStyle, setMessageFontStyle] = useState<string>('normal');
+  /** Font family key from MESSAGE_FONT_FAMILIES ('default' = inherit the space font). */
+  const [messageFontFamily, setMessageFontFamily] = useState<string>('default');
+  /** Font size in px; 0 = use the surface default. */
+  const [messageFontSize, setMessageFontSize] = useState<number>(0);
+  /** Marquee cycle length in seconds; 0 = use the surface default (25s card / 35s page). */
+  const [messageMarqueeSeconds, setMessageMarqueeSeconds] = useState<number>(0);
   const [messageDisplayLocation, setMessageDisplayLocation] = useState<'tile' | 'detail' | 'both'>('both');
   /** Tabs (Tab.id) a message is restricted to on the space page. Empty = every tab. */
   const [messageTabIds, setMessageTabIds] = useState<string[]>([]);
   /** Keep a tab-restricted message on the home-grid card banner. */
   const [messageShowOnCard, setMessageShowOnCard] = useState<boolean>(false);
+  /** Space-page banner placement: above the tab strip (default) or directly below it. */
+  const [messagePlacement, setMessagePlacement] = useState<'above' | 'below'>('above');
   /**
    * Tabs of the space being edited, used *only* to render the Message Board tab picker.
    * Kept out of `editingTile` on purpose so saving still takes the preserve-nested path.
@@ -4533,6 +4538,15 @@ export const TileGrid: React.FC<TileGridProps> = ({
     const priority = typeof m.priority === 'number' && Number.isFinite(m.priority) ? m.priority : index;
     const textColor = typeof m.textColor === 'string' ? m.textColor : undefined;
     const fontStyle = typeof m.fontStyle === 'string' ? m.fontStyle : undefined;
+    const fontFamily = typeof m.fontFamily === 'string' && MESSAGE_FONT_FAMILIES.some(family => family.key === m.fontFamily)
+      ? m.fontFamily
+      : undefined;
+    const fontSize = typeof m.fontSize === 'number' && Number.isFinite(m.fontSize)
+      ? Math.max(MESSAGE_FONT_SIZE_MIN, Math.min(MESSAGE_FONT_SIZE_MAX, Math.round(m.fontSize)))
+      : undefined;
+    const marqueeSeconds = typeof m.marqueeSeconds === 'number' && Number.isFinite(m.marqueeSeconds)
+      ? Math.max(MESSAGE_MARQUEE_SECONDS_MIN, Math.min(MESSAGE_MARQUEE_SECONDS_MAX, Math.round(m.marqueeSeconds)))
+      : undefined;
     const delayBefore = typeof m.delayBefore === 'number' && Number.isFinite(m.delayBefore) ? m.delayBefore : 0;
     // Tab scope (ids are resolved against the target space's own tabs by the import handler)
     const rawTabIds = Array.isArray(m.tabIds)
@@ -4540,6 +4554,7 @@ export const TileGrid: React.FC<TileGridProps> = ({
       : [];
     const tabIds = Array.from(new Set(rawTabIds.map(id => id.trim())));
     const showOnCard = m.showOnCard === true;
+    const placement: 'above' | 'below' = m.placement === 'below' ? 'below' : 'above';
     const url = normalizeImportedMessageUrl(m.url);
     const urlLabel = typeof m.urlLabel === 'string' ? m.urlLabel.trim() || undefined : undefined;
     let celebrationConfig: CelebrationConfig | undefined;
@@ -4562,9 +4577,13 @@ export const TileGrid: React.FC<TileGridProps> = ({
       priority,
       textColor: textColor || undefined,
       fontStyle: fontStyle || undefined,
+      fontFamily,
+      fontSize,
+      marqueeSeconds,
       displayLocation,
       tabIds: tabIds.length > 0 ? tabIds : undefined,
       showOnCard: tabIds.length > 0 && showOnCard ? true : undefined,
+      placement,
       animationType,
       delayBefore,
       celebrationEffect: celebrationEffect as TileMessage['celebrationEffect'],
@@ -4701,7 +4720,7 @@ export const TileGrid: React.FC<TileGridProps> = ({
 
   const handleDownloadAIPrompt = useCallback(() => {
     const tabReference = editableSpaceTabs.length > 0
-      ? `**This space's tabs** (use these ids in \`tabIds\` to limit a message to specific tabs):\n\n${editableSpaceTabs.map(tab => `- \`${tab.id}\` — ${tab.title || 'Untitled tab'}`).join('\n')}\n\nOmit \`tabIds\` (or use an empty array) to show a message on every tab. Add \`"showOnCard": true\` to keep a tab-scoped message on the home-grid card as well.\n`
+      ? `**This space's tabs** (use these ids in \`tabIds\` to limit a message to specific tabs):\n\n${editableSpaceTabs.map(tab => `- \`${tab.id}\` — ${tab.title || 'Untitled tab'}`).join('\n')}\n\nOmit \`tabIds\` (or use an empty array) to show a message on every tab. Add \`"showOnCard": true\` to keep a tab-scoped message on the home-grid card as well. Use \`"placement": "below"\` to render it under the tab strip instead of above it.\n`
       : 'This space has no tabs yet, so omit `tabIds` and `showOnCard`.\n';
     const prompt = `# Linknest Message Board – AI Bulk Generator Prompt
 
@@ -4727,9 +4746,13 @@ Generate a JSON array of scheduled message board messages for Linknest. Each mes
 | priority | number | 0, 1, 2, ... (lower = higher priority) | 0 |
 | textColor | string | hex e.g. "#3b82f6" | — |
 | fontStyle | string | "normal", "italic", "bold", etc. | "normal" |
+| fontFamily | string | "system", "arial", "verdana", "tahoma", "trebuchet", "georgia", "times", "garamond", "courier", "consolas", "impact", "comic" | — |
+| fontSize | number | px, 8-72 | — |
+| marqueeSeconds | number | seconds per marquee pass, 5-180 (higher = slower) | — |
 | displayLocation | string | "tile", "detail", "both" | "both" |
 | tabIds | array of strings | ids of this space's tabs the message should show on (space page only); omit for all tabs | — |
 | showOnCard | boolean | true keeps a tab-restricted message on the home-grid card too | false |
+| placement | string | "above" (above the tab strip) or "below" (top of the content area, under the tabs) | "above" |
 | animationType | string | "rollover", "still", "flash", "flip-horizontal", "flip-vertical", "bounce", "pulse", "shake", "fade", "slide" | "rollover" |
 | delayBefore | number | seconds before showing (sequential messages) | 0 |
 | celebrationEffect | string | "none", "fireworks", "burst-fireworks", "confetti", "snowfall", "hearts-rising", "hearts-falling", "bubbles", "butterflies", "birds-flying", "rocket-launch", "sparkles", "petals", "shooting-stars", "leaves", "fireflies", "balloons", "stars", "rainbow" | "fireworks" |
@@ -4767,7 +4790,11 @@ You may also wrap the array in an object: { "messages": [ ... ] }.
     "isActive": true,
     "priority": 0,
     "displayLocation": "both",
+    "placement": "above",
+    "fontFamily": "georgia",
+    "fontSize": 14,
     "animationType": "rollover",
+    "marqueeSeconds": 45,
     "celebrationEffect": "none",
     "url": "https://example.com/more-info",
     "urlLabel": "Learn more"
@@ -6498,8 +6525,12 @@ You may also wrap the array in an object: { "messages": [ ... ] }.
     setMessageEndDate('');
     setMessageIsActive(true);
     setMessagePriority(0);
+    setMessageFontFamily('default');
+    setMessageFontSize(0);
+    setMessageMarqueeSeconds(0);
     setMessageTabIds([]);
     setMessageShowOnCard(false);
+    setMessagePlacement('above');
     setEditableSpaceTabs([]);
     setEditableSpaceTabsLoading(false);
   };
@@ -12176,7 +12207,15 @@ You may also wrap the array in an object: { "messages": [ ... ] }.
                           }`}>
                           {messageType.toUpperCase()}
                         </div>
-                        <div className="text-[10px] font-semibold truncate flex-1" style={messageTextColor ? { color: messageTextColor } : {}}>
+                        <div
+                          className="font-semibold truncate flex-1"
+                          style={buildMessageTextStyle({
+                            textColor: messageTextColor || undefined,
+                            fontStyle: messageFontStyle,
+                            fontFamily: messageFontFamily,
+                            fontSize: messageFontSize > 0 ? messageFontSize : undefined
+                          })}
+                        >
                           {messageContent || (messageType === 'celebration' ? `Effect: ${messageCelebrationEffect}` : '')}
                         </div>
                       </div>
@@ -12274,9 +12313,13 @@ You may also wrap the array in an object: { "messages": [ ... ] }.
                             setMessagePriority(0);
                             setMessageTextColor('');
                             setMessageFontStyle('normal');
+                            setMessageFontFamily('default');
+                            setMessageFontSize(0);
+                            setMessageMarqueeSeconds(0);
                             setMessageDisplayLocation('both');
                             setMessageTabIds([]);
                             setMessageShowOnCard(false);
+                            setMessagePlacement('above');
                             setMessageAnimationType('rollover');
                             setMessageDelayBefore(0);
                             setMessageCelebrationEffect('fireworks');
@@ -12767,6 +12810,93 @@ You may also wrap the array in an object: { "messages": [ ... ] }.
                             </div>
                           </div>
 
+                          {/* Font family + size (used by the card marquee and the space-page banner) */}
+                          <div className="grid grid-cols-2 gap-4">
+                            <div>
+                              <label className="block text-sm font-semibold text-slate-700 dark:text-slate-300 mb-2">Font</label>
+                              <select
+                                value={messageFontFamily}
+                                onChange={(e) => setMessageFontFamily(e.target.value)}
+                                className="w-full bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-lg px-3 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-brand-500/50 focus:border-brand-500 transition-all"
+                              >
+                                {MESSAGE_FONT_FAMILIES.map(family => (
+                                  <option key={family.key} value={family.key}>{family.label}</option>
+                                ))}
+                              </select>
+                            </div>
+                            <div>
+                              <label className="block text-sm font-semibold text-slate-700 dark:text-slate-300 mb-2">
+                                Font Size <span className="text-xs font-normal text-slate-500 dark:text-slate-400">{messageFontSize > 0 ? `${messageFontSize}px` : 'Default'}</span>
+                              </label>
+                              <div className="flex items-center gap-3">
+                                <input
+                                  type="range"
+                                  min={MESSAGE_FONT_SIZE_MIN}
+                                  max={48}
+                                  step={1}
+                                  value={messageFontSize > 0 ? messageFontSize : 14}
+                                  onChange={(e) => setMessageFontSize(parseInt(e.target.value, 10))}
+                                  className="flex-1 h-2 rounded-lg appearance-none bg-slate-200 dark:bg-slate-700 accent-brand-500"
+                                  aria-label="Message font size"
+                                />
+                                <input
+                                  type="number"
+                                  min={MESSAGE_FONT_SIZE_MIN}
+                                  max={MESSAGE_FONT_SIZE_MAX}
+                                  value={messageFontSize || ''}
+                                  placeholder="Default"
+                                  onChange={(e) => {
+                                    const next = parseInt(e.target.value, 10);
+                                    setMessageFontSize(Number.isFinite(next) ? Math.max(MESSAGE_FONT_SIZE_MIN, Math.min(MESSAGE_FONT_SIZE_MAX, next)) : 0);
+                                  }}
+                                  className="w-20 bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-lg px-2 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-brand-500/50 focus:border-brand-500 transition-all"
+                                  aria-label="Message font size in pixels"
+                                />
+                                <button
+                                  type="button"
+                                  onClick={() => setMessageFontSize(0)}
+                                  className="shrink-0 px-2.5 py-2 text-xs text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-white hover:bg-slate-100 dark:hover:bg-slate-800 rounded-lg transition-colors"
+                                  title="Use the default size"
+                                >
+                                  Default
+                                </button>
+                              </div>
+                            </div>
+                          </div>
+
+                          {/* Marquee scroll duration (rollover messages only) */}
+                          {messageAnimationType === 'rollover' && (
+                            <div>
+                              <label className="block text-sm font-semibold text-slate-700 dark:text-slate-300 mb-2">
+                                Marquee Scroll Duration <span className="text-xs font-normal text-slate-500 dark:text-slate-400">{messageMarqueeSeconds > 0 ? `${messageMarqueeSeconds}s` : `Default (${MARQUEE_SECONDS_CARD}s card / ${MARQUEE_SECONDS_DETAIL}s page)`}</span>
+                              </label>
+                              <div className="flex items-center gap-3">
+                                <span className="shrink-0 text-xs text-slate-500 dark:text-slate-400">Faster</span>
+                                <input
+                                  type="range"
+                                  min={MESSAGE_MARQUEE_SECONDS_MIN}
+                                  max={120}
+                                  step={1}
+                                  value={messageMarqueeSeconds > 0 ? messageMarqueeSeconds : MARQUEE_SECONDS_DETAIL}
+                                  onChange={(e) => setMessageMarqueeSeconds(parseInt(e.target.value, 10))}
+                                  className="flex-1 h-2 rounded-lg appearance-none bg-slate-200 dark:bg-slate-700 accent-brand-500"
+                                  aria-label="Marquee scroll duration in seconds"
+                                />
+                                <span className="shrink-0 text-xs text-slate-500 dark:text-slate-400">Slower</span>
+                                <button
+                                  type="button"
+                                  onClick={() => setMessageMarqueeSeconds(0)}
+                                  className="shrink-0 px-2.5 py-1.5 text-xs text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-white hover:bg-slate-100 dark:hover:bg-slate-800 rounded-lg transition-colors"
+                                  title="Use the default duration"
+                                >
+                                  Reset
+                                </button>
+                              </div>
+                              <p className="mt-2 text-xs text-slate-500 dark:text-slate-400">
+                                Higher = slower scroll (seconds for one full pass, 5-180). If several marquee messages scroll together the slowest value wins — a faster value on one message will not speed up the others.
+                              </p>
+                            </div>
+                          )}
                           {/* Tab scope — which tabs of this space show the message (space page only) */}
                           {messageDisplayLocation !== 'tile' && (
                             <div>
@@ -12874,6 +13004,24 @@ You may also wrap the array in an object: { "messages": [ ... ] }.
                             </div>
                           )}
 
+                          {/* Banner placement on the space page (above the tabs is the default) */}
+                          {messageDisplayLocation !== 'tile' && (
+                            <label className="flex items-start gap-2 rounded-lg border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 px-3 py-2.5 text-xs text-slate-600 dark:text-slate-300 cursor-pointer">
+                              <input
+                                type="checkbox"
+                                checked={messagePlacement === 'below'}
+                                onChange={(e) => setMessagePlacement(e.target.checked ? 'below' : 'above')}
+                                className="mt-0.5 h-3.5 w-3.5 rounded accent-brand-500"
+                              />
+                              <span>
+                                <span className="font-semibold">Display below the tabs</span>
+                                <span className="mt-0.5 block text-slate-500 dark:text-slate-400">
+                                  Off = above the tabs (default). On = top of the content area, directly under the tab strip on the space page.
+                                </span>
+                              </span>
+                            </label>
+                          )}
+
                           <div>
                             <label className="block text-sm font-semibold text-slate-700 dark:text-slate-300 mb-2">Animation Type</label>
                             <select
@@ -12950,9 +13098,13 @@ You may also wrap the array in an object: { "messages": [ ... ] }.
                                   priority: messagePriority,
                                   textColor: messageTextColor || undefined,
                                   fontStyle: messageFontStyle || undefined,
+                                  fontFamily: messageFontFamily && messageFontFamily !== 'default' ? messageFontFamily : undefined,
+                                  fontSize: messageFontSize > 0 ? messageFontSize : undefined,
+                                  marqueeSeconds: messageMarqueeSeconds > 0 ? messageMarqueeSeconds : undefined,
                                   displayLocation: messageDisplayLocation,
                                   tabIds: messageTabIds.length > 0 ? messageTabIds : undefined,
                                   showOnCard: messageTabIds.length > 0 && messageShowOnCard ? true : undefined,
+                                  placement: messagePlacement,
                                   animationType: messageAnimationType,
                                   delayBefore: messageDelayBefore || 0,
                                   celebrationEffect: messageCelebrationEffect,
@@ -13072,6 +13224,22 @@ You may also wrap the array in an object: { "messages": [ ... ] }.
                                       <path d="M4.5 6A1.5 1.5 0 003 7.5v9A1.5 1.5 0 004.5 18h7a1.5 1.5 0 001.5-1.5v-5.879a1.5 1.5 0 00-.44-1.06L9.44 6.439A1.5 1.5 0 008.378 6H4.5z" />
                                     </svg>
                                     <span>Tabs: {describeMessageTabs(msg)}</span>
+                                    {msg.placement === 'below' && (
+                                      <span className="px-1.5 py-0.5 text-[10px] font-medium rounded bg-slate-100 text-slate-600 dark:bg-slate-700 dark:text-slate-300">
+                                        Below tabs
+                                      </span>
+                                    )}
+                                    {((msg.fontFamily && msg.fontFamily !== 'default') || (typeof msg.fontSize === 'number' && msg.fontSize > 0)) && (
+                                      <span className="px-1.5 py-0.5 text-[10px] font-medium rounded bg-slate-100 text-slate-600 dark:bg-slate-700 dark:text-slate-300">
+                                        {msg.fontFamily && msg.fontFamily !== 'default' ? messageFontFamilyLabel(msg.fontFamily) : 'Font'}
+                                        {typeof msg.fontSize === 'number' && msg.fontSize > 0 ? ` · ${msg.fontSize}px` : ''}
+                                      </span>
+                                    )}
+                                    {typeof msg.marqueeSeconds === 'number' && msg.marqueeSeconds > 0 && (
+                                      <span className="px-1.5 py-0.5 text-[10px] font-medium rounded bg-slate-100 text-slate-600 dark:bg-slate-700 dark:text-slate-300">
+                                        {msg.marqueeSeconds}s scroll
+                                      </span>
+                                    )}
                                     {msg.tabIds && msg.tabIds.length > 0 && msg.showOnCard === true && (
                                       <span className="px-1.5 py-0.5 text-[10px] font-medium rounded bg-slate-100 text-slate-600 dark:bg-slate-700 dark:text-slate-300">
                                         Card too
@@ -13121,9 +13289,13 @@ You may also wrap the array in an object: { "messages": [ ... ] }.
                                       setMessagePriority(msg.priority || 0);
                                       setMessageTextColor(msg.textColor || '');
                                       setMessageFontStyle(msg.fontStyle || 'normal');
+                                      setMessageFontFamily(typeof msg.fontFamily === 'string' && msg.fontFamily ? msg.fontFamily : 'default');
+                                      setMessageFontSize(typeof msg.fontSize === 'number' && msg.fontSize > 0 ? msg.fontSize : 0);
+                                      setMessageMarqueeSeconds(typeof msg.marqueeSeconds === 'number' && msg.marqueeSeconds > 0 ? msg.marqueeSeconds : 0);
                                       setMessageDisplayLocation(msg.displayLocation || 'both');
                                       setMessageTabIds(Array.isArray(msg.tabIds) ? msg.tabIds.filter(id => typeof id === 'string' && id.trim() !== '') : []);
                                       setMessageShowOnCard(msg.showOnCard === true);
+                                      setMessagePlacement(msg.placement === 'below' ? 'below' : 'above');
                                       setMessageAnimationType(msg.animationType || 'rollover');
                                       setMessageDelayBefore(msg.delayBefore || 0);
                                       const validEffects = ['none', 'fireworks', 'confetti', 'snowfall', 'hearts-rising', 'hearts-falling', 'bubbles', 'butterflies', 'birds-flying', 'rocket-launch', 'burst-fireworks', 'sparkles', 'petals', 'shooting-stars', 'leaves', 'fireflies', 'balloons', 'stars', 'rainbow'] as const;

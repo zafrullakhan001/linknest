@@ -856,6 +856,11 @@ export const normalizeImportedTiles = (
               if (/^[a-z0-9.-]+\.[a-z]{2,}([/:?#].*)?$/i.test(trimmed)) return `https://${trimmed}`;
               return undefined;
             })(),
+            // Space-page banner placement (above the tabs by default)
+            placement: msg.placement === 'below' ? 'below' : 'above',
+            fontFamily: typeof msg.fontFamily === 'string' ? msg.fontFamily : undefined,
+            fontSize: typeof msg.fontSize === 'number' ? msg.fontSize : undefined,
+            marqueeSeconds: typeof msg.marqueeSeconds === 'number' ? msg.marqueeSeconds : undefined,
             // Tab scope (ids remapped onto the freshly generated tabs above)
             ...messageScopeFromImport(msg.tabIds, msg.showOnCard, tabIdMap),
             urlLabel:

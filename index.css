@@ -567,6 +567,8 @@ div.linknest-tile.has-local-decoration .tooltip-force-black * {
   display: flex;
   white-space: nowrap;
   animation: marquee-stock-ticker-tile 25s linear infinite;
+  /* Per-message override (see utils/messageStyle.ts); falls back to the original 25s. */
+  animation-duration: var(--marquee-duration, 25s);
   width: max-content;
   will-change: transform;
   margin-left: 0;
@@ -576,6 +578,8 @@ div.linknest-tile.has-local-decoration .tooltip-force-black * {
   display: flex;
   white-space: nowrap;
   animation: marquee-stock-ticker-detail 35s linear infinite;
+  /* Per-message override (see utils/messageStyle.ts); falls back to the original 35s. */
+  animation-duration: var(--marquee-duration, 35s);
   width: max-content;
   will-change: transform;
   margin-left: 0;

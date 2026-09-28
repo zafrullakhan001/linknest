@@ -87,7 +87,7 @@ const LINK_FIELDS = [
   'richTextContent',
 ] as const;
 const RICH_TEXT_FIELDS = ['content', 'boxed', 'boxTitle', 'visibility'] as const;
-const MESSAGE_FIELDS = ['content', 'type', 'isActive', 'displayLocation', 'tabIds', 'showOnCard', 'animationType'] as const;
+const MESSAGE_FIELDS = ['content', 'type', 'isActive', 'displayLocation', 'tabIds', 'showOnCard', 'placement', 'fontFamily', 'fontSize', 'marqueeSeconds', 'animationType'] as const;
 
 const normalizeTitle = (value: unknown): string =>
   String(value ?? '')

@@ -137,10 +137,12 @@ if (!defined('SYSTEM_TOKEN')) {
 }
 
 // Bump when schema/migrations in initDatabase() change. Enables fast-path getDB().
+// 109 = Message Board fonts + marquee speed (tile_messages.font_family/font_size/marquee_seconds).
+// 108 = Message Board banner placement (tile_messages.placement: above | below the tabs).
 // 107 = Message Board tab scoping (tile_messages.tab_ids + tile_messages.show_on_card).
 // 106 = LinkNest 3.0.0 (schema_releases audit registry).
 if (!defined('LINKNEST_SCHEMA_VERSION')) {
-    define('LINKNEST_SCHEMA_VERSION', 107);
+    define('LINKNEST_SCHEMA_VERSION', 109);
 }
 
 // Shipped application version, recorded in schema_releases so admins can audit
@@ -537,11 +539,49 @@ function ensureTilesSearchTagsColumn(PDO $db): void {
 }
 
 /**
- * Ensure tile_messages.tab_ids / show_on_card exist (v107).
+ * Ensure the Message Board columns added in v107-v109 exist:
+ * tab_ids, show_on_card, placement, font_family, font_size, marquee_seconds.
+OLD;
+patchText($f, $old, $new, 1);
+
+$old = "function ensureTileMessageScopeColumns(PDO $db): void {";
+$new = "function ensureTileMessageColumns(PDO $db): void {";
+patchText($f, $old, $new, 1);
+
+$old = "            error_log('ensureTileMessageScopeColumns warning: ' . \$e->getMessage());";
+$new = "            error_log('ensureTileMessageColumns warning: ' . \$e->getMessage());";
+patchText($f, $old, $new, 1);
+
+$old = "            ensureTileMessageScopeColumns(\$db);";
+$new = "            ensureTileMessageColumns(\$db);";
+patchText($f, $old, $new, 2);
+
+// ensure helper body: the three new columns
+$old = <<<'OLD'
+        if (!in_array('placement', $names, true)) {
+            $db->exec("ALTER TABLE tile_messages ADD COLUMN placement TEXT DEFAULT 'above'");
+        }
+        $ensured = true;
+OLD;
+$new = <<<'NEW'
+        if (!in_array('placement', $names, true)) {
+            $db->exec("ALTER TABLE tile_messages ADD COLUMN placement TEXT DEFAULT 'above'");
+        }
+        if (!in_array('font_family', $names, true)) {
+            $db->exec('ALTER TABLE tile_messages ADD COLUMN font_family TEXT');
+        }
+        if (!in_array('font_size', $names, true)) {
+            $db->exec('ALTER TABLE tile_messages ADD COLUMN font_size INTEGER');
+        }
+        if (!in_array('marquee_seconds', $names, true)) {
+            $db->exec('ALTER TABLE tile_messages ADD COLUMN marquee_seconds INTEGER');
+        }
+        $ensured = true;
  *
  * tab_ids  = JSON array of Tab.id values the message is restricted to on the space page
  *            (NULL/empty/[] = every tab).
  * show_on_card = 1 keeps a tab-restricted message on the home-grid card banner.
+ * placement    = 'above' (default) or 'below' the tab strip on the space page.
  *
  * Additive + idempotent so it is safe on the getDB() fast path.
  */
@@ -562,6 +602,9 @@ function ensureTileMessageScopeColumns(PDO $db): void {
         }
         if (!in_array('show_on_card', $names, true)) {
             $db->exec('ALTER TABLE tile_messages ADD COLUMN show_on_card INTEGER DEFAULT 0');
+        }
+        if (!in_array('placement', $names, true)) {
+            $db->exec("ALTER TABLE tile_messages ADD COLUMN placement TEXT DEFAULT 'above'");
         }
         $ensured = true;
     } catch (PDOException $e) {
@@ -3654,6 +3697,10 @@ function initDatabase() {
             is_active INTEGER DEFAULT 1,
             tab_ids TEXT,
             show_on_card INTEGER DEFAULT 0,
+            placement TEXT DEFAULT "above",
+            font_family TEXT,
+            font_size INTEGER,
+            marquee_seconds INTEGER,
             FOREIGN KEY (tile_id) REFERENCES tiles(id) ON DELETE CASCADE
         )');
 
@@ -3686,6 +3733,10 @@ function initDatabase() {
                     delay_before REAL DEFAULT 0,
                     tab_ids TEXT,
                     show_on_card INTEGER DEFAULT 0,
+                    placement TEXT DEFAULT "above",
+                    font_family TEXT,
+                    font_size INTEGER,
+                    marquee_seconds INTEGER,
                     FOREIGN KEY (tile_id) REFERENCES tiles(id) ON DELETE CASCADE
                 )');
             } else {
@@ -3726,6 +3777,18 @@ function initDatabase() {
                 }
                 if (!in_array('show_on_card', $columnNames)) {
                     $db->exec('ALTER TABLE tile_messages ADD COLUMN show_on_card INTEGER DEFAULT 0');
+                }
+                if (!in_array('placement', $columnNames)) {
+                    $db->exec("ALTER TABLE tile_messages ADD COLUMN placement TEXT DEFAULT 'above'");
+                }
+                if (!in_array('font_family', $columnNames)) {
+                    $db->exec('ALTER TABLE tile_messages ADD COLUMN font_family TEXT');
+                }
+                if (!in_array('font_size', $columnNames)) {
+                    $db->exec('ALTER TABLE tile_messages ADD COLUMN font_size INTEGER');
+                }
+                if (!in_array('marquee_seconds', $columnNames)) {
+                    $db->exec('ALTER TABLE tile_messages ADD COLUMN marquee_seconds INTEGER');
                 }
             }
         } catch (PDOException $e) {

@@ -52,3 +52,85 @@ function tileMessageTabIdsForStorage($tabIds): ?string {
     $ids = tileMessageTabIdsNormalize($tabIds);
     return $ids === null ? null : json_encode(array_values($ids));
 }
+
+/** Valid space-page banner placements. */
+function tileMessagePlacements(): array {
+    return ['above', 'below'];
+}
+
+/** Decode tile_messages.placement ('above' = above the tabs, 'below' = under the tabs). */
+function tileMessagePlacementFromRow(array $msgRow): string {
+    $value = isset($msgRow['placement']) ? strtolower(trim((string)$msgRow['placement'])) : '';
+    return in_array($value, tileMessagePlacements(), true) ? $value : 'above';
+}
+
+/** Encode a message payload's placement for tile_messages.placement. */
+function tileMessagePlacementForStorage($placement): string {
+    $value = is_string($placement) ? strtolower(trim($placement)) : '';
+    return in_array($value, tileMessagePlacements(), true) ? $value : 'above';
+}
+
+/** Font families allowed for a message (mirrors MESSAGE_FONT_FAMILIES in types.ts). */
+function tileMessageFontFamilies(): array {
+    return ['system', 'arial', 'verdana', 'tahoma', 'trebuchet', 'georgia', 'times', 'garamond', 'courier', 'consolas', 'impact', 'comic'];
+}
+
+/** Whitelist a message font family key; null = inherit the space font. */
+function tileMessageFontFamilyNormalize($value): ?string {
+    if (!is_string($value)) {
+        return null;
+    }
+    $key = strtolower(trim($value));
+    if ($key === '' || $key === 'default') {
+        return null;
+    }
+    return in_array($key, tileMessageFontFamilies(), true) ? $key : null;
+}
+
+/** Clamp a message font size in px to 8-72; null = inherit the contextual size. */
+function tileMessageFontSizeNormalize($value): ?int {
+    if (!is_numeric($value)) {
+        return null;
+    }
+    $size = (int)round((float)$value);
+    if ($size <= 0) {
+        return null;
+    }
+    return max(8, min(72, $size));
+}
+
+/** Clamp a marquee cycle length to 5-180s; null = surface default (25s card / 35s page). */
+function tileMessageMarqueeSecondsNormalize($value): ?int {
+    if (!is_numeric($value)) {
+        return null;
+    }
+    $seconds = (int)round((float)$value);
+    if ($seconds <= 0) {
+        return null;
+    }
+    return max(5, min(180, $seconds));
+}
+
+function tileMessageFontFamilyFromRow(array $msgRow): ?string {
+    return tileMessageFontFamilyNormalize($msgRow['font_family'] ?? null);
+}
+
+function tileMessageFontFamilyForStorage($value): ?string {
+    return tileMessageFontFamilyNormalize($value);
+}
+
+function tileMessageFontSizeFromRow(array $msgRow): ?int {
+    return tileMessageFontSizeNormalize($msgRow['font_size'] ?? null);
+}
+
+function tileMessageFontSizeForStorage($value): ?int {
+    return tileMessageFontSizeNormalize($value);
+}
+
+function tileMessageMarqueeSecondsFromRow(array $msgRow): ?int {
+    return tileMessageMarqueeSecondsNormalize($msgRow['marquee_seconds'] ?? null);
+}
+
+function tileMessageMarqueeSecondsForStorage($value): ?int {
+    return tileMessageMarqueeSecondsNormalize($value);
+}

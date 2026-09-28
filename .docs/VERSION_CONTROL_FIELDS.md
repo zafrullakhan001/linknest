@@ -66,6 +66,10 @@ Messages are announcements/notifications displayed on tiles.
 | `displayLocation` | string | Where to show | `"both"`, `"tile"`, `"detail"` |
 | `tabIds` | array/null | Space-page tab ids this message is restricted to (empty/null = every tab) | `["tab_001"]` |
 | `showOnCard` | boolean | Keep a tab-restricted message on the home-grid card banner | `true` |
+| `placement` | string | Space-page banner placement | `"above"`, `"below"` |
+| `fontFamily` | string/null | Message font family key from `MESSAGE_FONT_FAMILIES` | `"georgia"` |
+| `fontSize` | int/null | Message font size in px (8-72) | `14` |
+| `marqueeSeconds` | int/null | Seconds per marquee pass (5-180, higher = slower) | `45` |
 | `animationType` | string | Animation type | `"rollover"`, `"fade"`, `"slide"` |
 | `delayBefore` | float | Delay before showing (s) | `2.5` |
 

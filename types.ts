@@ -543,6 +543,21 @@ export interface TileMessage {
    * card even though it is tab-restricted. Ignored when displayLocation is 'tile'.
    */
   showOnCard?: boolean;
+  /**
+   * Space-page banner placement: 'above' (default) sits above the tab strip, 'below'
+   * renders it at the top of the content area, directly under the tabs.
+   */
+  placement?: 'above' | 'below';
+  /** Font family key from MESSAGE_FONT_FAMILIES; omitted = inherit the space font. */
+  fontFamily?: string;
+  /** Font size in px (8-72); omitted = inherit the contextual size (card vs space page). */
+  fontSize?: number;
+  /**
+   * Seconds for one full marquee cycle (5-180). Omitted = 25s on home-grid cards and
+   * 35s on the space page. When several rollover messages scroll together the slowest
+   * value wins.
+   */
+  marqueeSeconds?: number;
   animationType?: 'rollover' | 'still' | 'flash' | 'flip-horizontal' | 'flip-vertical' | 'bounce' | 'pulse' | 'shake' | 'fade' | 'slide'; // Animation type
   delayBefore?: number; // Delay in seconds before showing this message (for sequential display when multiple messages are active)
   celebrationEffect?: 'none' | 'fireworks' | 'confetti' | 'snowfall' | 'hearts-rising' | 'hearts-falling' | 'bubbles' | 'butterflies' | 'birds-flying' | 'rocket-launch' | 'burst-fireworks' | 'sparkles' | 'petals' | 'shooting-stars' | 'leaves' | 'fireflies' | 'balloons' | 'stars' | 'rainbow'; // Visual effect for celebration messages
@@ -564,6 +579,32 @@ export interface CelebrationConfig {
   /** Milliseconds between bursts. Default 5000. Min 2000, max 15000. */
   triggerIntervalMs?: number;
 }
+
+/** Font families selectable for Message Board messages (bundled / system stacks only). */
+export const MESSAGE_FONT_FAMILIES = [
+  { key: 'default', label: 'Space default', stack: '' },
+  { key: 'system', label: 'System Sans', stack: "system-ui, -apple-system, 'Segoe UI', Roboto, Arial, sans-serif" },
+  { key: 'arial', label: 'Arial', stack: 'Arial, Helvetica, sans-serif' },
+  { key: 'verdana', label: 'Verdana', stack: 'Verdana, Geneva, sans-serif' },
+  { key: 'tahoma', label: 'Tahoma', stack: 'Tahoma, Geneva, sans-serif' },
+  { key: 'trebuchet', label: 'Trebuchet MS', stack: "'Trebuchet MS', Helvetica, sans-serif" },
+  { key: 'georgia', label: 'Georgia', stack: 'Georgia, serif' },
+  { key: 'times', label: 'Times New Roman', stack: "'Times New Roman', Times, serif" },
+  { key: 'garamond', label: 'Garamond', stack: 'Garamond, Georgia, serif' },
+  { key: 'courier', label: 'Courier New', stack: "'Courier New', Courier, monospace" },
+  { key: 'consolas', label: 'Consolas / Mono', stack: 'Consolas, Monaco, monospace' },
+  { key: 'impact', label: 'Impact', stack: 'Impact, Charcoal, sans-serif' },
+  { key: 'comic', label: 'Comic Sans MS', stack: "'Comic Sans MS', 'Comic Sans', cursive" },
+] as const;
+
+export type MessageFontFamilyKey = typeof MESSAGE_FONT_FAMILIES[number]['key'];
+
+/** Message font-size clamps (px). */
+export const MESSAGE_FONT_SIZE_MIN = 8;
+export const MESSAGE_FONT_SIZE_MAX = 72;
+/** Message marquee-cycle clamps (seconds). */
+export const MESSAGE_MARQUEE_SECONDS_MIN = 5;
+export const MESSAGE_MARQUEE_SECONDS_MAX = 180;
 
 export const THEME_COLORS = [
   'blue',

@@ -361,7 +361,7 @@ Default credentials:
 - `docs/BOOKMARK_SYNC_EXTENSION.md` - LinkNest Bookmark Sync extension (handshake, origin allowlist, per-profile sync, mass deploy)
 - `docs/MCP.md` - MCP / AI: LLMs (Cursor, Claude Desktop) list spaces, search links, create or edit bookmarks, and (admin tokens) manage users, roles, Device Presets, and database export/import
 - `docs/PRIVATE_SPACE_SHARING.md` - Private space sharing: `allowed_users` + `tile_share_invitations`, pending/accepted flow, keeping shared users checked in the space editor, revoke on uncheck, and LDAP full-name capture/sync
-- `docs/MESSAGE_BOARD_TABS.md` - Message Board tab scoping: per-message `tabIds` + `showOnCard`, editor tab picker, space-page/card visibility rules, `tile_messages.tab_ids`/`show_on_card` (schema v107)
+- `docs/MESSAGE_BOARD_TABS.md` - Message Board tab scoping, banner placement + message fonts: per-message `tabIds`, `showOnCard`, `placement` (above/below the tabs), `fontFamily`/`fontSize`, `marqueeSeconds` (marquee speed slider), editor pickers, space-page/card visibility rules, `tile_messages.tab_ids`/`show_on_card`/`placement`/`font_family`/`font_size`/`marquee_seconds` (schema v109)
 - `docs/ADMIN_LOCKOUT_RECOVERY.md` - Re-enable Local auth and reset local admin password (`scripts/reset_admin_password.php`); unlock Fingerprint-only access (`scripts/unlock_fingerprint_lock.php`) or login allowlist (`scripts/unlock_login_allowlist.php`) when locked out
 - `docs/MEDIA_LIBRARY.md` - Shared media library (images, PDF, audio, video; Admin + floating widget + RTE picker)
 - `docs/APP_UPDATES.md` - In-app App Updates (portable Releases for ArchLinks / ERP3)
@@ -408,7 +408,7 @@ Default credentials:
 
 See [`docs/APP_UPDATES.md`](docs/APP_UPDATES.md). Double-click [`publish-base-release.bat`](publish-base-release.bat) to publish a portable GitHub Release from the current branch, then apply it from Admin → App Updates.
 
-Current major release: **v3.0.0** — `LINKNEST_SCHEMA_VERSION` **107** (`schema_releases` audit registry, additive/idempotent; 107 adds `tile_messages.tab_ids` + `tile_messages.show_on_card` for Message Board tab scoping) with pre-release SQLite snapshots via `php api/snapshot.php`. See [`docs/RELEASE_NOTES_3.0.0.md`](docs/RELEASE_NOTES_3.0.0.md).
+Current major release: **v3.0.0** — `LINKNEST_SCHEMA_VERSION` **109** (`schema_releases` audit registry, additive/idempotent; 107 adds `tile_messages.tab_ids` + `tile_messages.show_on_card` for Message Board tab scoping, 108 adds `tile_messages.placement` for above/below-tabs banner placement, 109 adds `tile_messages.font_family`/`font_size`/`marquee_seconds` for message fonts and marquee speed) with pre-release SQLite snapshots via `php api/snapshot.php`. See [`docs/RELEASE_NOTES_3.0.0.md`](docs/RELEASE_NOTES_3.0.0.md).
 
 ## Vanilla Apache + PHP 8.5 (Windows)
 
