@@ -2086,7 +2086,15 @@ const SortableTile: React.FC<SortableTileProps> = ({
     </button>
   ) : null;
 
-  const activeMessages = (tile.messages?.filter(m => m.isActive && (!m.startDate || new Date(m.startDate) <= new Date()) && (!m.endDate || new Date(m.endDate) >= new Date()) && (m.displayLocation === 'tile' || m.displayLocation === 'both' || !m.displayLocation)) || []).sort((a, b) => (a.priority || 0) - (b.priority || 0));
+  // Tab-restricted messages stay off the home-grid card unless "Also show on the space card" is set.
+  // 'Tile Only' messages ignore tab scope entirely — a card has no tab context.
+  const isMessageVisibleOnCard = (m: TileMessage): boolean => {
+    if (m.displayLocation === 'tile') return true;
+    if (!m.tabIds || m.tabIds.length === 0) return true;
+    return m.showOnCard === true;
+  };
+
+  const activeMessages = (tile.messages?.filter(m => m.isActive && (!m.startDate || new Date(m.startDate) <= new Date()) && (!m.endDate || new Date(m.endDate) >= new Date()) && (m.displayLocation === 'tile' || m.displayLocation === 'both' || !m.displayLocation) && isMessageVisibleOnCard(m)) || []).sort((a, b) => (a.priority || 0) - (b.priority || 0));
 
   // Helper function to get animation class based on animation type
   const getMessageAnimationClass = (animationType?: string) => {
@@ -4273,6 +4281,16 @@ export const TileGrid: React.FC<TileGridProps> = ({
   const [messageTextColor, setMessageTextColor] = useState<string>('');
   const [messageFontStyle, setMessageFontStyle] = useState<string>('normal');
   const [messageDisplayLocation, setMessageDisplayLocation] = useState<'tile' | 'detail' | 'both'>('both');
+  /** Tabs (Tab.id) a message is restricted to on the space page. Empty = every tab. */
+  const [messageTabIds, setMessageTabIds] = useState<string[]>([]);
+  /** Keep a tab-restricted message on the home-grid card banner. */
+  const [messageShowOnCard, setMessageShowOnCard] = useState<boolean>(false);
+  /**
+   * Tabs of the space being edited, used *only* to render the Message Board tab picker.
+   * Kept out of `editingTile` on purpose so saving still takes the preserve-nested path.
+   */
+  const [editableSpaceTabs, setEditableSpaceTabs] = useState<Tab[]>([]);
+  const [editableSpaceTabsLoading, setEditableSpaceTabsLoading] = useState(false);
   const [messageAnimationType, setMessageAnimationType] = useState<'rollover' | 'still' | 'flash' | 'flip-horizontal' | 'flip-vertical' | 'bounce' | 'pulse' | 'shake' | 'fade' | 'slide'>('rollover');
   const [messageDelayBefore, setMessageDelayBefore] = useState<number>(0);
   const [messageCelebrationEffect, setMessageCelebrationEffect] = useState<TileMessage['celebrationEffect']>('fireworks');
@@ -4336,6 +4354,60 @@ export const TileGrid: React.FC<TileGridProps> = ({
       setMessageCelebrationConfig(preset);
     }
   };
+
+  // ── Message Board tab scoping (space page) ────────────────────────────────
+  /** Tab ids stored on a message that no longer exist on the space being edited. */
+  const missingMessageTabIds = useMemo(
+    () => messageTabIds.filter(id => !editableSpaceTabs.some(tab => tab.id === id)),
+    [messageTabIds, editableSpaceTabs]
+  );
+
+  const toggleMessageTab = (tabId: string) => {
+    setMessageTabIds(prev => (prev.includes(tabId) ? prev.filter(id => id !== tabId) : [...prev, tabId]));
+  };
+
+  /** Human-readable tab scope for the message list ("All tabs" when unrestricted). */
+  const describeMessageTabs = (msg: TileMessage): string => {
+    if (!msg.tabIds || msg.tabIds.length === 0) return 'All tabs';
+    const names = msg.tabIds.map(id => {
+      const tab = editableSpaceTabs.find(t => t.id === id);
+      if (!tab) return 'Removed tab';
+      return `${tab.emoji ? `${tab.emoji} ` : ''}${tab.title || 'Untitled tab'}`;
+    });
+    if (names.length <= 3) return names.join(', ');
+    return `${names.slice(0, 3).join(', ')} +${names.length - 3} more`;
+  };
+
+  // Home-grid tiles arrive in summary mode with `tabs: []` (api/tiles.php summary branch), so
+  // load the space's tabs for the picker when the Message Board tab opens. Deliberately kept in
+  // `editableSpaceTabs` (never merged into `editingTile`) so saving stays metadata-only.
+  useEffect(() => {
+    if (!isEditModalOpen || !editingTile?.id || editModalActiveTab !== 'messages') {
+      return;
+    }
+    if (Array.isArray(editingTile.tabs) && editingTile.tabs.length > 0) {
+      setEditableSpaceTabs(editingTile.tabs);
+      return;
+    }
+    if (!isAuthenticated) {
+      setEditableSpaceTabs([]);
+      return;
+    }
+    let cancelled = false;
+    setEditableSpaceTabsLoading(true);
+    getTile(editingTile.id)
+      .then((full) => {
+        if (cancelled) return;
+        setEditableSpaceTabs(Array.isArray(full?.tabs) ? full.tabs : []);
+      })
+      .catch(() => {
+        if (!cancelled) setEditableSpaceTabs([]);
+      })
+      .finally(() => {
+        if (!cancelled) setEditableSpaceTabsLoading(false);
+      });
+    return () => { cancelled = true; };
+  }, [isEditModalOpen, editingTile?.id, editingTile?.tabs, editModalActiveTab, isAuthenticated]);
 
   // Helper function to get message status
   const getMessageStatus = (msg: TileMessage): 'active' | 'upcoming' | 'expired' => {
@@ -4462,6 +4534,12 @@ export const TileGrid: React.FC<TileGridProps> = ({
     const textColor = typeof m.textColor === 'string' ? m.textColor : undefined;
     const fontStyle = typeof m.fontStyle === 'string' ? m.fontStyle : undefined;
     const delayBefore = typeof m.delayBefore === 'number' && Number.isFinite(m.delayBefore) ? m.delayBefore : 0;
+    // Tab scope (ids are resolved against the target space's own tabs by the import handler)
+    const rawTabIds = Array.isArray(m.tabIds)
+      ? (m.tabIds as unknown[]).filter((id): id is string => typeof id === 'string' && id.trim() !== '')
+      : [];
+    const tabIds = Array.from(new Set(rawTabIds.map(id => id.trim())));
+    const showOnCard = m.showOnCard === true;
     const url = normalizeImportedMessageUrl(m.url);
     const urlLabel = typeof m.urlLabel === 'string' ? m.urlLabel.trim() || undefined : undefined;
     let celebrationConfig: CelebrationConfig | undefined;
@@ -4485,6 +4563,8 @@ export const TileGrid: React.FC<TileGridProps> = ({
       textColor: textColor || undefined,
       fontStyle: fontStyle || undefined,
       displayLocation,
+      tabIds: tabIds.length > 0 ? tabIds : undefined,
+      showOnCard: tabIds.length > 0 && showOnCard ? true : undefined,
       animationType,
       delayBefore,
       celebrationEffect: celebrationEffect as TileMessage['celebrationEffect'],
@@ -4582,16 +4662,31 @@ export const TileGrid: React.FC<TileGridProps> = ({
         }
 
         const normalized: TileMessage[] = [];
+        // Tab ids are space-specific — drop references that do not exist on this space.
+        const knownTabIds = new Set(editableSpaceTabs.map(tab => tab.id));
+        let droppedTabRefs = 0;
         rawList.forEach((item, i) => {
           const msg = normalizeImportedMessage(item, i);
-          if (msg) normalized.push(msg);
+          if (!msg) return;
+          if (knownTabIds.size > 0 && msg.tabIds && msg.tabIds.length > 0) {
+            const kept = msg.tabIds.filter(id => knownTabIds.has(id));
+            droppedTabRefs += msg.tabIds.length - kept.length;
+            if (kept.length > 0) {
+              msg.tabIds = kept;
+            } else {
+              msg.tabIds = undefined;
+              msg.showOnCard = undefined;
+            }
+          }
+          normalized.push(msg);
         });
         setMessages(normalized);
         setEditingMessageId(null);
         const skipped = rawList.length - normalized.length;
-        if (skipped > 0 || fromSpaceExport) {
+        if (skipped > 0 || fromSpaceExport || droppedTabRefs > 0) {
           const parts = [`Imported ${normalized.length} message(s).`];
           if (skipped > 0) parts.push(`Skipped ${skipped} invalid or empty.`);
+          if (droppedTabRefs > 0) parts.push(`Reset ${droppedTabRefs} tab reference(s) not on this space to "All tabs".`);
           if (fromSpaceExport) parts.push('Click Update Space to save them.');
           alert(parts.join(' '));
         }
@@ -4602,9 +4697,12 @@ export const TileGrid: React.FC<TileGridProps> = ({
       e.target.value = '';
     };
     reader.readAsText(file, 'UTF-8');
-  }, [editingTile?.id, editingTile?.title]);
+  }, [editingTile?.id, editingTile?.title, editableSpaceTabs]);
 
   const handleDownloadAIPrompt = useCallback(() => {
+    const tabReference = editableSpaceTabs.length > 0
+      ? `**This space's tabs** (use these ids in \`tabIds\` to limit a message to specific tabs):\n\n${editableSpaceTabs.map(tab => `- \`${tab.id}\` — ${tab.title || 'Untitled tab'}`).join('\n')}\n\nOmit \`tabIds\` (or use an empty array) to show a message on every tab. Add \`"showOnCard": true\` to keep a tab-scoped message on the home-grid card as well.\n`
+      : 'This space has no tabs yet, so omit `tabIds` and `showOnCard`.\n';
     const prompt = `# Linknest Message Board – AI Bulk Generator Prompt
 
 Use this prompt with Claude, ChatGPT, or similar AI tools to generate scheduled messages in bulk. Copy everything below the line, paste into your AI chat, then save the AI's JSON output and import it via the Import button (upload icon) in the message board.
@@ -4630,6 +4728,8 @@ Generate a JSON array of scheduled message board messages for Linknest. Each mes
 | textColor | string | hex e.g. "#3b82f6" | — |
 | fontStyle | string | "normal", "italic", "bold", etc. | "normal" |
 | displayLocation | string | "tile", "detail", "both" | "both" |
+| tabIds | array of strings | ids of this space's tabs the message should show on (space page only); omit for all tabs | — |
+| showOnCard | boolean | true keeps a tab-restricted message on the home-grid card too | false |
 | animationType | string | "rollover", "still", "flash", "flip-horizontal", "flip-vertical", "bounce", "pulse", "shake", "fade", "slide" | "rollover" |
 | delayBefore | number | seconds before showing (sequential messages) | 0 |
 | celebrationEffect | string | "none", "fireworks", "burst-fireworks", "confetti", "snowfall", "hearts-rising", "hearts-falling", "bubbles", "butterflies", "birds-flying", "rocket-launch", "sparkles", "petals", "shooting-stars", "leaves", "fireflies", "balloons", "stars", "rainbow" | "fireworks" |
@@ -4637,6 +4737,7 @@ Generate a JSON array of scheduled message board messages for Linknest. Each mes
 | url | string | URL link for more info (e.g. "https://example.com/details") | — |
 | urlLabel | string | Custom text for the link (e.g. "Learn more", "View details") | "Info" |
 
+${tabReference}
 **celebrationConfig** (optional, for celebrationEffect not "none"):
 - intensity: 1–100 (default 100)
 - particleCount: 5–80
@@ -4682,7 +4783,7 @@ You may also wrap the array in an object: { "messages": [ ... ] }.
     a.download = 'linknest-ai-prompt-message-board.md';
     a.click();
     URL.revokeObjectURL(url);
-  }, []);
+  }, [editableSpaceTabs]);
 
   // Helper function to parse URLs and render clickable links
   const renderMessageContent = (content: string) => {
@@ -6397,6 +6498,10 @@ You may also wrap the array in an object: { "messages": [ ... ] }.
     setMessageEndDate('');
     setMessageIsActive(true);
     setMessagePriority(0);
+    setMessageTabIds([]);
+    setMessageShowOnCard(false);
+    setEditableSpaceTabs([]);
+    setEditableSpaceTabsLoading(false);
   };
 
   // When create modal opens, sync "Create in Staging" to current tab (Staging tab = staging)
@@ -12170,6 +12275,8 @@ You may also wrap the array in an object: { "messages": [ ... ] }.
                             setMessageTextColor('');
                             setMessageFontStyle('normal');
                             setMessageDisplayLocation('both');
+                            setMessageTabIds([]);
+                            setMessageShowOnCard(false);
                             setMessageAnimationType('rollover');
                             setMessageDelayBefore(0);
                             setMessageCelebrationEffect('fireworks');
@@ -12660,6 +12767,113 @@ You may also wrap the array in an object: { "messages": [ ... ] }.
                             </div>
                           </div>
 
+                          {/* Tab scope — which tabs of this space show the message (space page only) */}
+                          {messageDisplayLocation !== 'tile' && (
+                            <div>
+                              <label className="block text-sm font-semibold text-slate-700 dark:text-slate-300 mb-2">
+                                Show On Tabs <span className="text-xs font-normal text-slate-500 dark:text-slate-400">(space page)</span>
+                              </label>
+                              {editableSpaceTabsLoading ? (
+                                <div className="rounded-lg border border-slate-200 dark:border-slate-700 bg-white/70 dark:bg-slate-800/50 px-3 py-2.5 text-xs text-slate-500 dark:text-slate-400">
+                                  Loading this space's tabs…
+                                </div>
+                              ) : editableSpaceTabs.length === 0 ? (
+                                <div className="rounded-lg border border-dashed border-slate-200 dark:border-slate-700 px-3 py-2.5 text-xs text-slate-500 dark:text-slate-400">
+                                  <p>This space has no tabs yet — the message shows on the whole space page.</p>
+                                  {messageTabIds.length > 0 && (
+                                    <button
+                                      type="button"
+                                      onClick={() => { setMessageTabIds([]); setMessageShowOnCard(false); }}
+                                      className="mt-2 px-2.5 py-1 text-xs font-medium rounded-full border border-amber-300 bg-amber-50 text-amber-700 hover:bg-amber-100 dark:border-amber-700 dark:bg-amber-900/30 dark:text-amber-300"
+                                    >
+                                      Clear {messageTabIds.length} saved tab reference{messageTabIds.length === 1 ? '' : 's'}
+                                    </button>
+                                  )}
+                                </div>
+                              ) : (
+                                <>
+                                  <div className="mb-2 flex flex-wrap items-center gap-2">
+                                    <button
+                                      type="button"
+                                      onClick={() => { setMessageTabIds([]); setMessageShowOnCard(false); }}
+                                      className={`px-2.5 py-1 text-xs font-medium rounded-full border transition-colors ${messageTabIds.length === 0
+                                        ? 'border-brand-300 bg-brand-50 text-brand-700 dark:border-brand-700 dark:bg-brand-900/30 dark:text-brand-300'
+                                        : 'border-slate-200 bg-white text-slate-600 hover:bg-slate-50 dark:border-slate-700 dark:bg-slate-800 dark:text-slate-300 dark:hover:bg-slate-700'}`}
+                                      aria-pressed={messageTabIds.length === 0}
+                                    >
+                                      All tabs
+                                    </button>
+                                    <button
+                                      type="button"
+                                      onClick={() => setMessageTabIds(editableSpaceTabs.map(tab => tab.id))}
+                                      disabled={messageTabIds.length === editableSpaceTabs.length}
+                                      className="px-2.5 py-1 text-xs font-medium text-slate-600 dark:text-slate-300 bg-slate-100 dark:bg-slate-700 hover:bg-slate-200 dark:hover:bg-slate-600 rounded-full transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+                                    >
+                                      Select all
+                                    </button>
+                                  </div>
+                                  <div className="flex max-h-40 flex-wrap gap-1.5 overflow-y-auto rounded-lg border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 p-2.5">
+                                    {editableSpaceTabs.map(tab => {
+                                      const checked = messageTabIds.includes(tab.id);
+                                      return (
+                                        <button
+                                          key={tab.id}
+                                          type="button"
+                                          onClick={() => toggleMessageTab(tab.id)}
+                                          aria-pressed={checked}
+                                          title={tab.title || 'Untitled tab'}
+                                          className={`inline-flex items-center gap-1.5 px-2.5 py-1 text-xs font-medium rounded-full border transition-colors ${checked
+                                            ? 'border-emerald-300 bg-emerald-50 text-emerald-700 dark:border-emerald-700 dark:bg-emerald-900/30 dark:text-emerald-300'
+                                            : 'border-slate-200 bg-slate-50 text-slate-600 hover:bg-slate-100 dark:border-slate-700 dark:bg-slate-900/40 dark:text-slate-300 dark:hover:bg-slate-700'}`}
+                                        >
+                                          <span aria-hidden="true">{checked ? '✓' : '+'}</span>
+                                          <span className="max-w-[12rem] truncate">{tab.emoji ? `${tab.emoji} ` : ''}{tab.title || 'Untitled tab'}</span>
+                                        </button>
+                                      );
+                                    })}
+                                  </div>
+                                  {missingMessageTabIds.length > 0 && (
+                                    <div className="mt-2 flex flex-wrap items-center gap-1.5">
+                                      <span className="text-xs text-amber-600 dark:text-amber-400">No longer on this space:</span>
+                                      {missingMessageTabIds.map(id => (
+                                        <button
+                                          key={id}
+                                          type="button"
+                                          onClick={() => setMessageTabIds(prev => prev.filter(tabId => tabId !== id))}
+                                          className="inline-flex items-center gap-1 px-2 py-0.5 text-[11px] font-medium rounded-full border border-amber-300 bg-amber-50 text-amber-700 hover:bg-amber-100 dark:border-amber-700 dark:bg-amber-900/30 dark:text-amber-300"
+                                          title="Remove this tab reference"
+                                        >
+                                          Removed tab ✕
+                                        </button>
+                                      ))}
+                                    </div>
+                                  )}
+                                  <p className="mt-2 text-xs text-slate-500 dark:text-slate-400">
+                                    {messageTabIds.length === 0
+                                      ? 'Shown on every tab of this space.'
+                                      : `Shown only on ${messageTabIds.length} of ${editableSpaceTabs.length} tab${editableSpaceTabs.length === 1 ? '' : 's'} on the space page.`}
+                                  </p>
+                                  {messageTabIds.length > 0 && (
+                                    <label className="mt-2 flex items-start gap-2 text-xs text-slate-600 dark:text-slate-300 cursor-pointer">
+                                      <input
+                                        type="checkbox"
+                                        checked={messageShowOnCard}
+                                        onChange={(e) => setMessageShowOnCard(e.target.checked)}
+                                        className="mt-0.5 h-3.5 w-3.5 rounded accent-brand-500"
+                                      />
+                                      <span>
+                                        <span className="font-semibold">Also show on the space card</span>
+                                        <span className="mt-0.5 block text-slate-500 dark:text-slate-400">
+                                          Tab-restricted messages are hidden from the home-grid card unless this is ticked. Ignored when Display Location is “Tile Only”.
+                                        </span>
+                                      </span>
+                                    </label>
+                                  )}
+                                </>
+                              )}
+                            </div>
+                          )}
+
                           <div>
                             <label className="block text-sm font-semibold text-slate-700 dark:text-slate-300 mb-2">Animation Type</label>
                             <select
@@ -12737,6 +12951,8 @@ You may also wrap the array in an object: { "messages": [ ... ] }.
                                   textColor: messageTextColor || undefined,
                                   fontStyle: messageFontStyle || undefined,
                                   displayLocation: messageDisplayLocation,
+                                  tabIds: messageTabIds.length > 0 ? messageTabIds : undefined,
+                                  showOnCard: messageTabIds.length > 0 && messageShowOnCard ? true : undefined,
                                   animationType: messageAnimationType,
                                   delayBefore: messageDelayBefore || 0,
                                   celebrationEffect: messageCelebrationEffect,
@@ -12850,6 +13066,18 @@ You may also wrap the array in an object: { "messages": [ ... ] }.
                                       <span>To: {new Date(msg.endDate).toLocaleString()}</span>
                                     </div>
                                   )}
+                                  <div className="flex items-center gap-1" title="Tabs this message shows on (space page)">
+                                    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor" className="w-3.5 h-3.5">
+                                      <path d="M7 3.5A1.5 1.5 0 018.5 2h3.879a1.5 1.5 0 011.06.44l3.122 3.12A1.5 1.5 0 0117 6.622V12.5a1.5 1.5 0 01-1.5 1.5h-1v-3.379a3 3 0 00-.879-2.121L10.5 5.379A3 3 0 008.379 4.5H7v-1z" />
+                                      <path d="M4.5 6A1.5 1.5 0 003 7.5v9A1.5 1.5 0 004.5 18h7a1.5 1.5 0 001.5-1.5v-5.879a1.5 1.5 0 00-.44-1.06L9.44 6.439A1.5 1.5 0 008.378 6H4.5z" />
+                                    </svg>
+                                    <span>Tabs: {describeMessageTabs(msg)}</span>
+                                    {msg.tabIds && msg.tabIds.length > 0 && msg.showOnCard === true && (
+                                      <span className="px-1.5 py-0.5 text-[10px] font-medium rounded bg-slate-100 text-slate-600 dark:bg-slate-700 dark:text-slate-300">
+                                        Card too
+                                      </span>
+                                    )}
+                                  </div>
                                 </div>
                               </div>
                               <div className="flex flex-col gap-1.5 ml-4">
@@ -12894,6 +13122,8 @@ You may also wrap the array in an object: { "messages": [ ... ] }.
                                       setMessageTextColor(msg.textColor || '');
                                       setMessageFontStyle(msg.fontStyle || 'normal');
                                       setMessageDisplayLocation(msg.displayLocation || 'both');
+                                      setMessageTabIds(Array.isArray(msg.tabIds) ? msg.tabIds.filter(id => typeof id === 'string' && id.trim() !== '') : []);
+                                      setMessageShowOnCard(msg.showOnCard === true);
                                       setMessageAnimationType(msg.animationType || 'rollover');
                                       setMessageDelayBefore(msg.delayBefore || 0);
                                       const validEffects = ['none', 'fireworks', 'confetti', 'snowfall', 'hearts-rising', 'hearts-falling', 'bubbles', 'butterflies', 'birds-flying', 'rocket-launch', 'burst-fireworks', 'sparkles', 'petals', 'shooting-stars', 'leaves', 'fireflies', 'balloons', 'stars', 'rainbow'] as const;

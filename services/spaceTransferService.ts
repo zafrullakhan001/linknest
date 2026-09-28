@@ -1,4 +1,4 @@
-import { Tile, LinkSection, Link, Tab } from '../types';
+import { Tile, LinkSection, Link, Tab, TileMessage } from '../types';
 import { generateUuid } from './idService';
 import { normalizeLinkTooltipStyle } from '../utils/linkTooltipPreference';
 import { pickSectionBackgroundDecoration } from '../utils/sectionBackgroundColor';
@@ -46,6 +46,27 @@ const asNumberArray = (value: unknown): number[] | undefined =>
   Array.isArray(value)
     ? value.filter((v): v is number => typeof v === 'number')
     : undefined;
+
+/**
+ * Imported tabs get fresh ids, so a message's tab scope must be remapped onto them.
+ * Returns `{}` for unrestricted messages so the optional fields stay omitted.
+ */
+const messageScopeFromImport = (
+  rawTabIds: unknown,
+  showOnCard: unknown,
+  tabIdMap: Map<string, string>
+): Pick<TileMessage, 'tabIds' | 'showOnCard'> => {
+  if (!Array.isArray(rawTabIds)) return {};
+  const ids = Array.from(
+    new Set(
+      rawTabIds
+        .filter((id): id is string => typeof id === 'string' && id.trim() !== '')
+        .map(id => tabIdMap.get(id.trim()) ?? id.trim())
+    )
+  );
+  if (ids.length === 0) return {};
+  return { tabIds: ids, showOnCard: showOnCard === true ? true : undefined };
+};
 
 const MESSAGE_ANIMATION_TYPES = [
   'rollover',
@@ -666,14 +687,20 @@ export const normalizeImportedTiles = (
         ? src.group
         : parsed.categoryName) || 'Imported';
 
-    // Handle tabs structure (new structure)
+    // Handle tabs structure (new structure). Imported tabs get fresh ids, so remember the
+    // old → new mapping to remap message tab scopes below.
+    const tabIdMap = new Map<string, string>();
     const tabs = Array.isArray(src.tabs) && src.tabs.length > 0
       ? src.tabs.map((tab: any) => {
           const background = pickSectionBackgroundDecoration(
             tab && typeof tab === 'object' ? (tab as Record<string, unknown>) : undefined
           );
+          const newTabId = generateId();
+          if (tab && typeof tab === 'object' && typeof tab.id === 'string' && tab.id) {
+            tabIdMap.set(tab.id, newTabId);
+          }
           return {
-          id: generateId(),
+          id: newTabId,
           title: String(tab.title || 'New Tab'),
           position: typeof tab.position === 'number' ? tab.position : 0,
           textColor: typeof tab.textColor === 'string' ? tab.textColor : undefined,
@@ -829,6 +856,8 @@ export const normalizeImportedTiles = (
               if (/^[a-z0-9.-]+\.[a-z]{2,}([/:?#].*)?$/i.test(trimmed)) return `https://${trimmed}`;
               return undefined;
             })(),
+            // Tab scope (ids remapped onto the freshly generated tabs above)
+            ...messageScopeFromImport(msg.tabIds, msg.showOnCard, tabIdMap),
             urlLabel:
               typeof msg.urlLabel === 'string' && msg.urlLabel.trim()
                 ? msg.urlLabel.trim()

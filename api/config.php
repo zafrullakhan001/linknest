@@ -137,9 +137,10 @@ if (!defined('SYSTEM_TOKEN')) {
 }
 
 // Bump when schema/migrations in initDatabase() change. Enables fast-path getDB().
+// 107 = Message Board tab scoping (tile_messages.tab_ids + tile_messages.show_on_card).
 // 106 = LinkNest 3.0.0 (schema_releases audit registry).
 if (!defined('LINKNEST_SCHEMA_VERSION')) {
-    define('LINKNEST_SCHEMA_VERSION', 106);
+    define('LINKNEST_SCHEMA_VERSION', 107);
 }
 
 // Shipped application version, recorded in schema_releases so admins can audit
@@ -532,6 +533,39 @@ function ensureTilesSearchTagsColumn(PDO $db): void {
         $ensured = true;
     } catch (PDOException $e) {
         error_log('ensureTilesSearchTagsColumn warning: ' . $e->getMessage());
+    }
+}
+
+/**
+ * Ensure tile_messages.tab_ids / show_on_card exist (v107).
+ *
+ * tab_ids  = JSON array of Tab.id values the message is restricted to on the space page
+ *            (NULL/empty/[] = every tab).
+ * show_on_card = 1 keeps a tab-restricted message on the home-grid card banner.
+ *
+ * Additive + idempotent so it is safe on the getDB() fast path.
+ */
+function ensureTileMessageScopeColumns(PDO $db): void {
+    static $ensured = false;
+    if ($ensured) {
+        return;
+    }
+    try {
+        $columns = $db->query('PRAGMA table_info(tile_messages)')->fetchAll(PDO::FETCH_ASSOC);
+        if (empty($columns)) {
+            // Table is created later during bootstrap; nothing to repair yet.
+            return;
+        }
+        $names = array_column($columns, 'name');
+        if (!in_array('tab_ids', $names, true)) {
+            $db->exec('ALTER TABLE tile_messages ADD COLUMN tab_ids TEXT');
+        }
+        if (!in_array('show_on_card', $names, true)) {
+            $db->exec('ALTER TABLE tile_messages ADD COLUMN show_on_card INTEGER DEFAULT 0');
+        }
+        $ensured = true;
+    } catch (PDOException $e) {
+        error_log('ensureTileMessageScopeColumns warning: ' . $e->getMessage());
     }
 }
 
@@ -2324,6 +2358,7 @@ function initDatabase() {
         if ($currentVersion >= (int)LINKNEST_SCHEMA_VERSION) {
             // Required by tiles summary SELECT — always repair even if the v88 patch flag already exists.
             ensureAccessRestrictionsColumns($db);
+            ensureTileMessageScopeColumns($db);
             ensureFingerprintRegistryTable($db);
             ensureShortUrlsSchema($db);
             ensureInheritShortUrlsColumns($db);
@@ -2422,6 +2457,7 @@ function initDatabase() {
                 ensureSchemaReleaseRegistry($db);
                 markSchemaPatchesApplied();
             }
+            ensureTileMessageScopeColumns($db);
             releaseDatabaseInitLock($initLock);
             $initLock = null;
             return $db;
@@ -3616,6 +3652,8 @@ function initDatabase() {
             start_date TEXT,
             end_date TEXT,
             is_active INTEGER DEFAULT 1,
+            tab_ids TEXT,
+            show_on_card INTEGER DEFAULT 0,
             FOREIGN KEY (tile_id) REFERENCES tiles(id) ON DELETE CASCADE
         )');
 
@@ -3646,6 +3684,8 @@ function initDatabase() {
                     display_location TEXT DEFAULT "both",
                     animation_type TEXT DEFAULT "rollover",
                     delay_before REAL DEFAULT 0,
+                    tab_ids TEXT,
+                    show_on_card INTEGER DEFAULT 0,
                     FOREIGN KEY (tile_id) REFERENCES tiles(id) ON DELETE CASCADE
                 )');
             } else {
@@ -3680,6 +3720,12 @@ function initDatabase() {
                 }
                 if (!in_array('url_label', $columnNames)) {
                     $db->exec('ALTER TABLE tile_messages ADD COLUMN url_label TEXT');
+                }
+                if (!in_array('tab_ids', $columnNames)) {
+                    $db->exec('ALTER TABLE tile_messages ADD COLUMN tab_ids TEXT');
+                }
+                if (!in_array('show_on_card', $columnNames)) {
+                    $db->exec('ALTER TABLE tile_messages ADD COLUMN show_on_card INTEGER DEFAULT 0');
                 }
             }
         } catch (PDOException $e) {

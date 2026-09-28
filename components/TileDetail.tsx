@@ -1419,11 +1419,17 @@ export const TileDetail: React.FC<TileDetailProps> = ({
 
     // Helper function to get active messages
     const getActiveMessages = (): TileMessage[] => {
+        // Tab scoping: a message limited to specific tabs only shows while one of those tabs is active.
+        const spaceTabs = Array.isArray(tile.tabs) ? tile.tabs : [];
+        const activeTabId = (selectedTabId && spaceTabs.some(tab => tab.id === selectedTabId))
+            ? selectedTabId
+            : (resolveTabId(spaceTabs, selectedTabId) || spaceTabs[0]?.id || null);
         return (tile.messages?.filter(m =>
             m.isActive &&
             (!m.startDate || new Date(m.startDate) <= new Date()) &&
             (!m.endDate || new Date(m.endDate) >= new Date()) &&
-            (m.displayLocation === 'detail' || m.displayLocation === 'both' || !m.displayLocation)
+            (m.displayLocation === 'detail' || m.displayLocation === 'both' || !m.displayLocation) &&
+            (!m.tabIds || m.tabIds.length === 0 || (!!activeTabId && m.tabIds.includes(activeTabId)))
         ) || []).sort((a, b) => (a.priority || 0) - (b.priority || 0));
     };
 
@@ -1550,6 +1556,11 @@ export const TileDetail: React.FC<TileDetailProps> = ({
 
         return () => clearTimeout(timer);
     }, [currentMessageIndex, activeMessages]);
+
+    // Tab-scoped messages appear/disappear with the active tab — restart the rotation.
+    useEffect(() => {
+        setCurrentMessageIndex(0);
+    }, [selectedTabId]);
 
     // Sync state when tile changes, but only when not editing to prevent losing unsaved changes.
     // IMPORTANT: We only depend on `tile` and `isEditing` so that local edits

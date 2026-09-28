@@ -533,6 +533,16 @@ export interface TileMessage {
   textColor?: string; // Text color (hex code)
   fontStyle?: string; // Font style (normal, italic, bold, bold italic, etc.)
   displayLocation?: 'tile' | 'detail' | 'both'; // Where to display the message
+  /**
+   * Restrict the message to these space tabs (Tab.id values) on the space page.
+   * Empty/omitted = show on every tab (and on the home-grid card as usual).
+   */
+  tabIds?: string[];
+  /**
+   * Only meaningful when `tabIds` is set: keep showing the message on the home-grid
+   * card even though it is tab-restricted. Ignored when displayLocation is 'tile'.
+   */
+  showOnCard?: boolean;
   animationType?: 'rollover' | 'still' | 'flash' | 'flip-horizontal' | 'flip-vertical' | 'bounce' | 'pulse' | 'shake' | 'fade' | 'slide'; // Animation type
   delayBefore?: number; // Delay in seconds before showing this message (for sequential display when multiple messages are active)
   celebrationEffect?: 'none' | 'fireworks' | 'confetti' | 'snowfall' | 'hearts-rising' | 'hearts-falling' | 'bubbles' | 'butterflies' | 'birds-flying' | 'rocket-launch' | 'burst-fireworks' | 'sparkles' | 'petals' | 'shooting-stars' | 'leaves' | 'fireflies' | 'balloons' | 'stars' | 'rainbow'; // Visual effect for celebration messages

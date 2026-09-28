@@ -87,7 +87,7 @@ const LINK_FIELDS = [
   'richTextContent',
 ] as const;
 const RICH_TEXT_FIELDS = ['content', 'boxed', 'boxTitle', 'visibility'] as const;
-const MESSAGE_FIELDS = ['content', 'type', 'isActive', 'displayLocation', 'animationType'] as const;
+const MESSAGE_FIELDS = ['content', 'type', 'isActive', 'displayLocation', 'tabIds', 'showOnCard', 'animationType'] as const;
 
 const normalizeTitle = (value: unknown): string =>
   String(value ?? '')
@@ -486,9 +486,16 @@ export const concatenateSpaces = (left: Tile, right: Tile): Tile => {
 export const regenerateIds = (tile: Tile): Tile => {
   const next = deepClone(tile);
   next.id = generateUuid();
+  // Tab ids change here, so message tab scopes must be remapped to the new ids.
+  const tabIdMap = new Map<string, string>();
+  const assignTabId = (oldId: string | undefined): string => {
+    const newId = generateUuid();
+    if (oldId) tabIdMap.set(oldId, newId);
+    return newId;
+  };
   next.tabs = ensureTabs(next).map((tab, tabIndex) => ({
     ...tab,
-    id: generateUuid(),
+    id: assignTabId(tab.id),
     position: typeof tab.position === 'number' ? tab.position : tabIndex,
     sections: (tab.sections || []).map((section, sectionIndex) => ({
       ...section,
@@ -507,7 +514,13 @@ export const regenerateIds = (tile: Tile): Tile => {
     })),
   }));
   if (Array.isArray(next.messages)) {
-    next.messages = next.messages.map((msg) => ({ ...msg, id: generateUuid() }));
+    next.messages = next.messages.map((msg) => ({
+      ...msg,
+      id: generateUuid(),
+      tabIds: Array.isArray(msg.tabIds) && msg.tabIds.length > 0
+        ? Array.from(new Set(msg.tabIds.map(id => tabIdMap.get(id) ?? id)))
+        : undefined,
+    }));
   }
   delete (next as { sections?: LinkSection[] }).sections;
   return next;

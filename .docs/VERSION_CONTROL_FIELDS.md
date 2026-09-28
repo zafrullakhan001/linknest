@@ -64,6 +64,8 @@ Messages are announcements/notifications displayed on tiles.
 | `textColor` | string/null | Text color | `"#ffffff"` |
 | `fontStyle` | string/null | Font style | `"normal"`, `"italic"`, `"bold"` |
 | `displayLocation` | string | Where to show | `"both"`, `"tile"`, `"detail"` |
+| `tabIds` | array/null | Space-page tab ids this message is restricted to (empty/null = every tab) | `["tab_001"]` |
+| `showOnCard` | boolean | Keep a tab-restricted message on the home-grid card banner | `true` |
 | `animationType` | string | Animation type | `"rollover"`, `"fade"`, `"slide"` |
 | `delayBefore` | float | Delay before showing (s) | `2.5` |
 
