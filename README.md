@@ -565,6 +565,7 @@ php scripts/import_database.php data\backups    # restore the newest export/snap
 ---
 
 <div align="center">
+<<<<<<< HEAD
 
 **LinkNest** — one front door for every application URL you run.
 
@@ -575,3 +576,21 @@ Self-hosted · SQLite · no per-user licensing · built for IT teams that manage
 </div>
 
 
+=======
+</div>
+
+This contains everything you need to run your app locally.
+
+View your app in AI Studio: https://ai.studio/apps/drive/1yFB-r5cIXBuRnvN_K6nr8m5WQv6_0X1O
+
+## Run Locally
+
+**Prerequisites:**  Node.js
+
+
+1. Install dependencies:
+   `npm install`
+2. Set the `GEMINI_API_KEY` in [.env.local](.env.local) to your Gemini API key
+3. Run the app:
+   `npm run dev`
+>>>>>>> 77d1f26fa489885c5c0475108e1302d277c9a624
