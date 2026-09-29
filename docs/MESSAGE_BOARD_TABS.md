@@ -13,7 +13,7 @@ rendered above the tab strip (default) or directly below it on the space page.
 | `placement` | `'above' / 'below'` (optional) | Space-page banner position: `'above'` (default) keeps the banner above the tab strip; `'below'` moves it to the top of the content area, directly under the tabs. |
 | `fontFamily` | `string` (optional) | Key from `MESSAGE_FONT_FAMILIES` (`types.ts`) — bundled/system stacks only. Omitted = inherit the space font. |
 | `fontSize` | `number` (optional) | px, clamped 8-72. Omitted = the surface default (card `10-12px`, space page `14px`). |
-| `marqueeSeconds` | `number` (optional) | Seconds for one full marquee pass, clamped 5-180. Rollover/marquee messages only. |
+| `marqueeSeconds` | `number` (optional) | Stored marquee cycle length in seconds, clamped 5-180. Rollover/marquee messages only — see *Seamless marquee loop* for how it maps onto the animation. |
 
 ### Visibility rules
 
@@ -45,12 +45,52 @@ the tab/date/`displayLocation` filtering applies to both slots.
 |-------|--------|
 | `fontFamily` | Rendered as an inline CSS font stack (see `utils/messageStyle.ts`), so nothing is fetched at runtime and no layout shift is possible. |
 | `fontSize` | Applied as an inline `font-size` on both the card marquee and the space-page banner; the space-page banner track uses `min-h-6` so taller text is never clipped. |
-| `marqueeSeconds` | Drives the `--marquee-duration` CSS variable consumed by `.animate-rolling-tile` / `.animate-rolling-detail` in `index.css`. Unset falls back to the original 25s (card) / 35s (space page). |
+| `marqueeSeconds` | Drives the `--marquee-duration` CSS variable consumed by `.animate-rolling-tile` / `.animate-rolling-detail` in `index.css`. Unset falls back to the original 25s (card) / 35s (space page). The stored value is a *cycle length* from the old ticker, so `marqueeLoopSeconds()` (`utils/messageStyle.ts`) converts it for the seamless loop (see below). |
 
 **When several rollover messages share one marquee the slowest value wins**, so a faster value set
 on one message cannot speed up the marquee the others scroll in. The slider is only shown for
 messages with the *Rollover (Marquee)* animation type, and hovering a marquee still pauses it
 (`animation-play-state: paused`).
+
+### Seamless marquee loop
+
+Both marquees render the message run **twice** (`renderMessageRun()` in `components/TileGrid.tsx`
+and `components/TileMessageBanner.tsx`) and slide the track by exactly one run with the
+`marquee-seamless` keyframe (`translateX(0)` -> `translateX(-50%)`).
+
+A zero-gap loop would show the same message twice whenever the run is narrower than the strip, so
+the gap between the two runs is measured per surface (`hooks/useMarqueeGeometry.ts`) and rendered
+as a spacer (`data-marquee-seam`):
+
+```
+seam gap = max(0, strip width + widest message width - run content width)
+```
+
+That is the distance at which the following copy of a message can no longer be on screen at the
+same time as its previous copy, which gives both properties:
+
+* **a message is never on screen twice** - the next copy starts entering the right edge exactly as
+  the previous copy leaves the left edge (for a single message the hand-off is exact);
+* **the strip is never empty** - the spacer never exceeds the strip width, so something is always
+  scrolling and the marquee never waits between passes.
+
+Measuring runs through `ResizeObserver` on the strip and on the run (grid re-layouts, side-by-side
+views, mobile widths) plus `document.fonts.ready`, so the gap follows the widths actually rendered.
+Until the first measurement the track is `invisible`, so the un-measured zero-gap frame cannot
+flash a duplicate. The cloned run is `aria-hidden` and its links are removed from the tab order
+(they stay clickable, and hovering still pauses the marquee).
+
+The stored `marqueeSeconds` value keeps its meaning and its scroll speed:
+`marqueeLoopSeconds()` converts it to the ungapped loop duration and `marqueePaceScale()`
+multiplies it by `(run + seam gap) / run`, so a longer pitch takes proportionally longer and the
+pixels-per-second stay exactly what the slider was tuned to:
+
+```
+loop seconds = stored cycle x 0.65 / 2 x (run width + seam gap) / run width
+```
+
+Defaults before the seam gap is applied: 25s -> 8.125s (card) and 35s -> 11.375s (space page).
+
 ## Editor UI
 
 * **Show On Tabs** (in the message form, below *Display Location*) — checkbox chips for every
@@ -93,7 +133,7 @@ tabs, sections, or links.
 
 ## Related files
 
-`types.ts`, `utils/messageStyle.ts`, `components/TileGrid.tsx`, `components/TileDetail.tsx`,
+`types.ts`, `utils/messageStyle.ts`, `hooks/useMarqueeGeometry.ts`, `components/TileGrid.tsx`, `components/TileDetail.tsx`,
 `components/TileMessageBanner.tsx`, `index.css`, `services/spaceTransferService.ts`,
 `services/spaceCompareService.ts`, `api/tiles.php`, `api/tile_messages_lib.php`,
 `api/config.php`, `docs/schemas/schema-*.sql`.

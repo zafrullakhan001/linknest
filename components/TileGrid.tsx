@@ -3,6 +3,7 @@ import { createPortal } from 'react-dom';
 import { Tile, Tab, LinkSection, ThemeColor, THEME_COLORS, COLOR_STYLES, TileVisibility, TileMessage, Link, CelebrationConfig, AccessRestrictions } from '../types';
 import { MESSAGE_FONT_FAMILIES, MESSAGE_FONT_SIZE_MIN, MESSAGE_FONT_SIZE_MAX, MESSAGE_MARQUEE_SECONDS_MIN, MESSAGE_MARQUEE_SECONDS_MAX } from '../types';
 import { buildMessageTextStyle, messageMarqueeStyle, messageFontFamilyLabel, MARQUEE_SECONDS_CARD, MARQUEE_SECONDS_DETAIL } from '../utils/messageStyle';
+import { useMarqueeGeometry } from '../hooks/useMarqueeGeometry';
 import { useSettings } from '../contexts/SettingsContext';
 import { useStyles } from '../contexts/StyleContext';
 import { applyCategoryTextCase, buildCategoryCaseRenameMap } from '../services/styleService';
@@ -1968,6 +1969,14 @@ const SortableTile: React.FC<SortableTileProps> = ({
   const [starsTrigger, setStarsTrigger] = useState(0);
   const [rainbowTrigger, setRainbowTrigger] = useState(0);
   const tileRef = useRef<HTMLDivElement>(null);
+  // Seam geometry for the rollover message marquee: keeps the next copy off screen until the
+  // previous one has left, so the same message is never visible twice (see useMarqueeGeometry).
+  const {
+    viewportRef: marqueeViewportRef,
+    gap: marqueeSeamGap,
+    paceScale: marqueePaceScale,
+    measured: marqueeMeasured
+  } = useMarqueeGeometry();
   // Below lg: header image is hidden → force title/description. At lg+: restore checkbox behavior (image only when those are unchecked).
   const [isCompactLayout, setIsCompactLayout] = useState(() =>
     typeof window !== 'undefined' ? window.innerWidth < 1024 : true
@@ -2033,6 +2042,51 @@ const SortableTile: React.FC<SortableTileProps> = ({
       return <span key={index} dangerouslySetInnerHTML={{ __html: part }} />;
     });
   };
+
+  /**
+   * One marquee run: every rollover message plus the measured seam gap, so the next run starts
+   * entering the right edge exactly as this one's tail leaves the left edge - one message after
+   * another, never two copies of the same message on screen (see `useMarqueeGeometry`).
+   * The cloned run is hidden from assistive tech and removed from the tab order.
+   */
+  const renderMessageRun = (msgs: TileMessage[], keyPrefix: string, cloned: boolean, seamGap: number) => (
+    <div
+      key={keyPrefix}
+      data-marquee-run={keyPrefix}
+      className="flex items-center gap-10 pr-10 shrink-0"
+      aria-hidden={cloned || undefined}
+    >
+      {msgs.map((msg, idx) => (
+        <div
+          key={`${keyPrefix}-${msg.id}-${idx}`}
+          data-marquee-message
+          className="flex items-center gap-2 shrink-0"
+          style={buildMessageTextStyle(msg)}
+          data-message-color={msg.textColor || ''}
+        >
+          {renderMessageContent(msg.content)}
+          {msg.url && (
+            <a
+              href={msg.url}
+              target="_blank"
+              rel="noopener noreferrer"
+              className="inline-flex items-center gap-0.5 ml-1 px-1.5 py-0.5 text-[9px] font-medium text-slate-800 dark:text-brand-400 bg-transparent hover:bg-slate-200/50 dark:hover:bg-brand-900/30 rounded transition-colors"
+              onClick={(e) => e.stopPropagation()}
+              title={msg.urlLabel || 'Click for more info'}
+              tabIndex={cloned ? -1 : undefined}
+            >
+              <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor" className="w-2.5 h-2.5">
+                <path d="M12.232 4.232a2.5 2.5 0 013.536 3.536l-1.225 1.224a.75.75 0 001.061 1.06l1.224-1.224a4 4 0 00-5.656-5.656l-3 3a4 4 0 00.225 5.865.75.75 0 00.977-1.138 2.5 2.5 0 01-.142-3.667l3-3z" />
+                <path d="M11.603 7.963a.75.75 0 00-.977 1.138 2.5 2.5 0 01.142 3.667l-3 3a2.5 2.5 0 01-3.536-3.536l1.225-1.224a.75.75 0 00-1.061-1.06l-1.224 1.224a4 4 0 105.656 5.656l3-3a4 4 0 00-.225-5.865z" />
+              </svg>
+              {msg.urlLabel || 'Info'}
+            </a>
+          )}
+        </div>
+      ))}
+      <span data-marquee-seam className="shrink-0" aria-hidden="true" style={{ width: seamGap }} />
+    </div>
+  );
 
   const styles = getColorStyles(tile.themeColor);
   const isFileVideoSpace = !!(
@@ -2961,39 +3015,16 @@ const SortableTile: React.FC<SortableTileProps> = ({
               const allRollover = activeMessages.length > 0 && activeMessages.every(msg => !msg.animationType || msg.animationType === 'rollover');
 
               if (allRollover) {
-                // Rollover animation - stock ticker style: single copy, right-to-left, pause when fully gone
+                // Rollover animation - seamless ticker: the run is rendered twice, so the second
+                // copy is already where the first one started the moment it leaves the left edge.
                 return (
-                  <div className="overflow-hidden">
+                  <div ref={marqueeViewportRef} className="overflow-hidden">
                     <div
-                      className="animate-rolling-tile flex items-center gap-10 text-[10px] sm:text-xs font-semibold"
-                      style={messageMarqueeStyle(activeMessages, MARQUEE_SECONDS_CARD)}
+                      className={`animate-rolling-tile flex items-center text-[10px] sm:text-xs font-semibold ${marqueeMeasured ? '' : 'invisible'}`}
+                      style={messageMarqueeStyle(activeMessages, MARQUEE_SECONDS_CARD, marqueePaceScale)}
                     >
-                      {activeMessages.map((msg, idx) => (
-                        <div
-                          key={`${msg.id}-${idx}`}
-                          className="flex items-center gap-2 shrink-0"
-                          style={buildMessageTextStyle(msg)}
-                          data-message-color={msg.textColor || ''}
-                        >
-                          {renderMessageContent(msg.content)}
-                          {msg.url && (
-                            <a
-                              href={msg.url}
-                              target="_blank"
-                              rel="noopener noreferrer"
-                              className="inline-flex items-center gap-0.5 ml-1 px-1.5 py-0.5 text-[9px] font-medium text-slate-800 dark:text-brand-400 bg-transparent hover:bg-slate-200/50 dark:hover:bg-brand-900/30 rounded transition-colors"
-                              onClick={(e) => e.stopPropagation()}
-                              title={msg.urlLabel || 'Click for more info'}
-                            >
-                              <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor" className="w-2.5 h-2.5">
-                                <path d="M12.232 4.232a2.5 2.5 0 013.536 3.536l-1.225 1.224a.75.75 0 001.061 1.06l1.224-1.224a4 4 0 00-5.656-5.656l-3 3a4 4 0 00.225 5.865.75.75 0 00.977-1.138 2.5 2.5 0 01-.142-3.667l3-3z" />
-                                <path d="M11.603 7.963a.75.75 0 00-.977 1.138 2.5 2.5 0 01.142 3.667l-3 3a2.5 2.5 0 01-3.536-3.536l1.225-1.224a.75.75 0 00-1.061-1.06l-1.224 1.224a4 4 0 105.656 5.656l3-3a4 4 0 00-.225-5.865z" />
-                              </svg>
-                              {msg.urlLabel || 'Info'}
-                            </a>
-                          )}
-                        </div>
-                      ))}
+                      {renderMessageRun(activeMessages, 'run', false, marqueeSeamGap)}
+                      {renderMessageRun(activeMessages, 'run-clone', true, marqueeSeamGap)}
                     </div>
                   </div>
                 );
@@ -12893,7 +12924,7 @@ You may also wrap the array in an object: { "messages": [ ... ] }.
                                 </button>
                               </div>
                               <p className="mt-2 text-xs text-slate-500 dark:text-slate-400">
-                                Higher = slower scroll (seconds for one full pass, 5-180). If several marquee messages scroll together the slowest value wins — a faster value on one message will not speed up the others.
+                                Higher = slower scroll (seconds per marquee cycle, 5-180). The message loops seamlessly, so the next pass starts as soon as the previous one scrolls off instead of waiting. If several marquee messages scroll together the slowest value wins — a faster value on one message will not speed up the others.
                               </p>
                             </div>
                           )}

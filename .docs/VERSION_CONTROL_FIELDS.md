@@ -69,7 +69,7 @@ Messages are announcements/notifications displayed on tiles.
 | `placement` | string | Space-page banner placement | `"above"`, `"below"` |
 | `fontFamily` | string/null | Message font family key from `MESSAGE_FONT_FAMILIES` | `"georgia"` |
 | `fontSize` | int/null | Message font size in px (8-72) | `14` |
-| `marqueeSeconds` | int/null | Seconds per marquee pass (5-180, higher = slower) | `45` |
+| `marqueeSeconds` | int/null | Stored marquee cycle length (5-180, higher = slower); rendered as a seamless loop via `marqueeLoopSeconds()` plus the measured seam gap (`marqueePaceScale()` in `utils/messageStyle.ts`), so existing values keep their scroll speed and a message is never on screen twice | `45` |
 | `animationType` | string | Animation type | `"rollover"`, `"fade"`, `"slide"` |
 | `delayBefore` | float | Delay before showing (s) | `2.5` |
 

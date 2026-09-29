@@ -537,38 +537,28 @@ div.linknest-tile.has-local-decoration .tooltip-force-black * {
   animation: gradient-shift 3s ease infinite;
 }
 
-/* Rolling message animation (Marquee) - Stock ticker style: right-to-left with pause */
-/* Content enters from right, scrolls fully out to left, pauses before next cycle */
-@keyframes marquee-stock-ticker-tile {
-  0% {
-    transform: translateX(100%);
+/* Rolling message animation (Marquee) - seamless ticker: right-to-left, never blank.
+   The track renders the message run TWICE, so the moment one copy leaves the left edge the
+   next copy is already in exactly the same place: there is no pause to wait through before
+   the next pass appears. Two identical runs + translateX(-50%) == exactly one run pitch
+   (each run carries its own trailing gap, see TileGrid / TileMessageBanner). */
+@keyframes marquee-seamless {
+  from {
+    transform: translateX(0);
   }
-  65% {
-    transform: translateX(-100%);
-  }
-  100% {
-    transform: translateX(-100%);
-  }
-}
-
-@keyframes marquee-stock-ticker-detail {
-  0% {
-    transform: translateX(100%);
-  }
-  65% {
-    transform: translateX(-100%);
-  }
-  100% {
-    transform: translateX(-100%);
+  to {
+    transform: translateX(-50%);
   }
 }
 
 .animate-rolling-tile {
   display: flex;
   white-space: nowrap;
-  animation: marquee-stock-ticker-tile 25s linear infinite;
-  /* Per-message override (see utils/messageStyle.ts); falls back to the original 25s. */
-  animation-duration: var(--marquee-duration, 25s);
+  /* -50% must resolve against the true max-content width of the two runs. */
+  flex-shrink: 0;
+  animation: marquee-seamless 8.125s linear infinite;
+  /* Per-message override (see utils/messageStyle.ts); stored 25s cycle -> 8.125s seamless loop. */
+  animation-duration: var(--marquee-duration, 8.125s);
   width: max-content;
   will-change: transform;
   margin-left: 0;
@@ -577,9 +567,11 @@ div.linknest-tile.has-local-decoration .tooltip-force-black * {
 .animate-rolling-detail {
   display: flex;
   white-space: nowrap;
-  animation: marquee-stock-ticker-detail 35s linear infinite;
-  /* Per-message override (see utils/messageStyle.ts); falls back to the original 35s. */
-  animation-duration: var(--marquee-duration, 35s);
+  /* -50% must resolve against the true max-content width of the two runs. */
+  flex-shrink: 0;
+  animation: marquee-seamless 11.375s linear infinite;
+  /* Per-message override (see utils/messageStyle.ts); stored 35s cycle -> 11.375s seamless loop. */
+  animation-duration: var(--marquee-duration, 11.375s);
   width: max-content;
   will-change: transform;
   margin-left: 0;

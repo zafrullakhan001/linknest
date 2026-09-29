@@ -1,6 +1,7 @@
 import React, { useEffect, useState } from 'react';
 import type { TileMessage } from '../types';
 import { buildMessageTextStyle, messageMarqueeStyle, MARQUEE_SECONDS_DETAIL } from '../utils/messageStyle';
+import { useMarqueeGeometry } from '../hooks/useMarqueeGeometry';
 
 /** Strip markdown-ish formatting for the plain-text hover tooltip. */
 const stripFormatting = (content: string): string => {
@@ -41,6 +42,51 @@ const renderMessageContent = (content: string) => {
         return <span key={index} dangerouslySetInnerHTML={{ __html: part }} />;
     });
 };
+
+/**
+ * One marquee run: every message of this slot plus the measured seam gap, so the next run starts
+ * entering the right edge exactly as this one's tail leaves the left edge - one message after
+ * another, never two copies of the same message on screen (see `useMarqueeGeometry`).
+ * The cloned run is hidden from assistive tech and removed from the tab order.
+ */
+const renderMessageRun = (messages: TileMessage[], keyPrefix: string, cloned: boolean, seamGap: number) => (
+    <div
+        key={keyPrefix}
+        data-marquee-run={keyPrefix}
+        className="flex items-center gap-10 pr-10 shrink-0"
+        aria-hidden={cloned || undefined}
+    >
+        {messages.map((msg, idx) => (
+            <div
+                key={`${keyPrefix}-${msg.id}-${idx}`}
+                data-marquee-message
+                className="flex items-center gap-2 shrink-0"
+                style={buildMessageTextStyle(msg)}
+                data-message-color={msg.textColor || ''}
+            >
+                {renderMessageContent(msg.content)}
+                {msg.url && (
+                    <a
+                        href={msg.url}
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        className="inline-flex items-center gap-0.5 ml-1 px-1.5 py-0.5 text-[10px] font-medium text-slate-800 dark:text-brand-400 bg-transparent hover:bg-slate-200/50 dark:hover:bg-brand-900/30 rounded transition-colors"
+                        onClick={(e) => e.stopPropagation()}
+                        title={msg.urlLabel || 'Click for more info'}
+                        tabIndex={cloned ? -1 : undefined}
+                    >
+                        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor" className="w-3 h-3">
+                            <path d="M12.232 4.232a2.5 2.5 0 013.536 3.536l-1.225 1.224a.75.75 0 001.061 1.06l1.224-1.224a4 4 0 00-5.656-5.656l-3 3a4 4 0 00.225 5.865.75.75 0 00.977-1.138 2.5 2.5 0 01-.142-3.667l3-3z" />
+                            <path d="M11.603 7.963a.75.75 0 00-.977 1.138 2.5 2.5 0 01.142 3.667l-3 3a2.5 2.5 0 01-3.536-3.536l1.225-1.224a.75.75 0 00-1.061-1.06l-1.224 1.224a4 4 0 105.656 5.656l3-3a4 4 0 00-.225-5.865z" />
+                        </svg>
+                        {msg.urlLabel || 'Info'}
+                    </a>
+                )}
+            </div>
+        ))}
+        <span data-marquee-seam className="shrink-0" aria-hidden="true" style={{ width: seamGap }} />
+    </div>
+);
 
 /** Animation class for a message animation type. */
 const getMessageAnimationClass = (animationType?: string): string => {
@@ -128,6 +174,7 @@ interface TileMessageBannerProps {
  */
 export const TileMessageBanner: React.FC<TileMessageBannerProps> = ({ messages, slot = 'above' }) => {
     const messageIndex = useMessageRotation(messages);
+    const { viewportRef, gap: seamGap, paceScale, measured } = useMarqueeGeometry();
 
     if (messages.length === 0) {
         return null;
@@ -148,7 +195,7 @@ export const TileMessageBanner: React.FC<TileMessageBannerProps> = ({ messages, 
                 <div className="absolute top-full left-1/2 -translate-x-1/2 -mt-1 border-4 border-transparent border-t-yellow-400"></div>
             </div>
 
-            <div className={`relative min-h-6 flex items-center overflow-hidden ${!messages[0].textColor ? (
+            <div ref={viewportRef} className={`relative min-h-6 flex items-center overflow-hidden ${!messages[0].textColor ? (
                 messages[0].type === 'alert' ? 'text-amber-600 dark:text-amber-400' :
                     messages[0].type === 'warning' ? 'text-amber-600 dark:text-amber-400' :
                         messages[0].type === 'celebration' ? 'text-pink-600 dark:text-pink-400' :
@@ -164,38 +211,15 @@ export const TileMessageBanner: React.FC<TileMessageBannerProps> = ({ messages, 
                     const allRollover = messages.length > 0 && messages.every(msg => !msg.animationType || msg.animationType === 'rollover');
 
                     if (allRollover) {
-                        // Rollover animation - stock ticker style: single copy, right-to-left, pause when fully gone
+                        // Rollover animation - seamless ticker: the run is rendered twice, so the
+                        // second copy is already where the first one started when it exits left.
                         return (
                             <div
-                                className="animate-rolling-detail flex items-center gap-10 text-sm font-semibold"
-                                style={messageMarqueeStyle(messages, MARQUEE_SECONDS_DETAIL)}
+                                className={`animate-rolling-detail flex items-center text-sm font-semibold ${measured ? '' : 'invisible'}`}
+                                style={messageMarqueeStyle(messages, MARQUEE_SECONDS_DETAIL, paceScale)}
                             >
-                                {messages.map((msg, idx) => (
-                                    <div
-                                        key={`${msg.id}-${idx}`}
-                                        className="flex items-center gap-2 shrink-0"
-                                        style={buildMessageTextStyle(msg)}
-                                        data-message-color={msg.textColor || ''}
-                                    >
-                                        {renderMessageContent(msg.content)}
-                                        {msg.url && (
-                                            <a
-                                                href={msg.url}
-                                                target="_blank"
-                                                rel="noopener noreferrer"
-                                                className="inline-flex items-center gap-0.5 ml-1 px-1.5 py-0.5 text-[10px] font-medium text-slate-800 dark:text-brand-400 bg-transparent hover:bg-slate-200/50 dark:hover:bg-brand-900/30 rounded transition-colors"
-                                                onClick={(e) => e.stopPropagation()}
-                                                title={msg.urlLabel || 'Click for more info'}
-                                            >
-                                                <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor" className="w-3 h-3">
-                                                    <path d="M12.232 4.232a2.5 2.5 0 013.536 3.536l-1.225 1.224a.75.75 0 001.061 1.06l1.224-1.224a4 4 0 00-5.656-5.656l-3 3a4 4 0 00.225 5.865.75.75 0 00.977-1.138 2.5 2.5 0 01-.142-3.667l3-3z" />
-                                                    <path d="M11.603 7.963a.75.75 0 00-.977 1.138 2.5 2.5 0 01.142 3.667l-3 3a2.5 2.5 0 01-3.536-3.536l1.225-1.224a.75.75 0 00-1.061-1.06l-1.224 1.224a4 4 0 105.656 5.656l3-3a4 4 0 00-.225-5.865z" />
-                                                </svg>
-                                                {msg.urlLabel || 'Info'}
-                                            </a>
-                                        )}
-                                    </div>
-                                ))}
+                                {renderMessageRun(messages, 'run', false, seamGap)}
+                                {renderMessageRun(messages, 'run-clone', true, seamGap)}
                             </div>
                         );
                     } else {
