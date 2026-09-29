@@ -52,6 +52,30 @@ export const marqueePaceScale = (runContentWidth: number, seamGap: number): numb
   return Number(((runContentWidth + seamGap) / runContentWidth).toFixed(3));
 };
 
+/**
+ * One-shot entry time (seconds) for the first pass: the first copy travels in from the right edge
+ * (one strip width) at exactly the loop speed, so the first pass looks like every later pass. The
+ * seamless loop itself is delayed by the same amount (see `--marquee-entry-duration` in index.css).
+ */
+export const marqueeEntrySeconds = (viewportWidth: number, pitchWidth: number, loopSeconds: number): number => {
+  if (!Number.isFinite(viewportWidth) || viewportWidth <= 0) return 0;
+  if (!Number.isFinite(pitchWidth) || pitchWidth <= 0) return 0;
+  if (!Number.isFinite(loopSeconds) || loopSeconds <= 0) return 0;
+  return Number(((viewportWidth * loopSeconds) / pitchWidth).toFixed(3));
+};
+
+/** Measured geometry that tunes the marquee animation (see `hooks/useMarqueeGeometry.ts`). */
+export interface MarqueeRuntime {
+  /** Seam-gap pace multiplier from `marqueePaceScale` (1 before measuring). */
+  paceScale?: number;
+  /** Strip width in px: the distance the first copy travels in from the right edge. */
+  viewportWidth?: number;
+  /** One full pitch in px (run content + seam gap): the distance one loop covers. */
+  pitchWidth?: number;
+  /** False while the strip is unmeasured: the animation stays paused until the first measurement. */
+  measured?: boolean;
+}
+
 /** CSS font stack for a message fontFamily key (undefined = inherit the space font). */
 export const resolveMessageFontFamily = (key?: string | null): string | undefined => {
   if (!key || key === 'default') return undefined;
@@ -94,15 +118,22 @@ export const resolveMarqueeSeconds = (messages: TileMessage[], fallbackSeconds: 
 };
 
 /**
- * Container style that controls the seamless marquee speed via the --marquee-duration CSS variable.
+ * Container style for the seamless marquee track: `--marquee-duration` is the loop length,
+ * `--marquee-entry-duration` / `--marquee-entry-shift` drive the one-shot entry from the right edge
+ * and `--marquee-play-state` holds the animation back until the strip has been measured.
  * Stored values are legacy cycle lengths, converted by `marqueeLoopSeconds` (see above).
- * `paceScale` is the measured seam-gap multiplier from `marqueePaceScale` (1 before measuring).
  */
 export const messageMarqueeStyle = (
   messages: TileMessage[],
   fallbackSeconds: number,
-  paceScale = 1
+  runtime: MarqueeRuntime = {}
 ): CSSProperties => {
-  const loopSeconds = marqueeLoopSeconds(resolveMarqueeSeconds(messages, fallbackSeconds)) * paceScale;
-  return { '--marquee-duration': `${Number(loopSeconds.toFixed(3))}s` } as CSSProperties;
+  const loopSeconds = marqueeLoopSeconds(resolveMarqueeSeconds(messages, fallbackSeconds)) * (runtime.paceScale ?? 1);
+  const entrySeconds = marqueeEntrySeconds(runtime.viewportWidth ?? 0, runtime.pitchWidth ?? 0, loopSeconds);
+  return {
+    '--marquee-duration': `${Number(loopSeconds.toFixed(3))}s`,
+    '--marquee-entry-duration': `${entrySeconds}s`,
+    '--marquee-entry-shift': `${Math.max(0, Math.round(runtime.viewportWidth ?? 0))}px`,
+    '--marquee-play-state': runtime.measured ? 'running' : 'paused',
+  } as CSSProperties;
 };

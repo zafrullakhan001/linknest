@@ -174,7 +174,7 @@ interface TileMessageBannerProps {
  */
 export const TileMessageBanner: React.FC<TileMessageBannerProps> = ({ messages, slot = 'above' }) => {
     const messageIndex = useMessageRotation(messages);
-    const { viewportRef, gap: seamGap, paceScale, measured } = useMarqueeGeometry();
+    const { viewportRef, gap: seamGap, paceScale, measured, viewportWidth, pitchWidth } = useMarqueeGeometry();
 
     if (messages.length === 0) {
         return null;
@@ -184,7 +184,7 @@ export const TileMessageBanner: React.FC<TileMessageBannerProps> = ({ messages, 
         <div className="mb-2 w-full group/message relative cursor-help" data-message-banner-slot={slot}>
             {/* Custom Instant Tooltip - Optimized for Large Detail View */}
             <div
-                className="tooltip-force-black absolute left-1/2 -translate-x-1/2 bottom-full mb-2 px-3 py-2 bg-yellow-400 text-[10px] rounded-lg shadow-xl opacity-0 translate-y-2 group-hover/message:opacity-100 group-hover/message:translate-y-0 transition-all duration-200 pointer-events-none z-[100] border border-yellow-500 w-max max-w-[400px] text-left"
+                className="tooltip-force-black absolute left-1/2 -translate-x-1/2 bottom-full mb-2 px-4 py-3 bg-yellow-400 text-[20px] rounded-lg shadow-xl opacity-0 translate-y-2 group-hover/message:opacity-100 group-hover/message:translate-y-0 transition-all duration-200 pointer-events-none z-[100] border border-yellow-500 w-max max-w-[640px] text-left"
             >
                 {messages.map((m, idx) => (
                     <div key={m.id} className="last:mb-0 mb-1 leading-tight">
@@ -216,7 +216,12 @@ export const TileMessageBanner: React.FC<TileMessageBannerProps> = ({ messages, 
                         return (
                             <div
                                 className={`animate-rolling-detail flex items-center text-sm font-semibold ${measured ? '' : 'invisible'}`}
-                                style={messageMarqueeStyle(messages, MARQUEE_SECONDS_DETAIL, paceScale)}
+                                style={messageMarqueeStyle(messages, MARQUEE_SECONDS_DETAIL, {
+                                    paceScale,
+                                    viewportWidth,
+                                    pitchWidth,
+                                    measured
+                                })}
                             >
                                 {renderMessageRun(messages, 'run', false, seamGap)}
                                 {renderMessageRun(messages, 'run-clone', true, seamGap)}

@@ -45,6 +45,7 @@ the tab/date/`displayLocation` filtering applies to both slots.
 |-------|--------|
 | `fontFamily` | Rendered as an inline CSS font stack (see `utils/messageStyle.ts`), so nothing is fetched at runtime and no layout shift is possible. |
 | `fontSize` | Applied as an inline `font-size` on both the card marquee and the space-page banner; the space-page banner track uses `min-h-6` so taller text is never clipped. |
+| Hover tooltip | Lists every active message of the strip in plain text at `text-[20px]` (card `max-w-[320px]`, space page `max-w-[640px]`) so long messages stay readable. |
 | `marqueeSeconds` | Drives the `--marquee-duration` CSS variable consumed by `.animate-rolling-tile` / `.animate-rolling-detail` in `index.css`. Unset falls back to the original 25s (card) / 35s (space page). The stored value is a *cycle length* from the old ticker, so `marqueeLoopSeconds()` (`utils/messageStyle.ts`) converts it for the seamless loop (see below). |
 
 **When several rollover messages share one marquee the slowest value wins**, so a faster value set
@@ -90,6 +91,12 @@ loop seconds = stored cycle x 0.65 / 2 x (run width + seam gap) / run width
 ```
 
 Defaults before the seam gap is applied: 25s -> 8.125s (card) and 35s -> 11.375s (space page).
+
+The very first pass is a one-shot entry: the track starts one strip width to the right
+(`--marquee-entry-shift`) and slides in at exactly the loop speed (`--marquee-entry-duration`, from
+`marqueeEntrySeconds()`), so the first message enters from the right edge like every later copy
+instead of appearing mid-strip. The seamless loop is delayed by the same amount, and the animation
+stays `paused` (with the track `invisible`) until the strip has been measured.
 
 ## Editor UI
 

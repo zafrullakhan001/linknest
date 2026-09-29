@@ -551,30 +551,43 @@ div.linknest-tile.has-local-decoration .tooltip-force-black * {
   }
 }
 
-.animate-rolling-tile {
-  display: flex;
-  white-space: nowrap;
-  /* -50% must resolve against the true max-content width of the two runs. */
-  flex-shrink: 0;
-  animation: marquee-seamless 8.125s linear infinite;
-  /* Per-message override (see utils/messageStyle.ts); stored 25s cycle -> 8.125s seamless loop. */
-  animation-duration: var(--marquee-duration, 8.125s);
-  width: max-content;
-  will-change: transform;
-  margin-left: 0;
+/* One-shot entry: the very first copy slides in from the right edge (one strip width) at exactly
+   the loop speed, so the first pass looks like every later pass instead of starting mid-strip.
+   The seamless loop is delayed by the same amount, and the entry stops applying when it ends. */
+@keyframes marquee-entry-right {
+  from {
+    transform: translateX(var(--marquee-entry-shift, 0px));
+  }
+  to {
+    transform: translateX(0);
+  }
 }
 
+.animate-rolling-tile,
 .animate-rolling-detail {
   display: flex;
   white-space: nowrap;
   /* -50% must resolve against the true max-content width of the two runs. */
   flex-shrink: 0;
-  animation: marquee-seamless 11.375s linear infinite;
-  /* Per-message override (see utils/messageStyle.ts); stored 35s cycle -> 11.375s seamless loop. */
-  animation-duration: var(--marquee-duration, 11.375s);
   width: max-content;
+  /* Per-message overrides + measured entry/pace come from utils/messageStyle.ts and
+     hooks/useMarqueeGeometry.ts; stored 25s/35s cycles -> 8.125s/11.375s default loops. */
+  animation-name: marquee-entry-right, marquee-seamless;
+  animation-timing-function: linear, linear;
+  animation-iteration-count: 1, infinite;
+  animation-delay: 0s, var(--marquee-entry-duration, 0s);
+  /* Paused until the strip has been measured, so the entry starts on the measured frame. */
+  animation-play-state: var(--marquee-play-state, running);
   will-change: transform;
   margin-left: 0;
+}
+
+.animate-rolling-tile {
+  animation-duration: var(--marquee-entry-duration, 0.001s), var(--marquee-duration, 8.125s);
+}
+
+.animate-rolling-detail {
+  animation-duration: var(--marquee-entry-duration, 0.001s), var(--marquee-duration, 11.375s);
 }
 
 .animate-rolling-tile:hover,

@@ -1975,7 +1975,9 @@ const SortableTile: React.FC<SortableTileProps> = ({
     viewportRef: marqueeViewportRef,
     gap: marqueeSeamGap,
     paceScale: marqueePaceScale,
-    measured: marqueeMeasured
+    measured: marqueeMeasured,
+    viewportWidth: marqueeStripWidth,
+    pitchWidth: marqueePitchWidth
   } = useMarqueeGeometry();
   // Below lg: header image is hidden → force title/description. At lg+: restore checkbox behavior (image only when those are unchecked).
   const [isCompactLayout, setIsCompactLayout] = useState(() =>
@@ -2999,7 +3001,7 @@ const SortableTile: React.FC<SortableTileProps> = ({
           >
             {/* Custom Instant Tooltip - Optimized for Small Tiles */}
             <div
-              className="tooltip-force-black absolute left-1/2 -translate-x-1/2 bottom-full mb-2 px-3 py-2 bg-yellow-400 text-[10px] rounded-lg shadow-xl opacity-0 translate-y-2 group-hover/message:opacity-100 group-hover/message:translate-y-0 transition-all duration-200 pointer-events-none z-[100] border border-yellow-500 w-max max-w-[180px] text-left"
+              className="tooltip-force-black absolute left-1/2 -translate-x-1/2 bottom-full mb-2 px-4 py-3 bg-yellow-400 text-[20px] rounded-lg shadow-xl opacity-0 translate-y-2 group-hover/message:opacity-100 group-hover/message:translate-y-0 transition-all duration-200 pointer-events-none z-[100] border border-yellow-500 w-max max-w-[320px] text-left"
             >
               {activeMessages.map((m, idx) => (
                 <div key={m.id} className="last:mb-0 mb-1 leading-tight">
@@ -3021,7 +3023,12 @@ const SortableTile: React.FC<SortableTileProps> = ({
                   <div ref={marqueeViewportRef} className="overflow-hidden">
                     <div
                       className={`animate-rolling-tile flex items-center text-[10px] sm:text-xs font-semibold ${marqueeMeasured ? '' : 'invisible'}`}
-                      style={messageMarqueeStyle(activeMessages, MARQUEE_SECONDS_CARD, marqueePaceScale)}
+                      style={messageMarqueeStyle(activeMessages, MARQUEE_SECONDS_CARD, {
+                        paceScale: marqueePaceScale,
+                        viewportWidth: marqueeStripWidth,
+                        pitchWidth: marqueePitchWidth,
+                        measured: marqueeMeasured
+                      })}
                     >
                       {renderMessageRun(activeMessages, 'run', false, marqueeSeamGap)}
                       {renderMessageRun(activeMessages, 'run-clone', true, marqueeSeamGap)}

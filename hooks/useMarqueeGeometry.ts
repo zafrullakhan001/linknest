@@ -23,6 +23,10 @@ export interface MarqueeGeometry {
    * zero-gap frame can never flash two copies of the same message.
    */
   measured: boolean;
+  /** Strip width in px (0 until measured): the distance the first copy enters from. */
+  viewportWidth: number;
+  /** One full pitch in px = run content + seam gap (0 until measured). */
+  pitchWidth: number;
 }
 
 /**
@@ -39,6 +43,8 @@ export const useMarqueeGeometry = (): MarqueeGeometry => {
   const [gap, setGap] = useState(0);
   const [paceScale, setPaceScale] = useState(1);
   const [measured, setMeasured] = useState(false);
+  const [viewportWidth, setViewportWidth] = useState(0);
+  const [pitchWidth, setPitchWidth] = useState(0);
 
   useEffect(() => {
     if (!viewport) return;
@@ -60,9 +66,13 @@ export const useMarqueeGeometry = (): MarqueeGeometry => {
 
       const nextGap = resolveMarqueeSeamGap(viewport.clientWidth, Math.max(...messageWidths), runContentWidth);
       const nextPaceScale = marqueePaceScale(runContentWidth, nextGap);
+      const nextViewportWidth = viewport.clientWidth;
+      const nextPitchWidth = runContentWidth + nextGap;
 
       setGap((previous) => (Math.abs(previous - nextGap) <= 1 ? previous : nextGap));
       setPaceScale((previous) => (Math.abs(previous - nextPaceScale) <= 0.01 ? previous : nextPaceScale));
+      setViewportWidth((previous) => (Math.abs(previous - nextViewportWidth) <= 1 ? previous : nextViewportWidth));
+      setPitchWidth((previous) => (Math.abs(previous - nextPitchWidth) <= 1 ? previous : nextPitchWidth));
       setMeasured(true);
     };
 
@@ -85,5 +95,5 @@ export const useMarqueeGeometry = (): MarqueeGeometry => {
     };
   }, [viewport]);
 
-  return { viewportRef: setViewport, gap, paceScale, measured };
+  return { viewportRef: setViewport, gap, paceScale, measured, viewportWidth, pitchWidth };
 };
