@@ -116,6 +116,11 @@ docker/*.crt
 # Self-hosted TinyMCE runtime (copied from node_modules via postinstall)
 public/tinymce/
 
+# VPS deploy artifacts (Linux/nginx bundle — not part of the app source)
+dist-vps/
+vps-bundle/
+linknest-vps-*.tar.gz
+
 # Windows
 Thumbs.db
 ehthumbs.db
