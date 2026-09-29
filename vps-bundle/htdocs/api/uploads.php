@@ -1,0 +1,389 @@
+<?php
+// Serve uploaded files (logos, etc.) and handle image uploads for rich text / tile headers
+require_once __DIR__ . '/config.php';
+require_once __DIR__ . '/image_helpers.php';
+
+$method = $_SERVER['REQUEST_METHOD'] ?? 'GET';
+$path = $_SERVER['PATH_INFO'] ?? $_SERVER['REDIRECT_PATH_INFO'] ?? '';
+
+// Handle POST requests for image uploads
+if ($method === 'POST' && $path === '/rich-text-image') {
+    handleRichTextImageUpload();
+    exit;
+}
+
+if ($method === 'POST' && $path === '/tile-header-image') {
+    handleTileHeaderImageUpload();
+    exit;
+}
+
+if ($method === 'POST' && $path === '/tile-emoji-image') {
+    handleTileEmojiImageUpload();
+    exit;
+}
+
+if ($method === 'POST' && $path === '/link-maintenance-video') {
+    handleLinkMaintenanceVideoUpload();
+    exit;
+}
+
+// Handle GET requests - serve uploaded files
+$filename = ltrim($path, '/');
+
+// Security: Only allow alphanumeric, dots, underscores, and hyphens in filename
+if (!preg_match('/^[a-zA-Z0-9._-]+$/', $filename)) {
+    http_response_code(400);
+    header('Content-Type: text/plain');
+    echo 'Invalid filename';
+    exit;
+}
+
+// Path to uploads directory
+$uploadDir = __DIR__ . '/../uploads';
+$filepath = $uploadDir . '/' . $filename;
+
+// Check if file exists
+if (!file_exists($filepath) || !is_file($filepath)) {
+    http_response_code(404);
+    header('Content-Type: text/plain');
+    echo 'File not found';
+    exit;
+}
+
+// Get file extension to determine MIME type
+$extension = strtolower(pathinfo($filename, PATHINFO_EXTENSION));
+$mimeTypes = [
+    'jpg' => 'image/jpeg',
+    'jpeg' => 'image/jpeg',
+    'png' => 'image/png',
+    'gif' => 'image/gif',
+    'svg' => 'image/svg+xml',
+    'webp' => 'image/webp',
+    'ico' => 'image/x-icon',
+    'webm' => 'video/webm',
+    'mp4' => 'video/mp4',
+    'ogv' => 'video/ogg',
+    'ogg' => 'video/ogg',
+    'mov' => 'video/quicktime',
+    'pdf' => 'application/pdf',
+    'mp3' => 'audio/mpeg',
+    'wav' => 'audio/wav',
+    'm4a' => 'audio/mp4',
+];
+
+$mimeType = $mimeTypes[$extension] ?? 'application/octet-stream';
+
+// Set headers
+header('Content-Type: ' . $mimeType);
+header('Content-Length: ' . filesize($filepath));
+header('Cache-Control: public, max-age=31536000'); // Cache for 1 year
+
+// Output file
+readfile($filepath);
+exit;
+
+function uploadsBasePath() {
+    $requestUri = $_SERVER['REQUEST_URI'] ?? '';
+    if (($pos = strpos($requestUri, '?')) !== false) {
+        $requestUri = substr($requestUri, 0, $pos);
+    }
+    $apiPos = strpos($requestUri, '/api/');
+    if ($apiPos !== false) {
+        return substr($requestUri, 0, $apiPos);
+    }
+    return '';
+}
+
+function handleRichTextImageUpload() {
+    requireAuth(); // Require authentication
+    
+    // Check if file was uploaded
+    if (!isset($_FILES['image']) || $_FILES['image']['error'] !== UPLOAD_ERR_OK) {
+        sendJSON(['error' => 'No file uploaded or upload error'], 400);
+        return;
+    }
+    
+    $file = $_FILES['image'];
+    
+    // Validate file type
+    $allowedTypes = ['image/jpeg', 'image/jpg', 'image/png', 'image/gif', 'image/svg+xml', 'image/webp'];
+    $finfo = finfo_open(FILEINFO_MIME_TYPE);
+    $mimeType = finfo_file($finfo, $file['tmp_name']);
+    finfo_close($finfo);
+    
+    if (!in_array($mimeType, $allowedTypes)) {
+        sendJSON(['error' => 'Invalid file type. Allowed: JPEG, PNG, GIF, SVG, WebP'], 400);
+        return;
+    }
+    
+    // Validate file size (max 5MB)
+    $maxSize = 5 * 1024 * 1024; // 5MB
+    if ($file['size'] > $maxSize) {
+        sendJSON(['error' => 'File size too large. Maximum size: 5MB'], 400);
+        return;
+    }
+    
+    // Create uploads directory if it doesn't exist
+    $uploadDir = __DIR__ . '/../uploads';
+    if (!file_exists($uploadDir)) {
+        if (!mkdir($uploadDir, 0755, true)) {
+            sendJSON(['error' => 'Failed to create uploads directory'], 500);
+            return;
+        }
+    }
+    
+    // Generate unique filename
+    $extension = pathinfo($file['name'], PATHINFO_EXTENSION);
+    $filename = 'richtext_' . time() . '_' . uniqid() . '.' . $extension;
+    $filepath = $uploadDir . '/' . $filename;
+    
+    // Move uploaded file
+    if (!move_uploaded_file($file['tmp_name'], $filepath)) {
+        sendJSON(['error' => 'Failed to save uploaded file'], 500);
+        return;
+    }
+    
+    $url = uploadsBasePath() . '/uploads/' . $filename;
+    
+    sendJSON([
+        'success' => true,
+        'url' => $url
+    ]);
+}
+
+function handleTileHeaderImageUpload() {
+    requireAuth();
+
+    $removeBackground = !empty($_POST['remove_background']) && (
+        $_POST['remove_background'] === '1' ||
+        $_POST['remove_background'] === 'true' ||
+        $_POST['remove_background'] === true
+    );
+    $bgColor = isset($_POST['bg_color']) ? trim((string)$_POST['bg_color']) : '';
+    if ($bgColor === '') {
+        $bgColor = null;
+    }
+
+    // Reprocess an existing uploaded header image (no new file)
+    $sourceUrl = isset($_POST['source_url']) ? trim((string)$_POST['source_url']) : '';
+    if ($sourceUrl !== '' && (!isset($_FILES['image']) || $_FILES['image']['error'] === UPLOAD_ERR_NO_FILE)) {
+        $filename = basename(parse_url($sourceUrl, PHP_URL_PATH) ?: $sourceUrl);
+        if (!preg_match('/^[a-zA-Z0-9._-]+$/', $filename) || strpos($filename, 'tileheader_') !== 0) {
+            sendJSON(['error' => 'Invalid source image'], 400);
+            return;
+        }
+        $filepath = __DIR__ . '/../uploads/' . $filename;
+        if (!is_file($filepath)) {
+            sendJSON(['error' => 'Source image not found'], 404);
+            return;
+        }
+        $finfo = finfo_open(FILEINFO_MIME_TYPE);
+        $mimeType = finfo_file($finfo, $filepath);
+        finfo_close($finfo);
+        $result = processUploadedTileHeaderImage($filepath, $filename, $mimeType ?: 'image/png', 400, 80, $removeBackground, $bgColor);
+        $url = uploadsBasePath() . '/uploads/' . $result['filename'];
+        sendJSON([
+            'success' => true,
+            'url' => $url,
+            'converted' => true,
+            'width' => $result['width'] ?? null,
+            'height' => $result['height'] ?? null
+        ]);
+        return;
+    }
+
+    if (!isset($_FILES['image']) || $_FILES['image']['error'] !== UPLOAD_ERR_OK) {
+        sendJSON(['error' => 'No file uploaded or upload error'], 400);
+        return;
+    }
+
+    $file = $_FILES['image'];
+    $allowedTypes = ['image/jpeg', 'image/jpg', 'image/png', 'image/gif', 'image/webp', 'image/bmp', 'image/x-ms-bmp'];
+    $finfo = finfo_open(FILEINFO_MIME_TYPE);
+    $mimeType = finfo_file($finfo, $file['tmp_name']);
+    finfo_close($finfo);
+
+    if (!in_array($mimeType, $allowedTypes, true)) {
+        sendJSON(['error' => 'Invalid file type. Allowed: JPEG, PNG, GIF, WebP, BMP'], 400);
+        return;
+    }
+
+    $maxSize = 5 * 1024 * 1024;
+    if ($file['size'] > $maxSize) {
+        sendJSON(['error' => 'File size too large. Maximum size: 5MB'], 400);
+        return;
+    }
+
+    $result = processUploadedTileHeaderImage($file['tmp_name'], $file['name'], $mimeType, 400, 80, $removeBackground, $bgColor);
+    $url = uploadsBasePath() . '/uploads/' . $result['filename'];
+
+    sendJSON([
+        'success' => true,
+        'url' => $url,
+        'converted' => !empty($result['converted']),
+        'width' => $result['width'] ?? null,
+        'height' => $result['height'] ?? null
+    ]);
+}
+
+/**
+ * Emoji-slot image: convert to PNG and fit inside ~80×80 (2× the 40×40 card badge).
+ * Supports remove-background + reprocess of an existing tileemoji_ upload.
+ */
+function handleTileEmojiImageUpload() {
+    requireAuth();
+
+    $removeBackground = !empty($_POST['remove_background']) && (
+        $_POST['remove_background'] === '1' ||
+        $_POST['remove_background'] === 'true' ||
+        $_POST['remove_background'] === true
+    );
+    $bgColor = isset($_POST['bg_color']) ? trim((string)$_POST['bg_color']) : '';
+    if ($bgColor === '') {
+        $bgColor = null;
+    }
+
+    // Reprocess an existing emoji image (no new file)
+    $sourceUrl = isset($_POST['source_url']) ? trim((string)$_POST['source_url']) : '';
+    if ($sourceUrl !== '' && (!isset($_FILES['image']) || $_FILES['image']['error'] === UPLOAD_ERR_NO_FILE)) {
+        $filename = basename(parse_url($sourceUrl, PHP_URL_PATH) ?: $sourceUrl);
+        if (!preg_match('/^[a-zA-Z0-9._-]+$/', $filename) || strpos($filename, 'tileemoji_') !== 0) {
+            sendJSON(['error' => 'Invalid source image'], 400);
+            return;
+        }
+        $filepath = __DIR__ . '/../uploads/' . $filename;
+        if (!is_file($filepath)) {
+            sendJSON(['error' => 'Source image not found'], 404);
+            return;
+        }
+        $finfo = finfo_open(FILEINFO_MIME_TYPE);
+        $mimeType = finfo_file($finfo, $filepath);
+        finfo_close($finfo);
+        $result = processUploadedTileHeaderImage($filepath, $filename, $mimeType ?: 'image/png', 80, 80, $removeBackground, $bgColor, 'tileemoji_');
+        $url = uploadsBasePath() . '/uploads/' . $result['filename'];
+        sendJSON([
+            'success' => true,
+            'url' => $url,
+            'converted' => true,
+            'width' => $result['width'] ?? null,
+            'height' => $result['height'] ?? null
+        ]);
+        return;
+    }
+
+    if (!isset($_FILES['image']) || $_FILES['image']['error'] !== UPLOAD_ERR_OK) {
+        sendJSON(['error' => 'No file uploaded or upload error'], 400);
+        return;
+    }
+
+    $file = $_FILES['image'];
+    $allowedTypes = ['image/jpeg', 'image/jpg', 'image/png', 'image/gif', 'image/webp', 'image/bmp', 'image/x-ms-bmp'];
+    $finfo = finfo_open(FILEINFO_MIME_TYPE);
+    $mimeType = finfo_file($finfo, $file['tmp_name']);
+    finfo_close($finfo);
+
+    if (!in_array($mimeType, $allowedTypes, true)) {
+        sendJSON(['error' => 'Invalid file type. Allowed: JPEG, PNG, GIF, WebP, BMP'], 400);
+        return;
+    }
+
+    $maxSize = 5 * 1024 * 1024;
+    if ($file['size'] > $maxSize) {
+        sendJSON(['error' => 'File size too large. Maximum size: 5MB'], 400);
+        return;
+    }
+
+    // Fit inside emoji badge (40px display → 80px @2x), aspect preserved
+    $result = processUploadedTileHeaderImage($file['tmp_name'], $file['name'], $mimeType, 80, 80, $removeBackground, $bgColor, 'tileemoji_');
+    $url = uploadsBasePath() . '/uploads/' . $result['filename'];
+
+    sendJSON([
+        'success' => true,
+        'url' => $url,
+        'converted' => !empty($result['converted']),
+        'width' => $result['width'] ?? null,
+        'height' => $result['height'] ?? null
+    ]);
+}
+
+function handleLinkMaintenanceVideoUpload() {
+    requireAuth();
+
+    if (!isset($_FILES['video'])) {
+        sendJSON(['error' => 'No file uploaded or upload too large for PHP (raise upload_max_filesize and post_max_size to at least 50MB)'], 400);
+        return;
+    }
+
+    $file = $_FILES['video'];
+    if (($file['error'] ?? UPLOAD_ERR_NO_FILE) !== UPLOAD_ERR_OK) {
+        $code = (int)($file['error'] ?? UPLOAD_ERR_NO_FILE);
+        $hint = $code === UPLOAD_ERR_INI_SIZE || $code === UPLOAD_ERR_FORM_SIZE
+            ? ' File exceeds PHP upload_max_filesize / post_max_size (need at least 50MB).'
+            : '';
+        sendJSON(['error' => 'No file uploaded or upload error.' . $hint], 400);
+        return;
+    }
+
+    $allowedTypes = [
+        'video/webm' => 'webm',
+        'video/mp4' => 'mp4',
+        'video/ogg' => 'ogv',
+        'video/quicktime' => 'mov',
+        'video/x-matroska' => 'webm',
+        'application/ogg' => 'ogv',
+    ];
+    $finfo = finfo_open(FILEINFO_MIME_TYPE);
+    $mimeType = finfo_file($finfo, $file['tmp_name']);
+    finfo_close($finfo);
+    $origExt = strtolower((string)pathinfo($file['name'] ?? '', PATHINFO_EXTENSION));
+    $extToMime = [
+        'webm' => 'video/webm',
+        'mp4' => 'video/mp4',
+        'ogv' => 'video/ogg',
+        'ogg' => 'video/ogg',
+        'mov' => 'video/quicktime',
+    ];
+    if ((!is_string($mimeType) || !isset($allowedTypes[$mimeType])) && isset($extToMime[$origExt])) {
+        if (!is_string($mimeType) || $mimeType === 'application/octet-stream' || $mimeType === 'application/x-octet-stream') {
+            $mimeType = $extToMime[$origExt];
+        }
+    }
+    if (!is_string($mimeType) || !isset($allowedTypes[$mimeType])) {
+        sendJSON(['error' => 'Invalid file type. Allowed: WebM, MP4, Ogg, QuickTime'], 400);
+        return;
+    }
+
+    $maxSize = 50 * 1024 * 1024;
+    if ($file['size'] > $maxSize) {
+        sendJSON(['error' => 'File size too large. Maximum size: 50MB'], 400);
+        return;
+    }
+
+    $uploadDir = __DIR__ . '/../uploads';
+    if (!file_exists($uploadDir)) {
+        if (!mkdir($uploadDir, 0755, true)) {
+            sendJSON(['error' => 'Failed to create uploads directory'], 500);
+            return;
+        }
+    }
+
+    $origExt = strtolower((string)pathinfo($file['name'] ?? '', PATHINFO_EXTENSION));
+    $ext = $allowedTypes[$mimeType];
+    if ($origExt === 'ogg' && $ext === 'ogv') {
+        $ext = 'ogg';
+    }
+    $filename = 'maintvid_' . time() . '_' . uniqid() . '.' . $ext;
+    $filepath = $uploadDir . '/' . $filename;
+
+    if (!move_uploaded_file($file['tmp_name'], $filepath)) {
+        sendJSON(['error' => 'Failed to save uploaded file'], 500);
+        return;
+    }
+
+    $url = uploadsBasePath() . '/uploads/' . $filename;
+    sendJSON([
+        'success' => true,
+        'url' => $url
+    ]);
+}
+

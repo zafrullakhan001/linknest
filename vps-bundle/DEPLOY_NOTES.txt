@@ -1,0 +1,9 @@
+LinkNest VPS bundle - 20260929_182929
+target   : https://linknest.198-251-72-41.nip.io  (root@198.251.72.41)
+mode     : Update
+app root : /home/linknest/htdocs   (user: linknest)
+php-fpm  : pool linknest
+created  : 20260929_182929
+
+Created by scripts/deploy-vps-linknest.ps1 - see docs/DEPLOY_VPS.md.
+Update mode preserves data/ and uploads/ on the server.

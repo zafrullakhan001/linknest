@@ -1,0 +1,11 @@
+{
+    "appVersion": "3.0.0",
+    "releaseTag": "v3.0.0",
+    "gitCommit": "eb45d7f2493ef82348726a9eea2bd732e8e5ab44",
+    "commitMessage": "feat: Implement LDAP display name synchronization and enhance user management (baseline before the 3.0.0 release commit)",
+    "trackBranch": "linknest-spacefix",
+    "updatedVia": "manual",
+    "updatedAt": "2026-09-22 10:22:57",
+    "builtAt": "2026-09-22 10:22:57",
+    "buildId": "20260922-102257"
+}

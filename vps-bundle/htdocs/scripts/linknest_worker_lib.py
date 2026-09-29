@@ -1,0 +1,1573 @@
+"""
+Shared library for LinkNest external workers (Python 3.9+).
+
+- Uses only Python standard library
+- Designed for Windows Task Scheduler / cron usage
+"""
+
+from __future__ import annotations
+
+import base64
+import contextlib
+import datetime as _dt
+import email.utils
+import html as _html
+import json
+import math
+import os
+import sys
+import re
+import socket
+import sqlite3
+import ssl
+import subprocess
+import tempfile
+import time
+import urllib.error
+import urllib.request
+from dataclasses import dataclass
+from email.message import EmailMessage
+from typing import Any, Dict, Iterable, List, Optional, Sequence, Tuple
+
+
+DEFAULT_DB_PATH = os.path.normpath(os.path.join(os.path.dirname(__file__), "..", "data", "linknest.db"))
+
+
+def now_ts() -> int:
+    return int(time.time())
+
+
+DEFAULT_MONITOR_MAX_WORKERS = 20
+MONITOR_MAX_WORKERS_CEILING = 64
+
+
+def open_db(db_path: str, timeout_seconds: int = 10) -> sqlite3.Connection:
+    conn = sqlite3.connect(db_path, timeout=timeout_seconds)
+    conn.row_factory = sqlite3.Row
+    with contextlib.suppress(Exception):
+        conn.execute("PRAGMA busy_timeout = 5000")
+    with contextlib.suppress(Exception):
+        conn.execute("PRAGMA journal_mode = WAL")
+    with contextlib.suppress(Exception):
+        conn.execute("PRAGMA foreign_keys = OFF")
+    return conn
+
+
+def read_setting(conn: sqlite3.Connection, key: str, default: str = "") -> str:
+    try:
+        row = conn.execute("SELECT value FROM settings WHERE key = ? LIMIT 1", (key,)).fetchone()
+        if row is None:
+            return default
+        val = row["value"] if isinstance(row, sqlite3.Row) else row[0]
+        return str(val).strip() if val is not None else default
+    except Exception:
+        return default
+
+
+def resolve_app_name(conn: Optional[sqlite3.Connection] = None, default: str = "LinkNest") -> str:
+    """App display name for {app_name} tokens. SQLite settings first; optional OS override."""
+    env = (os.environ.get("LINKNEST_APP_NAME") or os.environ.get("APP_NAME") or "").strip()
+    if env:
+        return env
+    if conn is not None:
+        name = read_setting(conn, "app_name", "").strip()
+        if name:
+            return name
+    return default
+
+
+def expand_app_placeholders(text: Optional[str], app_name: str) -> str:
+    """Replace {app_name} the same way PHP mailer does (not a Windows env var)."""
+    if text is None:
+        return ""
+    return str(text).replace("{app_name}", app_name)
+
+
+def clamp_monitor_max_workers(value: Any, default: int = DEFAULT_MONITOR_MAX_WORKERS) -> int:
+    try:
+        n = int(value)
+    except (TypeError, ValueError):
+        n = int(default)
+    return max(1, min(MONITOR_MAX_WORKERS_CEILING, n))
+
+
+def resolve_monitor_max_workers(conn: sqlite3.Connection, cli_value: Optional[int] = None) -> int:
+    if cli_value is not None:
+        return clamp_monitor_max_workers(cli_value)
+    setting = read_setting(conn, "monitor_worker_max_workers", str(DEFAULT_MONITOR_MAX_WORKERS))
+    return clamp_monitor_max_workers(setting)
+
+
+def ensure_outbox_schema(conn: sqlite3.Connection) -> None:
+    # In case DB was created before the PHP migration ran.
+    conn.execute(
+        """
+        CREATE TABLE IF NOT EXISTS email_outbox (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            created_at INTEGER NOT NULL,
+            send_after INTEGER,
+            monitor_id INTEGER,
+            rule_id INTEGER,
+            status_trigger TEXT,
+            to_emails TEXT NOT NULL,
+            cc_emails TEXT,
+            subject TEXT NOT NULL,
+            body TEXT NOT NULL,
+            from_name TEXT,
+            from_email TEXT,
+            attempts INTEGER DEFAULT 0,
+            max_attempts INTEGER DEFAULT 3,
+            last_error TEXT,
+            sent_at INTEGER,
+            success INTEGER,
+            legacy_clear_pending INTEGER DEFAULT 0,
+            legacy_update_last_notified_status TEXT,
+            -- recovery-notification helpers: how long the target was down
+            -- before it started responding again (snapshot taken when queued)
+            outage_seconds INTEGER,
+            outage_started_at INTEGER
+        )
+        """
+    )
+    with contextlib.suppress(Exception):
+        conn.execute("CREATE INDEX IF NOT EXISTS idx_email_outbox_sent_at ON email_outbox(sent_at)")
+        conn.execute("CREATE INDEX IF NOT EXISTS idx_email_outbox_created_at ON email_outbox(created_at)")
+        conn.execute("CREATE INDEX IF NOT EXISTS idx_email_outbox_monitor_id ON email_outbox(monitor_id)")
+    # Older DBs predate the downtime columns; add them in place (safe to repeat).
+    with contextlib.suppress(Exception):
+        conn.execute("ALTER TABLE email_outbox ADD COLUMN outage_seconds INTEGER")
+    with contextlib.suppress(Exception):
+        conn.execute("ALTER TABLE email_outbox ADD COLUMN outage_started_at INTEGER")
+
+
+def ensure_monitors_schema(conn: sqlite3.Connection) -> None:
+    # Make sure new monitor fields exist (safe to call multiple times).
+    # Older DBs may not have these columns/tables yet.
+    # Note: PHP migrations also add these columns; we mirror them here so the
+    # standalone Python workers remain compatible with older databases.
+    with contextlib.suppress(Exception):
+        conn.execute("ALTER TABLE monitors ADD COLUMN warning_threshold INTEGER DEFAULT 1")
+    with contextlib.suppress(Exception):
+        conn.execute("ALTER TABLE monitors ADD COLUMN consecutive_failures INTEGER DEFAULT 0")
+    with contextlib.suppress(Exception):
+        conn.execute("ALTER TABLE monitors ADD COLUMN timeout INTEGER")
+    with contextlib.suppress(Exception):
+        conn.execute("ALTER TABLE monitors ADD COLUMN permissions_mode INTEGER DEFAULT 0")
+    with contextlib.suppress(Exception):
+        conn.execute("ALTER TABLE monitors ADD COLUMN legacy_email_disabled INTEGER DEFAULT 0")
+    with contextlib.suppress(Exception):
+        conn.execute("ALTER TABLE monitors ADD COLUMN legacy_email_to TEXT")
+    with contextlib.suppress(Exception):
+        conn.execute("ALTER TABLE monitors ADD COLUMN legacy_email_cc TEXT")
+    with contextlib.suppress(Exception):
+        conn.execute("ALTER TABLE monitors ADD COLUMN legacy_email_from_name TEXT")
+    with contextlib.suppress(Exception):
+        conn.execute("ALTER TABLE monitors ADD COLUMN legacy_email_from_email TEXT")
+    with contextlib.suppress(Exception):
+        conn.execute("ALTER TABLE monitors ADD COLUMN legacy_email_subject_template TEXT")
+    with contextlib.suppress(Exception):
+        conn.execute("ALTER TABLE monitors ADD COLUMN legacy_email_body_template TEXT")
+
+    with contextlib.suppress(Exception):
+        conn.execute(
+            """
+            CREATE TABLE IF NOT EXISTS user_monitor_permissions (
+              user_id INTEGER NOT NULL,
+              monitor_id INTEGER NOT NULL,
+              can_view INTEGER DEFAULT 1,
+              created_at INTEGER NOT NULL,
+              updated_at INTEGER NOT NULL,
+              PRIMARY KEY (user_id, monitor_id)
+            )
+            """
+        )
+
+    with contextlib.suppress(Exception):
+        conn.execute("CREATE INDEX IF NOT EXISTS idx_monitors_permissions_mode ON monitors(permissions_mode)")
+    with contextlib.suppress(Exception):
+        conn.execute("CREATE INDEX IF NOT EXISTS idx_user_monitor_permissions_monitor_id ON user_monitor_permissions(monitor_id)")
+    with contextlib.suppress(Exception):
+        conn.execute("CREATE INDEX IF NOT EXISTS idx_user_monitor_permissions_user_id ON user_monitor_permissions(user_id)")
+
+
+def ensure_monitor_check_jobs_schema(conn: sqlite3.Connection) -> None:
+    conn.execute(
+        """
+        CREATE TABLE IF NOT EXISTS monitor_check_jobs (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            created_at INTEGER NOT NULL,
+            started_at INTEGER,
+            finished_at INTEGER,
+            requested_by INTEGER,
+            scope TEXT NOT NULL DEFAULT 'all',
+            monitor_ids TEXT NOT NULL,
+            force_notify_rules INTEGER DEFAULT 0,
+            status TEXT NOT NULL DEFAULT 'queued',
+            checked_count INTEGER DEFAULT 0,
+            total_count INTEGER DEFAULT 0,
+            up_count INTEGER DEFAULT 0,
+            down_count INTEGER DEFAULT 0,
+            error_count INTEGER DEFAULT 0,
+            last_error TEXT,
+            worker_kicked INTEGER DEFAULT 0
+        )
+        """
+    )
+    with contextlib.suppress(Exception):
+        conn.execute("ALTER TABLE monitor_check_jobs ADD COLUMN worker_kicked INTEGER DEFAULT 0")
+    with contextlib.suppress(Exception):
+        conn.execute("ALTER TABLE monitor_check_jobs ADD COLUMN progress_json TEXT")
+    with contextlib.suppress(Exception):
+        conn.execute("CREATE INDEX IF NOT EXISTS idx_monitor_check_jobs_status ON monitor_check_jobs(status)")
+        conn.execute("CREATE INDEX IF NOT EXISTS idx_monitor_check_jobs_created_at ON monitor_check_jobs(created_at)")
+
+
+def normalize_email_list(raw: Any) -> List[str]:
+    if raw is None:
+        return []
+    if isinstance(raw, (list, tuple)):
+        parts = [str(x) for x in raw]
+    else:
+        parts = re.split(r"[,\n]+", str(raw))
+    out: List[str] = []
+    seen = set()
+    for p in parts:
+        e = p.strip()
+        if not e:
+            continue
+        if not is_valid_email_local(e):
+            continue
+        k = e.lower()
+        if k in seen:
+            continue
+        seen.add(k)
+        out.append(e)
+    return out
+
+
+def is_valid_email_local(email: str) -> bool:
+    email = email.strip()
+    if not email or "@" not in email:
+        return False
+    # Basic, permissive validation (matches PHP behavior allowing localhost / loopback domains)
+    return bool(re.match(r"^[^\s@]+@([^\s@]+\.[^\s@]+|localhost|127\.0\.0\.1|::1)$", email, re.I))
+
+
+def load_settings(conn: sqlite3.Connection, prefix: str) -> Dict[str, str]:
+    rows = conn.execute("SELECT key, value FROM settings WHERE key LIKE ?", (f"{prefix}%",)).fetchall()
+    out: Dict[str, str] = {}
+    for r in rows:
+        k = str(r["key"])
+        v = "" if r["value"] is None else str(r["value"])
+        out[k] = v
+    return out
+
+
+def get_smtp_config(conn: sqlite3.Connection) -> Dict[str, Any]:
+    """
+    Mirror PHP getSMTPConfig():
+    Prioritize the active server in 'smtp_servers' table, fallback to legacy 'settings' table.
+    """
+    try:
+        # Check if table exists first (in case migration didn't run yet)
+        table_check = conn.execute("SELECT name FROM sqlite_master WHERE type='table' AND name='smtp_servers'").fetchone()
+        if table_check:
+            row = conn.execute("SELECT * FROM smtp_servers WHERE is_active = 1 LIMIT 1").fetchone()
+            if row:
+                cfg = {
+                    "host": row["host"],
+                    "port": row["port"],
+                    "username": row["username"],
+                    "password": row["password"],
+                    "from_email": row["from_email"],
+                    "from_name": row["from_name"],
+                    "encryption": row["encryption"],
+                    "enabled": "1" if int(row["is_enabled"] or 0) == 1 else "0",
+                    "pause_start": row["pause_start"],
+                    "pause_end": row["pause_end"]
+                }
+                if cfg.get("password"):
+                    with contextlib.suppress(Exception):
+                        cfg["password"] = base64.b64decode(cfg["password"]).decode("utf-8", errors="replace")
+                return cfg
+    except Exception:
+        pass
+
+    # Fallback to legacy settings table
+    raw = load_settings(conn, "smtp_")
+    cfg = {}
+    for k, v in raw.items():
+        cfg[k.replace("smtp_", "", 1)] = v
+    if "password" in cfg and cfg["password"]:
+        # PHP stores base64-encoded
+        with contextlib.suppress(Exception):
+            cfg["password"] = base64.b64decode(cfg["password"]).decode("utf-8", errors="replace")
+    return cfg
+
+
+def notifications_paused(conn: sqlite3.Connection, *, default_on_error: bool = True) -> bool:
+    """
+    Mirror PHP: global boolean + legacy pause window.
+
+    IMPORTANT: This function is used by both monitor and email workers. If the settings table
+    is missing/locked/unavailable, we default to "paused" (default_on_error=True) to avoid
+    accidentally sending/queueing notifications, while still allowing monitoring status updates.
+    """
+    try:
+        # Check global pause flag first (simple boolean toggle)
+        row = conn.execute("SELECT value FROM settings WHERE key = 'notifications_paused'").fetchone()
+        if row:
+            v = str(row["value"]).strip().lower()
+            if v in ("1", "true", "yes", "on"):
+                return True
+
+        # Check time-based pause window from active SMTP server
+        # Mirroring PHP logic: getSMTPConfig() -> check pause_start/pause_end
+        cfg = get_smtp_config(conn)
+        start = cfg.get("pause_start")
+        end = cfg.get("pause_end")
+        
+        if not start or not end:
+            return False
+            
+        try:
+            # Format: 'YYYY-MM-DD HH:MM:SS' or just 'HH:MM'
+            # If it's a date-time string:
+            if len(start) > 5:
+                start_ts = int(time.mktime(time.strptime(start, "%Y-%m-%d %H:%M:%S")))
+                end_ts = int(time.mktime(time.strptime(end, "%Y-%m-%d %H:%M:%S")))
+                t = now_ts()
+                return start_ts <= t <= end_ts
+            else:
+                # If it's just HH:MM (unlikely but possible based on some UI iterations)
+                return time_window_active(start, end)
+        except Exception:
+            return False
+    except Exception:
+        return bool(default_on_error)
+
+
+def is_in_maintenance_window(monitor_row: sqlite3.Row) -> bool:
+    ms = monitor_row["maintenance_start"]
+    me = monitor_row["maintenance_end"]
+    if not ms or not me:
+        return False
+    t = now_ts()
+    try:
+        return int(ms) <= t <= int(me)
+    except Exception:
+        return False
+
+
+def format_downtime_duration(seconds: Optional[int]) -> str:
+    """Human duration used in monitor emails: '45 secs', '12 mins', '1 hr 12 mins'."""
+    try:
+        total = int(seconds)  # type: ignore[arg-type]
+    except (TypeError, ValueError):
+        return ""
+    if total <= 0:
+        return "0 secs"
+    hours, rem = divmod(total, 3600)
+    minutes, secs = divmod(rem, 60)
+    if hours and minutes:
+        return f"{hours} hr{'s' if hours != 1 else ''} {minutes} min{'s' if minutes != 1 else ''}"
+    if hours:
+        return f"{hours} hr{'s' if hours != 1 else ''}"
+    if minutes:
+        return f"{minutes} min{'s' if minutes != 1 else ''}"
+    return f"{secs} sec{'s' if secs != 1 else ''}"
+
+
+def find_last_monitor_outage(
+    conn: sqlite3.Connection,
+    monitor_id: int,
+    *,
+    scan_limit: int = 1000,
+    prev_status: Optional[str] = None,
+    monitor_type: Optional[str] = None,
+) -> Optional[Dict[str, Any]]:
+    """
+    Downtime window that just ended, derived from monitor_logs.
+
+    Walks the newest checks backwards: skips the trailing 'up' rows (the check that
+    detected the recovery), then measures the contiguous 'down'/'warning' run
+    before it. Call it right after the recovery log row was inserted.
+
+    Returns None when no outage streak can be found (no logs, or history pruned by
+    retention) and for SSL certificate warnings, which are not outages (an expiring
+    certificate that gets renewed would otherwise report a bogus multi-day "down").
+
+    The result is a dict:
+      started_at      unix ts of the first failed check (outage detected)
+      recovered_at    unix ts of the first successful check after the outage
+      seconds         recovered_at - started_at (accurate to +/- one check interval)
+      duration_text   human text, e.g. '1 hr 12 mins'
+      failing_checks  number of consecutive down/warning checks
+      saw_down        True when at least one check was a hard 'down'
+      truncated       True when the scan window ended mid-outage (duration is a floor)
+    """
+    mtype = str(monitor_type or "").strip().lower()
+    prev = str(prev_status or "").strip().lower()
+    if mtype == "ssl" and prev == "warning":
+        return None
+
+    try:
+        limit = max(10, min(20000, int(scan_limit)))
+    except (TypeError, ValueError):
+        limit = 1000
+
+    try:
+        rows = conn.execute(
+            """
+            SELECT status, checked_at
+            FROM monitor_logs
+            WHERE monitor_id = ?
+            ORDER BY checked_at DESC, id DESC
+            LIMIT ?
+            """,
+            (int(monitor_id), limit),
+        ).fetchall()
+    except Exception:
+        return None
+    if not rows:
+        return None
+
+    def _status(row: Any) -> str:
+        try:
+            return str(row["status"] or "").strip().lower()
+        except Exception:
+            return ""
+
+    def _ts(row: Any) -> int:
+        try:
+            return int(row["checked_at"] or 0)
+        except Exception:
+            return 0
+
+    i = 0
+    recovered_at: Optional[int] = None
+    while i < len(rows) and _status(rows[i]) == "up":
+        # Newest first, so the last value assigned is the *oldest* 'up' of the run,
+        # i.e. the first successful check after the outage.
+        recovered_at = _ts(rows[i])
+        i += 1
+    if i >= len(rows):
+        return None  # no failure found inside the scanned window
+
+    first_failed_at: Optional[int] = None
+    failing_checks = 0
+    saw_down = False
+    while i < len(rows):
+        row_status = _status(rows[i])
+        if row_status not in ("down", "warning"):
+            break
+        if row_status == "down":
+            saw_down = True
+        first_failed_at = _ts(rows[i])
+        failing_checks += 1
+        i += 1
+    if first_failed_at is None or failing_checks == 0:
+        return None
+
+    truncated = i >= limit
+    if not recovered_at or recovered_at <= 0:
+        # No trailing 'up' row (unexpected, e.g. logs written out of order):
+        # fall back to the newest log row time so the duration stays sane.
+        recovered_at = _ts(rows[0])
+    seconds = max(0, int(recovered_at) - int(first_failed_at))
+    return {
+        "started_at": int(first_failed_at),
+        "recovered_at": int(recovered_at),
+        "seconds": seconds,
+        "duration_text": format_downtime_duration(seconds),
+        "failing_checks": failing_checks,
+        "saw_down": saw_down,
+        "truncated": truncated,
+    }
+
+
+def replace_template_vars(
+    template: str,
+    monitor_row: sqlite3.Row,
+    status: str,
+    details: str,
+    response_ms: Optional[int],
+    app_name: str = "LinkNest",
+    extra_vars: Optional[Dict[str, Any]] = None,
+) -> str:
+    if template is None:
+        template = ""
+    rep = {
+        "{monitor_name}": str(monitor_row["name"]),
+        "{monitor_type}": str(monitor_row["type"]),
+        "{monitor_target}": str(monitor_row["target"]),
+        "{status}": status.upper(),
+        "{details}": details if details is not None else "N/A",
+        "{response_time}": (f"{response_ms} ms" if response_ms is not None else "N/A"),
+        "{time}": _dt.datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
+        "{date}": _dt.datetime.now().strftime("%Y-%m-%d"),
+        "{timestamp}": str(now_ts()),
+        "{app_name}": app_name,
+        # Recovery (UP) notifications: how long the target was down before it
+        # started responding again. "N/A" is used on down/warning emails.
+        "{downtime}": "N/A",
+        "{down_since}": "N/A",
+    }
+    if extra_vars:
+        for key, value in extra_vars.items():
+            if value is None:
+                continue
+            token = key if str(key).startswith("{") else "{" + str(key) + "}"
+            rep[token] = str(value)
+    out = template
+    for k, v in rep.items():
+        out = out.replace(k, v)
+    return out
+
+
+def parse_hhmm(s: str) -> Optional[int]:
+    if not s:
+        return None
+    m = re.match(r"^([01]?\d|2[0-3]):([0-5]\d)$", s.strip())
+    if not m:
+        return None
+    return int(m.group(1)) * 60 + int(m.group(2))
+
+
+def time_window_active(start_hhmm: Optional[str], end_hhmm: Optional[str], now_local: Optional[_dt.datetime] = None) -> bool:
+    if not start_hhmm or not end_hhmm:
+        return True
+    start_m = parse_hhmm(start_hhmm)
+    end_m = parse_hhmm(end_hhmm)
+    if start_m is None or end_m is None:
+        return True
+    if now_local is None:
+        now_local = _dt.datetime.now()
+    cur_m = now_local.hour * 60 + now_local.minute
+    if end_m < start_m:
+        return cur_m >= start_m or cur_m <= end_m
+    return start_m <= cur_m <= end_m
+
+
+def day_of_week_active(days_csv: Optional[str], now_local: Optional[_dt.datetime] = None) -> bool:
+    if not days_csv:
+        return True
+    if now_local is None:
+        now_local = _dt.datetime.now()
+    # Python: Monday=0, Sunday=6; PHP uses 0=Sunday ... 6=Saturday
+    php_dow = (now_local.weekday() + 1) % 7
+    active = set()
+    for p in str(days_csv).split(","):
+        p = p.strip()
+        if not p:
+            continue
+        with contextlib.suppress(Exception):
+            active.add(int(p))
+    return php_dow in active
+
+
+def get_monitor_notification_dst_enabled(conn: Optional[sqlite3.Connection] = None) -> bool:
+    if conn is None:
+        return True
+    with contextlib.suppress(Exception):
+        row = conn.execute(
+            "SELECT value FROM settings WHERE key = 'monitor_notification_dst_correction' LIMIT 1"
+        ).fetchone()
+        if row and str(row[0]).strip() == "0":
+            return False
+    return True
+
+
+def _standard_offset_seconds(tz_name: str, year: int) -> int:
+    from zoneinfo import ZoneInfo
+
+    zi = ZoneInfo(tz_name)
+    offsets: List[int] = []
+    for month in (1, 4, 7, 10):
+        dt = _dt.datetime(year, month, 15, 12, 0, tzinfo=zi)
+        off = dt.utcoffset()
+        offsets.append(int(off.total_seconds()) if off is not None else 0)
+    return min(offsets)
+
+
+def get_monitor_notification_timezone(conn: Optional[sqlite3.Connection] = None) -> str:
+    tz = ""
+    if conn is not None:
+        with contextlib.suppress(Exception):
+            row = conn.execute(
+                "SELECT value FROM settings WHERE key = 'monitor_notification_timezone' LIMIT 1"
+            ).fetchone()
+            if row and row[0]:
+                tz = str(row[0]).strip()
+    if tz:
+        try:
+            from zoneinfo import ZoneInfo
+            ZoneInfo(tz)
+            return tz
+        except Exception:
+            pass
+    local = _dt.datetime.now().astimezone()
+    key = getattr(local.tzinfo, "key", None)
+    if key:
+        return str(key)
+    return "UTC"
+
+
+def monitor_notification_now(conn: Optional[sqlite3.Connection] = None) -> _dt.datetime:
+    tz_name = get_monitor_notification_timezone(conn)
+    try:
+        from zoneinfo import ZoneInfo
+
+        zi = ZoneInfo(tz_name)
+        utc = _dt.datetime.now(_dt.timezone.utc)
+        if conn is not None and not get_monitor_notification_dst_enabled(conn):
+            std = _standard_offset_seconds(tz_name, utc.year)
+            local_naive = utc + _dt.timedelta(seconds=std)
+            return local_naive.replace(tzinfo=None)
+        return utc.astimezone(zi)
+    except Exception:
+        return _dt.datetime.now()
+
+
+def normalize_http_code(value: Any) -> Optional[int]:
+    try:
+        code = int(value)
+    except Exception:
+        return None
+    if 100 <= code <= 599:
+        return code
+    return None
+
+
+def parse_http_code(details: Optional[str]) -> Optional[int]:
+    if not details:
+        return None
+    matches = re.findall(r"(?:HTTP(?:\s+Error)?)\s+(\d{3})\b", str(details), flags=re.I)
+    if not matches:
+        return None
+    return normalize_http_code(matches[-1])
+
+
+def _http_error_result(exc: BaseException) -> Optional[Tuple[str, str]]:
+    if not isinstance(exc, urllib.error.HTTPError):
+        return None
+    code = normalize_http_code(getattr(exc, "code", None) or getattr(exc, "status", None))
+    with contextlib.suppress(Exception):
+        exc.close()
+    if code is None:
+        return None
+    if 200 <= code < 400:
+        return "up", f"HTTP {code}"
+    return "down", f"HTTP {code}"
+
+
+@dataclass
+class CheckResult:
+    status: str
+    details: str
+    response_ms: int
+    http_code: Optional[int] = None
+
+
+def _ssl_context(verify_ssl: bool) -> ssl.SSLContext:
+    if verify_ssl:
+        return ssl.create_default_context()
+    ctx = ssl.create_default_context()
+    ctx.check_hostname = False
+    ctx.verify_mode = ssl.CERT_NONE
+    return ctx
+
+
+def check_url_head(url: str, timeout: float, verify_ssl: bool, app_name: str = "LinkNest") -> Tuple[str, str]:
+    if not re.match(r"^https?://", url, re.I):
+        return "down", "Invalid URL"
+    ua = f"{app_name} Monitor/1.0"
+    req = urllib.request.Request(url, method="HEAD", headers={"User-Agent": ua, "Connection": "close"})
+    try:
+        with urllib.request.urlopen(req, timeout=timeout, context=_ssl_context(verify_ssl)) as resp:
+            code = getattr(resp, "status", None) or resp.getcode()
+            if 200 <= int(code) < 400:
+                return "up", f"HTTP {code}"
+            return "down", f"HTTP {code}"
+    except Exception as e:
+        http_res = _http_error_result(e)
+        if http_res:
+            return http_res
+        msg = str(e) or e.__class__.__name__
+        if "timed out" in msg.lower():
+            return "down", "Connection timeout"
+        return "down", f"Connection failed: {msg}"
+
+
+class _HeaderResponse:
+    def __init__(self, fp, headers, code: int):
+        self.fp = fp
+        self.headers = headers
+        self.status = int(code)
+        self.code = int(code)
+
+    def close(self):
+        if self.fp is not None:
+            with contextlib.suppress(Exception):
+                self.fp.close()
+
+
+class _NoRedirect(urllib.request.HTTPRedirectHandler):
+    def http_error_302(self, req, fp, code, msg, headers):
+        return _HeaderResponse(fp, headers, code)
+
+    http_error_301 = http_error_302
+    http_error_303 = http_error_302
+    http_error_307 = http_error_302
+    http_error_308 = http_error_302
+
+
+def _http_headers_open(url: str, method: str, timeout: float, verify_ssl: bool, app_name: str):
+    ua = f"{app_name} Monitor/1.0"
+    req = urllib.request.Request(url, method=method, headers={"User-Agent": ua, "Accept": "*/*", "Connection": "close"})
+    opener = urllib.request.build_opener(
+        urllib.request.HTTPSHandler(context=_ssl_context(verify_ssl)),
+        _NoRedirect(),
+    )
+    try:
+        return opener.open(req, timeout=timeout)
+    except urllib.error.HTTPError as e:
+        return e
+
+
+def _http_headers_details(code: int, headers, method: str) -> Tuple[str, str]:
+    interesting = ("location", "server", "content-type", "www-authenticate", "cache-control")
+    parts = [f"HTTP {code}"]
+    raw_lines = []
+    seen = set()
+    if headers is not None:
+        for key, value in headers.items():
+            raw_lines.append(f"{key}: {value}")
+            lk = str(key).lower()
+            if lk in interesting and lk not in seen:
+                seen.add(lk)
+                val = str(value)
+                if len(val) > 180:
+                    val = val[:177] + "..."
+                parts.append(f"{key}: {val}")
+    if str(method).upper() == "GET":
+        parts.append("GET fallback")
+    return " | ".join(parts), "\n".join(raw_lines)
+
+
+def check_http_headers(
+    url: str,
+    keyword: str,
+    timeout: float,
+    verify_ssl: bool,
+    app_name: str = "LinkNest",
+) -> Tuple[str, str]:
+    if not re.match(r"^https?://", url, re.I):
+        return "down", "Invalid URL"
+    needle = (keyword or "").strip()
+
+    def probe(method: str):
+        resp = _http_headers_open(url, method, timeout, verify_ssl, app_name)
+        try:
+            code = int(getattr(resp, "status", None) or getattr(resp, "code", None) or 0)
+            headers = getattr(resp, "headers", None)
+            return code, headers, None
+        finally:
+            fp = getattr(resp, "fp", None) or getattr(resp, "raw", None)
+            if fp is not None:
+                with contextlib.suppress(Exception):
+                    fp.close()
+            with contextlib.suppress(Exception):
+                resp.close()
+
+    try:
+        code, headers, _err = probe("HEAD")
+        used_method = "HEAD"
+        if code in (0, 405, 501):
+            code, headers, _err = probe("GET")
+            used_method = "GET"
+        details, raw = _http_headers_details(code, headers, used_method)
+        if needle:
+            if needle.lower() not in raw.lower() and needle.lower() not in details.lower():
+                return "down", f"Header '{needle}' not found ({details})"
+            if 200 <= code < 400:
+                return "up", f"Header match ({details})"
+            return "down", details
+        if 200 <= code < 400:
+            return "up", details
+        if code == 0:
+            return "down", "Connection failed: no HTTP response"
+        return "down", details
+    except Exception as e:
+        http_res = _http_error_result(e)
+        if http_res:
+            return http_res
+        msg = str(e) or e.__class__.__name__
+        if "timed out" in msg.lower():
+            return "down", "Connection timeout"
+        return "down", f"Connection failed: {msg}"
+
+
+def check_keyword(url: str, keyword: str, timeout: float, verify_ssl: bool, max_bytes: int = 1024 * 1024, app_name: str = "LinkNest") -> Tuple[str, str]:
+    if not re.match(r"^https?://", url, re.I):
+        return "down", "Invalid URL"
+    if not keyword:
+        return "down", "No keyword specified"
+    ua = f"{app_name} Monitor/1.0"
+    req = urllib.request.Request(url, method="GET", headers={"User-Agent": ua, "Connection": "close"})
+    try:
+        with urllib.request.urlopen(req, timeout=timeout, context=_ssl_context(verify_ssl)) as resp:
+            code = getattr(resp, "status", None) or resp.getcode()
+            if not (200 <= int(code) < 400):
+                return "down", f"HTTP {code}"
+            data = resp.read(max_bytes)
+            try:
+                text = data.decode("utf-8", errors="ignore")
+            except Exception:
+                text = str(data)
+            if keyword.lower() in text.lower():
+                return "up", f"Keyword found (HTTP {code})"
+            return "down", f"Keyword '{keyword}' not found (HTTP {code})"
+    except Exception as e:
+        http_res = _http_error_result(e)
+        if http_res:
+            return http_res
+        msg = str(e) or e.__class__.__name__
+        if "timed out" in msg.lower():
+            return "down", "Connection timeout"
+        return "down", f"Connection failed: {msg}"
+
+
+def check_port(target: str, port: int, timeout: float) -> Tuple[str, str]:
+    if not target or not port:
+        return "down", "Target and port are required"
+    try:
+        port_i = int(port)
+    except Exception:
+        return "down", "Invalid port number"
+    if port_i < 1 or port_i > 65535:
+        return "down", "Invalid port number"
+
+    host = target.strip()
+    # Extract host from URL if needed
+    m = re.match(r"^https?://([^/]+)", host, re.I)
+    if m:
+        host = m.group(1)
+        host = host.split("@")[-1]
+        host = host.split(":")[0]
+
+    try:
+        with socket.create_connection((host, port_i), timeout=timeout):
+            return "up", f"Port {port_i} open"
+    except Exception as e:
+        msg = str(e) or e.__class__.__name__
+        if "timed out" in msg.lower():
+            return "down", "Connection timeout"
+        return "down", f"Connection refused: {msg}"
+
+
+def check_ping(target: str, timeout_ms: int = 1000) -> Tuple[str, str]:
+    host = (target or "").strip()
+    if not host:
+        return "down", "Target is required"
+
+    # Extract host from URL if needed
+    m = re.match(r"^https?://([^/]+)", host, re.I)
+    if m:
+        host = m.group(1)
+        host = host.split("@")[-1]
+        host = host.split(":")[0] if host.count(":") == 0 else host
+
+    host = host.strip()
+    if not host or len(host) > 255:
+        return "down", "Invalid host"
+    if not re.match(r"^[a-zA-Z0-9\.\-:]+$", host):
+        return "down", "Invalid host format"
+
+    try:
+        tms = int(timeout_ms)
+    except Exception:
+        tms = 1000
+    tms = max(250, min(60000, tms))
+
+    is_windows = (os.name == "nt")
+    is_darwin = (sys.platform == "darwin")
+
+    if is_windows:
+        cmd = ["ping", "-n", "1", "-w", str(tms), host]
+        timeout_seconds = max(2, int((tms / 1000.0) + 2))
+    elif is_darwin:
+        # macOS: -W is milliseconds
+        cmd = ["ping", "-c", "1", "-W", str(tms), host]
+        timeout_seconds = max(2, int((tms / 1000.0) + 2))
+    else:
+        # Linux: -W is seconds
+        sec = max(1, int((tms + 999) / 1000))
+        cmd = ["ping", "-c", "1", "-W", str(sec), host]
+        timeout_seconds = max(2, sec + 2)
+
+    try:
+        cp = subprocess.run(cmd, capture_output=True, text=True, timeout=timeout_seconds)
+    except FileNotFoundError:
+        return "down", "Ping command not available"
+    except subprocess.TimeoutExpired:
+        return "down", "Connection timeout"
+    except Exception as e:
+        return "down", f"Ping failed: {e}"
+
+    if cp.returncode == 0:
+        return "up", "Ping OK"
+
+    err = (cp.stderr or "").strip() or (cp.stdout or "").strip() or "No response"
+    if len(err) > 180:
+        err = err[:180] + "..."
+    return "down", f"Ping failed: {err}"
+
+
+def _asn1_read_len(data: bytes, i: int) -> Tuple[int, int]:
+    if i >= len(data):
+        raise ValueError("truncated ASN.1 length")
+    first = data[i]
+    i += 1
+    if first < 0x80:
+        return first, i
+    n = first & 0x7F
+    if n == 0 or n > 4 or i + n > len(data):
+        raise ValueError("bad ASN.1 length")
+    ln = int.from_bytes(data[i : i + n], "big")
+    return ln, i + n
+
+
+def _parse_x509_time(data: bytes, i: int) -> Tuple[_dt.datetime, int]:
+    tag = data[i]
+    ln, j = _asn1_read_len(data, i + 1)
+    raw = data[j : j + ln].decode("ascii")
+    j += ln
+    if tag == 0x17 and raw.endswith("Z") and len(raw) >= 13:
+        yy = int(raw[0:2])
+        year = 2000 + yy if yy < 50 else 1900 + yy
+        return _dt.datetime.strptime(f"{year:04d}{raw[2:12]}", "%Y%m%d%H%M%S"), j
+    if tag == 0x18 and raw.endswith("Z") and len(raw) >= 15:
+        return _dt.datetime.strptime(raw[:14], "%Y%m%d%H%M%S"), j
+    raise ValueError("unsupported certificate time")
+
+
+def _ssl_not_after_from_der(der: bytes) -> Optional[_dt.datetime]:
+    """Parse notAfter from a DER X.509 cert (stdlib only; works with CERT_NONE)."""
+    try:
+        if not der or der[0] != 0x30:
+            return None
+        _, i = _asn1_read_len(der, 1)
+        if i >= len(der) or der[i] != 0x30:
+            return None
+        tbs_len, i = _asn1_read_len(der, i + 1)
+        tbs_end = min(len(der), i + tbs_len)
+        if i < tbs_end and der[i] == 0xA0:
+            vlen, i = _asn1_read_len(der, i + 1)
+            i += vlen
+        if i < tbs_end and der[i] == 0x02:
+            slen, i = _asn1_read_len(der, i + 1)
+            i += slen
+        if i < tbs_end and der[i] == 0x30:
+            slen, i = _asn1_read_len(der, i + 1)
+            i += slen
+        if i < tbs_end and der[i] == 0x30:
+            slen, i = _asn1_read_len(der, i + 1)
+            i += slen
+        if i >= tbs_end or der[i] != 0x30:
+            return None
+        _vlen, i = _asn1_read_len(der, i + 1)
+        _not_before, i = _parse_x509_time(der, i)
+        not_after, _ = _parse_x509_time(der, i)
+        return not_after
+    except Exception:
+        return None
+
+
+def _ssl_not_after_from_dict(not_after: Any) -> Optional[_dt.datetime]:
+    if not not_after:
+        return None
+    try:
+        return _dt.datetime.strptime(str(not_after), "%b %d %H:%M:%S %Y %Z")
+    except Exception:
+        return None
+
+
+def _ssl_cert_not_after(ssock: ssl.SSLSocket, cert_bin: Optional[bytes]) -> Optional[_dt.datetime]:
+    """Read certificate notAfter. CERT_NONE often yields an empty getpeercert() dict, so parse DER."""
+    cert = ssock.getpeercert() or {}
+    expiry = _ssl_not_after_from_dict(cert.get("notAfter") if isinstance(cert, dict) else None)
+    if expiry is not None:
+        return expiry
+    if cert_bin:
+        expiry = _ssl_not_after_from_der(cert_bin)
+        if expiry is not None:
+            return expiry
+        pem = ssl.DER_cert_to_PEM_cert(cert_bin)
+        decode = getattr(getattr(ssl, "_ssl", None), "_test_decode_cert", None)
+        if callable(decode) and pem:
+            fd, path = tempfile.mkstemp(suffix=".pem")
+            try:
+                os.write(fd, pem.encode("ascii"))
+                os.close(fd)
+                fd = None
+                info = decode(path) or {}
+                expiry = _ssl_not_after_from_dict(info.get("notAfter") if isinstance(info, dict) else None)
+            finally:
+                if fd is not None:
+                    with contextlib.suppress(Exception):
+                        os.close(fd)
+                with contextlib.suppress(Exception):
+                    os.unlink(path)
+    return expiry
+
+
+def _ssl_days_remaining(expiry: _dt.datetime) -> int:
+    """Whole days remaining, matching PHP floor((validTo_time_t - time()) / 86400)."""
+    if expiry.tzinfo is None:
+        expiry_ts = expiry.replace(tzinfo=_dt.timezone.utc).timestamp()
+    else:
+        expiry_ts = expiry.timestamp()
+    return int(math.floor((expiry_ts - time.time()) / 86400.0))
+
+
+def check_ssl(target: str, warn_days_raw: Optional[str], timeout: float = 8.0) -> Tuple[str, str]:
+    host = (target or "").strip()
+    port = 443
+
+    m = re.match(r"^https?://([^/]+)", host, re.I)
+    if m:
+        host_part = m.group(1)
+        host_part = host_part.split("@")[-1]
+        if ":" in host_part:
+            h, p = host_part.rsplit(":", 1)
+            if p.isdigit():
+                host, port = h, int(p)
+            else:
+                host = host_part
+        else:
+            host = host_part
+    else:
+        host = re.sub(r"^https?://", "", host, flags=re.I)
+        host = host.split("/")[0]
+        if ":" in host:
+            h, p = host.rsplit(":", 1)
+            if p.isdigit():
+                host, port = h, int(p)
+
+    if not host or not re.match(r"^[a-zA-Z0-9\.\-:]+$", host):
+        return "down", "Invalid host for SSL check"
+
+    warn_days = 30
+    if warn_days_raw is not None and str(warn_days_raw).strip() != "":
+        try:
+            warn_days = max(1, min(365, int(warn_days_raw)))
+        except Exception:
+            warn_days = 30
+
+    ctx = ssl.create_default_context()
+    ctx.check_hostname = False
+    ctx.verify_mode = ssl.CERT_NONE
+
+    try:
+        with socket.create_connection((host, port), timeout=timeout) as sock:
+            with ctx.wrap_socket(sock, server_hostname=host) as ssock:
+                cert_bin = ssock.getpeercert(binary_form=True)
+                expiry = _ssl_cert_not_after(ssock, cert_bin)
+        if not cert_bin:
+            return "down", "Could not read SSL certificate"
+        if expiry is None:
+            return "down", "Invalid certificate data"
+        days_remaining = _ssl_days_remaining(expiry)
+        # Amber WARNING when inside the warn window; red DOWN only after expiry / TLS failure.
+        if days_remaining < 0:
+            return "down", f"Certificate expired {abs(days_remaining)} days ago"
+        if days_remaining <= warn_days:
+            return "warning", f"Certificate expires in {days_remaining} days (threshold: {warn_days})"
+        return "up", f"Certificate valid ({days_remaining} days remaining)"
+    except Exception as e:
+        msg = str(e) or e.__class__.__name__
+        return "down", f"SSL connection failed: {msg}"
+
+
+def check_dns(target: str, expected: Optional[str] = None) -> Tuple[str, str]:
+    host = (target or "").strip()
+    host = re.sub(r"^https?://", "", host, flags=re.I)
+    host = host.split("/")[0].split(":")[0]
+
+    if not host or not re.match(r"^[a-zA-Z0-9]([a-zA-Z0-9\.\-]*[a-zA-Z0-9])?$", host):
+        return "down", "Invalid hostname for DNS check"
+
+    try:
+        import ipaddress
+        ipaddress.ip_address(host)
+        return "up", "Target is an IP address (DNS lookup skipped)"
+    except Exception:
+        pass
+
+    try:
+        infos = socket.getaddrinfo(host, None)
+    except socket.gaierror as e:
+        return "down", f"No DNS records found: {e}"
+
+    ips = list(dict.fromkeys([x[4][0] for x in infos if x and x[4]]))
+    if not ips:
+        return "down", "No DNS records found"
+
+    exp = (expected or "").strip()
+    if exp:
+        found = any(ip == exp or exp.lower() in ip.lower() for ip in ips)
+        if not found:
+            return "down", f"Expected '{exp}' not in DNS ({', '.join(ips[:4])})"
+        return "up", f"DNS matches expected ({exp})"
+
+    return "up", "DNS resolved: " + ", ".join(ips[:4])
+
+
+def check_json(url: str, keyword: str, timeout: float, verify_ssl: bool, app_name: str = "LinkNest") -> Tuple[str, str]:
+    if not re.match(r"^https?://", url, re.I):
+        return "down", "Invalid URL"
+    expr = (keyword or "").strip()
+    if not expr:
+        return "down", "No JSON check expression specified"
+
+    ua = f"{app_name} Monitor/1.0"
+    req = urllib.request.Request(url, method="GET", headers={"User-Agent": ua, "Accept": "application/json, */*", "Connection": "close"})
+    try:
+        with urllib.request.urlopen(req, timeout=timeout, context=_ssl_context(verify_ssl)) as resp:
+            code = getattr(resp, "status", None) or resp.getcode()
+            if not (200 <= int(code) < 400):
+                return "down", f"HTTP {code}"
+            body = resp.read(1024 * 1024)
+    except Exception as e:
+        http_res = _http_error_result(e)
+        if http_res:
+            return http_res
+        msg = str(e) or e.__class__.__name__
+        if "timed out" in msg.lower():
+            return "down", "Connection timeout"
+        return "down", f"Connection failed: {msg}"
+
+    try:
+        text = body.decode("utf-8", errors="ignore")
+        data = json.loads(text)
+    except Exception:
+        return "down", f"Response is not valid JSON (HTTP {code})"
+
+    if isinstance(data, dict) and ":" in expr:
+        key, expected = expr.split(":", 1)
+        key, expected = key.strip(), expected.strip()
+        actual = data.get(key)
+        if actual is None:
+            return "down", f"JSON key '{key}' not found (HTTP {code})"
+        actual_str = str(actual).lower() if not isinstance(actual, bool) else ("true" if actual else "false")
+        if actual_str == expected.lower() or str(actual) == expected:
+            return "up", f"JSON {key}={actual} (HTTP {code})"
+        return "down", f"JSON {key}={actual}, expected {expected} (HTTP {code})"
+
+    haystack = json.dumps(data).lower()
+    if expr.lower() in haystack:
+        return "up", f"JSON contains '{expr}' (HTTP {code})"
+    return "down", f"JSON value '{expr}' not found (HTTP {code})"
+
+
+def send_smtp_email(
+    *,
+    smtp_cfg: Dict[str, Any],
+    to_list: Sequence[str],
+    cc_list: Sequence[str],
+    subject: str,
+    body: str,
+    html_body: Optional[str] = None,
+    from_name: Optional[str],
+    from_email: Optional[str],
+    timeout_seconds: int = 20,
+    db_conn: Optional[sqlite3.Connection] = None,
+    app_name: Optional[str] = None,
+) -> Tuple[bool, Optional[str]]:
+    enabled = str(smtp_cfg.get("enabled", "")).strip().lower()
+    if enabled not in ("1", "true"):
+        return False, "SMTP disabled"
+
+    host = str(smtp_cfg.get("host", "")).strip()
+    if not host:
+        return False, "Missing SMTP host"
+    port = int(smtp_cfg.get("port") or 587)
+    encryption = str(smtp_cfg.get("encryption") or "tls").strip().lower()
+    username = str(smtp_cfg.get("username", "") or "")
+    password = str(smtp_cfg.get("password", "") or "")
+
+    resolved_app = (app_name or "").strip() or resolve_app_name(db_conn)
+    fe = expand_app_placeholders(from_email or smtp_cfg.get("from_email") or "", resolved_app).strip()
+    fn_raw = from_name if from_name is not None else smtp_cfg.get("from_name")
+    fn = expand_app_placeholders(fn_raw or f"{resolved_app} Monitor", resolved_app).strip()
+    if not fe:
+        return False, "Missing from_email"
+
+    subject = expand_app_placeholders(subject, resolved_app)
+
+    all_rcpt = list(dict.fromkeys([*(to_list or []), *(cc_list or [])]))
+    if not all_rcpt:
+        return False, "No valid recipients (To/CC)"
+
+    msg = EmailMessage()
+    msg["Date"] = email.utils.formatdate(localtime=True)
+    msg["From"] = email.utils.formataddr((fn, fe))
+    msg["To"] = ", ".join(to_list)
+    if cc_list:
+        msg["Cc"] = ", ".join(cc_list)
+    msg["Subject"] = subject
+    msg.set_content(body or "")
+    if html_body:
+        # HTML alternative only — do not CID-attach the logo. Outlook shows a
+        # paperclip for related image parts even when they are inline.
+        msg.add_alternative(str(html_body), subtype="html")
+
+    try:
+        import smtplib
+
+        if encryption == "ssl":
+            ctx = ssl.create_default_context()
+            with smtplib.SMTP_SSL(host, port, timeout=timeout_seconds, context=ctx) as s:
+                s.ehlo()
+                if username and password:
+                    s.login(username, password)
+                s.send_message(msg, from_addr=fe, to_addrs=all_rcpt)
+        else:
+            with smtplib.SMTP(host, port, timeout=timeout_seconds) as s:
+                s.ehlo()
+                if encryption == "tls":
+                    ctx = ssl.create_default_context()
+                    s.starttls(context=ctx)
+                    s.ehlo()
+                if username and password:
+                    s.login(username, password)
+                s.send_message(msg, from_addr=fe, to_addrs=all_rcpt)
+        return True, None
+    except Exception as e:
+        return False, str(e) or e.__class__.__name__
+
+
+def _ln_accent_for_status(status: str) -> str:
+    s = (status or "").strip().lower()
+    if s == "up":
+        return "#10b981"
+    if s == "down":
+        return "#ef4444"
+    if s == "warning":
+        return "#f59e0b"
+    return "#0ea5e9"
+
+
+def _ln_html_escape(v: object) -> str:
+    return _html.escape("" if v is None else str(v), quote=True)
+
+
+def _ln_nl2br_escaped(text: str) -> str:
+    # Escape first, then convert line breaks
+    return _ln_html_escape(text).replace("\r\n", "\n").replace("\r", "\n").replace("\n", "<br/>")
+
+
+def _setting_value(conn: Optional[sqlite3.Connection], key: str) -> str:
+    if conn is None:
+        try:
+            with open_db(DEFAULT_DB_PATH) as c:
+                row = c.execute("SELECT value FROM settings WHERE key = ? LIMIT 1", (key,)).fetchone()
+                return str(row["value"]) if row and row["value"] is not None else ""
+        except Exception:
+            return ""
+    try:
+        row = conn.execute("SELECT value FROM settings WHERE key = ? LIMIT 1", (key,)).fetchone()
+        return str(row["value"]) if row and row["value"] is not None else ""
+    except Exception:
+        return ""
+
+
+def resolve_brand_logo_filesystem_path(conn: Optional[sqlite3.Connection] = None) -> Optional[str]:
+    """Map header/logo setting to uploads/<file> on disk."""
+    raw = ""
+    for key in ("header_logo_image", "logo_image", "favicon"):
+        raw = (_setting_value(conn, key) or "").strip()
+        if raw:
+            break
+    if not raw or raw.startswith("http://") or raw.startswith("https://") or raw.startswith("data:"):
+        return None
+    normalized = re.sub(r"^/[^/]+/uploads/", "/uploads/", raw)
+    if not normalized.startswith("/uploads/"):
+        return None
+    filename = os.path.basename(normalized)
+    if not re.match(r"^[a-zA-Z0-9._-]+$", filename):
+        return None
+    disk = os.path.normpath(os.path.join(os.path.dirname(__file__), "..", "uploads", filename))
+    return disk if os.path.isfile(disk) else None
+
+
+def resolve_email_public_base_url(conn: Optional[sqlite3.Connection] = None) -> str:
+    """Public origin for hosted email images (no trailing slash)."""
+    setting = (_setting_value(conn, "auth_email_public_url") or "").strip().rstrip("/")
+    if setting:
+        return setting
+    env = (os.environ.get("LINKNEST_PUBLIC_URL") or os.environ.get("LINKNEST_URL") or "").strip().rstrip("/")
+    return env
+
+
+def resolve_brand_logo_url(conn: Optional[sqlite3.Connection] = None) -> str:
+    """Hosted logo URL for HTML email (never cid: — that creates a paperclip in Outlook)."""
+    raw = ""
+    for key in ("header_logo_image", "logo_image", "favicon"):
+        raw = (_setting_value(conn, key) or "").strip()
+        if raw:
+            break
+    if not raw:
+        return ""
+    if re.match(r"^https?://", raw, re.I) or raw.startswith("data:"):
+        return raw
+    normalized = re.sub(r"^/[^/]+/uploads/", "/uploads/", raw)
+    if not normalized.startswith("/uploads/"):
+        if raw.startswith("/uploads/"):
+            normalized = raw
+        else:
+            return ""
+    base = resolve_email_public_base_url(conn)
+    if not base:
+        return ""
+    return base + normalized
+
+
+def ln_email_base_layout(
+    title: str,
+    subtitle: str,
+    accent_hex: str,
+    inner_html: str,
+    preheader: str = "",
+    app_name: str = "LinkNest",
+    footer_label: Optional[str] = None,
+    db_conn: Optional[sqlite3.Connection] = None,
+) -> str:
+    """Outlook-safe table layout (mirrors api/email_templates.php)."""
+    accent = accent_hex if re.match(r"^#[0-9a-fA-F]{6}$", accent_hex or "") else "#4f46e5"
+    safe_title = _ln_html_escape(title)
+    safe_subtitle = _ln_html_escape(subtitle)
+    safe_preheader = _ln_html_escape(preheader)
+    safe_app_name = _ln_html_escape(app_name)
+    foot = footer_label or f"Sent by {app_name} Monitoring"
+    safe_foot = _ln_html_escape(foot)
+    now_s = _ln_html_escape(_dt.datetime.now().strftime("%Y-%m-%d %H:%M:%S"))
+
+    logo_row = ""
+    logo_src = resolve_brand_logo_url(db_conn)
+    if logo_src and not logo_src.lower().startswith("cid:"):
+        safe_logo = _ln_html_escape(logo_src)
+        logo_row = f"""
+          <tr>
+            <td bgcolor="#ffffff" style="background-color:#ffffff;padding:18px 24px 12px 24px;border-bottom:1px solid #e2e8f0;">
+              <img src="{safe_logo}" alt="{safe_app_name}" width="180" border="0" style="display:block;border:0;outline:none;text-decoration:none;height:auto;max-width:180px;width:180px;" />
+            </td>
+          </tr>"""
+
+    return f"""<!doctype html>
+<html xmlns="http://www.w3.org/1999/xhtml" xmlns:o="urn:schemas-microsoft-com:office:office" xmlns:v="urn:schemas-microsoft-com:vml">
+<head>
+  <meta http-equiv="Content-Type" content="text/html; charset=UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <meta name="x-apple-disable-message-reformatting" />
+  <!--[if mso]>
+  <style type="text/css">
+    table, td, div, span, a {{ font-family: Arial, Helvetica, sans-serif !important; }}
+  </style>
+  <![endif]-->
+  <title>{safe_title}</title>
+  <style type="text/css">
+    body, table, td, a {{ -webkit-text-size-adjust: 100%; -ms-text-size-adjust: 100%; }}
+    table, td {{ mso-table-lspace: 0pt; mso-table-rspace: 0pt; border-collapse: collapse !important; }}
+    img {{ -ms-interpolation-mode: bicubic; border: 0; outline: none; text-decoration: none; }}
+  </style>
+</head>
+<body style="margin:0;padding:0;background-color:#f1f5f9;width:100% !important;">
+  <div style="display:none;font-size:1px;line-height:1px;max-height:0;max-width:0;opacity:0;overflow:hidden;mso-hide:all;">{safe_preheader}</div>
+  <table role="presentation" cellpadding="0" cellspacing="0" border="0" width="100%" bgcolor="#f1f5f9" style="background-color:#f1f5f9;width:100%;">
+    <tr>
+      <td align="center" style="padding:24px 12px;">
+        <!--[if mso]>
+        <table role="presentation" cellpadding="0" cellspacing="0" border="0" width="600"><tr><td>
+        <![endif]-->
+        <table role="presentation" cellpadding="0" cellspacing="0" border="0" width="600" style="width:100%;max-width:600px;background-color:#ffffff;">
+          {logo_row}
+          <tr>
+            <td bgcolor="{accent}" style="background-color:{accent};padding:22px 24px;">
+              <table role="presentation" cellpadding="0" cellspacing="0" border="0" width="100%">
+                <tr>
+                  <td style="font-family:Arial,Helvetica,sans-serif;color:#ffffff;font-size:11px;font-weight:700;letter-spacing:1px;text-transform:uppercase;padding:0 0 8px 0;">{safe_app_name}</td>
+                </tr>
+                <tr>
+                  <td style="font-family:Arial,Helvetica,sans-serif;color:#ffffff;font-size:22px;font-weight:700;line-height:28px;padding:0 0 6px 0;">{safe_title}</td>
+                </tr>
+                <tr>
+                  <td style="font-family:Arial,Helvetica,sans-serif;color:#ffffff;font-size:14px;font-weight:600;line-height:20px;">{safe_subtitle}</td>
+                </tr>
+              </table>
+            </td>
+          </tr>
+          <tr>
+            <td bgcolor="#ffffff" style="background-color:#ffffff;padding:24px;">
+              {inner_html}
+            </td>
+          </tr>
+          <tr>
+            <td bgcolor="#f8fafc" style="background-color:#f8fafc;padding:16px 24px;border-top:1px solid #e2e8f0;">
+              <p style="margin:0;font-family:Arial,Helvetica,sans-serif;color:#64748b;font-size:12px;line-height:18px;text-align:center;">
+                {safe_foot} &bull; {now_s}
+              </p>
+            </td>
+          </tr>
+        </table>
+        <!--[if mso]>
+        </td></tr></table>
+        <![endif]-->
+      </td>
+    </tr>
+  </table>
+</body>
+</html>"""
+
+
+def _ln_ensure_monitor_email_subject_has_status(subject: str, status: str, monitor_name: Optional[str] = None) -> str:
+    subject = (subject or "").strip()
+    status_label = (status or "").strip().upper()
+    if not subject or status_label in ("", "UNKNOWN", "BOTH"):
+        return subject
+    if re.search(r"\s-\s" + re.escape(status_label) + r"\s*$", subject, re.I):
+        return subject
+
+    prefix = ""
+    name_part = subject
+    m = re.match(r"^(\[[^\]]+\]\s*)(.*)$", subject)
+    if m:
+        prefix = m.group(1)
+        name_part = m.group(2).strip()
+
+    name_part = re.sub(r"\s+Status(\s+Update)?\s*$", "", name_part, flags=re.I)
+    name_part = re.sub(r"^(UP|DOWN|WARNING):\s*", "", name_part, flags=re.I)
+    name_part = re.sub(r"\s+Status:\s*(UP|DOWN|WARNING)\s*$", "", name_part, flags=re.I)
+    name_part = re.sub(r"\s-\s(UP|DOWN|WARNING)\s*$", "", name_part, flags=re.I)
+    name_part = name_part.strip()
+
+    if monitor_name and str(monitor_name).strip():
+        name_part = str(monitor_name).strip()
+    if not name_part:
+        name_part = "Monitor"
+
+    return f"{prefix}{name_part} - {status_label}"
+
+
+def _monitor_email_details_from_body(body: str) -> str:
+    """Short details line for HTML (avoid duplicating full plain-text body)."""
+    text = (body or "").strip()
+    if not text:
+        return "N/A"
+    for line in text.splitlines():
+        stripped = line.strip()
+        if stripped.lower().startswith("details:"):
+            return stripped.split(":", 1)[1].strip() or stripped
+    first = next((ln.strip() for ln in text.splitlines() if ln.strip()), text)
+    return first
+
+
+def ln_render_monitor_notification_html(
+    *,
+    monitor_name: str,
+    target: str,
+    status: str,
+    details: str,
+    response_time_ms: Optional[object] = None,
+    app_name: str = "LinkNest",
+    db_conn: Optional[sqlite3.Connection] = None,
+    downtime_text: Optional[str] = None,
+    down_since_text: Optional[str] = None,
+) -> str:
+    """
+    Render Outlook-safe HTML similar to the PHP monitor status template.
+
+    downtime_text / down_since_text are optional and, when provided, add a
+    "Down for" / "Down since" row to the details grid (used by recovery emails).
+    """
+    status_label = (status or "").strip().upper() or "UNKNOWN"
+    accent = _ln_accent_for_status(status)
+    pill_bg = accent
+
+    safe_details = _ln_nl2br_escaped(details or "N/A")
+    safe_target = _ln_html_escape(target or "N/A")
+    target_cell = safe_target
+    if re.match(r"^https?://", target or "", re.I):
+        target_cell = f'<a href="{safe_target}" style="color:#2563eb;text-decoration:underline;">{safe_target}</a>'
+    rt = _ln_html_escape(str(response_time_ms) if response_time_ms not in (None, "") else "N/A")
+    now_s = _ln_html_escape(_dt.datetime.now().strftime("%Y-%m-%d %H:%M:%S"))
+
+    # Recovery notifications: how long the target was down before it responded again.
+    outage_rows = ""
+    if downtime_text:
+        outage_rows += f"""
+              <tr>
+                <td style="font-family:Arial,Helvetica,sans-serif;font-size:13px;color:#334155;padding:10px 14px;border-bottom:1px solid #e2e8f0;"><strong>Down for</strong></td>
+                <td align="right" style="font-family:Arial,Helvetica,sans-serif;font-size:13px;color:#334155;padding:10px 14px;border-bottom:1px solid #e2e8f0;">{_ln_html_escape(downtime_text)}</td>
+              </tr>"""
+    if down_since_text:
+        outage_rows += f"""
+              <tr>
+                <td style="font-family:Arial,Helvetica,sans-serif;font-size:13px;color:#334155;padding:10px 14px;border-bottom:1px solid #e2e8f0;"><strong>Down since</strong></td>
+                <td align="right" style="font-family:Arial,Helvetica,sans-serif;font-size:13px;color:#334155;padding:10px 14px;border-bottom:1px solid #e2e8f0;">{_ln_html_escape(down_since_text)}</td>
+              </tr>"""
+
+    inner = f"""
+      <table role="presentation" cellpadding="0" cellspacing="0" border="0" width="100%">
+        <tr>
+          <td style="font-family:Arial,Helvetica,sans-serif;font-size:18px;font-weight:700;color:#0f172a;padding:0 0 10px 0;">{_ln_html_escape(monitor_name or "Monitor")}</td>
+        </tr>
+        <tr>
+          <td style="padding:0 0 14px 0;">
+            <table role="presentation" cellpadding="0" cellspacing="0" border="0">
+              <tr>
+                <td bgcolor="{pill_bg}" style="background-color:{pill_bg};color:#ffffff;font-family:Arial,Helvetica,sans-serif;font-size:12px;font-weight:700;letter-spacing:0.6px;padding:6px 14px;">{_ln_html_escape(status_label)}</td>
+              </tr>
+            </table>
+          </td>
+        </tr>
+        <tr>
+          <td bgcolor="#f8fafc" style="background-color:#f8fafc;border:1px solid #e2e8f0;padding:0;">
+            <table role="presentation" cellpadding="0" cellspacing="0" border="0" width="100%">
+              <tr>
+                <td width="34%" style="font-family:Arial,Helvetica,sans-serif;font-size:13px;color:#334155;padding:10px 14px;border-bottom:1px solid #e2e8f0;"><strong>Target</strong></td>
+                <td width="66%" align="right" style="font-family:Arial,Helvetica,sans-serif;font-size:13px;color:#334155;padding:10px 14px;border-bottom:1px solid #e2e8f0;word-break:break-all;">{target_cell}</td>
+              </tr>
+              <tr>
+                <td style="font-family:Arial,Helvetica,sans-serif;font-size:13px;color:#334155;padding:10px 14px;border-bottom:1px solid #e2e8f0;"><strong>Response time</strong></td>
+                <td align="right" style="font-family:Arial,Helvetica,sans-serif;font-size:13px;color:#334155;padding:10px 14px;border-bottom:1px solid #e2e8f0;">{rt}</td>
+              </tr>{outage_rows}
+              <tr>
+                <td style="font-family:Arial,Helvetica,sans-serif;font-size:13px;color:#334155;padding:10px 14px;"><strong>Time</strong></td>
+                <td align="right" style="font-family:Arial,Helvetica,sans-serif;font-size:13px;color:#334155;padding:10px 14px;">{now_s}</td>
+              </tr>
+            </table>
+          </td>
+        </tr>
+        <tr>
+          <td style="font-family:Arial,Helvetica,sans-serif;font-size:13px;font-weight:700;color:#0f172a;padding:16px 0 8px 0;">Details</td>
+        </tr>
+        <tr>
+          <td bgcolor="#ffffff" style="background-color:#ffffff;border:1px solid #e2e8f0;border-left:4px solid {accent};padding:12px 14px;font-family:Arial,Helvetica,sans-serif;font-size:13px;line-height:1.6;color:#334155;">{safe_details}</td>
+        </tr>
+      </table>
+    """
+
+    pre = f"{status_label} - {monitor_name}"
+    return ln_email_base_layout(
+        "Monitor Status Update",
+        "Real-time status change notification",
+        accent,
+        inner,
+        preheader=pre,
+        app_name=app_name,
+        footer_label=f"Sent by {app_name} Monitoring",
+        db_conn=db_conn,
+    )
+
