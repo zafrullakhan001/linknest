@@ -151,3 +151,4 @@ Temporary Items
 # Vendored Python packages for VNC gateway (install with scripts/install-websockify.ps1)
 bin/python-packages/
 !bin/python-packages/.gitkeep
+linknest-vps-*.tar.gz
