@@ -22,6 +22,7 @@ function linknestDatabaseExportTableNames(): array
         'browser_list', 'browser_list_metadata',
         'roles', 'user_roles', 'role_tile_permissions', 'role_link_permissions', 'role_tab_permissions',
         'user_audit_log',
+        'user_two_factor', 'user_two_factor_devices',
     ];
 }
 
@@ -38,6 +39,7 @@ function linknestDatabaseImportClearTableNames(): array
         'rich_text_content', 'category_arrangements', 'tile_arrangements',
         'links', 'sections', 'tabs', 'tiles',
         'browser_list', 'browser_list_metadata',
+        'user_two_factor_devices', 'user_two_factor',
         'style_profiles', 'settings', 'roles', 'users',
     ];
 }

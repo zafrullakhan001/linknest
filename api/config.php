@@ -137,12 +137,13 @@ if (!defined('SYSTEM_TOKEN')) {
 }
 
 // Bump when schema/migrations in initDatabase() change. Enables fast-path getDB().
+// 110 = per-user TOTP two-factor authentication (user_two_factor + user_two_factor_devices).
 // 109 = Message Board fonts + marquee speed (tile_messages.font_family/font_size/marquee_seconds).
 // 108 = Message Board banner placement (tile_messages.placement: above | below the tabs).
 // 107 = Message Board tab scoping (tile_messages.tab_ids + tile_messages.show_on_card).
 // 106 = LinkNest 3.0.0 (schema_releases audit registry).
 if (!defined('LINKNEST_SCHEMA_VERSION')) {
-    define('LINKNEST_SCHEMA_VERSION', 109);
+    define('LINKNEST_SCHEMA_VERSION', 110);
 }
 
 // Shipped application version, recorded in schema_releases so admins can audit
@@ -2418,6 +2419,9 @@ function initDatabase() {
             ensureTilesVideoColumns($db);
             ensurePasswordResetColumns($db);
             ensureWebauthnCredentialsTable($db);
+            require_once __DIR__ . '/two_factor_lib.php';
+            ensureTwoFactorSchema($db);
+
             require_once __DIR__ . '/visit_analytics_lib.php';
             ensureVisitAnalyticsTables($db);
             backfillVisitAnalyticsIfNeeded($db);
@@ -2474,6 +2478,9 @@ function initDatabase() {
             ensureTilesVideoColumns($db);
             ensurePasswordResetColumns($db);
             ensureWebauthnCredentialsTable($db);
+            require_once __DIR__ . '/two_factor_lib.php';
+            ensureTwoFactorSchema($db);
+
             require_once __DIR__ . '/visit_analytics_lib.php';
             ensureVisitAnalyticsTables($db);
             backfillVisitAnalyticsIfNeeded($db);
@@ -4885,6 +4892,9 @@ function initDatabase() {
         require_once __DIR__ . '/url_safety_lib.php';
         ensureUrlSafetySchema($db);
         ensureWebauthnCredentialsTable($db);
+        require_once __DIR__ . '/two_factor_lib.php';
+        ensureTwoFactorSchema($db);
+
         
         ensureSchemaReleaseRegistry($db);
 

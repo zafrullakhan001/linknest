@@ -487,6 +487,8 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({ onUserApproved }) => {
     ldap_enabled: '0',
     saml_enabled: '0',
     passkey_enabled: '0',
+    two_factor_enabled: '0',
+    two_factor_required: '0',
     public_tile_animation: DEFAULT_TILE_ANIMATION,
     disabled_tabs: '[]',
     device_presets: '',
@@ -13567,6 +13569,59 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({ onUserApproved }) => {
                                 </div>
                               </div>
 
+                              <div className="rounded-xl border border-sky-200/80 dark:border-sky-800/50 bg-gradient-to-br from-sky-50/90 to-white dark:from-sky-950/30 dark:to-slate-900/40 px-4 py-3.5">
+                                <div className="flex items-center justify-between gap-3">
+                                  <div className="flex items-start gap-3 min-w-0 flex-1">
+                                    <div className="w-11 h-11 rounded-xl flex items-center justify-center shrink-0 text-xl bg-sky-100 dark:bg-sky-900/50 text-sky-700 dark:text-sky-200" aria-hidden>
+                                      🛡️
+                                    </div>
+                                    <div className="min-w-0">
+                                      <div className="flex flex-wrap items-center gap-2">
+                                        <span className="text-sm font-semibold text-slate-800 dark:text-slate-100">Two-factor authentication</span>
+                                        <span className={`text-[10px] font-semibold uppercase tracking-wide px-2 py-0.5 rounded-full ${settings.two_factor_enabled === '1'
+                                          ? 'bg-emerald-100 text-emerald-800 dark:bg-emerald-900/40 dark:text-emerald-200'
+                                          : 'bg-slate-200 text-slate-600 dark:bg-slate-700 dark:text-slate-300'
+                                          }`}>
+                                          {settings.two_factor_enabled === '1' ? 'On' : 'Off'}
+                                        </span>
+                                      </div>
+                                      <p className="text-xs text-slate-500 dark:text-slate-400 mt-0.5">
+                                        Optional add-on: Local and LDAP users enable a TOTP authenticator app (Google / Microsoft Authenticator, 1Password) in their profile, then enter a 6-digit code after their password. Includes one-time recovery codes and 30-day trusted browsers. No email or SMS required.
+                                      </p>
+                                      {settings.two_factor_enabled === '1' && (
+                                        <label className="mt-2 flex items-start gap-2 text-xs text-slate-600 dark:text-slate-300">
+                                          <input
+                                            type="checkbox"
+                                            checked={settings.two_factor_required === '1'}
+                                            onChange={(e) => setSettings({
+                                              ...settings,
+                                              two_factor_required: e.target.checked ? '1' : '0',
+                                            })}
+                                            className="mt-0.5 accent-sky-600"
+                                          />
+                                          <span>Ask every Local / LDAP user to enrol (they see a “required” notice in their profile; nobody is blocked at sign-in yet)</span>
+                                        </label>
+                                      )}
+                                    </div>
+                                  </div>
+                                  <button
+                                    type="button"
+                                    onClick={() => setSettings({
+                                      ...settings,
+                                      two_factor_enabled: settings.two_factor_enabled === '1' ? '0' : '1',
+                                    })}
+                                    className={`relative inline-flex h-6 w-11 items-center rounded-full transition-colors shrink-0 ${settings.two_factor_enabled === '1'
+                                      ? 'bg-sky-600'
+                                      : 'bg-slate-300 dark:bg-slate-600'
+                                      }`}
+                                  >
+                                    <span
+                                      className={`inline-block h-4 w-4 transform rounded-full bg-white transition-transform ${settings.two_factor_enabled === '1' ? 'translate-x-6' : 'translate-x-1'}`}
+                                    />
+                                  </button>
+                                </div>
+                              </div>
+
                               <button
                                 onClick={async () => {
                                   try {
@@ -13577,6 +13632,8 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({ onUserApproved }) => {
                                       ldap_enabled: settings.ldap_enabled,
                                       saml_enabled: settings.saml_enabled,
                                       passkey_enabled: settings.passkey_enabled === '1' ? '1' : '0',
+                                      two_factor_enabled: settings.two_factor_enabled === '1' ? '1' : '0',
+                                      two_factor_required: settings.two_factor_required === '1' ? '1' : '0',
                                     });
                                     await loadSettings();
                                     await refreshSettings();
@@ -20085,6 +20142,36 @@ node .\\load-tests\\generate-report.js`}
                           <path fillRule="evenodd" d="M15.312 11.424a5.5 5.5 0 01-9.201 2.466l-.312-.311h2.433a.75.75 0 000-1.5H3.989a.75.75 0 00-.75.75v4.242a.75.75 0 001.5 0v-2.43l.31.31a7 7 0 0011.712-3.138.75.75 0 00-1.449-.39zm1.23-3.723a.75.75 0 00.219-.53V2.929a.75.75 0 00-1.5 0V5.36l-.31-.31A7 7 0 003.239 8.188a.75.75 0 101.448.389A5.5 5.5 0 0113.89 6.11l.311.31h-2.432a.75.75 0 000 1.5h4.243a.75.75 0 00.53-.219z" clipRule="evenodd" />
                         </svg>
                         Change Password
+                      </button>
+                    )}
+
+                    {/* Reset two-factor authentication (lost authenticator) */}
+                    {settings.two_factor_enabled === '1' && (
+                      <button
+                        onClick={async () => {
+                          const target = userActionsDialog.user;
+                          setUserActionsDialog({ open: false, user: null });
+                          if (!window.confirm(
+                            `Reset two-factor authentication for “${target.username}”? They can sign in with their password only until they enrol again.`
+                          )) {
+                            return;
+                          }
+                          try {
+                            setProcessing(target.id);
+                            setError('');
+                            const message = await authService.resetUserTwoFactor(target.id);
+                            alert(message);
+                          } catch (err: any) {
+                            setError(err.message || 'Failed to reset two-factor authentication');
+                          } finally {
+                            setProcessing(null);
+                          }
+                        }}
+                        disabled={processing === userActionsDialog.user.id}
+                        className="w-full px-4 py-3 text-left text-sm font-medium bg-sky-50 dark:bg-sky-900/10 text-sky-700 dark:text-sky-400 hover:bg-sky-100 dark:hover:bg-sky-900/20 disabled:opacity-50 disabled:cursor-not-allowed flex items-center gap-3 rounded-xl transition-all"
+                      >
+                        <span className="text-lg leading-none" aria-hidden>🛡️</span>
+                        Reset Two-Factor Authentication
                       </button>
                     )}
 

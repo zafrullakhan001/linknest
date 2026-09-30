@@ -1,11 +1,14 @@
 import React, { createContext, useContext, useState, useEffect, ReactNode } from 'react';
-import { authService, User } from '../services/authService';
+import { authService, User, TwoFactorChallenge } from '../services/authService';
 import { webauthnService } from '../services/webauthnService';
 
 interface AuthContextType {
   user: User | null;
   loading: boolean;
-  login: (username: string, password: string, authMethod?: 'local' | 'ldap' | 'auto', rememberMe?: boolean, ldapServerIndex?: number, signal?: AbortSignal) => Promise<void>;
+  /** Resolves with a challenge when the account still needs its 2FA code. */
+  login: (username: string, password: string, authMethod?: 'local' | 'ldap' | 'auto', rememberMe?: boolean, ldapServerIndex?: number, signal?: AbortSignal) => Promise<{ twoFactor?: TwoFactorChallenge }>;
+  /** Complete a sign-in that was paused for the authenticator code. */
+  completeTwoFactorLogin: (challengeId: string, code: string, trustDevice?: boolean) => Promise<void>;
   loginWithPasskey: (rememberMe?: boolean) => Promise<void>;
   register: (username: string, email: string, password: string, confirmPassword?: string) => Promise<{ pending: boolean; message?: string }>;
   logout: () => Promise<void>;
@@ -28,7 +31,15 @@ export const AuthProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
   }, []);
 
   const login = async (username: string, password: string, authMethod?: 'local' | 'ldap' | 'auto', rememberMe?: boolean, ldapServerIndex?: number, signal?: AbortSignal) => {
-    const user = await authService.login(username, password, authMethod, rememberMe, ldapServerIndex, signal);
+    const result = await authService.login(username, password, authMethod, rememberMe, ldapServerIndex, signal);
+    if (result.user) {
+      setUser(result.user);
+    }
+    return { twoFactor: result.twoFactor };
+  };
+
+  const completeTwoFactorLogin = async (challengeId: string, code: string, trustDevice: boolean = false) => {
+    const user = await authService.verifyTwoFactor(challengeId, code, trustDevice);
     setUser(user);
   };
 
@@ -63,6 +74,7 @@ export const AuthProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
       user,
       loading,
       login,
+      completeTwoFactorLogin,
       loginWithPasskey,
       register,
       logout,

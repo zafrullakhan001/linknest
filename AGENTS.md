@@ -9,6 +9,7 @@ LinkNest is a **link and space organization platform** built with a React fronte
 - Organize links using tabs and sections with drag-and-drop
 - Link health monitoring and analytics
 - User authentication (Local, LDAP, SAML, and optional Passkeys / WebAuthn)
+- Per-user TOTP two-factor authentication after a Local/LDAP password check (opt-in in the profile menu; admin availability toggle, one-time recovery codes, 30-day trusted browsers, admin reset — see `docs/TWO_FACTOR_AUTH.md`)
 - Role-based access control and user groups
 - Private spaces shared with individual users (invite → accept → revoke); the space editor lists everyone a space is shared with, and Admin → Users can sync LDAP display names (`displayName` / `cn`) so users show full names next to their login id (see `docs/PRIVATE_SPACE_SHARING.md`)
 - Floating widgets (clock, weather, calculator, notes, media library, etc.)
@@ -185,6 +186,7 @@ GEMINI_API_KEY=your_gemini_api_key_here  # Optional, for AI features
 3. **Authentication:**
    - Session-based PHP authentication
    - Supports Local, LDAP, SAML, and optional Passkeys (WebAuthn)
+   - Optional per-user TOTP two-factor authentication on top of Local/LDAP password sign-in (see `docs/TWO_FACTOR_AUTH.md`)
    - User roles and permissions system
 
 ---
@@ -363,6 +365,8 @@ Default credentials:
 - `docs/PRIVATE_SPACE_SHARING.md` - Private space sharing: `allowed_users` + `tile_share_invitations`, pending/accepted flow, keeping shared users checked in the space editor, revoke on uncheck, and LDAP full-name capture/sync
 - `docs/MESSAGE_BOARD_TABS.md` - Message Board tab scoping, banner placement + message fonts: per-message `tabIds`, `showOnCard`, `placement` (above/below the tabs), `fontFamily`/`fontSize`, `marqueeSeconds` (marquee speed slider + seamless loop with a measured seam gap, so a message is never on screen twice), editor pickers, space-page/card visibility rules, `tile_messages.tab_ids`/`show_on_card`/`placement`/`font_family`/`font_size`/`marquee_seconds` (schema v109)
 - `docs/ADMIN_LOCKOUT_RECOVERY.md` - Re-enable Local auth and reset local admin password (`scripts/reset_admin_password.php`); unlock Fingerprint-only access (`scripts/unlock_fingerprint_lock.php`) or login allowlist (`scripts/unlock_login_allowlist.php`) when locked out
+- `docs/TWO_FACTOR_AUTH.md` - Per-user TOTP two-factor authentication after a Local/LDAP password check: profile enrolment (QR + setup key + one-time recovery codes), the code prompt in the sign-in modal, replay/lockout hardening, automatic authenticator clock-drift handling (`clock_offset_steps`), 30-day trusted browsers, admin availability toggle + `PUT /api/auth/2fa/reset/{userId}`, schema v110 (`user_two_factor`, `user_two_factor_devices`)
+
 - `docs/MEDIA_LIBRARY.md` - Shared media library (images, PDF, audio, video; Admin + floating widget + RTE picker)
 - `docs/APP_UPDATES.md` - In-app App Updates (portable Releases for ArchLinks / ERP3)
 - `docs/RELEASE_NOTES_3.0.0.md` - LinkNest 3.0.0 major release (schema v106 `schema_releases` registry, DB snapshot/rollback, apply steps)
@@ -408,7 +412,7 @@ Default credentials:
 
 See [`docs/APP_UPDATES.md`](docs/APP_UPDATES.md). Double-click [`publish-base-release.bat`](publish-base-release.bat) to publish a portable GitHub Release from the current branch, then apply it from Admin → App Updates.
 
-Current major release: **v3.0.0** — `LINKNEST_SCHEMA_VERSION` **109** (`schema_releases` audit registry, additive/idempotent; 107 adds `tile_messages.tab_ids` + `tile_messages.show_on_card` for Message Board tab scoping, 108 adds `tile_messages.placement` for above/below-tabs banner placement, 109 adds `tile_messages.font_family`/`font_size`/`marquee_seconds` for message fonts and marquee speed) with pre-release SQLite snapshots via `php api/snapshot.php`. See [`docs/RELEASE_NOTES_3.0.0.md`](docs/RELEASE_NOTES_3.0.0.md).
+Current major release: **v3.0.0** — `LINKNEST_SCHEMA_VERSION` **110** (`schema_releases` audit registry, additive/idempotent; 107 adds `tile_messages.tab_ids` + `tile_messages.show_on_card` for Message Board tab scoping, 108 adds `tile_messages.placement` for above/below-tabs banner placement, 109 adds `tile_messages.font_family`/`font_size`/`marquee_seconds` for message fonts and marquee speed, 110 adds `user_two_factor` + `user_two_factor_devices` for per-user TOTP two-factor authentication) with pre-release SQLite snapshots via `php api/snapshot.php`. See [`docs/RELEASE_NOTES_3.0.0.md`](docs/RELEASE_NOTES_3.0.0.md) and [`docs/TWO_FACTOR_AUTH.md`](docs/TWO_FACTOR_AUTH.md).
 
 ## Vanilla Apache + PHP 8.5 (Windows)
 

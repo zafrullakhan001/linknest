@@ -1782,6 +1782,11 @@ class CloneService {
                 if ($adminRow) {
                     $adminId = (int)$adminRow['id'];
                     $db->prepare('DELETE FROM users WHERE id != ?')->execute([$adminId]);
+                    // Cloned instances must not carry two-factor secrets/devices.
+                    require_once __DIR__ . '/two_factor_lib.php';
+                    ensureTwoFactorSchema($db);
+                    $db->exec('DELETE FROM user_two_factor');
+                    $db->exec('DELETE FROM user_two_factor_devices');
                     $hash = password_hash('admin123', PASSWORD_DEFAULT);
                     try {
                         $db->prepare('UPDATE users SET username = ?, email = ?, password_hash = ?, is_admin = 1, is_approved = 1, auth_source = ? WHERE id = ?')

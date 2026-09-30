@@ -1309,6 +1309,8 @@ function mcpAdminSetUserStatus(array $args, array $actor): array {
         if (!empty($row['is_approved'])) {
             return ['error' => 'Only pending (unapproved) users can be rejected'];
         }
+        require_once __DIR__ . '/two_factor_lib.php';
+        twoFactorDeleteForUser($db, (int)$id);
         $stmt = $db->prepare('DELETE FROM users WHERE id = ? AND is_admin = 0 AND is_approved = 0');
         $stmt->execute([$id]);
         if (function_exists('logUserAudit')) {

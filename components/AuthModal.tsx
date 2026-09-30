@@ -5,7 +5,7 @@ import { useSettings } from '../contexts/SettingsContext';
 import { SecurePasswordInput } from './SecurePasswordInput';
 import { PasswordCriteriaList } from './PasswordCriteriaList';
 import { validatePassword } from '../services/passwordValidation';
-import { authService } from '../services/authService';
+import { authService, type TwoFactorChallenge, type TwoFactorApiError } from '../services/authService';
 import { useTileAnimation, getTileAnimationClass } from './TileAnimationSelector';
 
 interface AuthModalProps {
@@ -147,10 +147,19 @@ export const AuthModal: React.FC<AuthModalProps> = ({ isOpen, onClose, initialMo
   const [showHelpInfo, setShowHelpInfo] = useState(false);
   const [showPasswordResetInfo, setShowPasswordResetInfo] = useState(false);
   const [activeResetToken, setActiveResetToken] = useState<string | null>(resetToken);
+  /** Set when the credentials were accepted but a TOTP code is still required. */
+  const [twoFactor, setTwoFactor] = useState<TwoFactorChallenge | null>(null);
+  const [twoFactorCode, setTwoFactorCode] = useState('');
+  const [twoFactorTrust, setTwoFactorTrust] = useState(true);
+  const [twoFactorUseRecovery, setTwoFactorUseRecovery] = useState(false);
+  const [twoFactorError, setTwoFactorError] = useState('');
+  const [twoFactorClockSkew, setTwoFactorClockSkew] = useState<number | null>(null);
+  const [twoFactorBusy, setTwoFactorBusy] = useState(false);
   const progressIntervalRef = useRef<NodeJS.Timeout | null>(null);
   const countdownTimerRef = useRef<NodeJS.Timeout | null>(null);
+  const twoFactorInputRef = useRef<HTMLInputElement>(null);
 
-  const { login, loginWithPasskey, register } = useAuth();
+  const { login, completeTwoFactorLogin, loginWithPasskey, register } = useAuth();
   const { settings: appSettings, loading: settingsLoading } = useSettings();
   const { animation: tileAnimation } = useTileAnimation();
   const tileAnimationClass = getTileAnimationClass(tileAnimation);
@@ -312,6 +321,12 @@ export const AuthModal: React.FC<AuthModalProps> = ({ isOpen, onClose, initialMo
       setRememberMe(false);
       setError('');
       setSuccess('');
+      setTwoFactor(null);
+      setTwoFactorCode('');
+      setTwoFactorError('');
+      setTwoFactorClockSkew(null);
+      setTwoFactorBusy(false);
+      setTwoFactorUseRecovery(false);
     }
   }, [isOpen]);
 
@@ -396,6 +411,87 @@ export const AuthModal: React.FC<AuthModalProps> = ({ isOpen, onClose, initialMo
       }
     };
   }, [authState]);
+
+  /**
+   * Credentials were accepted but the account still needs its second factor.
+   * Returns false so handleSubmit can stop before closing the modal.
+   */
+  const handleTwoFactorRequired = (result: { twoFactor?: TwoFactorChallenge } | undefined): boolean => {
+    if (!result?.twoFactor) {
+      return true;
+    }
+    setTwoFactor(result.twoFactor);
+    setTwoFactorCode('');
+    setTwoFactorError('');
+    setTwoFactorClockSkew(null);
+    setTwoFactorUseRecovery(false);
+    setTwoFactorTrust(true);
+    setPassword('');
+    setError('');
+    setSuccess('');
+    setAuthState('idle');
+    setProgress(0);
+    setCurrentMethod(null);
+    window.setTimeout(() => twoFactorInputRef.current?.focus(), 60);
+    return false;
+  };
+
+  const handleTwoFactorSubmit = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!twoFactor) return;
+
+    const value = twoFactorCode.trim();
+    if (!value) {
+      setTwoFactorError(
+        twoFactorUseRecovery
+          ? 'Enter one of your recovery codes'
+          : 'Enter the 6-digit code from your authenticator app'
+      );
+      return;
+    }
+
+    setTwoFactorBusy(true);
+    setTwoFactorError('');
+    try {
+      await completeTwoFactorLogin(twoFactor.challengeId, value, twoFactorTrust);
+      setTwoFactor(null);
+      setTwoFactorCode('');
+      onClose();
+      setUsername('');
+      setEmail('');
+      setPassword('');
+      setConfirmPassword('');
+      setRememberMe(false);
+      setAuthState('idle');
+      setProgress(0);
+      setCurrentMethod(null);
+    } catch (err: any) {
+      const apiError = err as TwoFactorApiError;
+      setTwoFactorError(apiError?.message || 'Verification failed');
+      setTwoFactorClockSkew(typeof apiError?.clockSkewSeconds === 'number' ? apiError.clockSkewSeconds : null);
+      setTwoFactorCode('');
+      setTwoFactor((current) => current ? {
+        ...current,
+        attemptsRemaining: typeof apiError?.attemptsRemaining === 'number' ? apiError.attemptsRemaining : current.attemptsRemaining,
+        lockedUntil: apiError?.lockedUntil ?? current.lockedUntil,
+      } : current);
+
+      // Expired, ended or unenrolled challenges cannot be retried.
+      if (apiError?.reason && ['no_challenge', 'challenge_mismatch', 'not_enrolled', 'secret_unreadable'].includes(apiError.reason)) {
+        setTwoFactor(null);
+      }
+    } finally {
+      setTwoFactorBusy(false);
+    }
+  };
+
+  const handleTwoFactorBack = async () => {
+    await authService.cancelTwoFactor();
+    setTwoFactor(null);
+    setTwoFactorCode('');
+    setTwoFactorError('');
+    setTwoFactorUseRecovery(false);
+  };
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -521,10 +617,15 @@ export const AuthModal: React.FC<AuthModalProps> = ({ isOpen, onClose, initialMo
 
           try {
             const ldapServerIndex = (method === 'ldap' || method === 'auto') ? selectedLdapServerIndex : undefined;
-            await Promise.race([
+            const ldapResult = await Promise.race([
               login(username, password, method === 'ldap' ? 'ldap' : 'auto', rememberMe, ldapServerIndex, abortController.signal),
               timeoutPromise
             ]);
+
+            // Second factor: keep the modal open on the code prompt.
+            if (!handleTwoFactorRequired(ldapResult)) {
+              return;
+            }
 
             // Success
             setAuthState('success');
@@ -553,7 +654,10 @@ export const AuthModal: React.FC<AuthModalProps> = ({ isOpen, onClose, initialMo
               setCurrentMethod('local');
               setProgress(50);
 
-              await login(username, password, 'local', rememberMe, undefined);
+              const localResult = await login(username, password, 'local', rememberMe, undefined);
+              if (!handleTwoFactorRequired(localResult)) {
+                return;
+              }
               setAuthState('success');
               setProgress(100);
               await new Promise(resolve => setTimeout(resolve, 200));
@@ -565,7 +669,10 @@ export const AuthModal: React.FC<AuthModalProps> = ({ isOpen, onClose, initialMo
           // Direct local authentication
           setAuthState('local_authenticating');
           setCurrentMethod('local');
-          await login(username, password, 'local', rememberMe, undefined);
+          const localResult = await login(username, password, 'local', rememberMe, undefined);
+          if (!handleTwoFactorRequired(localResult)) {
+            return;
+          }
           setAuthState('success');
           setProgress(100);
           await new Promise(resolve => setTimeout(resolve, 200));
@@ -633,6 +740,111 @@ export const AuthModal: React.FC<AuthModalProps> = ({ isOpen, onClose, initialMo
       setLoading(false);
     }
   };
+
+  const twoFactorLocked = !!twoFactor && twoFactor.lockedUntil > 0;
+  const twoFactorLockMinutes = twoFactor && twoFactor.lockedUntil > 0
+    ? Math.max(1, Math.ceil((twoFactor.lockedUntil - Date.now() / 1000) / 60))
+    : 0;
+
+  const twoFactorPanel = twoFactor ? (
+    <>
+      <div className="text-center space-y-1">
+        <div className="text-3xl" aria-hidden>🛡️</div>
+        <h3 className="text-base font-semibold text-slate-900 dark:text-white">
+          {twoFactorUseRecovery ? 'Enter a recovery code' : 'Two-factor verification'}
+        </h3>
+        <p className="text-xs text-slate-500 dark:text-slate-400 leading-relaxed">
+          {twoFactorUseRecovery
+            ? 'Use one of the one-time recovery codes you saved when you turned on two-factor authentication.'
+            : 'Enter the 6-digit code from your authenticator app to finish signing in.'}
+        </p>
+      </div>
+
+      {twoFactorLocked && (
+        <div className="rounded-xl border border-amber-200 dark:border-amber-800 bg-amber-50 dark:bg-amber-950/40 px-3 py-2.5 text-xs text-amber-900 dark:text-amber-100">
+          Too many incorrect codes. Please wait about {twoFactorLockMinutes} minute{twoFactorLockMinutes === 1 ? '' : 's'} and sign in again.
+        </div>
+      )}
+
+      {twoFactorClockSkew !== null && (
+        <div className="rounded-xl border border-orange-200 dark:border-orange-800 bg-orange-50 dark:bg-orange-950/40 px-3 py-2.5 text-xs text-orange-900 dark:text-orange-100">
+          <p className="font-semibold">Authenticator clock is out of sync</p>
+          <p className="mt-0.5 leading-relaxed">
+            That code is valid, but the app/device generating it is about {Math.abs(twoFactorClockSkew)} seconds
+            {' '}{twoFactorClockSkew > 0 ? 'ahead of' : 'behind'} the server. Turn on “set time automatically” on
+            that device, or ask an administrator to sync the server clock, then enter the next code.
+          </p>
+        </div>
+      )}
+
+      <div>
+        <label className="block text-xs sm:text-sm font-medium text-slate-700 dark:text-slate-300 mb-1.5 sm:mb-2">
+          {twoFactorUseRecovery ? 'Recovery code' : 'Authentication code'}
+        </label>
+        <input
+          ref={twoFactorInputRef}
+          type="text"
+          value={twoFactorCode}
+          onChange={(e) => setTwoFactorCode(
+            twoFactorUseRecovery
+              ? e.target.value.toUpperCase().slice(0, 11)
+              : e.target.value.replace(/[^\d]/g, '').slice(0, 6)
+          )}
+          inputMode={twoFactorUseRecovery ? 'text' : 'numeric'}
+          autoComplete="one-time-code"
+          disabled={twoFactorBusy || twoFactorLocked}
+          className="w-full bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-xl px-3 py-2.5 text-slate-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-brand-500 disabled:opacity-50 text-center text-lg font-mono tracking-[0.25em]"
+          placeholder={twoFactorUseRecovery ? 'XXXXX-XXXXX' : '000000'}
+        />
+      </div>
+
+      {!twoFactorUseRecovery && (
+        <label className="flex items-start gap-2 text-xs text-slate-600 dark:text-slate-300">
+          <input
+            type="checkbox"
+            checked={twoFactorTrust}
+            onChange={(e) => setTwoFactorTrust(e.target.checked)}
+            disabled={twoFactorBusy}
+            className="mt-0.5 accent-brand-600"
+          />
+          <span>Trust this browser for 30 days (no code needed here)</span>
+        </label>
+      )}
+
+      {twoFactorError && (
+        <p className="text-xs font-medium text-red-600 dark:text-red-400">{twoFactorError}</p>
+      )}
+
+      <button
+        type="submit"
+        disabled={twoFactorBusy || twoFactorLocked}
+        className="w-full py-2.5 rounded-xl bg-brand-600 hover:bg-brand-500 disabled:opacity-50 disabled:cursor-not-allowed text-white text-sm font-semibold transition-colors"
+      >
+        {twoFactorBusy ? 'Verifying…' : 'Verify and sign in'}
+      </button>
+
+      <div className="flex items-center justify-between text-xs">
+        <button
+          type="button"
+          onClick={() => {
+            setTwoFactorUseRecovery((v) => !v);
+            setTwoFactorCode('');
+            setTwoFactorError('');
+          }}
+          className="font-medium text-brand-700 dark:text-brand-300 hover:underline"
+        >
+          {twoFactorUseRecovery ? 'Use authenticator code' : 'Use a recovery code'}
+        </button>
+        <button
+          type="button"
+          onClick={() => void handleTwoFactorBack()}
+          className="text-slate-500 dark:text-slate-400 hover:text-slate-700 dark:hover:text-slate-200"
+        >
+          Back to sign in
+        </button>
+      </div>
+    </>
+  ) : null;
 
   if (!isOpen) return null;
 
@@ -813,6 +1025,11 @@ export const AuthModal: React.FC<AuthModalProps> = ({ isOpen, onClose, initialMo
           </>
         )}
 
+        {twoFactor ? (
+          <form onSubmit={handleTwoFactorSubmit} className="space-y-3 sm:space-y-4">
+            {twoFactorPanel}
+          </form>
+        ) : (
         <form onSubmit={handleSubmit} className="space-y-3 sm:space-y-4">
           {(mode === 'forgot' || mode === 'reset') && (
             <>
@@ -1356,8 +1573,9 @@ export const AuthModal: React.FC<AuthModalProps> = ({ isOpen, onClose, initialMo
           </>
           )}
         </form>
+        )}
 
-        {mode === 'login' && (
+        {mode === 'login' && !twoFactor && (
           <div className="mt-2 sm:mt-3 space-y-1.5 sm:space-y-2">
             {localAuthEnabled && (
             <div className="text-center">

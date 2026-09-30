@@ -9,6 +9,8 @@ export interface User {
   auth_source?: string;
   display_name?: string | null;
   notes?: string | null;
+  /** Per-user TOTP two-factor state at the time of the response. */
+  two_factor_enabled?: boolean;
   impersonating?: boolean;
   impersonating_admin_id?: number;
   impersonating_admin_username?: string;
@@ -31,6 +33,61 @@ export interface AllUser {
   auth_source?: string;
   notes?: string | null;
   created_at: number;
+}
+
+/** One browser that was remembered for 30 days after a verified 2FA sign-in. */
+export interface TwoFactorTrustedDevice {
+  id: number;
+  user_agent: string | null;
+  created_at: number;
+  last_used_at: number | null;
+  expires_at: number;
+}
+
+/** Server response when a sign-in must be completed with a second factor. */
+export interface TwoFactorChallenge {
+  twoFactorRequired: true;
+  challengeId: string;
+  methods: string[];
+  expiresIn: number;
+  attemptsRemaining: number;
+  lockedUntil: number;
+}
+
+/** login() either completes (user) or pauses for the authenticator code (twoFactor). */
+export interface LoginResult {
+  user?: User;
+  twoFactor?: TwoFactorChallenge;
+}
+
+export interface TwoFactorStatus {
+  available: boolean;
+  enabled: boolean;
+  /** Administrator wants every Local/LDAP account to enrol. */
+  required: boolean;
+  confirmed_at: number | null;
+  last_used_at: number | null;
+  locked_until: number | null;
+  recovery_codes_remaining: number;
+  /** Signed drift the server has learned for this user's authenticator (seconds). */
+  clock_offset_seconds: number;
+  trusted_devices: TwoFactorTrustedDevice[];
+}
+
+export interface TwoFactorSetupPayload {
+  secret: string;
+  otpauth_uri: string;
+  digits: number;
+  period: number;
+}
+
+/** Verification failures carry the retry/lockout metadata from the API. */
+export interface TwoFactorApiError extends Error {
+  reason?: string;
+  attemptsRemaining?: number | null;
+  lockedUntil?: number;
+  /** Set when the code was valid but the device clock is too far out of sync. */
+  clockSkewSeconds?: number | null;
 }
 
 export interface LdapUserDetail {
@@ -186,7 +243,7 @@ export const authService = {
     return { success: !!data.success, message: data.message || 'Password updated successfully.' };
   },
 
-  async login(username: string, password: string, authMethod?: 'local' | 'ldap' | 'auto', rememberMe?: boolean, ldapServerIndex?: number, signal?: AbortSignal): Promise<User> {
+  async login(username: string, password: string, authMethod?: 'local' | 'ldap' | 'auto', rememberMe?: boolean, ldapServerIndex?: number, signal?: AbortSignal): Promise<LoginResult> {
     const body: any = { username, password, auth_method: authMethod, remember_me: rememberMe || false };
     if (ldapServerIndex !== undefined && ldapServerIndex !== null) {
       body.ldap_server_index = ldapServerIndex;
@@ -205,7 +262,147 @@ export const authService = {
       throw new Error(data.error || 'Login failed');
     }
     
-    return data.user;
+    // Credentials were accepted but the account has a second factor enabled:
+    // no session exists yet, the caller must collect the authenticator code.
+    if (data.two_factor_required) {
+      return {
+        twoFactor: {
+          twoFactorRequired: true,
+          challengeId: String(data.challenge_id || ''),
+          methods: Array.isArray(data.methods) ? data.methods : ['totp', 'recovery'],
+          expiresIn: Number(data.expires_in || 300),
+          attemptsRemaining: typeof data.attempts_remaining === 'number' ? data.attempts_remaining : 5,
+          lockedUntil: Number(data.locked_until || 0),
+        },
+      };
+    }
+
+    return { user: data.user as User };
+  },
+
+  /** Finish a paused sign-in with the 6-digit code or a recovery code. */
+  async verifyTwoFactor(challengeId: string, code: string, trustDevice: boolean = false): Promise<User> {
+    const response = await fetch(`${API_BASE}/auth/2fa/verify`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      credentials: 'include',
+      body: JSON.stringify({ challenge_id: challengeId, code, trust_device: trustDevice }),
+    });
+
+    const data = await response.json().catch(() => ({} as any));
+    if (!response.ok) {
+      const error = new Error(data.error || 'Verification failed') as TwoFactorApiError;
+      error.reason = data.reason;
+      error.attemptsRemaining = typeof data.attempts_remaining === 'number' ? data.attempts_remaining : null;
+      error.lockedUntil = Number(data.locked_until || 0);
+      error.clockSkewSeconds = typeof data.clock_skew_seconds === 'number' ? data.clock_skew_seconds : null;
+      throw error;
+    }
+    return data.user as User;
+  },
+
+  /** Drop a pending second-factor challenge (user navigated back). */
+  async cancelTwoFactor(): Promise<void> {
+    try {
+      await fetch(`${API_BASE}/auth/2fa/cancel`, { method: 'POST', credentials: 'include' });
+    } catch {
+      // best effort — the challenge also expires on its own
+    }
+  },
+
+  async getTwoFactorStatus(): Promise<TwoFactorStatus> {
+    const response = await fetch(`${API_BASE}/auth/2fa/status`, { credentials: 'include' });
+    const data = await response.json().catch(() => ({} as any));
+    if (!response.ok) {
+      throw new Error(data.error || 'Failed to load two-factor status');
+    }
+    return data.two_factor as TwoFactorStatus;
+  },
+
+  async startTwoFactorSetup(): Promise<TwoFactorSetupPayload> {
+    const response = await fetch(`${API_BASE}/auth/2fa/setup`, { method: 'POST', credentials: 'include' });
+    const data = await response.json().catch(() => ({} as any));
+    if (!response.ok) {
+      throw new Error(data.error || 'Failed to start two-factor setup');
+    }
+    return data.two_factor as TwoFactorSetupPayload;
+  },
+
+  async enableTwoFactor(code: string): Promise<{ recoveryCodes: string[]; status: TwoFactorStatus }> {
+    const response = await fetch(`${API_BASE}/auth/2fa/enable`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      credentials: 'include',
+      body: JSON.stringify({ code }),
+    });
+    const data = await response.json().catch(() => ({} as any));
+    if (!response.ok) {
+      throw new Error(data.error || 'Failed to enable two-factor authentication');
+    }
+    return {
+      recoveryCodes: Array.isArray(data.recovery_codes) ? data.recovery_codes : [],
+      status: data.two_factor as TwoFactorStatus,
+    };
+  },
+
+  /** Local users confirm with their password; LDAP/SAML users with a current code. */
+  async disableTwoFactor(params: { password?: string; code?: string }): Promise<{ status: TwoFactorStatus; message?: string }> {
+    const response = await fetch(`${API_BASE}/auth/2fa/disable`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      credentials: 'include',
+      body: JSON.stringify({ password: params.password ?? '', code: params.code ?? '' }),
+    });
+    const data = await response.json().catch(() => ({} as any));
+    if (!response.ok) {
+      throw new Error(data.error || 'Failed to disable two-factor authentication');
+    }
+    return { status: data.two_factor as TwoFactorStatus, message: data.message };
+  },
+
+  async regenerateRecoveryCodes(code: string): Promise<{ recoveryCodes: string[]; status: TwoFactorStatus }> {
+    const response = await fetch(`${API_BASE}/auth/2fa/recovery-codes`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      credentials: 'include',
+      body: JSON.stringify({ code }),
+    });
+    const data = await response.json().catch(() => ({} as any));
+    if (!response.ok) {
+      throw new Error(data.error || 'Failed to generate recovery codes');
+    }
+    return {
+      recoveryCodes: Array.isArray(data.recovery_codes) ? data.recovery_codes : [],
+      status: data.two_factor as TwoFactorStatus,
+    };
+  },
+
+  /** Omit deviceId to revoke every trusted device. */
+  async revokeTwoFactorDevice(deviceId?: number | null): Promise<TwoFactorStatus> {
+    const response = await fetch(`${API_BASE}/auth/2fa/devices/revoke`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      credentials: 'include',
+      body: JSON.stringify({ device_id: deviceId ?? null }),
+    });
+    const data = await response.json().catch(() => ({} as any));
+    if (!response.ok) {
+      throw new Error(data.error || 'Failed to revoke trusted device');
+    }
+    return data.two_factor as TwoFactorStatus;
+  },
+
+  /** Admin recovery for a user who lost their authenticator. */
+  async resetUserTwoFactor(userId: number): Promise<string> {
+    const response = await fetch(`${API_BASE}/auth/2fa/reset/${userId}`, {
+      method: 'PUT',
+      credentials: 'include',
+    });
+    const data = await response.json().catch(() => ({} as any));
+    if (!response.ok) {
+      throw new Error(data.error || 'Failed to reset two-factor authentication');
+    }
+    return data.message || 'Two-factor authentication reset';
   },
 
   async logout(): Promise<void> {

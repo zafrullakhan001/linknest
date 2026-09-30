@@ -7,6 +7,7 @@ import { validatePassword } from '../services/passwordValidation';
 import { SecurePasswordInput } from './SecurePasswordInput';
 import { PasswordCriteriaList } from './PasswordCriteriaList';
 import { PasskeyManagerDialog } from './PasskeyManagerDialog';
+import { TwoFactorDialog } from './TwoFactorDialog';
 
 interface ProfileMenuProps {
   onLogout: () => void;
@@ -19,6 +20,7 @@ export const ProfileMenu: React.FC<ProfileMenuProps> = ({ onLogout }) => {
   const [showChangePassword, setShowChangePassword] = useState(false);
   const [showDisplayNameEdit, setShowDisplayNameEdit] = useState(false);
   const [showPasskeys, setShowPasskeys] = useState(false);
+  const [showTwoFactor, setShowTwoFactor] = useState(false);
   const [displayNameValue, setDisplayNameValue] = useState('');
   const [currentPassword, setCurrentPassword] = useState('');
   const [newPassword, setNewPassword] = useState('');
@@ -32,6 +34,7 @@ export const ProfileMenu: React.FC<ProfileMenuProps> = ({ onLogout }) => {
   const displayLabel = (user?.display_name && user.display_name.trim()) ? user.display_name.trim() : (user?.username ?? '');
   const canChangePassword = (user?.auth_source ?? 'local') === 'local';
   const passkeysEnabled = String(settings?.passkey_enabled || '0') === '1';
+  const twoFactorAvailable = String(settings?.two_factor_enabled || '0') === '1';
 
   const updatePosition = () => {
     if (menuRef.current) {
@@ -312,6 +315,25 @@ export const ProfileMenu: React.FC<ProfileMenuProps> = ({ onLogout }) => {
             </button>
           )}
 
+          {twoFactorAvailable && (
+            <button
+              type="button"
+              onClick={() => {
+                setOpen(false);
+                setShowTwoFactor(true);
+              }}
+              className="w-full px-4 py-2.5 text-left text-sm text-slate-700 dark:text-slate-300 hover:bg-slate-50 dark:hover:bg-slate-700/50 flex items-center gap-2"
+            >
+              <span className="w-4 h-4 text-center text-sm leading-4" aria-hidden>🛡️</span>
+              <span className="truncate">Two-factor authentication</span>
+              {user?.two_factor_enabled && (
+                <span className="ml-auto shrink-0 text-[10px] font-semibold uppercase tracking-wide px-1.5 py-0.5 rounded bg-emerald-100 text-emerald-800 dark:bg-emerald-900/40 dark:text-emerald-200">
+                  On
+                </span>
+              )}
+            </button>
+          )}
+
           <div className="pt-1">
             <button
               type="button"
@@ -329,6 +351,7 @@ export const ProfileMenu: React.FC<ProfileMenuProps> = ({ onLogout }) => {
       )}
 
       <PasskeyManagerDialog isOpen={showPasskeys} onClose={() => setShowPasskeys(false)} />
+      <TwoFactorDialog isOpen={showTwoFactor} onClose={() => setShowTwoFactor(false)} />
     </div>
   );
 };

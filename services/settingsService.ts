@@ -229,6 +229,10 @@ export interface AppSettings {
   local_auth_enabled?: string; // '0' or '1'
   /** Passkeys / WebAuthn as an add-on sign-in method ('0' or '1') */
   passkey_enabled?: string;
+  /** Two-factor authentication (TOTP) availability for Local / LDAP users ('0' or '1') */
+  two_factor_enabled?: string;
+  /** Policy: every Local / LDAP user must enrol a second factor ('0' or '1') */
+  two_factor_required?: string;
   sp_entity_id?: string;
   sp_assertion_consumer_service?: string;
   sp_single_logout_service?: string;
@@ -478,6 +482,8 @@ export const settingsService = {
       saml_enabled: data.settings?.saml_enabled || '0',
       local_auth_enabled: data.settings?.local_auth_enabled || '1',
       passkey_enabled: data.settings?.passkey_enabled === '1' ? '1' : '0',
+      two_factor_enabled: data.settings?.two_factor_enabled === '1' ? '1' : '0',
+      two_factor_required: data.settings?.two_factor_required === '1' ? '1' : '0',
       sp_entity_id: data.settings?.sp_entity_id || '',
       sp_assertion_consumer_service: data.settings?.sp_assertion_consumer_service || '',
       sp_single_logout_service: data.settings?.sp_single_logout_service || '',

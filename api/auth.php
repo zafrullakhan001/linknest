@@ -10,6 +10,7 @@ ini_set('log_errors', 1);
 error_reporting(E_ALL);
 
 require_once __DIR__ . '/config.php';
+require_once __DIR__ . '/two_factor_lib.php';
 require_once __DIR__ . '/user_notes_helper.php';
 require_once __DIR__ . '/user_audit_helper.php';
 require_once __DIR__ . '/auth_mail.php';
@@ -75,6 +76,20 @@ switch ($method) {
             handleStartImpersonation((int)$matches[1]);
         } elseif ($path === '/stop-impersonation') {
             handleStopImpersonation();
+        } elseif ($path === '/2fa/verify') {
+            handleTwoFactorVerify();
+        } elseif ($path === '/2fa/cancel') {
+            handleTwoFactorCancel();
+        } elseif ($path === '/2fa/setup') {
+            handleTwoFactorSetup();
+        } elseif ($path === '/2fa/enable') {
+            handleTwoFactorEnable();
+        } elseif ($path === '/2fa/disable') {
+            handleTwoFactorDisable();
+        } elseif ($path === '/2fa/recovery-codes') {
+            handleTwoFactorRegenerateRecoveryCodes();
+        } elseif ($path === '/2fa/devices/revoke') {
+            handleTwoFactorRevokeDevice();
         } else {
             sendJSON(['error' => 'Invalid endpoint'], 404);
         }
@@ -91,6 +106,8 @@ switch ($method) {
             handleGetAllUsers();
         } elseif ($path === '/users') {
             handleGetUsers();
+        } elseif ($path === '/2fa/status') {
+            handleTwoFactorStatus();
         } elseif (preg_match('#^/user/(\d+)$#', $path, $matches)) {
             handleGetUserInfo((int)$matches[1]);
         } else {
@@ -121,6 +138,8 @@ switch ($method) {
             handleUpdateMyProfile();
         } elseif ($path === '/me/change-password') {
             handleChangeMyPassword();
+        } elseif (preg_match('#^/2fa/reset/(\d+)$#', $path, $matches)) {
+            handleTwoFactorReset((int)$matches[1]);
         } else {
             sendJSON(['error' => 'Invalid endpoint'], 404);
         }
@@ -1048,46 +1067,12 @@ function handleLogin() {
         }
 
         require_login_allowlist_access($user, $ldapUser['groups'] ?? [], 'ldap');
-        
-        // Login success - set session with remember me support
-        if (session_status() === PHP_SESSION_NONE) {
-            session_start();
-        }
-        $_SESSION['user_id'] = $user['id'];
-        $_SESSION['username'] = $user['username'];
 
-        // Set session cookie expiration based on remember me
-        // Cookie path/name are instance-scoped (see session_bootstrap.php)
-        $cookieLifetime = $rememberMe
-            ? 30 * 24 * 60 * 60
-            : 24 * 60 * 60;
-        linknestWriteSessionCookie($cookieLifetime);
-        linknestReleaseSessionLock();
+        // Second factor (Local / LDAP username + password): no session is created
+        // until the authenticator code is verified. See api/two_factor_lib.php.
+        twoFactorMaybeGate($user, $rememberMe, 'ldap');
 
-        // Track user login for performance analytics (if enabled)
-        trackUserLogin($user['id'], $user['username']);
-        logUserAudit('auth.login', [
-            'actor_id' => (int)$user['id'],
-            'actor_username' => (string)$user['username'],
-            'target_user_id' => (int)$user['id'],
-            'target_username' => (string)$user['username'],
-            'details' => ['method' => 'ldap', 'remember_me' => (bool)$rememberMe],
-        ]);
-        
-        sendJSON([
-            'success' => true,
-            'user' => [
-                'id' => $user['id'],
-                'username' => $user['username'],
-                'email' => $user['email'],
-                'is_admin' => (bool)$user['is_admin'],
-                'is_approved' => (bool)$user['is_approved'],
-                'auth_source' => 'ldap',
-                'display_name' => $user['display_name'] ?? null,
-                'notes' => isset($user['notes']) && $user['notes'] !== '' ? (string)$user['notes'] : null
-            ]
-        ]);
-        return;
+        linknestCompleteInteractiveLogin($user, $rememberMe, 'ldap');
     }
     
     // 2. Fallback to Local Authentication
@@ -1164,46 +1149,12 @@ function handleLogin() {
     }
 
     require_login_allowlist_access($user, [], 'local');
-    
-    // Login success - set session with remember me support
-    if (session_status() === PHP_SESSION_NONE) {
-        session_start();
-    }
-    $_SESSION['user_id'] = $user['id'];
-    $_SESSION['username'] = $user['username'];
 
-    // Set session cookie expiration based on remember me
-    // Cookie path/name are instance-scoped (see session_bootstrap.php)
-    $cookieLifetime = $rememberMe
-        ? 30 * 24 * 60 * 60
-        : 24 * 60 * 60;
-    linknestWriteSessionCookie($cookieLifetime);
-    // Persist session before audit/analytics so parallel post-login requests are not blocked
-    linknestReleaseSessionLock();
+    // Second factor (Local / LDAP username + password): no session is created
+    // until the authenticator code is verified. See api/two_factor_lib.php.
+    twoFactorMaybeGate($user, $rememberMe, 'local');
 
-    // Track user login for performance analytics (if enabled)
-    trackUserLogin($user['id'], $user['username']);
-    logUserAudit('auth.login', [
-        'actor_id' => (int)$user['id'],
-        'actor_username' => (string)$user['username'],
-        'target_user_id' => (int)$user['id'],
-        'target_username' => (string)$user['username'],
-        'details' => ['method' => 'local', 'remember_me' => (bool)$rememberMe],
-    ]);
-    
-    sendJSON([
-        'success' => true,
-        'user' => [
-            'id' => $user['id'],
-            'username' => $user['username'],
-            'email' => $user['email'],
-            'is_admin' => (bool)$user['is_admin'],
-            'is_approved' => (bool)$user['is_approved'],
-            'auth_source' => $user['auth_source'] ?? 'local',
-            'display_name' => $user['display_name'] ?? null,
-            'notes' => isset($user['notes']) && $user['notes'] !== '' ? (string)$user['notes'] : null
-        ]
-    ]);
+    linknestCompleteInteractiveLogin($user, $rememberMe, 'local');
     } catch (Exception $e) {
         // Ensure we clean any output and send proper JSON error
         while (ob_get_level() > 0) {
@@ -1228,11 +1179,94 @@ function handleLogin() {
     }
 }
 
+/**
+ * Finish an interactive sign-in: create the session, honour remember-me, record
+ * analytics + audit, and return the shared user payload.
+ *
+ * Shared by handleLogin() (Local / LDAP) and the two-factor verification step so
+ * every path writes exactly the same session, cookie and audit shape.
+ *
+ * @param array<string, mixed> $user
+ * @param array<string, mixed> $extraDetails Extra audit detail keys.
+ */
+function linknestCompleteInteractiveLogin(array $user, bool $rememberMe, string $method, array $extraDetails = []): void
+{
+    $userId = (int)$user['id'];
+    $username = (string)$user['username'];
+    $authSource = $method === 'ldap' ? 'ldap' : (string)($user['auth_source'] ?? 'local');
+
+    if (session_status() === PHP_SESSION_NONE) {
+        session_start();
+    }
+
+    // A verified sign-in supersedes any pending second-factor challenge.
+    unset($_SESSION['two_factor_pending']);
+
+    $_SESSION['user_id'] = $user['id'];
+    $_SESSION['username'] = $user['username'];
+
+    // Set session cookie expiration based on remember me
+    // Cookie path/name are instance-scoped (see session_bootstrap.php)
+    $cookieLifetime = $rememberMe
+        ? 30 * 24 * 60 * 60
+        : 24 * 60 * 60;
+    linknestWriteSessionCookie($cookieLifetime);
+    // Persist session before audit/analytics so parallel post-login requests are not blocked
+    linknestReleaseSessionLock();
+
+    // Track user login for performance analytics (if enabled)
+    trackUserLogin($userId, $username);
+
+    logUserAudit('auth.login', [
+        'actor_id' => $userId,
+        'actor_username' => $username,
+        'target_user_id' => $userId,
+        'target_username' => $username,
+        'details' => array_merge([
+            'method' => $method,
+            'remember_me' => $rememberMe,
+        ], $extraDetails),
+    ]);
+
+    $twoFactorEnabled = false;
+    try {
+        if (function_exists('twoFactorIsEnrolled')) {
+            $twoFactorEnabled = twoFactorIsEnrolled(getDB(), $userId);
+        }
+    } catch (Throwable $e) {
+        $twoFactorEnabled = false;
+    }
+
+    sendJSON([
+        'success' => true,
+        'user' => [
+            'id' => $user['id'],
+            'username' => $user['username'],
+            'email' => $user['email'],
+            'is_admin' => (bool)$user['is_admin'],
+            'is_approved' => (bool)$user['is_approved'],
+            'auth_source' => $authSource,
+            'display_name' => $user['display_name'] ?? null,
+            'notes' => isset($user['notes']) && $user['notes'] !== '' ? (string)$user['notes'] : null,
+            'two_factor_enabled' => $twoFactorEnabled,
+        ]
+    ]);
+}
+
 function handleGetMe() {
     $user = getAuthenticatedUser();
     // Home load fires /auth/me in parallel with other APIs that share this session.
     linknestReleaseSessionLock();
     if ($user) {
+        // Surface the per-user two-factor state so the profile menu can badge it
+        // without an extra round trip.
+        try {
+            if (twoFactorIsAvailable() && !empty($user['id']) && empty($user['_mcp_token_id'])) {
+                $user['two_factor_enabled'] = twoFactorIsEnrolled(getDB(), (int)$user['id']);
+            }
+        } catch (Throwable $e) {
+            // Non-fatal: the profile dialog fetches /auth/2fa/status anyway.
+        }
         sendJSON(['user' => $user]);
     } else {
         sendJSON(['user' => null]);
@@ -1426,6 +1460,13 @@ function handleRejectUser($userId) {
         // Continue with user deletion even if link cleanup fails
     }
     
+    // Delete two-factor secret + trusted devices (SQLite FK cascade not always enabled)
+    try {
+        twoFactorDeleteForUser($db, (int)$userId);
+    } catch (Throwable $e) {
+        error_log('Error deleting two-factor records for rejected user: ' . $e->getMessage());
+    }
+
     // Delete the user account (only pending users)
     $stmt = $db->prepare('DELETE FROM users WHERE id = ? AND is_admin = 0 AND is_approved = 0');
     $stmt->execute([$userId]);
@@ -1608,6 +1649,13 @@ function handleDeleteUser($userId) {
         $credDel->execute([$userId]);
     } catch (Throwable $e) {
         error_log('Error deleting webauthn credentials for user: ' . $e->getMessage());
+    }
+
+    // Delete two-factor secret + trusted devices (SQLite FK cascade not always enabled)
+    try {
+        twoFactorDeleteForUser($db, (int)$userId);
+    } catch (Throwable $e) {
+        error_log('Error deleting two-factor records for user: ' . $e->getMessage());
     }
 
     // Delete the user account (cascade will delete their tiles)
@@ -5464,3 +5512,567 @@ function handleGetUserInfo($userId) {
         'isAdmin' => (bool)$userInfo['is_admin']
     ]);
 }
+
+/* ---------------------------------------------------------------------------
+ * Two-factor authentication (TOTP) — per-user settings and login verification
+ * ------------------------------------------------------------------------ */
+
+/** Two-factor endpoints are unavailable while the admin toggle is off. */
+function twoFactorRequireFeature(): void
+{
+    if (!twoFactorIsAvailable()) {
+        sendJSON(['error' => 'Two-factor authentication is disabled by your administrator'], 403);
+    }
+}
+
+/** Own 2FA status for the profile dialog. */
+function handleTwoFactorStatus()
+{
+    if (ob_get_level() > 0) {
+        ob_clean();
+    }
+    $user = twoFactorRequireBrowserSessionUser();
+    $db = getDB();
+    ensureTwoFactorSchema($db);
+    sendJSON(['two_factor' => twoFactorUserStatus($db, (int)$user['id'])]);
+}
+
+/**
+ * Start enrolment: create a secret, keep it as pending_secret until the user
+ * proves their authenticator works.
+ */
+function handleTwoFactorSetup()
+{
+    if (ob_get_level() > 0) {
+        ob_clean();
+    }
+    twoFactorRequireFeature();
+    $user = twoFactorRequireBrowserSessionUser();
+    $userId = (int)$user['id'];
+
+    $db = getDB();
+    ensureTwoFactorSchema($db);
+
+    if (twoFactorIsEnrolled($db, $userId)) {
+        sendJSON(['error' => 'Two-factor authentication is already enabled. Turn it off first to set it up again.'], 400);
+    }
+
+    $secret = twoFactorGenerateSecret();
+    $encrypted = twoFactorEncryptSecret($secret);
+    if ($encrypted === '' || $secret === '') {
+        sendJSON(['error' => 'Could not generate a two-factor secret on this server'], 500);
+    }
+
+    $now = time();
+    $stmt = $db->prepare('INSERT INTO user_two_factor (user_id, secret, pending_secret, enabled, created_at)
+        VALUES (?, NULL, ?, 0, ?)
+        ON CONFLICT(user_id) DO UPDATE SET
+            pending_secret = excluded.pending_secret,
+            secret = NULL,
+            recovery_codes = NULL,
+            enabled = 0,
+            confirmed_at = NULL');
+    $stmt->execute([$userId, $encrypted, $now]);
+
+    $account = trim((string)($user['username'] ?? ''));
+    if ($account === '') {
+        $account = 'user-' . $userId;
+    }
+
+    logUserAudit('auth.two_factor_setup_started', [
+        'actor_id' => $userId,
+        'actor_username' => $account,
+        'target_user_id' => $userId,
+        'target_username' => $account,
+    ]);
+
+    sendJSON([
+        'two_factor' => [
+            'secret' => $secret,
+            'otpauth_uri' => twoFactorProvisioningUri($secret, $account),
+            'digits' => TWO_FACTOR_CODE_DIGITS,
+            'period' => TWO_FACTOR_CODE_PERIOD,
+        ],
+    ]);
+}
+
+/** Confirm enrolment with the first code, then hand out recovery codes once. */
+function handleTwoFactorEnable()
+{
+    if (ob_get_level() > 0) {
+        ob_clean();
+    }
+    twoFactorRequireFeature();
+    $user = twoFactorRequireBrowserSessionUser();
+    $userId = (int)$user['id'];
+
+    $data = getJSONInput();
+    $code = trim((string)($data['code'] ?? ''));
+    if ($code === '') {
+        sendJSON(['error' => 'Enter the 6-digit code from your authenticator app'], 400);
+    }
+
+    $db = getDB();
+    ensureTwoFactorSchema($db);
+
+    if (twoFactorIsEnrolled($db, $userId)) {
+        sendJSON(['error' => 'Two-factor authentication is already enabled'], 400);
+    }
+
+    $row = twoFactorRow($db, $userId);
+    $pendingSecret = $row !== null ? twoFactorDecryptSecret((string)($row['pending_secret'] ?? '')) : '';
+    if ($pendingSecret === '') {
+        sendJSON(['error' => 'Start the setup again — no pending secret was found'], 400);
+    }
+
+    // Enrolment tolerates a skewed device clock: accept any nearby step and
+    // remember the exact offset so later sign-ins match straight away.
+    $matchedCounter = twoFactorMatchCode($pendingSecret, $code, TWO_FACTOR_ENROLL_WINDOW_STEPS);
+    if ($matchedCounter === null) {
+        $skewSeconds = twoFactorDiagnoseSkew($pendingSecret, $code, TWO_FACTOR_DIAGNOSTIC_MAX_STEPS);
+        logUserAudit('auth.two_factor_setup_failed', [
+            'actor_id' => $userId,
+            'actor_username' => (string)$user['username'],
+            'target_user_id' => $userId,
+            'target_username' => (string)$user['username'],
+            'details' => ['reason' => 'invalid_code', 'clock_skew_seconds' => $skewSeconds],
+        ]);
+        if ($skewSeconds === null) {
+            sendJSON(['error' => 'That code did not match. Set your device clock to automatic and enter the current code again.'], 400);
+        }
+        $direction = $skewSeconds > 0 ? 'ahead of' : 'behind';
+        sendJSON([
+            'error' => 'That code does not match this server — the authenticator clock is about '
+                . abs($skewSeconds) . ' seconds ' . $direction . ' it. Fix the clock and enter the current code again.'
+                . ' If the server clock is the one that is wrong, ask an administrator to sync it.',
+        ], 400);
+    }
+
+    // Positive = the authenticator's clock runs ahead of the server.
+    $clockOffsetSteps = $matchedCounter - twoFactorCurrentCounter();
+    $codes = twoFactorGenerateRecoveryCodes();
+    $now = time();
+    $stmt = $db->prepare('UPDATE user_two_factor
+        SET secret = pending_secret,
+            pending_secret = NULL,
+            enabled = 1,
+            recovery_codes = ?,
+            confirmed_at = ?,
+            last_used_at = ?,
+            last_counter = NULL,
+            clock_offset_steps = ?,
+            failed_attempts = 0,
+            locked_until = NULL
+        WHERE user_id = ?');
+    $stmt->execute([
+        twoFactorHashRecoveryCodes($codes),
+        $now,
+        $now,
+        $clockOffsetSteps,
+        $userId,
+    ]);
+
+    logUserAudit('auth.two_factor_enabled', [
+        'actor_id' => $userId,
+        'actor_username' => (string)$user['username'],
+        'target_user_id' => $userId,
+        'target_username' => (string)$user['username'],
+        'details' => ['clock_offset_seconds' => $clockOffsetSteps * TWO_FACTOR_CODE_PERIOD],
+    ]);
+
+    sendJSON([
+        'success' => true,
+        'recovery_codes' => $codes,
+        'two_factor' => twoFactorUserStatus($db, $userId),
+    ]);
+}
+
+/**
+ * Turn 2FA off. Local users confirm with their password (LDAP/SAML users have no
+ * local password, so they confirm with a current authenticator code).
+ */
+function handleTwoFactorDisable()
+{
+    if (ob_get_level() > 0) {
+        ob_clean();
+    }
+    $user = twoFactorRequireBrowserSessionUser();
+    $userId = (int)$user['id'];
+
+    $data = getJSONInput();
+    $password = (string)($data['password'] ?? '');
+    $code = trim((string)($data['code'] ?? ''));
+
+    $db = getDB();
+    ensureTwoFactorSchema($db);
+
+    if (!twoFactorIsEnrolled($db, $userId)) {
+        twoFactorResetUser($db, $userId, 'self_disabled_noop');
+        sendJSON([
+            'success' => true,
+            'message' => 'Two-factor authentication is already off',
+            'two_factor' => twoFactorUserStatus($db, $userId),
+        ]);
+    }
+
+    $row = twoFactorRow($db, $userId);
+    $authSource = (string)($user['auth_source'] ?? 'local');
+
+    if ($authSource === 'local') {
+        if ($password === '') {
+            sendJSON(['error' => 'Enter your password to turn off two-factor authentication'], 400);
+        }
+        $stmt = $db->prepare('SELECT password_hash FROM users WHERE id = ?');
+        $stmt->execute([$userId]);
+        $hash = (string)$stmt->fetchColumn();
+        if ($hash === '' || !password_verify($password, $hash)) {
+            logUserAudit('auth.two_factor_disable_failed', [
+                'actor_id' => $userId,
+                'actor_username' => (string)$user['username'],
+                'target_user_id' => $userId,
+                'target_username' => (string)$user['username'],
+                'details' => ['reason' => 'invalid_password'],
+            ]);
+            sendJSON(['error' => 'That password is not correct'], 401);
+        }
+    } else {
+        if ($code === '') {
+            sendJSON(['error' => 'Enter the current code from your authenticator app to turn off two-factor authentication'], 400);
+        }
+        $resynced = false;
+        $appliedOffset = 0;
+        $matchedCode = twoFactorVerifyStoredCode($db, $userId, $row ?? [], $code, $resynced, $appliedOffset);
+        if ($matchedCode === null) {
+            logUserAudit('auth.two_factor_disable_failed', [
+                'actor_id' => $userId,
+                'actor_username' => (string)$user['username'],
+                'target_user_id' => $userId,
+                'target_username' => (string)$user['username'],
+                'details' => ['reason' => 'invalid_code'],
+            ]);
+            sendJSON(['error' => 'That code is not correct'], 401);
+        }
+    }
+
+    twoFactorResetUser($db, $userId, 'self_disabled');
+    twoFactorClearTrustedDeviceCookie();
+
+    logUserAudit('auth.two_factor_disabled', [
+        'actor_id' => $userId,
+        'actor_username' => (string)$user['username'],
+        'target_user_id' => $userId,
+        'target_username' => (string)$user['username'],
+        'details' => ['auth_source' => $authSource],
+    ]);
+
+    sendJSON([
+        'success' => true,
+        'message' => 'Two-factor authentication turned off',
+        'two_factor' => twoFactorUserStatus($db, $userId),
+    ]);
+}
+
+/** Issue a fresh set of one-time recovery codes (current code required). */
+function handleTwoFactorRegenerateRecoveryCodes()
+{
+    if (ob_get_level() > 0) {
+        ob_clean();
+    }
+    twoFactorRequireFeature();
+    $user = twoFactorRequireBrowserSessionUser();
+    $userId = (int)$user['id'];
+
+    $data = getJSONInput();
+    $code = trim((string)($data['code'] ?? ''));
+    if ($code === '') {
+        sendJSON(['error' => 'Enter the current 6-digit code from your authenticator app'], 400);
+    }
+
+    $db = getDB();
+    ensureTwoFactorSchema($db);
+
+    $row = twoFactorRow($db, $userId);
+    if ($row === null || (int)$row['enabled'] !== 1) {
+        sendJSON(['error' => 'Two-factor authentication is not enabled'], 400);
+    }
+
+    $secret = twoFactorDecryptSecret((string)($row['secret'] ?? ''));
+    if ($secret === '') {
+        sendJSON(['error' => 'Your stored two-factor secret could not be read. Set it up again from your profile.'], 500);
+    }
+
+    $resynced = false;
+    $appliedOffset = 0;
+    $matchedCode = twoFactorVerifyStoredCode($db, $userId, $row, $code, $resynced, $appliedOffset);
+    if ($matchedCode === null) {
+        sendJSON(['error' => 'That code is not correct'], 401);
+    }
+
+    $codes = twoFactorGenerateRecoveryCodes();
+    $stmt = $db->prepare('UPDATE user_two_factor SET recovery_codes = ?, last_used_at = ? WHERE user_id = ?');
+    $stmt->execute([twoFactorHashRecoveryCodes($codes), time(), $userId]);
+
+    logUserAudit('auth.two_factor_recovery_codes_regenerated', [
+        'actor_id' => $userId,
+        'actor_username' => (string)$user['username'],
+        'target_user_id' => $userId,
+        'target_username' => (string)$user['username'],
+    ]);
+
+    sendJSON([
+        'success' => true,
+        'recovery_codes' => $codes,
+        'two_factor' => twoFactorUserStatus($db, $userId),
+    ]);
+}
+
+/** Revoke one trusted device, or all of them when device_id is omitted. */
+function handleTwoFactorRevokeDevice()
+{
+    if (ob_get_level() > 0) {
+        ob_clean();
+    }
+    $user = twoFactorRequireBrowserSessionUser();
+    $userId = (int)$user['id'];
+
+    $data = getJSONInput();
+    $deviceId = isset($data['device_id']) ? (int)$data['device_id'] : 0;
+
+    $db = getDB();
+    ensureTwoFactorSchema($db);
+
+    if ($deviceId > 0) {
+        if (!twoFactorRevokeTrustedDevice($db, $userId, $deviceId)) {
+            sendJSON(['error' => 'Trusted device not found'], 404);
+        }
+        $action = 'auth.two_factor_device_revoked';
+    } else {
+        twoFactorRevokeAllTrustedDevices($db, $userId);
+        $action = 'auth.two_factor_devices_revoked';
+    }
+
+    logUserAudit($action, [
+        'actor_id' => $userId,
+        'actor_username' => (string)$user['username'],
+        'target_user_id' => $userId,
+        'target_username' => (string)$user['username'],
+        'details' => ['device_id' => $deviceId],
+    ]);
+
+    sendJSON([
+        'success' => true,
+        'two_factor' => twoFactorUserStatus($db, $userId),
+    ]);
+}
+
+/** Admin recovery for a locked-out user (lost phone). */
+function handleTwoFactorReset($userId)
+{
+    $admin = requireAdmin();
+    $targetId = (int)$userId;
+    if ($targetId <= 0) {
+        sendJSON(['error' => 'Invalid user id'], 400);
+    }
+
+    $db = getDB();
+    ensureTwoFactorSchema($db);
+
+    $stmt = $db->prepare('SELECT id, username FROM users WHERE id = ?');
+    $stmt->execute([$targetId]);
+    $target = $stmt->fetch();
+    if (!$target) {
+        sendJSON(['error' => 'User not found'], 404);
+    }
+
+    twoFactorResetUser($db, $targetId, 'admin_reset');
+
+    logUserAudit('user.two_factor_reset', [
+        'actor_id' => (int)$admin['id'],
+        'actor_username' => (string)$admin['username'],
+        'target_user_id' => $targetId,
+        'target_username' => (string)$target['username'],
+    ]);
+
+    sendJSON([
+        'success' => true,
+        'message' => 'Two-factor authentication reset for ' . $target['username'],
+    ]);
+}
+
+/**
+ * Complete a sign-in that was paused for the second factor.
+ *
+ * The pending challenge in the session is the only source of the user id, so a
+ * client cannot nominate which account to finish signing in as.
+ */
+function handleTwoFactorVerify()
+{
+    if (ob_get_level() > 0) {
+        ob_clean();
+    }
+
+    if (!twoFactorIsAvailable()) {
+        sendJSON(['error' => 'Two-factor authentication is disabled by your administrator'], 403);
+    }
+
+    $data = getJSONInput();
+    $challengeId = trim((string)($data['challenge_id'] ?? ''));
+    $code = trim((string)($data['code'] ?? ''));
+    $trustDevice = !empty($data['trust_device']);
+
+    if ($code === '') {
+        sendJSON(['error' => 'Enter the code from your authenticator app'], 400);
+    }
+
+    $db = getDB();
+    ensureTwoFactorSchema($db);
+
+    $result = twoFactorVerifyChallenge($db, $challengeId, $code);
+    $method = (string)($result['pending']['method'] ?? 'local');
+
+    if (empty($result['ok'])) {
+        logUserAudit('auth.two_factor_failed', [
+            'actor_id' => !empty($result['user_id']) ? (int)$result['user_id'] : null,
+            'actor_username' => isset($result['pending']['username']) ? (string)$result['pending']['username'] : null,
+            'target_user_id' => !empty($result['user_id']) ? (int)$result['user_id'] : null,
+            'target_username' => isset($result['pending']['username']) ? (string)$result['pending']['username'] : null,
+            'details' => [
+                'method' => $method,
+                'reason' => (string)$result['reason'],
+                'used_recovery' => !empty($result['used_recovery']),
+            ],
+        ]);
+
+        $messages = [
+            'no_challenge' => 'Your verification session has expired. Please sign in again.',
+            'challenge_mismatch' => 'Your verification session has expired. Please sign in again.',
+            'not_enrolled' => 'Two-factor authentication is no longer enabled for this account. Please sign in again.',
+            'secret_unreadable' => 'Two-factor authentication needs to be set up again. Please sign in again.',
+            'locked' => 'Too many incorrect codes. Please wait a few minutes and then sign in again.',
+            'invalid_code' => 'Incorrect code.',
+            'invalid_recovery_code' => 'Incorrect recovery code.',
+            'replay' => 'That code was already used. Wait for the next code in your app.',
+        ];
+        $reason = (string)$result['reason'];
+        $message = $messages[$reason] ?? 'Two-factor verification failed. Please sign in again.';
+
+        // A valid code that is simply too far out of range: explain the clock problem.
+        $clockSkewSeconds = isset($result['clock_skew_seconds']) ? (int)$result['clock_skew_seconds'] : null;
+        if ($reason === 'clock_skew' && $clockSkewSeconds !== null) {
+            $direction = $clockSkewSeconds > 0 ? 'ahead of' : 'behind';
+            $message = 'That code is valid, but the authenticator clock is about ' . abs($clockSkewSeconds)
+                . ' seconds ' . $direction . ' this server, which is too far out to accept. Set the device clock to '
+                . 'automatic (or ask an administrator to sync the server clock) and enter the next code.';
+        }
+
+        $attemptsRemaining = isset($result['attempts_remaining']) ? (int)$result['attempts_remaining'] : null;
+        if ($attemptsRemaining !== null && $attemptsRemaining > 0
+            && in_array($reason, ['invalid_code', 'invalid_recovery_code'], true)) {
+            $message .= ' ' . $attemptsRemaining . ' attempt' . ($attemptsRemaining === 1 ? '' : 's') . ' remaining.';
+        }
+
+        $status = $reason === 'locked' ? 429 : 401;
+        sendJSON([
+            'error' => $message,
+            'reason' => $reason,
+            'attempts_remaining' => $attemptsRemaining,
+            'locked_until' => isset($result['locked_until']) ? (int)$result['locked_until'] : 0,
+            'clock_skew_seconds' => $clockSkewSeconds,
+            'challenge_id' => $challengeId,
+            'two_factor_required' => true,
+        ], $status);
+    }
+
+    $userId = (int)$result['user_id'];
+    $pending = is_array($result['pending']) ? $result['pending'] : [];
+    $rememberMe = !empty($pending['remember_me']);
+
+    $stmt = $db->prepare('SELECT id, username, email, is_admin, is_approved, COALESCE(is_disabled, 0) AS is_disabled, auth_source, display_name, notes FROM users WHERE id = ?');
+    $stmt->execute([$userId]);
+    $user = $stmt->fetch();
+
+    if (!$user) {
+        sendJSON(['error' => 'Account not found. Please sign in again.'], 401);
+    }
+
+    // Account state can change while the code prompt is open. The login
+    // allowlist was already applied at the credential step, so it is not
+    // re-evaluated here (LDAP group membership is no longer available).
+    if ($user['is_disabled'] && !$user['is_admin']) {
+        twoFactorClearPending();
+        logUserAudit('auth.login_failed', [
+            'actor_id' => $userId,
+            'actor_username' => (string)$user['username'],
+            'target_user_id' => $userId,
+            'target_username' => (string)$user['username'],
+            'details' => ['method' => $method, 'reason' => 'disabled', 'stage' => 'two_factor'],
+        ]);
+        sendJSON(['error' => 'Your account has been disabled. Please contact your administrator.'], 403);
+    }
+    if (!$user['is_approved'] && !$user['is_admin']) {
+        twoFactorClearPending();
+        logUserAudit('auth.login_failed', [
+            'actor_id' => $userId,
+            'actor_username' => (string)$user['username'],
+            'target_user_id' => $userId,
+            'target_username' => (string)$user['username'],
+            'details' => ['method' => $method, 'reason' => 'pending', 'stage' => 'two_factor'],
+        ]);
+        sendJSON(['error' => 'Your account is pending admin approval. Please wait for approval before logging in.'], 403);
+    }
+    if ($method !== 'ldap' && (string)getSetting('maintenance_enabled', '0') === '1' && !$user['is_admin']) {
+        twoFactorClearPending();
+        sendJSON(['error' => 'The application is currently in maintenance mode. Only administrators can log in at this time.'], 503);
+    }
+
+    if ($trustDevice) {
+        twoFactorIssueTrustedDevice($db, $userId);
+    }
+
+    // The device clock drifted and the window was re-centred for this user.
+    if (!empty($result['clock_resynced'])) {
+        logUserAudit('auth.two_factor_clock_resynced', [
+            'actor_id' => $userId,
+            'actor_username' => (string)$user['username'],
+            'target_user_id' => $userId,
+            'target_username' => (string)$user['username'],
+            'details' => [
+                'clock_offset_seconds' => isset($result['clock_offset_seconds']) ? (int)$result['clock_offset_seconds'] : 0,
+            ],
+        ]);
+    }
+
+    logUserAudit('auth.two_factor_verified', [
+        'actor_id' => $userId,
+        'actor_username' => (string)$user['username'],
+        'target_user_id' => $userId,
+        'target_username' => (string)$user['username'],
+        'details' => [
+            'method' => $method,
+            'used_recovery' => !empty($result['used_recovery']),
+            'trusted_device' => $trustDevice,
+        ],
+    ]);
+
+    linknestCompleteInteractiveLogin($user, $rememberMe, $method, [
+        'two_factor' => true,
+        'two_factor_used_recovery' => !empty($result['used_recovery']),
+    ]);
+}
+
+/** Abandon a pending second-factor challenge (user pressed "back"). */
+function handleTwoFactorCancel()
+{
+    if (ob_get_level() > 0) {
+        ob_clean();
+    }
+    twoFactorClearPending();
+    linknestReleaseSessionLock();
+    sendJSON(['success' => true]);
+}
+
+
+
+
+
+

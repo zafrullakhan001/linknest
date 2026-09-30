@@ -616,6 +616,8 @@ function mcpAdminDeleteUser(array $args, array $actor): array {
     }
     $userId = (int)$row['id'];
     mcpAdminCleanupUserLinkReferences($db, $userId);
+    require_once __DIR__ . '/two_factor_lib.php';
+    twoFactorDeleteForUser($db, $userId);
     $stmt = $db->prepare('DELETE FROM users WHERE id = ? AND is_admin = 0');
     $stmt->execute([$userId]);
     if ($stmt->rowCount() < 1) {
@@ -728,6 +730,8 @@ function mcpAdminBulkUserAction(array $args, array $actor): array {
                 continue;
             }
             mcpAdminCleanupUserLinkReferences($db, $id);
+            require_once __DIR__ . '/two_factor_lib.php';
+            twoFactorDeleteForUser($db, (int)$id);
             $stmt = $db->prepare('DELETE FROM users WHERE id = ? AND is_admin = 0 AND is_approved = 0');
             $stmt->execute([$id]);
             $affected += $stmt->rowCount();
