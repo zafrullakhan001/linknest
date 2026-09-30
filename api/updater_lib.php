@@ -679,7 +679,7 @@ function updaterRunCommand(string $command, ?string $cwd = null, int $timeoutSec
             $env['PATH'] = '/usr/local/bin:' . $env['PATH'];
         }
         if (empty($env['HOME'])) {
-            $env['HOME'] = updaterIsDockerRuntime() ? '/var/www' : '/tmp';
+            $env['HOME'] = updaterWritableHomeDir();
         }
         $env['GIT_TERMINAL_PROMPT'] = '0';
         $env['GIT_ASKPASS'] = '';
@@ -1753,15 +1753,76 @@ function updaterPortableViteEnv(): array {
     ];
 }
 
+/**
+ * Home directory the app user can write. Unix workers used to force /var/www,
+ * which is root-owned on a VPS (php-fpm user linknest) and breaks npm.
+ */
+function updaterWritableHomeDir(): string
+{
+    $envHome = getenv('HOME');
+    if (is_string($envHome) && $envHome !== '' && is_dir($envHome) && is_writable($envHome)) {
+        return $envHome;
+    }
+    if (is_dir('/var/www') && is_writable('/var/www')) {
+        return '/var/www';
+    }
+    $data = UPDATER_ROOT . DIRECTORY_SEPARATOR . 'data';
+    if (is_dir($data) && is_writable($data)) {
+        return $data;
+    }
+    return sys_get_temp_dir();
+}
+
+/**
+ * npm cache the current user can create. /var/www/.npm is only usable when that
+ * path is already writable (Docker www-data). Otherwise use the user home or data/.
+ */
+function updaterPrepareNpmCacheDir(): string
+{
+    $home = rtrim(str_replace('\\', '/', updaterWritableHomeDir()), '/');
+    $candidates = [
+        $home . '/.npm',
+        UPDATER_ROOT . DIRECTORY_SEPARATOR . 'data' . DIRECTORY_SEPARATOR . '.npm',
+        '/var/www/.npm',
+        rtrim(sys_get_temp_dir(), '/\\') . DIRECTORY_SEPARATOR . 'linknest-npm-cache',
+    ];
+    foreach ($candidates as $dir) {
+        if (!is_dir($dir)) {
+            @mkdir($dir, 0775, true);
+        }
+        if (is_dir($dir) && is_writable($dir)) {
+            return $dir;
+        }
+    }
+    return rtrim(sys_get_temp_dir(), '/\\') . DIRECTORY_SEPARATOR . 'linknest-npm-cache';
+}
+
+/**
+ * @return array<string, string>
+ */
+function updaterNpmEnv(): array
+{
+    $cache = updaterPrepareNpmCacheDir();
+    $nodeOptions = getenv('NODE_OPTIONS');
+    $nodeOptions = is_string($nodeOptions) ? trim($nodeOptions) : '';
+    // Small VPS hosts (about 2 GB RAM) otherwise OOM during Vite and wipe dist/.
+    if (!str_contains($nodeOptions, 'max-old-space-size')) {
+        $nodeOptions = trim($nodeOptions . ' --max-old-space-size=2048');
+    }
+    return [
+        'HOME' => updaterWritableHomeDir(),
+        'NPM_CONFIG_CACHE' => $cache,
+        'npm_config_cache' => $cache,
+        'NODE_OPTIONS' => $nodeOptions,
+    ];
+}
+
 function updaterDockerViteEnv(): array
 {
     updaterAppendLog('Frontend rebuild using Docker vite.docker.config.ts (base /)');
     return [
         'VITE_BASE_PATH' => '/',
         'VITE_API_BASE' => '/api',
-        'HOME' => '/var/www',
-        'NPM_CONFIG_CACHE' => '/var/www/.npm',
-        'npm_config_cache' => '/var/www/.npm',
         'npm_config_strict_ssl' => 'false',
     ];
 }
@@ -1772,7 +1833,8 @@ function updaterRebuildFrontend(): void {
         throw new RuntimeException('Node.js/npm required to rebuild after checkout');
     }
     $docker = updaterIsDockerRuntime();
-    $viteEnv = $docker ? updaterDockerViteEnv() : updaterPortableViteEnv();
+    $viteEnv = array_merge($docker ? updaterDockerViteEnv() : updaterPortableViteEnv(), updaterNpmEnv());
+    updaterAppendLog('npm cache ' . $viteEnv['NPM_CONFIG_CACHE']);
     // Stale caniuse-lite only prints a stderr warning, but on some hosts that noise
     // was the only text shown when a rebuild was mis-reported as failed.
     $viteEnv['BROWSERSLIST_IGNORE_OLD_DATA'] = '1';
@@ -2153,7 +2215,14 @@ function updaterSpawnApplyWorker(string $spec): bool {
         return $ok;
     }
 
-    $envPrefix = 'HOME=/var/www npm_config_strict_ssl=false NODE_TLS_REJECT_UNAUTHORIZED=0 LINKNEST_DOCKER=1 ';
+    $npmEnv = updaterNpmEnv();
+    // LINKNEST_DOCKER=1 keeps Unix docroot installs (VPS and Docker) on vite base /.
+    // HOME and the npm cache must still be writable by the php-fpm user.
+    $envPrefix = 'HOME=' . escapeshellarg($npmEnv['HOME'])
+        . ' NPM_CONFIG_CACHE=' . escapeshellarg($npmEnv['NPM_CONFIG_CACHE'])
+        . ' npm_config_cache=' . escapeshellarg($npmEnv['npm_config_cache'])
+        . ' NODE_OPTIONS=' . escapeshellarg($npmEnv['NODE_OPTIONS'])
+        . ' npm_config_strict_ssl=false NODE_TLS_REJECT_UNAUTHORIZED=0 LINKNEST_DOCKER=1 ';
     $command = $envPrefix . 'nohup ' . escapeshellarg($php) . ' -f ' . escapeshellarg($scriptPath) . ' '
         . escapeshellarg($spec) . ' >> ' . escapeshellarg($logFile) . ' 2>&1 &';
     if (function_exists('exec')) {
