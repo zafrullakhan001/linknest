@@ -8,6 +8,13 @@
  *   php api/runtime_check.php --markdown > runtime-report.md
  *   php api/runtime_check.php --force          # bypass the 6-hour vendor cache
  *
+ * Preview another platform (Linux / Docker / macOS / nginx) without touching the
+ * host — great for checking the guidance before you run it on a VPS:
+ *   php api/runtime_check.php --simulate=linux-nginx
+ *   php api/runtime_check.php --simulate=linux-rhel --web-server=apache
+ *   php api/runtime_check.php --simulate=docker --json
+ *   php api/runtime_check.php --list-simulations
+ *
  * Nothing is installed, replaced or restarted by this script.
  * Guide: docs/RUNTIME_UPDATES.md
  */
@@ -26,6 +33,38 @@ $argvList = $argv ?? [];
 $asJson = in_array('--json', $argvList, true);
 $asMarkdown = in_array('--markdown', $argvList, true);
 $force = in_array('--force', $argvList, true);
+
+/** --simulate=<preset|json> / --web-server=<nginx|apache|both|none> / --list-simulations */
+$simulateFlag = null;
+$webServerFlag = null;
+foreach ($argvList as $argument) {
+    if (str_starts_with($argument, '--simulate=')) {
+        $simulateFlag = substr($argument, strlen('--simulate='));
+    } elseif ($argument === '--simulate') {
+        $simulateFlag = 'linux-debian';
+    } elseif (str_starts_with($argument, '--web-server=')) {
+        $webServerFlag = substr($argument, strlen('--web-server='));
+    }
+}
+
+if (in_array('--list-simulations', $argvList, true) || in_array('-l', $argvList, true)) {
+    echo 'Simulation profiles (LINKNEST_RUNTIME_SIMULATE):' . PHP_EOL;
+    foreach (array_keys(runtimeSimulationPresets()) as $preset) {
+        echo '  ' . $preset . PHP_EOL;
+    }
+    exit(0);
+}
+
+if ($simulateFlag !== null) {
+    $payload = $simulateFlag;
+    if ($webServerFlag !== null) {
+        $decoded = json_decode($simulateFlag, true);
+        $decoded = is_array($decoded) ? $decoded : ['platform' => $simulateFlag];
+        $decoded['webServer'] = strtolower($webServerFlag);
+        $payload = (string)json_encode($decoded);
+    }
+    putenv('LINKNEST_RUNTIME_SIMULATE=' . $payload);
+}
 
 /** Windows consoles are not UTF-8 by default — keep the plain-text view readable. */
 function runtimeCheckAscii(string $text): string
@@ -67,8 +106,43 @@ $line = str_repeat('=', 72);
 echo $line . PHP_EOL;
 echo '  LinkNest - underlying software (read-only)' . PHP_EOL;
 echo $line . PHP_EOL;
+$platform = is_array($payload['platform'] ?? null) ? $payload['platform'] : [];
+$distro = is_array($platform['distro'] ?? null) ? $platform['distro'] : [];
+$webServer = is_array($platform['webServer'] ?? null) ? $platform['webServer'] : [];
+$fpm = is_array($platform['fpm'] ?? null) ? $platform['fpm'] : [];
+$container = is_array($platform['container'] ?? null) ? $platform['container'] : [];
+$shellInfo = is_array($platform['shell'] ?? null) ? $platform['shell'] : [];
+$simulation = is_array($platform['simulation'] ?? null) ? $platform['simulation'] : [];
+
 echo '  Host      : ' . (string)($payload['host']['os'] ?? '?') . PHP_EOL;
 echo '  Layout    : ' . (string)($payload['layout']['label'] ?? '?') . ' (' . (string)($payload['layout']['id'] ?? '?') . ')' . PHP_EOL;
+echo '  Distro    : ' . (string)($distro['pretty'] ?? 'n/a')
+    . ' | family ' . (string)($distro['family'] ?? '?')
+    . ' | packages: ' . (string)($distro['packageManager'] ?? '?') . PHP_EOL;
+echo '  Web server: ' . (string)($webServer['primaryLabel'] ?? 'none detected')
+    . ' | SAPI ' . (string)($webServer['sapi'] ?? '?') . PHP_EOL;
+foreach ((array)($webServer['servers'] ?? []) as $server) {
+    echo '              - ' . (string)($server['label'] ?? '?') . ' ' . (string)($server['version'] ?? 'version?')
+        . ' ' . (string)($server['path'] ?? 'path?')
+        . ($server['processRunning'] ?? false ? ' (running)' : '') . PHP_EOL;
+}
+if (!empty($fpm['service'])) {
+    echo '  PHP-FPM   : ' . (string)$fpm['service'] . ' ' . (string)($fpm['socket'] ?? 'socket?')
+        . (($fpm['installed'] ?? false) ? ' (installed)' : ' (not detected)') . PHP_EOL;
+}
+if (!empty($container['isContainer'])) {
+    echo '  Container : ' . (string)($container['runtime'] ?? 'container')
+        . ' | service ' . (string)($container['service'] ?? '?')
+        . ' | ports ' . (string)($container['ports']['http'] ?? '?') . '/' . (string)($container['ports']['https'] ?? '?')
+        . ' | volumes: ' . (!empty($container['volumeMounts']) ? 'yes' : 'no') . PHP_EOL;
+    echo '  Base images: PHP ' . (string)($container['phpBaseImage'] ?? '?')
+        . ' | Node ' . (string)($container['nodeBaseImage'] ?? '?') . PHP_EOL;
+}
+echo '  Elevation : ' . (string)($shellInfo['elevation'] ?? '?') . ' - ' . (string)($shellInfo['note'] ?? '') . PHP_EOL;
+if (!empty($simulation['active'])) {
+    echo '  SIMULATION: active - profile ' . (string)($simulation['profile'] ?? 'custom')
+        . ' via ' . (string)($simulation['source'] ?? 'env') . ' (reported values are simulated)' . PHP_EOL;
+}
 echo '  Summary   : ' . runtimeCheckAscii((string)($payload['summary']['message'] ?? '')) . PHP_EOL;
 echo PHP_EOL . '  Current versions' . PHP_EOL;
 

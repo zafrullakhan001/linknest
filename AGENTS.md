@@ -370,7 +370,7 @@ Default credentials:
 
 - `docs/MEDIA_LIBRARY.md` - Shared media library (images, PDF, audio, video; Admin + floating widget + RTE picker)
 - `docs/APP_UPDATES.md` - In-app App Updates (portable Releases for ArchLinks / ERP3)
-- `docs/RUNTIME_UPDATES.md` - Underlying software (PHP / Node.js / Apache / SQLite): read-only version + patch panel (`Admin → Tools → System Runtime`), vendor indexes, copy-paste upgrade commands per layout, downtime table, procedure changelog
+- `docs/RUNTIME_UPDATES.md` - Underlying software (PHP / Node.js / Apache / nginx / Caddy / SQLite): read-only version + patch panel (`Admin → Tools → System Runtime`), cross-platform host detection (Linux distro/package manager, every web server, PHP-FPM, Docker container), vendor indexes, copy-paste upgrade commands per layout, downtime table, platform simulation, procedure changelog
 - `docs/RELEASE_NOTES_3.0.0.md` - LinkNest 3.0.0 major release (schema v106 `schema_releases` registry, DB snapshot/rollback, apply steps)
 - `docs/PYTHON_WORKERS.md` - Monitoring + email Python workers; Windows Task Scheduler (`scripts/schedule-monitor-workers.bat`) and Docker entrypoint loop; also documents **scheduled worker speed tests** (host path vs browser path)
 - `docs/SETUP.md` - Detailed setup instructions
@@ -410,24 +410,44 @@ Default credentials:
 
 *This file should be updated when significant architectural changes are made to the project.*
 
-## Runtime (PHP / Node) visibility — read-only
+## Runtime (PHP / Node) visibility — read-only, cross-platform
 
 `Admin → Tools → System Runtime` (`components/RuntimeUpdatesPanel.tsx`) reports the PHP / Node.js / npm /
 Apache / SQLite / git versions on the host, the patches published by the vendor indexes, a **Security** badge
-(PHP via `php.net/feed.atom`; Node via the vendor `security` flag on any missed release in the major line) and
-the exact copy-paste commands for the detected layout (XAMPP, stock Apache + PHP, Docker, Linux, dev server).
+(PHP from the php.net release `tags` plus `php.net/feed.atom`; Node via the vendor `security` flag on any missed
+release in the major line) and the exact copy-paste commands for the detected layout.
 
+* **Cross-platform detection (Linux / macOS / Windows / Docker).** Distro from `/etc/os-release` with the real
+  package manager (`apt-get`/`apt`/`dnf`/`yum`/`zypper`/`apk`/`pacman`/`brew`); every web server is reported
+  (Apache **and** nginx / Caddy / OpenLiteSpeed) with an `ambiguous` flag when more than one is installed, so an
+  nginx-only VPS never shows "Apache unknown"; PHP-FPM unit + socket targets; container metadata (runtime,
+  compose service/container, ports, volume-mount check, base images read from `docker/Dockerfile`); PATH-walk
+  executable lookup (no `which`/`where` needed in slim images) and a `/proc` scan for running processes; elevation
+  wording per host (`Administrator` / `root or sudo` / `Docker host`).
+* **Vendor indexes.** Windows PHP from `downloads.php.net` (TS x64 + SHA256); Linux/macOS PHP from
+  `www.php.net/releases/active.php` **plus** `www.php.net/releases/index.php?json&version=<major>&max=60`
+  (the `?json&version=8` form *without* `&max` returns a single object and no per-patch keys — reading only that
+  is what used to break Linux); Node from `nodejs.org/dist/index.json`.
+* **Statuses:** `up-to-date`, `patch-available`, `security-patch-available`, `minor-available`,
+  `lts-upgrade-available`, `unsupported-line`, `could-not-check`, `not-installed`. The summary is per-component
+  and never claims "up to date" for a component whose index could not be read.
 * Read-only by contract: **no** apply/install/restart endpoint, no worker, no maintenance-mode automation, no
   DB schema or settings change. Its only write is the vendor cache `data/runtime-cache.json` (6 h TTL).
 * Endpoints (admin only): `GET /api/runtime/status`, `POST /api/runtime/check`,
   `GET /api/runtime/instructions?component=php|node|npm|apache|sqlite`, `GET /api/runtime/report?format=md|json`
-  — see `api/runtime.php`, `api/runtime_lib.php`, routed from `api/index.php` (`/runtime` prefix).
-* CLI: `php api/runtime_check.php [--json|--markdown|--force]`.
+  — see `api/runtime.php`, `api/runtime_lib.php`, routed from `api/index.php` (`/runtime` prefix). The status and
+  instructions payloads carry a `platform` block (distro / webServer / fpm / container / shell / simulation).
+* CLI: `php api/runtime_check.php [--json|--markdown|--force|--list-simulations|--simulate=<preset|json>|--web-server=<name>]`.
+* QA simulation: `LINKNEST_RUNTIME_SIMULATE` (presets `linux-debian`, `linux-nginx`, `linux-rhel`, `linux-alpine`,
+  `linux-suse`, `linux-none`, `macos`, `docker`, `windows-xampp`) renders another platform's guidance from a
+  Windows box. It is advisory-only and flagged in the payload (`platform.simulation.active`) and the UI.
 * Outbound network is GET-only against an allowlist (`downloads.php.net`, `www.php.net`, `php.net`, `nodejs.org`);
-  the only child processes are read-only version probes (`node -v`, `node -p process.arch`, `httpd -v`, `git --version`).
-* Node is not in the request path, so its upgrades have no downtime; a Windows Apache `mod_php` patch needs a
-  5–20 second Apache restart (Linux reload = none). Notes/procedure changelog live in `docs/RUNTIME_UPDATES.md`
-  and travel with App Updates (Guides reads them through `/api/docs/file`).
+  the only child processes are read-only version probes (`node -v`, `node -p process.arch`, `nginx -v`, `httpd -v`,
+  `php-fpm -v`, `caddy version`, `git --version`). LAN-free: no service restarts, no package installs.
+* Downtime: Node is not in the request path (0 s); a Windows Apache `mod_php` patch needs a 5–20 s restart
+  (Linux/nginx/php-fpm = graceful reload, container = image rebuild). The Docker runbook backs the database up
+  first because `docker/docker-compose.yml` mounts no host volumes. Notes/procedure changelog live in
+  `docs/RUNTIME_UPDATES.md` and travel with App Updates (Guides reads them through `/api/docs/file`).
 
 ## In-app updates
 

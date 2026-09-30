@@ -694,19 +694,26 @@ export const HelpAboutDialog: React.FC<HelpAboutDialogProps> = ({
                     </p>
                   </div>
                   <div className="bg-slate-50 dark:bg-slate-900/50 rounded-lg p-4">
-                    <h4 className="font-semibold text-slate-900 dark:text-white mb-2">Underlying software updates (PHP / Node.js / Apache / SQLite)</h4>
+                    <h4 className="font-semibold text-slate-900 dark:text-white mb-2">Underlying software updates (PHP / Node.js / Apache or nginx / SQLite)</h4>
                     <p className="text-sm text-slate-700 dark:text-slate-300">
-                      <strong>Admin → Tools → System Runtime</strong> shows the PHP, Node.js, npm, Apache and
-                      SQLite versions this host is running, the patches published by the vendors (including a
+                      <strong>Admin → Tools → System Runtime</strong> shows the PHP, Node.js, npm, web server
+                      (Apache <em>or</em> nginx / Caddy — every one it finds) and SQLite versions this host is
+                      running, the patches published by the vendors (including a
                       <strong> Security</strong> badge when a release is a security fix), and the exact
-                      copy-paste commands for your layout (XAMPP, stock Apache + PHP, Docker, Linux).
+                      copy-paste commands for your layout: Windows XAMPP, stock Apache + PHP, <strong>Linux VPS
+                      (distro packages + PHP-FPM + nginx/Apache reloads)</strong> and <strong>Docker</strong>.
+                      It reports the distribution and package manager it detected, and if a vendor index cannot
+                      be read it says <em>Could not check</em> instead of pretending everything is current.
                       It is <strong>read-only</strong> — nothing is installed, replaced or restarted from the
-                      app; you run the commands from an Administrator shell. Node.js never serves the app, so
-                      upgrading it has no downtime; a PHP patch on Windows Apache needs a 5–20 second Apache
-                      restart, and a Linux <code className="text-xs">systemctl reload</code> needs none. Full
-                      procedures and rollback: <strong>Guides → Runtime (PHP / Node) updates</strong>. You can
+                      app; you run the commands yourself (<strong>Administrator</strong> shell on Windows,
+                      <strong>root / sudo</strong> on Linux, <strong>on the Docker host</strong> for containers).
+                      Node.js never serves the app, so upgrading it has no downtime; a PHP patch on Windows Apache
+                      needs a 5–20 second Apache restart, while a Linux reload is graceful. In Docker, back the
+                      database up before a rebuild — the compose file mounts no host volumes. Full procedures and
+                      rollback: <strong>Guides → Runtime (PHP / Node) updates</strong>. You can
                       also run <code className="text-xs bg-slate-200 dark:bg-slate-800 px-1 rounded">php api/runtime_check.php</code>{' '}
-                      on the server (add <code className="text-xs">--markdown</code> for a report).
+                      on the server (add <code className="text-xs">--markdown</code> for a report, or{' '}
+                      <code className="text-xs">--simulate=linux-nginx</code> to preview another platform).
                     </p>
                   </div>
                   <div className="bg-slate-50 dark:bg-slate-900/50 rounded-lg p-4">

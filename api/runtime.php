@@ -55,6 +55,7 @@ try {
             'data' => $componentData['instructions'] + [
                 'host' => $payload['host'],
                 'layout' => $payload['layout'],
+                'platform' => $payload['platform'] ?? null,
             ],
         ]);
     }

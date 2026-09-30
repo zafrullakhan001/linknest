@@ -37,6 +37,106 @@ export interface RuntimeStep {
   elevated?: boolean;
 }
 
+export interface RuntimeDistroInfo {
+  id: string;
+  name: string;
+  pretty: string;
+  version: string;
+  codename: string;
+  family: string;
+  packageManager: string;
+  packageManagerNote?: string;
+  serviceManager: string;
+  elevation: string;
+  known: boolean;
+  simulated?: boolean;
+}
+
+export interface RuntimeWebServerEntry {
+  id: string;
+  label: string;
+  path: string | null;
+  version: string | null;
+  service: string;
+  role: 'primary' | 'also-detected' | string;
+  processRunning: boolean;
+  configFile: string | null;
+  configTest: string;
+  reload: string;
+  restart: string;
+  simulated: boolean;
+}
+
+export interface RuntimeWebServerInfo {
+  primary: 'apache' | 'nginx' | 'caddy' | 'litespeed' | 'none' | string;
+  primaryLabel: string;
+  ambiguous: boolean;
+  sapi: string;
+  servers: RuntimeWebServerEntry[];
+  ids: string[];
+  reloadCommands: string[];
+  notes: string[];
+}
+
+export interface RuntimeFpmInfo {
+  installed: boolean;
+  version: string;
+  line: string;
+  binary: string | null;
+  service: string;
+  socket: string | null;
+  poolIni: string | null;
+  running: boolean;
+  reload: string;
+  restart: string;
+  status: string;
+  logHint: string;
+}
+
+export interface RuntimeContainerInfo {
+  isContainer: boolean;
+  runtime: string | null;
+  id: string | null;
+  hostname: string | null;
+  composeProject: string | null;
+  composeFile: string | null;
+  service: string;
+  container: string;
+  volumeMounts: boolean;
+  phpBaseImage: string | null;
+  nodeBaseImage: string | null;
+  ports: { http: string; https: string };
+  dbPath: string | null;
+  dbPathInContainer: string;
+  notes: string[];
+  commands: Record<string, string | null>;
+}
+
+export interface RuntimePlatform {
+  osFamily: string;
+  osLabel: string;
+  distro: RuntimeDistroInfo;
+  webServer: RuntimeWebServerInfo;
+  fpm: RuntimeFpmInfo;
+  container: RuntimeContainerInfo;
+  shell: {
+    elevation: string;
+    elevationShort: string;
+    privilegedPrefix: string;
+    serviceManager: string;
+    note: string;
+  };
+  simulation: {
+    active: boolean;
+    profile: string | null;
+    osFamily: string | null;
+    webServer: string | null;
+    docker: boolean | null;
+    phpVersion: string | null;
+    source: string | null;
+  };
+}
+
 export interface RuntimeDowntime {
   requiresRestart: boolean;
   window: string;
@@ -48,7 +148,18 @@ export interface RuntimeInstructions {
   component: string;
   layout: string | null;
   layoutLabel?: string | null;
+  /** Honest section title when the host runs nginx/Caddy instead of Apache. */
+  sectionTitle?: string | null;
   requiresElevation?: boolean;
+  elevationLabel?: string | null;
+  elevationNote?: string | null;
+  webServer?: {
+    primary: string;
+    label: string;
+    ambiguous: boolean;
+    ids: string[];
+  } | null;
+  packageManager?: string | null;
   steps: RuntimeStep[];
   downtime: RuntimeDowntime | null;
   docs?: Record<string, string>;
@@ -132,13 +243,25 @@ export interface RuntimePhpUpdate {
   latestForLine: string | null;
   latestAny: string | null;
   latestAnyLine: string | null;
-  status: 'up-to-date' | 'patch-available' | 'minor-available' | 'unknown' | string;
+  supportedLines?: string[];
+  lineSupported?: boolean | null;
+  status:
+    | 'up-to-date'
+    | 'patch-available'
+    | 'security-patch-available'
+    | 'minor-available'
+    | 'unsupported-line'
+    | 'could-not-check'
+    | 'unknown'
+    | string;
   patchAvailable: boolean;
   newerMinorAvailable: boolean;
   security: boolean;
+  vendorSecurityTag?: boolean;
   securityHint: RuntimeSecurityHint | null;
   notesUrl: string | null;
   publishedAt: string | null;
+  publishedAtLabel?: string | null;
   assetName: string | null;
   assetUrl: string | null;
   sha256: string | null;
@@ -229,8 +352,19 @@ export interface RuntimeStatus {
     phpIniPath: string | null;
     phpBinary: string | null;
     apachePath: string | null;
+    distroId?: string;
+    distroName?: string;
+    packageManager?: string;
+    webServer?: string;
+    webServerLabel?: string;
+    webServerAmbiguous?: boolean;
+    fpmService?: string;
+    elevation?: string;
+    elevationShort?: string;
+    simulated?: boolean;
     notes: string[];
   };
+  platform: RuntimePlatform;
   capabilities: {
     readOnly: boolean;
     inAppUpgrade: boolean;
@@ -240,6 +374,14 @@ export interface RuntimeStatus {
     procOpen: boolean;
     curl: boolean;
     writes: string;
+    /** What the read-only platform detection is allowed to touch. */
+    platformProbes?: {
+      files: string[];
+      pathWalk: boolean;
+      procScan: boolean;
+      childProcesses: string;
+      simulation: boolean;
+    };
   };
   components: {
     php: { component: 'php'; info: RuntimePhpInfo; update: RuntimePhpUpdate; instructions: RuntimeInstructions };
@@ -259,6 +401,10 @@ export interface RuntimeStatus {
     patchCount: number;
     php: string;
     node: string;
+    /** At least one component could not be checked — never shown as "up to date". */
+    couldNotCheck?: boolean;
+    phpLine?: string;
+    nodeLine?: string;
     message: string;
   };
 }
@@ -324,6 +470,10 @@ export function runtimeStatusLabel(status: string): string {
       return 'Newer minor available';
     case 'lts-upgrade-available':
       return 'Newer LTS available';
+    case 'unsupported-line':
+      return 'Unsupported line (EOL)';
+    case 'could-not-check':
+      return 'Could not check';
     case 'not-installed':
       return 'Not installed';
     default:
@@ -342,6 +492,8 @@ export function runtimeStatusClass(status: string): string {
       return 'bg-amber-100 text-amber-900 dark:bg-amber-900/40 dark:text-amber-100';
     case 'security-patch-available':
       return 'bg-red-100 text-red-800 dark:bg-red-900/40 dark:text-red-200';
+    case 'unsupported-line':
+      return 'bg-orange-100 text-orange-900 dark:bg-orange-900/40 dark:text-orange-100';
     case 'not-installed':
       return 'bg-slate-200 text-slate-700 dark:bg-slate-700 dark:text-slate-200';
     default:

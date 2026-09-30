@@ -5,6 +5,7 @@ import {
   runtimeReportUrl,
   runtimeStatusClass,
   runtimeStatusLabel,
+  type RuntimePlatform,
   type RuntimeStatus,
   type RuntimeStep,
 } from '../services/runtimeService';
@@ -128,19 +129,28 @@ const SHELL_LABEL: Record<string, string> = {
   bash: 'Shell',
 };
 
-const ElevatedBadge: React.FC = () => (
+const ElevatedBadge: React.FC<{ label?: string }> = ({ label }) => (
   <span className="inline-flex rounded-md border border-amber-200/80 dark:border-amber-800/60 bg-amber-100 px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wide text-amber-800 dark:bg-amber-950/50 dark:text-amber-200">
-    Run as administrator
+    Run as {label || 'administrator'}
   </span>
 );
 
-const StepBlock: React.FC<{ step: RuntimeStep }> = ({ step }) => (
+const StepBlock: React.FC<{ step: RuntimeStep; elevationLabel?: string; elevatedNote?: string }> = ({
+  step,
+  elevationLabel,
+  elevatedNote,
+}) => (
   <div className="rounded-lg border border-sky-100 dark:border-sky-900/50 bg-slate-50 dark:bg-slate-900/60 p-3">
     <div className="flex flex-wrap items-start justify-between gap-2">
       <div className="min-w-0">
         <p className="flex flex-wrap items-center gap-2 text-sm font-semibold text-slate-900 dark:text-white">
           <span>{step.title}</span>
-          {step.elevated && <ElevatedBadge />}
+          {step.elevated && <ElevatedBadge label={elevationLabel} />}
+          {step.elevated && elevatedNote && (
+            <span className="text-[10px] font-normal normal-case text-amber-800 dark:text-amber-200">
+              {elevatedNote}
+            </span>
+          )}
         </p>
         <p className="mt-0.5 text-[11px] uppercase tracking-wide text-sky-700 dark:text-sky-300">
           {SHELL_LABEL[step.shell] ?? step.shell}
@@ -166,7 +176,9 @@ const CommandSection: React.FC<{
   downtime?: { requiresRestart: boolean; window: string; summary: string; planning: string } | null;
   defaultOpen?: boolean;
   footer?: React.ReactNode;
-}> = ({ title, emoji, steps, downtime, defaultOpen = false, footer }) => {
+  elevationLabel?: string;
+  elevatedNote?: string;
+}> = ({ title, emoji, steps, downtime, defaultOpen = false, footer, elevationLabel, elevatedNote }) => {
   const [open, setOpen] = useState(defaultOpen);
   const allCode = useMemo(() => steps.map((s) => `# ${s.title}\n${s.code}`).join('\n\n'), [steps]);
 
@@ -209,7 +221,12 @@ const CommandSection: React.FC<{
             </p>
           )}
           {steps.map((step) => (
-            <StepBlock key={step.id} step={step} />
+            <StepBlock
+              key={step.id}
+              step={step}
+              elevationLabel={elevationLabel}
+              elevatedNote={elevatedNote}
+            />
           ))}
           {footer}
         </div>
@@ -218,42 +235,68 @@ const CommandSection: React.FC<{
   );
 };
 
-const SummaryBanner: React.FC<{
-  summary: RuntimeStatus['summary'];
-  layoutLabel: string;
-  requiresElevation: boolean;
-  sources: RuntimeStatus['sources'];
-}> = ({ summary, layoutLabel, requiresElevation, sources }) => (
-  <div
-    className={`rounded-xl border p-4 text-sm ${
-      summary.securityAvailable
-        ? 'border-red-200/80 dark:border-red-800/60 bg-red-50 dark:bg-red-950/30 text-red-900 dark:text-red-100'
-        : summary.updateAvailable
-          ? 'border-amber-200/80 dark:border-amber-800/60 bg-amber-50 dark:bg-amber-950/30 text-amber-900 dark:text-amber-100'
-          : 'border-emerald-200/80 dark:border-emerald-800/60 bg-emerald-50 dark:bg-emerald-950/30 text-emerald-900 dark:text-emerald-100'
-    }`}
-  >
-    <p className="font-semibold">{summary.message}</p>
-    {summary.securityAvailable && (
-      <p className="mt-1 text-xs">
-        At least one available release is a vendor-declared security release — apply it soon.
-      </p>
-    )}
-    <p className="mt-1 text-xs opacity-80">
-      Host detected as <strong>{layoutLabel}</strong>
-      {requiresElevation ? ' — PHP/Apache changes need an Administrator shell.' : '.'}{' '}
-      Vendor indexes read {formatAgo(sources.php.fetchedAt)} (PHP) and {formatAgo(sources.node.fetchedAt)}{' '}
-      (Node).
-      {(sources.php.error || sources.node.error) && (
-        <>
-          {' '}
-          Index warning: {sources.php.error || sources.node.error} — commands below are still generated from
-          the local install.
-        </>
-      )}
-    </p>
+const SimulationBanner: React.FC<{ simulation: RuntimePlatform['simulation'] }> = ({ simulation }) => (
+  <div className="rounded-xl border border-purple-300/70 dark:border-purple-700/60 bg-purple-50 dark:bg-purple-950/30 p-3 text-xs text-purple-900 dark:text-purple-100">
+    <strong>Simulation active ({simulation.profile || 'custom'}).</strong> Values and commands below are rendered
+    for a previewed platform via <code className="font-mono">{simulation.source || 'LINKNEST_RUNTIME_SIMULATE'}</code> —
+    nothing was probed on this host for the simulated parts. Unset the variable to see the real host.
   </div>
 );
+
+const SummaryBanner: React.FC<{
+  summary: RuntimeStatus['summary'];
+  platform: RuntimePlatform;
+  sources: RuntimeStatus['sources'];
+}> = ({ summary, platform, sources }) => {
+  const couldNotCheck = Boolean(summary.couldNotCheck);
+  return (
+    <div
+      className={`rounded-xl border p-4 text-sm ${
+        summary.securityAvailable
+          ? 'border-red-200/80 dark:border-red-800/60 bg-red-50 dark:bg-red-950/30 text-red-900 dark:text-red-100'
+          : summary.updateAvailable
+            ? 'border-amber-200/80 dark:border-amber-800/60 bg-amber-50 dark:bg-amber-950/30 text-amber-900 dark:text-amber-100'
+            : couldNotCheck
+              ? 'border-sky-200/80 dark:border-sky-800/60 bg-sky-50 dark:bg-sky-950/30 text-sky-900 dark:text-sky-100'
+              : 'border-emerald-200/80 dark:border-emerald-800/60 bg-emerald-50 dark:bg-emerald-950/30 text-emerald-900 dark:text-emerald-100'
+      }`}
+    >
+      <p className="font-semibold">{summary.message}</p>
+      {summary.securityAvailable && (
+        <p className="mt-1 text-xs">
+          At least one available release is a vendor-declared security release — apply it soon.
+        </p>
+      )}
+      {couldNotCheck && !summary.updateAvailable && (
+        <p className="mt-1 text-xs">
+          A vendor index could not be read, so the components above are <strong>not</strong> confirmed up to date.
+          Apply the generated commands yourself or press <strong>Check for patches</strong> again.
+        </p>
+      )}
+      <p className="mt-1 text-xs opacity-80">
+        Host detected as <strong>{platform.distro.pretty || platform.osFamily}</strong>
+        {' · '}
+        web server <strong>{platform.webServer.primaryLabel}</strong>
+        {platform.container.isContainer ? ` · ${platform.container.runtime || 'container'} deployment` : ''}
+        {' · '}
+        {platform.container.isContainer
+          ? 'run the commands on the Docker host.'
+          : platform.osFamily === 'Windows'
+            ? 'PHP/Apache changes need an Administrator shell.'
+            : 'PHP/package changes need root (or sudo).'}{' '}
+        Vendor indexes read {formatAgo(sources.php.fetchedAt)} (PHP) and {formatAgo(sources.node.fetchedAt)}{' '}
+        (Node).
+        {(sources.php.error || sources.node.error) && (
+          <>
+            {' '}
+            Index warning: {sources.php.error || sources.node.error} — commands below are still generated from
+            the local install.
+          </>
+        )}
+      </p>
+    </div>
+  );
+};
 
 export const RuntimeUpdatesPanel: React.FC<{
   /**
@@ -336,9 +379,15 @@ export const RuntimeUpdatesPanel: React.FC<{
     );
   }
 
-  const { components, summary, layout, sources, capabilities } = status;
+  const { components, summary, layout, sources, capabilities, platform } = status;
   const php = components.php.update;
   const node = components.node.update;
+  const isWindowsHost = platform.osFamily === 'Windows' || status.host.windows;
+  const elevationLabel = platform.shell.elevationShort || layout.elevationShort || (isWindowsHost ? 'Administrator' : 'root / sudo');
+  const elevationNote = platform.shell.note;
+  const webServer = platform.webServer;
+  const container = platform.container;
+  const fpm = platform.fpm;
 
   const versionRows: Array<{
     key: string;
@@ -355,8 +404,14 @@ export const RuntimeUpdatesPanel: React.FC<{
       version: components.php.info.version,
       detail: (
         <>
-          {components.php.info.zts ? 'Thread Safe (ZTS)' : 'Non-Thread Safe (NTS)'} ·{' '}
-          {components.php.info.arch} · {components.php.info.sapi}
+          {isWindowsHost
+            ? components.php.info.zts
+              ? 'Thread Safe (ZTS)'
+              : 'Non-Thread Safe (NTS)'
+            : components.php.info.zts
+              ? 'ZTS'
+              : 'NTS (normal for php-fpm/nginx)'}{' '}
+          · {components.php.info.arch} · {components.php.info.sapi}
           <br />
           <span className="font-mono">{components.php.info.iniPath || 'php.ini unknown'}</span>
           {components.php.info.missingExtensions.length > 0 && (
@@ -394,17 +449,98 @@ export const RuntimeUpdatesPanel: React.FC<{
     },
     {
       key: 'apache',
-      label: 'Apache',
-      version: components.apache.info.version || 'unknown',
+      label: webServer.primary === 'apache' ? 'Apache' : 'Web server',
+      version:
+        components.apache.info.version
+        || (webServer.primary !== 'none' && webServer.servers[0]?.version)
+        || 'unknown',
       detail: (
         <>
-          {components.apache.info.arch || 'arch unknown'}
-          <br />
-          <span className="font-mono">{components.apache.info.path || 'httpd not found'}</span>
+          {webServer.servers.length === 0 ? (
+            <>
+              None detected · PHP SAPI <span className="font-mono">{webServer.sapi}</span>
+            </>
+          ) : (
+            <>
+              {webServer.servers
+                .map((server) =>
+                  `${server.label}${server.version ? ` ${server.version}` : ''}${
+                    server.role === 'primary' ? ' (primary)' : ''
+                  }${server.processRunning ? ' · running' : ''}`
+                )
+                .join(' + ')}
+              {webServer.ambiguous ? ' · more than one web server installed' : ''}
+              <br />
+              <span className="font-mono">
+                {webServer.servers
+                  .map((server) => server.path || `${server.id} path unknown`)
+                  .join('  |  ')}
+              </span>
+            </>
+          )}
+          {components.apache.info.error && (
+            <span className="text-slate-500 dark:text-slate-400">
+              <br />
+              {components.apache.info.error}
+            </span>
+          )}
         </>
       ),
-      note: 'Check vendor page',
+      note: webServer.primary === 'none' ? 'No web server on this host' : 'Check vendor page',
     },
+    ...(fpm.installed
+      ? [
+          {
+            key: 'fpm',
+            label: 'PHP-FPM',
+            version: fpm.version || 'unknown',
+            detail: (
+              <>
+                {fpm.running ? 'running' : 'installed'}
+                {fpm.socket ? ` · socket ${fpm.socket}` : ' · socket not found'}
+                <br />
+                <span className="font-mono">{fpm.binary || fpm.poolIni || fpm.service}</span>
+              </>
+            ),
+            note: fpm.reload,
+          },
+        ]
+      : []),
+    {
+      key: 'host',
+      label: 'Host',
+      version: platform.distro.version || platform.osFamily,
+      detail: (
+        <>
+          {platform.distro.pretty || platform.osFamily} · family {platform.distro.family || 'unknown'}
+          <br />
+          Package manager: <span className="font-mono">{platform.distro.packageManager || 'unknown'}</span>
+          {' · '}
+          Services: <span className="font-mono">{platform.distro.serviceManager || 'unknown'}</span>
+        </>
+      ),
+      note: platform.distro.packageManagerNote || platform.distro.pretty,
+    },
+    ...(container.isContainer
+      ? [
+          {
+            key: 'container',
+            label: 'Container',
+            version: container.runtime || 'container',
+            detail: (
+              <>
+                service <span className="font-mono">{container.service}</span>
+                {container.id ? <> · id <span className="font-mono">{container.id}</span></> : null}
+                <br />
+                ports <span className="font-mono">{container.ports.http}</span> (HTTP) /{' '}
+                <span className="font-mono">{container.ports.https}</span> (HTTPS) ·{' '}
+                {container.volumeMounts ? 'volume mounts declared' : 'no volume mounts — data lives in the container'}
+              </>
+            ),
+            note: `PHP base image ${container.phpBaseImage || 'unknown'}`,
+          },
+        ]
+      : []),
     {
       key: 'sqlite',
       label: 'SQLite',
@@ -477,7 +613,8 @@ export const RuntimeUpdatesPanel: React.FC<{
         </div>
 
         <div className="space-y-3 p-6">
-          <SummaryBanner summary={summary} layoutLabel={layout.label} requiresElevation={layout.requiresElevation} sources={sources} />
+          {platform.simulation.active && <SimulationBanner simulation={platform.simulation} />}
+          <SummaryBanner summary={summary} platform={platform} sources={sources} />
           {error && (
             <p className="rounded-lg border border-red-200 dark:border-red-800/60 bg-red-50 dark:bg-red-950/30 p-3 text-xs text-red-800 dark:text-red-200">
               {error}
@@ -546,8 +683,11 @@ export const RuntimeUpdatesPanel: React.FC<{
             <span aria-hidden>⬆️</span> Available patches &amp; command lines
           </h3>
           <p className={ADMIN_SECTION_SUBTITLE}>
-            Generated for the <strong>{layout.label}</strong> layout. Copy a command and run it from an
-            Administrator shell — this page does not execute anything.
+            Generated for the <strong>{layout.label}</strong> layout
+            {container.isContainer ? ` (${container.runtime || 'container'} deployment)` : ''}
+            {' · '}web server <strong>{webServer.primaryLabel}</strong>
+            {platform.distro.packageManager ? <> · packages via <strong>{platform.distro.packageManager}</strong></> : null}
+            . Copy a command and run it {isWindowsHost ? 'in an Administrator shell' : container.isContainer ? 'on the Docker host' : 'as root (or with sudo)'} — this page does not execute anything.
           </p>
         </div>
         <div className="space-y-4 p-6">
@@ -593,6 +733,8 @@ export const RuntimeUpdatesPanel: React.FC<{
             emoji="🐘"
             steps={components.php.instructions.steps}
             downtime={components.php.instructions.downtime}
+            elevationLabel={elevationLabel}
+            elevatedNote={elevationNote}
             defaultOpen
           />
 
@@ -633,20 +775,32 @@ export const RuntimeUpdatesPanel: React.FC<{
             emoji="⬡"
             steps={components.node.instructions.steps}
             downtime={components.node.instructions.downtime}
+            elevationLabel={elevationLabel}
+            elevatedNote={elevationNote}
           />
 
             <CommandSection
-              title="Apache patch"
+              title={components.apache.instructions.sectionTitle || 'Apache patch'}
               emoji="🪶"
               steps={components.apache.instructions.steps}
               downtime={components.apache.instructions.downtime}
+              elevationLabel={elevationLabel}
+              elevatedNote={elevationNote}
             />
 
             <CommandSection
-              title="SQLite engine / DLL"
+              title={
+                container.isContainer
+                  ? 'SQLite engine / image'
+                  : isWindowsHost
+                    ? 'SQLite engine / DLL'
+                    : 'SQLite engine (packages)'
+              }
               emoji="🗃️"
               steps={components.sqlite.instructions.steps}
               downtime={components.sqlite.instructions.downtime}
+              elevationLabel={elevationLabel}
+              elevatedNote={elevationNote}
             />
         </div>
       </div>
@@ -744,6 +898,26 @@ export const RuntimeUpdatesPanel: React.FC<{
             — {sources.node.lineCount} major line(s), read {formatAgo(sources.node.fetchedAt)}
             {sources.node.stale ? ' (cached copy)' : ''}
             {sources.node.error ? ` — ${sources.node.error}` : ''}
+          </p>
+          <p>
+            Host detection: <strong>{platform.distro.pretty || platform.osFamily}</strong>
+            {platform.distro.packageManager ? <> · packages via <span className="font-mono">{platform.distro.packageManager}</span></> : null}
+            {' · '}
+            web server <strong>{webServer.primaryLabel}</strong>
+            {webServer.ambiguous ? ' (more than one installed)' : ''}
+            {fpm.installed ? <> · <span className="font-mono">{fpm.service}</span></> : null}
+            {container.isContainer ? <> · {container.runtime || 'container'} <span className="font-mono">{container.container}</span></> : null}
+            . Detection is read-only: <span className="font-mono">/etc/os-release</span>, PATH and{' '}
+            <span className="font-mono">/proc</span>, plus read-only version probes.
+          </p>
+          <p>
+            Previewing a different platform (Linux / Docker / nginx) without touching this host:{' '}
+            <code className="font-mono">php api/runtime_check.php --simulate=linux-nginx</code> or set{' '}
+            <code className="font-mono">LINKNEST_RUNTIME_SIMULATE</code> (presets:{' '}
+            <code className="font-mono">linux-debian</code>, <code className="font-mono">linux-rhel</code>,{' '}
+            <code className="font-mono">linux-alpine</code>, <code className="font-mono">macos</code>,{' '}
+            <code className="font-mono">docker</code>). Run{' '}
+            <code className="font-mono">php api/runtime_check.php --list-simulations</code> for the full list.
           </p>
           <p>
             Cache: <code className="font-mono">{status.cacheFile}</code> · vendor indexes are cached for up to{' '}

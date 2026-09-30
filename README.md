@@ -522,7 +522,7 @@ linknest/
 | [docs/MULTIPLE_SMTP_SERVERS.md](docs/MULTIPLE_SMTP_SERVERS.md) | Alerting / e-mail server configuration |
 | [docs/PYTHON_WORKERS.md](docs/PYTHON_WORKERS.md) · [docs/CLONED_INSTANCE_SCHEDULING.md](docs/CLONED_INSTANCE_SCHEDULING.md) | Monitor/e-mail workers and scheduling per instance |
 | [docs/REMOTE_WIDGETS_SETUP.md](docs/REMOTE_WIDGETS_SETUP.md) · [docs/SSH_SESSION_SHARED_WORKER.md](docs/SSH_SESSION_SHARED_WORKER.md) | SSH/RDP/VNC widgets, runtime and session continuity |
-| [docs/APP_UPDATES.md](docs/APP_UPDATES.md) · [docs/RUNTIME_UPDATES.md](docs/RUNTIME_UPDATES.md) · [docs/RELEASE_NOTES_3.0.0.md](docs/RELEASE_NOTES_3.0.0.md) | In-app updates, underlying software (PHP / Node) visibility, portable releases, current release notes |
+| [docs/APP_UPDATES.md](docs/APP_UPDATES.md) · [docs/RUNTIME_UPDATES.md](docs/RUNTIME_UPDATES.md) · [docs/RELEASE_NOTES_3.0.0.md](docs/RELEASE_NOTES_3.0.0.md) | In-app updates, underlying software (PHP / Node) visibility on Windows, Linux/VPS and Docker (distro, web server, PHP-FPM, container, patch commands), portable releases, current release notes |
 | [docs/ADMIN_LOCKOUT_RECOVERY.md](docs/ADMIN_LOCKOUT_RECOVERY.md) | Recover admin access, reset passwords, unlock allow-lists |
 | [docs/PACKAGE_FOR_DEPLOYMENT.md](docs/PACKAGE_FOR_DEPLOYMENT.md) · [docs/WINDOWS_BOOTSTRAP_BUNDLES.md](docs/WINDOWS_BOOTSTRAP_BUNDLES.md) | Windows deploy ZIPs and runtime bundles |
 | [docs/VANILLA_APACHE_PHP85_WINDOWS.md](docs/VANILLA_APACHE_PHP85_WINDOWS.md) · [docs/XAMPP_PHP_UPGRADE.md](docs/XAMPP_PHP_UPGRADE.md) | Apache/PHP host configuration and upgrades |
