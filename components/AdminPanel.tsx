@@ -32,6 +32,7 @@ import { getCustomWidgets, createWidget, updateWidget, deleteWidget, CustomWidge
 import { GranularPermissionsModal } from './GranularPermissionsModal';
 import { AddonsManagement } from './AddonsManagement';
 import { UpdatesPanel } from './UpdatesDialog';
+import { RuntimeUpdatesPanel } from './RuntimeUpdatesPanel';
 import { DevicePresetsAdmin } from './DevicePresetsAdmin';
 import { CategoryPresetsAdmin } from './CategoryPresetsAdmin';
 import { LinkCheckExceptionsAdmin } from './LinkCheckExceptionsAdmin';
@@ -173,6 +174,7 @@ type AdminNavTabId =
   | 'media'
   | 'addons'
   | 'appUpdates'
+  | 'systemRuntime'
   | 'loadTest'
   | 'visitCounter';
 
@@ -231,6 +233,7 @@ const ADMIN_NAV_SECTIONS: Array<{
       { id: 'media', label: 'Media Library', emoji: '📁' },
       { id: 'addons', label: 'Add-ons', emoji: '🔌' },
       { id: 'appUpdates', label: 'App Updates', emoji: '🔔' },
+      { id: 'systemRuntime', label: 'System Runtime', emoji: '🧱' },
       { id: 'loadTest', label: 'Load Test', emoji: '📈' },
     ],
   },
@@ -340,7 +343,7 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({ onUserApproved }) => {
     const validTabs: Array<AdminNavTabId | 'footer'> = [
       'pending', 'all', 'userAudit', 'settings', 'database', 'spaces', 'visitCounter', 'ldap', 'saml', 'footer',
       'tabVisibility', 'devicePresets', 'categoryPresets', 'linkCheckExceptions', 'urlSafety', 'urlScanFix', 'tooltipSync', 'iframeBlockDomains', 'access', 'clone', 'browser', 'mcp', 'broadcast',
-      'maintenanceScripts', 'maintenance', 'widgets', 'media', 'addons', 'appUpdates', 'loadTest',
+      'maintenanceScripts', 'maintenance', 'widgets', 'media', 'addons', 'appUpdates', 'systemRuntime', 'loadTest',
     ];
     return (savedTab && validTabs.includes(savedTab as AdminNavTabId | 'footer'))
       ? (savedTab as AdminNavTabId | 'footer')
@@ -15984,6 +15987,18 @@ php scripts/reset_admin_password.php admin 'NewStrongPass1!'`}</pre>
                         </button>
                       )}
                     </div>
+                    <p className="mt-4 text-sm text-slate-600 dark:text-slate-300">
+                      Running an older PHP, Node.js, Apache or SQLite build?{' '}
+                      <button
+                        type="button"
+                        onClick={() => selectAdminTab('systemRuntime')}
+                        className="font-semibold text-sky-700 hover:underline dark:text-sky-300"
+                      >
+                        Open System Runtime
+                      </button>{' '}
+                      to see the installed versions, the patches published by the vendors, and the exact
+                      commands to apply them (read-only — nothing is upgraded from here).
+                    </p>
                   </div>
 
                   {/* PHP OPcache Status */}
@@ -16893,6 +16908,12 @@ export const YourWidget: React.FC<YourWidgetProps> = ({ onClose }) => {
                       <UpdatesPanel />
                     </div>
                   </div>
+                </div>
+              )}
+
+              {activeTab === 'systemRuntime' && (
+                <div className="mt-6 space-y-4">
+                  <RuntimeUpdatesPanel />
                 </div>
               )}
 

@@ -19,6 +19,7 @@ const DOCS_CATEGORY_MAP = [
     'SETUP.md' => 'Getting Started',
     'ARCHITECTURE.md' => 'Architecture',
     'APP_UPDATES.md' => 'Updates & Deploy',
+    'RUNTIME_UPDATES.md' => 'Updates & Deploy',
     'DOCKER_DEPLOYMENT.md' => 'Updates & Deploy',
     'PACKAGE_FOR_DEPLOYMENT.md' => 'Updates & Deploy',
     'WINDOWS_BOOTSTRAP_BUNDLES.md' => 'Updates & Deploy',
@@ -64,6 +65,7 @@ const DOCS_CATEGORY_ORDER = [
 /** Preferred sort within Updates & Deploy */
 const DOCS_FILE_PRIORITY = [
     'APP_UPDATES.md' => 0,
+    'RUNTIME_UPDATES.md' => 1,
     'DOCKER_DEPLOYMENT.md' => 1,
     'PACKAGE_FOR_DEPLOYMENT.md' => 2,
     'WINDOWS_BOOTSTRAP_BUNDLES.md' => 2,

@@ -370,6 +370,7 @@ Default credentials:
 
 - `docs/MEDIA_LIBRARY.md` - Shared media library (images, PDF, audio, video; Admin + floating widget + RTE picker)
 - `docs/APP_UPDATES.md` - In-app App Updates (portable Releases for ArchLinks / ERP3)
+- `docs/RUNTIME_UPDATES.md` - Underlying software (PHP / Node.js / Apache / SQLite): read-only version + patch panel (`Admin → Tools → System Runtime`), vendor indexes, copy-paste upgrade commands per layout, downtime table, procedure changelog
 - `docs/RELEASE_NOTES_3.0.0.md` - LinkNest 3.0.0 major release (schema v106 `schema_releases` registry, DB snapshot/rollback, apply steps)
 - `docs/PYTHON_WORKERS.md` - Monitoring + email Python workers; Windows Task Scheduler (`scripts/schedule-monitor-workers.bat`) and Docker entrypoint loop; also documents **scheduled worker speed tests** (host path vs browser path)
 - `docs/SETUP.md` - Detailed setup instructions
@@ -408,6 +409,25 @@ Default credentials:
 ---
 
 *This file should be updated when significant architectural changes are made to the project.*
+
+## Runtime (PHP / Node) visibility — read-only
+
+`Admin → Tools → System Runtime` (`components/RuntimeUpdatesPanel.tsx`) reports the PHP / Node.js / npm /
+Apache / SQLite / git versions on the host, the patches published by the vendor indexes, a **Security** badge
+(PHP via `php.net/feed.atom`; Node via the vendor `security` flag on any missed release in the major line) and
+the exact copy-paste commands for the detected layout (XAMPP, stock Apache + PHP, Docker, Linux, dev server).
+
+* Read-only by contract: **no** apply/install/restart endpoint, no worker, no maintenance-mode automation, no
+  DB schema or settings change. Its only write is the vendor cache `data/runtime-cache.json` (6 h TTL).
+* Endpoints (admin only): `GET /api/runtime/status`, `POST /api/runtime/check`,
+  `GET /api/runtime/instructions?component=php|node|npm|apache|sqlite`, `GET /api/runtime/report?format=md|json`
+  — see `api/runtime.php`, `api/runtime_lib.php`, routed from `api/index.php` (`/runtime` prefix).
+* CLI: `php api/runtime_check.php [--json|--markdown|--force]`.
+* Outbound network is GET-only against an allowlist (`downloads.php.net`, `www.php.net`, `php.net`, `nodejs.org`);
+  the only child processes are read-only version probes (`node -v`, `node -p process.arch`, `httpd -v`, `git --version`).
+* Node is not in the request path, so its upgrades have no downtime; a Windows Apache `mod_php` patch needs a
+  5–20 second Apache restart (Linux reload = none). Notes/procedure changelog live in `docs/RUNTIME_UPDATES.md`
+  and travel with App Updates (Guides reads them through `/api/docs/file`).
 
 ## In-app updates
 

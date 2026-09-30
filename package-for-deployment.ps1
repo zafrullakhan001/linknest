@@ -3008,7 +3008,8 @@ if ($AppOnly) {
     Write-Host "  7. Ctrl+F5 once if old UI remains (service worker)" -ForegroundColor Yellow
     Write-Host "  8. Admin -> Maintenance Scripts -> System Specs Check (match SOURCE_SPECS.json)" -ForegroundColor Yellow
     Write-Host "  9. Admin -> App Updates: set GitHub PAT, track branch, Check for updates" -ForegroundColor Yellow
-    Write-Host "  10. Docs: docs/APP_UPDATES.md" -ForegroundColor Yellow
+    Write-Host " 10. Admin -> Tools -> System Runtime: check PHP / Node.js / Apache / SQLite patches (read-only; commands are yours to run)" -ForegroundColor Yellow
+    Write-Host " 11. Docs: docs/APP_UPDATES.md + docs/RUNTIME_UPDATES.md" -ForegroundColor Yellow
     Write-Host "  11. Remote widgets: bundled ttyd + OpenSSH + Python; see docs/REMOTE_WIDGETS_SETUP.md" -ForegroundColor Yellow
     Write-Host "  12. PHP 8.5+: run upgrade-xampp-php.bat (elevated) - docs/XAMPP_PHP_UPGRADE.md" -ForegroundColor Yellow
     Write-Host "  13. Remote push from this PC: deploy-remote-xampp.bat -ComputerName HOST -ZipPath <zip>" -ForegroundColor Yellow

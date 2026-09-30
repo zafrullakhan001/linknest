@@ -5,6 +5,10 @@ Official XAMPP packages often lag behind current PHP releases. LinkNest ships a 
 **Minimum for LinkNest:** PHP 8.2+  
 **Recommended (verified):** PHP **8.5.x** (LDAP included and load-tested)
 
+> **Check first:** **Admin → Tools → System Runtime** shows the installed PHP version, the newest published
+> patch (with its SHA256) and whether that patch is a security release — see
+> [RUNTIME_UPDATES.md](RUNTIME_UPDATES.md). The panel is read-only: it prints the commands below for you to run.
+
 ---
 
 ## Scripts

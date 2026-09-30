@@ -383,6 +383,15 @@ if ($path === '/') {
     }
     require __DIR__ . '/updater.php';
     exit;
+} elseif (strpos($path, '/runtime') === 0) {
+    $remainingPath = substr($path, strlen('/runtime'));
+    if ($remainingPath === false || $remainingPath === '') {
+        $_SERVER['PATH_INFO'] = '/';
+    } else {
+        $_SERVER['PATH_INFO'] = ($remainingPath[0] === '/') ? $remainingPath : '/' . $remainingPath;
+    }
+    require __DIR__ . '/runtime.php';
+    exit;
 } elseif (strpos($path, '/tts') === 0) {
     require __DIR__ . '/tts.php';
     exit;

@@ -6,6 +6,10 @@ Use this when LinkNest already runs on **stock Apache** at `D:\Apache` and **PHP
 
 **This is not the XAMPP path.** For `C:\xampp`, use [XAMPP_PHP_UPGRADE.md](XAMPP_PHP_UPGRADE.md).
 
+> **Check first:** **Admin → Tools → System Runtime** shows this host's PHP and Apache versions, the newest
+> published patch (with SHA256) and whether it is a security release — see
+> [RUNTIME_UPDATES.md](RUNTIME_UPDATES.md). It is read-only and prints the commands used below.
+
 ---
 
 ## What the script does

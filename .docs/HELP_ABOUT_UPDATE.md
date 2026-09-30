@@ -3,6 +3,19 @@
 ## Overview
 The Help & About dialog has been comprehensively updated to reflect all new features added to LinkNest.
 
+## Latest: Runtime (PHP / Node) visibility — read-only (2026-09-30)
+
+- New admin tab **Tools → System Runtime** (`components/RuntimeUpdatesPanel.tsx`): PHP / Node.js / npm / Apache / SQLite / git versions, vendor patches, **Security** badges, downtime reference and copy-paste commands
+- New API (admin, read-only): `GET /api/runtime/status`, `POST /api/runtime/check`, `GET /api/runtime/instructions`, `GET /api/runtime/report` (`api/runtime.php`, `api/runtime_lib.php`, routed via `/runtime` in `api/index.php`)
+- New CLI: `php api/runtime_check.php [--json|--markdown|--force]`
+- Sources: `downloads.php.net/~windows/releases/releases.json` (PHP TS x64 with SHA256), `nodejs.org/dist/index.json` (LTS + vendor `security` flag), `php.net/feed.atom` (security-release hint)
+- New guide: [`docs/RUNTIME_UPDATES.md`](../docs/RUNTIME_UPDATES.md) — registered in Guides under **Updates & Deploy** with a dated **Procedure changelog** (notes travel with App Updates)
+- Help tab: **Underlying software updates (PHP / Node.js / Apache / SQLite)**; App Updates dialog gained an advisory strip linking to the new tab
+- System Specs Check card links to **Open System Runtime**; cross-links added to `XAMPP_PHP_UPGRADE.md` / `VANILLA_APACHE_PHP_UPGRADE.md`
+- **No schema change, no settings change.** Deliberately advisory: nothing is installed, replaced or restarted from the app; Node upgrades have no downtime, a Windows Apache `mod_php` patch needs a 5–20 s restart
+
+---
+
 ## Latest: LinkNest 3.0.0 major release (2026-09)
 
 - Database: `LINKNEST_SCHEMA_VERSION` **105 → 106** with new additive `schema_releases` audit registry (`api/config.php` → `ensureSchemaReleaseRegistry()`)

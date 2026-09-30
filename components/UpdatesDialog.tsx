@@ -15,6 +15,7 @@ import {
   UpdaterStatus,
 } from '../services/updaterService';
 import { settingsService } from '../services/settingsService';
+import { getRuntimeStatus } from '../services/runtimeService';
 import { useSettings } from '../contexts/SettingsContext';
 import { renderReleaseNotesHtml } from '../utils/releaseNotesMarkdown';
 import { useMobile } from '../hooks/useMobile';
@@ -224,6 +225,56 @@ const UpdateProgressBlock: React.FC<{ job: UpdaterJob | null }> = ({ job }) => {
         </pre>
       </div>
     </div>
+  );
+};
+
+/**
+ * Advisory strip for the *underlying software* (PHP / Node.js / Apache / SQLite).
+ * Read-only: it only reports versions and links to Admin → Tools → System Runtime,
+ * where the operator copies the commands. Deliberately does not touch the
+ * App Updates badge count, so an app update is never confused with a runtime patch.
+ */
+const RuntimePatchStrip: React.FC = () => {
+  const [data, setData] = useState<{ message: string; security: boolean; update: boolean } | null>(
+    null
+  );
+
+  useEffect(() => {
+    let cancelled = false;
+    getRuntimeStatus()
+      .then((s) => {
+        if (cancelled) return;
+        setData({
+          message: s.summary.message,
+          security: Boolean(s.summary.securityAvailable),
+          update: Boolean(s.summary.updateAvailable),
+        });
+      })
+      .catch(() => {
+        if (!cancelled) setData(null);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, []);
+
+  if (!data || !data.update) {
+    return null;
+  }
+
+  return (
+    <a
+      href="#/admin/systemRuntime"
+      className={`block rounded-lg border p-3 text-[12px] leading-relaxed transition-colors ${
+        data.security
+          ? 'border-red-300 dark:border-red-800 bg-red-50 dark:bg-red-900/20 text-red-900 dark:text-red-100 hover:bg-red-100 dark:hover:bg-red-900/30'
+          : 'border-amber-300 dark:border-amber-700 bg-amber-50 dark:bg-amber-900/20 text-amber-950 dark:text-amber-100 hover:bg-amber-100 dark:hover:bg-amber-900/30'
+      }`}
+      title="Open Admin → Tools → System Runtime (read-only guidance)"
+    >
+      <span aria-hidden>🧱</span> <strong>Underlying software:</strong> {data.message}. Open{' '}
+      <strong>System Runtime</strong> for the exact commands — read-only, nothing is installed from there.
+    </a>
   );
 };
 
@@ -597,6 +648,7 @@ export const UpdatesPanel: React.FC<{
             <p className="text-[11px] text-slate-500">
               Updates never run automatically — choose a commit/release, then confirm Update.
             </p>
+            <RuntimePatchStrip />
             {status?.capabilities?.dockerRuntime && !status.capabilities.nodeAvailable && (
               <div className="rounded-lg border border-amber-300 dark:border-amber-700 bg-amber-50 dark:bg-amber-900/20 p-3 text-sm text-amber-950 dark:text-amber-100 space-y-1">
                 <p className="font-semibold">Docker: UI comes from image rebuild, not commit zipballs</p>

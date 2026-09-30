@@ -391,7 +391,7 @@ export const HelpAboutDialog: React.FC<HelpAboutDialogProps> = ({
                   <div className="bg-emerald-50 dark:bg-emerald-900/20 rounded-lg p-4 space-y-2 border border-emerald-200 dark:border-emerald-800">
                     <p className="font-medium text-emerald-900 dark:text-emerald-100">Guides tab:</p>
                     <p className="text-sm">
-                      Open the <strong>Guides</strong> tab in this dialog for searchable in-app docs (MCP / AI, Your Bookmarks, Bookmark Sync Extension, setup, architecture, <strong>Python Workers (Monitoring + Email)</strong>, App Updates, Docker deployment &amp; database, Admin password &amp; lockout recovery, SSH / VNC, Package for Deployment, Vanilla Apache + PHP 8.5, and more). In <strong>Help</strong>, see the dedicated topic <strong>Python Monitor Workers &amp; Task Scheduler</strong> for CLI options, scheduling, and force-all Py handover. Start with <strong>MCP / AI</strong> to let Cursor or Claude create spaces and links, <strong>Your Bookmarks</strong> or <strong>Bookmark Sync Extension</strong> for guest bookmark Sync / OutSync, <strong>Admin Password &amp; Lockout Recovery</strong> if you cannot sign in, or App Updates / Docker Deployment / Architecture for admin workflows.
+                      Open the <strong>Guides</strong> tab in this dialog for searchable in-app docs (MCP / AI, Your Bookmarks, Bookmark Sync Extension, setup, architecture, <strong>Runtime (PHP / Node) updates</strong>, <strong>Python Workers (Monitoring + Email)</strong>, App Updates, Docker deployment &amp; database, Admin password &amp; lockout recovery, SSH / VNC, Package for Deployment, Vanilla Apache + PHP 8.5, and more). In <strong>Help</strong>, see the dedicated topic <strong>Python Monitor Workers &amp; Task Scheduler</strong> for CLI options, scheduling, and force-all Py handover. Start with <strong>MCP / AI</strong> to let Cursor or Claude create spaces and links, <strong>Your Bookmarks</strong> or <strong>Bookmark Sync Extension</strong> for guest bookmark Sync / OutSync, <strong>Admin Password &amp; Lockout Recovery</strong> if you cannot sign in, or App Updates / Docker Deployment / Architecture for admin workflows.
                     </p>
                   </div>
                 </div>
@@ -691,6 +691,22 @@ export const HelpAboutDialog: React.FC<HelpAboutDialogProps> = ({
                     <p className="text-sm text-slate-700 dark:text-slate-300">
                       Admins can check GitHub commits/releases, preview changes, apply updates with database backup, and roll back (XAMPP installs).
                       For ArchLinks + ERP3, publish one portable Release and apply it on each instance — Help → In-app App Updates.
+                    </p>
+                  </div>
+                  <div className="bg-slate-50 dark:bg-slate-900/50 rounded-lg p-4">
+                    <h4 className="font-semibold text-slate-900 dark:text-white mb-2">Underlying software updates (PHP / Node.js / Apache / SQLite)</h4>
+                    <p className="text-sm text-slate-700 dark:text-slate-300">
+                      <strong>Admin → Tools → System Runtime</strong> shows the PHP, Node.js, npm, Apache and
+                      SQLite versions this host is running, the patches published by the vendors (including a
+                      <strong> Security</strong> badge when a release is a security fix), and the exact
+                      copy-paste commands for your layout (XAMPP, stock Apache + PHP, Docker, Linux).
+                      It is <strong>read-only</strong> — nothing is installed, replaced or restarted from the
+                      app; you run the commands from an Administrator shell. Node.js never serves the app, so
+                      upgrading it has no downtime; a PHP patch on Windows Apache needs a 5–20 second Apache
+                      restart, and a Linux <code className="text-xs">systemctl reload</code> needs none. Full
+                      procedures and rollback: <strong>Guides → Runtime (PHP / Node) updates</strong>. You can
+                      also run <code className="text-xs bg-slate-200 dark:bg-slate-800 px-1 rounded">php api/runtime_check.php</code>{' '}
+                      on the server (add <code className="text-xs">--markdown</code> for a report).
                     </p>
                   </div>
                   <div className="bg-slate-50 dark:bg-slate-900/50 rounded-lg p-4">
