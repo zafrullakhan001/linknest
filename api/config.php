@@ -137,13 +137,14 @@ if (!defined('SYSTEM_TOKEN')) {
 }
 
 // Bump when schema/migrations in initDatabase() change. Enables fast-path getDB().
+// 111 = Archive banner actor (tiles.archived_by + tiles.archived_by_username).
 // 110 = per-user TOTP two-factor authentication (user_two_factor + user_two_factor_devices).
 // 109 = Message Board fonts + marquee speed (tile_messages.font_family/font_size/marquee_seconds).
 // 108 = Message Board banner placement (tile_messages.placement: above | below the tabs).
 // 107 = Message Board tab scoping (tile_messages.tab_ids + tile_messages.show_on_card).
 // 106 = LinkNest 3.0.0 (schema_releases audit registry).
 if (!defined('LINKNEST_SCHEMA_VERSION')) {
-    define('LINKNEST_SCHEMA_VERSION', 110);
+    define('LINKNEST_SCHEMA_VERSION', 111);
 }
 
 // Shipped application version, recorded in schema_releases so admins can audit
@@ -536,6 +537,36 @@ function ensureTilesSearchTagsColumn(PDO $db): void {
         $ensured = true;
     } catch (PDOException $e) {
         error_log('ensureTilesSearchTagsColumn warning: ' . $e->getMessage());
+    }
+}
+
+/**
+ * Ensure the tiles.archived_by columns exist, so the Archived-space banner can show
+ * who moved a space to the Archive (id + username snapshot).
+ */
+function ensureTileArchiveActorColumns(PDO $db): void {
+    static $ensured = false;
+    if ($ensured) {
+        return;
+    }
+    try {
+        $columns = $db->query('PRAGMA table_info(tiles)')->fetchAll(PDO::FETCH_ASSOC);
+        if (empty($columns)) {
+            return;
+        }
+        $names = array_column($columns, 'name');
+        $needed = [
+            'archived_by' => 'INTEGER',
+            'archived_by_username' => 'TEXT',
+        ];
+        foreach ($needed as $col => $type) {
+            if (!in_array($col, $names, true)) {
+                $db->exec("ALTER TABLE tiles ADD COLUMN {$col} {$type}");
+            }
+        }
+        $ensured = true;
+    } catch (PDOException $e) {
+        error_log('ensureTileArchiveActorColumns warning: ' . $e->getMessage());
     }
 }
 
@@ -2417,6 +2448,7 @@ function initDatabase() {
             ensureMcpTokensTable($db);
             ensureCategoryVisibilityPresetsTable($db);
             ensureTilesVideoColumns($db);
+            ensureTileArchiveActorColumns($db);
             ensurePasswordResetColumns($db);
             ensureWebauthnCredentialsTable($db);
             require_once __DIR__ . '/two_factor_lib.php';
@@ -2476,6 +2508,7 @@ function initDatabase() {
             ensureMcpTokensTable($db);
             ensureCategoryVisibilityPresetsTable($db);
             ensureTilesVideoColumns($db);
+            ensureTileArchiveActorColumns($db);
             ensurePasswordResetColumns($db);
             ensureWebauthnCredentialsTable($db);
             require_once __DIR__ . '/two_factor_lib.php';
@@ -2782,7 +2815,8 @@ function initDatabase() {
         }
 
         ensureTilesVideoColumns($db);
-        
+        ensureTileArchiveActorColumns($db);
+
         // Migrate existing tiles table to add deleted_at column for soft delete (recycle bin)
         try {
             $columns = $db->query("PRAGMA table_info(tiles)")->fetchAll();

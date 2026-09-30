@@ -35,7 +35,19 @@ import {
     parseSectionLinksExport,
     parseTabExport
 } from '../services/sectionTabTransferService';
-import { cloneTile, createTile, getTiles, saveTile, toggleLinkFavorite, createTempVersion, updateTilePageAnimation, recordTileVisit } from '../services/storageService';
+import {
+    cloneTile,
+    createTile,
+    getTiles,
+    saveTile,
+    toggleLinkFavorite,
+    createTempVersion,
+    updateTilePageAnimation,
+    recordTileVisit,
+    restoreTile,
+    permanentDeleteTile,
+    unarchiveTile
+} from '../services/storageService';
 import { useTilePresence } from '../hooks/useTilePresence';
 import { TilePresence } from './TilePresence';
 import { TileMessageBanner } from './TileMessageBanner';
@@ -110,6 +122,8 @@ import { SpaceCompareDialog } from './SpaceCompareDialog';
 import type { SpaceCompareCandidate } from './SpaceCompareDialog';
 import { TileAnimationSelector, getTileAnimationClass, TileAnimation, getAnimationOption, resolveLinkAnimation } from './TileAnimationSelector';
 import { SpaceViewHeaderActions } from './SpaceViewHeaderActions';
+import { RecycleBinPreviewBanner } from './RecycleBinPreviewBanner';
+import { ArchivedSpaceBanner } from './ArchivedSpaceBanner';
 import { AuthSourceBadge } from './AuthSourceBadge';
 import { EditLinkForm } from './EditLinkForm';
 import { AddLinkMenu } from './AddLinkMenu';
@@ -488,6 +502,8 @@ interface TileDetailProps {
     onAuthRequired?: () => void;
     sourceTab?: 'public' | 'your-apps' | 'staging' | 'private' | 'favorites' | 'public-favorites' | null;
     user?: User | null;
+    /** Opened from the Recycle Bin: read-only preview with restore / permanent delete actions. */
+    isRecycleBin?: boolean;
 }
 // Enhanced emoji categories with more emojis
 const EmojiPickerTabs: React.FC<{
@@ -840,7 +856,8 @@ export const TileDetail: React.FC<TileDetailProps> = ({
     isAuthenticated = false,
     onAuthRequired,
     sourceTab = null,
-    user
+    user,
+    isRecycleBin = false
 }) => {
     const { assertCanOpen } = useAccessRestrictionGate();
     const canRecycleShortUrl = tile.canEdit === true || !!user?.is_admin;
@@ -917,7 +934,8 @@ export const TileDetail: React.FC<TileDetailProps> = ({
         setShortUrlOverrides({});
     }, [tile.id]);
 
-    const [isEditing, setIsEditing] = useState(() => getEditParamFromHash());
+    // Recycle Bin previews are always read-only, even when ?edit=1 is present in the URL.
+    const [isEditing, setIsEditing] = useState(() => (isRecycleBin ? false : getEditParamFromHash()));
     const setEditingMode = useCallback((editing: boolean) => {
         setIsEditing(editing);
         writeTileHashEdit(editing);
@@ -1397,14 +1415,15 @@ export const TileDetail: React.FC<TileDetailProps> = ({
 
     // Record visitor hit when tile detail is opened
     useEffect(() => {
-        if (tile?.id) {
+        // Soft-deleted spaces cannot record visits (the API rejects them).
+        if (tile?.id && !tile.deletedAt) {
             void recordTileVisit(tile.id);
         }
         // eslint-disable-next-line react-hooks/exhaustive-deps
-    }, [tile?.id]);
+    }, [tile?.id, tile?.deletedAt]);
 
     const presenceViewers = useTilePresence(tile?.id, {
-        enabled: !!isAuthenticated && !!user,
+        enabled: !!isAuthenticated && !!user && !tile?.deletedAt,
         mode: isEditing ? 'editing' : 'viewing',
     });
 
@@ -1566,7 +1585,7 @@ export const TileDetail: React.FC<TileDetailProps> = ({
 
     // Keep edit mode active during auto-save operations
     useEffect(() => {
-        if (autoSavingRef.current && !isEditing) {
+        if (!isRecycleBin && autoSavingRef.current && !isEditing) {
             console.log('Auto-save: Detected edit mode was reset, restoring it');
             setEditingMode(true);
         }
@@ -7334,6 +7353,48 @@ export const TileDetail: React.FC<TileDetailProps> = ({
         }
     }, [activeViewTab, persistViewModeTile, tile, viewReorderSaving]);
 
+    /** Restore this space out of the Recycle Bin (admins and the space owner). */
+    const handleRestoreFromRecycleBin = useCallback(async () => {
+        if (!tile.deletedAt) return;
+        if (!window.confirm(`Restore "${tile.title}" from the Recycle Bin?`)) return;
+        try {
+            await restoreTile(tile.id);
+            window.location.hash = '#/';
+        } catch (e) {
+            alert(e instanceof Error ? e.message : 'Failed to restore this space');
+        }
+    }, [tile.deletedAt, tile.id, tile.title]);
+
+    /** Permanently delete this space from the Recycle Bin — cannot be undone. */
+    const handlePermanentDeleteFromRecycleBin = useCallback(async () => {
+        if (!tile.deletedAt) return;
+        const confirmed = window.confirm(
+            `Permanently delete "${tile.title}"?\n\nThis cannot be undone. Restore it first if you only want it back on the dashboard.`
+        );
+        if (!confirmed) return;
+        try {
+            await permanentDeleteTile(tile.id);
+            window.location.hash = '#/';
+        } catch (e) {
+            alert(e instanceof Error ? e.message : 'Failed to delete this space');
+        }
+    }, [tile.deletedAt, tile.id, tile.title]);
+
+    /** Move this space out of the Archive and back to its normal tab. */
+    const handleUnarchiveFromBanner = useCallback(async () => {
+        if (!tile.archivedAt) return;
+        const confirmed = window.confirm(
+            `Unarchive "${tile.title}"?\n\nThe space leaves the Archive tab and becomes visible again.`
+        );
+        if (!confirmed) return;
+        try {
+            await unarchiveTile(tile.id);
+            window.location.hash = '#/';
+        } catch (e) {
+            alert(e instanceof Error ? e.message : 'Failed to unarchive this space');
+        }
+    }, [tile.archivedAt, tile.id, tile.title]);
+
     // VIEW MODE (also used when the URL asked for edit but this session cannot edit)
     if (!isEditing || !tile.canEdit) {
         return (
@@ -7369,6 +7430,25 @@ export const TileDetail: React.FC<TileDetailProps> = ({
                     />
                 )}
                 <div className="animate-in fade-in slide-in-from-bottom-4 duration-300 min-h-[80vh] flex flex-col w-full pb-10">
+
+                    {/* Archived-space banner (opened from the Archive tab or a direct link) */}
+                    {tile.archivedAt ? (
+                        <ArchivedSpaceBanner
+                            tile={tile}
+                            onUnarchive={() => void handleUnarchiveFromBanner()}
+                            onBack={goBackToDashboard}
+                        />
+                    ) : null}
+
+                    {/* Recycle Bin read-only preview banner (admins + space owner) */}
+                    {isRecycleBin && tile.deletedAt ? (
+                        <RecycleBinPreviewBanner
+                            tile={tile}
+                            onRestore={() => void handleRestoreFromRecycleBin()}
+                            onDeleteForever={() => void handlePermanentDeleteFromRecycleBin()}
+                            onBack={goBackToDashboard}
+                        />
+                    ) : null}
 
                     {/* Compact Modern Header */}
                     <div className="linknest-content-header relative rounded-2xl mb-6 group border border-slate-200 dark:border-slate-700/50 shadow-lg dark:shadow-none isolate">
@@ -7416,7 +7496,7 @@ export const TileDetail: React.FC<TileDetailProps> = ({
                                         onRecycled={({ shortUrl }) => applyRecycledShortUrl('tile', tile.id, shortUrl)}
                                     />
                                     ) : null}
-                                    {isAuthenticated && (
+                                    {isAuthenticated && !isRecycleBin && (
                                         <TilePresence
                                             viewers={presenceViewers}
                                             currentUserId={user?.id}
@@ -7431,6 +7511,9 @@ export const TileDetail: React.FC<TileDetailProps> = ({
                                 tile={tile}
                                 allTiles={allTiles}
                                 user={user}
+                                recycleBinMode={isRecycleBin}
+                                archiveMode={!!tile.archivedAt}
+                                onUnarchive={() => void handleUnarchiveFromBanner()}
                                 isAuthenticated={isAuthenticated}
                                 sourceTab={sourceTab}
                                 showShortUrls={showShortUrls}

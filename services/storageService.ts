@@ -85,6 +85,10 @@ const transformTile = (apiTile: any): Tile => {
     hasRoleAccess: apiTile.hasRoleAccess === true || apiTile.has_role_access === true || apiTile.hasRoleAccess === 1,
     deletedAt: apiTile.deletedAt || undefined, // Include deletedAt if present (for recycle bin)
     archivedAt: apiTile.archivedAt || undefined, // Include archivedAt if present (for archive)
+    archivedBy:
+      apiTile.archivedBy !== undefined && apiTile.archivedBy !== null ? Number(apiTile.archivedBy) : undefined,
+    archivedByName:
+      typeof apiTile.archivedByName === 'string' && apiTile.archivedByName ? apiTile.archivedByName : undefined,
     visibleFrom: apiTile.visibleFrom || undefined,
     expiresAt: apiTile.expiresAt || undefined,
     accessRestrictions: apiTile.accessRestrictions || undefined,
@@ -221,8 +225,17 @@ export const getTiles = async (options?: GetTilesOptions): Promise<Tile[]> => {
   return apiTiles.map(transformTile);
 };
 
-export const getTile = async (tileId: string): Promise<Tile | null> => {
-  const response = await fetch(`${API_BASE}/tiles/${tileId}`, {
+export interface GetTileOptions {
+  /**
+   * Recycle Bin review: ask the API for a soft-deleted space. Admins may open any
+   * recycled space, users only their own; the API ignores this flag for everyone else.
+   */
+  includeDeleted?: boolean;
+}
+
+export const getTile = async (tileId: string, options?: GetTileOptions): Promise<Tile | null> => {
+  const query = options?.includeDeleted ? '?include_deleted=1' : '';
+  const response = await fetch(`${API_BASE}/tiles/${tileId}${query}`, {
     method: 'GET',
     credentials: 'include',
     headers: fingerprintRequestHeaders(),

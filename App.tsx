@@ -197,7 +197,8 @@ const AppContent: React.FC = () => {
 
   // Space visit counter when a space is open
   useEffect(() => {
-    if (!detailTile?.id) {
+    // Soft-deleted spaces cannot record visits (the API rejects them) — skip the call.
+    if (!detailTile?.id || detailTile.deletedAt) {
       setSpaceVisitCount(null);
       return;
     }
@@ -1020,6 +1021,11 @@ const AppContent: React.FC = () => {
     ? ((route.split('/tile/')[1] || '').split('?')[0] || '')
     : '';
 
+  // Source tab of the open space route ("recycle-bin" when opened from the Recycle Bin).
+  const tileRouteSourceTab = route.startsWith('#/tile/')
+    ? (new URLSearchParams((route.split('/tile/')[1] || '').split('?')[1] || '').get('from') || '')
+    : '';
+
   // Fetch full tile when opening #/tile/id (home list is card summary only).
   // Wait for the session check so a refresh does not treat a private/edit space
   // as missing and bounce to the dashboard.
@@ -1036,9 +1042,11 @@ const AppContent: React.FC = () => {
       return;
     }
     let cancelled = false;
+    // Recycle Bin review: ask for the soft-deleted space so it can be inspected read-only.
+    const isRecycleReview = tileRouteSourceTab === 'recycle-bin';
     setDetailLoading(true);
     setDetailError(null);
-    getTile(tileRouteId)
+    getTile(tileRouteId, { includeDeleted: isRecycleReview })
       .then(async (t) => {
         if (cancelled) return;
         if (!t) {
@@ -1071,7 +1079,7 @@ const AppContent: React.FC = () => {
     return () => {
       cancelled = true;
     };
-  }, [tileRouteId, isAuthenticated, authLoading, assertCanOpen]);
+  }, [tileRouteId, tileRouteSourceTab, isAuthenticated, authLoading, assertCanOpen]);
 
   // If guest access is disabled and user is not authenticated, we show login dialog (computed here so hooks below run unconditionally).
   // Require !authLoading so we never show/open login until session check has finished (fixes refresh with existing session).
@@ -1576,6 +1584,7 @@ const AppContent: React.FC = () => {
             isAuthenticated={isAuthenticated}
             onAuthRequired={() => setAuthModalOpen(true)}
             sourceTab={sourceTab as 'public' | 'your-apps' | 'private' | 'favorites' | 'public-favorites' | 'staging' | null}
+            isRecycleBin={sourceTab === 'recycle-bin'}
             user={user}
           />
         </Suspense>

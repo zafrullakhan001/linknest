@@ -1255,6 +1255,34 @@ function handleGetTiles() {
     }
 }
 
+/**
+ * Display name of the user who archived a space ("who archived it" in the Archive banner).
+ * Prefers the live account (display name, then username) and falls back to the username
+ * snapshot stored on the tile row when that account no longer exists.
+ */
+function tileArchiverDisplayName(PDO $db, array $row): ?string {
+    $fallback = !empty($row['archived_by_username']) ? (string)$row['archived_by_username'] : null;
+    $archiverId = !empty($row['archived_by']) ? (int)$row['archived_by'] : null;
+    if ($archiverId !== null) {
+        try {
+            $stmt = $db->prepare('SELECT username, display_name FROM users WHERE id = ?');
+            $stmt->execute([$archiverId]);
+            $archiver = $stmt->fetch(PDO::FETCH_ASSOC);
+            if ($archiver) {
+                $displayName = trim((string)($archiver['display_name'] ?? ''));
+                if ($displayName !== '') {
+                    return $displayName;
+                }
+                $username = trim((string)($archiver['username'] ?? ''));
+                return $username !== '' ? $username : $fallback;
+            }
+        } catch (PDOException $e) {
+            // fall through to the stored snapshot
+        }
+    }
+    return $fallback;
+}
+
 function handleGetTile($tileId) {
     $user = getAuthenticatedUser();
     $db = getDB();
@@ -1277,7 +1305,24 @@ function handleGetTile($tileId) {
     $stmt = $db->prepare('SELECT * FROM tiles WHERE id = ? AND deleted_at IS NULL');
     $stmt->execute([$tileId]);
     $row = $stmt->fetch();
-    
+
+    // Recycle Bin review: admins may open any soft-deleted space, owners only their own.
+    // Opt-in via ?include_deleted=1 (or ?recycled=1) and only accepted when the requester is
+    // allowed to review it, so ordinary (live) space requests behave exactly as before.
+    $isRecycledRow = false;
+    if (!$row && (!empty($_GET['include_deleted']) || !empty($_GET['recycled'])) && $user) {
+        $isAdminRequester = !empty($user['is_admin']);
+        $reviewStmt = $db->prepare($isAdminRequester
+            ? 'SELECT * FROM tiles WHERE id = ? AND deleted_at IS NOT NULL'
+            : 'SELECT * FROM tiles WHERE id = ? AND deleted_at IS NOT NULL AND user_id = ?');
+        $reviewStmt->execute($isAdminRequester ? [$tileId] : [$tileId, (int)$user['id']]);
+        $reviewRow = $reviewStmt->fetch();
+        if ($reviewRow && !empty($reviewRow['deleted_at'])) {
+            $row = $reviewRow;
+            $isRecycledRow = true;
+        }
+    }
+
     if (!$row) {
         sendJSON(['error' => 'Tile not found'], 404);
     }
@@ -1288,16 +1333,17 @@ function handleGetTile($tileId) {
         $hasRoleAccess = canUserViewTileByRole($user['id'], $tileId, $db);
     }
 
-    // Staging tiles: admins always; non-admins only when explicitly role-assigned
+    // Staging tiles: admins always; non-admins only when explicitly role-assigned.
+    // Recycled rows are already limited to admins / the owning user, so these gates are skipped.
     $rowSourceTab = isset($row['source_tab']) ? trim($row['source_tab']) : 'public';
-    if ($rowSourceTab === 'staging' && (!$user || empty($user['is_admin']))) {
+    if (!$isRecycledRow && $rowSourceTab === 'staging' && (!$user || empty($user['is_admin']))) {
         if (!$hasRoleAccess) {
             sendJSON(['error' => 'Tile not found'], 404);
         }
     }
 
     // Unpublished tiles are admin-only
-    if (!canUserSeePublishedContent($user, $row)) {
+    if (!$isRecycledRow && !canUserSeePublishedContent($user, $row)) {
         sendJSON(['error' => 'Tile not found'], 404);
     }
     
@@ -1322,7 +1368,8 @@ function handleGetTile($tileId) {
         }
     }
     
-    $isTileVisible = canUserSeeByVisibility($user, $row, $userGroupIds);
+    // Recycle Bin review: visibility is irrelevant, the row was already authorized above.
+    $isTileVisible = $isRecycledRow ? true : canUserSeeByVisibility($user, $row, $userGroupIds);
 
     // Owner can always open their own private tile
     if (!$isTileVisible && $user && isset($row['user_id']) && (int)$row['user_id'] === (int)$user['id']) {
@@ -1361,8 +1408,13 @@ function handleGetTile($tileId) {
     $canView = true; // Default: everyone can view (unless explicitly denied)
     $canEdit = false; // Default: no edit access (unless explicitly granted)
     $canDelete = false; // Default: no delete access (unless explicitly granted)
-    
-    if ($user) {
+
+    if ($isRecycledRow) {
+        // Recycle Bin review is read-only: never expose edit rights for a deleted space.
+        $canView = true;
+        $canEdit = false;
+        $canDelete = true; // admin/owner may restore or purge it from the recycle bin
+    } elseif ($user) {
         // Admins have full access to everything
         if ($user['is_admin']) {
             $canView = true;
@@ -1415,7 +1467,11 @@ function handleGetTile($tileId) {
         $shareCountStmt->execute([$row['id']]);
         $shareCount = (int)$shareCountStmt->fetchColumn();
     }
-    
+
+    // Archived-space banner: who moved this space to the Archive (authenticated viewers only).
+    $archivedById = !empty($row['archived_by']) ? (int)$row['archived_by'] : null;
+    $archivedByName = $user ? tileArchiverDisplayName($db, $row) : null;
+
     // Load tile decoration fields
     $tileGradientColors = null;
     if (isset($row['tile_gradient_colors']) && $row['tile_gradient_colors']) {
@@ -1454,6 +1510,10 @@ function handleGetTile($tileId) {
         'canView' => $canView,
         'canEdit' => $canEdit,
         'canDelete' => $canDelete,
+        'deletedAt' => $isRecycledRow ? (int)$row['deleted_at'] : null,
+        'archivedAt' => !empty($row['archived_at']) ? (int)$row['archived_at'] : null,
+        'archivedBy' => $user ? $archivedById : null,
+        'archivedByName' => $user ? $archivedByName : null,
         'hasRoleAccess' => $hasRoleAccess,
         'visibleFrom' => $row['visible_from'] ?? null,
         'expiresAt' => $row['expires_at'] ?? null,
@@ -3939,9 +3999,9 @@ function handleArchiveCategory($categoryName) {
     
     $db->beginTransaction();
     try {
-        $updateStmt = $db->prepare('UPDATE tiles SET archived_at = ? WHERE id = ? AND deleted_at IS NULL AND archived_at IS NULL');
+        $updateStmt = $db->prepare('UPDATE tiles SET archived_at = ?, archived_by = ?, archived_by_username = ? WHERE id = ? AND deleted_at IS NULL AND archived_at IS NULL');
         foreach ($tiles as $tile) {
-            $updateStmt->execute([$currentTime, $tile['id']]);
+            $updateStmt->execute([$currentTime, (int)$user['id'], (string)($user['username'] ?? ''), $tile['id']]);
             $archivedCount++;
         }
         
@@ -4006,7 +4066,7 @@ function handleUnarchiveCategory($categoryName) {
     
     $db->beginTransaction();
     try {
-        $updateStmt = $db->prepare('UPDATE tiles SET archived_at = NULL WHERE id = ? AND archived_at IS NOT NULL AND deleted_at IS NULL');
+        $updateStmt = $db->prepare('UPDATE tiles SET archived_at = NULL, archived_by = NULL, archived_by_username = NULL WHERE id = ? AND archived_at IS NOT NULL AND deleted_at IS NULL');
         foreach ($tiles as $tile) {
             $updateStmt->execute([$tile['id']]);
             $unarchivedCount++;
@@ -5122,7 +5182,7 @@ function handleArchiveTile($tileId) {
     $db = getDB();
     
     // Verify tile exists and is not already archived or deleted
-    $checkStmt = $db->prepare('SELECT id, user_id FROM tiles WHERE id = ? AND deleted_at IS NULL AND archived_at IS NULL');
+    $checkStmt = $db->prepare('SELECT id, user_id, title FROM tiles WHERE id = ? AND deleted_at IS NULL AND archived_at IS NULL');
     $checkStmt->execute([$tileId]);
     $tile = $checkStmt->fetch();
     
@@ -5137,17 +5197,29 @@ function handleArchiveTile($tileId) {
         return;
     }
     
-    // Archive tile by setting archived_at timestamp
+    // Archive the tile: record when it happened and who did it (shown in the Archived banner)
     try {
-        $stmt = $db->prepare('UPDATE tiles SET archived_at = ? WHERE id = ?');
-        $result = $stmt->execute([time(), $tileId]);
-        
+        $stmt = $db->prepare('UPDATE tiles SET archived_at = ?, archived_by = ?, archived_by_username = ? WHERE id = ?');
+        $result = $stmt->execute([
+            time(),
+            (int)$user['id'],
+            (string)($user['username'] ?? ''),
+            $tileId,
+        ]);
+
         if (!$result) {
             error_log('Failed to archive tile: ' . json_encode($stmt->errorInfo()));
             sendJSON(['error' => 'Failed to archive tile', 'details' => 'Database update failed'], 500);
             return;
         }
-        
+
+        logUserAudit('space.archived', [
+            'details' => [
+                'tile_id' => $tileId,
+                'title' => (string)($tile['title'] ?? ''),
+            ],
+        ]);
+
         invalidateGuestTilesListCache();
         sendJSON(['success' => true, 'message' => 'Tile archived successfully']);
     } catch (PDOException $e) {
@@ -5161,7 +5233,7 @@ function handleUnarchiveTile($tileId) {
     $db = getDB();
     
     // Verify tile exists and is archived
-    $checkStmt = $db->prepare('SELECT id, user_id FROM tiles WHERE id = ? AND archived_at IS NOT NULL AND deleted_at IS NULL');
+    $checkStmt = $db->prepare('SELECT id, user_id, title FROM tiles WHERE id = ? AND archived_at IS NOT NULL AND deleted_at IS NULL');
     $checkStmt->execute([$tileId]);
     $tile = $checkStmt->fetch();
     
@@ -5188,10 +5260,17 @@ function handleUnarchiveTile($tileId) {
         sendJSON(['error' => 'You do not have permission to unarchive this tile'], 403);
     }
     
-    // Unarchive tile by clearing archived_at
-    $stmt = $db->prepare('UPDATE tiles SET archived_at = NULL WHERE id = ?');
+    // Unarchive tile: clear the archive timestamp and the "archived by" actor
+    $stmt = $db->prepare('UPDATE tiles SET archived_at = NULL, archived_by = NULL, archived_by_username = NULL WHERE id = ?');
     $stmt->execute([$tileId]);
-    
+
+    logUserAudit('space.unarchived', [
+        'details' => [
+            'tile_id' => $tileId,
+            'title' => (string)($tile['title'] ?? ''),
+        ],
+    ]);
+
     invalidateGuestTilesListCache();
     sendJSON(['success' => true]);
 }
@@ -7408,6 +7487,8 @@ function handleGetTileInfo($tileId) {
             t.user_id,
             t.created_at,
             t.archived_at,
+            t.archived_by,
+            t.archived_by_username,
             t.deleted_at,
             t.visibility,
             t.source_tab,
@@ -7630,6 +7711,8 @@ function handleGetTileInfo($tileId) {
         'createdAt' => (int)$row['created_at'],
         'lastModified' => $lastModified,
         'archivedAt' => $row['archived_at'] ? (int)$row['archived_at'] : null,
+        'archivedBy' => !empty($row['archived_by']) ? (int)$row['archived_by'] : null,
+        'archivedByName' => $user ? tileArchiverDisplayName($db, $row) : null,
         'deletedAt' => $row['deleted_at'] ? (int)$row['deleted_at'] : null,
         'visibility' => $tileVisibility,
         'sourceTab' => $sourceTabLabel,

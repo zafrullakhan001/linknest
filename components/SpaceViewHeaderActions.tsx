@@ -49,6 +49,11 @@ export interface SpaceViewHeaderActionsProps {
   showHeaderActionsMenu: boolean;
   setShowHeaderActionsMenu: React.Dispatch<React.SetStateAction<boolean>>;
   headerActionsMenuRef: React.RefObject<HTMLDivElement | null>;
+  /** Opened from the Recycle Bin (soft-deleted space): read-only preview, no edit/delete actions. */
+  recycleBinMode?: boolean;
+  /** Opened an archived space: the Archive action is replaced by Unarchive. */
+  archiveMode?: boolean;
+  onUnarchive?: () => void;
 }
 
 export const SpaceViewHeaderActions: React.FC<SpaceViewHeaderActionsProps> = ({
@@ -72,6 +77,9 @@ export const SpaceViewHeaderActions: React.FC<SpaceViewHeaderActionsProps> = ({
   showHeaderActionsMenu,
   setShowHeaderActionsMenu,
   headerActionsMenuRef,
+  recycleBinMode = false,
+  archiveMode = false,
+  onUnarchive,
 }) => {
   const [showInfo, setShowInfo] = useState(false);
   const [showShare, setShowShare] = useState(false);
@@ -84,12 +92,16 @@ export const SpaceViewHeaderActions: React.FC<SpaceViewHeaderActionsProps> = ({
     setGuestFavorite(isPublicFavorite(tile.id));
   }, [tile.id]);
 
-  const canEdit = tile.canEdit === true;
+  // Recycle Bin previews are read-only: editing, archiving, deleting, sharing, cloning, favouriting
+  // and the link-health check are suppressed so a deleted space can never be modified from here.
+  const canEdit = !recycleBinMode && tile.canEdit === true;
   const canEditTile = tile.canEditTile === undefined || tile.canEditTile === true;
-  const canClone = !!(user?.is_admin || tile.canCloneTile === true);
+  const canClone = !recycleBinMode && !!(user?.is_admin || tile.canCloneTile === true);
   const canInfo = tile.canViewTileInfo !== false && (tile.canViewTileInfo === true || tile.canView === true);
   const canShare = canEdit && !tile.sharedWithMeInvitationId;
-  const canDelete = tile.canDelete === true;
+  const canDelete = !recycleBinMode && tile.canDelete === true;
+  const canFavorite = !recycleBinMode;
+  const canCheckLinks = !recycleBinMode;
   /**
    * Deleting a space that other users can still open needs an explicit decision about their
    * access. `shareCount` covers share invitations (pending + accepted); `allowedUsers` also
@@ -295,22 +307,26 @@ export const SpaceViewHeaderActions: React.FC<SpaceViewHeaderActionsProps> = ({
               />
             </div>
           )}
-          <SpaceHeaderIconButton title={favoriteTitle} label="Fav" active={isFavorited} onClick={() => void handleFavorite()}>
-            {HeaderIcons.favorite(isFavorited)}
-          </SpaceHeaderIconButton>
+          {canFavorite && (
+            <SpaceHeaderIconButton title={favoriteTitle} label="Fav" active={isFavorited} onClick={() => void handleFavorite()}>
+              {HeaderIcons.favorite(isFavorited)}
+            </SpaceHeaderIconButton>
+          )}
           {canInfo && (
             <SpaceHeaderIconButton title="Show tile information" label="Info" onClick={() => setShowInfo(true)}>
               {HeaderIcons.info}
             </SpaceHeaderIconButton>
           )}
-          <SpaceHeaderIconButton
-            title={checkingHealth ? 'Checking links…' : 'Check all links in this tile'}
-            label={checkingHealth ? 'Wait' : 'Check'}
-            disabled={checkingHealth}
-            onClick={(e) => onCheckLinks(e)}
-          >
-            {checkingHealth ? HeaderIcons.spinner : HeaderIcons.checkLinks}
-          </SpaceHeaderIconButton>
+          {canCheckLinks && (
+            <SpaceHeaderIconButton
+              title={checkingHealth ? 'Checking links…' : 'Check all links in this tile'}
+              label={checkingHealth ? 'Wait' : 'Check'}
+              disabled={checkingHealth}
+              onClick={(e) => onCheckLinks(e)}
+            >
+              {checkingHealth ? HeaderIcons.spinner : HeaderIcons.checkLinks}
+            </SpaceHeaderIconButton>
+          )}
           {canEdit && canEditTile && (
             <SpaceHeaderIconButton title="Compare & merge with another space" label="Merge" onClick={onCompare}>
               {HeaderIcons.compare}
@@ -339,8 +355,13 @@ export const SpaceViewHeaderActions: React.FC<SpaceViewHeaderActionsProps> = ({
               {HeaderIcons.clone}
             </SpaceHeaderIconButton>
           )}
-          {canDelete && (
+          {canDelete && !archiveMode && (
             <SpaceHeaderIconButton title="Archive" label="Archive" onClick={() => void handleArchive()}>
+              {HeaderIcons.archive}
+            </SpaceHeaderIconButton>
+          )}
+          {archiveMode && canDelete && onUnarchive && (
+            <SpaceHeaderIconButton title="Unarchive this space" label="Unarchive" onClick={onUnarchive}>
               {HeaderIcons.archive}
             </SpaceHeaderIconButton>
           )}
@@ -354,12 +375,12 @@ export const SpaceViewHeaderActions: React.FC<SpaceViewHeaderActionsProps> = ({
               {HeaderIcons.close}
             </SpaceHeaderIconButton>
           )}
-          {(sourceTab === 'public' || sourceTab === null) && user?.is_admin && (
+          {!recycleBinMode && (sourceTab === 'public' || sourceTab === null) && user?.is_admin && (
             <SpaceHeaderIconButton title="Move to Staging tab" label="Stage" onClick={() => void handleMoveTab('staging')}>
               {HeaderIcons.plus}
             </SpaceHeaderIconButton>
           )}
-          {sourceTab === 'staging' && user?.is_admin && (
+          {!recycleBinMode && sourceTab === 'staging' && user?.is_admin && (
             <SpaceHeaderIconButton title="Move to Public tab" label="Public" onClick={() => void handleMoveTab('public')}>
               {HeaderIcons.plus}
             </SpaceHeaderIconButton>
@@ -449,14 +470,16 @@ export const SpaceViewHeaderActions: React.FC<SpaceViewHeaderActionsProps> = ({
                     )}
 
                     <div className="space-y-1 px-2">
-                      <SpaceHeaderDrawerButton
-                        label={favoriteTitle}
-                        icon={HeaderIcons.favorite(isFavorited)}
-                        onClick={() => {
-                          closeMenu();
-                          void handleFavorite();
-                        }}
-                      />
+                      {canFavorite && (
+                        <SpaceHeaderDrawerButton
+                          label={favoriteTitle}
+                          icon={HeaderIcons.favorite(isFavorited)}
+                          onClick={() => {
+                            closeMenu();
+                            void handleFavorite();
+                          }}
+                        />
+                      )}
                       {canInfo && (
                         <SpaceHeaderDrawerButton
                           label="Space information"
@@ -495,15 +518,17 @@ export const SpaceViewHeaderActions: React.FC<SpaceViewHeaderActionsProps> = ({
                           }}
                         />
                       )}
-                      <SpaceHeaderDrawerButton
-                        label={checkingHealth ? 'Checking...' : 'Check Links'}
-                        icon={checkingHealth ? HeaderIcons.spinner : HeaderIcons.checkLinks}
-                        disabled={checkingHealth}
-                        onClick={(e) => {
-                          closeMenu();
-                          onCheckLinks(e);
-                        }}
-                      />
+                      {canCheckLinks && (
+                        <SpaceHeaderDrawerButton
+                          label={checkingHealth ? 'Checking...' : 'Check Links'}
+                          icon={checkingHealth ? HeaderIcons.spinner : HeaderIcons.checkLinks}
+                          disabled={checkingHealth}
+                          onClick={(e) => {
+                            closeMenu();
+                            onCheckLinks(e);
+                          }}
+                        />
+                      )}
                       {tile.sharedWithMeInvitationId && isAuthenticated && (
                         <SpaceHeaderDrawerButton
                           label="Remove from Private"
@@ -545,13 +570,23 @@ export const SpaceViewHeaderActions: React.FC<SpaceViewHeaderActionsProps> = ({
                           }}
                         />
                       )}
-                      {canDelete && (
+                      {canDelete && !archiveMode && (
                         <SpaceHeaderDrawerButton
                           label="Archive"
                           icon={HeaderIcons.archive}
                           onClick={() => {
                             closeMenu();
                             void handleArchive();
+                          }}
+                        />
+                      )}
+                      {archiveMode && canDelete && onUnarchive && (
+                        <SpaceHeaderDrawerButton
+                          label="Unarchive"
+                          icon={HeaderIcons.archive}
+                          onClick={() => {
+                            closeMenu();
+                            onUnarchive();
                           }}
                         />
                       )}
@@ -566,7 +601,7 @@ export const SpaceViewHeaderActions: React.FC<SpaceViewHeaderActionsProps> = ({
                           }}
                         />
                       )}
-                      {(sourceTab === 'public' || sourceTab === null) && user?.is_admin && (
+                      {!recycleBinMode && (sourceTab === 'public' || sourceTab === null) && user?.is_admin && (
                         <SpaceHeaderDrawerButton
                           label="Move to Staging"
                           icon={HeaderIcons.plus}
@@ -576,7 +611,7 @@ export const SpaceViewHeaderActions: React.FC<SpaceViewHeaderActionsProps> = ({
                           }}
                         />
                       )}
-                      {sourceTab === 'staging' && user?.is_admin && (
+                      {!recycleBinMode && sourceTab === 'staging' && user?.is_admin && (
                         <SpaceHeaderDrawerButton
                           label="Move to Public"
                           icon={HeaderIcons.plus}

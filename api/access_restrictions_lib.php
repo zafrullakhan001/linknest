@@ -1026,7 +1026,7 @@ function user_bypasses_access_restrictions(?array $user, string $tileId, PDO $db
  *
  * @return array{ok: bool, error?: string, status?: int, tile_id?: string, tile_row?: array, chain?: list<array{at: string, rules: ?array}>}
  */
-function load_access_restriction_chain(PDO $db, string $entityType, string $id): array {
+function load_access_restriction_chain(PDO $db, string $entityType, string $id, bool $includeSoftRemoved = false): array {
     $entityType = strtolower(trim($entityType));
     $id = trim($id);
     if ($id === '' || !in_array($entityType, ['tile', 'tab', 'link'], true)) {
@@ -1034,7 +1034,8 @@ function load_access_restriction_chain(PDO $db, string $entityType, string $id):
     }
 
     if ($entityType === 'tile') {
-        $stmt = $db->prepare('SELECT * FROM tiles WHERE id = ? AND deleted_at IS NULL AND archived_at IS NULL');
+        $softRemovedFilter = $includeSoftRemoved ? '' : ' AND deleted_at IS NULL AND archived_at IS NULL';
+        $stmt = $db->prepare('SELECT * FROM tiles WHERE id = ?' . $softRemovedFilter);
         $stmt->execute([$id]);
         $tile = $stmt->fetch(PDO::FETCH_ASSOC);
         if (!$tile) {
@@ -1051,11 +1052,12 @@ function load_access_restriction_chain(PDO $db, string $entityType, string $id):
     }
 
     if ($entityType === 'tab') {
+        $softRemovedFilter = $includeSoftRemoved ? '' : ' AND tiles.deleted_at IS NULL AND tiles.archived_at IS NULL';
         $stmt = $db->prepare(
             'SELECT tabs.*, tiles.id AS _tile_id
              FROM tabs
              JOIN tiles ON tiles.id = tabs.tile_id
-             WHERE tabs.id = ? AND tiles.deleted_at IS NULL AND tiles.archived_at IS NULL'
+             WHERE tabs.id = ?' . $softRemovedFilter
         );
         $stmt->execute([$id]);
         $row = $stmt->fetch(PDO::FETCH_ASSOC);
@@ -1080,13 +1082,14 @@ function load_access_restriction_chain(PDO $db, string $entityType, string $id):
         ];
     }
 
+    $softRemovedFilter = $includeSoftRemoved ? '' : ' AND tiles.deleted_at IS NULL AND tiles.archived_at IS NULL';
     $stmt = $db->prepare(
         'SELECT links.*, tabs.id AS _tab_id, tiles.id AS _tile_id
          FROM links
          JOIN sections ON sections.id = links.section_id
          JOIN tabs ON tabs.id = sections.tab_id
          JOIN tiles ON tiles.id = tabs.tile_id
-         WHERE links.id = ? AND tiles.deleted_at IS NULL AND tiles.archived_at IS NULL'
+         WHERE links.id = ?' . $softRemovedFilter
     );
     $stmt->execute([$id]);
     $row = $stmt->fetch(PDO::FETCH_ASSOC);
@@ -1117,16 +1120,41 @@ function load_access_restriction_chain(PDO $db, string $entityType, string $id):
 }
 
 /**
+ * Recycle Bin / Archive review guard: a soft-removed space may only be inspected by an
+ * admin or by the user who owns it.
+ */
+function soft_removed_tile_is_viewable_by(?array $tileRow, ?array $user): bool {
+    if (!$tileRow || !$user) {
+        return false;
+    }
+    if (empty($tileRow['deleted_at']) && empty($tileRow['archived_at'])) {
+        return false;
+    }
+    if (!empty($user['is_admin'])) {
+        return true;
+    }
+    return isset($tileRow['user_id']) && (int) $tileRow['user_id'] === (int) ($user['id'] ?? 0);
+}
+
+/**
  * @return array{allowed: bool, message?: string, reason?: string, failedAt?: string}
  */
 function evaluate_entity_access_chain(string $entityType, string $id, array $extraCtx = []): array {
     $db = getDB();
+    $user = getAuthenticatedUser();
     $loaded = load_access_restriction_chain($db, $entityType, $id);
+    if (!$loaded['ok'] && $user) {
+        // Soft-deleted / archived spaces are hidden from the strict lookup; retry for an
+        // admin or the owner so the Recycle Bin preview page and its links stay usable.
+        $relaxed = load_access_restriction_chain($db, $entityType, $id, true);
+        if ($relaxed['ok'] && soft_removed_tile_is_viewable_by($relaxed['tile_row'] ?? null, $user)) {
+            $loaded = $relaxed;
+        }
+    }
     if (!$loaded['ok']) {
         return ['allowed' => false, 'message' => $loaded['error'] ?? 'Not found', 'reason' => 'not_found'];
     }
 
-    $user = getAuthenticatedUser();
     $tileRow = $loaded['tile_row'];
     $userGroupIds = [];
     if ($user) {

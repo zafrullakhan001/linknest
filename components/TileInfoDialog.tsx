@@ -44,6 +44,8 @@ interface TileInfo {
   createdAt: number;
   lastModified: number;
   archivedAt: number | null;
+  /** Display name (or username) of the user who archived the space. */
+  archivedByName?: string | null;
   deletedAt: number | null;
   visibility: string;
   /** Which tab this tile comes from: "Public tab", "Staging tab", or "Private tab" */
@@ -1002,6 +1004,11 @@ const TileInfoView: React.FC<{
             <div>
               <div className="font-medium text-sm">{formatDate(tileInfo.archivedAt)}</div>
               <div className="text-xs text-slate-500 dark:text-slate-400">{formatRelativeTime(tileInfo.archivedAt)}</div>
+              {tileInfo.archivedByName ? (
+                <div className="text-xs text-slate-500 dark:text-slate-400">
+                  Archived by {tileInfo.archivedByName}
+                </div>
+              ) : null}
             </div>
           </InfoRow>
         )}

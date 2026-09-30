@@ -6969,11 +6969,18 @@ You may also wrap the array in an object: { "messages": [ ... ] }.
   };
 
   const handleTileClick = async (tileId: string) => {
-    const sourceList = activeTab === 'staging' ? stagingTiles : tiles;
+    // Recycle Bin cards are soft-deleted spaces: always open the read-only space preview
+    // (never launch a hyperlink/video) and never count a visit for them.
+    const isRecycleReview = activeTab === 'recycle-bin';
+    const sourceList = activeTab === 'staging'
+      ? stagingTiles
+      : isRecycleReview
+        ? recycleBinTiles
+        : tiles;
     const tile = sourceList.find(t => t.id === tileId);
     const allowed = await assertCanOpen('tile', tileId, { rules: tile?.accessRestrictions ?? null });
     if (!allowed) return;
-    if (tile?.isHyperlink && tile.hyperlinkUrl) {
+    if (!isRecycleReview && tile?.isHyperlink && tile.hyperlinkUrl) {
       // Hyperlink tiles never open TileDetail, so record the visit here
       void recordTileVisit(tile.id);
       if (tile.openInNewTab) {
@@ -6981,7 +6988,7 @@ You may also wrap the array in an object: { "messages": [ ... ] }.
       } else {
         window.location.href = tile.hyperlinkUrl;
       }
-    } else if (tile?.isVideo && tile.videoUrl) {
+    } else if (!isRecycleReview && tile?.isVideo && tile.videoUrl) {
       void recordTileVisit(tile.id);
       const isYouTubeVideo =
         tile.videoSource === 'youtube' ||

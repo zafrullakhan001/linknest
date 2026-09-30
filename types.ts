@@ -490,6 +490,8 @@ export interface Tile {
   /** Open-time HTTP restrictions (does not hide the space). Null/undefined = none. */
   accessRestrictions?: AccessRestrictions | null;
   archivedAt?: number; // Timestamp when tile was archived
+  archivedBy?: number; // User id that archived the space (shown in the Archived banner)
+  archivedByName?: string; // Display name (or username) of the user who archived the space
   browser?: string; // Browser to open links in: 'default', 'chrome', 'firefox', 'edge', 'safari', or custom browser ID
   // Tile decoration properties
   tileBackgroundColor?: string; // Background color (hex code)
