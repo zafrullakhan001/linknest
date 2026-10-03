@@ -2627,8 +2627,28 @@ function handleUpdateLinksBrowser($tileId) {
 }
 
 /**
- * Update only the sections/page entrance animation for a space (tile).
- * Avoids a full tile PUT which can clear page_animation when client payloads omit the field.
+ * Normalize an animation id from a request: null for "no animation", false when invalid.
+ *
+ * @return string|null|false
+ */
+function normalizeAnimationIdInput($raw) {
+    if ($raw === null) {
+        return null;
+    }
+    if (!is_string($raw)) {
+        return false;
+    }
+    $value = strtolower(trim($raw));
+    if ($value === '' || $value === 'none') {
+        return null;
+    }
+    return preg_match('/^[a-z0-9-]{1,64}$/', $value) === 1 ? $value : false;
+}
+
+/**
+ * Update only the sections (page_animation) and/or default links (links_animation)
+ * entrance animation for a space. Only fields present in the request are written, so
+ * a full tile PUT is not needed and the other column is never cleared by accident.
  */
 function handleUpdatePageAnimation($tileId) {
     $user = requireAuth();
@@ -2649,18 +2669,51 @@ function handleUpdatePageAnimation($tileId) {
         return;
     }
 
-    $raw = $data['pageAnimation'] ?? $data['page_animation'] ?? null;
-    $pageAnimation = null;
-    if (is_string($raw) && $raw !== '' && strtolower($raw) !== 'none') {
-        $pageAnimation = $raw;
+    if (!is_array($data)) {
+        sendJSON(['error' => 'Invalid request body'], 400);
+        return;
     }
 
-    $stmt = $db->prepare('UPDATE tiles SET page_animation = ? WHERE id = ?');
-    $stmt->execute([$pageAnimation, $tileId]);
+    $fields = [
+        'pageAnimation' => ['page_animation', ['pageAnimation', 'page_animation']],
+        'linksAnimation' => ['links_animation', ['linksAnimation', 'links_animation']],
+    ];
+    $sets = [];
+    $params = [];
+    foreach ($fields as $label => [$column, $keys]) {
+        foreach ($keys as $key) {
+            if (!array_key_exists($key, $data)) {
+                continue;
+            }
+            $value = normalizeAnimationIdInput($data[$key]);
+            if ($value === false) {
+                sendJSON(['error' => "Invalid {$label}"], 400);
+                return;
+            }
+            $sets[] = "{$column} = ?";
+            $params[] = $value;
+            break;
+        }
+    }
+
+    if (!$sets) {
+        sendJSON(['error' => 'Nothing to update: send pageAnimation and/or linksAnimation'], 400);
+        return;
+    }
+
+    $params[] = $tileId;
+    $stmt = $db->prepare('UPDATE tiles SET ' . implode(', ', $sets) . ' WHERE id = ?');
+    $stmt->execute($params);
+    invalidateGuestTilesListCache();
+
+    $rowStmt = $db->prepare('SELECT page_animation, links_animation FROM tiles WHERE id = ?');
+    $rowStmt->execute([$tileId]);
+    $row = $rowStmt->fetch() ?: [];
 
     sendJSON([
         'success' => true,
-        'pageAnimation' => $pageAnimation,
+        'pageAnimation' => $row['page_animation'] ?? null,
+        'linksAnimation' => $row['links_animation'] ?? null,
     ]);
 }
 

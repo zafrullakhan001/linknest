@@ -528,6 +528,14 @@ interface TileAnimationSelectorProps {
     onOpenChange?: (open: boolean) => void;
     /** Hide the trigger button (use with controlled `open` from an external control). */
     hideTrigger?: boolean;
+    /** Elements whose animation the Replay button restarts (defaults by `persistGlobal`). */
+    replaySelector?: string;
+    /** Extra Replay action, e.g. restarting one-shot section entrance animations. */
+    onReplay?: () => void;
+    /** Space default link animation, edited on a second "Links" tab. */
+    linksValue?: TileAnimation;
+    /** Passing this shows the Sections / Links tabs. */
+    onLinksAnimationChange?: (animation: TileAnimation) => void;
 }
 
 export const TileAnimationSelector: React.FC<TileAnimationSelectorProps> = ({
@@ -544,12 +552,16 @@ export const TileAnimationSelector: React.FC<TileAnimationSelectorProps> = ({
     open,
     onOpenChange,
     hideTrigger = false,
+    replaySelector,
+    onReplay,
+    linksValue,
+    onLinksAnimationChange,
 }) => {
     const [selectedAnimation, setSelectedAnimation] = useState<TileAnimation>(
         value || (includeInherit ? 'inherit' : DEFAULT_TILE_ANIMATION)
     );
     const [selectedDecoration, setSelectedDecoration] = useState<TileDecoration>('none');
-    const [activeTab, setActiveTab] = useState<'animations' | 'decorations'>('animations');
+    const [activeTab, setActiveTab] = useState<'animations' | 'decorations' | 'links'>('animations');
     const [uncontrolledOpen, setUncontrolledOpen] = useState(false);
     const isControlled = open !== undefined;
     const isOpen = isControlled ? open : uncontrolledOpen;
@@ -717,34 +729,59 @@ export const TileAnimationSelector: React.FC<TileAnimationSelectorProps> = ({
         return () => window.removeEventListener('keydown', onKeyDown, true);
     }, [isOpen]);
 
-    const handleDragHeaderMouseDown = (e: React.MouseEvent<HTMLDivElement>) => {
+    const dragStartRef = useRef<{ x: number; y: number; moved: boolean } | null>(null);
+    /** Set after a real drag so the click that ends it does not also switch tabs. */
+    const suppressClickRef = useRef(false);
+
+    const handleDragHeaderPointerDown = (e: React.PointerEvent<HTMLDivElement>) => {
         // Allow dragging from tab buttons and empty header chrome so the panel is always movable
+        if (e.button !== 0) return;
         if ((e.target as HTMLElement).closest('input, textarea, a')) return;
+        dragStartRef.current = { x: e.clientX, y: e.clientY, moved: false };
         setDragOffset({
             x: e.clientX - dropdownPosition.left,
             y: e.clientY - dropdownPosition.top,
         });
         setIsDragging(true);
-        e.preventDefault();
     };
 
     useEffect(() => {
         if (!isDragging) return;
-        const handleMouseMove = (e: MouseEvent) => {
+        const handlePointerMove = (e: PointerEvent) => {
+            const start = dragStartRef.current;
+            if (start && !start.moved) {
+                if (Math.hypot(e.clientX - start.x, e.clientY - start.y) < 4) return;
+                start.moved = true;
+                suppressClickRef.current = true;
+            }
             const panelWidth = panelRef.current?.offsetWidth ?? Math.min(360, window.innerWidth - 32);
             const panelHeight = panelRef.current?.offsetHeight ?? Math.min(520, window.innerHeight - 32);
             const left = Math.max(8, Math.min(e.clientX - dragOffset.x, window.innerWidth - panelWidth - 8));
             const top = Math.max(8, Math.min(e.clientY - dragOffset.y, window.innerHeight - panelHeight - 8));
             setDropdownPosition({ top, left });
         };
-        const handleMouseUp = () => setIsDragging(false);
-        window.addEventListener('mousemove', handleMouseMove);
-        window.addEventListener('mouseup', handleMouseUp);
+        const handlePointerUp = () => {
+            setIsDragging(false);
+            dragStartRef.current = null;
+            if (suppressClickRef.current) {
+                setTimeout(() => { suppressClickRef.current = false; }, 0);
+            }
+        };
+        window.addEventListener('pointermove', handlePointerMove);
+        window.addEventListener('pointerup', handlePointerUp);
+        window.addEventListener('pointercancel', handlePointerUp);
         return () => {
-            window.removeEventListener('mousemove', handleMouseMove);
-            window.removeEventListener('mouseup', handleMouseUp);
+            window.removeEventListener('pointermove', handlePointerMove);
+            window.removeEventListener('pointerup', handlePointerUp);
+            window.removeEventListener('pointercancel', handlePointerUp);
         };
     }, [isDragging, dragOffset]);
+
+    const selectTab = (tab: 'animations' | 'decorations' | 'links') => {
+        if (suppressClickRef.current) return;
+        setActiveTab(tab);
+        setPreviewKey((k) => k + 1);
+    };
 
     const handleAnimationSelect = async (animation: TileAnimation) => {
         setSelectedAnimation(animation);
@@ -805,6 +842,55 @@ export const TileAnimationSelector: React.FC<TileAnimationSelectorProps> = ({
     const selectedAnimationOption = allAnimationOptions.find(opt => opt.id === selectedAnimation) || allAnimationOptions[0];
     const selectedDecorationOption = DECORATION_OPTIONS.find(opt => opt.id === selectedDecoration) || DECORATION_OPTIONS[0];
 
+    const hasLinksTab = !!onLinksAnimationChange;
+    const onLinksTab = hasLinksTab && activeTab === 'links';
+    const linksSelected: TileAnimation = isTileAnimationId(linksValue) ? linksValue : 'none';
+    /** Animation shown as selected / previewed for the active tab. */
+    const shownAnimation: TileAnimation = onLinksTab ? linksSelected : selectedAnimation;
+    const shownAnimationOption = onLinksTab ? getAnimationOption(linksSelected) : selectedAnimationOption;
+    /** "#67 Stretch Ver" — same number shown on the option cards in the grid. */
+    const animationLabel = (animation: TileAnimation) => {
+        const index = allAnimationOptions.findIndex((opt) => opt.id === animation);
+        const name = getAnimationOption(animation).name;
+        return index >= 0 ? `#${index + 1} ${name}` : name;
+    };
+    const restartAnimations = (selector: string) => {
+        document.querySelectorAll<HTMLElement>(selector).forEach((element) => {
+            element.style.animationName = 'none';
+            void element.offsetWidth;
+            element.style.animationName = '';
+        });
+    };
+    const playBoth = () => {
+        replayPreview();
+        restartAnimations(replaySelector ?? '.linknest-content-section');
+        restartAnimations('.linknest-content-link');
+        onReplay?.();
+    };
+    const optionsGridRef = useRef<HTMLDivElement>(null);
+
+    // Space dialog: play the current sections + links animations on the page as soon as it opens
+    useEffect(() => {
+        if (!isOpen || !hasLinksTab) return;
+        const timer = window.setTimeout(playBoth, 150);
+        return () => window.clearTimeout(timer);
+        // eslint-disable-next-line react-hooks/exhaustive-deps
+    }, [isOpen, hasLinksTab]);
+
+    // Bring the selected option into view when the dialog opens or the tab changes
+    useEffect(() => {
+        if (!isOpen) return;
+        const frame = window.requestAnimationFrame(() => {
+            optionsGridRef.current
+                ?.querySelector<HTMLElement>('[data-selected="true"]')
+                ?.scrollIntoView({ block: 'center' });
+        });
+        return () => window.cancelAnimationFrame(frame);
+    }, [isOpen, activeTab]);
+
+    const tabActiveClass = 'text-brand-600 border-b-2 border-brand-500 bg-brand-50/50 dark:bg-brand-500/5';
+    const tabIdleClass = 'text-slate-500 hover:text-slate-700 hover:bg-slate-50 dark:hover:bg-slate-900';
+
     return (
         <>
             {/* Trigger Button */}
@@ -864,48 +950,73 @@ export const TileAnimationSelector: React.FC<TileAnimationSelectorProps> = ({
                         onMouseDown={(e) => e.stopPropagation()}
                         onClick={(e) => e.stopPropagation()}
                     >
-                        {/* Tabs */}
-                        <div className="flex border-b border-slate-200 dark:border-slate-700 shrink-0">
-                            <button
-                                onClick={() => setActiveTab('animations')}
-                                className={`${animationsOnly ? 'w-full' : 'flex-1'} py-3 text-xs font-bold uppercase tracking-wider transition-colors ${activeTab === 'animations'
-                                    ? 'text-brand-600 border-b-2 border-brand-500 bg-brand-50/50 dark:bg-brand-500/5'
-                                    : 'text-slate-500 hover:text-slate-700 hover:bg-slate-50 dark:hover:bg-slate-900'
-                                    }`}
-                            >
-                                ✨ Animations ({ANIMATION_OPTIONS.length})
-                            </button>
-                            {!animationsOnly && (
-                                <button
-                                    onClick={() => setActiveTab('decorations')}
-                                    className={`flex-1 py-3 text-xs font-bold uppercase tracking-wider transition-colors ${activeTab === 'decorations'
-                                        ? 'text-brand-600 border-b-2 border-brand-500 bg-brand-50/50 dark:bg-brand-500/5'
-                                        : 'text-slate-500 hover:text-slate-700 hover:bg-slate-50 dark:hover:bg-slate-900'
-                                        }`}
-                                >
-                                    🎄 Festive ({DECORATION_OPTIONS.length})
-                                </button>
+                        {/* Tabs — title bar, also a drag handle */}
+                        <div
+                            onPointerDown={handleDragHeaderPointerDown}
+                            className={`flex border-b border-slate-200 dark:border-slate-700 shrink-0 select-none touch-none ${isDragging ? 'cursor-grabbing' : 'cursor-grab'}`}
+                            title="Drag to move"
+                        >
+                            {hasLinksTab ? (
+                                <>
+                                    <button
+                                        type="button"
+                                        onClick={() => selectTab('animations')}
+                                        className={`flex-1 py-3 text-xs font-bold uppercase tracking-wider transition-colors cursor-[inherit] ${activeTab !== 'links' ? tabActiveClass : tabIdleClass}`}
+                                        title="Animation for whole link sections on this page"
+                                    >
+                                        ✨ Sections
+                                    </button>
+                                    <button
+                                        type="button"
+                                        onClick={() => selectTab('links')}
+                                        className={`flex-1 py-3 text-xs font-bold uppercase tracking-wider transition-colors cursor-[inherit] ${activeTab === 'links' ? tabActiveClass : tabIdleClass}`}
+                                        title="Default animation for every link in this space"
+                                    >
+                                        🔗 Links
+                                    </button>
+                                </>
+                            ) : (
+                                <>
+                                    <button
+                                        type="button"
+                                        onClick={() => selectTab('animations')}
+                                        className={`${animationsOnly ? 'w-full' : 'flex-1'} py-3 text-xs font-bold uppercase tracking-wider transition-colors cursor-[inherit] ${activeTab === 'animations' ? tabActiveClass : tabIdleClass}`}
+                                    >
+                                        ✨ Animations ({ANIMATION_OPTIONS.length})
+                                    </button>
+                                    {!animationsOnly && (
+                                        <button
+                                            type="button"
+                                            onClick={() => selectTab('decorations')}
+                                            className={`flex-1 py-3 text-xs font-bold uppercase tracking-wider transition-colors cursor-[inherit] ${activeTab === 'decorations' ? tabActiveClass : tabIdleClass}`}
+                                        >
+                                            🎄 Festive ({DECORATION_OPTIONS.length})
+                                        </button>
+                                    )}
+                                </>
                             )}
                         </div>
 
                         {/* Search & Header — drag handle */}
                         <div
-                            onMouseDown={handleDragHeaderMouseDown}
+                            onPointerDown={handleDragHeaderPointerDown}
                             className={`p-3 bg-slate-50 dark:bg-slate-900 border-b border-slate-200 dark:border-slate-700 shrink-0 select-none ${isDragging ? 'cursor-grabbing' : 'cursor-grab'}`}
                             title="Drag to move"
                         >
                             <div className="flex items-center justify-between mb-2">
                                 <span className="text-[10px] font-black uppercase tracking-tighter text-brand-600 dark:text-brand-400">
-                                    {scopeLabel || (persistGlobal ? 'Global Visual Engine' : 'Link Animation')}
+                                    {onLinksTab ? 'LINKS ANIMATION' : (scopeLabel || (persistGlobal ? 'Global Visual Engine' : 'Link Animation'))}
                                 </span>
                                 <span className="text-[9px] font-bold text-slate-400 bg-slate-200 dark:bg-slate-700 px-1.5 py-0.5 rounded-full">
-                                    {scopeHint || (persistGlobal ? 'Affects Tiles & Monitoring' : 'This link only')}
+                                    {onLinksTab
+                                        ? 'Default for all links; each link can override'
+                                        : (scopeHint || (persistGlobal ? 'Affects Tiles & Monitoring' : 'This link only'))}
                                 </span>
                             </div>
                             <div className="relative">
                                 <input
                                     type="text"
-                                    placeholder={`Search ${activeTab === 'animations' ? 'animations' : 'decorations'}...`}
+                                    placeholder={`Search ${activeTab === 'decorations' ? 'decorations' : 'animations'}...`}
                                     value={searchQuery}
                                     onChange={(e) => setSearchQuery(e.target.value)}
                                     className="w-full px-3 py-1.5 pl-8 text-xs bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-md focus:outline-none focus:ring-1 focus:ring-brand-500"
@@ -921,7 +1032,59 @@ export const TileAnimationSelector: React.FC<TileAnimationSelectorProps> = ({
                                 </svg>
                             </div>
 
-                            {/* Sample link — live entrance animation preview */}
+                            {hasLinksTab ? (
+                            <div
+                                className="mt-2 rounded-lg border border-dashed border-slate-200 dark:border-slate-600 bg-white/80 dark:bg-slate-800/60 p-2"
+                                onMouseDown={(e) => e.stopPropagation()}
+                            >
+                                <div className="flex items-center justify-between mb-1.5">
+                                    <span className="text-[9px] font-bold text-slate-400 uppercase tracking-wider">Current on this space</span>
+                                    <button
+                                        type="button"
+                                        onClick={playBoth}
+                                        className="text-[9px] font-bold uppercase tracking-wider text-brand-600 dark:text-brand-400 hover:underline"
+                                        title="Play the sections and links animations together on the page"
+                                    >
+                                        Play both
+                                    </button>
+                                </div>
+                                <div className="grid grid-cols-2 gap-2">
+                                    {([
+                                        { tab: 'animations', name: 'Sections', icon: '✨', anim: selectedAnimation },
+                                        { tab: 'links', name: 'Links', icon: '🔗', anim: linksSelected },
+                                    ] as const).map(({ tab, name, icon, anim }) => {
+                                        const option = getAnimationOption(anim);
+                                        const active = (tab === 'links') === onLinksTab;
+                                        return (
+                                            <button
+                                                key={tab}
+                                                type="button"
+                                                onClick={() => selectTab(tab)}
+                                                className={`min-w-0 text-left rounded-lg border-2 p-1.5 transition-colors cursor-pointer ${active
+                                                    ? 'border-brand-500 bg-brand-50/60 dark:bg-brand-500/10'
+                                                    : 'border-transparent bg-slate-50 dark:bg-slate-900 hover:border-slate-300 dark:hover:border-slate-600'}`}
+                                                title={`${name} animation: ${animationLabel(anim)}${active ? '' : ' (click to change)'}`}
+                                            >
+                                                <div className="flex items-center justify-between gap-1 mb-1 text-[9px] font-bold uppercase tracking-wider">
+                                                    <span className="text-slate-500 dark:text-slate-400 truncate">{icon} {name}</span>
+                                                    {active && <span className="text-brand-600 dark:text-brand-400 shrink-0">Editing</span>}
+                                                </div>
+                                                <div className="overflow-hidden rounded-md">
+                                                    <div
+                                                        key={`${tab}-${previewKey}`}
+                                                        className={`flex items-center gap-1.5 rounded-md bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 px-1.5 py-1 shadow-sm ${getTileAnimationClass(anim)}`}
+                                                    >
+                                                        <span className="text-sm leading-none select-none">{option.icon}</span>
+                                                        <span className="text-[11px] font-semibold text-slate-700 dark:text-slate-200 truncate">{animationLabel(anim)}</span>
+                                                    </div>
+                                                </div>
+                                            </button>
+                                        );
+                                    })}
+                                </div>
+                            </div>
+                            ) : (
+                            /* Sample link — live entrance animation preview */
                             <div
                                 className="mt-2 overflow-hidden rounded-lg border border-dashed border-slate-200 dark:border-slate-600 bg-white/80 dark:bg-slate-800/60 p-2"
                                 onMouseDown={(e) => e.stopPropagation()}
@@ -943,44 +1106,51 @@ export const TileAnimationSelector: React.FC<TileAnimationSelectorProps> = ({
                                             linknest-anim-preview-link flex items-center gap-2 rounded-lg
                                             bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700
                                             px-2.5 py-2 shadow-sm
-                                            ${getTileAnimationClass(selectedAnimation)}
+                                            ${getTileAnimationClass(shownAnimation)}
                                             ${!animationsOnly ? getTileDecorationClass(selectedDecoration) : ''}
                                         `}
                                     >
                                         <div className="w-8 h-8 rounded-lg bg-brand-500/15 text-brand-600 dark:text-brand-400 flex items-center justify-center text-sm shrink-0 select-none">
-                                            {selectedAnimationOption.icon}
+                                            {shownAnimationOption.icon}
                                         </div>
                                         <div className="min-w-0 flex-1">
                                             <div className="text-xs font-semibold text-slate-700 dark:text-slate-200 truncate">
                                                 Sample Link
                                             </div>
                                             <div className="text-[10px] text-slate-400 dark:text-slate-500 truncate">
-                                                {selectedAnimation === 'none' || selectedAnimation === 'inherit'
-                                                    ? selectedAnimationOption.description
+                                                {shownAnimation === 'none' || shownAnimation === 'inherit'
+                                                    ? shownAnimationOption.description
                                                     : 'example.com/link'}
                                             </div>
                                         </div>
                                     </div>
                                 </div>
                             </div>
+                            )}
                         </div>
 
                         {/* Options Grid — scrolls; footer stays pinned */}
-                        <div className="flex-1 min-h-0 overflow-y-auto p-2">
-                            {(animationsOnly || activeTab === 'animations') ? (
+                        <div ref={optionsGridRef} className="flex-1 min-h-0 overflow-y-auto p-2">
+                            {(animationsOnly || activeTab !== 'decorations') ? (
                                 <div className="grid grid-cols-2 gap-2">
                                     {filteredAnimations.map((option) => (
                                         <button
                                             key={option.id}
                                             type="button"
+                                            data-selected={shownAnimation === option.id}
                                             onClick={(e) => {
                                                 e.preventDefault();
                                                 e.stopPropagation();
+                                                if (onLinksTab) {
+                                                    setPreviewKey((k) => k + 1);
+                                                    onLinksAnimationChange?.(option.id);
+                                                    return;
+                                                }
                                                 void handleAnimationSelect(option.id);
                                             }}
                                             className={`
                         p-3 rounded-lg text-left transition-all relative
-                        ${selectedAnimation === option.id
+                        ${shownAnimation === option.id
                                                     ? 'bg-brand-50 dark:bg-brand-500/10 border-2 border-brand-500 shadow-sm'
                                                     : 'bg-slate-50 dark:bg-slate-900 border-2 border-transparent hover:border-slate-300 dark:hover:border-slate-600'
                                                 }
@@ -1007,6 +1177,7 @@ export const TileAnimationSelector: React.FC<TileAnimationSelectorProps> = ({
                                         <button
                                             key={option.id}
                                             type="button"
+                                            data-selected={selectedDecoration === option.id}
                                             onClick={(e) => {
                                                 e.preventDefault();
                                                 e.stopPropagation();
@@ -1040,27 +1211,51 @@ export const TileAnimationSelector: React.FC<TileAnimationSelectorProps> = ({
 
                         {/* Footer / Actions */}
                         <div className="p-3 border-t border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-900 shrink-0">
-                            <div className="flex items-center justify-between">
-                                <div className="flex flex-col">
+                            <div className="flex items-center justify-between gap-2">
+                                <div className="flex flex-col min-w-0">
                                     <span className="text-[10px] font-bold text-slate-400 uppercase tracking-wider">Preview Active</span>
-                                    <span className="text-[10px] text-slate-500">
-                                        #{selectedAnimationOption.name}{persistGlobal && !animationsOnly ? ` + ${selectedDecorationOption.name}` : ''}
-                                    </span>
+                                    {hasLinksTab ? (
+                                        <>
+                                            <span className={`text-[10px] truncate ${onLinksTab ? 'text-slate-500' : 'text-slate-700 dark:text-slate-200 font-semibold'}`}>
+                                                Sections: {animationLabel(selectedAnimation)}
+                                            </span>
+                                            <span className={`text-[10px] truncate ${onLinksTab ? 'text-slate-700 dark:text-slate-200 font-semibold' : 'text-slate-500'}`}>
+                                                Links: {animationLabel(linksSelected)}
+                                            </span>
+                                        </>
+                                    ) : (
+                                        <span className="text-[10px] text-slate-500">
+                                            #{shownAnimationOption.name}{persistGlobal && !animationsOnly ? ` + ${selectedDecorationOption.name}` : ''}
+                                        </span>
+                                    )}
                                 </div>
-                                <div className="flex items-center gap-2">
+                                <div className="flex items-center gap-1.5 shrink-0">
+                                    {hasLinksTab && (
+                                        <button
+                                            type="button"
+                                            onClick={playBoth}
+                                            className="inline-flex items-center gap-1 px-2.5 py-1.5 text-xs font-semibold text-brand-700 dark:text-brand-300 bg-brand-50 dark:bg-brand-500/10 hover:bg-brand-100 dark:hover:bg-brand-500/20 border border-brand-200 dark:border-brand-500/30 rounded-md transition-colors"
+                                            title="Play the sections and links animations together on the page"
+                                        >
+                                            <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor" className="w-3.5 h-3.5" aria-hidden>
+                                                <path d="M6.3 2.84A1.5 1.5 0 0 0 4 4.11v11.78a1.5 1.5 0 0 0 2.3 1.27l9.34-5.89a1.5 1.5 0 0 0 0-2.54L6.3 2.84Z" />
+                                            </svg>
+                                            Play both
+                                        </button>
+                                    )}
                                     <button
                                         type="button"
                                         onClick={() => {
                                             replayPreview();
-                                            const selector = persistGlobal ? '.linknest-tile-animated' : '.linknest-content-link';
-                                            const tiles = document.querySelectorAll(selector);
-                                            tiles.forEach((tile) => {
-                                                const element = tile as HTMLElement;
-                                                element.style.animation = 'none';
-                                                setTimeout(() => { element.style.animation = ''; }, 10);
-                                            });
+                                            restartAnimations(
+                                                onLinksTab
+                                                    ? '.linknest-content-link'
+                                                    : replaySelector ?? (persistGlobal ? '.linknest-tile-animated' : '.linknest-content-link')
+                                            );
+                                            if (!onLinksTab) onReplay?.();
                                         }}
-                                        className="px-3 py-1.5 text-xs font-medium text-brand-600 dark:text-brand-400 hover:bg-brand-50 dark:hover:bg-brand-500/10 rounded-md transition-colors"
+                                        className="px-2.5 py-1.5 text-xs font-medium text-brand-600 dark:text-brand-400 hover:bg-brand-50 dark:hover:bg-brand-500/10 rounded-md transition-colors"
+                                        title={hasLinksTab ? `Replay only the ${onLinksTab ? 'links' : 'sections'} animation` : undefined}
                                     >
                                         Replay
                                     </button>
@@ -1150,6 +1345,31 @@ export const useTileAnimation = () => {
 export const getTileAnimationClass = (animation: TileAnimation): string => {
     if (animation === 'none' || animation === 'inherit') return '';
     return `tile-anim-${animation}`;
+};
+
+const animationDurationCache = new Map<string, number>();
+
+/** Longest animation-duration (ms) of a CSS animation class, read from the loaded stylesheets once. */
+export const getAnimationClassDurationMs = (className: string): number => {
+    if (!className || typeof document === 'undefined') return 0;
+    const cached = animationDurationCache.get(className);
+    if (cached !== undefined) return cached;
+    const probe = document.createElement('div');
+    probe.className = className;
+    probe.style.cssText = 'position:absolute;visibility:hidden;pointer-events:none';
+    document.body.appendChild(probe);
+    const style = getComputedStyle(probe);
+    const hasAnimation = !!style.animationName && style.animationName !== 'none';
+    const ms = hasAnimation
+        ? Math.max(0, ...style.animationDuration.split(',').map((part) => {
+            const value = parseFloat(part);
+            if (!Number.isFinite(value)) return 0;
+            return part.trim().endsWith('ms') ? value : value * 1000;
+        }))
+        : 0;
+    probe.remove();
+    animationDurationCache.set(className, ms);
+    return ms;
 };
 
 export const getTileDecorationClass = (decoration: TileDecoration): string => {

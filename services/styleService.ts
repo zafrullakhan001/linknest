@@ -2762,7 +2762,7 @@ function generateContentPageCSS(styles: SpaceStyles, isDark: boolean): string {
       display: grid !important;
       width: 100% !important;
       /* Default: auto-fit for side-by-side view */
-      grid-template-columns: repeat(auto-fit, minmax(380px, 1fr)) !important;
+      grid-template-columns: repeat(auto-fit, minmax(min(100%, 380px), 1fr)) !important;
     }
     
     .linknest-content-link-grid > * {
@@ -2782,7 +2782,7 @@ function generateContentPageCSS(styles: SpaceStyles, isDark: boolean): string {
       }
       /* Side-by-side view: adjust minmax for better fit */
       [data-view-layout="side-by-side"] .linknest-content-link-grid {
-        grid-template-columns: repeat(auto-fit, minmax(380px, 1fr)) !important;
+        grid-template-columns: repeat(auto-fit, minmax(min(100%, 380px), 1fr)) !important;
       }
     }
     
@@ -2791,7 +2791,7 @@ function generateContentPageCSS(styles: SpaceStyles, isDark: boolean): string {
         grid-template-columns: repeat(${styles.contentGridColumns.md || 2}, minmax(0, 1fr)) !important;
       }
       [data-view-layout="side-by-side"] .linknest-content-link-grid {
-        grid-template-columns: repeat(auto-fit, minmax(400px, 1fr)) !important;
+        grid-template-columns: repeat(auto-fit, minmax(min(100%, 400px), 1fr)) !important;
       }
     }
     
@@ -2800,7 +2800,7 @@ function generateContentPageCSS(styles: SpaceStyles, isDark: boolean): string {
         grid-template-columns: repeat(${styles.contentGridColumns.lg || 3}, minmax(0, 1fr)) !important;
       }
       [data-view-layout="side-by-side"] .linknest-content-link-grid {
-        grid-template-columns: repeat(auto-fit, minmax(420px, 1fr)) !important;
+        grid-template-columns: repeat(auto-fit, minmax(min(100%, 420px), 1fr)) !important;
       }
     }
     
@@ -2809,7 +2809,7 @@ function generateContentPageCSS(styles: SpaceStyles, isDark: boolean): string {
         grid-template-columns: repeat(${styles.contentGridColumns.xl || 4}, minmax(0, 1fr)) !important;
       }
       [data-view-layout="side-by-side"] .linknest-content-link-grid {
-        grid-template-columns: repeat(auto-fit, minmax(450px, 1fr)) !important;
+        grid-template-columns: repeat(auto-fit, minmax(min(100%, 450px), 1fr)) !important;
       }
     }
 

@@ -5,11 +5,19 @@ import { CSS } from '@dnd-kit/utilities';
 
 export const VIEW_SECTION_DROP_PREFIX = 'view-section-drop:';
 
+/** Window event that restarts every `entranceClassName` animation on the page. */
+export const VIEW_ENTRANCE_REPLAY_EVENT = 'linknest-replay-section-animations';
+
+export function replayViewEntranceAnimations(): void {
+  window.dispatchEvent(new Event(VIEW_ENTRANCE_REPLAY_EVENT));
+}
+
 export function viewSectionDropId(sectionId: string): string {
   return `${VIEW_SECTION_DROP_PREFIX}${sectionId}`;
 }
 
 const SOFT_TRANSITION = 'transform 220ms cubic-bezier(0.22, 1, 0.36, 1), box-shadow 180ms ease, background-color 180ms ease, opacity 160ms ease';
+const IDLE_TRANSITION = 'transform 220ms cubic-bezier(0.22, 1, 0.36, 1)';
 
 type DragHandleProps = {
   attributes: React.HTMLAttributes<HTMLElement>;
@@ -45,6 +53,11 @@ export const ViewModeSortable: React.FC<{
   layout?: 'list' | 'grid';
   /** Extra sortable data (e.g. sectionId for cross-section moves). */
   data?: Record<string, unknown>;
+  /**
+   * One-shot entrance animation class. It is removed once the animation ends so the
+   * animation's fill-mode stops owning `transform` and drag-reorder keeps working.
+   */
+  entranceClassName?: string;
   children: React.ReactNode | DragHandleRender;
 } & Omit<React.HTMLAttributes<HTMLDivElement>, 'id' | 'children' | 'style' | 'className'>> = ({
   id,
@@ -54,9 +67,39 @@ export const ViewModeSortable: React.FC<{
   style,
   layout = 'list',
   data,
+  entranceClassName,
   children,
+  onAnimationEnd,
+  onAnimationCancel,
   ...rest
 }) => {
+  const [entranceDone, setEntranceDone] = React.useState(false);
+
+  React.useEffect(() => {
+    setEntranceDone(false);
+  }, [entranceClassName]);
+
+  React.useEffect(() => {
+    if (!entranceClassName) return;
+    let frame = 0;
+    const replay = () => {
+      setEntranceDone(true);
+      cancelAnimationFrame(frame);
+      frame = requestAnimationFrame(() => {
+        frame = requestAnimationFrame(() => setEntranceDone(false));
+      });
+    };
+    window.addEventListener(VIEW_ENTRANCE_REPLAY_EVENT, replay);
+    return () => {
+      window.removeEventListener(VIEW_ENTRANCE_REPLAY_EVENT, replay);
+      cancelAnimationFrame(frame);
+    };
+  }, [entranceClassName]);
+
+  const finishEntrance = (e: React.AnimationEvent<HTMLDivElement>) => {
+    if (e.target === e.currentTarget) setEntranceDone(true);
+  };
+
   const { active, over } = useDndContext();
   const {
     attributes,
@@ -109,7 +152,7 @@ export const ViewModeSortable: React.FC<{
           willChange: 'transform',
         }
       : {
-          transition: transition ?? SOFT_TRANSITION,
+          transition: transition ?? (transform || isOverTarget ? SOFT_TRANSITION : IDLE_TRANSITION),
           zIndex: isOverTarget ? 5 : undefined,
         }),
     position: 'relative',
@@ -119,8 +162,17 @@ export const ViewModeSortable: React.FC<{
     <div
       ref={setNodeRef}
       id={htmlId}
+      onAnimationEnd={(e) => {
+        finishEntrance(e);
+        onAnimationEnd?.(e);
+      }}
+      onAnimationCancel={(e) => {
+        finishEntrance(e);
+        onAnimationCancel?.(e);
+      }}
       className={[
         className,
+        entranceClassName && !entranceDone && !isDragging ? entranceClassName : '',
         'overflow-visible',
         !isDragging ? 'transition-[box-shadow,background-color,opacity] duration-200 ease-out' : 'animate-none',
         isDragging

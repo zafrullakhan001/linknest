@@ -43,6 +43,7 @@ import {
     toggleLinkFavorite,
     createTempVersion,
     updateTilePageAnimation,
+    updateTileLinksAnimation,
     recordTileVisit,
     restoreTile,
     permanentDeleteTile,
@@ -120,7 +121,7 @@ import {
 import { VersionDiffViewer } from './VersionDiffViewer';
 import { SpaceCompareDialog } from './SpaceCompareDialog';
 import type { SpaceCompareCandidate } from './SpaceCompareDialog';
-import { TileAnimationSelector, getTileAnimationClass, TileAnimation, getAnimationOption, resolveLinkAnimation } from './TileAnimationSelector';
+import { TileAnimationSelector, getTileAnimationClass, getAnimationClassDurationMs, TileAnimation, getAnimationOption, resolveLinkAnimation } from './TileAnimationSelector';
 import { SpaceViewHeaderActions } from './SpaceViewHeaderActions';
 import { RecycleBinPreviewBanner } from './RecycleBinPreviewBanner';
 import { ArchivedSpaceBanner } from './ArchivedSpaceBanner';
@@ -154,6 +155,7 @@ import {
     ViewModeSectionDropZone,
     ViewModeSortable,
     VIEW_SECTION_DROP_PREFIX,
+    replayViewEntranceAnimations,
 } from './ViewModeSortable';
 
 type ViewLayoutMode = 'stacked' | 'side-by-side' | 'grid' | 'compact' | 'qr';
@@ -7424,9 +7426,24 @@ export const TileDetail: React.FC<TileDetailProps> = ({
                                 alert(e instanceof Error ? e.message : 'Failed to save page animation');
                             }
                         }}
+                        replaySelector=".linknest-content-section"
+                        onReplay={replayViewEntranceAnimations}
+                        linksValue={(tile.linksAnimation as TileAnimation) || 'none'}
+                        onLinksAnimationChange={async (animation) => {
+                            const next = animation && animation !== 'none' ? animation : null;
+                            const updatedTile: Tile = { ...tile, linksAnimation: next };
+                            const updatedTiles = allTiles.map(t => t.id === updatedTile.id ? updatedTile : t);
+                            try {
+                                await updateTileLinksAnimation(tile.id, next);
+                                onUpdateTiles(updatedTiles, true, false, true);
+                            } catch (e) {
+                                console.error('Failed to save links animation:', e);
+                                alert(e instanceof Error ? e.message : 'Failed to save links animation');
+                            }
+                        }}
                         scopeLabel="SECTIONS ANIMATION"
                         scopeHint="Animates whole link sections on this page"
-                        buttonTitle="Choose entrance animation for link sections"
+                        buttonTitle="Choose entrance animations for sections and links"
                     />
                 )}
                 <div className="animate-in fade-in slide-in-from-bottom-4 duration-300 min-h-[80vh] flex flex-col w-full pb-10">
@@ -8787,6 +8804,15 @@ export const TileDetail: React.FC<TileDetailProps> = ({
                                     const shouldForceStacked = section.forceStackedView === true;
                                     const sectionLinkLayout = getSectionLinkLayout(section);
                                     const isQrLayout = sectionLinkLayout === 'qr';
+                                    const sectionEntranceClass = isQrLayout
+                                        ? undefined
+                                        : tile.pageAnimation && tile.pageAnimation !== 'none'
+                                            ? getTileAnimationClass(tile.pageAnimation as TileAnimation)
+                                            : 'animate-in fade-in slide-in-from-bottom-2';
+                                    const sectionDelayMs = isQrLayout ? 0 : sectionIndex * 120;
+                                    // Links start once their section has finished arriving (capped so long effects don't stall the page)
+                                    const linksStartMs = sectionDelayMs
+                                        + Math.min(getAnimationClassDurationMs(sectionEntranceClass ?? ''), 1200);
                                     const canReorderSections = canViewReorder && filteredSections.length > 1;
                                     const resolvedLinkContainerClass =
                                         sectionLinkLayout === 'grid'
@@ -8825,17 +8851,11 @@ export const TileDetail: React.FC<TileDetailProps> = ({
                                                     : sectionLinkLayout === 'compact'
                                                         ? 'p-4'
                                                         : 'p-6'
-                                            } ${
-                                                // Do not put animate-in on the sortable root when reorder is enabled —
-                                                // animation fill-mode locks transform and hides the drag preview.
-                                                canReorderSections || isQrLayout
-                                                    ? ''
-                                                    : tile.pageAnimation && tile.pageAnimation !== 'none'
-                                                        ? getTileAnimationClass(tile.pageAnimation as TileAnimation)
-                                                        : 'animate-in fade-in slide-in-from-bottom-2'
                                             }`}
+                                            entranceClassName={sectionEntranceClass}
                                             style={{
-                                                animationDelay: isQrLayout || canReorderSections ? undefined : `${sectionIndex * 120}ms`,
+                                                animationDelay: isQrLayout ? undefined : `${sectionDelayMs}ms`,
+                                                animationFillMode: isQrLayout ? undefined : 'both',
                                                 ...(sectionSoftBg ? sectionSoftBg.cssVars : {}),
                                             }}
                                         >
@@ -9148,7 +9168,7 @@ export const TileDetail: React.FC<TileDetailProps> = ({
                                                 }
                                             >
                                                 {sortedItems.map((item, itemIndex) => {
-                                                        const animationDelay = (sectionIndex * 100) + (itemIndex * 30);
+                                                        const animationDelay = linksStartMs + Math.min(itemIndex, 15) * 40;
 
                                                         // Render rich text content
                                                         if (item.itemType === 'rich-text') {
@@ -9163,7 +9183,7 @@ export const TileDetail: React.FC<TileDetailProps> = ({
                                                                             ? 'grid'
                                                                             : 'list'
                                                                     }
-                                                                    style={{ animationDelay: `${animationDelay}ms` }}
+                                                                    style={{ animationDelay: `${animationDelay}ms`, animationFillMode: 'both' }}
                                                                     className={`linknest-content-rich-text rich-text-content-item animate-in fade-in slide-in-from-bottom-2 ${
                                                                         sectionLinkLayout === 'grid' || sectionLinkLayout === 'qr' ? 'col-span-full' : ''
                                                                     }`}
@@ -9525,7 +9545,7 @@ export const TileDetail: React.FC<TileDetailProps> = ({
                                                                 {({ attributes: itemDragAttrs, listeners: itemDragListeners }) => (
                                                             <LinkHoverTooltip link={link} fallbackTitle={stripHtmlTags(link.label || '')}>
                                                             <div
-                                                                style={{ animationDelay: `${animationDelay}ms` }}
+                                                                style={{ animationDelay: `${animationDelay}ms`, animationFillMode: 'both' }}
                                                                 className={`
                                                     linknest-content-link group relative rounded-xl bg-white dark:bg-slate-800/80 border border-slate-200 dark:border-slate-700/60
                                                     hover:border-brand-300 dark:hover:border-brand-500/50 transition-all duration-300 shadow-sm
@@ -11289,6 +11309,7 @@ export const TileDetail: React.FC<TileDetailProps> = ({
                                             persistGlobal={false}
                                             value={editLinksAnimation}
                                             onAnimationChange={setEditLinksAnimation}
+                                            replaySelector=".linknest-content-link"
                                             scopeLabel="LINKS ANIMATION"
                                             scopeHint="Default for all links — each link can inherit, disable, or override"
                                             buttonTitle="Choose default entrance animation for all links"

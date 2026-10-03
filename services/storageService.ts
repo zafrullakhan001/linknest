@@ -442,6 +442,28 @@ export const updateTilePageAnimation = async (
   return response.json();
 };
 
+/** Persist the default links entrance animation for one space (links can still override it). */
+export const updateTileLinksAnimation = async (
+  tileId: string,
+  linksAnimation?: string | null
+): Promise<{ success: boolean; pageAnimation: string | null; linksAnimation: string | null }> => {
+  const response = await fetch(`${API_BASE}/tiles/${tileId}/page-animation`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    credentials: 'include',
+    body: JSON.stringify({
+      linksAnimation: linksAnimation && linksAnimation !== 'none' ? linksAnimation : null,
+    }),
+  });
+
+  if (!response.ok) {
+    const errorData = await response.json().catch(() => ({ error: 'Failed to save links animation' }));
+    throw new Error(errorData.error || 'Failed to save links animation');
+  }
+
+  return response.json();
+};
+
 export const createTile = async (tile: Tile): Promise<Tile> => {
   try {
     const response = await fetch(`${API_BASE}/tiles`, {

@@ -9,6 +9,7 @@ import {
   getTiles,
   saveTile,
   toggleFavorite,
+  updateTileLinksAnimation,
   updateTilePageAnimation,
 } from '../services/storageService';
 import { exportTileToFileAsync } from '../services/spaceTransferService';
@@ -17,6 +18,7 @@ import { isPublicFavorite, togglePublicFavorite } from '../services/publicFavori
 import { TileAnimationSelector, getAnimationOption, type TileAnimation } from './TileAnimationSelector';
 import { HeaderIcons, SpaceHeaderDrawerButton, SpaceHeaderIconButton } from './SpaceHeaderIconButton';
 import { SpaceHeaderDock } from './SpaceHeaderDock';
+import { replayViewEntranceAnimations } from './ViewModeSortable';
 
 const TileInfoDialog = lazy(() => import('./TileInfoDialog').then((m) => ({ default: m.TileInfoDialog })));
 const ShareTileDialog = lazy(() => import('./ShareTileDialog').then((m) => ({ default: m.ShareTileDialog })));
@@ -254,6 +256,22 @@ export const SpaceViewHeaderActions: React.FC<SpaceViewHeaderActionsProps> = ({
     [allTiles, onUpdateTiles, tile]
   );
 
+  const handleLinksAnimationChange = useCallback(
+    async (animation: TileAnimation) => {
+      const next = animation && animation !== 'none' ? animation : null;
+      const updatedTile: Tile = { ...tile, linksAnimation: next };
+      const updatedTiles = allTiles.map((t) => (t.id === updatedTile.id ? updatedTile : t));
+      try {
+        await updateTileLinksAnimation(tile.id, next);
+        onUpdateTiles(updatedTiles, true, false, true);
+      } catch (e) {
+        console.error('Failed to save links animation:', e);
+        alert(e instanceof Error ? e.message : 'Failed to save links animation');
+      }
+    },
+    [allTiles, onUpdateTiles, tile]
+  );
+
   const handleAppliedAi = useCallback(
     async (updated: Tile) => {
       const nextTiles = allTiles.map((t) => (t.id === updated.id ? updated : t));
@@ -269,7 +287,7 @@ export const SpaceViewHeaderActions: React.FC<SpaceViewHeaderActionsProps> = ({
 
   const favoriteTitle = isFavorited ? 'Remove from favorites' : 'Add to favorites';
   const shortUrlTitle = 'Show LinkNest short URLs instead of original destinations (hover, copy, and QR)';
-  const animTitle = `Sections animation: ${animOption.name}`;
+  const animTitle = `Animations: sections ${animOption.name}, links ${getAnimationOption((tile.linksAnimation as TileAnimation) || 'none').name}`;
 
   return (
     <>
@@ -301,6 +319,10 @@ export const SpaceViewHeaderActions: React.FC<SpaceViewHeaderActionsProps> = ({
                 onOpenChange={setPageAnimOpen}
                 value={(tile.pageAnimation as TileAnimation) || 'none'}
                 onAnimationChange={handleAnimationChange}
+                replaySelector=".linknest-content-section"
+                onReplay={replayViewEntranceAnimations}
+                linksValue={(tile.linksAnimation as TileAnimation) || 'none'}
+                onLinksAnimationChange={handleLinksAnimationChange}
                 scopeLabel="SECTIONS ANIMATION"
                 scopeHint="Animates whole link sections on this page"
                 buttonTitle={animTitle}
