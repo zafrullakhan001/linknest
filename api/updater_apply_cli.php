@@ -45,6 +45,7 @@ try {
 
         updaterExecuteRollback();
         updaterReleaseLock();
+        updaterAuditJob('app.rollback_succeeded');
         error_log('updater_apply_cli: rollback success');
         exit(0);
     }
@@ -71,6 +72,7 @@ try {
 
     updaterApplyTarget($target, true);
     updaterReleaseLock();
+    updaterAuditJob('app.update_succeeded');
     error_log("updater_apply_cli: success for {$spec}");
     exit(0);
 } catch (Throwable $e) {
@@ -83,5 +85,10 @@ try {
     $job['percent'] = (int)($job['percent'] ?? 0);
     updaterWriteJob($job);
     updaterReleaseLock();
+    updaterAuditJob(
+        !empty($job['rollback']) ? 'app.rollback_failed' : 'app.update_failed',
+        $job,
+        ['error' => $e->getMessage()]
+    );
     exit(1);
 }

@@ -1402,6 +1402,82 @@ function updaterWriteJob(array $job): void {
     @file_put_contents(UPDATER_JOB_FILE, json_encode($job, JSON_PRETTY_PRINT | JSON_UNESCAPED_SLASHES), LOCK_EX);
 }
 
+/**
+ * Who started the job, saved on the job file so the CLI worker (no session) can audit it.
+ */
+function updaterJobActorFields(?array $user): array {
+    if ($user === null && PHP_SAPI !== 'cli' && function_exists('getAuthenticatedUser')) {
+        $user = getAuthenticatedUser();
+    }
+    $ip = function_exists('getClientIpAddress') ? getClientIpAddress() : ($_SERVER['REMOTE_ADDR'] ?? null);
+    $ua = (string)($_SERVER['HTTP_USER_AGENT'] ?? '');
+    $actorId = $user['id'] ?? null;
+    $actorUsername = $user['username'] ?? null;
+    if (is_array($user) && !empty($user['impersonating']) && !empty($user['impersonating_admin_id'])) {
+        $actorId = (int)$user['impersonating_admin_id'];
+        $actorUsername = $user['impersonating_admin_username'] ?? $actorUsername;
+    }
+    return [
+        'actorId' => $actorId !== null ? (int)$actorId : null,
+        'actorUsername' => $actorUsername !== null ? (string)$actorUsername : null,
+        'actorIp' => $ip !== null && $ip !== '' ? (string)$ip : null,
+        'actorUserAgent' => $ua !== '' ? substr($ua, 0, 512) : null,
+    ];
+}
+
+/**
+ * Write an app.* row to user_audit_log for the job's actor. Never throws.
+ */
+function updaterAuditJob(string $action, ?array $job = null, array $extra = []): void {
+    try {
+        if (!function_exists('logUserAudit')) {
+            require_once __DIR__ . '/user_audit_helper.php';
+        }
+        $job = $job ?? (updaterReadJob() ?: []);
+
+        $details = array_filter([
+            'tag' => $job['tag'] ?? null,
+            'sha' => isset($job['sha']) ? substr((string)$job['sha'], 0, 12) : null,
+            'version' => $job['version'] ?? null,
+            'new_version' => $job['newVersion'] ?? null,
+            'mode' => $job['mode'] ?? null,
+            'backup_database' => !empty($job['rollback']) ? null : ($job['backupDatabase'] ?? null),
+            'restore_database' => !empty($job['rollback']) ? ($job['restoreDatabase'] ?? null) : null,
+            'history_id' => $job['historyId'] ?? null,
+        ] + $extra, static fn($v) => $v !== null && $v !== '');
+
+        $opts = [
+            'actor' => [],
+            'actor_id' => $job['actorId'] ?? null,
+            'actor_username' => $job['actorUsername'] ?? null,
+            'details' => $details,
+        ];
+        if (empty($job['actorId']) && PHP_SAPI !== 'cli') {
+            unset($opts['actor'], $opts['actor_id'], $opts['actor_username']);
+        }
+
+        $restore = [];
+        if (PHP_SAPI === 'cli') {
+            foreach (['REMOTE_ADDR' => 'actorIp', 'HTTP_USER_AGENT' => 'actorUserAgent'] as $key => $field) {
+                $restore[$key] = $_SERVER[$key] ?? null;
+                if (!empty($job[$field])) {
+                    $_SERVER[$key] = (string)$job[$field];
+                }
+            }
+        }
+        logUserAudit($action, $opts);
+        foreach ($restore as $key => $value) {
+            if ($value === null) {
+                unset($_SERVER[$key]);
+            } else {
+                $_SERVER[$key] = $value;
+            }
+        }
+    } catch (Throwable $e) {
+        error_log('updater audit failed: ' . $e->getMessage());
+    }
+}
+
 function updaterAppendLog(string $line): void {
     $job = updaterReadJob() ?: [];
     $logs = isset($job['log']) && is_array($job['log']) ? $job['log'] : [];

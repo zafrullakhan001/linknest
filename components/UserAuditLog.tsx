@@ -65,6 +65,12 @@ const ACTION_LABELS: Record<string, string> = {
   'monitor.tab_renamed': 'Monitor tab renamed',
   'monitor.group_renamed': 'Monitor group renamed',
   'monitor.audit_purged': 'Monitor audit log purged',
+  'app.update_started': 'App update started',
+  'app.update_succeeded': 'App update applied',
+  'app.update_failed': 'App update failed',
+  'app.rollback_started': 'App rollback started',
+  'app.rollback_succeeded': 'App rollback completed',
+  'app.rollback_failed': 'App rollback failed',
 };
 
 const ACTION_BADGE: Record<string, string> = {
@@ -122,10 +128,16 @@ const ACTION_BADGE: Record<string, string> = {
   'monitor.tab_renamed': 'bg-amber-100 text-amber-800 dark:bg-amber-900/40 dark:text-amber-200',
   'monitor.group_renamed': 'bg-amber-100 text-amber-800 dark:bg-amber-900/40 dark:text-amber-200',
   'monitor.audit_purged': 'bg-rose-100 text-rose-800 dark:bg-rose-900/40 dark:text-rose-200',
+  'app.update_started': 'bg-sky-100 text-sky-800 dark:bg-sky-900/40 dark:text-sky-200',
+  'app.update_succeeded': 'bg-emerald-100 text-emerald-800 dark:bg-emerald-900/40 dark:text-emerald-200',
+  'app.update_failed': 'bg-rose-100 text-rose-800 dark:bg-rose-900/40 dark:text-rose-200',
+  'app.rollback_started': 'bg-amber-100 text-amber-800 dark:bg-amber-900/40 dark:text-amber-200',
+  'app.rollback_succeeded': 'bg-purple-100 text-purple-800 dark:bg-purple-900/40 dark:text-purple-200',
+  'app.rollback_failed': 'bg-rose-100 text-rose-800 dark:bg-rose-900/40 dark:text-rose-200',
 };
 
 function actionLabel(action: string): string {
-  return ACTION_LABELS[action] || action.replace(/^(user|monitor|auth|space|settings|audit)\./, '').replace(/_/g, ' ');
+  return ACTION_LABELS[action] || action.replace(/^(user|monitor|auth|space|settings|audit|app)\./, '').replace(/_/g, ' ');
 }
 
 function formatTime(unix: number): string {

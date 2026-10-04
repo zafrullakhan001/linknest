@@ -166,8 +166,9 @@ function handleUpdaterApply(): void {
             'startedAt' => time(),
             'updatedAt' => time(),
             'error' => null,
-        ];
+        ] + updaterJobActorFields($GLOBALS['AUTH_USER'] ?? null);
         updaterWriteJob($job);
+        updaterAuditJob('app.update_started', $job);
 
         // Windows/XAMPP: inline under Apache (detached SYSTEM workers are unreliable).
         $preferInline = updaterIsWindows();
@@ -196,6 +197,7 @@ function handleUpdaterApply(): void {
         try {
             updaterApplyTarget($target, true);
             updaterReleaseLock();
+            updaterAuditJob('app.update_succeeded');
             sendJSON([
                 'data' => [
                     'started' => true,
@@ -213,6 +215,7 @@ function handleUpdaterApply(): void {
             $job['message'] = $e->getMessage();
             updaterWriteJob($job);
             updaterReleaseLock();
+            updaterAuditJob('app.update_failed', $job, ['error' => $e->getMessage()]);
             sendJSON(['error' => $e->getMessage(), 'data' => $job], 500);
         }
     } catch (Throwable $e) {
@@ -278,8 +281,9 @@ function handleUpdaterRollback(): void {
             'startedAt' => time(),
             'updatedAt' => time(),
             'error' => null,
-        ];
+        ] + updaterJobActorFields($GLOBALS['AUTH_USER'] ?? null);
         updaterWriteJob($job);
+        updaterAuditJob('app.rollback_started', $job);
 
         $preferInline = updaterIsWindows();
         $canSpawn = !$preferInline && (function_exists('popen') || function_exists('exec'));
@@ -305,6 +309,7 @@ function handleUpdaterRollback(): void {
         try {
             updaterExecuteRollbackToEntry($peek, $restoreDatabase);
             updaterReleaseLock();
+            updaterAuditJob('app.rollback_succeeded');
             sendJSON([
                 'data' => [
                     'started' => true,
@@ -320,6 +325,7 @@ function handleUpdaterRollback(): void {
             $job['error'] = $e->getMessage();
             updaterWriteJob($job);
             updaterReleaseLock();
+            updaterAuditJob('app.rollback_failed', $job, ['error' => $e->getMessage()]);
             sendJSON(['error' => $e->getMessage()], 500);
         }
     } catch (Throwable $e) {
