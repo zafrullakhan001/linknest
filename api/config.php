@@ -326,7 +326,7 @@ function applySqlitePerformancePragmas(PDO $db, bool $heavy = false): array {
     $db->exec('PRAGMA temp_store = MEMORY');
     $applied['temp_store'] = (int)$db->query('PRAGMA temp_store')->fetchColumn();
 
-    // Parallel sort / index build threads (MAX_WORKER_THREADS=8 in SQLite 3.53.4)
+    // Parallel sort / index build threads (MAX_WORKER_THREADS=8 in SQLite 3.54.0)
     try {
         $db->exec('PRAGMA threads = 4');
         $applied['threads'] = (int)$db->query('PRAGMA threads')->fetchColumn();

@@ -25,7 +25,7 @@ Later PHP / Apache patches (keeps php.ini, httpd.conf, htdocs):
 Notes
 -----
 * httpd.conf and php.ini are already set for D:\Apache and D:\php.
-* Official SQLite 3.53.4 libsqlite3.dll is already in D:\php (and Apache\bin) so health.php SQLite checks pass.
+* Official SQLite 3.54.0 libsqlite3.dll is already in D:\php (and Apache\bin) so health.php SQLite checks pass.
 * Service name is Apache24-LinkNest so it does not clash with XAMPP Apache2.4.
 * If port 80 is taken, stop the other Apache or change Listen in D:\Apache\conf\httpd.conf.
 * Full written guide: docs/VANILLA_APACHE_PHP85_WINDOWS.md (also Help and About -> Guides).

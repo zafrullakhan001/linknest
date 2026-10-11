@@ -35,8 +35,8 @@ $ReleasesBase = 'https://downloads.php.net/~windows/releases/'
 $CacertUrl = 'https://curl.se/ca/cacert.pem'
 $ApachePageUrl = 'https://www.apachelounge.com/download/VS17/'
 # Same official Windows x64 package health.php / package-for-deployment.ps1 expect.
-$SqliteTargetVersion = '3.53.4'
-$SqliteDllZipUrl = 'https://www.sqlite.org/2026/sqlite-dll-win-x64-3530400.zip'
+$SqliteTargetVersion = '3.54.0'
+$SqliteDllZipUrl = 'https://www.sqlite.org/2026/sqlite-dll-win-x64-3540000.zip'
 $SqliteMinVersion = '3.53.0'
 
 $RequiredExtensions = @(

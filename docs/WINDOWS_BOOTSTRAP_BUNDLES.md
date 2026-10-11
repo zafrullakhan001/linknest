@@ -32,7 +32,7 @@ Built by [`scripts/package-vanilla-apache-php85.ps1`](../scripts/package-vanilla
 
 - Latest PHP **8.5 Thread Safe x64** from windows.php.net (SHA256 verified)
 - Apache Lounge **httpd Win64 VS17** (matches PHP’s VS17 ABI)
-- Official **SQLite 3.53.4** `libsqlite3.dll` in `D:\php` (and `Apache\bin`) so `health.php` SQLite checks pass without a manual DLL swap
+- Official **SQLite 3.54.0** `libsqlite3.dll` in `D:\php` (and `Apache\bin`) so `health.php` SQLite checks pass without a manual DLL swap
 - `php.ini` from `php.ini-production` with SQLite, curl, LDAP, OpenSSL, zip, mbstring, OPcache, CA bundle, sessions under `D:\Apache\tmp`
 - `httpd.conf` with `AllowOverride All`, `mod_rewrite`, PHP module (`php8apache2_4.dll`), DocumentRoot `D:\Apache\htdocs`
 - PHP dependency DLLs copied into `Apache\bin`
@@ -46,7 +46,7 @@ Built by [`package-for-deployment.ps1`](../package-for-deployment.ps1).
 
 - Production `dist/` (portable Vite base `./` — works under `/linknest`, `/ArchLinks`, `/ERP3`, …)
 - PHP API, `vendor/` (SAML), docs, deploy helpers (`deploy-xampp.bat` / `update-xampp.bat`)
-- SQLite 3.53.4 DLL + `install-sqlite-xampp.bat`
+- SQLite 3.54.0 DLL + `install-sqlite-xampp.bat`
 - `bin/` ttyd + portable OpenSSH + embeddable Python + websockify (SSH/VNC Easy)
 - **Fresh database** by default (this PC’s live `data/linknest.db` is **not** shipped unless you pass `-IncludeDatabase`)
 - **`uploads/` is excluded by default** (test videos and other local uploads stay on this PC). Pass `-IncludeUploads` only if you intend to ship them.

@@ -1,12 +1,16 @@
-import React, { useEffect, useState, lazy, Suspense } from 'react';
+import React, { useEffect, useRef, useState, lazy, Suspense } from 'react';
 import { useAuth } from '../contexts/AuthContext';
 import { useSettings, resolveBrandedAssetHref } from '../contexts/SettingsContext';
 import { useMobile } from '../hooks/useMobile';
+import { useNavOverlapLayout } from '../hooks/useNavOverlapLayout';
 import { getDisabledTabsFromSettings } from '../services/tabVisibilityService';
 import { getUpdaterStatus } from '../services/updaterService';
 import { isSignInButtonVisible } from '../services/settingsService';
 import { ProfileMenu } from './ProfileMenu';
 import { ThemeModeMenu } from './ThemeModeMenu';
+import { NavWidgetsPill } from './NavWidgetsPill';
+import { buildNavWidgetItems } from './navWidgetItems';
+
 
 const QRCodeDialog = lazy(() => import('./QRCodeDialog').then(m => ({ default: m.QRCodeDialog })));
 const UpdatesDialog = lazy(() => import('./UpdatesDialog').then(m => ({ default: m.UpdatesDialog })));
@@ -117,9 +121,87 @@ export const Navigation: React.FC<NavigationProps> = ({ darkMode, showClock, tog
     : '#/';
   const appShareLabel = settings.app_name || 'LinkNest';
 
+  // --- Measured nav layout: keep the centered brand clear of the side clusters ---
+  const navInnerRef = useRef<HTMLDivElement>(null);
+  const rightClusterRef = useRef<HTMLDivElement>(null);
+  const companyLogoRef = useRef<HTMLAnchorElement>(null);
+  const widgetsPillRef = useRef<HTMLDivElement>(null);
+  const widgetIconProbeRef = useRef<HTMLButtonElement>(null);
+
+  const hasUser = Boolean(user);
+  const isAdmin = Boolean(user?.is_admin);
+
+  const navWidgets = buildNavWidgetItems({
+    isWidgetAllowed,
+    hasUser,
+    isAdmin,
+    showClock,
+    toggleClock,
+    showWeather,
+    toggleWeather,
+    showCalculator,
+    toggleCalculator,
+    showNotes,
+    toggleNotes,
+    showMedia,
+    toggleMedia,
+    showPasswordGenerator,
+    togglePasswordGenerator,
+    showPhoneticAlphabet,
+    togglePhoneticAlphabet,
+    showZoomControl,
+    toggleZoomControl,
+    showTheme,
+    toggleThemeWidget,
+    showFavOrganizer,
+    toggleFavOrganizer,
+    showChat,
+    toggleChat,
+    showSnakeGame,
+    toggleSnakeGame,
+    showVncViewer,
+    toggleVncViewer,
+    showSshTerminal,
+    toggleSshTerminal,
+    showInternetSpeedTester,
+    toggleInternetSpeedTester,
+  });
+
+  // Smallest brand box worth centering: logo/icon + a readable slice of the name.
+  const brandMinWidth = logoSize + 64;
+  const widgetHeadCount = 4;
+  // Re-measure when the brand text, icon set, or auth state changes.
+  const navLayoutSignature = [
+    settings.app_name,
+    settings.app_subheading,
+    settings.logo_type,
+    settings.logo_image,
+    settings.logo_size,
+    settings.header_logo_image,
+    settings.header_logo_size,
+    navWidgets.length,
+    user?.id ?? '',
+    isAdmin ? '1' : '0',
+    updateAvailable ? '1' : '0',
+    showSignInButton ? '1' : '0',
+  ].join('|');
+
+  const navLayout = useNavOverlapLayout({
+    enabled: true,
+    navRef: navInnerRef,
+    rightClusterRef,
+    companyLogoRef,
+    iconProbeRef: widgetIconProbeRef,
+    brandMinWidth,
+    widgetCount: navWidgets.length,
+    headCount: widgetHeadCount,
+    signature: navLayoutSignature,
+  });
+
+
   return (
     <nav className="linknest-nav fixed top-0 left-0 right-0 border-b border-slate-200 dark:border-slate-800 bg-white/90 dark:bg-slate-900/90 backdrop-blur-md z-[100] transition-colors duration-300">
-      <div className="relative w-full px-4 py-2" style={{ minHeight: navMinHeight }}>
+      <div ref={navInnerRef} className="relative w-full px-4 py-2" style={{ minHeight: navMinHeight }}>
         {/* Far-left company logo — wide screens only */}
         {showCompanyLogo ? (
           <a
@@ -128,9 +210,11 @@ export const Navigation: React.FC<NavigationProps> = ({ darkMode, showClock, tog
               e.preventDefault();
               window.location.hash = '#/';
             }}
+            ref={companyLogoRef}
             className="linknest-header-logo absolute left-4 top-1/2 -translate-y-1/2 z-20 flex items-center"
             title="Home"
           >
+
             <img
               src={resolveBrandedAssetHref(settings.header_logo_image)}
               alt=""
@@ -143,12 +227,18 @@ export const Navigation: React.FC<NavigationProps> = ({ darkMode, showClock, tog
         {/* App brand — left on tablet/compact, centered on wide screens */}
         <div
           onClick={() => window.location.hash = '#/'}
+          style={
+            isCompactNav
+              ? { maxWidth: Math.max(96, navLayout.compactBrandMaxWidth) }
+              : { maxWidth: Math.max(96, navLayout.brandMaxWidth) }
+          }
           className={
             isCompactNav
-              ? 'absolute left-4 top-1/2 -translate-y-1/2 z-10 flex items-center gap-2 group cursor-pointer min-w-0 max-w-[calc(100%-12rem)] pr-2'
-              : 'absolute left-1/2 top-1/2 -translate-x-1/2 -translate-y-1/2 z-10 flex items-center justify-center gap-2 group cursor-pointer min-w-0 max-w-[50vw]'
+              ? 'absolute left-4 top-1/2 -translate-y-1/2 z-10 flex items-center gap-2 group cursor-pointer min-w-0 pr-2'
+              : 'absolute left-1/2 top-1/2 -translate-x-1/2 -translate-y-1/2 z-10 flex items-center justify-center gap-2 group cursor-pointer min-w-0'
           }
         >
+
           {/* Show from hydrated cache; blank only when nothing to show yet */}
           {settingsLoading && !settings.app_name && !settings.header_logo_image ? (
             <div className="h-8 min-w-[7rem]" aria-hidden="true" />
@@ -183,7 +273,7 @@ export const Navigation: React.FC<NavigationProps> = ({ darkMode, showClock, tog
           )}
         </div>
 
-        <div className="absolute right-4 top-1/2 -translate-y-1/2 flex items-center gap-2 sm:gap-4 flex-shrink-0 z-10">
+        <div ref={rightClusterRef} className="absolute right-4 top-1/2 -translate-y-1/2 flex items-center gap-2 sm:gap-4 flex-shrink-0 z-10">
           {/* Auth Section */}
           <div className="flex items-center gap-3 order-1 sm:order-none">
             {user ? (
@@ -244,209 +334,14 @@ export const Navigation: React.FC<NavigationProps> = ({ darkMode, showClock, tog
             )}
           </div>
 
-          {/* Widgets Pill */}
-          <div className="flex items-center gap-0.5 bg-slate-100/50 dark:bg-slate-800/50 border border-slate-200 dark:border-slate-700 rounded-full p-1 shadow-sm backdrop-blur-sm">
-            {isWidgetAllowed('clock') && (
-              <button
-                onClick={toggleClock}
-                className={`p-2 rounded-full transition-all linknest-nav-icon ${showClock ? 'bg-white dark:bg-slate-700 text-brand-500 shadow-sm' : 'hover:bg-slate-200 dark:hover:bg-slate-700 text-slate-500 dark:text-slate-400'}`}
-                title={showClock ? "Hide Clock Widget" : "Show Clock Widget"}
-              >
-              <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="w-4 h-4 sm:w-5 sm:h-5">
-                <circle cx="12" cy="12" r="10"></circle>
-                <polyline points="12 6 12 12 16 14"></polyline>
-              </svg>
-              </button>
-            )}
-            {isWidgetAllowed('weather') && (
-              <button
-                onClick={toggleWeather}
-                className={`p-2 rounded-full transition-all linknest-nav-icon ${showWeather ? 'bg-white dark:bg-slate-700 text-brand-500 shadow-sm' : 'hover:bg-slate-200 dark:hover:bg-slate-700 text-slate-500 dark:text-slate-400'}`}
-                title={showWeather ? "Hide Weather Widget" : "Show Weather Widget"}
-              >
-              <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="w-4 h-4 sm:w-5 sm:h-5">
-                <path d="M17.5 19H9a7 7 0 1 1 6.71-9h1.79a4.5 4.5 0 1 1 0 9Z"></path>
-                <path d="M22 10a3 3 0 0 0-3-3h-2.5a2.5 2.5 0 0 0-5 0H12a3 3 0 0 0 0 6h3a2.5 2.5 0 0 0 5 0H22Z"></path>
-              </svg>
-              </button>
-            )}
-            {isWidgetAllowed('calculator') && (
-              <button
-                onClick={toggleCalculator}
-                className={`p-2 rounded-full transition-all linknest-nav-icon ${showCalculator ? 'bg-white dark:bg-slate-700 text-brand-500 shadow-sm' : 'hover:bg-slate-200 dark:hover:bg-slate-700 text-slate-500 dark:text-slate-400'}`}
-                title={showCalculator ? "Hide Calculator Widget" : "Show Calculator Widget"}
-              >
-              <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="w-4 h-4 sm:w-5 sm:h-5">
-                <rect x="4" y="2" width="16" height="20" rx="2"></rect>
-                <line x1="8" y1="6" x2="16" y2="6"></line>
-                <line x1="8" y1="10" x2="16" y2="10"></line>
-                <line x1="8" y1="14" x2="16" y2="14"></line>
-                <line x1="8" y1="18" x2="16" y2="18"></line>
-              </svg>
-              </button>
-            )}
-            {user && isWidgetAllowed('notes') && (
-              <button
-                onClick={toggleNotes}
-                className={`p-2 rounded-full transition-all linknest-nav-icon ${showNotes ? 'bg-white dark:bg-slate-700 text-brand-500 shadow-sm' : 'hover:bg-slate-200 dark:hover:bg-slate-700 text-slate-500 dark:text-slate-400'}`}
-                title={showNotes ? "Hide Notes Widget" : "Show Notes Widget"}
-              >
-                <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="w-4 h-4 sm:w-5 sm:h-5">
-                  <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"></path>
-                  <polyline points="14 2 14 8 20 8"></polyline>
-                  <line x1="16" y1="13" x2="8" y2="13"></line>
-                  <line x1="16" y1="17" x2="8" y2="17"></line>
-                  <polyline points="10 9 9 9 8 9"></polyline>
-                </svg>
-              </button>
-            )}
-            {user?.is_admin && isWidgetAllowed('media') && (
-              <button
-                onClick={toggleMedia}
-                className={`p-2 rounded-full transition-all linknest-nav-icon ${showMedia ? 'bg-white dark:bg-slate-700 text-brand-500 shadow-sm' : 'hover:bg-slate-200 dark:hover:bg-slate-700 text-slate-500 dark:text-slate-400'}`}
-                title={showMedia ? "Hide Media Library" : "Show Media Library"}
-              >
-                <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="w-4 h-4 sm:w-5 sm:h-5">
-                  <rect x="3" y="3" width="18" height="18" rx="2"></rect>
-                  <circle cx="8.5" cy="8.5" r="1.5"></circle>
-                  <polyline points="21 15 16 10 5 21"></polyline>
-                </svg>
-              </button>
-            )}
-            {isWidgetAllowed('password-generator') && (
-              <button
-                onClick={togglePasswordGenerator}
-                className={`p-2 rounded-full transition-all linknest-nav-icon ${showPasswordGenerator ? 'bg-white dark:bg-slate-700 text-brand-500 shadow-sm' : 'hover:bg-slate-200 dark:hover:bg-slate-700 text-slate-500 dark:text-slate-400'}`}
-                title={showPasswordGenerator ? "Hide Password Generator Widget" : "Show Password Generator Widget"}
-              >
-              <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="w-4 h-4 sm:w-5 sm:h-5">
-                <rect x="5" y="11" width="14" height="10" rx="2" ry="2"></rect>
-                <path d="M7 11V7a5 5 0 0 1 10 0v4"></path>
-              </svg>
-              </button>
-            )}
-            {isWidgetAllowed('phonetic-alphabet') && (
-              <button
-                onClick={togglePhoneticAlphabet}
-                className={`p-2 rounded-full transition-all linknest-nav-icon ${showPhoneticAlphabet ? 'bg-white dark:bg-slate-700 text-brand-500 shadow-sm' : 'hover:bg-slate-200 dark:hover:bg-slate-700 text-slate-500 dark:text-slate-400'}`}
-                title={showPhoneticAlphabet ? "Hide Phonetic Alphabet" : "Show Phonetic Alphabet"}
-              >
-              <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="w-4 h-4 sm:w-5 sm:h-5">
-                <path d="M4 19.5v-15A2.5 2.5 0 0 1 6.5 2H20v20H6.5a2.5 2.5 0 0 1 0-5H20"></path>
-                <path d="M8 8h4M8 12h4M8 16h4"></path>
-              </svg>
-              </button>
-            )}
-            {isWidgetAllowed('zoom-control') && (
-              <button
-                onClick={toggleZoomControl}
-                className={`p-2 rounded-full transition-all linknest-nav-icon ${showZoomControl ? 'bg-white dark:bg-slate-700 text-brand-500 shadow-sm' : 'hover:bg-slate-200 dark:hover:bg-slate-700 text-slate-500 dark:text-slate-400'}`}
-                title={showZoomControl ? "Hide Zoom Control Widget" : "Show Zoom Control Widget"}
-              >
-              <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="w-4 h-4 sm:w-5 sm:h-5">
-                <circle cx="11" cy="11" r="8"></circle>
-                <path d="m21 21-4.35-4.35"></path>
-                <line x1="11" y1="8" x2="11" y2="14"></line>
-                <line x1="8" y1="11" x2="14" y2="11"></line>
-              </svg>
-              </button>
-            )}
-            {isWidgetAllowed('theme') && (
-              <button
-                onClick={toggleThemeWidget}
-                className={`p-2 rounded-full transition-all linknest-nav-icon ${showTheme ? 'bg-white dark:bg-slate-700 text-brand-500 shadow-sm' : 'hover:bg-slate-200 dark:hover:bg-slate-700 text-slate-500 dark:text-slate-400'}`}
-                title={showTheme ? "Hide Theme Widget" : "Show Theme Widget"}
-              >
-              <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="w-4 h-4 sm:w-5 sm:h-5">
-                <circle cx="13.5" cy="6.5" r=".5"></circle>
-                <circle cx="17.5" cy="10.5" r=".5"></circle>
-                <circle cx="8.5" cy="7.5" r=".5"></circle>
-                <circle cx="6.5" cy="12.5" r=".5"></circle>
-                <path d="M12 2C6.5 2 2 6.5 2 12s4.5 10 10 10c.926 0 1.648-.746 1.648-1.688 0-.437-.18-.835-.437-1.125-.29-.289-.438-.652-.438-1.125a1.64 1.64 0 0 1 1.668-1.668h1.996c3.051 0 5.555-2.503 5.555-5.554C21.965 6.012 17.461 2 12 2z"></path>
-              </svg>
-              </button>
-            )}
-            {user && isWidgetAllowed('fav-organizer') && (
-              <button
-                onClick={toggleFavOrganizer}
-                className={`p-2 rounded-full transition-all linknest-nav-icon ${showFavOrganizer ? 'bg-white dark:bg-slate-700 text-brand-500 shadow-sm' : 'hover:bg-slate-200 dark:hover:bg-slate-700 text-slate-500 dark:text-slate-400'}`}
-                title={showFavOrganizer ? "Hide Favorite Organizer Widget" : "Show Favorite Organizer Widget"}
-              >
-              <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="w-4 h-4 sm:w-5 sm:h-5">
-                <path d="M19 21l-7-5-7 5V5a2 2 0 0 1 2-2h10a2 2 0 0 1 2 2z"></path>
-                <path d="M12 2v14"></path>
-                <path d="M8 6h8"></path>
-                <path d="M8 10h8"></path>
-                <path d="M8 14h6"></path>
-              </svg>
-              </button>
-            )}
-            {user && isWidgetAllowed('chat') && (
-              <button
-                onClick={toggleChat}
-                className={`p-2 rounded-full transition-all relative linknest-nav-icon ${showChat ? 'bg-white dark:bg-slate-700 text-brand-500 shadow-sm' : hasUnreadChatMessages ? 'hover:bg-slate-200 dark:hover:bg-slate-700 text-red-500 dark:text-red-400' : 'hover:bg-slate-200 dark:hover:bg-slate-700 text-slate-500 dark:text-slate-400'}`}
-                title={showChat ? "Hide Chat Widget" : hasUnreadChatMessages ? "Show Chat Widget (New messages)" : "Show Chat Widget"}
-              >
-                <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="w-4 h-4 sm:w-5 sm:h-5">
-                  <path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2"></path>
-                  <circle cx="12" cy="7" r="4"></circle>
-                </svg>
-                {hasUnreadChatMessages && (
-                  <span className="absolute top-0 right-0 w-2.5 h-2.5 bg-red-500 rounded-full ring-2 ring-white dark:ring-slate-800"></span>
-                )}
-              </button>
-            )}
-            {isWidgetAllowed('snake-game') && (
-              <button
-                onClick={toggleSnakeGame}
-                className={`p-2 rounded-full transition-all linknest-nav-icon ${showSnakeGame ? 'bg-white dark:bg-slate-700 text-brand-500 shadow-sm' : 'hover:bg-slate-200 dark:hover:bg-slate-700 text-slate-500 dark:text-slate-400'}`}
-                title={showSnakeGame ? "Hide Snake Game Widget" : "Show Snake Game Widget"}
-              >
-              <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="w-4 h-4 sm:w-5 sm:h-5">
-                <path d="M2 12h20"></path>
-                <path d="M12 2v20"></path>
-                <path d="M8 8l-4 4 4 4"></path>
-                <path d="M16 8l4 4-4 4"></path>
-              </svg>
-              </button>
-            )}
-            {isWidgetAllowed('vnc-viewer') && (
-              <button
-                onClick={toggleVncViewer}
-                className={`p-2 rounded-full transition-all linknest-nav-icon ${showVncViewer ? 'bg-white dark:bg-slate-700 text-brand-500 shadow-sm' : 'hover:bg-slate-200 dark:hover:bg-slate-700 text-slate-500 dark:text-slate-400'}`}
-                title={showVncViewer ? "Hide VNC Viewer Widget" : "Show VNC Viewer Widget"}
-              >
-                <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="w-4 h-4 sm:w-5 sm:h-5">
-                  <rect x="2" y="3" width="20" height="14" rx="2"></rect>
-                  <path d="M8 21h8"></path>
-                  <path d="M12 17v4"></path>
-                </svg>
-              </button>
-            )}
-            {isWidgetAllowed('ssh-terminal') && (
-              <button
-                onClick={toggleSshTerminal}
-                className={`p-2 rounded-full transition-all linknest-nav-icon ${showSshTerminal ? 'bg-white dark:bg-slate-700 text-brand-500 shadow-sm' : 'hover:bg-slate-200 dark:hover:bg-slate-700 text-slate-500 dark:text-slate-400'}`}
-                title={showSshTerminal ? "Hide SSH Terminal Widget" : "Show SSH Terminal Widget"}
-              >
-                <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="w-4 h-4 sm:w-5 sm:h-5">
-                  <polyline points="4 17 10 11 4 5"></polyline>
-                  <line x1="12" y1="19" x2="20" y2="19"></line>
-                </svg>
-              </button>
-            )}
-            {user && isWidgetAllowed('internet-speed-tester') && (
-              <button
-                onClick={toggleInternetSpeedTester}
-                className={`p-2 rounded-full transition-all linknest-nav-icon ${showInternetSpeedTester ? 'bg-white dark:bg-slate-700 text-brand-500 shadow-sm' : 'hover:bg-slate-200 dark:hover:bg-slate-700 text-slate-500 dark:text-slate-400'}`}
-                title={showInternetSpeedTester ? "Hide Internet Speed Tester" : "Show Internet Speed Tester"}
-              >
-                <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 576 512" fill="currentColor" className="w-4 h-4 sm:w-5 sm:h-5">
-                  <path d="M288 32C128.94 32 0 160.94 0 320c0 52.8 19.94 101.47 53.13 139.72 8.06 9.22 21.41 9.66 30.28 1.41l.03-.03c7.56-7.03 8.28-18.91 1.56-26.88A222.08 222.08 0 0 1 64 320c0-123.71 100.29-224 224-224s224 100.29 224 224c0 29.94-5.91 58.56-16.66 84.75-6.03 14.72 2.47 31.5 17.69 35.03 14.72 3.41 29.75-5.47 33.16-20.19A287.05 287.05 0 0 0 576 320C576 160.94 447.06 32 288 32zm0 64c-88.22 0-160 71.78-160 160 0 24.28 5.53 47.28 15.28 68.03l118.97-118.97c7.5-7.5 19.69-7.5 27.19 0 7.5 7.5 7.5 19.69 0 27.19L170.47 351.22A158.2 158.2 0 0 0 288 384c88.22 0 160-71.78 160-160S376.22 96 288 96z" />
-                </svg>
-              </button>
-            )}
-          </div>
+          {/* Widgets Pill — collapses into an overflow menu when the nav is tight */}
+          <NavWidgetsPill
+            items={navWidgets}
+            collapse={navLayout.collapseWidgets}
+            headCount={widgetHeadCount}
+            pillRef={widgetsPillRef}
+            iconProbeRef={widgetIconProbeRef}
+          />
 
           {/* System Section */}
           <div className="flex items-center gap-1">

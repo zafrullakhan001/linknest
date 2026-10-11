@@ -22,10 +22,10 @@ if (!$wantJson && isset($_SERVER['HTTP_ACCEPT']) && str_contains((string)$_SERVE
 }
 
 /** Windows SQLite package (same URLs as package-for-deployment.ps1). */
-const LN_HEALTH_SQLITE_VERSION = '3.53.4';
-const LN_HEALTH_SQLITE_DLL_ZIP = 'sqlite-dll-win-x64-3530400.zip';
-const LN_HEALTH_SQLITE_DLL_URL = 'https://www.sqlite.org/2026/sqlite-dll-win-x64-3530400.zip';
-const LN_HEALTH_SQLITE_TOOLS_URL = 'https://www.sqlite.org/2026/sqlite-tools-win-x64-3530400.zip';
+const LN_HEALTH_SQLITE_VERSION = '3.54.0';
+const LN_HEALTH_SQLITE_DLL_ZIP = 'sqlite-dll-win-x64-3540000.zip';
+const LN_HEALTH_SQLITE_DLL_URL = 'https://www.sqlite.org/2026/sqlite-dll-win-x64-3540000.zip';
+const LN_HEALTH_SQLITE_TOOLS_URL = 'https://www.sqlite.org/2026/sqlite-tools-win-x64-3540000.zip';
 /** Minimum Node for npm run build / Vite (AGENTS.md). Not required to serve dist/. */
 const LN_HEALTH_NODE_MIN = '20.0.0';
 
@@ -1010,7 +1010,7 @@ $checks[] = lnHealthCheck(
     'SQLite',
     $sqliteOk,
     'fail',
-    'SQLite >= 3.53.0 (3.53.4 recommended)',
+    'SQLite >= 3.53.0 (3.54.0 recommended)',
     $sqliteVersion !== '' ? $sqliteVersion : ('unavailable' . ($sqliteError !== '' ? ': ' . $sqliteError : '')),
     $sqliteDllAdvice
 );
@@ -1022,13 +1022,13 @@ if ($isWindows) {
         'SQLite',
         $sqliteOk && $dllLooksModern && $libSqliteArch === 'x64',
         'warn',
-        'Windows libsqlite3.dll from sqlite.org 3.53.4 x64 (~3 MB)',
+        'Windows libsqlite3.dll from sqlite.org 3.54.0 x64 (~3 MB)',
         $libSqlitePath !== ''
             ? $libSqlitePath . ' (' . lnHealthBytes($libSqliteBytes) . ', '
                 . ($libSqliteArch !== null ? lnHealthArchLabel($libSqliteArch) : 'arch?')
                 . '), runtime ' . ($sqliteVersion !== '' ? $sqliteVersion : '?')
             : 'DLL not found next to php.ini; runtime ' . ($sqliteVersion !== '' ? $sqliteVersion : '?'),
-        'Official 3.53.x x64 DLLs are ~3 MB. Stock XAMPP 3.39 DLLs were ~1.3 MB and lack mmap. Package: '
+        'Official 3.54.x x64 DLLs are ~3 MB. Stock XAMPP 3.39 DLLs were ~1.3 MB and lack mmap. Package: '
             . LN_HEALTH_SQLITE_DLL_ZIP . ' — ' . LN_HEALTH_SQLITE_DLL_URL
     );
 }

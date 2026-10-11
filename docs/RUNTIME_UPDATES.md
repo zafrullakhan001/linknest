@@ -364,7 +364,7 @@ sudo systemctl reload php8.5-fpm
 > **SQLite 3.53+ is a Windows parity target, not a Linux minimum.** `health.php` compares the *runtime*
 > SQLite against 3.53 because that is the DLL version LinkNest ships for XAMPP. Debian 12 ships 3.40 and
 > Ubuntu 24.04 ships ~3.45 — those are perfectly usable (the app only loses the newest query-planner/mmap
-> gains). Only the Windows `libsqlite3.dll` is expected to be 3.53.4.
+> gains). Only the Windows `libsqlite3.dll` is expected to be 3.54.0.
 
 XAMPP has no standalone Apache patcher: either install a newer XAMPP over the existing folder (keeping
 `htdocs` and `conf`) or swap in a current Apache Lounge Win64 build while preserving `conf/htdocs/logs`.

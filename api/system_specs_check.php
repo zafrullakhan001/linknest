@@ -169,7 +169,7 @@ try {
         'sqlite_version',
         'SQLite',
         version_compare($sqliteVersion, '3.53.0', '>='),
-        'SQLite >= 3.53.0 (3.53.4 recommended)',
+        'SQLite >= 3.53.0 (3.54.0 recommended)',
         $sqliteVersion,
         'On Windows XAMPP replace php/libsqlite3.dll using install-sqlite-xampp.bat from the deployment package.'
     );
@@ -227,7 +227,7 @@ try {
         $threads >= 1,
         'PRAGMA threads >= 1',
         (string)$threads,
-        'Requires SQLite build with MAX_WORKER_THREADS (official 3.53.4 Windows build).'
+        'Requires SQLite build with MAX_WORKER_THREADS (official 3.54.0 Windows build).'
     );
 
     // ---- Filesystem ----
@@ -304,14 +304,14 @@ try {
                 break;
             }
         }
-        // Official 3.53.x Windows x64 builds are ~3 MB; stock XAMPP 3.39 DLLs were ~1.3 MB
+        // Official 3.54.x Windows x64 builds are ~3 MB; stock XAMPP 3.39 DLLs were ~1.3 MB
         $dllLooksModern = $libSqlitePath !== '' && $libSqliteBytes >= 2 * 1024 * 1024;
         $sqliteOk = version_compare($sqliteVersion, '3.53.0', '>=');
         $checks[] = specsCheck(
             'windows_libsqlite',
             'Deploy',
             $sqliteOk && $dllLooksModern,
-            'Windows: php/libsqlite3.dll from sqlite.org 3.53.4 (~3 MB)',
+            'Windows: php/libsqlite3.dll from sqlite.org 3.54.0 (~3 MB)',
             $libSqlitePath !== ''
                 ? $libSqlitePath . ' (' . specsFormatBytes($libSqliteBytes) . '), runtime ' . $sqliteVersion
                 : 'DLL not found next to php.exe; runtime ' . $sqliteVersion,
@@ -335,7 +335,7 @@ try {
     $targetSpecs = [
         'php' => '8.2+',
         'extensions' => ['pdo_sqlite', 'sqlite3', 'json', 'mbstring', 'openssl', 'session', 'fileinfo', 'Zend OPcache (recommended)'],
-        'sqlite' => '3.53.4 Windows x64 DLL (libsqlite3.dll) from https://sqlite.org/',
+        'sqlite' => '3.54.0 Windows x64 DLL (libsqlite3.dll) from https://sqlite.org/',
         'sqlite_pragmas' => [
             'journal_mode=WAL',
             'synchronous=NORMAL',

@@ -3225,14 +3225,14 @@ function runtimeInstructionsSqlite(array $layout): array
             'code' => 'cd "' . $root . '"' . "\n"
                 . '.\\scripts\\install-sqlite-xampp.ps1',
             'note' => 'Stop Apache first — libsqlite3.dll is locked while the module is loaded. '
-                . '3.53+ is the Windows parity target health.php checks (3.53.4 recommended).',
+                . '3.53+ is the Windows parity target health.php checks (3.54.0 recommended).',
             'elevated' => true,
         ];
         $steps[] = [
             'id' => 'windows-sqlite-manual',
             'title' => 'Manual DLL refresh',
             'shell' => 'powershell',
-            'code' => '$url = "https://www.sqlite.org/2026/sqlite-dll-win-x64-3530400.zip"' . "\n"
+            'code' => '$url = "https://www.sqlite.org/2026/sqlite-dll-win-x64-3540000.zip"' . "\n"
                 . '$zip = Join-Path $env:TEMP (Split-Path $url -Leaf)' . "\n"
                 . 'Invoke-WebRequest $url -OutFile $zip' . "\n"
                 . 'Expand-Archive $zip -DestinationPath (Split-Path $zip) -Force' . "\n"
@@ -3279,7 +3279,7 @@ function runtimeInstructionsSqlite(array $layout): array
                 . $reload,
             'note' => 'LinkNest targets SQLite 3.53+ (the Windows build we ships as a DLL). Distro packages may be '
                 . 'older — Debian 12 ships 3.40, Ubuntu 24.04 ships 3.45. That is still safe to run, it just misses '
-                . 'the newest query-planner and mmap improvements; only the Windows DLL is expected to match 3.53+.',
+                . 'the newest query-planner and mmap improvements; only the Windows DLL is expected to match 3.54.0.',
             'elevated' => true,
         ];
         $steps[] = [
@@ -3287,9 +3287,9 @@ function runtimeInstructionsSqlite(array $layout): array
             'title' => 'Newer SQLite from source (optional, only if you need 3.53+)',
             'shell' => 'bash',
             'code' => 'cd /tmp' . "\n"
-                . 'curl -fsSLO https://www.sqlite.org/2026/sqlite-autoconf-3530400.tar.gz' . "\n"
-                . './configure --prefix=/opt/sqlite-3.53 && make -j"$(nproc)" && sudo make install' . "\n"
-                . '# then point PHP at it (rebuild php-sqlite using /opt/sqlite-3.53) — usually not worth it',
+                . 'curl -fsSLO https://www.sqlite.org/2026/sqlite-autoconf-3540000.tar.gz' . "\n"
+                . './configure --prefix=/opt/sqlite-3.54 && make -j"$(nproc)" && sudo make install' . "\n"
+                . '# then point PHP at it (rebuild php-sqlite using /opt/sqlite-3.54) — usually not worth it',
             'note' => 'Prefer the distribution package: a hand-built libsqlite3 must match the PHP SQLite extension '
                 . 'that was compiled against the system library.',
             'elevated' => true,

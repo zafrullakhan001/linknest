@@ -71,7 +71,7 @@ try {
         ],
         'notes' => [
             'WAL + synchronous=NORMAL is the recommended high-performance durable mode',
-            'mmap_size enables memory-mapped I/O (supported in SQLite 3.53.4 Windows build)',
+            'mmap_size enables memory-mapped I/O (supported in SQLite 3.54.0 Windows build)',
             'cache_size=-32768 gives a 32 MB page cache',
             'PRAGMA threads uses up to 4 auxiliary worker threads for sorts/indexes',
             'page_size can only change on an empty database',

@@ -118,7 +118,7 @@ try {
         [
             'id' => 'sqlite_version',
             'ok' => $versionOk,
-            'detail' => $sqliteVersion . ($versionOk ? '' : ' (want 3.53.4+)'),
+            'detail' => $sqliteVersion . ($versionOk ? '' : ' (want 3.54.0+)'),
         ],
         [
             'id' => 'not_volatile_memory_db',

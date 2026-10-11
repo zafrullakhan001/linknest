@@ -20,7 +20,7 @@ scripts\package-vanilla-apache-php85.bat
 
 Output: `linknest-apache-php85-runtime-YYYYMMDD_HHMMSS.zip` in the project root (gitignored). On the target: extract to **D:\**, install the VC++ 2015–2022 x64 runtime, run `install-runtime.bat` as Administrator, then copy the LinkNest app into `D:\Apache\htdocs\linknest`.
 
-The runtime ZIP already includes official **SQLite 3.53.4** as `D:\php\libsqlite3.dll` (and a copy under `Apache\bin`), so `health.php` SQLite checks should pass without a separate `install-sqlite-xampp` step.
+The runtime ZIP already includes official **SQLite 3.54.0** as `D:\php\libsqlite3.dll` (and a copy under `Apache\bin`), so `health.php` SQLite checks should pass without a separate `install-sqlite-xampp` step.
 
 **Rebuild both ZIPs and upload to GitHub** (runtime + LinkNest app) from the repo root:
 
@@ -410,7 +410,7 @@ In a browser (or `curl`):
 | `http://<host>/linknest/api/tiles` | HTTP 200 JSON |
 | `http://<host>/linknest/dist/index.html` | HTTP 200 (confirms the production build exists) |
 
-Open `http://<host>/linknest/health.php` first. It checks PHP extensions (`pdo_sqlite`, `curl`, `ldap`, …), Apache modules (`mod_rewrite`), `php.ini` path, OPcache, writable `data/` / `uploads/` / session tmp, and the SQLite engine plus Windows `libsqlite3.dll` (3.53.4 ~3 MB). HTTP 503 means a critical check failed.
+Open `http://<host>/linknest/health.php` first. It checks PHP extensions (`pdo_sqlite`, `curl`, `ldap`, …), Apache modules (`mod_rewrite`), `php.ini` path, OPcache, writable `data/` / `uploads/` / session tmp, and the SQLite engine plus Windows `libsqlite3.dll` (3.54.0 ~3 MB). HTTP 503 means a critical check failed.
 
 Do **not** leave a `phpinfo.php` file on the server. Use `/health.php` instead.
 

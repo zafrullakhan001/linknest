@@ -5,7 +5,7 @@
 .DESCRIPTION
     Clean-builds the React frontend with the correct base path, gathers all
     runtime files (API, vendor/SAML, dist, utils, docs), stamps BUILD_INFO.json
-    (for PWA cache busting + in-app updater), bundles SQLite 3.53.4 for XAMPP PHP,
+    (for PWA cache busting + in-app updater), bundles SQLite 3.54.0 for XAMPP PHP,
     captures a SOURCE_SPECS.json snapshot from this known-good host, and produces
     a self-contained ZIP ready to deploy/update on another XAMPP machine.
 
@@ -25,7 +25,7 @@
     Default: FRESH install package (no live SQLite DB). The target PC creates
     a new database on first launch. Use -IncludeDatabase to mirror this PC's DB.
 
-    SQLite: ships runtime/sqlite/ (libsqlite3.dll 3.53.4) plus install-sqlite-xampp.bat
+    SQLite: ships runtime/sqlite/ (libsqlite3.dll 3.54.0) plus install-sqlite-xampp.bat
     and scripts/install-sqlite-xampp.ps1. Deploy enables extension=sqlite3 / pdo_sqlite in
     php.ini (fixes "Class SQLite3 not found" on minimal XAMPP) and upgrades libsqlite3.dll
     so performance pragmas in api/config.php (WAL, mmap, cache, worker threads) take effect.
@@ -49,7 +49,7 @@
 .PARAMETER ExcludeUploads
     Do not include the uploads/ directory in the package.
 .PARAMETER SkipSqliteRuntime
-    Do not bundle/download SQLite 3.53.4 DLL for XAMPP (not recommended).
+    Do not bundle/download SQLite 3.54.0 DLL for XAMPP (not recommended).
 .PARAMETER SkipRemoteRuntime
     Do not vendor/bundle bin/ ttyd + OpenSSH + embeddable Python + websockify (SSH/VNC Easy gateways will need manual install on target).
 .PARAMETER OutputDir
@@ -124,9 +124,9 @@ $TempDir = Join-Path $env:TEMP $PackageName
 $BuildId = $Timestamp
 
 # Official SQLite Windows x64 build shipped with the package (https://sqlite.org/)
-$SqliteTargetVersion = "3.53.4"
-$SqliteDllZipUrl = "https://www.sqlite.org/2026/sqlite-dll-win-x64-3530400.zip"
-$SqliteToolsZipUrl = "https://www.sqlite.org/2026/sqlite-tools-win-x64-3530400.zip"
+$SqliteTargetVersion = "3.54.0"
+$SqliteDllZipUrl = "https://www.sqlite.org/2026/sqlite-dll-win-x64-3540000.zip"
+$SqliteToolsZipUrl = "https://www.sqlite.org/2026/sqlite-tools-win-x64-3540000.zip"
 $SqliteVersionShipped = $null
 $SqliteRuntimeBundled = $false
 $SourceSpecsSnapshot = $null
@@ -790,7 +790,7 @@ else {
 }
 
 # ---------------------------------------------------------------------------
-#  5b. Bundle SQLite 3.53.4 runtime for target XAMPP PHP
+#  5b. Bundle SQLite 3.54.0 runtime for target XAMPP PHP
 # ---------------------------------------------------------------------------
 Write-Header "5b / Bundle SQLite Runtime ($SqliteTargetVersion)"
 
@@ -859,7 +859,7 @@ else {
         }
         else {
             Write-Err "Could not obtain SQLite $SqliteTargetVersion DLL for the package."
-            Write-Err "Re-run with network access, or install 3.53.4 on this PC first."
+            Write-Err "Re-run with network access, or install 3.54.0 on this PC first."
             if (Test-Path $downloadTmp) { Remove-Item $downloadTmp -Recurse -Force -ErrorAction SilentlyContinue }
             Read-Host "Press Enter to exit"
             exit 1
@@ -2447,7 +2447,7 @@ HTML report from the packager host (when available):
 
 ---
 
-## SQLite 3.53.4 + performance (ships with this package)
+## SQLite 3.54.0 + performance (ships with this package)
 
 | Piece | What it does |
 |-------|----------------|

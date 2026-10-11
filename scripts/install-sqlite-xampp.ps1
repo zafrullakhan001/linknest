@@ -3,7 +3,7 @@
 # Does two things many XAMPP hosts need:
 #   1. Enable extension=sqlite3 and extension=pdo_sqlite in php.ini
 #      (and de-dupe openssl so PHP stops warning "Module openssl is already loaded")
-#   2. Replace php\libsqlite3.dll with the bundled 3.53.x DLL from the deploy ZIP
+#   2. Replace php\libsqlite3.dll with the bundled 3.54.x DLL from the deploy ZIP
 #
 # Usage:
 #   .\scripts\install-sqlite-xampp.ps1 -XamppRoot D:\xampp
