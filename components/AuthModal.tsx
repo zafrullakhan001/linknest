@@ -158,6 +158,10 @@ export const AuthModal: React.FC<AuthModalProps> = ({ isOpen, onClose, initialMo
   const progressIntervalRef = useRef<NodeJS.Timeout | null>(null);
   const countdownTimerRef = useRef<NodeJS.Timeout | null>(null);
   const twoFactorInputRef = useRef<HTMLInputElement>(null);
+  /** First credential field of the panel (Sign In / Create Account username, Forgot password email) */
+  const usernameInputRef = useRef<HTMLInputElement>(null);
+  const registerUsernameInputRef = useRef<HTMLInputElement>(null);
+  const forgotEmailInputRef = useRef<HTMLInputElement>(null);
 
   const { login, completeTwoFactorLogin, loginWithPasskey, register } = useAuth();
   const { settings: appSettings, loading: settingsLoading } = useSettings();
@@ -329,6 +333,79 @@ export const AuthModal: React.FC<AuthModalProps> = ({ isOpen, onClose, initialMo
       setTwoFactorUseRecovery(false);
     }
   }, [isOpen]);
+
+  /**
+   * Put the caret in the first credential field as soon as the dialog appears so the user can
+   * start typing without clicking into the field first. Also re-runs when the panel switches
+   * (Sign In / Create Account / Forgot password), when the auth method resolves after settings
+   * load, and when coming back from the two-factor step. The field can render a tick later
+   * (settings still loading, panel fade-in), so a short retry loop covers that.
+   */
+  useEffect(() => {
+    // The Reset Password panel leads with a password field, which is intentionally left alone.
+    if (!isOpen || twoFactor || mode === 'reset') return;
+
+    // Touch-first devices: leave the field alone so the on-screen keyboard is not forced open
+    // (the dialog can also be opened automatically by protected routes, without a tap).
+    try {
+      if (window.matchMedia && window.matchMedia('(pointer: coarse)').matches) return;
+    } catch {
+      // matchMedia unavailable — keep the desktop behaviour
+    }
+
+    const pickTarget = (): HTMLInputElement | null => {
+      if (mode === 'forgot') return forgotEmailInputRef.current;
+      if (mode === 'register') return registerUsernameInputRef.current;
+      return usernameInputRef.current;
+    };
+
+    const isEditable = (el: Element | null): boolean => {
+      if (!el) return false;
+      if (el instanceof HTMLElement && el.isContentEditable) return true;
+      return el.tagName === 'INPUT' || el.tagName === 'TEXTAREA' || el.tagName === 'SELECT';
+    };
+
+    // Keyboard users arrow through the sr-only auth-method radios — never yank focus away from them.
+    const isKeyboardFocusedAuthMethod = (): boolean => {
+      const active = document.activeElement as HTMLInputElement | null;
+      if (!active || active.type !== 'radio' || active.name !== 'authMethod') return false;
+      try {
+        return active.matches(':focus-visible');
+      } catch {
+        return false;
+      }
+    };
+
+    const tryFocus = (): boolean => {
+      const target = pickTarget();
+      if (!target || target.disabled) return false;
+      const active = document.activeElement;
+      if (active === target) return true;
+      // Never steal focus from a radio being navigated by keyboard, or from a field already in use.
+      if (isKeyboardFocusedAuthMethod() || isEditable(active)) return true;
+      target.focus();
+      // Keep any existing value but place the caret after it, ready for typing.
+      if (target.value && typeof target.setSelectionRange === 'function') {
+        try {
+          target.setSelectionRange(target.value.length, target.value.length);
+        } catch {
+          // Some input types reject setSelectionRange — focus alone is enough
+        }
+      }
+      return true;
+    };
+
+    if (tryFocus()) return;
+
+    const timers: number[] = [];
+    const clearTimers = () => timers.forEach((timer) => window.clearTimeout(timer));
+    [50, 150, 350, 600].forEach((delay) => {
+      timers.push(window.setTimeout(() => {
+        if (tryFocus()) clearTimers();
+      }, delay));
+    });
+    return clearTimers;
+  }, [isOpen, mode, authMethod, twoFactor]);
 
   const selectAuthMethod = (method: AuthMethodChoice) => {
     setAuthMethod(method);
@@ -1039,6 +1116,7 @@ export const AuthModal: React.FC<AuthModalProps> = ({ isOpen, onClose, initialMo
                     Email
                   </label>
                   <input
+                    ref={forgotEmailInputRef}
                     type="email"
                     value={email}
                     onChange={(e) => setEmail(e.target.value)}
@@ -1300,6 +1378,7 @@ export const AuthModal: React.FC<AuthModalProps> = ({ isOpen, onClose, initialMo
                     Username or Email
                   </label>
                   <input
+                    ref={usernameInputRef}
                     type="text"
                     value={username}
                     onChange={(e) => setUsername(e.target.value)}
@@ -1356,6 +1435,7 @@ export const AuthModal: React.FC<AuthModalProps> = ({ isOpen, onClose, initialMo
                   Username
                 </label>
                 <input
+                  ref={registerUsernameInputRef}
                   type="text"
                   value={username}
                   onChange={(e) => setUsername(e.target.value)}
