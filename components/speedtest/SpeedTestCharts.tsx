@@ -58,8 +58,12 @@ export const ComparisonPanel: React.FC<{
   server: SpeedTestResult | null;
   onRunCompare: () => void;
   running: boolean;
-}> = ({ internet, server, onRunCompare, running }) => {
+  /** Label for the second (non-internet) leg — "This server" or "Custom server (host)". */
+  serverLabel?: string;
+}> = ({ internet, server, onRunCompare, running, serverLabel }) => {
   const findings = compareTargets(internet, server);
+  const serverIsProxy = server?.target === 'custom' && server.meta.endpointMode === 'proxy';
+  const secondLabel = serverLabel || 'This server';
   const chart = [
     {
       name: 'Download',
@@ -79,7 +83,8 @@ export const ComparisonPanel: React.FC<{
         <div>
           <div className="text-sm font-bold text-slate-900 dark:text-white">Path comparison</div>
           <p className="text-[11px] text-slate-500">
-            Runs Internet then This server. VPN/LAN notes are heuristics — browsers cannot read VPN adapters.
+            Runs Internet first, then {secondLabel}. VPN/LAN notes are heuristics — browsers cannot read VPN adapters.
+            {serverIsProxy ? ' The second leg was relayed from the LinkNest host.' : ''}
           </p>
         </div>
         <button
@@ -113,9 +118,14 @@ export const ComparisonPanel: React.FC<{
           <div>Ping {internet ? `${Math.round(internet.pingMs ?? 0)} ms` : '—'}</div>
         </div>
         <div className="rounded-xl border border-slate-200 dark:border-[#333] p-3">
-          <div className="font-bold text-slate-700 dark:text-slate-200">This server</div>
+          <div className="font-bold text-slate-700 dark:text-slate-200">{secondLabel}</div>
           <div>Down {formatMbps(server?.downloadMbps)} · Up {formatMbps(server?.uploadMbps)}</div>
           <div>Ping {server ? `${Math.round(server.pingMs ?? 0)} ms` : '—'}</div>
+          {server?.target === 'custom' && (
+            <div className="text-[11px] text-slate-500 mt-0.5">
+              {server.meta.endpointMode === 'proxy' ? 'via LinkNest host' : 'browser-direct'}
+            </div>
+          )}
         </div>
       </div>
       <DiagnosticsPanel findings={findings} />

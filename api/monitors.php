@@ -348,6 +348,10 @@ function monitorExportSpeedtestSettings(): array {
         'speedtest_worker_daily_cap_mb',
         'speedtest_worker_min_interval_minutes',
         'speedtest_loopback_base_url',
+        'speedtest_proxy_allow_hosts',
+        'speedtest_proxy_allow_self_signed',
+        'speedtest_proxy_max_redirects',
+        'speedtest_public_probe_enabled',
     ];
     $out = [];
     foreach ($keys as $key) {
@@ -452,6 +456,10 @@ function monitorImportApplySpeedtestSettings(array $settings): void {
         'speedtest_worker_daily_cap_mb' => true,
         'speedtest_worker_min_interval_minutes' => true,
         'speedtest_loopback_base_url' => true,
+        'speedtest_proxy_allow_hosts' => true,
+        'speedtest_proxy_allow_self_signed' => true,
+        'speedtest_proxy_max_redirects' => true,
+        'speedtest_public_probe_enabled' => true,
     ];
     foreach ($settings as $key => $value) {
         $key = (string)$key;

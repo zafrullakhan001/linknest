@@ -16,10 +16,18 @@ const CF_DOWN = 'https://speed.cloudflare.com/__down';
 const CF_UP = 'https://speed.cloudflare.com/__up';
 const CF_TRACE = 'https://speed.cloudflare.com/cdn-cgi/trace';
 
-export type SpeedTestTarget = 'internet' | 'server';
+export type SpeedTestTarget = 'internet' | 'server' | 'custom';
 export type SpeedTestProfile = 'quick' | 'standard' | 'thorough';
 export type SpeedTestConnectionMode = 'single' | 'multi';
 export type SpeedTestExecutor = 'browser' | 'worker';
+/**
+ * How a custom-server target is reached:
+ * - `direct` — this browser connects to the endpoint itself (endpoint must expose the
+ *   public probe, e.g. another LinkNest with `speedtest_public_probe_enabled`).
+ * - `proxy` — this LinkNest host relays to the endpoint (works for any web server;
+ *   gated by the admin proxy allow-list).
+ */
+export type SpeedTestEndpointMode = 'direct' | 'proxy';
 export type SpeedTestPhase =
   | 'idle'
   | 'preparing'
@@ -65,6 +73,8 @@ export interface SpeedTestMeta {
   userAgent: string | null;
   browser: string | null;
   endpointHost: string | null;
+  /** Only set for the custom-server target; null for Internet / This server. */
+  endpointMode: SpeedTestEndpointMode | null;
   connectionType: string | null;
   connectionDownlink: number | null;
   connectionRtt: number | null;
@@ -130,6 +140,12 @@ const PROFILES: Record<SpeedTestTarget, Record<SpeedTestProfile, ProfileConfig>>
     standard: { pings: 8, downloadMs: 9000, uploadMs: 7000, streams: 3, downloadChunk: 6_000_000, uploadChunk: 1_500_000 },
     thorough: { pings: 12, downloadMs: 12000, uploadMs: 9000, streams: 4, downloadChunk: 8_000_000, uploadChunk: 2_000_000 },
   },
+  // Same shape as `server`: LAN/HTTP endpoints, 8 MiB per-request cap on the PHP probe.
+  custom: {
+    quick: { pings: 6, downloadMs: 6000, uploadMs: 5000, streams: 2, downloadChunk: 4_000_000, uploadChunk: 1_000_000 },
+    standard: { pings: 8, downloadMs: 9000, uploadMs: 7000, streams: 3, downloadChunk: 6_000_000, uploadChunk: 1_500_000 },
+    thorough: { pings: 12, downloadMs: 12000, uploadMs: 9000, streams: 4, downloadChunk: 8_000_000, uploadChunk: 2_000_000 },
+  },
 };
 
 function nowMs(): number {
@@ -188,6 +204,104 @@ function classifyIp(ip: string | null): { ipv4: string | null; ipv6: string | nu
   if (!ip) return { ipv4: null, ipv6: null };
   if (ip.includes(':')) return { ipv4: null, ipv6: ip };
   return { ipv4: ip, ipv6: null };
+}
+
+/**
+ * A "Custom server" speed-test target — another web server reachable by IP/host.
+ * `baseUrl` is that endpoint's API base (origin + install path, no trailing slash):
+ * `https://192.168.10.20:8443/api` or `http://fileserver.local/linknest/api`.
+ */
+export interface SpeedTestEndpoint {
+  /** Origin + install path, e.g. https://192.168.10.20:8443/api */
+  baseUrl: string;
+  /** Origin only, e.g. https://192.168.10.20:8443 */
+  origin: string;
+  mode: SpeedTestEndpointMode;
+  /** Display label, e.g. 192.168.10.20:8443 */
+  label: string;
+}
+
+const DEFAULT_ENDPOINT_PATH = '/api';
+
+/** Normalize an address typed or pasted by a user into a usable custom endpoint. */
+export function normalizeSpeedTestEndpoint(input: {
+  scheme?: string | null;
+  host?: string | null;
+  port?: string | number | null;
+  path?: string | null;
+  mode?: string | null;
+}): SpeedTestEndpoint | null {
+  let raw = String(input.host ?? '').trim().replace(/[\s\u00a0]+/g, '');
+  if (!raw) return null;
+
+  let scheme = String(input.scheme ?? '').trim().toLowerCase();
+  let path = String(input.path ?? '').trim();
+  let port = String(input.port ?? '').trim();
+
+  // Accept a pasted full URL in the address box.
+  if (/^[a-z][a-z0-9+.-]*:\/\//i.test(raw)) {
+    try {
+      const parsed = new URL(raw);
+      scheme = parsed.protocol.replace(':', '').toLowerCase();
+      if (parsed.pathname) path = parsed.pathname;
+      if (parsed.port) port = parsed.port;
+      raw = parsed.hostname;
+    } catch {
+      return null;
+    }
+  }
+
+  raw = raw.replace(/^\/+/, '').replace(/\/+$/, '');
+  if (!raw) return null;
+
+  // host[:port] — respect bracketed IPv6.
+  let host = raw;
+  const bracketed = raw.match(/^\[([^\]]+)\](?::(\d+))?$/);
+  if (bracketed) {
+    host = bracketed[1];
+    if (bracketed[2]) port = bracketed[2];
+  } else if ((raw.match(/:/g) || []).length === 1) {
+    const [h, p] = raw.split(':');
+    host = h;
+    if (p) port = p;
+  }
+  host = host.trim().replace(/^\[|\]$/g, '');
+  if (!host || /[/\\?#@\s*]/.test(host)) return null;
+
+  if (scheme !== 'https') scheme = 'http';
+  if (port !== '' && (!/^\d{1,5}$/.test(port) || Number(port) < 1 || Number(port) > 65535)) {
+    port = '';
+  }
+  if (!path || !path.startsWith('/')) path = DEFAULT_ENDPOINT_PATH;
+  path = path.replace(/\/+$/, '') || DEFAULT_ENDPOINT_PATH;
+
+  const hostForUrl = host.includes(':') ? `[${host}]` : host;
+  const origin = `${scheme}://${hostForUrl}${port ? ':' + port : ''}`;
+  return {
+    origin,
+    baseUrl: `${origin}${path}`,
+    mode: input.mode === 'proxy' ? 'proxy' : 'direct',
+    label: `${host}${port ? ':' + port : ''}`,
+  };
+}
+
+/**
+ * Identity of a measured path. Custom-server history is keyed by endpoint + mode so
+ * two different IPs (or direct vs proxy) can never be compared to each other.
+ */
+export function speedTestPathKey(ref: {
+  target: SpeedTestTarget;
+  connectionMode?: SpeedTestConnectionMode;
+  executor?: SpeedTestExecutor;
+  endpointHost?: string | null;
+  endpointMode?: SpeedTestEndpointMode | null;
+}): string {
+  const mode = ref.connectionMode || 'multi';
+  const executor = ref.executor || 'browser';
+  if (ref.target === 'custom') {
+    return `custom|${ref.endpointHost || ''}|${ref.endpointMode || 'direct'}|${mode}|${executor}`;
+  }
+  return `${ref.target}|${mode}|${executor}`;
 }
 
 export function formatMbps(mbps: number | null | undefined): string {
@@ -305,10 +419,15 @@ async function fetchCloudflareMeta(signal: AbortSignal): Promise<Partial<SpeedTe
   return parseCloudflareTrace(await res.text());
 }
 
-async function fetchServerMeta(signal: AbortSignal): Promise<Partial<SpeedTestMeta>> {
-  const res = await fetch(`${API_BASE}/speedtest/info?r=${Date.now()}`, {
+async function fetchServerMeta(signal: AbortSignal, target: SpeedTestTarget, endpoint?: SpeedTestEndpoint): Promise<Partial<SpeedTestMeta>> {
+  const url =
+    target === 'custom' && endpoint
+      ? endpointRequestUrl(endpoint, '/speedtest/info')
+      : `${API_BASE}/speedtest/info?r=${Date.now()}`;
+  const res = await fetch(url, {
     cache: 'no-store',
-    credentials: 'include',
+    credentials: target === 'custom' && endpoint?.mode === 'direct' ? 'omit' : 'include',
+    mode: 'cors',
     signal,
   });
   if (!res.ok) {
@@ -319,12 +438,19 @@ async function fetchServerMeta(signal: AbortSignal): Promise<Partial<SpeedTestMe
   const data = json?.data ?? json;
   const ip = data?.ip ?? null;
   const { ipv4, ipv6 } = classifyIp(ip);
+  const endpointHost =
+    target === 'custom' && endpoint
+      ? endpoint.label
+      : typeof window !== 'undefined'
+        ? window.location.host
+        : 'linknest-host';
   return {
     ip,
     ipv4,
     ipv6,
     userAgent: data?.user_agent ?? navigator.userAgent,
-    endpointHost: typeof window !== 'undefined' ? window.location.host : 'linknest-host',
+    endpointHost,
+    endpointMode: target === 'custom' && endpoint ? endpoint.mode : null,
     httpProtocol: data?.http_protocol ?? null,
     tls: null,
     loc: null,
@@ -334,10 +460,16 @@ async function fetchServerMeta(signal: AbortSignal): Promise<Partial<SpeedTestMe
 
 function httpErrorMessage(kind: 'Download' | 'Upload', status: number, target: SpeedTestTarget): string {
   if (status === 429) {
-    if (target === 'server') {
-      return `${kind} rate-limited by LinkNest (too many chunk requests this hour). Wait a bit, use Single mode, or try again next hour.`;
+    if (target === 'internet') {
+      return `${kind} rate-limited by Cloudflare (429). Wait ~30s and retry, or switch to This server.`;
     }
-    return `${kind} rate-limited by Cloudflare (429). Wait ~30s and retry, or switch to This server.`;
+    if (target === 'custom') {
+      return `${kind} rate-limited by the target server (too many chunk requests this hour). Wait a bit, use Single mode, or try again next hour.`;
+    }
+    return `${kind} rate-limited by LinkNest (too many chunk requests this hour). Wait a bit, use Single mode, or try again next hour.`;
+  }
+  if (status === 401 || status === 403) {
+    return `${kind} refused by the target server (${status}). For Browser-direct the endpoint must expose the public speed-test probe (or be another LinkNest with it enabled); otherwise use Server-proxy.`;
   }
   return `${kind} failed (${status})`;
 }
@@ -358,35 +490,79 @@ async function fetchThroughput(
   return res;
 }
 
-function downloadUrl(target: SpeedTestTarget, bytes: number): string {
+function appendQuery(url: string, params: Record<string, string | number>): string {
+  const qs = Object.entries(params)
+    .map(([k, v]) => `${encodeURIComponent(k)}=${encodeURIComponent(String(v))}`)
+    .join('&');
+  if (!qs) return url;
+  return url + (url.includes('?') ? '&' : '?') + qs;
+}
+
+/**
+ * Resolve a `/speedtest/*` path for a custom endpoint.
+ * - direct → `<endpoint.baseUrl>/speedtest/<action>` (this browser talks to the endpoint)
+ * - proxy  → `<thisHost>/api/speedtest/proxy/<action>?target=<endpoint.baseUrl>` (relayed by LinkNest)
+ */
+export function endpointRequestUrl(endpoint: SpeedTestEndpoint, speedtestPath: string): string {
+  if (endpoint.mode === 'proxy') {
+    const sub = speedtestPath.replace(/^\/speedtest/, '');
+    return appendQuery(`${API_BASE}/speedtest/proxy${sub}`, { target: endpoint.baseUrl });
+  }
+  return `${endpoint.baseUrl}${speedtestPath}`;
+}
+
+function downloadUrl(target: SpeedTestTarget, bytes: number, endpoint?: SpeedTestEndpoint): string {
   const bust = Date.now().toString(36) + Math.random().toString(36).slice(2, 6);
   if (target === 'internet') {
     return `${CF_DOWN}?bytes=${bytes}&r=${bust}`;
   }
+  if (target === 'custom' && endpoint) {
+    return appendQuery(endpointRequestUrl(endpoint, '/speedtest/download'), { bytes, r: bust });
+  }
   return `${API_BASE}/speedtest/download?bytes=${bytes}&r=${bust}`;
 }
 
-function pingUrl(target: SpeedTestTarget): string {
+function pingUrl(target: SpeedTestTarget, endpoint?: SpeedTestEndpoint): string {
   const bust = Date.now().toString(36) + Math.random().toString(36).slice(2, 6);
   if (target === 'internet') {
     return `${CF_DOWN}?bytes=500&r=${bust}`;
   }
+  if (target === 'custom' && endpoint) {
+    return appendQuery(endpointRequestUrl(endpoint, '/speedtest/ping'), { r: bust });
+  }
   return `${API_BASE}/speedtest/ping?r=${bust}`;
 }
 
-function fetchOpts(target: SpeedTestTarget, signal: AbortSignal, init?: RequestInit): RequestInit {
+/** Custom endpoints rarely sit on this origin, so surface a clear CORS/refused hint. */
+function customEndpointHint(endpoint: SpeedTestEndpoint): string {
+  if (endpoint.mode === 'direct') {
+    return ' Browser-direct needs the endpoint to allow cross-origin speed-test probes (another LinkNest with the public probe enabled). If it does not, switch to Server-proxy.';
+  }
+  return ' Server-proxy must have this endpoint on the admin allow-list (speedtest_proxy_allow_hosts).';
+}
+
+function fetchOpts(target: SpeedTestTarget, signal: AbortSignal, init?: RequestInit, endpoint?: SpeedTestEndpoint): RequestInit {
+  const directCustom = target === 'custom' && endpoint?.mode === 'direct';
   return {
     cache: 'no-store',
-    credentials: target === 'server' ? 'include' : 'omit',
+    credentials: target === 'internet' || directCustom ? 'omit' : 'include',
     mode: 'cors',
     signal,
     ...init,
   };
 }
 
-async function pingOnce(target: SpeedTestTarget, signal: AbortSignal): Promise<number> {
+async function pingOnce(target: SpeedTestTarget, signal: AbortSignal, endpoint?: SpeedTestEndpoint): Promise<number> {
   const t0 = nowMs();
-  const res = await fetch(pingUrl(target), fetchOpts(target, signal, { method: 'GET' }));
+  let res: Response;
+  try {
+    res = await fetch(pingUrl(target, endpoint), fetchOpts(target, signal, { method: 'GET' }, endpoint));
+  } catch (err) {
+    if (target === 'custom' && endpoint && !signal.aborted) {
+      throw new Error(`Could not reach ${endpoint.label}.${customEndpointHint(endpoint)}`);
+    }
+    throw err;
+  }
   await res.arrayBuffer();
   if (!res.ok) throw new Error(`Ping failed (${res.status})`);
   return nowMs() - t0;
@@ -410,14 +586,15 @@ async function measureLatency(
   target: SpeedTestTarget,
   count: number,
   signal: AbortSignal,
-  onEach: (rtt: number, done: number, total: number) => void
+  onEach: (rtt: number, done: number, total: number) => void,
+  endpoint?: SpeedTestEndpoint
 ): Promise<{ rtts: number[]; failed: number }> {
   const rtts: number[] = [];
   let failed = 0;
   for (let i = 0; i < count; i++) {
     if (signal.aborted) break;
     try {
-      const rtt = await pingOnce(target, signal);
+      const rtt = await pingOnce(target, signal, endpoint);
       rtts.push(rtt);
       onEach(rtt, i + 1, count);
     } catch (err) {
@@ -437,7 +614,8 @@ async function runLoadedLatencyProbe(
   target: SpeedTestTarget,
   durationMs: number,
   signal: AbortSignal,
-  onSample: (rtt: number | null) => void
+  onSample: (rtt: number | null) => void,
+  endpoint?: SpeedTestEndpoint
 ): Promise<{ medianMs: number | null; failedPct: number; samples: number[] }> {
   const started = nowMs();
   const rtts: number[] = [];
@@ -446,7 +624,7 @@ async function runLoadedLatencyProbe(
   while (nowMs() - started < durationMs && !signal.aborted) {
     attempts += 1;
     try {
-      const rtt = await pingOnce(target, signal);
+      const rtt = await pingOnce(target, signal, endpoint);
       rtts.push(rtt);
       onSample(rtt);
     } catch {
@@ -470,7 +648,8 @@ async function runDownloadStream(
   target: SpeedTestTarget,
   cfg: ProfileConfig,
   signal: AbortSignal,
-  onBytes: (delta: number, total: number, sampleMbps: number | null) => void
+  onBytes: (delta: number, total: number, sampleMbps: number | null) => void,
+  endpoint?: SpeedTestEndpoint
 ): Promise<{ bytes: number; samples: number[]; peak: number; timedSamples: SpeedSample[] }> {
   const started = nowMs();
   const deadline = started + cfg.downloadMs;
@@ -500,8 +679,8 @@ async function runDownloadStream(
   const worker = async () => {
     while (nowMs() < deadline && !signal.aborted) {
       const res = await fetchThroughput(
-        downloadUrl(target, cfg.downloadChunk),
-        fetchOpts(target, signal),
+        downloadUrl(target, cfg.downloadChunk, endpoint),
+        fetchOpts(target, signal, undefined, endpoint),
         'Download',
         target
       );
@@ -554,7 +733,8 @@ async function runUploadStream(
   target: SpeedTestTarget,
   cfg: ProfileConfig,
   signal: AbortSignal,
-  onBytes: (delta: number, total: number, sampleMbps: number | null) => void
+  onBytes: (delta: number, total: number, sampleMbps: number | null) => void,
+  endpoint?: SpeedTestEndpoint
 ): Promise<{ bytes: number; samples: number[]; peak: number; timedSamples: SpeedSample[] }> {
   const blob = createRandomBlob(cfg.uploadChunk);
   const started = nowMs();
@@ -584,17 +764,25 @@ async function runUploadStream(
 
   const worker = async () => {
     while (nowMs() < deadline && !signal.aborted) {
+      const bust = Date.now().toString(36);
       const url =
         target === 'internet'
-          ? `${CF_UP}?r=${Date.now().toString(36)}`
-          : `${API_BASE}/speedtest/upload?r=${Date.now().toString(36)}`;
+          ? `${CF_UP}?r=${bust}`
+          : target === 'custom' && endpoint
+            ? appendQuery(endpointRequestUrl(endpoint, '/speedtest/upload'), { r: bust })
+            : `${API_BASE}/speedtest/upload?r=${bust}`;
       const res = await fetchThroughput(
         url,
-        fetchOpts(target, signal, {
-          method: 'POST',
-          body: blob,
-          headers: { 'Content-Type': 'application/octet-stream' },
-        }),
+        fetchOpts(
+          target,
+          signal,
+          {
+            method: 'POST',
+            body: blob,
+            headers: { 'Content-Type': 'application/octet-stream' },
+          },
+          endpoint
+        ),
         'Upload',
         target
       );
@@ -641,8 +829,13 @@ export async function runSpeedTest(options: {
   connectionMode?: SpeedTestConnectionMode;
   signal: AbortSignal;
   onProgress: (progress: SpeedTestProgress) => void;
+  /** Required for `target: 'custom'`; ignored otherwise. */
+  endpoint?: SpeedTestEndpoint;
 }): Promise<SpeedTestResult> {
-  const { target, profile, signal, onProgress } = options;
+  const { target, profile, signal, onProgress, endpoint } = options;
+  if (target === 'custom' && !endpoint) {
+    throw new Error('Custom-server target requires an endpoint address (IP / host).');
+  }
   const connectionMode: SpeedTestConnectionMode = options.connectionMode ?? 'multi';
   const baseCfg = PROFILES[target][profile];
   const streams = resolveStreams(target, profile, connectionMode);
@@ -664,7 +857,15 @@ export async function runSpeedTest(options: {
     tls: null,
     userAgent: navigator.userAgent,
     browser: detectBrowser(navigator.userAgent),
-    endpointHost: target === 'internet' ? 'speed.cloudflare.com' : typeof window !== 'undefined' ? window.location.host : null,
+    endpointHost:
+      target === 'custom' && endpoint
+        ? endpoint.label
+        : target === 'internet'
+          ? 'speed.cloudflare.com'
+          : typeof window !== 'undefined'
+            ? window.location.host
+            : null,
+    endpointMode: target === 'custom' && endpoint ? endpoint.mode : null,
     ...conn,
   };
 
@@ -691,17 +892,32 @@ export async function runSpeedTest(options: {
     phase: 'preparing',
     phaseLabel: 'Preparing',
     percent: 2,
-    message: target === 'internet' ? 'Reaching Cloudflare…' : 'Contacting this server…',
+    message:
+      target === 'internet'
+        ? 'Reaching Cloudflare…'
+        : target === 'custom' && endpoint
+          ? endpoint.mode === 'proxy'
+            ? `Asking this LinkNest host to reach ${endpoint.label}…`
+            : `Reaching ${endpoint.label} from this browser…`
+          : 'Contacting this server…',
   });
 
   try {
-    const extra = target === 'internet' ? await fetchCloudflareMeta(signal) : await fetchServerMeta(signal);
+    const extra =
+      target === 'internet'
+        ? await fetchCloudflareMeta(signal)
+        : await fetchServerMeta(signal, target, endpoint);
     meta = { ...meta, ...extra, browser: detectBrowser(extra.userAgent || navigator.userAgent) };
   } catch (err) {
     if (signal.aborted) throw err;
     if (target === 'internet') {
       throw new Error(
         'Could not reach Cloudflare speed servers. Try “This server”, disable an ad blocker, or check outbound HTTPS.'
+      );
+    }
+    if (target === 'custom' && endpoint && err instanceof TypeError) {
+      throw new Error(
+        `Could not reach ${endpoint.label}.${customEndpointHint(endpoint)}`
       );
     }
     throw err instanceof Error ? err : new Error('Could not reach the LinkNest speed-test endpoint.');
@@ -718,7 +934,7 @@ export async function runSpeedTest(options: {
       liveMbps: 0,
       message: `Ping sample ${done}/${total}`,
     });
-  });
+  }, endpoint);
   if (signal.aborted) throw new DOMException('Aborted', 'AbortError');
 
   const pingMs = percentile([...rtts].sort((a, b) => a - b), 50) ?? rtts[0] ?? null;
@@ -746,7 +962,7 @@ export async function runSpeedTest(options: {
     if (rtt != null) {
       loadedPingMs = rtt;
     }
-  });
+  }, endpoint);
 
   const down = await runDownloadStream(target, cfg, signal, (_delta, total, sampleMbps) => {
     bytesDownloaded = total;
@@ -770,7 +986,7 @@ export async function runSpeedTest(options: {
       bytesTransferred: total,
       message: `Downloaded ${formatBytes(total)}`,
     });
-  });
+  }, endpoint);
   if (signal.aborted) throw new DOMException('Aborted', 'AbortError');
   const loadedDown = await loadedDownPromise;
   downloadMbps = trimmedMean(down.samples);
@@ -782,7 +998,7 @@ export async function runSpeedTest(options: {
 
   if (loadedPingMs == null) {
     try {
-      loadedPingMs = await pingOnce(target, signal);
+      loadedPingMs = await pingOnce(target, signal, endpoint);
     } catch {
       loadedPingMs = null;
     }
@@ -808,7 +1024,7 @@ export async function runSpeedTest(options: {
 
   const loadedUpPromise = runLoadedLatencyProbe(target, cfg.uploadMs, signal, (rtt) => {
     if (rtt != null) loadedUploadPingMs = rtt;
-  });
+  }, endpoint);
 
   const up = await runUploadStream(target, cfg, signal, (_delta, total, sampleMbps) => {
     bytesUploaded = total;
@@ -832,7 +1048,7 @@ export async function runSpeedTest(options: {
       bytesTransferred: bytesDownloaded + total,
       message: `Uploaded ${formatBytes(total)}`,
     });
-  });
+  }, endpoint);
   if (signal.aborted) throw new DOMException('Aborted', 'AbortError');
   const loadedUp = await loadedUpPromise;
   uploadMbps = trimmedMean(up.samples);
@@ -921,6 +1137,8 @@ export async function runDualSpeedTest(options: {
   connectionMode?: SpeedTestConnectionMode;
   signal: AbortSignal;
   onProgress: (progress: SpeedTestProgress & { compareTarget?: SpeedTestTarget }) => void;
+  /** When set, the second leg measures this custom endpoint instead of "This server". */
+  endpoint?: SpeedTestEndpoint;
 }): Promise<{ internet: SpeedTestResult; server: SpeedTestResult }> {
   const internet = await runSpeedTest({
     target: 'internet',
@@ -931,11 +1149,12 @@ export async function runDualSpeedTest(options: {
   });
   if (options.signal.aborted) throw new DOMException('Aborted', 'AbortError');
   const server = await runSpeedTest({
-    target: 'server',
+    target: options.endpoint ? 'custom' : 'server',
     profile: options.profile,
     connectionMode: options.connectionMode,
     signal: options.signal,
-    onProgress: (p) => options.onProgress({ ...p, compareTarget: 'server' }),
+    endpoint: options.endpoint,
+    onProgress: (p) => options.onProgress({ ...p, compareTarget: options.endpoint ? 'custom' : 'server' }),
   });
   return { internet, server };
 }
@@ -944,6 +1163,8 @@ function normalizeHistoryItem(raw: unknown): SpeedTestResult | null {
   if (!raw || typeof raw !== 'object') return null;
   const r = raw as Partial<SpeedTestResult>;
   if (!r.id || !r.at || !r.target || !r.profile) return null;
+  const target: SpeedTestTarget =
+    r.target === 'internet' || r.target === 'server' || r.target === 'custom' ? r.target : 'server';
   const pingMs = r.pingMs ?? null;
   const loadedPingMs = r.loadedPingMs ?? null;
   const loadedUploadPingMs = r.loadedUploadPingMs ?? null;
@@ -952,7 +1173,7 @@ function normalizeHistoryItem(raw: unknown): SpeedTestResult | null {
   const base: SpeedTestResult = {
     id: String(r.id),
     at: Number(r.at),
-    target: r.target,
+    target,
     profile: r.profile,
     connectionMode: r.connectionMode === 'single' ? 'single' : 'multi',
     executor: r.executor === 'worker' ? 'worker' : 'browser',
@@ -990,6 +1211,7 @@ function normalizeHistoryItem(raw: unknown): SpeedTestResult | null {
       userAgent: r.meta?.userAgent ?? null,
       browser: r.meta?.browser ?? null,
       endpointHost: r.meta?.endpointHost ?? null,
+      endpointMode: r.meta?.endpointMode === 'proxy' ? 'proxy' : r.meta?.endpointMode === 'direct' ? 'direct' : null,
       connectionType: r.meta?.connectionType ?? null,
       connectionDownlink: r.meta?.connectionDownlink ?? null,
       connectionRtt: r.meta?.connectionRtt ?? null,
@@ -1023,21 +1245,34 @@ export function saveSpeedTestResult(result: SpeedTestResult): SpeedTestResult[] 
   return next;
 }
 
-export function speedTestTargetLabel(target: SpeedTestTarget): string {
-  return target === 'internet' ? 'Internet' : 'This server';
+export function speedTestTargetLabel(target: SpeedTestTarget, endpointHost?: string | null): string {
+  if (target === 'internet') return 'Internet';
+  if (target === 'custom') return endpointHost ? `Custom server (${endpointHost})` : 'Custom server';
+  return 'This server';
 }
 
 /** Same path + stream mode + runner so Internet is never compared to host LAN speeds. */
 export function isLikeForLikeSpeedTest(
-  current: Pick<SpeedTestResult, 'target' | 'connectionMode' | 'executor'>,
+  current: Pick<SpeedTestResult, 'target' | 'connectionMode' | 'executor'> & {
+    meta?: Pick<SpeedTestMeta, 'endpointHost' | 'endpointMode'> | null;
+  },
   other: SpeedTestResult
 ): boolean {
-  const mode = current.connectionMode || 'multi';
-  const executor = current.executor || 'browser';
   return (
-    other.target === current.target &&
-    (other.connectionMode || 'multi') === mode &&
-    (other.executor || 'browser') === executor
+    speedTestPathKey({
+      target: current.target,
+      connectionMode: current.connectionMode,
+      executor: current.executor,
+      endpointHost: current.meta?.endpointHost ?? null,
+      endpointMode: current.meta?.endpointMode ?? null,
+    }) ===
+    speedTestPathKey({
+      target: other.target,
+      connectionMode: other.connectionMode,
+      executor: other.executor,
+      endpointHost: other.meta?.endpointHost ?? null,
+      endpointMode: other.meta?.endpointMode ?? null,
+    })
   );
 }
 
@@ -1058,7 +1293,12 @@ export function clearSpeedTestHistory(): void {
 
 export function resultToShareText(result: SpeedTestResult): string {
   const when = new Date(result.at).toLocaleString();
-  const target = result.target === 'internet' ? 'Internet (Cloudflare)' : 'This LinkNest server';
+  const target =
+    result.target === 'internet'
+      ? 'Internet (Cloudflare)'
+      : result.target === 'custom'
+        ? `Custom server (${result.meta.endpointHost || 'unknown'}${result.meta.endpointMode === 'proxy' ? ', via LinkNest host' : ', browser-direct'})`
+        : 'This LinkNest server';
   const loc = [result.meta.loc, result.meta.colo].filter(Boolean).join(' / ');
   const grades = result.useCaseGrades.map((g) => `${g.label} ${g.grade}`).join(', ');
   return [
@@ -1089,6 +1329,8 @@ export function historyToCsv(history: SpeedTestResult[]): string {
     'at',
     'executor',
     'target',
+    'endpoint',
+    'endpointMode',
     'profile',
     'connectionMode',
     'streams',
@@ -1115,6 +1357,8 @@ export function historyToCsv(history: SpeedTestResult[]): string {
       new Date(h.at).toISOString(),
       h.executor,
       h.target,
+      h.target === 'custom' ? h.meta.endpointHost : '',
+      h.target === 'custom' ? h.meta.endpointMode : '',
       h.profile,
       h.connectionMode,
       h.streams,

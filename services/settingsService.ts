@@ -169,6 +169,17 @@ export interface AppSettings {
   url_safety_check_adult?: string;
   /** '0' or '1' — hard-block malware/phishing on save (MCP); UI uses confirm when off */
   url_safety_block_malicious?: string;
+  /**
+   * Speed-test Server-proxy allow-list: CSV of hostnames, IPs, or IPv4 CIDRs the
+   * "Custom server" proxy may reach. Empty blocks every proxy target.
+   */
+  speedtest_proxy_allow_hosts?: string;
+  /** '0' or '1' — allow self-signed / privately-signed TLS on a proxied endpoint */
+  speedtest_proxy_allow_self_signed?: string;
+  /** Max redirect hops the proxy follows (0–3) */
+  speedtest_proxy_max_redirects?: string;
+  /** '0' or '1' — expose this host's /api/speedtest probe without a session (Browser-direct) */
+  speedtest_public_probe_enabled?: string;
 
   // LDAP Settings
   ldap_enabled?: string;
@@ -428,6 +439,10 @@ export const settingsService = {
       url_safety_enabled: data.settings?.url_safety_enabled === '0' ? '0' : '1',
       url_safety_check_adult: data.settings?.url_safety_check_adult === '0' ? '0' : '1',
       url_safety_block_malicious: data.settings?.url_safety_block_malicious === '1' ? '1' : '0',
+      speedtest_proxy_allow_hosts: data.settings?.speedtest_proxy_allow_hosts || '',
+      speedtest_proxy_allow_self_signed: data.settings?.speedtest_proxy_allow_self_signed === '0' ? '0' : '1',
+      speedtest_proxy_max_redirects: data.settings?.speedtest_proxy_max_redirects || '0',
+      speedtest_public_probe_enabled: data.settings?.speedtest_public_probe_enabled === '1' ? '1' : '0',
 
       // LDAP defaults
       ldap_enabled: data.settings?.ldap_enabled || '0',

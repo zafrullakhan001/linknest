@@ -1,4 +1,4 @@
-import { SpeedTestResult, formatMbps, formatMs, historyToCsv, resultToShareText } from './speedTestService';
+import { SpeedTestResult, formatMbps, formatMs, historyToCsv, resultToShareText, speedTestTargetLabel } from './speedTestService';
 
 function downloadBlob(blob: Blob, filename: string): void {
   const url = URL.createObjectURL(blob);
@@ -76,7 +76,9 @@ export async function buildSpeedTestPngBlob(result: SpeedTestResult): Promise<Bl
   ctx.fillStyle = '#64748b';
   ctx.fillText(new Date(result.at).toLocaleString(), 56, 102);
   ctx.fillText(
-    `${result.target === 'internet' ? 'Internet' : 'This server'} · ${result.connectionMode} · ${result.profile}`,
+    `${speedTestTargetLabel(result.target, result.meta.endpointHost)}${
+      result.target === 'custom' ? (result.meta.endpointMode === 'proxy' ? ' via LinkNest host' : ' browser-direct') : ''
+    } · ${result.connectionMode} · ${result.profile}`,
     56,
     124
   );

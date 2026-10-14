@@ -298,6 +298,9 @@ export function describeExecutor(target: SpeedTestTarget, executor: 'browser' | 
       ? 'Server worker → Cloudflare (measures this host’s internet path)'
       : 'Server worker → LinkNest loopback (measures this host locally)';
   }
+  if (target === 'custom') {
+    return 'This browser → custom endpoint (or LinkNest host when proxied)';
+  }
   return target === 'internet'
     ? 'This browser → Cloudflare (your device’s internet path)'
     : 'This browser → LinkNest host (LAN/VPN if you are local)';

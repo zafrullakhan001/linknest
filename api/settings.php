@@ -986,7 +986,9 @@ function handleUpdateSettings() {
                 'sp_single_logout_service', 'sp_site_url', 'idp_entity_id', 'idp_sso_url', 'idp_slo_url',
                 'idp_x509cert', 'nameid_format', 'strict', 'debug', 'map_name_to', 'map_email_to',
                 'map_display_name_to', 'auto_provision',
-                'updater_repo', 'updater_github_token', 'updater_check_interval_minutes', 'updater_track_branch'
+                'updater_repo', 'updater_github_token', 'updater_check_interval_minutes', 'updater_track_branch',
+                'speedtest_proxy_allow_hosts', 'speedtest_proxy_allow_self_signed', 'speedtest_proxy_max_redirects',
+                'speedtest_public_probe_enabled'
             ];
 
             // After a full LDAP purge in this request, ignore residual flat ldap_* fields from the client

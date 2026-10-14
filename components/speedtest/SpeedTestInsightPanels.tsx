@@ -102,6 +102,19 @@ export const NetworkDetailsPanel: React.FC<{ result: SpeedTestResult | null }> =
         <div title="Browser Network Information API connection type when available (e.g. wifi, ethernet).">Type: <span className="font-semibold text-slate-800 dark:text-slate-200">{m?.connectionType || '—'}</span></div>
         <div title="Browser user-agent summary for this run.">Browser: <span className="font-semibold text-slate-800 dark:text-slate-200">{m?.browser || '—'}</span></div>
         <div title="Hostname of the speed-test endpoint used.">Endpoint: <span className="font-semibold text-slate-800 dark:text-slate-200">{m?.endpointHost || '—'}</span></div>
+        {result?.target === 'custom' && (
+          <div
+            className="sm:col-span-2"
+            title="Which network path the custom-server result measured: this browser directly, or this LinkNest host relaying."
+          >
+            Path:{' '}
+            <span className="font-semibold text-violet-700 dark:text-violet-300">
+              {m?.endpointMode === 'proxy'
+                ? 'LinkNest host → endpoint (relayed; not this device)'
+                : 'This browser → endpoint'}
+            </span>
+          </div>
+        )}
         <div title="HTTP and TLS versions reported for the transfer path when known.">Protocol: <span className="font-semibold text-slate-800 dark:text-slate-200">{[m?.httpProtocol, m?.tls].filter(Boolean).join(' · ') || '—'}</span></div>
         <div title="Approximate edge location / colo for the internet target.">Location: <span className="font-semibold text-slate-800 dark:text-slate-200">{[m?.loc, m?.colo].filter(Boolean).join(' · ') || '—'}</span></div>
         <div title="Browser-estimated downlink from the Network Information API (not the measured test).">

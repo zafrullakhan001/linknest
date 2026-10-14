@@ -18,12 +18,15 @@ import {
     FaTrash,
     FaUpload,
     FaCog,
+    FaNetworkWired,
 } from 'react-icons/fa';
 import { Area, AreaChart, CartesianGrid, ResponsiveContainer, Tooltip, XAxis, YAxis } from 'recharts';
 import { useEscapeToClose } from '../hooks/useEscapeToClose';
 import { useAuth } from '../contexts/AuthContext';
 import {
     SpeedTestConnectionMode,
+    SpeedTestEndpoint,
+    SpeedTestEndpointMode,
     SpeedTestPhase,
     SpeedTestProfile,
     SpeedTestProgress,
@@ -36,12 +39,18 @@ import {
     formatMs,
     isLikeForLikeSpeedTest,
     loadSpeedTestHistory,
+    normalizeSpeedTestEndpoint,
     runDualSpeedTest,
     runSpeedTest,
     saveSpeedTestResult,
     speedTestTargetLabel,
 } from '../services/speedTestService';
-import { loadSpeedTestPreferences, patchSpeedTestPreferences, SpeedTestPreferences } from '../services/speedTestPreferences';
+import {
+    SpeedTestCustomServerPrefs,
+    loadSpeedTestPreferences,
+    patchSpeedTestPreferences,
+    SpeedTestPreferences,
+} from '../services/speedTestPreferences';
 import { notifySpeedTestAlerts, notifySpeedTestComplete } from '../services/speedTestNotifications';
 import {
     copySpeedTestPng,
@@ -316,6 +325,21 @@ export const InternetSpeedTester: React.FC<InternetSpeedTesterProps> = ({ isOpen
         () => loadSpeedTestPreferences().connectionMode
     );
     const [viewTab, setViewTab] = useState<'test' | 'compare' | 'settings'>('test');
+    const [customServer, setCustomServer] = useState<SpeedTestCustomServerPrefs>(
+        () => loadSpeedTestPreferences().customServer
+    );
+    const customEndpoint = useMemo<SpeedTestEndpoint | null>(
+        () =>
+            normalizeSpeedTestEndpoint({
+                scheme: customServer.scheme,
+                host: customServer.host,
+                port: customServer.port,
+                path: customServer.path,
+                mode: customServer.mode,
+            }),
+        [customServer]
+    );
+    const [failedEndpoint, setFailedEndpoint] = useState<SpeedTestEndpoint | null>(null);
     const [progress, setProgress] = useState<SpeedTestProgress>(emptyProgress);
     const [result, setResult] = useState<SpeedTestResult | null>(null);
     const [compareInternet, setCompareInternet] = useState<SpeedTestResult | null>(null);
@@ -524,9 +548,28 @@ export const InternetSpeedTester: React.FC<InternetSpeedTesterProps> = ({ isOpen
     useEffect(() => {
         if (!isOpen) return;
         setHistory(loadSpeedTestHistory());
-        setPrefs(loadSpeedTestPreferences());
+        const loaded = loadSpeedTestPreferences();
+        setPrefs(loaded);
+        setCustomServer(loaded.customServer);
         ensureBrowserSpeedScheduleLoop();
     }, [isOpen]);
+
+    const updateCustomServer = useCallback((patch: Partial<SpeedTestCustomServerPrefs>) => {
+        setCustomServer((prev) => ({ ...prev, ...patch }));
+    }, []);
+
+    /** Save the custom-server fields (plus the global defaults) and return the normalized prefs. */
+    const persistCustomServer = useCallback(() => {
+        const next = patchSpeedTestPreferences({
+            defaultTarget: target,
+            defaultProfile: profile,
+            connectionMode,
+            customServer,
+        });
+        setPrefs(next);
+        setCustomServer(next.customServer);
+        return next;
+    }, [customServer, connectionMode, profile, target]);
 
     const stop = useCallback(() => {
         abortRef.current?.abort();
@@ -551,22 +594,34 @@ export const InternetSpeedTester: React.FC<InternetSpeedTesterProps> = ({ isOpen
         }
     }, []);
 
-    const start = useCallback(async () => {
+    const start = useCallback(async (endpointOverride?: SpeedTestEndpoint | null) => {
+        const endpoint = endpointOverride ?? (target === 'custom' ? customEndpoint : null);
+        if (target === 'custom' && !endpoint) {
+            setError('Enter the IP address (or host) of the target server first.');
+            setProgress({ ...emptyProgress, phase: 'error', phaseLabel: 'Error', message: 'No endpoint address' });
+            return;
+        }
         abortRef.current?.abort();
         const ac = new AbortController();
         abortRef.current = ac;
         setError(null);
+        setFailedEndpoint(null);
         setResult(null);
         setCopied(false);
         setViewTab('test');
         patchSpeedTestPreferences({ defaultTarget: target, defaultProfile: profile, connectionMode });
-        setPrefs(loadSpeedTestPreferences());
+        if (target === 'custom') {
+            persistCustomServer();
+        } else {
+            setPrefs(loadSpeedTestPreferences());
+        }
         setProgress({ ...emptyProgress, phase: 'preparing', phaseLabel: 'Preparing', percent: 1 });
         try {
             const next = await runSpeedTest({
                 target,
                 profile,
                 connectionMode,
+                endpoint: endpoint ?? undefined,
                 signal: ac.signal,
                 onProgress: setProgress,
             });
@@ -579,23 +634,45 @@ export const InternetSpeedTester: React.FC<InternetSpeedTesterProps> = ({ isOpen
             }
             const message = err instanceof Error ? err.message : 'Speed test failed.';
             setError(message);
+            // No silent auto-retry: offer the proxy path explicitly, attributed as the LinkNest host.
+            if (target === 'custom' && endpoint && endpoint.mode === 'direct') {
+                setFailedEndpoint(endpoint);
+            }
             setProgress({ ...emptyProgress, phase: 'error', phaseLabel: 'Error', message });
         } finally {
             if (abortRef.current === ac) abortRef.current = null;
         }
-    }, [profile, target, connectionMode, finalizeResult]);
+    }, [profile, target, connectionMode, customEndpoint, finalizeResult, persistCustomServer]);
+
+    const retryViaProxy = useCallback(() => {
+        if (!failedEndpoint) return;
+        const proxyEndpoint: SpeedTestEndpoint = { ...failedEndpoint, mode: 'proxy' };
+        const next = patchSpeedTestPreferences({ customServer: { ...customServer, mode: 'proxy' } });
+        setCustomServer(next.customServer);
+        setError(null);
+        void start(proxyEndpoint);
+    }, [failedEndpoint, customServer, start]);
 
     const startCompare = useCallback(async () => {
+        if (target === 'custom' && !customEndpoint) {
+            setError('Enter the IP address (or host) of the target server first.');
+            setProgress({ ...emptyProgress, phase: 'error', phaseLabel: 'Error', message: 'No endpoint address' });
+            return;
+        }
         abortRef.current?.abort();
         const ac = new AbortController();
         abortRef.current = ac;
         setError(null);
         setViewTab('compare');
+        if (target === 'custom') {
+            persistCustomServer();
+        }
         setProgress({ ...emptyProgress, phase: 'preparing', phaseLabel: 'Comparing', percent: 1 });
         try {
             const dual = await runDualSpeedTest({
                 profile,
                 connectionMode,
+                endpoint: target === 'custom' ? customEndpoint ?? undefined : undefined,
                 signal: ac.signal,
                 onProgress: setProgress,
             });
@@ -615,7 +692,7 @@ export const InternetSpeedTester: React.FC<InternetSpeedTesterProps> = ({ isOpen
         } finally {
             if (abortRef.current === ac) abortRef.current = null;
         }
-    }, [profile, connectionMode, finalizeResult]);
+    }, [profile, connectionMode, target, customEndpoint, finalizeResult, persistCustomServer]);
 
     useEffect(() => () => abortRef.current?.abort(), []);
 
@@ -648,14 +725,21 @@ export const InternetSpeedTester: React.FC<InternetSpeedTesterProps> = ({ isOpen
             ? result.downloadMbps - previous.downloadMbps
             : null;
 
+    const chartRef = result ?? (target === 'custom' ? { target, meta: { endpointHost: customEndpoint?.label ?? null, endpointMode: customServer.mode } } : null);
     const historyChartTarget = result?.target ?? target;
     const historyChartMode = result?.connectionMode ?? connectionMode;
+    const historyChartHost = result?.meta.endpointHost ?? customEndpoint?.label ?? null;
     const historyChart = useMemo(
         () =>
             history
                 .filter((h) =>
                     isLikeForLikeSpeedTest(
-                        { target: historyChartTarget, connectionMode: historyChartMode, executor: result?.executor || 'browser' },
+                        {
+                            target: historyChartTarget,
+                            connectionMode: historyChartMode,
+                            executor: result?.executor || 'browser',
+                            meta: chartRef?.meta ?? null,
+                        },
                         h
                     )
                 )
@@ -666,7 +750,7 @@ export const InternetSpeedTester: React.FC<InternetSpeedTesterProps> = ({ isOpen
                     down: h.downloadMbps ?? 0,
                     up: h.uploadMbps ?? 0,
                 })),
-        [history, historyChartTarget, historyChartMode, result?.executor]
+        [history, historyChartTarget, historyChartMode, result?.executor, chartRef?.meta?.endpointHost, chartRef?.meta?.endpointMode]
     );
 
     const copyResult = async () => {
@@ -810,6 +894,19 @@ export const InternetSpeedTester: React.FC<InternetSpeedTesterProps> = ({ isOpen
                             >
                                 <FaServer size={11} /> This server
                             </button>
+                            <button
+                                type="button"
+                                disabled={running}
+                                onClick={() => setTarget('custom')}
+                                title="Measure a specific server by IP/host — another link/space host on the LAN or a web server you nominate."
+                                className={`inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-bold transition-all disabled:opacity-50 ${
+                                    target === 'custom'
+                                        ? 'bg-white dark:bg-[#333] text-violet-600 dark:text-violet-400 shadow-sm'
+                                        : 'text-slate-500'
+                                }`}
+                            >
+                                <FaNetworkWired size={11} /> Custom server
+                            </button>
                         </div>
                         <div className="flex rounded-xl bg-slate-100 dark:bg-[#252525] p-0.5">
                             {(Object.keys(PROFILE_LABEL) as SpeedTestProfile[]).map((p) => (
@@ -897,6 +994,74 @@ export const InternetSpeedTester: React.FC<InternetSpeedTesterProps> = ({ isOpen
                             ))}
                         </div>
                     </div>
+                    {target === 'custom' && (
+                        <div className="rounded-2xl border border-violet-200 dark:border-violet-900/50 bg-violet-50/70 dark:bg-violet-950/20 px-3 py-2.5 space-y-2">
+                            <div className="flex flex-wrap items-center gap-2">
+                                <span className="inline-flex items-center gap-1.5 text-[11px] font-bold uppercase tracking-wide text-violet-700 dark:text-violet-300">
+                                    <FaNetworkWired size={11} /> Target server
+                                </span>
+                                <input
+                                    type="text"
+                                    value={customServer.host}
+                                    disabled={running}
+                                    onChange={(e) => updateCustomServer({ host: e.target.value })}
+                                    onBlur={persistCustomServer}
+                                    placeholder="192.168.10.20  or  fileserver.local  or  10.0.0.5:8080"
+                                    spellCheck={false}
+                                    autoComplete="off"
+                                    className="flex-1 min-w-[220px] rounded-lg border border-violet-200 dark:border-violet-800 bg-white dark:bg-[#111] px-2.5 py-1.5 text-xs font-semibold text-slate-800 dark:text-slate-100 disabled:opacity-60"
+                                    title="IP address or hostname of the server to measure. Add :port for a non-standard port; you can paste a full http(s):// URL."
+                                />
+                                <div className="flex rounded-lg bg-white dark:bg-[#1a1a1a] border border-violet-200 dark:border-violet-800 p-0.5">
+                                    {(['direct', 'proxy'] as SpeedTestEndpointMode[]).map((m) => (
+                                        <button
+                                            key={m}
+                                            type="button"
+                                            disabled={running}
+                                            onClick={() => {
+                                                updateCustomServer({ mode: m });
+                                                setError(null);
+                                                setFailedEndpoint(null);
+                                            }}
+                                            title={
+                                                m === 'direct'
+                                                    ? 'This browser connects to the endpoint directly (needs a cross-origin speed-test probe — another LinkNest with the public probe enabled).'
+                                                    : 'This LinkNest host relays to the endpoint — works for any web server, but the address must be on the admin proxy allow-list.'
+                                            }
+                                            className={`px-2.5 py-1 rounded-md text-[11px] font-bold transition-all disabled:opacity-50 ${
+                                                customServer.mode === m
+                                                    ? 'bg-violet-600 text-white shadow-sm'
+                                                    : 'text-slate-500'
+                                            }`}
+                                        >
+                                            {m === 'direct' ? 'Browser → endpoint' : 'Host → endpoint'}
+                                        </button>
+                                    ))}
+                                </div>
+                            </div>
+                            <p className="text-[11px] leading-snug text-violet-800/90 dark:text-violet-200/80">
+                                {customServer.mode === 'direct' ? (
+                                    <>
+                                        Measures <strong>this device’s</strong> path to{' '}
+                                        <span className="font-semibold">{customEndpoint ? customEndpoint.label : 'the endpoint'}</span>. The
+                                        endpoint must expose the speed-test probe (another LinkNest with it enabled). Needs HTTPS or a same-scheme
+                                        origin.
+                                    </>
+                                ) : (
+                                    <>
+                                        Measures <strong>this LinkNest host’s</strong> path to{' '}
+                                        <span className="font-semibold">{customEndpoint ? customEndpoint.label : 'the endpoint'}</span> — not this
+                                        device. Results are labelled “via LinkNest host”. The address must be on the admin proxy allow-list.
+                                    </>
+                                )}
+                            </p>
+                            {customServer.host.trim() !== '' && !customEndpoint && (
+                                <p className="text-[11px] font-semibold text-red-600 dark:text-red-400">
+                                    Address not understood — use an IP or hostname, optionally with :port.
+                                </p>
+                            )}
+                        </div>
+                    )}
                     {viewTab === 'test' && (
                         <p className="text-[11px] text-slate-500 dark:text-slate-400 -mt-1 mb-1 leading-snug">
                             <span className="font-semibold text-slate-600 dark:text-slate-300">Single vs Multi:</span>{' '}
@@ -905,7 +1070,17 @@ export const InternetSpeedTester: React.FC<InternetSpeedTesterProps> = ({ isOpen
                     )}
 
                     {viewTab === 'settings' && (
-                        <SpeedTestSettingsPanel prefs={prefs} onPrefsChange={setPrefs} isAdmin={isAdmin} />
+                        <SpeedTestSettingsPanel
+                            prefs={prefs}
+                            onPrefsChange={setPrefs}
+                            isAdmin={isAdmin}
+                            customServer={customServer}
+                            onCustomServerChange={(next) => {
+                                const saved = patchSpeedTestPreferences({ customServer: next });
+                                setCustomServer(saved.customServer);
+                                setPrefs(saved);
+                            }}
+                        />
                     )}
 
                     {viewTab === 'compare' && (
@@ -914,6 +1089,11 @@ export const InternetSpeedTester: React.FC<InternetSpeedTesterProps> = ({ isOpen
                             server={compareServer}
                             onRunCompare={startCompare}
                             running={running}
+                            serverLabel={
+                                target === 'custom'
+                                    ? speedTestTargetLabel('custom', customEndpoint?.label ?? null)
+                                    : speedTestTargetLabel('server')
+                            }
                         />
                     )}
 
@@ -980,7 +1160,7 @@ export const InternetSpeedTester: React.FC<InternetSpeedTesterProps> = ({ isOpen
                                 ) : (
                                     <button
                                         type="button"
-                                        onClick={start}
+                                        onClick={() => void start()}
                                         title="Start ping, download, and upload using the selected target, profile, and Single/Multi mode."
                                         className="inline-flex items-center gap-2 px-8 py-3 rounded-full bg-gradient-to-r from-cyan-500 to-blue-600 hover:from-cyan-400 hover:to-blue-500 text-white text-lg font-black tracking-wide shadow-xl shadow-cyan-500/30 active:scale-95 transition-all"
                                     >
@@ -990,7 +1170,7 @@ export const InternetSpeedTester: React.FC<InternetSpeedTesterProps> = ({ isOpen
                                 {result && !running && (
                                     <button
                                         type="button"
-                                        onClick={start}
+                                        onClick={() => void start()}
                                         title="Run another test with the same settings."
                                         className="inline-flex items-center gap-2 px-4 py-2.5 rounded-2xl bg-slate-100 dark:bg-[#252525] text-slate-700 dark:text-slate-200 font-bold hover:bg-slate-200 dark:hover:bg-[#333] transition-all"
                                     >
@@ -1014,6 +1194,16 @@ export const InternetSpeedTester: React.FC<InternetSpeedTesterProps> = ({ isOpen
                                             }}
                                         >
                                             Switch to this server
+                                        </button>
+                                    )}
+                                    {failedEndpoint && (
+                                        <button
+                                            type="button"
+                                            className="ml-2 underline font-semibold"
+                                            onClick={retryViaProxy}
+                                            title="Re-run the same endpoint through this LinkNest host. The result is labelled as measured from the host, not this device."
+                                        >
+                                            Try via server (proxy)
                                         </button>
                                     )}
                                 </div>
@@ -1160,7 +1350,7 @@ export const InternetSpeedTester: React.FC<InternetSpeedTesterProps> = ({ isOpen
                                     <FaHistory className="text-cyan-500" /> Test history
                                 </div>
                                 <p className="text-[11px] text-slate-500 dark:text-slate-400 mt-0.5">
-                                    Trend shows {speedTestTargetLabel(historyChartTarget)} ({historyChartMode}) tests only — Internet and This-server speeds are not mixed.
+                                    Trend shows {speedTestTargetLabel(historyChartTarget, historyChartHost)} ({historyChartMode}) tests only — different targets and paths are not mixed.
                                 </p>
                             </div>
                             {history.length > 0 && (
@@ -1191,7 +1381,7 @@ export const InternetSpeedTester: React.FC<InternetSpeedTesterProps> = ({ isOpen
                             <>
                                 {historyChart.length === 0 ? (
                                     <p className="text-xs text-slate-500 dark:text-slate-400 mb-3">
-                                        No {speedTestTargetLabel(historyChartTarget)} ({historyChartMode}) tests yet. Run GO on that path and mode to build a like-to-like trend. Other path results stay in the list below.
+                                        No {speedTestTargetLabel(historyChartTarget, historyChartHost)} ({historyChartMode}) tests yet. Run GO on that path and mode to build a like-to-like trend. Other path results stay in the list below.
                                     </p>
                                 ) : (
                                 <div className="h-36 mb-3">
@@ -1234,7 +1424,15 @@ export const InternetSpeedTester: React.FC<InternetSpeedTesterProps> = ({ isOpen
                                                 const likeForLike = result
                                                     ? isLikeForLikeSpeedTest(result, h)
                                                     : isLikeForLikeSpeedTest(
-                                                          { target, connectionMode, executor: 'browser' },
+                                                          {
+                                                              target,
+                                                              connectionMode,
+                                                              executor: 'browser',
+                                                              meta: {
+                                                                  endpointHost: customEndpoint?.label ?? null,
+                                                                  endpointMode: customServer.mode,
+                                                              },
+                                                          },
                                                           h
                                                       );
                                                 return (

@@ -1,5 +1,6 @@
 import React, { useEffect, useRef, useState } from 'react';
 import {
+  SpeedTestCustomServerPrefs,
   SpeedTestPreferences,
   SpeedTestSchedulePreset,
   loadSpeedTestPreferences,
@@ -7,6 +8,8 @@ import {
   SCHEDULE_PRESET_MINUTES,
 } from '../../services/speedTestPreferences';
 import { requestSpeedTestNotificationPermission } from '../../services/speedTestNotifications';
+import { useSettings } from '../../contexts/SettingsContext';
+import { settingsService } from '../../services/settingsService';
 import {
   configureBrowserSpeedSchedule,
   subscribeBrowserSpeedSchedule,
@@ -45,13 +48,68 @@ export const SpeedTestSettingsPanel: React.FC<{
   prefs: SpeedTestPreferences;
   onPrefsChange: (prefs: SpeedTestPreferences) => void;
   isAdmin?: boolean;
-}> = ({ prefs, onPrefsChange, isAdmin }) => {
+  /** Controlled custom-server fields; when omitted the panel falls back to `prefs.customServer`. */
+  customServer?: SpeedTestCustomServerPrefs;
+  onCustomServerChange?: (next: SpeedTestCustomServerPrefs) => void;
+}> = ({ prefs, onPrefsChange, isAdmin, customServer, onCustomServerChange }) => {
+  const { settings, refreshSettings } = useSettings();
   const [workerSchedules, setWorkerSchedules] = useState<SpeedTestScheduleRow[]>([]);
   const [status, setStatus] = useState<Awaited<ReturnType<typeof getSpeedTestStatus>> | null>(null);
   const [busy, setBusy] = useState(false);
   const [msg, setMsg] = useState<string | null>(null);
   const pollRef = useRef<number | null>(null);
   const baselineResultId = useRef<number | null>(null);
+
+  const custom = customServer ?? prefs.customServer;
+  const setCustom = (patch: Partial<SpeedTestCustomServerPrefs>) => {
+    const next = { ...custom, ...patch };
+    if (onCustomServerChange) {
+      onCustomServerChange(next);
+    } else {
+      onPrefsChange(patchSpeedTestPreferences({ customServer: next }));
+    }
+  };
+
+  // Admin-only Server-proxy settings live in app settings (not localStorage).
+  const [allowHosts, setAllowHosts] = useState('');
+  const [allowSelfSigned, setAllowSelfSigned] = useState(true);
+  const [maxRedirects, setMaxRedirects] = useState('0');
+  const [publicProbe, setPublicProbe] = useState(false);
+  const [proxySaving, setProxySaving] = useState(false);
+  const [proxyMsg, setProxyMsg] = useState<string | null>(null);
+
+  useEffect(() => {
+    if (!isAdmin) return;
+    setAllowHosts(settings.speedtest_proxy_allow_hosts || '');
+    setAllowSelfSigned(settings.speedtest_proxy_allow_self_signed !== '0');
+    setMaxRedirects(settings.speedtest_proxy_max_redirects || '0');
+    setPublicProbe(settings.speedtest_public_probe_enabled === '1');
+  }, [
+    isAdmin,
+    settings.speedtest_proxy_allow_hosts,
+    settings.speedtest_proxy_allow_self_signed,
+    settings.speedtest_proxy_max_redirects,
+    settings.speedtest_public_probe_enabled,
+  ]);
+
+  const saveProxySettings = async () => {
+    setProxySaving(true);
+    setProxyMsg(null);
+    try {
+      await settingsService.updateSettings({
+        speedtest_proxy_allow_hosts: allowHosts.trim(),
+        speedtest_proxy_allow_self_signed: allowSelfSigned ? '1' : '0',
+        speedtest_proxy_max_redirects: maxRedirects,
+        speedtest_public_probe_enabled: publicProbe ? '1' : '0',
+      });
+      await refreshSettings();
+      setProxyMsg('Proxy settings saved');
+    } catch (e) {
+      setProxyMsg(e instanceof Error ? e.message : 'Could not save proxy settings');
+    } finally {
+      setProxySaving(false);
+    }
+  };
 
   const refreshServer = async () => {
     try {
@@ -207,6 +265,161 @@ export const SpeedTestSettingsPanel: React.FC<{
       </div>
 
       {msg && <div className="text-xs rounded-xl bg-slate-100 dark:bg-[#252525] px-3 py-2 text-slate-600 dark:text-slate-300">{msg}</div>}
+
+      <div className="space-y-2">
+        <div
+          className="text-[11px] font-bold uppercase tracking-wide text-slate-500"
+          title="Measure a specific server by IP/host. Browser-direct uses this device's path; Server-proxy uses this LinkNest host's path."
+        >
+          Custom server
+        </div>
+        <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 text-xs">
+          <label className="flex flex-col gap-0.5" title="http:// or https:// — use https when the endpoint serves TLS.">
+            <span className="text-[10px] font-bold uppercase text-slate-500">Scheme</span>
+            <select
+              className="rounded-lg border border-slate-200 dark:border-[#333] bg-white dark:bg-[#111] px-2 py-1"
+              value={custom.scheme}
+              onChange={(e) => setCustom({ scheme: e.target.value === 'https' ? 'https' : 'http' })}
+            >
+              <option value="http">http</option>
+              <option value="https">https</option>
+            </select>
+          </label>
+          <label className="flex flex-col gap-0.5" title="IP address or hostname of the server to measure.">
+            <span className="text-[10px] font-bold uppercase text-slate-500">Host / IP</span>
+            <input
+              type="text"
+              spellCheck={false}
+              autoComplete="off"
+              placeholder="192.168.10.20"
+              className="rounded-lg border border-slate-200 dark:border-[#333] bg-white dark:bg-[#111] px-2 py-1"
+              value={custom.host}
+              onChange={(e) => setCustom({ host: e.target.value })}
+            />
+          </label>
+          <label className="flex flex-col gap-0.5" title="Leave blank for the scheme default (80/443).">
+            <span className="text-[10px] font-bold uppercase text-slate-500">Port</span>
+            <input
+              type="text"
+              inputMode="numeric"
+              placeholder="default"
+              className="rounded-lg border border-slate-200 dark:border-[#333] bg-white dark:bg-[#111] px-2 py-1"
+              value={custom.port}
+              onChange={(e) => setCustom({ port: e.target.value })}
+            />
+          </label>
+          <label className="flex flex-col gap-0.5" title="API path of the speed-test probe on the endpoint. Default /api.">
+            <span className="text-[10px] font-bold uppercase text-slate-500">Path</span>
+            <input
+              type="text"
+              spellCheck={false}
+              autoComplete="off"
+              placeholder="/api"
+              className="rounded-lg border border-slate-200 dark:border-[#333] bg-white dark:bg-[#111] px-2 py-1"
+              value={custom.path}
+              onChange={(e) => setCustom({ path: e.target.value })}
+            />
+          </label>
+        </div>
+        <div className="flex flex-wrap items-center gap-2">
+          <span className="text-[11px] font-bold uppercase text-slate-500" title="Which executor reaches the endpoint.">
+            Mode
+          </span>
+          {(['direct', 'proxy'] as const).map((m) => (
+            <button
+              key={m}
+              type="button"
+              onClick={() => setCustom({ mode: m })}
+              title={
+                m === 'direct'
+                  ? 'This browser connects to the endpoint itself (needs a cross-origin probe on the endpoint).'
+                  : 'This LinkNest host relays to the endpoint (needs the address on the admin proxy allow-list).'
+              }
+              className={`px-2.5 py-1 rounded-lg text-[11px] font-bold ${
+                custom.mode === m ? 'bg-violet-600 text-white' : 'bg-slate-100 dark:bg-[#252525] text-slate-600 dark:text-slate-300'
+              }`}
+            >
+              {m === 'direct' ? 'Browser → endpoint' : 'Host → endpoint'}
+            </button>
+          ))}
+        </div>
+        <label
+          className="flex items-center gap-2 text-xs text-slate-700 dark:text-slate-300"
+          title="Browser-direct only: accept endpoints with a self-signed / privately-signed TLS certificate."
+        >
+          <input
+            type="checkbox"
+            checked={custom.allowSelfSigned}
+            onChange={(e) => setCustom({ allowSelfSigned: e.target.checked })}
+          />
+          Allow self-signed TLS on the endpoint (Browser-direct)
+        </label>
+        <p className="text-[11px] text-slate-500 leading-snug">
+          Server-proxy targets must be listed by an admin. Configure{' '}
+          <code className="bg-slate-100 dark:bg-[#252525] px-1 rounded">speedtest_proxy_allow_hosts</code> (CSV of IPs/CIDRs)
+          and <code className="bg-slate-100 dark:bg-[#252525] px-1 rounded">speedtest_public_probe_enabled</code> in the
+          admin block below.
+        </p>
+
+        {isAdmin ? (
+          <div className="rounded-2xl border border-violet-200 dark:border-violet-900/50 bg-violet-50/60 dark:bg-violet-950/20 p-3 space-y-2">
+            <div
+              className="text-[11px] font-bold uppercase tracking-wide text-violet-700 dark:text-violet-300"
+              title="Server-proxy relays from this LinkNest host to an allow-listed endpoint. Private/loopback ranges are blocked unless explicitly listed."
+            >
+              Admin · proxy allow-list
+            </div>
+            <label className="flex flex-col gap-0.5" title="CSV of hostnames, IPs, or IPv4 CIDRs the proxy may reach. Empty blocks every proxy target.">
+              <span className="text-[10px] font-bold uppercase text-slate-500">Allowed hosts / CIDRs</span>
+              <textarea
+                rows={2}
+                spellCheck={false}
+                placeholder="10.20.0.0/16, fileserver.local, 203.0.113.7"
+                className="rounded-lg border border-slate-200 dark:border-[#333] bg-white dark:bg-[#111] px-2 py-1 text-xs font-mono"
+                value={allowHosts}
+                onChange={(e) => setAllowHosts(e.target.value)}
+              />
+            </label>
+            <div className="flex flex-wrap items-center gap-3 text-xs">
+              <label className="flex items-center gap-2" title="Allow self-signed / privately-signed TLS certificates on a proxied endpoint.">
+                <input type="checkbox" checked={allowSelfSigned} onChange={(e) => setAllowSelfSigned(e.target.checked)} />
+                Allow self-signed TLS
+              </label>
+              <label className="flex items-center gap-2" title="Max redirect hops the proxy follows (0–3). Redirects can escape the allow-list, so 0 is safest.">
+                Max redirects
+                <input
+                  type="text"
+                  inputMode="numeric"
+                  className="w-14 rounded-lg border border-slate-200 dark:border-[#333] bg-white dark:bg-[#111] px-2 py-1 text-center"
+                  value={maxRedirects}
+                  onChange={(e) => setMaxRedirects(e.target.value)}
+                />
+              </label>
+              <label
+                className="flex items-center gap-2"
+                title="Expose THIS host's /api/speedtest probe without a session so another LinkNest can measure it Browser-direct. Per-IP rate-limited."
+              >
+                <input type="checkbox" checked={publicProbe} onChange={(e) => setPublicProbe(e.target.checked)} />
+                Public probe (this host)
+              </label>
+            </div>
+            <div className="flex items-center gap-2">
+              <button
+                type="button"
+                disabled={proxySaving}
+                onClick={() => void saveProxySettings()}
+                className="px-3 py-1.5 rounded-xl text-xs font-bold bg-violet-600 text-white disabled:opacity-50"
+                title="Save the Server-proxy settings for this install."
+              >
+                {proxySaving ? 'Saving…' : 'Save proxy settings'}
+              </button>
+              {proxyMsg && <span className="text-[11px] text-slate-600 dark:text-slate-300">{proxyMsg}</span>}
+            </div>
+          </div>
+        ) : (
+          <p className="text-[11px] text-slate-500">Sign in as admin to manage the Server-proxy allow-list.</p>
+        )}
+      </div>
 
       <div className="space-y-2">
         <div

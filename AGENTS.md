@@ -360,6 +360,7 @@ Default credentials:
 ## Documentation References
 
 - `docs/YOUR_BOOKMARKS.md` - Guest Your Bookmarks, Favorite Links compact view, Rewrite tools
+- `docs/SPEED_TEST.md` - Internet speed test widget: Internet / This server / **Custom server (by IP)** targets, Browser-direct vs Server-proxy, the SSRF-safe `speedtest_proxy_allow_hosts` allow-list, and the public probe
 - `docs/BOOKMARK_SYNC_EXTENSION.md` - LinkNest Bookmark Sync extension (handshake, origin allowlist, per-profile sync, mass deploy)
 - `docs/MCP.md` - MCP / AI: LLMs (Cursor, Claude Desktop) list spaces, search links, create or edit bookmarks, and (admin tokens) manage users, roles, Device Presets, and database export/import
 - `docs/PRIVATE_SPACE_SHARING.md` - Private space sharing: `allowed_users` + `tile_share_invitations`, pending/accepted flow, keeping shared users checked in the space editor, revoke on uncheck, and LDAP full-name capture/sync
