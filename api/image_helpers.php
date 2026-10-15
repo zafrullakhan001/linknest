@@ -578,3 +578,91 @@ function processUploadedTileHeaderImage($tmpPath, $originalName, $mimeType, $max
         'height' => $height
     ];
 }
+
+/**
+ * Build maskable (safe zone) PNG icons next to a raster favicon.
+ *
+ * Android crops maskable icons to the launcher shape, so artwork must sit
+ * inside the inner 80% circle. A plain square favicon loses its edges, so we
+ * composite it onto a solid brand-colour canvas with padding.
+ *
+ * @param string $sourceDisk Path to the raster favicon
+ * @param string $bgHex      Background colour (#rrggbb); falls back to white
+ * @return array<int,string> map of pixel size => filename in uploads/
+ */
+function ensurePwaMaskableIconFiles($sourceDisk, $bgHex = '') {
+    $out = [];
+    $sourceDisk = (string) $sourceDisk;
+    if ($sourceDisk === '' || !is_file($sourceDisk) || !extension_loaded('gd')) {
+        return $out;
+    }
+    $ext = strtolower(pathinfo($sourceDisk, PATHINFO_EXTENSION));
+    if ($ext === 'svg') {
+        return $out;
+    }
+    $base = pathinfo($sourceDisk, PATHINFO_FILENAME);
+    if ($base === '' || preg_match('/(192|512)$/', $base)) {
+        return $out;
+    }
+
+    $rgb = $bgHex !== '' ? parseHexColorToRgb($bgHex) : null;
+    [$r, $g, $b] = $rgb ?: [255, 255, 255];
+
+    $src = loadGdImageFromFile($sourceDisk, '', $ext);
+    if ($src === false) {
+        $info = @getimagesize($sourceDisk);
+        if ($info && !empty($info['mime'])) {
+            $src = loadGdImageFromFile($sourceDisk, $info['mime'], $ext);
+        }
+    }
+    if ($src === false) {
+        return $out;
+    }
+
+    $dir = dirname($sourceDisk);
+    foreach ([192, 512] as $size) {
+        $filename = $base . '-maskable-' . $size . '.png';
+        $filepath = $dir . DIRECTORY_SEPARATOR . $filename;
+        if (!is_file($filepath) && !saveGdMaskablePng($src, $size, $r, $g, $b, $filepath)) {
+            continue;
+        }
+        if (is_file($filepath)) {
+            $out[$size] = $filename;
+        }
+    }
+    imagedestroy($src);
+    return $out;
+}
+
+/**
+ * Composite a source image centred on a solid background at $size x $size.
+ * The artwork is scaled to 62.5% so it stays inside the maskable safe zone
+ * (the spec safe circle has a radius of 40% of the icon width).
+ * @param \GdImage|resource $src
+ */
+function saveGdMaskablePng($src, $size, $r, $g, $b, $filepath) {
+    $size = (int) $size;
+    if ($size <= 0) return false;
+
+    $canvas = imagecreatetruecolor($size, $size);
+    if ($canvas === false) return false;
+    $bg = imagecolorallocate($canvas, (int) $r, (int) $g, (int) $b);
+    imagefilledrectangle($canvas, 0, 0, $size, $size, $bg);
+
+    $art = cloneGdImage($src);
+    if ($art === false) {
+        imagedestroy($canvas);
+        return false;
+    }
+
+    $inner = (int) round($size * 0.625);
+    $scaled = resizeGdImageExactSquare($art, $inner);
+    $offset = (int) floor(($size - $inner) / 2);
+    imagealphablending($canvas, true);
+    imagecopy($canvas, $scaled, $offset, $offset, 0, 0, $inner, $inner);
+    imagedestroy($scaled);
+
+    $ok = imagepng($canvas, $filepath, 6);
+    imagedestroy($canvas);
+    return (bool) $ok;
+}

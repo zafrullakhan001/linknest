@@ -84,7 +84,24 @@ try {
         }
     }
 
+
+
+    // Maskable variants so Android launchers can crop to any shape without
+    // clipping the artwork (composited onto the theme colour by image_helpers).
+    if ($faviconDisk !== '') {
+        $maskable = ensurePwaMaskableIconFiles($faviconDisk, '#3b82f6');
+        foreach ($maskable as $px => $maskableFile) {
+            $icons[] = [
+                'src' => $uploadsUrlPrefix . $maskableFile,
+                'sizes' => $px . 'x' . $px,
+                'type' => 'image/png',
+                'purpose' => 'maskable'
+            ];
+        }
+    }
+
     $startUrl = '/';
+
     // Detect subpath from SCRIPT_NAME e.g. /linknest/api/index.php
     $script = $_SERVER['SCRIPT_NAME'] ?? '';
     if (preg_match('#^(.+)/api/#', $script, $m)) {
@@ -98,6 +115,24 @@ try {
         'start_url' => $startUrl,
         'background_color' => '#ffffff',
         'theme_color' => '#3b82f6',
+        // display_override lets a browser pick minimal-ui when it cannot honour
+        // standalone; orientation lock stops the launcher from rotating the board.
+        'display_override' => ['standalone', 'minimal-ui'],
+        'orientation' => 'any',
+        'scope' => $startUrl,
+        'categories' => ['productivity', 'utilities'],
+        'shortcuts' => [
+            [
+                'name' => 'Public spaces',
+                'short_name' => 'Public',
+                'url' => $startUrl . '#/?tab=public'
+            ],
+            [
+                'name' => 'Favorites',
+                'short_name' => 'Favorites',
+                'url' => $startUrl . '#/?tab=favorites'
+            ]
+        ],
         'icons' => $icons
     ], JSON_UNESCAPED_SLASHES | JSON_UNESCAPED_UNICODE);
 } catch (Throwable $e) {

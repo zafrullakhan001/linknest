@@ -67,6 +67,8 @@ const FloatingWeatherWidget = lazy(() => import('./components/FloatingWeatherWid
 const WeatherWidget = lazy(() => import('./components/WeatherWidget').then(m => ({ default: m.WeatherWidget })));
 const FloatingCalculatorWidget = lazy(() => import('./components/FloatingCalculatorWidget').then(m => ({ default: m.FloatingCalculatorWidget })));
 const CalculatorWidget = lazy(() => import('./components/CalculatorWidget').then(m => ({ default: m.CalculatorWidget })));
+const MobileWidgetSheet = lazy(() => import('./components/MobileWidgetSheet').then(m => ({ default: m.MobileWidgetSheet })));
+const MobileWidgetHost = lazy(() => import('./components/MobileWidgetHost').then(m => ({ default: m.MobileWidgetHost })));
 const FloatingPasswordGeneratorWidget = lazy(() => import('./components/FloatingPasswordGeneratorWidget').then(m => ({ default: m.FloatingPasswordGeneratorWidget })));
 const PasswordGeneratorWidget = lazy(() => import('./components/PasswordGeneratorWidget').then(m => ({ default: m.PasswordGeneratorWidget })));
 const FloatingPageZoomControl = lazy(() => import('./components/FloatingPageZoomControl').then(m => ({ default: m.FloatingPageZoomControl })));
@@ -272,6 +274,18 @@ const AppContent: React.FC = () => {
   useEffect(() => {
     localStorage.setItem('linknest_show_calculator_widget', showCalculator.toString());
   }, [showCalculator]);
+
+  // Mobile widget sheet: which widget panel is open on phones (null = none).
+  // Desktop keeps floating-panel widgets in the nav pill; see MobileWidgetSheet.
+  const [mobileWidgetId, setMobileWidgetId] = useState<string | null>(null);
+  const [mobileWidgetMenuOpen, setMobileWidgetMenuOpen] = useState(false);
+
+  // Any mobile surface (drawer, bottom nav) can ask for the widget sheet.
+  useEffect(() => {
+    const open = () => setMobileWidgetMenuOpen(true);
+    window.addEventListener('linknest-mobile-widgets-open', open);
+    return () => window.removeEventListener('linknest-mobile-widgets-open', open);
+  }, []);
 
   // Password Generator Widget Visibility State
   const [showPasswordGenerator, setShowPasswordGenerator] = useState(() => {
@@ -620,6 +634,43 @@ const AppContent: React.FC = () => {
 
     return allowedWidgetIds.has(widgetId);
   }, [isAuthenticated, user, allowedWidgetIds, widgetsLoading, settings.ssh_gateway_enabled, settings.vnc_gateway_enabled]);
+
+  // Phone-safe widget subset. VNC / SSH / RDP stay desktop-only because App.tsx
+  // already blocks them on small screens, and their terminal canvases need a
+  // real keyboard + pointer.
+  const mobileWidgetItems = useMemo(() => {
+    const items: Array<{ id: string; label: string; icon: React.ReactNode }> = [];
+    const icon = (children: React.ReactNode) => (
+      <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2} strokeLinecap="round" strokeLinejoin="round" className="h-6 w-6">
+        {children}
+      </svg>
+    );
+    if (isWidgetAllowed('clock')) {
+      items.push({ id: 'clock', label: 'Clock', icon: icon(<><circle cx="12" cy="12" r="10" /><polyline points="12 6 12 12 16 14" /></>) });
+    }
+    if (isWidgetAllowed('weather')) {
+      items.push({ id: 'weather', label: 'Weather', icon: icon(<path d="M17.5 19a4.5 4.5 0 100-9 6 6 0 00-11.6 1.6A3.5 3.5 0 006.5 19h11z" />) });
+    }
+    if (isWidgetAllowed('calculator')) {
+      items.push({ id: 'calculator', label: 'Calculator', icon: icon(<><rect x="4" y="2" width="16" height="20" rx="2" /><line x1="8" y1="6" x2="16" y2="6" /><line x1="8" y1="11" x2="8" y2="11" /><line x1="12" y1="11" x2="12" y2="11" /><line x1="16" y1="11" x2="16" y2="11" /><line x1="8" y1="16" x2="8" y2="16" /><line x1="12" y1="16" x2="12" y2="16" /><line x1="16" y1="16" x2="16" y2="16" /></>) });
+    }
+    if (isWidgetAllowed('password-generator')) {
+      items.push({ id: 'password-generator', label: 'Password', icon: icon(<><rect x="3" y="11" width="18" height="11" rx="2" /><path d="M7 11V7a5 5 0 0110 0v4" /></>) });
+    }
+    if (isWidgetAllowed('phonetic-alphabet')) {
+      items.push({ id: 'phonetic-alphabet', label: 'Phonetic', icon: icon(<><path d="M4 19V5a2 2 0 012-2h2a2 2 0 012 2v14" /><path d="M14 19V5a2 2 0 012-2h2a2 2 0 012 2v14" /><line x1="4" y1="12" x2="20" y2="12" /></>) });
+    }
+    if (isAuthenticated && isWidgetAllowed('notes')) {
+      items.push({ id: 'notes', label: 'Notes', icon: icon(<><path d="M4 4a2 2 0 012-2h8l6 6v12a2 2 0 01-2 2H6a2 2 0 01-2-2V4z" /><polyline points="14 2 14 8 20 8" /></>) });
+    }
+    if (isAuthenticated && isWidgetAllowed('chat')) {
+      items.push({ id: 'chat', label: 'Chat', icon: icon(<path d="M21 15a2 2 0 01-2 2H7l-4 4V5a2 2 0 012-2h14a2 2 0 012 2z" />) });
+    }
+    if (isAuthenticated && isWidgetAllowed('internet-speed-tester')) {
+      items.push({ id: 'internet-speed-tester', label: 'Speed Test', icon: icon(<><path d="M12 20a8 8 0 100-16 8 8 0 000 16z" /><path d="M12 12l4-4" /></>) });
+    }
+    return items;
+  }, [isWidgetAllowed, isAuthenticated]);
 
   // Theme State — keep in sync with index.html bootstrap + browser-only preferences
   const [darkMode, setDarkMode] = useState(() => {
@@ -994,6 +1045,32 @@ const AppContent: React.FC = () => {
     };
     window.addEventListener('linknest-tiles-refresh', onRefresh);
     return () => window.removeEventListener('linknest-tiles-refresh', onRefresh);
+  }, []);
+
+  // Deep link: #/?tab=<tabId> switches to that tab on first paint. Used by the
+  // PWA manifest shortcuts; TileGrid owns the tab-switch logic and listens for
+  // the existing switchTab event, so we only have to relay the value once the
+  // grid is mounted. The param is stripped afterwards so a later refresh does
+  // not yank the user back to a tab they navigated away from.
+  useEffect(() => {
+    if (typeof window === 'undefined') return;
+    const raw = window.location.hash || '';
+    const match = raw.match(/[?&]tab=([^&]+)/);
+    if (!match) return;
+    let tabId = '';
+    try {
+      tabId = decodeURIComponent(match[1]);
+    } catch {
+      return;
+    }
+    if (!tabId) return;
+    // Defer so TileGrid has registered its switchTab listener.
+    const timer = window.setTimeout(() => {
+      window.dispatchEvent(new CustomEvent('switchTab', { detail: tabId }));
+    }, 0);
+    const cleaned = raw.replace(/[?&]tab=[^&]*/, '').replace(/[?&]$/, '');
+    window.history.replaceState(null, '', `${window.location.pathname}${window.location.search}${cleaned}`);
+    return () => window.clearTimeout(timer);
   }, []);
 
   // Load database path only when the footer would show it
@@ -2053,7 +2130,59 @@ const AppContent: React.FC = () => {
           )}
         </Suspense>
       )}
-      <AuthModal
+      {/* Mobile widgets: same widget components, hosted in a bottom sheet. Desktop-only
+          floating wrappers (drag handle + absolute positioning) are unusable on a phone. */}
+      {isMobile && (
+        <Suspense fallback={null}>
+          <MobileWidgetSheet
+            isOpen={mobileWidgetMenuOpen}
+            onClose={() => setMobileWidgetMenuOpen(false)}
+            activeId={mobileWidgetId}
+            onSelect={(id) => {
+              setMobileWidgetMenuOpen(false);
+              setMobileWidgetId(id);
+            }}
+            items={mobileWidgetItems}
+          />
+        </Suspense>
+      )}
+
+      {/* Mobile widget panels (one at a time, inside a scrollable sheet) */}
+      {isMobile && mobileWidgetId && (
+        <Suspense fallback={null}>
+          <MobileWidgetHost
+            isOpen={!!mobileWidgetId}
+            title={mobileWidgetItems.find((w) => w.id === mobileWidgetId)?.label || 'Widget'}
+            onClose={() => setMobileWidgetId(null)}
+          >
+            {mobileWidgetId === 'clock' && <TimezoneDisplay onClose={() => setMobileWidgetId(null)} />}
+            {mobileWidgetId === 'weather' && <WeatherWidget onClose={() => setMobileWidgetId(null)} />}
+            {mobileWidgetId === 'calculator' && <CalculatorWidget onClose={() => setMobileWidgetId(null)} />}
+            {mobileWidgetId === 'password-generator' && <PasswordGeneratorWidget onClose={() => setMobileWidgetId(null)} />}
+            {mobileWidgetId === 'phonetic-alphabet' && <PhoneticAlphabet onClose={() => setMobileWidgetId(null)} />}
+            {mobileWidgetId === 'notes' && isAuthenticated && <NotesWidget onClose={() => setMobileWidgetId(null)} />}
+            {mobileWidgetId === 'chat' && isAuthenticated && (
+              <ChatWidget
+                tiles={tiles}
+                onClose={() => setMobileWidgetId(null)}
+                onUnreadChange={setHasUnreadChatMessages}
+                onTileImported={async () => {
+                  try {
+                    const stored = await getTiles();
+                    setTiles(stored);
+                  } catch (error) {
+                    console.error('Failed to refresh tiles after chat import:', error);
+                  }
+                }}
+              />
+            )}
+            {mobileWidgetId === 'internet-speed-tester' && isAuthenticated && (
+              <InternetSpeedTester isOpen onClose={() => setMobileWidgetId(null)} />
+            )}
+          </MobileWidgetHost>
+        </Suspense>
+      )}
+<AuthModal
         isOpen={authModalOpen}
         onClose={() => {
           setAuthModalOpen(false);

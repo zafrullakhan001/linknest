@@ -700,7 +700,7 @@ export const MobileTileEdit: React.FC<MobileTileEditProps> = ({
     return (
         <div className="mobile-tile-edit min-h-screen bg-slate-50 dark:bg-slate-900 pb-20">
             {/* Sticky Header */}
-            <div className="sticky top-0 z-40 bg-white dark:bg-slate-800 border-b border-slate-200 dark:border-slate-700 shadow-sm">
+            <div className="linknest-mobile-nav sticky top-0 z-40 bg-white dark:bg-slate-800 border-b border-slate-200 dark:border-slate-700 shadow-sm">
                 <div className="px-4 py-3">
                     <div className="flex items-center justify-between mb-3">
                         <h1 className="text-xl font-bold text-slate-900 dark:text-white">Edit Page</h1>

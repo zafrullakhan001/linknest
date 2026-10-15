@@ -9116,6 +9116,113 @@ You may also wrap the array in an object: { "messages": [ ... ] }.
         user={user}
         onToggleFavorite={handleToggleFavorite}
         onUpdateTiles={onUpdateTiles}
+        onCreateTile={() => {
+          setIsModalOpen(true);
+          if (user && !user.is_admin) {
+            selectPrivateVisibility(user.id);
+          }
+        }}
+        stagingTiles={stagingTiles}
+        archiveTiles={archiveTiles}
+        recycleBinTiles={recycleBinTiles}
+        pendingInvitationsCount={pendingInvitationsCount}
+        privateSubTab={privateSubTab}
+        yourAppsFilter={yourAppsFilter}
+        onSelectPrivateSubTab={setPrivateSubTab}
+        onSelectYourAppsFilter={setYourAppsFilter}
+        onDownloadStagingTemplates={handleDownloadBothStagingTemplates}
+        onFocusOfflineKit={focusStagingOfflineKit}
+        archiveActions={
+          activeTab === 'archive' ? (
+            <div className="flex items-center justify-between gap-2 px-4 py-3 bg-slate-50 dark:bg-slate-800/50 border-b border-slate-200 dark:border-slate-700">
+              <span className="text-xs text-slate-600 dark:text-slate-400">
+                {isLoadingArchive
+                  ? 'Loading archive...'
+                  : archiveTiles.length === 0
+                    ? 'Archive is empty'
+                    : `${archiveTiles.length} space(s) in archive`}
+              </span>
+              <div className="flex items-center gap-2">
+                <button
+                  onClick={async () => {
+                    setIsLoadingArchive(true);
+                    try {
+                      setArchiveTiles(await getArchive());
+                    } catch (error) {
+                      console.error('Failed to refresh archive:', error);
+                    } finally {
+                      setIsLoadingArchive(false);
+                    }
+                  }}
+                  className="px-3 py-1.5 text-xs font-medium text-slate-600 dark:text-slate-400 bg-slate-100 dark:bg-slate-700 rounded-lg touch-manipulation"
+                  style={{ minHeight: '44px' }}
+                >
+                  Refresh
+                </button>
+                {archiveTiles.length > 0 && user?.is_admin && (
+                  <button
+                    onClick={handlePurgeArchive}
+                    className="px-3 py-1.5 text-xs font-medium text-red-600 dark:text-red-400 bg-red-50 dark:bg-red-900/20 rounded-lg touch-manipulation"
+                    style={{ minHeight: '44px' }}
+                  >
+                    Delete All
+                  </button>
+                )}
+              </div>
+            </div>
+          ) : null
+        }
+        recycleBinActions={
+          activeTab === 'recycle-bin' ? (
+            <div className="flex items-center justify-between gap-2 px-4 py-3 bg-slate-50 dark:bg-slate-800/50 border-b border-slate-200 dark:border-slate-700">
+              <span className="text-xs text-slate-600 dark:text-slate-400">
+                {isLoadingRecycleBin
+                  ? 'Loading recycle bin...'
+                  : recycleBinTiles.length === 0
+                    ? 'Recycle bin is empty'
+                    : `${recycleBinTiles.length} space(s) in recycle bin`}
+              </span>
+              <div className="flex items-center gap-2">
+                <button
+                  onClick={async () => {
+                    setIsLoadingRecycleBin(true);
+                    try {
+                      setRecycleBinTiles(await getRecycleBin());
+                    } catch (error) {
+                      console.error('Failed to refresh recycle bin:', error);
+                    } finally {
+                      setIsLoadingRecycleBin(false);
+                    }
+                  }}
+                  className="px-3 py-1.5 text-xs font-medium text-slate-600 dark:text-slate-400 bg-slate-100 dark:bg-slate-700 rounded-lg touch-manipulation"
+                  style={{ minHeight: '44px' }}
+                >
+                  Refresh
+                </button>
+                {recycleBinTiles.length > 0 && (
+                  <button
+                    onClick={handlePurgeRecycleBin}
+                    className="px-3 py-1.5 text-xs font-medium text-red-600 dark:text-red-400 bg-red-50 dark:bg-red-900/20 rounded-lg touch-manipulation"
+                    style={{ minHeight: '44px' }}
+                  >
+                    Purge All
+                  </button>
+                )}
+              </div>
+            </div>
+          ) : null
+        }
+        showCreateFab={activeTab !== 'recycle-bin' && activeTab !== 'archive'}
+        onRefresh={async () => {
+          // Await the fetch so the pull-to-refresh spinner stays up for its
+          // duration. skipReload=true because we already have the fresh list.
+          try {
+            const fresh = await getTiles();
+            onUpdateTiles(fresh, true);
+          } catch (error) {
+            console.error('Pull-to-refresh failed:', error);
+          }
+        }}
       />
     );
   }

@@ -248,6 +248,110 @@ html:not(.ln-branding-ready) nav.linknest-nav {
   }
 }
 
+/* -------------------------------------------------------------------------
+ * Mobile polish: safe-area insets + dynamic viewport + iOS input zoom guard.
+ *
+ * --ln-mobile-nav-h is published at runtime by MobileTileView (it measures the
+ * real header, which varies with logo size / app subheading) so sticky
+ * offsets never drift from the rendered nav height.
+ * ------------------------------------------------------------------------- */
+:root {
+  --ln-safe-top: env(safe-area-inset-top, 0px);
+  --ln-safe-bottom: env(safe-area-inset-bottom, 0px);
+  --ln-safe-left: env(safe-area-inset-left, 0px);
+  --ln-safe-right: env(safe-area-inset-right, 0px);
+  --ln-mobile-nav-h: 104px;
+}
+
+/* Phones only. Stops at 767.98px so it never overlaps Tailwind's `md:`
+   (768px) breakpoint or the app's own useMobile(768) = innerWidth < 768. */
+@media (max-width: 767.98px) {
+  html {
+    -webkit-text-size-adjust: 100%;
+    text-size-adjust: 100%;
+  }
+
+  /* iOS Safari force-zooms the page when a focused field is under 16px.
+     Tailwind's text-sm is a class, so a bare element selector would lose —
+     !important is required to actually win here. */
+  input,
+  select,
+  textarea {
+    font-size: 16px !important;
+  }
+
+  /* Keep pull gestures inside the app instead of bouncing the document. */
+  html,
+  body {
+    overscroll-behavior-y: contain;
+  }
+
+  /* Standalone PWA: clear the notch / status bar on the app chrome. */
+  .linknest-mobile-nav {
+    padding-top: var(--ln-safe-top);
+  }
+
+  .linknest-mobile-drawer {
+    padding-left: var(--ln-safe-left);
+    padding-top: var(--ln-safe-top);
+    padding-bottom: var(--ln-safe-bottom);
+  }
+
+  .linknest-mobile-page {
+    padding-left: var(--ln-safe-left);
+    padding-right: var(--ln-safe-right);
+    padding-bottom: calc(1.5rem + var(--ln-safe-bottom));
+  }
+
+  /* Floating action button sits above the home indicator. */
+  .linknest-mobile-fab {
+    bottom: calc(1.25rem + var(--ln-safe-bottom));
+    right: calc(1rem + var(--ln-safe-right));
+  }
+
+  /* Bottom tab bar: clears the home indicator and lifts page content/FAB. */
+  .linknest-mobile-bottomnav {
+    padding-bottom: var(--ln-safe-bottom);
+  }
+
+  .linknest-has-bottomnav .linknest-mobile-page {
+    padding-bottom: calc(var(--ln-mobile-bottomnav-h, 52px) + var(--ln-safe-bottom) + 1rem);
+  }
+
+  .linknest-has-bottomnav .linknest-mobile-fab {
+    bottom: calc(var(--ln-mobile-bottomnav-h, 52px) + var(--ln-safe-bottom) + 1rem);
+  }
+
+  /* Pull-to-refresh indicator (transform-only, so it never affects layout). */
+  .linknest-ptr {
+    position: fixed;
+    left: 50%;
+    top: calc(var(--ln-mobile-nav-h, 104px) + 0.5rem);
+    z-index: 25;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    width: 2.25rem;
+    height: 2.25rem;
+    border-radius: 9999px;
+    background: #ffffff;
+    color: #64748b;
+    box-shadow: 0 2px 10px rgb(0 0 0 / 0.15);
+    pointer-events: none;
+    opacity: 0;
+    transition: opacity 150ms ease;
+  }
+
+  .dark .linknest-ptr {
+    background: #1e293b;
+    color: #94a3b8;
+  }
+
+  .linknest-ptr-visible {
+    opacity: 1;
+  }
+}
+
 /* Video tiles: edge-to-edge preview so height matches sibling tiles in the grid */
 .linknest-tile.linknest-video-tile,
 div.linknest-tile.linknest-video-tile {
@@ -8597,4 +8701,20 @@ input[type="search"]::-ms-clear {
   }
 }
 
+/* -------------------------------------------------------------------------
+ * Standalone (installed PWA): the browser chrome is gone, so reclaim the space
+ * the in-app brand row was reserved for. Also pins the bottom bar so the home
+ * indicator never overlaps it on iOS.
+ * ------------------------------------------------------------------------- */
+@media all and (display-mode: standalone) {
+  .linknest-standalone-hide {
+    display: none !important;
+  }
+}
 
+/* iOS Safari does not report display-mode: standalone for home-screen apps. */
+@media all and (display-mode: fullscreen) {
+  .linknest-standalone-hide {
+    display: none !important;
+  }
+}

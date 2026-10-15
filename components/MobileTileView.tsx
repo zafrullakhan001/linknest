@@ -1,4 +1,4 @@
-import React, { useState, useMemo, useEffect, useCallback } from 'react';
+import React, { useState, useMemo, useEffect, useCallback, useRef } from 'react';
 import { Tile, Link } from '../types';
 import { useSettings } from '../contexts/SettingsContext';
 import { useAuth } from '../contexts/AuthContext';
@@ -16,7 +16,7 @@ import {
   copyFavoritesToPublicBookmarkFolders
 } from '../services/publicBookmarksService';
 import { PublicBookmarksPanel } from './PublicBookmarksPanel';
-import { getFavoriteLinks, resolveFavoriteLinks, FavoriteLink } from '../services/storageService';
+import { getFavoriteLinks, resolveFavoriteLinks, getTiles, FavoriteLink } from '../services/storageService';
 import { getDisplayUrl, viewerLinkDisplay, viewerLinkUrl } from '../utils/urlDisplay';
 import { tryHandleSshLinkClick } from '../utils/sshLink';
 import { openLinkUrl } from '../utils/openLinkUrl';
@@ -33,6 +33,31 @@ import { QRCodeDialog } from './QRCodeDialog';
 import { UpdatesDialog } from './UpdatesDialog';
 import { ThemeModeMenu } from './ThemeModeMenu';
 import { SearchResultFilterControl, SearchWordModeControl, FuzzySearchControl, SearchIncludeUrlsControl, RefineSearchInput, SearchStatsBar, MatchScoreBadge, getSearchWords, tileMatchesSearch, scoreTileSearch, combineSearchScores, type SearchResultFilter, type SearchMatchingLink, type SearchWordMode, type SearchStatsSummary, type SearchMatchScore } from './SearchResultFilterControl';
+import { TabOverviews, isNonGridTab, tilesForTab, type TabOverviewSubTab } from './TabOverviews';
+import { MobileCreateFab } from './MobileCreateFab';
+import { SharedTileNotifications } from './SharedTileNotifications';
+import { BlockedUsersSection } from './BlockedUsersSection';
+import { MobileBottomNav, type MobileBottomNavItem } from './MobileBottomNav';
+import { TileActionSheet, type TileActionSheetAction } from './TileActionSheet';
+import {
+  MobileHomeControls,
+  OfflineBanner,
+  MOBILE_DENSITY_STYLES,
+  MOBILE_DENSITY_COLUMNS,
+  readMobileTileDensity,
+  readMobileGroupByCategory,
+  persistMobileGroupByCategory,
+  readMobileTileSort,
+  persistMobileTileDensity,
+  persistMobileTileSort,
+  type MobileTileDensity,
+  type MobileTileSort,
+} from './MobileHomeControls';
+import { useLongPress } from '../hooks/useLongPress';
+import { usePullToRefresh } from '../hooks/usePullToRefresh';
+import { haptics } from '../utils/haptics';
+import { useStandaloneMode } from '../hooks/useStandaloneMode';
+import { useVoiceSearch } from '../hooks/useVoiceSearch';
 
 function stripHtml(html: string): string {
   if (!html || typeof html !== 'string') return '';
@@ -40,6 +65,51 @@ function stripHtml(html: string): string {
   const div = document.createElement('div');
   div.innerHTML = html;
   return div.textContent || div.innerText || html.replace(/<[^>]*>/g, '') || '';
+}
+
+/**
+ * Local visit counters for mobile sorting ('Recently visited' / 'Most visited').
+ *
+ * `recordTileVisit` posts to the API but keeps no client-side tally, and the
+ * per-space aggregate requires an admin dashboard call. A small localStorage
+ * map is enough to order a user's own grid and costs nothing.
+ */
+const TILE_VISIT_META_KEY = 'linknest.mobile.tileVisits.v1';
+
+type TileVisitMetaMap = Record<string, { count: number; last: number }>;
+
+function readTileVisitMetaMap(): TileVisitMetaMap {
+  if (typeof localStorage === 'undefined') return {};
+  try {
+    const raw = localStorage.getItem(TILE_VISIT_META_KEY);
+    if (!raw) return {};
+    const parsed = JSON.parse(raw) as TileVisitMetaMap;
+    return parsed && typeof parsed === 'object' ? parsed : {};
+  } catch {
+    return {};
+  }
+}
+
+/** Visits recorded locally for one space. Unknown ids report zero/last=0. */
+export function readTileVisitMeta(tileId: string): { count: number; last: number } {
+  return readTileVisitMetaMap()[tileId] || { count: 0, last: 0 };
+}
+
+/** Bump the local counter for a space. Called on every grid tap. */
+export function bumpTileVisitMeta(tileId: string): void {
+  if (!tileId || typeof localStorage === 'undefined') return;
+  try {
+    const map = readTileVisitMetaMap();
+    const previous = map[tileId] || { count: 0, last: 0 };
+    map[tileId] = { count: previous.count + 1, last: Date.now() };
+    // Keep the map small — 200 most recent spaces is plenty for ordering.
+    const entries = Object.entries(map)
+      .sort((a, b) => b[1].last - a[1].last)
+      .slice(0, 200);
+    localStorage.setItem(TILE_VISIT_META_KEY, JSON.stringify(Object.fromEntries(entries)));
+  } catch {
+    /* storage disabled or full */
+  }
 }
 
 /** Walk tabs and legacy sections to find links on a tile */
@@ -123,6 +193,25 @@ interface MobileTileViewProps {
   user?: { id: number; username: string; email: string; is_admin?: boolean } | null;
   onToggleFavorite?: (tileId: string) => void;
   onUpdateTiles?: (tiles: Tile[]) => void;
+  /** Open the create-space form (hoisted from TileGrid). */
+  onCreateTile?: () => void;
+  /** Non-grid tabs: counts + optional action bars reused from the desktop header. */
+  stagingTiles?: Tile[];
+  archiveTiles?: Tile[];
+  recycleBinTiles?: Tile[];
+  pendingInvitationsCount?: number;
+  privateSubTab?: TabOverviewSubTab;
+  yourAppsFilter?: 'authenticated' | 'assigned';
+  onSelectPrivateSubTab?: (subTab: TabOverviewSubTab) => void;
+  onSelectYourAppsFilter?: (filter: 'authenticated' | 'assigned') => void;
+  onDownloadStagingTemplates?: () => void;
+  onFocusOfflineKit?: () => void;
+  archiveActions?: React.ReactNode;
+  recycleBinActions?: React.ReactNode;
+  /** Hide the create FAB (e.g. recycle-bin / archive review). */
+  showCreateFab?: boolean;
+  /** Pull-to-refresh: re-fetch spaces + settings. */
+  onRefresh?: () => void | Promise<void>;
 }
 
 export const MobileTileView: React.FC<MobileTileViewProps> = ({
@@ -153,11 +242,113 @@ export const MobileTileView: React.FC<MobileTileViewProps> = ({
   onLoginClick,
   user: userProp,
   onToggleFavorite,
-  onUpdateTiles
+  onUpdateTiles,
+  onCreateTile,
+  stagingTiles = [],
+  archiveTiles = [],
+  recycleBinTiles = [],
+  pendingInvitationsCount = 0,
+  privateSubTab = 'spaces',
+  yourAppsFilter = 'authenticated',
+  onSelectPrivateSubTab,
+  onSelectYourAppsFilter,
+  onDownloadStagingTemplates,
+  onFocusOfflineKit,
+  archiveActions,
+  recycleBinActions,
+  showCreateFab = true,
+  onRefresh
 }) => {
   const [isMenuOpen, setIsMenuOpen] = useState(false);
   const [showAppQrDialog, setShowAppQrDialog] = useState(false);
   const [showUpdatesDialog, setShowUpdatesDialog] = useState(false);
+  // The header height depends on logo size + optional app subheading, so the
+  // search bar's sticky offset is measured rather than hardcoded (was top-[73px]).
+  const navRef = useRef<HTMLElement | null>(null);
+
+  // Installed PWA: browser chrome is gone, so the brand row just costs vertical
+  // space. Hide it and move the nav actions up instead.
+  const isStandalone = useStandaloneMode();
+
+  // Voice dictation into the search box (Chromium/Safari only).
+  const voiceSearch = useVoiceSearch((text) => {
+    if (text) onSearchChange(text);
+  });
+
+  // Grid appearance (persisted locally - no round trip for a display preference).
+  const [tileDensity, setTileDensity] = useState<MobileTileDensity>(() => readMobileTileDensity());
+  const [tileSort, setTileSort] = useState<MobileTileSort>(() => readMobileTileSort());
+  const [groupByCategory, setGroupByCategory] = useState<boolean>(() => readMobileGroupByCategory());
+  const [collapsedGroups, setCollapsedGroups] = useState<Set<string>>(new Set());
+  // Long-press target for the tile action sheet.
+  const [actionSheetTile, setActionSheetTile] = useState<Tile | null>(null);
+
+  const handleDensityChange = useCallback((value: MobileTileDensity) => {
+    setTileDensity(value);
+    persistMobileTileDensity(value);
+  }, []);
+
+  const handleGroupByCategoryChange = useCallback((value: boolean) => {
+    setGroupByCategory(value);
+    persistMobileGroupByCategory(value);
+    if (!value) setCollapsedGroups(new Set());
+  }, []);
+
+  const toggleGroupCollapsed = useCallback((groupName: string) => {
+    setCollapsedGroups((prev) => {
+      const next = new Set(prev);
+      if (next.has(groupName)) next.delete(groupName);
+      else next.add(groupName);
+      return next;
+    });
+  }, []);
+
+  const handleSortChange = useCallback((value: MobileTileSort) => {
+    setTileSort(value);
+    persistMobileTileSort(value);
+  }, []);
+
+  // Pull-to-refresh (window scroll). No-op until the caller wires onRefresh.
+  const pullToRefresh = usePullToRefresh({
+    onRefresh: useCallback(async () => {
+      haptics.toggle();
+      if (onRefresh) await onRefresh();
+    }, [onRefresh]),
+    disabled: !onRefresh || !!actionSheetTile || isMenuOpen,
+  });
+
+  // Grid density
+  const densityStyles = MOBILE_DENSITY_STYLES[tileDensity];
+  const densityColumns = MOBILE_DENSITY_COLUMNS[tileDensity];
+
+  // A long press must not also fire the tile's own onClick (open space).
+  const suppressClickRef = useRef(false);
+
+  /** Open a space, unless the press that just ended was a long press. */
+  const handleTileTap = useCallback((tileId: string) => {
+    if (suppressClickRef.current) {
+      suppressClickRef.current = false;
+      return;
+    }
+    haptics.tap();
+    bumpTileVisitMeta(tileId);
+    onTileClick(tileId);
+  }, [onTileClick]);
+
+  // Delegated long-press: reads data-tile-id from the pressed tile's ancestor.
+  const gridLongPress = useLongPress({
+    onLongPress: (event) => {
+      const target = event.target as HTMLElement | null;
+      const host = target?.closest?.('[data-tile-id]') as HTMLElement | null;
+      const tileId = host?.dataset?.tileId;
+      if (!tileId) return;
+      const tile = sortedTilesRef.current.find((t) => t.id === tileId);
+      if (!tile) return;
+      suppressClickRef.current = true;
+      haptics.hold();
+      setActionSheetTile(tile);
+    },
+  });
   const { user: authUser, logout } = useAuth();
   const { assertCanOpen } = useAccessRestrictionGate();
   const { loading: settingsLoading } = useSettings();
@@ -217,6 +408,8 @@ export const MobileTileView: React.FC<MobileTileViewProps> = ({
     !isAuthenticated && activeTab === 'public-favorites' && publicFavoritesSubTab === 'bookmarks';
   const showGuestFavoritesContent =
     isAuthenticated || publicFavoritesSubTab === 'favorites' || activeTab !== 'public-favorites';
+  // Private tab: Sharing / Blocked sub-tabs replace the spaces grid entirely.
+  const showSpacesGrid = !(activeTab === 'private' && privateSubTab !== 'spaces');
 
   const favoriteSpaceTilesInOrder = useMemo(() => {
     const byId = new Map(tiles.map((t) => [t.id, t]));
@@ -535,6 +728,17 @@ export const MobileTileView: React.FC<MobileTileViewProps> = ({
         }
         return true;
       });
+    } else if (isNonGridTab(activeTab)) {
+      // Archive / Recycle Bin / Staging / Scheduled / Expired manage their own
+      // tile lists — groupedTiles is built from the main board and would show
+      // the wrong spaces (or nothing) here.
+      allTiles = tilesForTab(activeTab, {
+        tiles,
+        staging: stagingTiles,
+        archive: archiveTiles,
+        recycleBin: recycleBinTiles,
+      });
+      usedRecalculation = true;
     } else {
       // For other tabs, try to use groupedTiles first (preferred, already filtered and grouped)
       allTiles = Object.values(groupedTiles).flat() as Tile[];
@@ -561,8 +765,7 @@ export const MobileTileView: React.FC<MobileTileViewProps> = ({
             return false;
           });
         } else {
-          // For other tabs (your-apps, scheduled, expired, archive, recycle-bin)
-          // Use groupedTiles if available, otherwise show all tiles
+          // Other main-board tabs — groupedTiles already carries the right list.
           allTiles = tiles;
         }
 
@@ -628,7 +831,232 @@ export const MobileTileView: React.FC<MobileTileViewProps> = ({
     // Dependencies: tiles array reference changes when data loads, groupedTiles updates accordingly
     // We check both to handle cases where groupedTiles is stale on refresh
     // Include publicFavorites for public-favorites tab
-  }, [searchTerm, searchWordMode, searchFuzzy, searchIncludeUrls, refineSearchTerm, groupedTiles, activeTab, tiles, isAuthenticated, user, publicFavorites]);
+  }, [searchTerm, searchWordMode, searchFuzzy, searchIncludeUrls, refineSearchTerm, groupedTiles, activeTab, tiles, isAuthenticated, user, publicFavorites, stagingTiles, archiveTiles, recycleBinTiles]);
+
+  // Sort layer: the filter above keeps the tab's natural order (favorites order,
+  // archive order...), so sorting is applied on top rather than replacing it.
+  // 'recent' / 'most-visited' read the locally cached visit counters that
+  // recordTileVisit already stores; unknown spaces sort last.
+  const sortedTiles = useMemo(() => {
+    if (tileSort === 'default' || filteredTiles.length < 2) return filteredTiles;
+
+    const collator = new Intl.Collator(undefined, { sensitivity: 'base', numeric: true });
+    const byTitle = (a: Tile, b: Tile) => collator.compare(a.title || '', b.title || '');
+
+    const next = [...filteredTiles];
+    switch (tileSort) {
+      case 'az':
+        next.sort(byTitle);
+        break;
+      case 'za':
+        next.sort((a, b) => byTitle(b, a));
+        break;
+      case 'recent':
+        next.sort((a, b) => readTileVisitMeta(b.id).last - readTileVisitMeta(a.id).last);
+        break;
+      case 'most-visited':
+        next.sort((a, b) => readTileVisitMeta(b.id).count - readTileVisitMeta(a.id).count);
+        break;
+      default:
+        break;
+    }
+    return next;
+  }, [filteredTiles, tileSort]);
+
+  // Keeps the delegated long-press handler (bound once) reading the latest list.
+  // Category sections for the grouped view (mirrors desktop Categories mode).
+  const groupedSections = useMemo(() => {
+    if (!groupByCategory) return [] as Array<{ name: string; tiles: Tile[] }>;
+    const map = new Map<string, Tile[]>();
+    for (const tile of sortedTiles) {
+      const name = (tile.group || 'General').trim() || 'General';
+      const bucket = map.get(name);
+      if (bucket) bucket.push(tile);
+      else map.set(name, [tile]);
+    }
+    return Array.from(map.entries())
+      .map(([name, tiles]) => ({ name, tiles }))
+      .sort((a, b) => a.name.localeCompare(b.name));
+  }, [groupByCategory, sortedTiles]);
+
+  // Flat render list. When grouping is on we interleave full-width category
+  // headers into the same grid (gridColumn: 1 / -1) instead of nesting grids,
+  // so tile sizing/spacing stays identical in both modes.
+  type GridItem =
+    | { kind: 'header'; name: string; count: number }
+    | { kind: 'tile'; tile: Tile };
+  const gridItems = useMemo<GridItem[]>(() => {
+    if (!groupByCategory || groupedSections.length === 0) {
+      return sortedTiles.map((tile) => ({ kind: 'tile' as const, tile }));
+    }
+    const out: GridItem[] = [];
+    for (const section of groupedSections) {
+      out.push({ kind: 'header', name: section.name, count: section.tiles.length });
+      for (const tile of section.tiles) out.push({ kind: 'tile', tile });
+    }
+    return out;
+  }, [groupByCategory, groupedSections, sortedTiles]);
+
+  // Recently visited shelf: read straight from the same local counters that back
+  // the Recently visited sort, so no extra API call is needed.
+  const recentlyVisited = useMemo(() => {
+    if (activeTab !== 'public' && activeTab !== 'your-apps' && activeTab !== 'favorites') return [] as Tile[];
+    if (searchTerm.trim() || groupByCategory) return [] as Tile[];
+    const pool = sortedTiles.length > 0 ? sortedTiles : tiles;
+    const byId = new Map<string, Tile>(pool.map((t): [string, Tile] => [t.id, t]));
+    const seen = new Set<string>();
+    const out: Tile[] = [];
+    const meta = readTileVisitMetaMap();
+    Object.entries(meta).sort((a, b) => b[1].last - a[1].last).forEach(([tileId]) => {
+      if (seen.has(tileId)) return;
+      const t = byId.get(tileId);
+      if (!t) return;
+      seen.add(tileId);
+      out.push(t);
+    });
+    return out.slice(0, 8);
+  }, [activeTab, groupByCategory, searchTerm, sortedTiles, tiles]);
+  const sortedTilesRef = useRef<Tile[]>(sortedTiles);
+  sortedTilesRef.current = sortedTiles;
+
+  // Actions offered by the long-press sheet, mirroring the desktop hover toolbar
+  // and gating Edit on the permission the API already returns.
+  const actionSheetActions = useMemo<TileActionSheetAction[]>(() => {
+    const tile = actionSheetTile;
+    if (!tile) return [];
+    const isFavorited = isAuthenticated ? tile.isFavorite === true : isPublicFavorite(tile.id);
+
+    const items: TileActionSheetAction[] = [
+      {
+        id: 'open',
+        label: 'Open',
+        icon: (
+          <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor" className="h-5 w-5" aria-hidden="true">
+            <path d="M10 12.5a2.5 2.5 0 100-5 2.5 2.5 0 000 5z" />
+            <path fillRule="evenodd" d="M.664 10.59a1.651 1.651 0 010-1.186A10.004 10.004 0 0110 3c4.257 0 7.893 2.66 9.336 6.41.147.381.146.804 0 1.186A10.004 10.004 0 0110 17c-4.257 0-7.893-2.66-9.336-6.41z" clipRule="evenodd" />
+          </svg>
+        ),
+        onSelect: () => handleTileTap(tile.id),
+      },
+    ];
+
+    if (tile.isHyperlink && tile.hyperlinkUrl) {
+      items.push({
+        id: 'open-new',
+        label: 'Open link in new tab',
+        hint: tile.hyperlinkUrl,
+        icon: (
+          <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor" className="h-5 w-5" aria-hidden="true">
+            <path d="M11 3a1 1 0 100 2h2.586l-6.293 6.293a1 1 0 101.414 1.414L15 6.414V9a1 1 0 102 0V4a1 1 0 00-1-1h-5z" />
+            <path d="M5 5a2 2 0 00-2 2v8a2 2 0 002 2h8a2 2 0 002-2v-3a1 1 0 10-2 0v3H5V7h3a1 1 0 000-2H5z" />
+          </svg>
+        ),
+        onSelect: () => window.open(tile.hyperlinkUrl, '_blank', 'noopener,noreferrer'),
+      });
+    }
+
+    if (!isNonGridTab(activeTab) && localStorageAvailable) {
+      items.push({
+        id: 'favorite',
+        label: isFavorited ? 'Remove from favorites' : 'Add to favorites',
+        icon: (
+          <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor" className="h-5 w-5" aria-hidden="true">
+            <path fillRule="evenodd" d="M10.868 2.884c-.321-.772-1.415-.772-1.736 0l-1.83 4.401-4.753.381c-.833.067-1.171 1.107-.536 1.651l3.62 3.102-1.106 4.637c-.194.813.691 1.456 1.405 1.02L10 15.591l4.069 2.485c.713.436 1.598-.207 1.404-1.02l-1.106-4.637 3.62-3.102c.635-.544.297-1.584-.536-1.65l-4.752-.382-1.831-4.401z" clipRule="evenodd" />
+          </svg>
+        ),
+        onSelect: () => handleFavoriteToggle(tile.id),
+      });
+    }
+
+    items.push({
+      id: 'share',
+      label: 'Share / QR code',
+      icon: (
+        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor" className="h-5 w-5" aria-hidden="true">
+          <path d="M13 4.5a2.5 2.5 0 11.702 1.737L6.97 9.604a2.518 2.518 0 010 .792l6.733 3.367a2.5 2.5 0 11-.671 1.341l-6.733-3.367a2.5 2.5 0 110-3.474l6.733-3.366A2.52 2.52 0 0113 4.5z" />
+        </svg>
+      ),
+      onSelect: () => setShowAppQrDialog(true),
+    });
+
+    if (isAuthenticated) {
+      items.push({
+        id: 'edit',
+        label: 'Edit space',
+        hint: tile.canEdit === true ? undefined : 'You do not have edit permission',
+        icon: (
+          <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor" className="h-5 w-5" aria-hidden="true">
+            <path d="M2.695 14.762l-1.262 3.155a.5.5 0 00.65.65l3.155-1.262a4 4 0 001.343-.885L17.5 5.5a2.121 2.121 0 00-3-3L3.58 13.42a4 4 0 00-.885 1.342z" />
+          </svg>
+        ),
+        onSelect: () => {
+          if (tile.canEdit !== true) {
+            haptics.warn();
+            window.alert('You do not have permission to edit this space.');
+            return;
+          }
+          // TileDetail reads `edit=1` from the hash to open straight in edit mode.
+          window.location.hash = `#/tile/${tile.id}?from=${activeTab}&edit=1`;
+        },
+      });
+    }
+
+    return items;
+  }, [
+    actionSheetTile,
+    activeTab,
+    handleFavoriteToggle,
+    handleTileTap,
+    isAuthenticated,
+    localStorageAvailable,
+  ]);
+
+  // Bottom bar: the four highest-traffic tabs stay one tap away; everything
+  // else (Admin, QR, Updates, Archive, Recycle Bin, Staging) stays in the drawer.
+  const bottomNavItems = useMemo<MobileBottomNavItem[]>(() => [
+    {
+      id: 'public',
+      label: 'Public',
+      disabled: disabledTabs.has('public'),
+      icon: (
+        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor" className="h-5 w-5" aria-hidden="true">
+          <path d="M10 12.5a2.5 2.5 0 100-5 2.5 2.5 0 000 5z" />
+          <path fillRule="evenodd" d="M.664 10.59a1.651 1.651 0 010-1.186A10.004 10.004 0 0110 3c4.257 0 7.893 2.66 9.336 6.41.147.381.146.804 0 1.186A10.004 10.004 0 0110 17c-4.257 0-7.893-2.66-9.336-6.41zM14 10a4 4 0 11-8 0 4 4 0 018 0z" clipRule="evenodd" />
+        </svg>
+      ),
+    },
+    {
+      id: isAuthenticated ? 'favorites' : 'public-favorites',
+      label: 'Favorites',
+      disabled: disabledTabs.has('favorites'),
+      icon: (
+        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor" className="h-5 w-5" aria-hidden="true">
+          <path fillRule="evenodd" d="M10.868 2.884c-.321-.772-1.415-.772-1.736 0l-1.83 4.401-4.753.381c-.833.067-1.171 1.107-.536 1.651l3.62 3.102-1.106 4.637c-.194.813.691 1.456 1.405 1.02L10 15.591l4.069 2.485c.713.436 1.598-.207 1.404-1.02l-1.106-4.637 3.62-3.102c.635-.544.297-1.584-.536-1.65l-4.752-.382-1.831-4.401z" clipRule="evenodd" />
+        </svg>
+      ),
+    },
+    {
+      id: 'private',
+      label: 'Private',
+      disabled: !isAuthenticated || disabledTabs.has('private'),
+      badge: pendingInvitationsCount,
+      icon: (
+        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor" className="h-5 w-5" aria-hidden="true">
+          <path fillRule="evenodd" d="M10 1a4.5 4.5 0 00-4.5 4.5V9H5a2 2 0 00-2 2v6a2 2 0 002 2h10a2 2 0 002-2v-6a2 2 0 00-2-2h-.5V5.5A4.5 4.5 0 0010 1zm3 8V5.5a3 3 0 10-6 0V9h6z" clipRule="evenodd" />
+        </svg>
+      ),
+    },
+    {
+      id: 'your-apps',
+      label: 'Apps',
+      disabled: !isAuthenticated || disabledTabs.has('your-apps'),
+      icon: (
+        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor" className="h-5 w-5" aria-hidden="true">
+          <path fillRule="evenodd" d="M9.293 2.293a1 1 0 011.414 0l7 7A1 1 0 0117 11h-1v6a1 1 0 01-1 1h-2a1 1 0 01-1-1v-3a1 1 0 00-1-1H9a1 1 0 00-1 1v3a1 1 0 01-1 1H5a1 1 0 01-1-1v-6H3a1 1 0 01-.707-1.707l7-7z" clipRule="evenodd" />
+        </svg>
+      ),
+    },
+  ], [disabledTabs, isAuthenticated, pendingInvitationsCount]);
 
   const tileSearchMatches = useMemo(() => {
     const matches: Record<string, SearchMatchScore> = {};
@@ -686,16 +1114,37 @@ export const MobileTileView: React.FC<MobileTileViewProps> = ({
   const logoSize = Math.min(28, Math.max(16, (parseInt(settings.logo_size || '32', 10) || 32) * 0.75));
   const drawerLogoSize = Math.min(48, Math.max(28, parseInt(settings.header_logo_size || '40', 10) || 40));
   const navMinHeight = Math.max(52, logoSize + 16, settings.app_subheading ? 56 : 52);
+  // Publish the real header height so the sticky search bar (and anything else
+  // that docks under the nav) lines up even when branding changes logo size.
+  useEffect(() => {
+    const el = navRef.current;
+    if (!el || typeof window === 'undefined') return;
+    const publish = () => {
+      const h = Math.round(el.getBoundingClientRect().height);
+      if (h > 0) document.documentElement.style.setProperty('--ln-mobile-nav-h', `${h}px`);
+    };
+    publish();
+    const observer = typeof ResizeObserver !== 'undefined' ? new ResizeObserver(publish) : null;
+    observer?.observe(el);
+    window.addEventListener('resize', publish);
+    window.addEventListener('orientationchange', publish);
+    return () => {
+      observer?.disconnect();
+      window.removeEventListener('resize', publish);
+      window.removeEventListener('orientationchange', publish);
+    };
+  }, [navMinHeight, settings.app_subheading, settings.logo_size, settings.logo_type, settings.logo_image]);
+
   const appShareUrl = typeof window !== 'undefined'
     ? `${window.location.origin}${window.location.pathname}${window.location.search}#/`
     : '#/';
   const appShareLabel = settings.app_name || 'LinkNest';
 
   return (
-    <div className="w-full min-h-screen bg-slate-50 dark:bg-slate-900 pb-6">
+    <div className="linknest-has-bottomnav linknest-mobile-page w-full min-h-screen bg-slate-50 dark:bg-slate-900">
       {/* Mobile header: row 1 = menu + brand; row 2 = compact actions (avoids title overlap) */}
-      <nav className="linknest-nav sticky top-0 z-20 bg-white/90 dark:bg-slate-900/90 backdrop-blur-md border-b border-slate-200 dark:border-slate-800">
-        <div className="w-full px-2 pt-1.5 pb-1 flex flex-col gap-0.5">
+      <nav className="linknest-nav linknest-mobile-nav sticky top-0 z-20 bg-white/90 dark:bg-slate-900/90 backdrop-blur-md border-b border-slate-200 dark:border-slate-800">
+        <div ref={navRef} className="w-full px-2 pt-1.5 pb-1 flex flex-col gap-0.5">
           {/* Row 1: hamburger + brand (spacer mirrors menu width for true center) */}
           <div className="flex items-center gap-1 min-w-0" style={{ minHeight: navMinHeight - 4 }}>
             <button
@@ -717,7 +1166,7 @@ export const MobileTileView: React.FC<MobileTileViewProps> = ({
 
             <div
               onClick={() => { window.location.hash = '#/'; }}
-              className="flex-1 flex items-center justify-center gap-1.5 cursor-pointer min-w-0"
+              className={`flex-1 flex items-center justify-center gap-1.5 cursor-pointer min-w-0${isStandalone ? ' linknest-standalone-hide' : ''}`}
             >
               {settingsLoading && !settings.app_name ? (
                 <div className="h-7 min-w-[5rem]" aria-hidden="true" />
@@ -791,6 +1240,27 @@ export const MobileTileView: React.FC<MobileTileViewProps> = ({
         </div>
       </nav>
 
+      <OfflineBanner />
+
+      {/* Pull-to-refresh indicator (only while the gesture is active) */}
+      <div
+        className={`linknest-ptr ${pullToRefresh.pull > 0 || pullToRefresh.refreshing ? 'linknest-ptr-visible' : ''}`}
+        style={{
+          transform: `translateX(-50%) translateY(${Math.min(pullToRefresh.pull, 110)}px)`,
+        }}
+        aria-hidden={pullToRefresh.pull === 0 && !pullToRefresh.refreshing}
+      >
+        <svg
+          xmlns="http://www.w3.org/2000/svg"
+          viewBox="0 0 20 20"
+          fill="currentColor"
+          className={`h-5 w-5 ${pullToRefresh.refreshing ? 'animate-spin' : ''}`}
+          style={pullToRefresh.refreshing ? undefined : { transform: `rotate(${Math.min(pullToRefresh.pull * 3, 300)}deg)` }}
+        >
+          <path fillRule="evenodd" d="M15.312 11.424a5.5 5.5 0 01-9.201 2.466l-.312-.311h2.433a.75.75 0 000-1.5H3.989a.75.75 0 00-.75.75v4.242a.75.75 0 001.5 0v-2.43l.31.31a7 7 0 0011.712-3.138.75.75 0 00-1.449-.39zm1.23-3.723a.75.75 0 00.219-.53V2.929a.75.75 0 00-1.5 0V5.36l-.31-.31A7 7 0 003.239 8.188a.75.75 0 101.448.389A5.5 5.5 0 0113.89 6.11l.311.31h-2.432a.75.75 0 000 1.5h4.243a.75.75 0 00.53-1.281z" clipRule="evenodd" />
+        </svg>
+      </div>
+
       {/* Hamburger Menu Sidebar */}
       {isMenuOpen && (
         <>
@@ -801,7 +1271,7 @@ export const MobileTileView: React.FC<MobileTileViewProps> = ({
           />
           {/* Menu - Smooth slide animation */}
           <div
-            className="fixed left-0 top-0 bottom-0 w-64 bg-white dark:bg-slate-900 border-r border-slate-200 dark:border-slate-800 z-40 shadow-2xl transform transition-transform duration-300 ease-out translate-x-0"
+            className="linknest-mobile-drawer fixed left-0 top-0 bottom-0 w-64 bg-white dark:bg-slate-900 border-r border-slate-200 dark:border-slate-800 z-40 shadow-2xl transform transition-transform duration-300 ease-out translate-x-0"
             style={{
               boxShadow: '4px 0 24px rgba(0, 0, 0, 0.15)'
             }}
@@ -952,6 +1422,113 @@ export const MobileTileView: React.FC<MobileTileViewProps> = ({
                     </button>
                   )}
 
+                  {/* Staging - admins only */}
+                  {isAuthenticated && user?.is_admin && !disabledTabs.has('staging') && (
+                    <button
+                      onClick={() => handleTabClick('staging')}
+                      className={`w-full flex items-center gap-3 px-4 py-3 rounded-lg text-left transition-colors ${activeTab === 'staging'
+                        ? 'bg-emerald-50 dark:bg-emerald-900/30 text-emerald-600 dark:text-emerald-400 font-medium'
+                        : 'text-slate-700 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-800'
+                        }`}
+                      style={{ minHeight: '44px' }}
+                    >
+                      <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor" className="w-5 h-5">
+                        <path fillRule="evenodd" d="M10 1c-1.828 0-3.623.149-5.371.435a.75.75 0 00-.629.74v.387c-.827.157-1.642.345-2.445.564a.75.75 0 00-.552.698 5 5 0 004.503 5.152 6 6 0 002.946 1.822A6.451 6.451 0 017.768 13H7.5A1.5 1.5 0 006 14.5V17a.75.75 0 00.75.75h6.5A.75.75 0 0014 17v-2.5a1.5 1.5 0 00-1.5-1.5h-.268a6.453 6.453 0 01-.684-2.202 6 6 0 002.946-1.822 5 5 0 004.503-5.152.75.75 0 00-.552-.698A31.804 31.804 0 0016 2.562v-.387a.75.75 0 00-.629-.74A33.227 33.227 0 0010 1z" clipRule="evenodd" />
+                      </svg>
+                      <span>Staging</span>
+                    </button>
+                  )}
+
+                  {/* Scheduled - authenticated users */}
+                  {isAuthenticated && !disabledTabs.has('scheduled') && (
+                    <button
+                      onClick={() => handleTabClick('scheduled')}
+                      className={`w-full flex items-center gap-3 px-4 py-3 rounded-lg text-left transition-colors ${activeTab === 'scheduled'
+                        ? 'bg-sky-50 dark:bg-sky-900/30 text-sky-600 dark:text-sky-400 font-medium'
+                        : 'text-slate-700 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-800'
+                        }`}
+                      style={{ minHeight: '44px' }}
+                    >
+                      <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor" className="w-5 h-5">
+                        <path fillRule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zm.75-13a.75.75 0 00-1.5 0v5c0 .414.336.75.75.75h4a.75.75 0 000-1.5h-3.25V5z" clipRule="evenodd" />
+                      </svg>
+                      <span>Scheduled</span>
+                    </button>
+                  )}
+
+                  {/* Expired - authenticated users */}
+                  {isAuthenticated && !disabledTabs.has('expired') && (
+                    <button
+                      onClick={() => handleTabClick('expired')}
+                      className={`w-full flex items-center gap-3 px-4 py-3 rounded-lg text-left transition-colors ${activeTab === 'expired'
+                        ? 'bg-orange-50 dark:bg-orange-900/30 text-orange-600 dark:text-orange-400 font-medium'
+                        : 'text-slate-700 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-800'
+                        }`}
+                      style={{ minHeight: '44px' }}
+                    >
+                      <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor" className="w-5 h-5">
+                        <path fillRule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zM8.28 7.22a.75.75 0 00-1.06 1.06L8.94 10l-1.72 1.72a.75.75 0 101.06 1.06L10 11.06l1.72 1.72a.75.75 0 101.06-1.06L11.06 10l1.72-1.72a.75.75 0 00-1.06-1.06L10 8.94 8.28 7.22z" clipRule="evenodd" />
+                      </svg>
+                      <span>Expired</span>
+                    </button>
+                  )}
+
+                  {/* Archive - authenticated users */}
+                  {isAuthenticated && !disabledTabs.has('archive') && (
+                    <button
+                      onClick={() => handleTabClick('archive')}
+                      className={`w-full flex items-center gap-3 px-4 py-3 rounded-lg text-left transition-colors ${activeTab === 'archive'
+                        ? 'bg-amber-50 dark:bg-amber-900/30 text-amber-600 dark:text-amber-400 font-medium'
+                        : 'text-slate-700 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-800'
+                        }`}
+                      style={{ minHeight: '44px' }}
+                    >
+                      <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor" className="w-5 h-5">
+                        <path d="M2 3a1 1 0 00-1 1v1a1 1 0 001 1h16a1 1 0 001-1V4a1 1 0 00-1-1H2z" />
+                        <path fillRule="evenodd" d="M2 7h16v9a2 2 0 01-2 2H4a2 2 0 01-2-2V7zm5 3a1 1 0 011-1h4a1 1 0 110 2H8a1 1 0 01-1-1z" clipRule="evenodd" />
+                      </svg>
+                      <span>Archive</span>
+                    </button>
+                  )}
+
+                  {/* Recycle Bin - authenticated users */}
+                  {isAuthenticated && !disabledTabs.has('recycle-bin') && (
+                    <button
+                      onClick={() => handleTabClick('recycle-bin')}
+                      className={`w-full flex items-center gap-3 px-4 py-3 rounded-lg text-left transition-colors ${activeTab === 'recycle-bin'
+                        ? 'bg-rose-50 dark:bg-rose-900/30 text-rose-600 dark:text-rose-400 font-medium'
+                        : 'text-slate-700 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-800'
+                        }`}
+                      style={{ minHeight: '44px' }}
+                    >
+                      <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor" className="w-5 h-5">
+                        <path fillRule="evenodd" d="M8.75 1A2.75 2.75 0 006 3.75v.443c-.795.077-1.584.176-2.365.298a.75.75 0 10.23 1.482l.149-.022.841 10.518A2.75 2.75 0 007.596 19h4.807a2.75 2.75 0 002.742-2.53l.841-10.52.149.023a.75.75 0 00.23-1.482A41.03 41.03 0 0014 4.193V3.75A2.75 2.75 0 0011.25 1h-2.5zM10 4c.84 0 1.673.025 2.5.075V3.75c0-.69-.56-1.25-1.25-1.25h-2.5c-.69 0-1.25.56-1.25 1.25v.325C8.327 4.025 9.16 4 10 4z" clipRule="evenodd" />
+                      </svg>
+                      <span>Recycle Bin</span>
+                    </button>
+                  )}
+
+                  {/* Widgets - opens the phone-safe widget sheet (App.tsx) */}
+                  <div className="my-2 border-t border-slate-200 dark:border-slate-700"></div>
+                  <button
+                    onClick={() => {
+                      setIsMenuOpen(false);
+                      window.dispatchEvent(new CustomEvent('linknest-mobile-widgets-open'));
+                    }}
+                    className="w-full flex items-center gap-3 px-4 py-3 rounded-lg text-left transition-colors text-slate-700 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-800 touch-manipulation"
+                    style={{ minHeight: '44px' }}
+                  >
+                    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2} strokeLinecap="round" strokeLinejoin="round" className="w-5 h-5 text-brand-600 dark:text-brand-400">
+                      <rect x="3" y="3" width="7" height="7" rx="1" />
+                      <rect x="14" y="3" width="7" height="7" rx="1" />
+                      <rect x="14" y="14" width="7" height="7" rx="1" />
+                      <rect x="3" y="14" width="7" height="7" rx="1" />
+                    </svg>
+                    <div className="flex flex-col items-start min-w-0">
+                      <span className="font-medium">Widgets</span>
+                      <span className="text-[11px] text-slate-400 dark:text-slate-500">Clock, calculator, notes...</span>
+                    </div>
+                  </button>
                   {/* Share app URL via QR — available to everyone including public/guests */}
                   <div className="my-2 border-t border-slate-200 dark:border-slate-700"></div>
                   <button
@@ -1013,8 +1590,46 @@ export const MobileTileView: React.FC<MobileTileViewProps> = ({
         </>
       )}
 
+      {/* Tab banners (Archive / Recycle Bin / Staging / Your Apps / Private /
+          Scheduled / Expired). Phones previously fell through to a bare grid. */}
+      <TabOverviews
+        activeTab={activeTab}
+        spaceCount={Object.values(groupedTiles).flat().length}
+        archiveCount={archiveTiles.length}
+        recycleBinCount={recycleBinTiles.length}
+        isAuthenticated={isAuthenticated}
+        isAdmin={!!user?.is_admin}
+        pendingInvitationsCount={pendingInvitationsCount}
+        privateSubTab={privateSubTab}
+        yourAppsFilter={yourAppsFilter}
+        onSelectPrivateSubTab={onSelectPrivateSubTab}
+        onSelectYourAppsFilter={onSelectYourAppsFilter}
+        onDownloadStagingTemplates={onDownloadStagingTemplates}
+        onFocusOfflineKit={onFocusOfflineKit}
+        archiveActions={archiveActions}
+        recycleBinActions={recycleBinActions}
+      />
+
+      {/* Private tab sub-panels — previously unreachable on phones. */}
+      {activeTab === 'private' && isAuthenticated && privateSubTab === 'sharing' && (
+        <div className="px-4 pt-4">
+          <SharedTileNotifications
+            onAccept={() => { getTiles().then(t => onUpdateTiles?.(t)); }}
+            onReject={() => { }}
+          />
+        </div>
+      )}
+      {activeTab === 'private' && isAuthenticated && privateSubTab === 'blocked' && (
+        <div className="px-4 pt-4">
+          <BlockedUsersSection onUnblock={() => { getTiles().then(t => onUpdateTiles?.(t)); }} />
+        </div>
+      )}
+
       {/* Search Bar - Modern styling with glassmorphism */}
-      <div className="sticky top-[73px] z-10 bg-white/80 dark:bg-slate-900/80 backdrop-blur-lg border-b border-slate-200/50 dark:border-slate-700/50 px-4 py-3 shadow-sm">
+      <div
+        className="sticky z-10 bg-white/80 dark:bg-slate-900/80 backdrop-blur-lg border-b border-slate-200/50 dark:border-slate-700/50 px-4 py-3 shadow-sm"
+        style={{ top: 'var(--ln-mobile-nav-h, 104px)' }}
+      >
         <div className="relative">
           <div className="absolute inset-y-0 left-0 flex items-center pl-3 pointer-events-none">
             <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor" className="w-5 h-5 text-slate-400">
@@ -1028,6 +1643,22 @@ export const MobileTileView: React.FC<MobileTileViewProps> = ({
             onChange={(e) => onSearchChange(e.target.value)}
             className="w-full bg-white/90 dark:bg-slate-800/90 backdrop-blur-sm border border-slate-200 dark:border-slate-700 rounded-2xl pl-10 pr-10 py-3.5 text-sm text-slate-900 dark:text-white placeholder-slate-400 focus:outline-none focus:ring-2 focus:ring-brand-500/50 focus:border-brand-500 transition-all shadow-sm hover:shadow-md"
           />
+          {voiceSearch.supported && (
+            <button
+              type='button'
+              onClick={() => { if (voiceSearch.listening) voiceSearch.stop(); else voiceSearch.start(); }}
+              className={`absolute ${searchTerm ? 'right-11' : 'right-1.5'} top-1/2 -translate-y-1/2 inline-flex items-center justify-center w-9 h-9 rounded-xl transition-colors active:scale-95 ${voiceSearch.listening ? 'bg-red-100 text-red-600 dark:bg-red-900/30 dark:text-red-400' : 'text-slate-400 hover:text-slate-600 dark:hover:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-700/80'}`}
+              title={voiceSearch.listening ? 'Stop voice input' : 'Search by voice'}
+              aria-label={voiceSearch.listening ? 'Stop voice input' : 'Search by voice'}
+              aria-pressed={voiceSearch.listening}
+            >
+              <svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='currentColor' strokeWidth={2} strokeLinecap='round' strokeLinejoin='round' className='w-5 h-5 pointer-events-none' aria-hidden>
+                <path d='M12 1a3 3 0 00-3 3v7a3 3 0 006 0V4a3 3 0 00-3-3z' />
+                <path d='M19 10v1a7 7 0 01-14 0v-1' />
+                <line x1='12' y1='19' x2='12' y2='23' />
+              </svg>
+            </button>
+          )}
           {searchTerm && (
             <button
               type="button"
@@ -1042,6 +1673,7 @@ export const MobileTileView: React.FC<MobileTileViewProps> = ({
             </button>
           )}
         </div>
+
         {searchTerm.trim() && onSearchResultFilterChange && (
           <div className="mt-2 flex justify-end gap-1.5 flex-wrap">
             <SearchResultFilterControl
@@ -1077,8 +1709,54 @@ export const MobileTileView: React.FC<MobileTileViewProps> = ({
         )}
       </div>
 
-      {/* Tiles Grid - 3 columns like mobile apps */}
+      {/* Tiles Grid - density-aware columns */}
       <div className="px-4 py-6">
+        <MobileHomeControls
+          density={tileDensity}
+          onDensityChange={handleDensityChange}
+          sort={tileSort}
+          onSortChange={handleSortChange}
+          groupByCategory={groupByCategory}
+          onGroupByCategoryChange={handleGroupByCategoryChange}
+          hidden={!!searchTerm.trim() || !showSpacesGrid}
+        />
+
+        {/* Recently visited shelf */}
+        {recentlyVisited.length > 0 && (
+          <div className="mb-5">
+            <h3 className="mb-2 px-0.5 text-[11px] font-semibold uppercase tracking-wider text-slate-500 dark:text-slate-400">
+              Recently visited
+            </h3>
+            <div className="-mx-4 flex gap-2 overflow-x-auto px-4 pb-1 [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
+              {recentlyVisited.map((tile) => {
+                const tileStyles = getTileStyles(tile);
+                return (
+                  <button
+                    key={`recent-${tile.id}`}
+                    type="button"
+                    onClick={() => handleTileTap(tile.id)}
+                    className="flex w-16 shrink-0 flex-col items-center gap-1 touch-manipulation"
+                    title={tile.title || 'Untitled'}
+                  >
+                    <span
+                      className="flex h-12 w-12 items-center justify-center overflow-hidden rounded-xl text-xl shadow-sm"
+                      style={tileStyles}
+                    >
+                      {tile.emojiImage ? (
+                        <img src={tile.emojiImage} alt="" className="h-full w-full object-contain p-0.5" />
+                      ) : (
+                        tile.emoji || '✨'
+                      )}
+                    </span>
+                    <span className="w-full truncate text-center text-[10px] font-medium text-slate-600 dark:text-slate-300">
+                      {tile.title || 'Untitled'}
+                    </span>
+                  </button>
+                );
+              })}
+            </div>
+          </div>
+        )}
         {searchTerm.trim() && searchStats && (
           <div className="mb-4">
             <SearchStatsBar stats={searchStats} />
@@ -1371,9 +2049,37 @@ export const MobileTileView: React.FC<MobileTileViewProps> = ({
           </div>
         )}
 
-        {!showGuestBookmarks && filteredTiles.length > 0 && !(searchTerm.trim() && searchResultFilter === 'links') ? (
-          <div className="grid grid-cols-3 gap-6">
-            {filteredTiles.map((tile, index) => {
+        {!showGuestBookmarks && showSpacesGrid && filteredTiles.length > 0 && !(searchTerm.trim() && searchResultFilter === 'links') ? (
+          // Long-press is delegated from this container; useLongPress is a hook and
+          // cannot be called per tile inside the map below.
+          <div
+            className={`grid ${densityStyles.gap}`}
+            style={{ gridTemplateColumns: `repeat(${densityColumns}, minmax(0, 1fr))` }}
+            {...gridLongPress}
+          >
+            {gridItems.map((item, index) => {
+              if (item.kind === 'header') {
+                const collapsed = collapsedGroups.has(item.name);
+                return (
+                  <div key={`hdr-${item.name}`} className="col-span-full mt-2 first:mt-0">
+                    <button
+                      type="button"
+                      onClick={() => toggleGroupCollapsed(item.name)}
+                      aria-expanded={!collapsed}
+                      className="flex w-full items-center gap-2 rounded-lg px-2 py-1.5 text-left touch-manipulation"
+                    >
+                      <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor" className={`h-3.5 w-3.5 shrink-0 text-slate-400 transition-transform ${collapsed ? '' : 'rotate-90'}`} aria-hidden="true">
+                        <path d="M7 5l6 5-6 5V5z" />
+                      </svg>
+                      <span className="truncate text-xs font-semibold uppercase tracking-wider text-slate-500 dark:text-slate-400">{item.name}</span>
+                      <span className="shrink-0 rounded-full bg-slate-100 px-1.5 py-0.5 text-[10px] font-semibold text-slate-500 dark:bg-slate-800 dark:text-slate-400">{item.count}</span>
+                    </button>
+                  </div>
+                );
+              }
+              const tile = item.tile;
+              const isCollapsedGroup = !!tile.group && collapsedGroups.has(tile.group);
+              if (isCollapsedGroup) return null;
               const tileStyles = getTileStyles(tile);
               const animationClass = getTileAnimationClass(currentAnimation);
               const decorationClass = getTileDecorationClass(currentDecoration);
@@ -1388,6 +2094,7 @@ export const MobileTileView: React.FC<MobileTileViewProps> = ({
               return (
                 <div
                   key={tile.id}
+                  data-tile-id={tile.id}
                   className={`flex flex-col items-center relative group mobile-tile ${fullAnimationClass} ${tileAnimatedClass}`}
                   style={{
                     animationDelay: fullAnimationClass ? `${index * 0.05}s` : undefined
@@ -1395,8 +2102,8 @@ export const MobileTileView: React.FC<MobileTileViewProps> = ({
                 >
                   {/* Tile Icon - Square like mobile app icon with modern styling */}
                   <div
-                    onClick={() => onTileClick(tile.id)}
-                    className="relative w-20 h-20 rounded-2xl shadow-lg hover:shadow-xl flex items-center justify-center text-3xl mb-2 transition-all duration-200 active:scale-90 group-hover:scale-105 cursor-pointer overflow-visible"
+                    onClick={() => handleTileTap(tile.id)}
+                    className={`relative ${densityStyles.icon} shadow-lg hover:shadow-xl flex items-center justify-center ${densityStyles.emoji} mb-2 transition-all duration-200 active:scale-90 group-hover:scale-105 cursor-pointer overflow-visible touch-manipulation`}
                     style={tileStyles}
                   >
                     {/* Ripple effect background */}
@@ -1493,7 +2200,7 @@ export const MobileTileView: React.FC<MobileTileViewProps> = ({
                   <div className="text-center w-full">
                     <p
                       className="text-xs font-medium line-clamp-2 px-1 transition-colors duration-200 group-hover:text-brand-600 dark:group-hover:text-brand-400 cursor-pointer"
-                      onClick={() => onTileClick(tile.id)}
+                      onClick={() => handleTileTap(tile.id)}
                       style={{
                         color: darkMode ? '#f1f5f9' : '#1e293b' // Force readable text: light in dark mode, dark in light mode
                       }}
@@ -1572,6 +2279,38 @@ export const MobileTileView: React.FC<MobileTileViewProps> = ({
           </div>
         ) : null}
       </div>
+
+      {/* Long-press action sheet */}
+      <TileActionSheet
+        isOpen={!!actionSheetTile}
+        onClose={() => setActionSheetTile(null)}
+        tile={actionSheetTile}
+        actions={actionSheetActions}
+      />
+
+      {/* Primary create action — the desktop "New Space" button never rendered
+          below 768px, so phones had no way to create a space. */}
+      {showCreateFab && !isNonGridTab(activeTab) && (
+        <MobileCreateFab
+          onClick={() => {
+            if (onCreateTile) {
+              onCreateTile();
+              return;
+            }
+            if (!isAuthenticated && onLoginClick) onLoginClick();
+          }}
+          requiresAuth={!isAuthenticated}
+        />
+      )}
+
+      {/* Bottom tab bar (hides everything below md, which matches useMobile) */}
+      <MobileBottomNav
+        items={bottomNavItems}
+        activeTab={activeTab}
+        onSelect={handleTabClick}
+        onOpenMore={() => setIsMenuOpen(true)}
+        moreActive={isMenuOpen}
+      />
 
       <LinkMaintenanceDialog
         isOpen={!!linkMaintenanceDialog}
