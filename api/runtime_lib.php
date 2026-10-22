@@ -709,7 +709,9 @@ function runtimeDetectWebServers(): array
         $version = null;
         $versionArgs = is_array($row['versionCommand']) ? $row['versionCommand'] : [$row['versionCommand']];
         if ($path !== null && runtimeCmdAllowed('proc_open')) {
-            $output = runtimeRunArgv(array_merge([$path], $versionArgs), 6);
+            $output = $id === 'apache'
+                ? runtimeApacheVersionOutput($path, $versionArgs)
+                : runtimeRunArgv(array_merge([$path], $versionArgs), 6);
             if ($output !== '' && preg_match((string)$row['versionPattern'], $output, $matches)) {
                 $version = $matches[1];
             }
@@ -1031,11 +1033,49 @@ function runtimeCmdAllowed(string $fn): bool
 }
 
 /**
+ * Environment for a Windows Apache probe.
+ *
+ * mod_php sets AP_PARENT_PID. A nested httpd.exe treats that as "I am an mpm_winnt
+ * child", reads a generation number from the parent, and exits before -v prints.
+ * Dropping the variable (and putting the bin directory on PATH) lets -v run.
+ *
+ * @return array<string, string>|null null keeps the parent environment
+ */
+function runtimeWindowsProbeEnv(?string $pathPrefix): ?array
+{
+    if (!runtimeIsWindows()) {
+        return null;
+    }
+    $env = getenv();
+    if (!is_array($env)) {
+        $env = [];
+    }
+    foreach (array_keys($env) as $key) {
+        if (strcasecmp((string)$key, 'AP_PARENT_PID') === 0) {
+            unset($env[$key]);
+        }
+    }
+    if ($pathPrefix !== null && $pathPrefix !== '') {
+        $pathKey = 'Path';
+        $current = '';
+        foreach ($env as $key => $value) {
+            if (strcasecmp((string)$key, 'PATH') === 0) {
+                $pathKey = (string)$key;
+                $current = (string)$value;
+                break;
+            }
+        }
+        $env[$pathKey] = $pathPrefix . PATH_SEPARATOR . $current;
+    }
+    return $env;
+}
+
+/**
  * Read-only argv probe. Never uses a shell; never accepts a command string.
  *
  * @param list<string> $argv
  */
-function runtimeRunArgv(array $argv, int $timeoutSec = 4): string
+function runtimeRunArgv(array $argv, int $timeoutSec = 4, ?string $cwd = null, ?string $pathPrefix = null, bool $mergeStderr = false): string
 {
     if ($argv === [] || !runtimeCmdAllowed('proc_open')) {
         return '';
@@ -1046,12 +1086,18 @@ function runtimeRunArgv(array $argv, int $timeoutSec = 4): string
     if ((str_contains($binary, '/') || str_contains($binary, '\\')) && !@is_file($binary)) {
         return '';
     }
+    if ($cwd !== null && !@is_dir($cwd)) {
+        $cwd = null;
+    }
+    $env = ($cwd !== null || ($pathPrefix !== null && $pathPrefix !== ''))
+        ? runtimeWindowsProbeEnv($pathPrefix)
+        : null;
     $descriptors = [
         0 => ['pipe', 'r'],
         1 => ['pipe', 'w'],
         2 => ['pipe', 'w'],
     ];
-    $proc = @proc_open($argv, $descriptors, $pipes, null, null, ['bypass_shell' => true]);
+    $proc = @proc_open($argv, $descriptors, $pipes, $cwd, $env, ['bypass_shell' => true]);
     if (!is_resource($proc)) {
         return '';
     }
@@ -1075,10 +1121,42 @@ function runtimeRunArgv(array $argv, int $timeoutSec = 4): string
         usleep(20000);
     }
     $out .= (string)stream_get_contents($pipes[1]);
+    $err .= (string)stream_get_contents($pipes[2]);
     fclose($pipes[1]);
     fclose($pipes[2]);
     proc_close($proc);
-    return trim($out !== '' ? $out : $err);
+    $out = trim($out);
+    $err = trim($err);
+    if (!$mergeStderr) {
+        return $out !== '' ? $out : $err;
+    }
+    if ($out === '') {
+        return $err;
+    }
+    if ($err === '' || str_contains($out, $err)) {
+        return $out;
+    }
+    return $out . "\n" . $err;
+}
+
+/**
+ * httpd -v from the binary's own directory. On Windows the worker's AP_PARENT_PID
+ * is removed so the probe is not mistaken for an Apache child.
+ *
+ * @param list<string> $versionArgs
+ */
+function runtimeApacheVersionOutput(string $path, array $versionArgs = ['-v']): string
+{
+    $cwd = null;
+    $pathPrefix = null;
+    if (runtimeIsWindowsEffective() && !runtimeSimulation()['active']) {
+        $dir = dirname($path);
+        if ($dir !== '' && $dir !== '.' && @is_dir($dir)) {
+            $cwd = $dir;
+            $pathPrefix = $dir;
+        }
+    }
+    return runtimeRunArgv(array_merge([$path], $versionArgs), 6, $cwd, $pathPrefix, true);
 }
 
 /**
@@ -1756,11 +1834,16 @@ function runtimeApacheInfo(): array
         } elseif (!runtimeCmdAllowed('proc_open')) {
             $info['error'] = 'proc_open is disabled — the Apache version could not be read';
         } else {
-            $output = runtimeRunArgv([$path, '-v'], 6);
+            $output = runtimeApacheVersionOutput($path);
             if ($output !== '' && preg_match('#Apache/(\d+(?:\.\d+)+)#i', $output, $matches)) {
                 $info['version'] = $matches[1];
             } else {
-                $info['error'] = 'Apache version not reported by ' . basename($path);
+                $snippet = trim((string)preg_replace('/\s+/', ' ', $output));
+                if (strlen($snippet) > 180) {
+                    $snippet = substr($snippet, 0, 177) . '...';
+                }
+                $info['error'] = 'Apache version not reported by ' . basename($path)
+                    . ($snippet !== '' ? ': ' . $snippet : '');
             }
         }
     }
