@@ -219,7 +219,11 @@ export const LinkUrlField: React.FC<LinkUrlFieldProps> = ({
                 <input
                     type={inputType}
                     value={value}
-                    onChange={(e) => onChange(e.target.value)}
+                    onChange={(e) => {
+                        handleSafetyResult(null);
+                        setProbeStatus('idle');
+                        onChange(e.target.value);
+                    }}
                     placeholder={placeholder}
                     required={required}
                     aria-invalid={blocking || hasUrlError}

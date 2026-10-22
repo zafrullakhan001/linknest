@@ -7,8 +7,8 @@ import {
 } from '../services/urlSafetyService';
 
 /**
- * If the URL looks malicious/phishing, prompt before continuing.
- * Returns true if save should proceed.
+ * Confirm known malware/phishing verdicts without waiting for background checks.
+ * Pending or unavailable verdicts do not prevent saving.
  */
 export async function confirmUrlSafetyBeforeSave(
   url: string,
@@ -19,9 +19,8 @@ export async function confirmUrlSafetyBeforeSave(
     return true;
   }
 
-  let result: UrlSafetyCheckResult | null = null;
   if (known && 'verdict' in known) {
-    if (safetyRequiresConfirm(known as UrlSafetyCheckResult)) {
+    if (known.blockMalicious || known.verdict === 'malicious' || known.requiresConfirm) {
       // Known live result from the form badges
       const msg =
         'flags' in known && Array.isArray((known as UrlSafetyCheckResult).flags)
@@ -47,25 +46,7 @@ export async function confirmUrlSafetyBeforeSave(
     }
   }
 
-  try {
-    result = await urlSafetyService.checkUrl(trimmed);
-  } catch {
-    // Don't block save if the safety API is down
-    return true;
-  }
-
-  if (result.blockMalicious) {
-    window.alert(
-      `This URL is blocked by URL Safety settings (malware/phishing). Ask an admin to allowlist the domain or disable hard-block.`
-    );
-    return false;
-  }
-
-  if (!safetyRequiresConfirm(result)) {
-    return true;
-  }
-
-  return window.confirm(formatSafetyConfirmMessage(result));
+  return true;
 }
 
 /**

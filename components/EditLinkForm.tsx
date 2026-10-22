@@ -1,5 +1,6 @@
 import React, { useCallback, useEffect, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
+import { Check, FileText, Info, Link2, Rocket, Settings2, ShieldCheck, Wrench } from 'lucide-react';
 import type { AccessRestrictions, Link, LinkOpenTarget, LinkVisibility } from '../types';
 import { LINK_OPEN_TARGET_OPTIONS, normalizeLinkOpenTarget } from '../utils/openLinkUrl';
 import type { UserListItem } from '../services/authService';
@@ -16,7 +17,7 @@ import { normalizeLinkTooltipStyle, type LinkTooltipStyle } from '../utils/linkT
 import { EmojiPickerPanel } from './EmojiPickerPanel';
 import { TileAnimationSelector, type TileAnimation, getAnimationOption } from './TileAnimationSelector';
 import { AuthSourceBadge } from './AuthSourceBadge';
-import { SpaceModalHeader, EditModalTabButton } from './SpaceFormChrome';
+import { SpaceModalHeader } from './SpaceFormChrome';
 import { useEscapeToClose } from '../hooks/useEscapeToClose';
 
 export const EDIT_LINK_VIEW_MODE_KEY = 'linknest_edit_link_view_mode';
@@ -27,9 +28,6 @@ type DialogGeometry = { x: number; y: number; width: number; height: number };
 
 const MIN_DIALOG_WIDTH = 400;
 const MIN_DIALOG_HEIGHT = 300;
-/** Keep at least this many pixels of the dialog inside the viewport for grab handles. */
-const VIEWPORT_EDGE_PAD = 48;
-
 export const readEditLinkViewMode = (): EditLinkViewMode => {
   try {
     return localStorage.getItem(EDIT_LINK_VIEW_MODE_KEY) === 'dialog-tabs' ? 'dialog-tabs' : 'accordion';
@@ -47,15 +45,14 @@ export const writeEditLinkViewMode = (mode: EditLinkViewMode): void => {
 };
 
 const clampDialogGeometry = (geo: DialogGeometry): DialogGeometry => {
-  const maxW = Math.max(MIN_DIALOG_WIDTH, window.innerWidth - 20);
-  const maxH = Math.max(MIN_DIALOG_HEIGHT, window.innerHeight - 20);
+  const maxW = Math.max(1, window.innerWidth - 20);
+  const maxH = Math.max(1, window.innerHeight - 20);
   const width = Math.min(Math.max(geo.width, MIN_DIALOG_WIDTH), maxW);
   const height = Math.min(Math.max(geo.height, MIN_DIALOG_HEIGHT), maxH);
-  // Keep a usable strip on-screen so header/bottom drag bars stay reachable
-  const minX = VIEWPORT_EDGE_PAD - width;
-  const maxX = window.innerWidth - VIEWPORT_EDGE_PAD;
-  const minY = VIEWPORT_EDGE_PAD - height;
-  const maxY = window.innerHeight - VIEWPORT_EDGE_PAD;
+  const minX = 10;
+  const maxX = Math.max(minX, window.innerWidth - width - 10);
+  const minY = 10;
+  const maxY = Math.max(minY, window.innerHeight - height - 10);
   const x = Math.min(Math.max(geo.x, minX), maxX);
   const y = Math.min(Math.max(geo.y, minY), maxY);
   return { x, y, width, height };
@@ -94,8 +91,8 @@ const writeDialogGeometry = (geo: DialogGeometry): void => {
 };
 
 const defaultDialogGeometry = (): DialogGeometry => {
-  const width = Math.min(768, window.innerWidth - 40);
-  const height = Math.min(700, window.innerHeight - 40);
+  const width = Math.min(880, window.innerWidth - 20);
+  const height = Math.min(760, window.innerHeight - 20);
   return clampDialogGeometry({
     x: (window.innerWidth - width) / 2,
     y: (window.innerHeight - height) / 2,
@@ -337,11 +334,7 @@ export type EditLinkFormProps = {
   linkAnimationForEdit: (animation?: string) => TileAnimation;
 };
 
-const SaveIcon = () => (
-  <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" strokeWidth={2} stroke="currentColor" className="w-3.5 h-3.5">
-    <path strokeLinecap="round" strokeLinejoin="round" d="M9 12.75L11.25 15 15 9.75M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
-  </svg>
-);
+const TAB_ICONS = { access: Rocket, basics: Link2, notes: FileText, info: Info, maintenance: Wrench, advanced: Settings2, restrictions: ShieldCheck };
 
 export const EditLinkForm: React.FC<EditLinkFormProps> = (props) => {
   const {
@@ -611,9 +604,10 @@ export const EditLinkForm: React.FC<EditLinkFormProps> = (props) => {
         type="button"
         onClick={onSave}
         disabled={!canSave}
-        className="px-4 py-2 text-xs font-semibold bg-brand-600 hover:bg-brand-500 disabled:opacity-50 disabled:cursor-not-allowed text-white rounded-lg transition-all shadow-md hover:shadow-lg shadow-brand-500/30 flex items-center gap-1.5"
+        title={!canSave ? 'Enter a link label and URL' : 'Save link'}
+        className="px-5 py-2 text-sm font-semibold bg-brand-600 hover:bg-brand-500 disabled:opacity-50 disabled:cursor-not-allowed text-white rounded-lg transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand-500 focus-visible:ring-offset-2 flex items-center gap-2"
       >
-        <SaveIcon />
+        <Check className="w-4 h-4" aria-hidden="true" />
         Save
       </button>
     </>
@@ -1575,15 +1569,15 @@ export const EditLinkForm: React.FC<EditLinkFormProps> = (props) => {
         role="dialog"
         aria-modal="true"
         aria-label="Edit Link"
-        className={`bg-white dark:bg-slate-800 border border-slate-200/80 dark:border-slate-700 rounded-2xl p-6 pb-8 relative shadow-2xl animate-in fade-in zoom-in duration-200 overflow-hidden flex flex-col ${isDragging ? 'cursor-move' : ''} ${isDragging || isResizing ? 'will-change-transform' : ''} ${dialogReady ? '' : 'opacity-0'}`}
+        className={`bg-white dark:bg-slate-800 border border-slate-200/80 dark:border-slate-700 rounded-lg p-6 pb-8 relative shadow-2xl animate-in fade-in zoom-in duration-200 overflow-hidden flex flex-col ${isDragging ? 'cursor-move' : ''} ${isDragging || isResizing ? 'will-change-transform' : ''} ${dialogReady ? '' : 'opacity-0'}`}
         style={{
           zIndex: 100060,
           width: dialogReady ? `${modalSize.width}px` : '768px',
-          maxWidth: '90vw',
-          minWidth: `${MIN_DIALOG_WIDTH}px`,
+          maxWidth: 'calc(100vw - 20px)',
+          minWidth: 'min(400px, calc(100vw - 20px))',
           height: dialogReady ? `${modalSize.height}px` : '700px',
-          maxHeight: '90vh',
-          minHeight: `${MIN_DIALOG_HEIGHT}px`,
+          maxHeight: 'calc(100dvh - 20px)',
+          minHeight: 'min(300px, calc(100dvh - 20px))',
           left: dialogReady ? `${modalPosition.x}px` : 'auto',
           top: dialogReady ? `${modalPosition.y}px` : 'auto',
           position: dialogReady ? 'absolute' : 'relative',
@@ -1595,21 +1589,34 @@ export const EditLinkForm: React.FC<EditLinkFormProps> = (props) => {
           emoji="✏️"
           eyebrow="Edit Link"
           title={draft.label?.trim() || 'Untitled link'}
-          subtitle="Organize access, content, and display options"
           onClose={onCancel}
           onMouseDown={handleDragStart}
         />
-        <div className="flex items-center gap-2 shrink-0 flex-wrap justify-end -mt-2 mb-3">
-          {!dialogOnly && viewModeToggle}
-          {cancelSaveButtons}
-        </div>
-        <div className="flex gap-1.5 mb-4 border-b border-slate-200 dark:border-slate-700 overflow-x-auto shrink-0">
-          {TABS.map((tab) => (
-            <EditModalTabButton
-              key={tab.id}
-              active={activeTab === tab.id}
-              emoji={tab.emoji}
-              label={
+        {!dialogOnly && <div className="flex justify-end shrink-0 mb-3">{viewModeToggle}</div>}
+        <div role="tablist" aria-label="Link settings" className="flex gap-1 mb-5 border-b border-slate-200 dark:border-slate-700 overflow-x-auto shrink-0">
+          {TABS.map((tab) => {
+            const Icon = TAB_ICONS[tab.id];
+            return (
+              <button
+                key={tab.id}
+                type="button"
+                role="tab"
+                id={`edit-link-${link.id}-${tab.id}`}
+                aria-selected={activeTab === tab.id}
+                aria-controls={`edit-link-panel-${link.id}`}
+                className={`flex shrink-0 items-center gap-2 px-3 py-3 text-xs font-semibold border-b-2 transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-brand-500 ${activeTab === tab.id ? 'border-brand-600 text-brand-700 dark:text-brand-300 bg-brand-50/60 dark:bg-brand-950/20' : 'border-transparent text-slate-500 dark:text-slate-400 hover:text-slate-900 dark:hover:text-white hover:bg-slate-50 dark:hover:bg-slate-700/50'}`}
+                onClick={() => setActiveTab(tab.id)}
+                onKeyDown={(event) => {
+                  const index = TABS.findIndex((item) => item.id === tab.id);
+                  const nextIndex = event.key === 'ArrowRight' ? (index + 1) % TABS.length : event.key === 'ArrowLeft' ? (index + TABS.length - 1) % TABS.length : event.key === 'Home' ? 0 : event.key === 'End' ? TABS.length - 1 : -1;
+                  if (nextIndex < 0) return;
+                  event.preventDefault();
+                  setActiveTab(TABS[nextIndex].id);
+                  document.getElementById(`edit-link-${link.id}-${TABS[nextIndex].id}`)?.focus();
+                }}
+                tabIndex={activeTab === tab.id ? 0 : -1}
+              >
+                <Icon className="w-4 h-4" aria-hidden="true" />
                 <span className="inline-flex items-center">
                   {tab.label}
                   {tab.id === 'notes' && tabBadge(notesOn, 'bg-amber-200/80 dark:bg-amber-800/50 text-amber-800 dark:text-amber-200')}
@@ -1617,15 +1624,14 @@ export const EditLinkForm: React.FC<EditLinkFormProps> = (props) => {
                   {tab.id === 'maintenance' && tabBadge(maintenanceOn, 'bg-amber-200/80 dark:bg-amber-800/50 text-amber-800 dark:text-amber-200')}
                   {tab.id === 'restrictions' && tabBadge(restrictionsOn, 'bg-slate-200 dark:bg-slate-700 text-slate-700 dark:text-slate-200')}
                 </span>
-              }
-              onClick={() => setActiveTab(tab.id)}
-            />
-          ))}
+              </button>
+            );
+          })}
         </div>
-        <div className="flex-1 overflow-y-auto pr-1 min-h-0 space-y-3">
+        <div role="tabpanel" id={`edit-link-panel-${link.id}`} aria-labelledby={`edit-link-${link.id}-${activeTab}`} tabIndex={0} className="flex-1 overflow-y-auto overscroll-contain pr-2 min-h-0 space-y-4 focus-visible:outline-none">
           {dialogTabContent}
         </div>
-        <div className="shrink-0 mt-3">
+        <div className="shrink-0 mt-4 pb-2">
           {footerActions}
         </div>
         {/* Bottom drag strip — reachable if the header is off-screen */}

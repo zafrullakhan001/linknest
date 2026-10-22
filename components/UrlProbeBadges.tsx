@@ -456,19 +456,21 @@ const UrlProbeBadgesInner: React.FC<UrlProbeBadgesProps> = ({
 
         const requestId = ++safetyRequestIdRef.current;
         setSafetyPhase('checking');
+        setSafetyResult(null);
+        onSafetyResultRef.current?.(null);
         const controller = new AbortController();
         safetyAbortRef.current = controller;
 
         const timer = window.setTimeout(async () => {
             try {
-                const result = await urlSafetyService.checkUrl(trimmedUrl, controller.signal);
-                if (requestId !== safetyRequestIdRef.current) return;
+                const result = await urlSafetyService.checkUrl(trimmedUrl);
                 safetyCache.set(trimmedUrl, { result, cachedAt: Date.now() });
+                if (controller.signal.aborted || requestId !== safetyRequestIdRef.current) return;
                 setSafetyResult(result);
                 setSafetyPhase('done');
                 onSafetyResultRef.current?.(toSafetyResult(result));
             } catch (e) {
-                if (requestId !== safetyRequestIdRef.current) return;
+                if (controller.signal.aborted || requestId !== safetyRequestIdRef.current) return;
                 if ((e as Error)?.name === 'AbortError') return;
                 setSafetyPhase('error');
                 setSafetyResult(null);
