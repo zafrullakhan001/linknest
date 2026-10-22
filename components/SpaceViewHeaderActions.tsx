@@ -12,7 +12,7 @@ import {
   updateTileLinksAnimation,
   updateTilePageAnimation,
 } from '../services/storageService';
-import { exportTileToFileAsync } from '../services/spaceTransferService';
+import { exportTileToFileAsync, saveSpaceSyncSource, syncSpaceFromSource } from '../services/spaceTransferService';
 import { removeSharedTile } from '../services/tileShareService';
 import { isPublicFavorite, togglePublicFavorite } from '../services/publicFavoritesService';
 import { TileAnimationSelector, getAnimationOption, type TileAnimation } from './TileAnimationSelector';
@@ -86,6 +86,12 @@ export const SpaceViewHeaderActions: React.FC<SpaceViewHeaderActionsProps> = ({
   const [showInfo, setShowInfo] = useState(false);
   const [showShare, setShowShare] = useState(false);
   const [showAi, setShowAi] = useState(false);
+  const [showSync, setShowSync] = useState(false);
+  const [syncing, setSyncing] = useState(false);
+  const [syncNote, setSyncNote] = useState('');
+  const [sourceUrl, setSourceUrl] = useState(tile.syncSource?.baseUrl || '');
+  const [sourceTileId, setSourceTileId] = useState(tile.syncSource?.tileId || '');
+  const [sourceToken, setSourceToken] = useState('');
   /** Delete confirmation for a space that is shared with other users. */
   const [showDeleteShared, setShowDeleteShared] = useState(false);
   const [guestFavorite, setGuestFavorite] = useState(() => isPublicFavorite(tile.id));
@@ -93,6 +99,72 @@ export const SpaceViewHeaderActions: React.FC<SpaceViewHeaderActionsProps> = ({
   useEffect(() => {
     setGuestFavorite(isPublicFavorite(tile.id));
   }, [tile.id]);
+
+  useEffect(() => {
+    setSourceUrl(tile.syncSource?.baseUrl || '');
+    setSourceTileId(tile.syncSource?.tileId || '');
+    setSourceToken('');
+  }, [tile.id, tile.syncSource?.baseUrl, tile.syncSource?.tileId]);
+
+  const linkedToSource = !!(tile.syncSource?.baseUrl && tile.syncSource?.tileId);
+  const lastSyncLabel = tile.syncSource?.lastSyncAt
+    ? new Date(tile.syncSource.lastSyncAt * 1000).toLocaleString()
+    : '';
+
+  const applySyncedTile = (fresh: Tile) => {
+    onUpdateTiles(
+      allTiles.map((t) => (t.id === tile.id ? fresh : t)),
+      true,
+      false,
+      true
+    );
+  };
+
+  const handleSync = useCallback(async () => {
+    setSyncing(true);
+    setSyncNote('');
+    try {
+      const { summary, tile: fresh } = await syncSpaceFromSource(tile.id);
+      if (fresh) applySyncedTile(fresh);
+      setSyncNote(`Updated ${summary.updated}, added ${summary.added}, removed ${summary.removed}. Sharing on this instance was kept.`);
+    } catch (error) {
+      setSyncNote(error instanceof Error ? error.message : 'Sync failed');
+    } finally {
+      setSyncing(false);
+    }
+  }, [allTiles, onUpdateTiles, tile.id]);
+
+  const handleSaveSyncSource = async () => {
+    setSyncNote('');
+    try {
+      const saved = await saveSpaceSyncSource(tile.id, {
+        baseUrl: sourceUrl.trim(),
+        tileId: sourceTileId.trim(),
+        ...(sourceToken.trim() ? { token: sourceToken.trim() } : {}),
+      });
+      applySyncedTile({ ...tile, syncSource: saved || undefined });
+      setSourceToken('');
+      setSyncNote(saved ? 'Source link saved.' : 'Source link cleared.');
+      if (!saved) setShowSync(false);
+    } catch (error) {
+      setSyncNote(error instanceof Error ? error.message : 'Could not save the source link');
+    }
+  };
+
+  const handleClearSyncToken = async () => {
+    try {
+      const saved = await saveSpaceSyncSource(tile.id, {
+        baseUrl: sourceUrl.trim(),
+        tileId: sourceTileId.trim(),
+        token: '',
+      });
+      applySyncedTile({ ...tile, syncSource: saved || undefined });
+      setSourceToken('');
+      setSyncNote('Read token removed.');
+    } catch (error) {
+      setSyncNote(error instanceof Error ? error.message : 'Could not remove the token');
+    }
+  };
 
   // Recycle Bin previews are read-only: editing, archiving, deleting, sharing, cloning, favouriting
   // and the link-health check are suppressed so a deleted space can never be modified from here.
@@ -358,6 +430,25 @@ export const SpaceViewHeaderActions: React.FC<SpaceViewHeaderActionsProps> = ({
             {HeaderIcons.export}
           </SpaceHeaderIconButton>
           {canEdit && (
+            <SpaceHeaderIconButton
+              title={linkedToSource ? `Source ${tile.syncSource?.baseUrl}` : 'Link this space to another instance'}
+              label="Source"
+              onClick={() => setShowSync(true)}
+            >
+              {HeaderIcons.checkLinks}
+            </SpaceHeaderIconButton>
+          )}
+          {canEdit && linkedToSource && (
+            <SpaceHeaderIconButton
+              title={syncNote || (lastSyncLabel ? `Last sync ${lastSyncLabel}` : 'Pull tabs, sections, and links from the source')}
+              label={syncing ? 'Wait' : syncNote && !syncNote.startsWith('Updated') && !syncNote.startsWith('Source') ? 'Error' : 'Sync'}
+              disabled={syncing}
+              onClick={() => void handleSync()}
+            >
+              {syncing ? HeaderIcons.spinner : HeaderIcons.checkLinks}
+            </SpaceHeaderIconButton>
+          )}
+          {canEdit && (
             <SpaceHeaderIconButton title="AI space analysis" label="AI" onClick={() => setShowAi(true)}>
               {HeaderIcons.ai}
             </SpaceHeaderIconButton>
@@ -520,6 +611,27 @@ export const SpaceViewHeaderActions: React.FC<SpaceViewHeaderActionsProps> = ({
                           void exportTileToFileAsync(tile);
                         }}
                       />
+                      {canEdit && (
+                        <SpaceHeaderDrawerButton
+                          label="Source link"
+                          icon={HeaderIcons.checkLinks}
+                          onClick={() => {
+                            closeMenu();
+                            setShowSync(true);
+                          }}
+                        />
+                      )}
+                      {canEdit && linkedToSource && (
+                        <SpaceHeaderDrawerButton
+                          label={syncing ? 'Syncing...' : 'Sync from source'}
+                          icon={syncing ? HeaderIcons.spinner : HeaderIcons.checkLinks}
+                          disabled={syncing}
+                          onClick={() => {
+                            closeMenu();
+                            void handleSync();
+                          }}
+                        />
+                      )}
                       {canEdit && canEditTile && (
                         <SpaceHeaderDrawerButton
                           label="Compare & merge"
@@ -658,6 +770,92 @@ export const SpaceViewHeaderActions: React.FC<SpaceViewHeaderActionsProps> = ({
         </div>
       </div>
 
+      {showSync && canEdit && createPortal(
+        <div className="fixed inset-0 z-[80] flex items-center justify-center bg-black/50 p-4" onClick={() => setShowSync(false)}>
+          <div
+            className="w-full max-w-lg rounded-xl bg-white p-5 shadow-xl dark:bg-slate-900"
+            onClick={(e) => e.stopPropagation()}
+            role="dialog"
+            aria-labelledby="space-sync-title"
+          >
+            <h2 id="space-sync-title" className="text-lg font-semibold text-slate-900 dark:text-slate-100">Sync from another instance</h2>
+            <p className="mt-1 text-sm text-slate-600 dark:text-slate-300">
+              Pulls tabs, sections, and links. Sharing, visibility, and message-board messages on this instance stay as they are.
+            </p>
+            <label className="mt-4 block text-sm font-medium text-slate-700 dark:text-slate-200">
+              Source address
+              <input
+                className="mt-1 w-full rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm dark:border-slate-600 dark:bg-slate-800"
+                value={sourceUrl}
+                onChange={(e) => setSourceUrl(e.target.value)}
+                placeholder="https://prod.example.com/linknest"
+                autoComplete="off"
+              />
+            </label>
+            <label className="mt-3 block text-sm font-medium text-slate-700 dark:text-slate-200">
+              Source space id
+              <input
+                className="mt-1 w-full rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm dark:border-slate-600 dark:bg-slate-800"
+                value={sourceTileId}
+                onChange={(e) => setSourceTileId(e.target.value)}
+                autoComplete="off"
+              />
+            </label>
+            <label className="mt-3 block text-sm font-medium text-slate-700 dark:text-slate-200">
+              Read token
+              <input
+                type="password"
+                className="mt-1 w-full rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm dark:border-slate-600 dark:bg-slate-800"
+                value={sourceToken}
+                onChange={(e) => setSourceToken(e.target.value)}
+                placeholder={tile.syncSource?.hasToken ? 'Saved — leave blank to keep it' : 'Only if the source space is not public'}
+                autoComplete="new-password"
+              />
+            </label>
+            {lastSyncLabel && (
+              <p className="mt-3 text-xs text-slate-500 dark:text-slate-400">Last sync {lastSyncLabel}</p>
+            )}
+            {syncNote && (
+              <p className="mt-3 text-sm text-slate-700 dark:text-slate-200">{syncNote}</p>
+            )}
+            <div className="mt-4 flex flex-wrap gap-2">
+              <button type="button" className="rounded-lg bg-brand-600 px-3 py-2 text-sm font-medium text-white" onClick={() => void handleSaveSyncSource()}>
+                Save link
+              </button>
+              {linkedToSource && (
+                <button type="button" className="rounded-lg border border-slate-300 px-3 py-2 text-sm dark:border-slate-600" disabled={syncing} onClick={() => void handleSync()}>
+                  {syncing ? 'Syncing…' : 'Sync now'}
+                </button>
+              )}
+              {tile.syncSource?.hasToken && (
+                <button type="button" className="rounded-lg border border-slate-300 px-3 py-2 text-sm dark:border-slate-600" onClick={() => void handleClearSyncToken()}>
+                  Remove token
+                </button>
+              )}
+              <button
+                type="button"
+                className="rounded-lg border border-slate-300 px-3 py-2 text-sm dark:border-slate-600"
+                onClick={() => {
+                  setSourceUrl('');
+                  setSourceTileId('');
+                  void saveSpaceSyncSource(tile.id, { baseUrl: '', tileId: '' }).then((saved) => {
+                    applySyncedTile({ ...tile, syncSource: saved || undefined });
+                    setShowSync(false);
+                  }).catch((error) => {
+                    setSyncNote(error instanceof Error ? error.message : 'Could not clear the source link');
+                  });
+                }}
+              >
+                Clear link
+              </button>
+              <button type="button" className="ml-auto rounded-lg px-3 py-2 text-sm text-slate-600 dark:text-slate-300" onClick={() => setShowSync(false)}>
+                Close
+              </button>
+            </div>
+          </div>
+        </div>,
+        document.body
+      )}
       {showInfo && (
         <Suspense fallback={null}>
           <TileInfoDialog isOpen={showInfo} onClose={() => setShowInfo(false)} tile={tile} />

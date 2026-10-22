@@ -112,7 +112,15 @@ const transformTile = (apiTile: any): Tile => {
     shareCount: typeof apiTile.shareCount === 'number' ? apiTile.shareCount : undefined,
     // Shared-with-me: when tile was shared by another user and receiver accepted
     sharedWithMeInvitationId: apiTile.sharedWithMeInvitationId ?? undefined,
-    sharedWithMeSharer: apiTile.sharedWithMeSharer ?? undefined
+    sharedWithMeSharer: apiTile.sharedWithMeSharer ?? undefined,
+    syncSource: apiTile.syncSource && typeof apiTile.syncSource.baseUrl === 'string' && typeof apiTile.syncSource.tileId === 'string'
+      ? {
+          baseUrl: apiTile.syncSource.baseUrl,
+          tileId: apiTile.syncSource.tileId,
+          hasToken: apiTile.syncSource.hasToken === true,
+          lastSyncAt: typeof apiTile.syncSource.lastSyncAt === 'number' ? apiTile.syncSource.lastSyncAt : null,
+        }
+      : undefined
   };
 };
 

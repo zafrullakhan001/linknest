@@ -4,16 +4,26 @@ import { normalizeLinkTooltipStyle } from '../utils/linkTooltipPreference';
 import { pickSectionBackgroundDecoration } from '../utils/sectionBackgroundColor';
 import {
   uploadTileEmojiImage,
-  uploadTileHeaderImage
+  uploadTileHeaderImage,
+  getTile,
 } from './storageService';
+import { resolveApiBase } from './apiHelpers';
 
 export type SpaceExportType = 'tile' | 'category' | 'all_categories';
 
+export interface SpaceExportOrigin {
+  /** This instance, without a trailing slash. */
+  baseUrl: string;
+  /** Set on a single-space file. Category files use each space's own id. */
+  tileId?: string;
+}
+
 export interface SpaceExportFile {
+  // 1.5: origin so another instance can pull later changes
   // 1.4: tab/section backgroundColor + gradient decoration fields
   // 1.3: logos embedded in assets, position, category order, show* flags
   // 1.2: decorations, messages (celebration + url/urlLabel), pageAnimation, linksAnimation, link animation, allowedGroups
-  version: '1.2' | '1.3' | '1.4';
+  version: '1.2' | '1.3' | '1.4' | '1.5';
   type: SpaceExportType;
   exportedAt: number;
   tile?: Tile;
@@ -22,6 +32,7 @@ export interface SpaceExportFile {
   categories?: string[];
   /** Map of normalized upload asset keys → base64 data URLs (emoji/header logos). */
   assets?: Record<string, string>;
+  origin?: SpaceExportOrigin;
 }
 
 export interface ParsedSpaceImport {
@@ -30,10 +41,24 @@ export interface ParsedSpaceImport {
   categoryName?: string;
   categories?: string[];
   assets?: Record<string, string>;
+  origin?: SpaceExportOrigin;
 }
 
 // Simple ID generator for imported items (client-side only)
 const generateId = () => Math.random().toString(36).substring(2, 11);
+
+/** Public base URL of the instance that is exporting, so a later import can sync. */
+export const instanceBaseUrl = (): string => {
+  if (typeof window === 'undefined') return '';
+  const base = String(import.meta.env.BASE_URL || '/').replace(/\/$/, '');
+  const prefix = base === '' || base === '/' ? '' : base;
+  return window.location.origin + prefix;
+};
+
+const exportOrigin = (tileId?: string): SpaceExportOrigin => ({
+  baseUrl: instanceBaseUrl(),
+  ...(tileId ? { tileId } : {}),
+});
 
 const slugify = (value: string) =>
   value
@@ -347,6 +372,7 @@ export const restoreImportedTileAssets = async (
 /** Normalize a single link from import JSON */
 const normalizeImportedLink = (link: any): Link => ({
   id: generateId(),
+  syncSourceId: typeof link.id === 'string' && link.id ? link.id : undefined,
   label: String(link.label || ''),
   url: String(link.url || ''),
   icon: typeof link.icon === 'string' ? link.icon : undefined,
@@ -435,6 +461,7 @@ const normalizeImportedSection = (section: any): LinkSection => {
 
   return {
     id: generateId(),
+    syncSourceId: typeof section.id === 'string' && section.id ? section.id : undefined,
     title: String(section.title || ''),
     position: typeof section.position === 'number' ? section.position : undefined,
     textColor: typeof section.textColor === 'string' ? section.textColor : undefined,
@@ -465,14 +492,15 @@ const prepareTabForExport = (tab: Tab): Tab => {
 };
 
 const prepareTileForExport = (tile: Tile): Tile => {
-  const tabs = Array.isArray(tile.tabs) ? tile.tabs.map(prepareTabForExport) : tile.tabs;
-  const sections = Array.isArray(tile.sections)
-    ? tile.sections.map((section) => ({
+  const { syncSource: _sync, ...withoutSource } = tile;
+  const tabs = Array.isArray(withoutSource.tabs) ? withoutSource.tabs.map(prepareTabForExport) : withoutSource.tabs;
+  const sections = Array.isArray(withoutSource.sections)
+    ? withoutSource.sections.map((section) => ({
         ...section,
         ...pickSectionBackgroundDecoration(section as unknown as Record<string, unknown>),
       }))
-    : tile.sections;
-  return { ...tile, tabs, sections };
+    : withoutSource.sections;
+  return { ...withoutSource, tabs, sections };
 };
 
 const asOptionalBoolean = (value: unknown): boolean | undefined => {
@@ -488,10 +516,11 @@ const asOptionalNumber = (value: unknown): number | undefined =>
 /** Export a single space/tile to a JSON file (sync; no asset embed). Prefer exportTileToFileAsync. */
 export const exportTileToFile = (tile: Tile) => {
   const payload: SpaceExportFile = {
-    version: '1.4',
+    version: '1.5',
     type: 'tile',
     exportedAt: Date.now(),
-    tile: prepareTileForExport(tile)
+    tile: prepareTileForExport(tile),
+    origin: exportOrigin(tile.id)
   };
 
   const filename = `linknest-space-${slugify(tile.title)}.json`;
@@ -503,10 +532,11 @@ export const exportTileToFileAsync = async (tile: Tile) => {
   const prepared = prepareTileForExport(tile);
   const assets = await collectSpaceExportAssets([prepared]);
   const payload: SpaceExportFile = {
-    version: '1.4',
+    version: '1.5',
     type: 'tile',
     exportedAt: Date.now(),
     tile: prepared,
+    origin: exportOrigin(prepared.id),
     ...(Object.keys(assets).length > 0 ? { assets } : {})
   };
   const filename = `linknest-space-${slugify(prepared.title)}.json`;
@@ -526,11 +556,12 @@ export const exportCategoryToFile = (categoryName: string, tiles: Tile[]) => {
   }
 
   const payload: SpaceExportFile = {
-    version: '1.4',
+    version: '1.5',
     type: 'category',
     exportedAt: Date.now(),
     categoryName,
-    tiles: categoryTiles
+    tiles: categoryTiles,
+    origin: exportOrigin()
   };
 
   const filename = `linknest-category-${slugify(categoryName)}.json`;
@@ -551,11 +582,12 @@ export const exportCategoryToFileAsync = async (categoryName: string, tiles: Til
 
   const assets = await collectSpaceExportAssets(categoryTiles);
   const payload: SpaceExportFile = {
-    version: '1.4',
+    version: '1.5',
     type: 'category',
     exportedAt: Date.now(),
     categoryName,
     tiles: categoryTiles,
+    origin: exportOrigin(),
     ...(Object.keys(assets).length > 0 ? { assets } : {})
   };
   const filename = `linknest-category-${slugify(categoryName)}.json`;
@@ -573,11 +605,12 @@ export const exportAllCategoriesToFile = (tiles: Tile[], categoryOrder: string[]
   const orderedTiles = sortTilesByCategoryAndPosition(tiles, categories).map(prepareTileForExport);
 
   const payload: SpaceExportFile = {
-    version: '1.4',
+    version: '1.5',
     type: 'all_categories',
     exportedAt: Date.now(),
     tiles: orderedTiles,
-    categories
+    categories,
+    origin: exportOrigin()
   };
 
   const filename = 'linknest-spaces-all-categories.json';
@@ -599,11 +632,12 @@ export const exportAllCategoriesToFileAsync = async (
   const assets = await collectSpaceExportAssets(orderedTiles);
 
   const payload: SpaceExportFile = {
-    version: '1.4',
+    version: '1.5',
     type: 'all_categories',
     exportedAt: Date.now(),
     tiles: orderedTiles,
     categories,
+    origin: exportOrigin(),
     ...(Object.keys(assets).length > 0 ? { assets } : {})
   };
 
@@ -617,13 +651,14 @@ export const parseSpaceExportObject = (data: any): ParsedSpaceImport => {
     throw new Error('Invalid file: expected a JSON object.');
   }
 
-  // Support 1.0–1.4 for backward compatibility
+  // Support 1.0–1.5 for backward compatibility
   if (
     data.version !== '1.0' &&
     data.version !== '1.1' &&
     data.version !== '1.2' &&
     data.version !== '1.3' &&
-    data.version !== '1.4'
+    data.version !== '1.4' &&
+    data.version !== '1.5'
   ) {
     console.warn('Unknown space export version, proceeding anyway:', data.version);
   }
@@ -653,6 +688,14 @@ export const parseSpaceExportObject = (data: any): ParsedSpaceImport => {
     ? data.categories.filter((c: unknown) => typeof c === 'string')
     : undefined;
 
+  const originBase = typeof data.origin?.baseUrl === 'string' ? data.origin.baseUrl.trim() : '';
+  const origin: SpaceExportOrigin | undefined = /^https?:\/\//i.test(originBase)
+    ? {
+        baseUrl: originBase.replace(/\/$/, ''),
+        ...(typeof data.origin?.tileId === 'string' && data.origin.tileId ? { tileId: data.origin.tileId } : {}),
+      }
+    : undefined;
+
   const assets: Record<string, string> | undefined =
     data.assets && typeof data.assets === 'object' && !Array.isArray(data.assets)
       ? Object.fromEntries(
@@ -671,7 +714,8 @@ export const parseSpaceExportObject = (data: any): ParsedSpaceImport => {
     tiles: orderedTiles,
     categoryName,
     categories: categories || orderedCategories,
-    assets: assets && Object.keys(assets).length > 0 ? assets : undefined
+    assets: assets && Object.keys(assets).length > 0 ? assets : undefined,
+    origin
   };
 };
 
@@ -701,6 +745,7 @@ export const normalizeImportedTiles = (
           }
           return {
           id: newTabId,
+          syncSourceId: typeof tab.id === 'string' && tab.id ? tab.id : undefined,
           title: String(tab.title || 'New Tab'),
           position: typeof tab.position === 'number' ? tab.position : 0,
           textColor: typeof tab.textColor === 'string' ? tab.textColor : undefined,
@@ -728,8 +773,11 @@ export const normalizeImportedTiles = (
     const showTitle = asOptionalBoolean(src.showTitle);
     const showDescription = asOptionalBoolean(src.showDescription);
 
+    const originBase = typeof parsed.origin?.baseUrl === 'string' ? parsed.origin.baseUrl.replace(/\/$/, '') : '';
+    const sourceTileId = typeof src.id === 'string' ? src.id : '';
     const tile: Tile = {
       id: generateUuid(),
+      syncSource: originBase && sourceTileId ? { baseUrl: originBase, tileId: sourceTileId } : undefined,
       title: String(src.title || `Imported Space ${index + 1}`),
       description: String(src.description || ''),
       searchTags: Array.isArray(src.searchTags)
@@ -875,4 +923,46 @@ export const normalizeImportedTiles = (
   });
 
   return normalized;
+};
+
+export interface SpaceSyncSummary {
+  added: number;
+  updated: number;
+  removed: number;
+}
+
+const syncApi = (tileId: string, path: string) =>
+  `${resolveApiBase()}/tiles/${encodeURIComponent(tileId)}${path}`;
+
+export const saveSpaceSyncSource = async (
+  tileId: string,
+  source: { baseUrl: string; tileId: string; token?: string }
+): Promise<Tile['syncSource']> => {
+  const response = await fetch(syncApi(tileId, '/sync-source'), {
+    method: 'PUT',
+    credentials: 'include',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(source),
+  });
+  const data = await response.json().catch(() => ({}));
+  if (!response.ok) {
+    throw new Error((data as { error?: string }).error || 'Could not save the source link');
+  }
+  return (data as { syncSource?: Tile['syncSource'] }).syncSource ?? null;
+};
+
+export const syncSpaceFromSource = async (
+  tileId: string
+): Promise<{ summary: SpaceSyncSummary; tile: Tile | null }> => {
+  const response = await fetch(syncApi(tileId, '/sync-from-source'), {
+    method: 'POST',
+    credentials: 'include',
+  });
+  const data = await response.json().catch(() => ({}));
+  if (!response.ok) {
+    throw new Error((data as { error?: string }).error || 'Sync failed');
+  }
+  const summary = (data as { summary?: SpaceSyncSummary }).summary || { added: 0, updated: 0, removed: 0 };
+  const tile = await getTile(tileId);
+  return { summary, tile };
 };

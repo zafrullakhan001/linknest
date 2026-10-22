@@ -137,6 +137,7 @@ if (!defined('SYSTEM_TOKEN')) {
 }
 
 // Bump when schema/migrations in initDatabase() change. Enables fast-path getDB().
+// 112 = Cross-instance space sync (tiles.sync_source_* and sync_source_id on tabs/sections/links).
 // 111 = Archive banner actor (tiles.archived_by + tiles.archived_by_username).
 // 110 = per-user TOTP two-factor authentication (user_two_factor + user_two_factor_devices).
 // 109 = Message Board fonts + marquee speed (tile_messages.font_family/font_size/marquee_seconds).
@@ -144,7 +145,7 @@ if (!defined('SYSTEM_TOKEN')) {
 // 107 = Message Board tab scoping (tile_messages.tab_ids + tile_messages.show_on_card).
 // 106 = LinkNest 3.0.0 (schema_releases audit registry).
 if (!defined('LINKNEST_SCHEMA_VERSION')) {
-    define('LINKNEST_SCHEMA_VERSION', 111);
+    define('LINKNEST_SCHEMA_VERSION', 112);
 }
 
 // Shipped application version, recorded in schema_releases so admins can audit
@@ -571,45 +572,6 @@ function ensureTileArchiveActorColumns(PDO $db): void {
 }
 
 /**
- * Ensure the Message Board columns added in v107-v109 exist:
- * tab_ids, show_on_card, placement, font_family, font_size, marquee_seconds.
-OLD;
-patchText($f, $old, $new, 1);
-
-$old = "function ensureTileMessageScopeColumns(PDO $db): void {";
-$new = "function ensureTileMessageColumns(PDO $db): void {";
-patchText($f, $old, $new, 1);
-
-$old = "            error_log('ensureTileMessageScopeColumns warning: ' . \$e->getMessage());";
-$new = "            error_log('ensureTileMessageColumns warning: ' . \$e->getMessage());";
-patchText($f, $old, $new, 1);
-
-$old = "            ensureTileMessageScopeColumns(\$db);";
-$new = "            ensureTileMessageColumns(\$db);";
-patchText($f, $old, $new, 2);
-
-// ensure helper body: the three new columns
-$old = <<<'OLD'
-        if (!in_array('placement', $names, true)) {
-            $db->exec("ALTER TABLE tile_messages ADD COLUMN placement TEXT DEFAULT 'above'");
-        }
-        $ensured = true;
-OLD;
-$new = <<<'NEW'
-        if (!in_array('placement', $names, true)) {
-            $db->exec("ALTER TABLE tile_messages ADD COLUMN placement TEXT DEFAULT 'above'");
-        }
-        if (!in_array('font_family', $names, true)) {
-            $db->exec('ALTER TABLE tile_messages ADD COLUMN font_family TEXT');
-        }
-        if (!in_array('font_size', $names, true)) {
-            $db->exec('ALTER TABLE tile_messages ADD COLUMN font_size INTEGER');
-        }
-        if (!in_array('marquee_seconds', $names, true)) {
-            $db->exec('ALTER TABLE tile_messages ADD COLUMN marquee_seconds INTEGER');
-        }
-        $ensured = true;
- *
  * tab_ids  = JSON array of Tab.id values the message is restricted to on the space page
  *            (NULL/empty/[] = every tab).
  * show_on_card = 1 keeps a tab-restricted message on the home-grid card banner.
@@ -2449,6 +2411,8 @@ function initDatabase() {
             ensureCategoryVisibilityPresetsTable($db);
             ensureTilesVideoColumns($db);
             ensureTileArchiveActorColumns($db);
+            require_once __DIR__ . '/space_sync_lib.php';
+            ensureSpaceSyncColumns($db);
             ensurePasswordResetColumns($db);
             ensureWebauthnCredentialsTable($db);
             require_once __DIR__ . '/two_factor_lib.php';
@@ -2509,6 +2473,8 @@ function initDatabase() {
             ensureCategoryVisibilityPresetsTable($db);
             ensureTilesVideoColumns($db);
             ensureTileArchiveActorColumns($db);
+            require_once __DIR__ . '/space_sync_lib.php';
+            ensureSpaceSyncColumns($db);
             ensurePasswordResetColumns($db);
             ensureWebauthnCredentialsTable($db);
             require_once __DIR__ . '/two_factor_lib.php';
@@ -2816,6 +2782,8 @@ function initDatabase() {
 
         ensureTilesVideoColumns($db);
         ensureTileArchiveActorColumns($db);
+        require_once __DIR__ . '/space_sync_lib.php';
+        ensureSpaceSyncColumns($db);
 
         // Migrate existing tiles table to add deleted_at column for soft delete (recycle bin)
         try {

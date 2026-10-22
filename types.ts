@@ -154,6 +154,8 @@ export interface AccessRestrictions {
 
 export interface Link {
   id: string;
+  /** Id of this link on the instance it was imported from. */
+  syncSourceId?: string | null;
   label: string;
   url: string;
   icon?: string; // Optional emoji or icon identifier
@@ -338,6 +340,8 @@ export interface MediaTransformOptions {
 
 export interface LinkSection {
   id: string;
+  /** Id of this section on the instance it was imported from. */
+  syncSourceId?: string | null;
   title: string;
   /** Optional emoji shown to the left of the section title. */
   emoji?: string;
@@ -371,6 +375,8 @@ export interface LinkSection {
 
 export interface Tab {
   id: string;
+  /** Id of this tab on the instance it was imported from. */
+  syncSourceId?: string | null;
   title: string;
   /** Optional emoji shown to the left of the tab title. */
   emoji?: string;
@@ -419,6 +425,16 @@ export interface Tile {
   showShortUrls?: boolean | null;
   /** Recyclable LinkNest short URL for this space. */
   shortUrl?: string;
+  /**
+   * When this space was imported from another LinkNest, where to pull updates from.
+   * The read token is never sent back to the browser.
+   */
+  syncSource?: {
+    baseUrl: string;
+    tileId: string;
+    hasToken?: boolean;
+    lastSyncAt?: number | null;
+  } | null;
   /** Optional PNG URL shown inside the emoji badge (replaces the emoji character when set). */
   emojiImage?: string | null;
   /** Opacity of the emoji/icon image (0–100). Default 100. */

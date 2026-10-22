@@ -5,6 +5,7 @@ require_once __DIR__ . '/short_urls_lib.php';
 require_once __DIR__ . '/upload_video_lib.php';
 require_once __DIR__ . '/user_audit_helper.php';
 require_once __DIR__ . '/tile_messages_lib.php';
+require_once __DIR__ . '/space_sync_lib.php';
 
 $method = $_SERVER['REQUEST_METHOD'];
 $path = $_SERVER['PATH_INFO'] ?? $_SERVER['REDIRECT_PATH_INFO'] ?? '';
@@ -110,6 +111,8 @@ switch ($method) {
             handleRecordTileVisit($matches[1]);
         } elseif (preg_match('#^/([^/]+)/presence$#', $path, $matches)) {
             handlePostTilePresence($matches[1]);
+        } elseif (preg_match('#^/([^/]+)/sync-from-source$#', $path, $matches)) {
+            handleSyncSpaceFromSource($matches[1]);
         } else {
             sendJSON(['error' => 'Invalid endpoint'], 404);
         }
@@ -118,6 +121,8 @@ switch ($method) {
     case 'PUT':
         if ($path === '/favorites/links/order' || $path === '/favorites/links/order/') {
             handleSaveFavoriteLinksOrder();
+        } elseif (preg_match('#^/([^/]+)/sync-source$#', $path, $matches)) {
+            handleSaveSpaceSyncSource($matches[1]);
         } elseif (preg_match('#^/([^/]+)$#', $path, $matches)) {
             handleUpdateTile($matches[1]);
         } else {
@@ -1544,6 +1549,7 @@ function handleGetTile($tileId) {
             'showTitle' => !(isset($row['show_title']) && ((int)$row['show_title'] === 0 || $row['show_title'] === '0' || $row['show_title'] === false)),
             'showDescription' => !(isset($row['show_description']) && ((int)$row['show_description'] === 0 || $row['show_description'] === '0' || $row['show_description'] === false)),
             'showShortUrls' => mapShowShortUrlsFromRow($row),
+        'syncSource' => spaceSyncSourceForApi($row),
         'tabs' => [],
         'shareCount' => $shareCount,
         'sharedWithMeInvitationId' => null,
@@ -1615,6 +1621,7 @@ function handleGetTile($tileId) {
         error_log("Retrieved tab {$tabRow['id']} ({$tabRow['title']}) with color: " . ($tabColor ?? 'null'));
         $tab = [
             'id' => $tabRow['id'],
+            'syncSourceId' => spaceSyncChildId($tabRow),
             'title' => $tabRow['title'],
                         'emoji' => contentEmojiFromRow($tabRow),
             'position' => (int)($tabRow['position'] ?? 0),
@@ -1649,6 +1656,7 @@ function handleGetTile($tileId) {
             }
             $section = [
                 'id' => $sectionRow['id'],
+                'syncSourceId' => spaceSyncChildId($sectionRow),
                 'title' => $sectionRow['title'],
                                 'emoji' => contentEmojiFromRow($sectionRow),
                 'textColor' => (!empty($sectionRow['text_color']) && trim($sectionRow['text_color']) !== '') ? trim($sectionRow['text_color']) : null,
@@ -1708,6 +1716,7 @@ function handleGetTile($tileId) {
 
                 $link = [
                     'id' => $linkRow['id'],
+                    'syncSourceId' => spaceSyncChildId($linkRow),
                     'label' => $linkRow['label'],
                     'url' => $linkRow['url'],
                     'icon' => isset($linkRow['icon']) ? $linkRow['icon'] : null,
@@ -1792,6 +1801,7 @@ function handleGetTile($tileId) {
                 }
                 $section = [
                     'id' => $sectionRow['id'],
+                    'syncSourceId' => spaceSyncChildId($sectionRow),
                     'title' => $sectionRow['title'],
                                 'emoji' => contentEmojiFromRow($sectionRow),
                     'textColor' => (!empty($sectionRow['text_color']) && trim($sectionRow['text_color']) !== '') ? trim($sectionRow['text_color']) : null,
@@ -1848,6 +1858,7 @@ function handleGetTile($tileId) {
 
                     $link = [
                         'id' => $linkRow['id'],
+                        'syncSourceId' => spaceSyncChildId($linkRow),
                         'label' => $linkRow['label'],
                         'url' => $linkRow['url'],
                         'icon' => $linkRow['icon'] ?? null,
@@ -2154,6 +2165,7 @@ function handleCreateTile() {
     }
 
     persistTileShowShortUrls($db, $tileId, $data);
+    persistTileSyncSource($db, $tileId, $data);
     
     // Create share invitations for users added to allowed list (they must accept to get access)
     if (!empty($pendingShareUserIds) && $visibility === 'private') {
@@ -2457,6 +2469,7 @@ function handleCreateTile() {
         }
     }
 
+    stampSyncSourceIds($db, $data);
     invalidateGuestTilesListCache();
     logUserAudit('space.created', [
         'details' => [
@@ -6825,6 +6838,8 @@ function updateTileInternal($tileId, $data, $db, $user, $isRestore = false, $isF
             }
         }
 
+        stampSyncSourceIds($db, $data);
+        persistTileSyncSource($db, $tileId, $data);
         $db->commit();
         invalidateGuestTilesListCache();
 
