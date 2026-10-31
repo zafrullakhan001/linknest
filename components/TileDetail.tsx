@@ -9281,6 +9281,8 @@ export const TileDetail: React.FC<TileDetailProps> = ({
                                                         const isGridCards = sectionLinkLayout === 'grid';
                                                         const isCompact = sectionLinkLayout === 'compact';
                                                         const isQrView = sectionLinkLayout === 'qr';
+                                                        // Signed-in: list/compact put actions under the title. Guests keep the corner overlay.
+                                                        const actionBarBelowTitle = !!isAuthenticated && !isGridCards;
                                                         const showNotesAction = isLinkActionAllowed('notes') && shouldShowLinkNotes(link);
                                                         const showInfoAction = shouldOpenInfoDialog(link);
                                                         const showFavoriteAction = isLinkActionAllowed('favorite');
@@ -9597,9 +9599,11 @@ export const TileDetail: React.FC<TileDetailProps> = ({
                                                     ${isNetwork ? 'border-slate-300 dark:border-slate-500/50 bg-slate-50/50 dark:bg-slate-900/20' : ''}
                                                     ${isGridCards
                                                         ? 'flex flex-col items-center text-center gap-2 p-4 pt-5'
-                                                        : isCompact
-                                                            ? 'flex items-center gap-2 px-2.5 py-1.5 rounded-lg'
-                                                            : 'flex items-center gap-4 p-4'}
+                                                        : actionBarBelowTitle
+                                                            ? (isCompact ? 'flex flex-col px-2.5 py-1.5 rounded-lg' : 'flex flex-col p-4')
+                                                            : isCompact
+                                                                ? 'flex items-center gap-2 px-2.5 py-1.5 rounded-lg'
+                                                                : 'flex items-center gap-4 p-4'}
                                                     ${getTileAnimationClass(resolveLinkAnimation(link.animation, tile.linksAnimation))}
                                                 `}
                                                             >
@@ -9612,6 +9616,14 @@ export const TileDetail: React.FC<TileDetailProps> = ({
                                                                         className="absolute top-1 left-1 z-30 bg-white/90 dark:bg-slate-900/80 shadow-sm opacity-0 group-hover:opacity-100"
                                                                     />
                                                                 )}
+                                                                {/* Signed-in list/compact: icon+title on one row. Grid/guest: contents so children stay in the outer flex. */}
+                                                                <div className={
+                                                                    actionBarBelowTitle
+                                                                        ? (isCompact
+                                                                            ? 'flex items-center gap-2 min-w-0 w-full'
+                                                                            : 'flex items-center gap-4 min-w-0 w-full')
+                                                                        : 'contents'
+                                                                }>
                                                                 {/* Icon + health (grid: alive dot centered above icon) */}
                                                                 <div className={`relative shrink-0 ${
                                                                     isGridCards
@@ -9663,9 +9675,11 @@ export const TileDetail: React.FC<TileDetailProps> = ({
                                                                     className={`min-w-0 block focus:outline-none overflow-hidden [&_a]:pointer-events-none ${
                                                                         isGridCards
                                                                             ? 'w-full px-1 pb-1'
-                                                                            : isCompact
-                                                                                ? 'flex-1 pr-20'
-                                                                                : 'flex-1 pr-32'
+                                                                            : actionBarBelowTitle
+                                                                                ? 'flex-1'
+                                                                                : isCompact
+                                                                                    ? 'flex-1 pr-20'
+                                                                                    : 'flex-1 pr-32'
                                                                     }`}
                                                                     onClick={handleOpenAssociatedLink}
                                                                 >
@@ -9751,6 +9765,7 @@ export const TileDetail: React.FC<TileDetailProps> = ({
                                                                         })()}
                                                                     </div>
                                                                 </a>
+                                                                </div>
 
                                                                 {/* Browser Selection Menu - Rendered via Portal */}
                                                                 {showBrowserMenu[link.id] && settings.browser_specific_links_enabled === '1' && typeof document !== 'undefined' && createPortal(
@@ -9900,9 +9915,22 @@ export const TileDetail: React.FC<TileDetailProps> = ({
                                                                 )}
 
                                                                 {showLinkActionBar && (
-                                                                <div className={`absolute flex items-center gap-0.5 opacity-0 group-hover:opacity-100 transition-all duration-200 bg-white/95 dark:bg-slate-800/95 backdrop-blur-sm p-0.5 rounded-lg border border-slate-200/50 dark:border-slate-700/50 z-20 pointer-events-none group-hover:pointer-events-auto ${
-                                                                    isGridCards || isCompact ? 'top-1 right-1' : 'top-1.5 right-1.5'
-                                                                }`}>
+                                                                <div
+                                                                    className={
+                                                                        actionBarBelowTitle
+                                                                            ? 'w-full min-w-0 max-h-0 overflow-hidden opacity-0 transition-[max-height,opacity] duration-200 ease-out group-hover:max-h-32 group-hover:opacity-100 focus-within:max-h-32 focus-within:opacity-100'
+                                                                            : `absolute z-20 flex items-center gap-0.5 opacity-0 group-hover:opacity-100 transition-all duration-200 bg-white/95 dark:bg-slate-800/95 backdrop-blur-sm p-0.5 rounded-lg border border-slate-200/50 dark:border-slate-700/50 pointer-events-none group-hover:pointer-events-auto ${
+                                                                                isGridCards || isCompact ? 'top-1 right-1' : 'top-1.5 right-1.5'
+                                                                            }`
+                                                                    }
+                                                                >
+                                                                <div
+                                                                    className={
+                                                                        actionBarBelowTitle
+                                                                            ? 'flex flex-wrap items-center gap-0.5 mt-1 w-fit max-w-full bg-white/95 dark:bg-slate-800/95 backdrop-blur-sm p-0.5 rounded-lg border border-slate-200/50 dark:border-slate-700/50 pointer-events-none group-hover:pointer-events-auto focus-within:pointer-events-auto'
+                                                                            : 'contents'
+                                                                    }
+                                                                >
                                                                     {showEditAction && activeViewTab && (
                                                                         <button
                                                                             type="button"
@@ -10269,6 +10297,7 @@ export const TileDetail: React.FC<TileDetailProps> = ({
                                                                             </svg>
                                                                         </button>
                                                                     )}
+                                                                </div>
                                                                 </div>
                                                                 )}
                                                             </div>
