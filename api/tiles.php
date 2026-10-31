@@ -32,6 +32,8 @@ switch ($method) {
             handleGetTileVersions($matches[1]);
         } elseif (preg_match('#^/([^/]+)/versions/([^/]+)$#', $path, $matches)) {
             handleGetVersionDetails($matches[1], $matches[2]);
+        } elseif (preg_match('#^/([^/]+)/links/([^/]+)/(info|notes|maintenance)-revisions$#', $path, $matches)) {
+            handleGetLinkInfoRevisions($matches[1], $matches[2], $matches[3]);
         } elseif (preg_match('#^/([^/]+)/info$#', $path, $matches)) {
             handleGetTileInfo($matches[1]);
         } elseif (preg_match('#^/([^/]+)/visitors$#', $path, $matches)) {
@@ -701,6 +703,7 @@ function handleGetTiles() {
                 applyLinkMaintenanceToApi($searchLink, $linkRow);
                 applyLinkNotesInfoVideoToApi($searchLink, $linkRow);
                 applyLinkFeatureTogglesToApi($searchLink, $linkRow);
+                applyLinkInfoTopicsToApi($searchLink, $linkRow);
                 applyLinkOpenTargetToApi($searchLink, $linkRow);
                 applyLinkMobilePreviewEmulationToApi($searchLink, $linkRow);
                 applyLinkOpenInEmulationToApi($searchLink, $linkRow);
@@ -1072,6 +1075,7 @@ function handleGetTiles() {
                                     applyLinkMaintenanceToApi($link, $linkRow);
                                     applyLinkNotesInfoVideoToApi($link, $linkRow);
                                     applyLinkFeatureTogglesToApi($link, $linkRow);
+                applyLinkInfoTopicsToApi($link, $linkRow);
                 applyLinkOpenTargetToApi($link, $linkRow);
                 applyLinkMobilePreviewEmulationToApi($link, $linkRow);
                 applyLinkOpenInEmulationToApi($link, $linkRow);
@@ -1194,6 +1198,7 @@ function handleGetTiles() {
                             applyLinkMaintenanceToApi($link, $linkRow);
                             applyLinkNotesInfoVideoToApi($link, $linkRow);
                             applyLinkFeatureTogglesToApi($link, $linkRow);
+                applyLinkInfoTopicsToApi($link, $linkRow);
                 applyLinkOpenTargetToApi($link, $linkRow);
                 applyLinkMobilePreviewEmulationToApi($link, $linkRow);
                 applyLinkOpenInEmulationToApi($link, $linkRow);
@@ -1752,6 +1757,7 @@ function handleGetTile($tileId) {
                 applyLinkMaintenanceToApi($link, $linkRow);
                 applyLinkNotesInfoVideoToApi($link, $linkRow);
                 applyLinkFeatureTogglesToApi($link, $linkRow);
+                applyLinkInfoTopicsToApi($link, $linkRow);
                 applyLinkOpenTargetToApi($link, $linkRow);
                 applyLinkMobilePreviewEmulationToApi($link, $linkRow);
                 applyLinkOpenInEmulationToApi($link, $linkRow);
@@ -1888,6 +1894,7 @@ function handleGetTile($tileId) {
                     applyLinkMaintenanceToApi($link, $linkRow);
                     applyLinkNotesInfoVideoToApi($link, $linkRow);
                     applyLinkFeatureTogglesToApi($link, $linkRow);
+                applyLinkInfoTopicsToApi($link, $linkRow);
                 applyLinkOpenTargetToApi($link, $linkRow);
                 applyLinkMobilePreviewEmulationToApi($link, $linkRow);
                 applyLinkOpenInEmulationToApi($link, $linkRow);
@@ -2288,6 +2295,7 @@ function handleCreateTile() {
                                 persistLinkOpenInEmulation($db, $linkId, $link);
                                 persistLinkForceShortUrl($db, $linkId, $link);
                                 persistLinkBrokenStatusLabel($db, $linkId, $link);
+                                persistLinkInfoTopics($db, $linkId, $link);
                             } catch (PDOException $e) {
                                 error_log('Error inserting link: ' . $e->getMessage());
                                 error_log('Link data: ' . json_encode($link));
@@ -2315,6 +2323,7 @@ function handleCreateTile() {
                                 persistLinkOpenInEmulation($db, $linkId, $link);
                                 persistLinkForceShortUrl($db, $linkId, $link);
                                 persistLinkBrokenStatusLabel($db, $linkId, $link);
+                                persistLinkInfoTopics($db, $linkId, $link);
                                 } catch (PDOException $e2) {
                                     error_log('Error inserting link (fallback): ' . $e2->getMessage());
                                     throw $e2;
@@ -2781,6 +2790,7 @@ function cloneTileLinksAndRichText(PDO $db, string $sourceSectionId, string $new
         persistLinkOpenInEmulation($db, $newLinkId, $link);
         persistLinkForceShortUrl($db, $newLinkId, $link);
         persistLinkBrokenStatusLabel($db, $newLinkId, $link);
+        persistLinkInfoTopics($db, $newLinkId, $link);
     }
 
     $richTextStmt = $db->prepare('SELECT * FROM rich_text_content WHERE section_id = ?');
@@ -4307,6 +4317,7 @@ function mapFavoriteLinkRow(array $row): array {
         ]
     ];
     applyLinkFeatureTogglesToApi($mapped, $row);
+    applyLinkInfoTopicsToApi($mapped, $row);
                 applyLinkOpenTargetToApi($mapped, $row);
                 applyLinkMobilePreviewEmulationToApi($mapped, $row);
                 applyLinkOpenInEmulationToApi($mapped, $row);
@@ -4794,6 +4805,7 @@ function handleGetRecycleBin() {
                     applyLinkMaintenanceToApi($link, $linkRow);
                     applyLinkNotesInfoVideoToApi($link, $linkRow);
                     applyLinkFeatureTogglesToApi($link, $linkRow);
+                applyLinkInfoTopicsToApi($link, $linkRow);
                 applyLinkOpenTargetToApi($link, $linkRow);
                 applyLinkMobilePreviewEmulationToApi($link, $linkRow);
                 applyLinkOpenInEmulationToApi($link, $linkRow);
@@ -5198,6 +5210,7 @@ function handleGetArchive() {
                     applyLinkMaintenanceToApi($link, $linkRow);
                     applyLinkNotesInfoVideoToApi($link, $linkRow);
                     applyLinkFeatureTogglesToApi($link, $linkRow);
+                applyLinkInfoTopicsToApi($link, $linkRow);
                 applyLinkOpenTargetToApi($link, $linkRow);
                 applyLinkMobilePreviewEmulationToApi($link, $linkRow);
                 applyLinkOpenInEmulationToApi($link, $linkRow);
@@ -5488,6 +5501,71 @@ function handlePurgeArchive() {
 /**
  * VERSION CONTROL FUNCTIONS
  */
+
+/** History of info / notes / maintenance topic sets for one link (editors only). */
+function handleGetLinkInfoRevisions($tileId, $linkId, $kind = 'info') {
+    $user = requireAuth();
+    $db = getDB();
+    ensureLinkInfoTopicsSchema($db);
+    $kind = normalizeLinkContentTopicKind($kind) ?? 'info';
+    $meta = linkContentTopicKindMeta($kind);
+
+    if (!canUserEditTile($user['id'], $tileId, $db)) {
+        sendJSON(['error' => 'Permission denied'], 403);
+        return;
+    }
+
+    // Confirm the link belongs to this space (current tree or leftover revisions after id reuse)
+    $belongs = $db->prepare(
+        'SELECT 1 FROM links l
+         JOIN sections s ON s.id = l.section_id
+         WHERE l.id = ? AND s.tile_id = ?
+         LIMIT 1'
+    );
+    $belongs->execute([$linkId, $tileId]);
+    if (!$belongs->fetchColumn()) {
+        $any = $db->prepare('SELECT 1 FROM link_info_revisions WHERE link_id = ? AND kind = ? LIMIT 1');
+        $any->execute([$linkId, $kind]);
+        if (!$any->fetchColumn()) {
+            sendJSON(['error' => 'Link not found'], 404);
+            return;
+        }
+    }
+
+    $stmt = $db->prepare(
+        'SELECT r.id, r.link_id, r.kind, r.topics_json, r.created_at, r.user_id, u.username
+         FROM link_info_revisions r
+         LEFT JOIN users u ON u.id = r.user_id
+         WHERE r.link_id = ? AND r.kind = ?
+         ORDER BY r.created_at DESC, r.id DESC
+         LIMIT ' . (int)LINK_INFO_REVISIONS_KEEP
+    );
+    $stmt->execute([$linkId, $kind]);
+    $revisions = [];
+    while ($row = $stmt->fetch(PDO::FETCH_ASSOC)) {
+        $topics = normalizeLinkInfoTopics(
+            decodeLinkInfoTopicsJson($row['topics_json'] ?? ''),
+            null,
+            $meta['defaultTitle'],
+            $meta['idPrefix']
+        );
+        $revisions[] = [
+            'id' => (int)$row['id'],
+            'linkId' => $row['link_id'],
+            'kind' => $kind,
+            'topics' => $topics,
+            'createdAt' => (int)$row['created_at'],
+            'userId' => $row['user_id'] !== null ? (int)$row['user_id'] : null,
+            'username' => $row['username'] ?: 'Unknown',
+            'topicCount' => count($topics),
+            'titles' => array_map(static function ($t) use ($meta) {
+                return (string)($t['title'] ?? $meta['defaultTitle']);
+            }, $topics),
+        ];
+    }
+
+    sendJSON(['revisions' => $revisions, 'kind' => $kind]);
+}
 
 function handleGetTileVersions($tileId) {
     $user = requireAuth();
@@ -5784,6 +5862,7 @@ function getTileForVersion($tileId, $db) {
                 applyLinkMaintenanceToApi($link, $linkRow);
                 applyLinkNotesInfoVideoToApi($link, $linkRow);
                 applyLinkFeatureTogglesToApi($link, $linkRow);
+                applyLinkInfoTopicsToApi($link, $linkRow);
                 applyLinkOpenTargetToApi($link, $linkRow);
                 applyLinkMobilePreviewEmulationToApi($link, $linkRow);
                 applyLinkOpenInEmulationToApi($link, $linkRow);
@@ -6609,6 +6688,11 @@ function updateTileInternal($tileId, $data, $db, $user, $isRestore = false, $isF
             $rolesForNewLinks = array_values(array_unique($rolesForNewLinks));
         }
 
+        // Snapshot previous Information topics when content changed (survives delete+reinsert of same link ids)
+        if (isset($data['tabs']) && is_array($data['tabs'])) {
+            snapshotLinkInfoTopicsBeforeSave($db, $data['tabs'], $user['id'] ?? null);
+        }
+
         $db->prepare('DELETE FROM rich_text_content WHERE section_id IN (SELECT id FROM sections WHERE tile_id = ?)')->execute([$tileId]);
         $db->prepare('DELETE FROM links WHERE section_id IN (SELECT id FROM sections WHERE tile_id = ?)')->execute([$tileId]);
         $db->prepare('DELETE FROM sections WHERE tile_id = ?')->execute([$tileId]);
@@ -6715,6 +6799,7 @@ function updateTileInternal($tileId, $data, $db, $user, $isRestore = false, $isF
                                 persistLinkOpenInEmulation($db, $linkId, $link);
                                 persistLinkForceShortUrl($db, $linkId, $link);
                                 persistLinkBrokenStatusLabel($db, $linkId, $link);
+                                persistLinkInfoTopics($db, $linkId, $link);
                             }
                         }
                         
@@ -6788,6 +6873,7 @@ function updateTileInternal($tileId, $data, $db, $user, $isRestore = false, $isF
                                 persistLinkOpenInEmulation($db, $linkId, $link);
                                 persistLinkForceShortUrl($db, $linkId, $link);
                                 persistLinkBrokenStatusLabel($db, $linkId, $link);
+                                persistLinkInfoTopics($db, $linkId, $link);
                     }
                     if (isset($section['richTextContent']) && is_array($section['richTextContent'])) {
                         foreach ($section['richTextContent'] as $richText) {

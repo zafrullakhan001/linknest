@@ -13,6 +13,7 @@ import { useEscapeToClose } from '../hooks/useEscapeToClose';
 import { ReadAloudButtons, ReadAloudSettingsRow } from './ReadAloudControls';
 import { TinyMceRichTextViewer, type TinyMceRichTextViewerHandle } from './TinyMceRichTextViewer';
 import { isLinkInfoDismissed, setLinkInfoDismissed } from '../utils/linkInfoDismiss';
+import { normalizeLinkInfoTopics, visibleLinkInfoTopics, type LinkInfoTopic } from '../utils/linkInfoTopics';
 
 interface LinkInfoDialogProps {
   isOpen: boolean;
@@ -21,6 +22,7 @@ interface LinkInfoDialogProps {
   linkLabel: string;
   linkIcon?: string;
   richTextContent: string;
+  infoTopics?: LinkInfoTopic[];
   infoVideoUrl?: string;
   linkUrl?: string;
   showOpenLink?: boolean;
@@ -95,6 +97,7 @@ export const LinkInfoDialog: React.FC<LinkInfoDialogProps> = ({
   linkLabel,
   linkIcon,
   richTextContent,
+  infoTopics,
   infoVideoUrl,
   linkUrl,
   showOpenLink = true,
@@ -115,21 +118,33 @@ export const LinkInfoDialog: React.FC<LinkInfoDialogProps> = ({
   const positionRef = useRef({ x: 0, y: 0 });
   const sizeRef = useRef({ width: 0, height: 0 });
 
+  const topics = useMemo(
+    () => visibleLinkInfoTopics(normalizeLinkInfoTopics(infoTopics, richTextContent)),
+    [infoTopics, richTextContent]
+  );
+  const [selectedTopicId, setSelectedTopicId] = useState<string>('');
+  useEffect(() => {
+    if (!isOpen) return;
+    setSelectedTopicId(topics[0]?.id || '');
+  }, [isOpen, topics]);
+  const selectedTopic = topics.find((t) => t.id === selectedTopicId) || topics[0] || null;
+  const activeHtml = selectedTopic?.html || (topics.length === 0 ? richTextContent || '' : '');
+
   const plainLabel = useMemo(() => stripHtmlTags(linkLabel || ''), [linkLabel]);
   const displayHtml = useMemo(
-    () => enhanceRichTextWithEmojis(linkifyHtml(richTextContent || '')),
-    [richTextContent]
+    () => enhanceRichTextWithEmojis(linkifyHtml(activeHtml || '')),
+    [activeHtml]
   );
   const hasVideo = !!infoVideoUrl?.trim();
-  const speakableText = useMemo(() => toSpeakableText(richTextContent || ''), [richTextContent]);
+  const speakableText = useMemo(() => toSpeakableText(activeHtml || ''), [activeHtml]);
   const readAloud = useReadAloud({
     text: speakableText,
     active: isOpen,
     autoStart: false,
   });
   const dismissFields = useMemo(
-    () => ({ id: linkId, richTextContent, infoVideoUrl }),
-    [linkId, richTextContent, infoVideoUrl]
+    () => ({ id: linkId, richTextContent, infoTopics: topics, infoVideoUrl }),
+    [linkId, richTextContent, topics, infoVideoUrl]
   );
   const [dontShowNextTime, setDontShowNextTime] = useState(false);
 
@@ -385,8 +400,8 @@ export const LinkInfoDialog: React.FC<LinkInfoDialogProps> = ({
           <ReadAloudSettingsRow readAloud={readAloud} idPrefix="link-info" className="mt-2.5" />
         </div>
 
-        {/* Content — optional video + rich text */}
-        <div className={`flex-1 min-h-0 bg-slate-50 dark:bg-slate-900/50 ${hasVideo ? 'overflow-y-auto flex flex-col' : 'overflow-hidden'}`}>
+        {/* Content — optional video + topic list + rich text */}
+        <div className={`flex-1 min-h-0 bg-slate-50 dark:bg-slate-900/50 ${hasVideo ? 'overflow-y-auto flex flex-col' : 'overflow-hidden flex flex-col'}`}>
           {hasVideo && (
             <video
               src={infoVideoUrl}
@@ -395,15 +410,51 @@ export const LinkInfoDialog: React.FC<LinkInfoDialogProps> = ({
               className="w-full max-h-72 rounded-lg bg-black shrink-0 mx-auto mt-4 px-5"
             />
           )}
-          {displayHtml ? (
-            <div className={hasVideo ? 'min-h-[220px] h-[280px] shrink-0 mt-3' : 'h-full'}>
-              <TinyMceRichTextViewer ref={viewerRef} html={displayHtml} onEscape={handleClose} />
+          {topics.length > 1 ? (
+            <div className="sm:hidden px-4 pt-3 shrink-0">
+              <label className="sr-only" htmlFor="link-info-topic-select">Topic</label>
+              <select
+                id="link-info-topic-select"
+                value={selectedTopic?.id || ''}
+                onChange={(e) => setSelectedTopicId(e.target.value)}
+                className="w-full rounded-lg border border-slate-200 dark:border-slate-600 bg-white dark:bg-slate-800 px-3 py-2 text-sm text-slate-900 dark:text-white"
+              >
+                {topics.map((t) => (
+                  <option key={t.id} value={t.id}>{t.title || 'Untitled'}</option>
+                ))}
+              </select>
             </div>
-          ) : hasVideo ? null : (
-            <div className="h-full min-h-[120px] flex items-center justify-center text-sm text-slate-400">
-              No information available for this link.
+          ) : null}
+          <div className={`flex-1 min-h-0 flex ${hasVideo ? 'mt-3' : ''} ${topics.length > 1 ? 'flex-col sm:flex-row' : ''}`}>
+            {topics.length > 1 ? (
+              <div className="hidden sm:flex sm:flex-col sm:w-44 shrink-0 border-r border-slate-200 dark:border-slate-700 p-2 gap-1 overflow-y-auto">
+                {topics.map((t) => (
+                  <button
+                    key={t.id}
+                    type="button"
+                    onClick={() => setSelectedTopicId(t.id)}
+                    className={`text-left text-xs px-2.5 py-2 rounded-lg font-medium truncate transition-colors ${
+                      t.id === selectedTopic?.id
+                        ? 'bg-violet-600 text-white'
+                        : 'bg-white dark:bg-slate-800 text-slate-700 dark:text-slate-200 hover:bg-slate-100 dark:hover:bg-slate-700'
+                    }`}
+                    title={t.title}
+                  >
+                    {t.title || 'Untitled'}
+                  </button>
+                ))}
+              </div>
+            ) : null}
+            <div className={`flex-1 min-w-0 min-h-0 ${hasVideo ? 'min-h-[220px] h-[280px] shrink-0' : 'h-full'}`}>
+              {displayHtml ? (
+                <TinyMceRichTextViewer ref={viewerRef} html={displayHtml} onEscape={handleClose} />
+              ) : hasVideo ? null : (
+                <div className="h-full min-h-[120px] flex items-center justify-center text-sm text-slate-400">
+                  No information available for this link.
+                </div>
+              )}
             </div>
-          )}
+          </div>
         </div>
 
         {/* Footer */}

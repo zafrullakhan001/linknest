@@ -166,6 +166,8 @@ export interface Link {
   allowedUsers?: number[]; // Array of user IDs for private links
   allowedGroups?: number[]; // Array of group IDs for private links
   notes?: string; // Optional notes/description for the link
+  /** Multi-topic Notes (left list / right body). When set, notes is a joined mirror. */
+  notesTopics?: Array<{ id: string; title: string; html: string; hidden?: boolean }>;
   tooltip?: string; // Optional custom hover tooltip (rich HTML — fonts, colors, and formatting are shown on hover)
   /** Hover tooltip presentation for this link. classic = native Windows/browser title; rich = formatted overlay. */
   tooltipStyle?: 'rich' | 'classic';
@@ -174,6 +176,11 @@ export interface Link {
   /** Optional uploaded/recorded video URL shown in the Notes dialog with the notes text. */
   notesVideoUrl?: string;
   richTextContent?: string; // Optional rich text HTML content - if present, shows dialog instead of opening URL
+  /**
+   * Multi-topic Information Content (left topic list / right body).
+   * When set, the Info dialog and editor use these; richTextContent is a joined mirror for older clients.
+   */
+  infoTopics?: Array<{ id: string; title: string; html: string; hidden?: boolean }>;
   /** When false, clicking opens the URL even if richTextContent is stored. Unspecified infers from content. */
   richTextEnabled?: boolean;
   /** Optional uploaded/recorded video URL shown in the Info dialog with the info content. */
@@ -232,6 +239,8 @@ export interface Link {
   maintenanceEnabled?: boolean;
   /** HTML maintenance message shown in the dialog. Kept when the toggle is off. */
   maintenanceMessage?: string;
+  /** Multi-topic Maintenance messages. When set, maintenanceMessage is a joined mirror. */
+  maintenanceTopics?: Array<{ id: string; title: string; html: string; hidden?: boolean }>;
   /** Optional uploaded/recorded video URL for the maintenance dialog. */
   maintenanceVideoUrl?: string;
   /**

@@ -9,8 +9,10 @@ import { AccessRestrictionsEditor, AccessRestrictionsBadge } from './AccessRestr
 import { SelectableRichTextEditor } from './SelectableRichTextEditor';
 import { LinkLabelField } from './LinkLabelField';
 import { LinkMaintenanceVideoField } from './LinkMaintenanceVideoField';
+import { LinkInfoTopicsEditor } from './LinkInfoTopicsEditor';
 import { hasVisibleRichText } from '../utils/richTextDisplay';
 import { isInfoContentEnabled, isInfoOpenLinkShown, isNotesTooltipEnabled } from '../utils/linkFeatureToggles';
+import { linkContentTopicKindMeta, linkInfoTopicsToRichTextHtml, normalizeLinkContentTopics, type LinkInfoTopic } from '../utils/linkInfoTopics';
 import { LinkTooltipStyleToggle } from './LinkTooltipStyleToggle';
 import { HoverTooltipEditor } from './HoverTooltipEditor';
 import { normalizeLinkTooltipStyle, type LinkTooltipStyle } from '../utils/linkTooltipPreference';
@@ -122,6 +124,7 @@ export type EditLinkDraft = {
   allowedUsers: number[];
   allowedGroups: number[];
   notes: string;
+  notesTopics: LinkInfoTopic[];
   tooltip: string;
   tooltipStyle: LinkTooltipStyle;
   notesEnabled: boolean;
@@ -129,6 +132,7 @@ export type EditLinkDraft = {
   browser: string;
   openTarget: LinkOpenTarget;
   richTextContent: string;
+  infoTopics: LinkInfoTopic[];
   richTextEnabled: boolean;
   infoVideoUrl: string;
   infoShowOpenLink: boolean;
@@ -136,6 +140,7 @@ export type EditLinkDraft = {
   accessRestrictions?: AccessRestrictions;
   maintenanceEnabled: boolean;
   maintenanceMessage: string;
+  maintenanceTopics: LinkInfoTopic[];
   maintenanceVideoUrl: string;
   mobilePreviewEmulation: boolean;
   openInEmulation: boolean;
@@ -143,11 +148,11 @@ export type EditLinkDraft = {
 
 type EditLinkField =
   | 'label' | 'url' | 'icon' | 'textColor' | 'visibility' | 'allowedUsers' | 'allowedGroups'
-  | 'notes' | 'tooltip' | 'tooltipStyle' | 'notesEnabled' | 'notesVideoUrl' | 'browser' | 'openTarget' | 'richTextContent'
+  | 'notes' | 'notesTopics' | 'tooltip' | 'tooltipStyle' | 'notesEnabled' | 'notesVideoUrl' | 'browser' | 'openTarget' | 'richTextContent' | 'infoTopics'
   | 'richTextEnabled' | 'infoVideoUrl' | 'infoShowOpenLink' | 'animation' | 'published' | 'inheritShortUrls' | 'forceShortUrl' | 'brokenStatusLabel'
   | 'brokenStatusNote' | 'brokenStatusTone' | 'brokenStatusExpected' | 'brokenStatusManual'
   | 'brokenStatusFontColor' | 'brokenStatusFontWeight' | 'brokenStatusFontStyle' | 'brokenStatusFontFamily'
-  | 'maintenanceEnabled' | 'maintenanceMessage' | 'maintenanceVideoUrl' | 'mobilePreviewEmulation' | 'openInEmulation';
+  | 'maintenanceEnabled' | 'maintenanceMessage' | 'maintenanceTopics' | 'maintenanceVideoUrl' | 'mobilePreviewEmulation' | 'openInEmulation';
 
 const LINK_EDIT_NEUTRAL_CARD = 'border-slate-300 dark:border-slate-600 bg-slate-50 dark:bg-slate-900/50';
 
@@ -302,11 +307,13 @@ export type EditLinkFormProps = {
   foldOpen: boolean;
   onCollapseAll: () => void;
   onExpandAll: () => void;
-  onUpdateField: (field: EditLinkField, value: string | LinkVisibility | number[] | boolean) => void;
+  onUpdateField: (field: EditLinkField, value: string | LinkVisibility | number[] | boolean | LinkInfoTopic[]) => void;
   onPatchDraft: (patch: Partial<EditLinkDraft>) => void;
   onCancel: () => void;
   onSave: () => void;
   onConvert?: () => void;
+  /** Space id — enables Information topic History when editing an existing link. */
+  tileId?: string;
   /** Prefer this mode on mount (e.g. dialog-tabs when editing from view mode). */
   initialViewMode?: EditLinkViewMode;
   /** When true and in dialog-tabs, only render the floating dialog (no inline placeholder). */
@@ -351,6 +358,7 @@ export const EditLinkForm: React.FC<EditLinkFormProps> = (props) => {
     onCancel,
     onSave,
     onConvert,
+    tileId,
     initialViewMode,
     dialogOnly = false,
     urlField,
@@ -1023,32 +1031,40 @@ export const EditLinkForm: React.FC<EditLinkFormProps> = (props) => {
     </div>
   );
 
+  const notesMeta = linkContentTopicKindMeta('notes');
   const notesFields = (
     <div className="space-y-3">
-      <div>
-        <div className="flex items-center justify-between mb-1.5">
-          <label className="block text-xs font-semibold uppercase tracking-wider text-slate-600 dark:text-slate-400">Notes (Rich Text)</label>
-          {onOpenNotesPreset && (
-            <button
-              type="button"
-              onClick={onOpenNotesPreset}
-              className="text-[10px] px-2 py-1 bg-brand-100 dark:bg-brand-900/30 text-brand-600 dark:text-brand-400 hover:bg-brand-200 dark:hover:bg-brand-900/50 rounded transition-colors flex items-center gap-1"
-              title="Use preset form"
-            >
-              <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" strokeWidth={2} stroke="currentColor" className="w-3 h-3">
-                <path strokeLinecap="round" strokeLinejoin="round" d="M12 4.5v15m7.5-7.5h-15" />
-              </svg>
-              Preset Form
-            </button>
-          )}
-        </div>
-        <SelectableRichTextEditor
-          value={draft.notes || ''}
-          onChange={(html) => onUpdateField('notes', html)}
-          placeholder="Add notes... or use Preset Form button above"
-          className="min-h-[200px]"
-        />
+      <div className="flex items-center justify-between mb-1.5">
+        <label className="block text-xs font-semibold uppercase tracking-wider text-slate-600 dark:text-slate-400">Notes (Rich Text)</label>
+        {onOpenNotesPreset && (
+          <button
+            type="button"
+            onClick={onOpenNotesPreset}
+            className="text-[10px] px-2 py-1 bg-brand-100 dark:bg-brand-900/30 text-brand-600 dark:text-brand-400 hover:bg-brand-200 dark:hover:bg-brand-900/50 rounded transition-colors flex items-center gap-1"
+            title="Use preset form"
+          >
+            <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" strokeWidth={2} stroke="currentColor" className="w-3 h-3">
+              <path strokeLinecap="round" strokeLinejoin="round" d="M12 4.5v15m7.5-7.5h-15" />
+            </svg>
+            Preset Form
+          </button>
+        )}
       </div>
+      <LinkInfoTopicsEditor
+        kind="notes"
+        accent="amber"
+        topics={normalizeLinkContentTopics('notes', draft.notesTopics, draft.notes)}
+        onChange={(topics) => {
+          onPatchDraft({
+            notesTopics: topics,
+            notes: linkInfoTopicsToRichTextHtml(topics, notesMeta.defaultTitle),
+            notesEnabled: true,
+          });
+        }}
+        plain={plain}
+        tileId={tileId}
+        linkId={link.id}
+      />
       <div>
         <div className="flex items-center justify-between gap-2 mb-1.5 flex-wrap">
           <label className="block text-xs font-semibold uppercase tracking-wider text-slate-600 dark:text-slate-400">Hover Tooltip</label>
@@ -1079,28 +1095,22 @@ export const EditLinkForm: React.FC<EditLinkFormProps> = (props) => {
 
   const infoFields = (
     <div className="space-y-3">
-      <div className="flex items-center justify-between gap-2">
-        <p className="text-xs text-slate-500 dark:text-slate-400">
-          If provided, clicking this link opens a rich text dialog instead of navigating to the URL. Viewers can skip the dialog until the information is updated, and reopen it anytime with the View info icon.
-        </p>
-        <button
-          type="button"
-          onClick={() => {
-            const demoContent = '<h2>Welcome to Information Content</h2><p>This is a <strong>sample rich text content</strong> that demonstrates various formatting options available in the editor.</p><h3>Key Features</h3><ul><li>Rich text formatting with <em>bold</em> and <u>underline</u></li><li>Lists and structured content</li><li>Links and embedded content</li><li>Custom styling options</li></ul><h3>Contact Information</h3><p>For more information, please contact:</p><p><strong>Support Team:</strong> support@company.com<br/><strong>Phone:</strong> +1-555-0100</p><blockquote><p>This is an important note or quote that stands out from the regular content.</p></blockquote><p>You can edit this content using the rich text editor toolbar above.</p>';
-            onPatchDraft({ richTextContent: demoContent, richTextEnabled: true });
-          }}
-          className={`px-3 py-1 text-xs text-white rounded-lg font-medium transition-colors shrink-0 ${
-            plain ? 'bg-slate-600 hover:bg-slate-500' : 'bg-amber-500 hover:bg-amber-600'
-          }`}
-        >
-          Demo Fill
-        </button>
-      </div>
-      <SelectableRichTextEditor
-        value={draft.richTextContent || ''}
-        onChange={(html) => onUpdateField('richTextContent', html)}
-        placeholder="Enter rich text content that will be displayed in a dialog when the link is clicked..."
-        className="min-h-[200px]"
+      <p className="text-xs text-slate-500 dark:text-slate-400">
+        If provided, clicking this link opens a rich text dialog instead of navigating to the URL. Viewers can skip the dialog until the information is updated, and reopen it anytime with the View info icon.
+      </p>
+      <LinkInfoTopicsEditor
+        kind="info"
+        topics={normalizeLinkContentTopics('info', draft.infoTopics, draft.richTextContent)}
+        onChange={(topics) => {
+          onPatchDraft({
+            infoTopics: topics,
+            richTextContent: linkInfoTopicsToRichTextHtml(topics, 'Information'),
+            richTextEnabled: true,
+          });
+        }}
+        plain={plain}
+        tileId={tileId}
+        linkId={link.id}
       />
       <div className={`flex items-center justify-between gap-3 p-3.5 rounded-xl border-2 ${
         plain
@@ -1160,11 +1170,20 @@ export const EditLinkForm: React.FC<EditLinkFormProps> = (props) => {
       <p className="text-xs text-slate-500 dark:text-slate-400">
         Message and video are kept when the toggle is off so you can reuse them later.
       </p>
-      <SelectableRichTextEditor
-        value={draft.maintenanceMessage || ''}
-        onChange={(html) => onUpdateField('maintenanceMessage', html)}
-        placeholder="Describe the maintenance window..."
-        className="min-h-[160px]"
+      <LinkInfoTopicsEditor
+        kind="maintenance"
+        accent="amber"
+        topics={normalizeLinkContentTopics('maintenance', draft.maintenanceTopics, draft.maintenanceMessage)}
+        onChange={(topics) => {
+          onPatchDraft({
+            maintenanceTopics: topics,
+            maintenanceMessage: linkInfoTopicsToRichTextHtml(topics, 'Maintenance'),
+            maintenanceEnabled: true,
+          });
+        }}
+        plain={plain}
+        tileId={tileId}
+        linkId={link.id}
       />
       <LinkMaintenanceVideoField
         value={draft.maintenanceVideoUrl || ''}
@@ -1449,7 +1468,7 @@ export const EditLinkForm: React.FC<EditLinkFormProps> = (props) => {
         title="Notes & Tooltip"
         subtitle="Owner info, support details, hover text"
         accent="amber"
-        defaultOpen={!!(draft.notesEnabled || hasVisibleRichText(draft.notes) || hasVisibleRichText(draft.tooltip) || draft.notesVideoUrl || hasVisibleRichText(link.notes) || hasVisibleRichText(link.tooltip) || link.notesVideoUrl)}
+        defaultOpen={!!(draft.notesEnabled || hasVisibleRichText(draft.notes) || (draft.notesTopics && draft.notesTopics.length > 0) || hasVisibleRichText(draft.tooltip) || draft.notesVideoUrl || hasVisibleRichText(link.notes) || (link.notesTopics && link.notesTopics.length > 0) || hasVisibleRichText(link.tooltip) || link.notesVideoUrl)}
         foldNonce={foldNonce}
         foldOpen={foldOpen}
         plain={plain}
@@ -1480,7 +1499,7 @@ export const EditLinkForm: React.FC<EditLinkFormProps> = (props) => {
         title="Information Content"
         subtitle="Rich text dialog instead of opening the URL"
         accent="violet"
-        defaultOpen={!!(draft.richTextEnabled || draft.richTextContent || draft.infoVideoUrl || link.richTextContent || link.infoVideoUrl)}
+        defaultOpen={!!(draft.richTextEnabled || draft.richTextContent || (draft.infoTopics && draft.infoTopics.length > 0) || draft.infoVideoUrl || link.richTextContent || (link.infoTopics && link.infoTopics.length > 0) || link.infoVideoUrl)}
         foldNonce={foldNonce}
         foldOpen={foldOpen}
         plain={plain}
@@ -1511,7 +1530,7 @@ export const EditLinkForm: React.FC<EditLinkFormProps> = (props) => {
         title="Maintenance"
         subtitle="Show a maintenance dialog instead of opening the URL"
         accent="amber"
-        defaultOpen={!!(draft.maintenanceEnabled || draft.maintenanceMessage || draft.maintenanceVideoUrl)}
+        defaultOpen={!!(draft.maintenanceEnabled || draft.maintenanceMessage || (draft.maintenanceTopics && draft.maintenanceTopics.length > 0) || draft.maintenanceVideoUrl || link.maintenanceMessage || (link.maintenanceTopics && link.maintenanceTopics.length > 0) || link.maintenanceVideoUrl)}
         foldNonce={foldNonce}
         foldOpen={foldOpen}
         plain={plain}

@@ -8,17 +8,28 @@ export type LinkInfoDismissFields = {
   id?: string;
   richTextEnabled?: boolean;
   richTextContent?: string;
+  infoTopics?: Array<{ id?: string; title?: string; html?: string }> | null;
   infoVideoUrl?: string;
 };
 
 /** Short, stable fingerprint of info content so an edit re-prompts the dialog. */
 export function linkInfoFingerprint(link: {
   richTextContent?: string;
+  infoTopics?: Array<{ id?: string; title?: string; html?: string }> | null;
   infoVideoUrl?: string;
 }): string {
+  const topicsJson = Array.isArray(link.infoTopics)
+    ? JSON.stringify(
+        link.infoTopics.map((t) => ({
+          id: t?.id || '',
+          title: t?.title || '',
+          html: t?.html || '',
+        }))
+      )
+    : '';
   const content = typeof link.richTextContent === 'string' ? link.richTextContent : '';
   const video = typeof link.infoVideoUrl === 'string' ? link.infoVideoUrl.trim() : '';
-  const raw = `${content}\n\0${video}`;
+  const raw = `${topicsJson}\n\0${content}\n\0${video}`;
   let hash = 2166136261;
   for (let i = 0; i < raw.length; i++) {
     hash ^= raw.charCodeAt(i);

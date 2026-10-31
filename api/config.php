@@ -137,6 +137,8 @@ if (!defined('SYSTEM_TOKEN')) {
 }
 
 // Bump when schema/migrations in initDatabase() change. Enables fast-path getDB().
+// 114 = Per-link Notes + Maintenance topics (links.notes_topics / maintenance_topics; revisions.kind).
+// 113 = Per-link Information topics (links.info_topics + link_info_revisions history).
 // 112 = Cross-instance space sync (tiles.sync_source_* and sync_source_id on tabs/sections/links).
 // 111 = Archive banner actor (tiles.archived_by + tiles.archived_by_username).
 // 110 = per-user TOTP two-factor authentication (user_two_factor + user_two_factor_devices).
@@ -145,7 +147,7 @@ if (!defined('SYSTEM_TOKEN')) {
 // 107 = Message Board tab scoping (tile_messages.tab_ids + tile_messages.show_on_card).
 // 106 = LinkNest 3.0.0 (schema_releases audit registry).
 if (!defined('LINKNEST_SCHEMA_VERSION')) {
-    define('LINKNEST_SCHEMA_VERSION', 112);
+    define('LINKNEST_SCHEMA_VERSION', 114);
 }
 
 // Shipped application version, recorded in schema_releases so admins can audit
@@ -1002,8 +1004,8 @@ function infoShowOpenLinkFromInput($link): int {
 
 function mapLinkFeatureTogglesFromRow(array $row): array {
     return [
-        'notesEnabled' => linkToggleFlagFromRow($row, 'notes_enabled', ['notes', 'tooltip', 'notes_video_url']),
-        'richTextEnabled' => linkToggleFlagFromRow($row, 'rich_text_enabled', ['rich_text_content', 'info_video_url']),
+        'notesEnabled' => linkToggleFlagFromRow($row, 'notes_enabled', ['notes', 'notes_topics', 'tooltip', 'notes_video_url']),
+        'richTextEnabled' => linkToggleFlagFromRow($row, 'rich_text_enabled', ['rich_text_content', 'info_topics', 'info_video_url']),
         'infoShowOpenLink' => infoShowOpenLinkFromRow($row),
     ];
 }
@@ -1582,6 +1584,385 @@ function persistLinkBrokenStatusLabel(PDO $db, string $linkId, $source): void {
     }
 }
 
+/** Cap for per-link content topic history (info / notes / maintenance). */
+if (!defined('LINK_INFO_REVISIONS_KEEP')) {
+    define('LINK_INFO_REVISIONS_KEEP', 30);
+}
+
+/**
+ * Multi-topic link content: info_topics / notes_topics / maintenance_topics + shared revisions (kind).
+ * Revisions keep link_id without ON DELETE CASCADE so tile save (delete+reinsert same ids) retains history.
+ */
+function ensureLinkInfoTopicsSchema(PDO $db): void {
+    static $ensured = false;
+    if ($ensured) {
+        return;
+    }
+    try {
+        $exists = $db->query("SELECT name FROM sqlite_master WHERE type='table' AND name='links'")->fetchColumn();
+        if (!$exists) {
+            return;
+        }
+        $columns = $db->query('PRAGMA table_info(links)')->fetchAll(PDO::FETCH_ASSOC);
+        $names = array_column($columns, 'name');
+        foreach (['info_topics', 'notes_topics', 'maintenance_topics'] as $col) {
+            if (!in_array($col, $names, true)) {
+                $db->exec('ALTER TABLE links ADD COLUMN ' . $col . ' TEXT');
+            }
+        }
+        $db->exec('CREATE TABLE IF NOT EXISTS link_info_revisions (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            link_id TEXT NOT NULL,
+            topics_json TEXT NOT NULL,
+            created_at INTEGER NOT NULL,
+            user_id INTEGER
+        )');
+        $revCols = $db->query('PRAGMA table_info(link_info_revisions)')->fetchAll(PDO::FETCH_ASSOC);
+        $revNames = array_column($revCols, 'name');
+        if (!in_array('kind', $revNames, true)) {
+            $db->exec("ALTER TABLE link_info_revisions ADD COLUMN kind TEXT NOT NULL DEFAULT 'info'");
+        }
+        $db->exec('CREATE INDEX IF NOT EXISTS idx_link_info_revisions_link ON link_info_revisions(link_id, created_at DESC)');
+        $db->exec('CREATE INDEX IF NOT EXISTS idx_link_info_revisions_link_kind ON link_info_revisions(link_id, kind, created_at DESC)');
+        $ensured = true;
+    } catch (PDOException $e) {
+        error_log('ensureLinkInfoTopicsSchema warning: ' . $e->getMessage());
+    }
+}
+
+/** @return 'info'|'notes'|'maintenance'|null */
+function normalizeLinkContentTopicKind($kind): ?string {
+    $k = is_string($kind) ? strtolower(trim($kind)) : '';
+    return in_array($k, ['info', 'notes', 'maintenance'], true) ? $k : null;
+}
+
+function linkContentTopicKindMeta(string $kind): array {
+    static $meta = [
+        'info' => [
+            'column' => 'info_topics',
+            'mirror' => 'rich_text_content',
+            'apiKey' => 'infoTopics',
+            'snakeKey' => 'info_topics',
+            'legacyKeys' => ['richTextContent', 'rich_text_content'],
+            'defaultTitle' => 'Information',
+            'idPrefix' => 'infotopic_',
+        ],
+        'notes' => [
+            'column' => 'notes_topics',
+            'mirror' => 'notes',
+            'apiKey' => 'notesTopics',
+            'snakeKey' => 'notes_topics',
+            'legacyKeys' => ['notes'],
+            'defaultTitle' => 'Notes',
+            'idPrefix' => 'notestopic_',
+        ],
+        'maintenance' => [
+            'column' => 'maintenance_topics',
+            'mirror' => 'maintenance_message',
+            'apiKey' => 'maintenanceTopics',
+            'snakeKey' => 'maintenance_topics',
+            'legacyKeys' => ['maintenanceMessage', 'maintenance_message'],
+            'defaultTitle' => 'Maintenance',
+            'idPrefix' => 'mainttopic_',
+        ],
+    ];
+    return $meta[$kind];
+}
+
+function linkInfoTopicId(string $prefix = 'infotopic_'): string {
+    try {
+        return $prefix . bin2hex(random_bytes(8));
+    } catch (Exception $e) {
+        return uniqid($prefix, true);
+    }
+}
+
+/** Strip tags for short topic titles / heading detection. */
+function linkInfoPlainText($html): string {
+    $text = trim(html_entity_decode(strip_tags((string)$html), ENT_QUOTES | ENT_HTML5, 'UTF-8'));
+    return preg_replace('/\s+/u', ' ', $text) ?? $text;
+}
+
+/**
+ * Normalize incoming topics (or legacy HTML) to [{id,title,html}, ...].
+ * Empty content returns [].
+ */
+function normalizeLinkInfoTopics($topics, $legacyHtml = null, string $defaultTitle = 'Information', string $idPrefix = 'infotopic_'): array {
+    $out = [];
+    if (is_array($topics)) {
+        foreach ($topics as $item) {
+            if (!is_array($item)) {
+                continue;
+            }
+            $html = isset($item['html']) ? (string)$item['html'] : (isset($item['content']) ? (string)$item['content'] : '');
+            $title = isset($item['title']) ? trim((string)$item['title']) : '';
+            $id = isset($item['id']) ? trim((string)$item['id']) : '';
+            if ($id === '') {
+                $id = linkInfoTopicId($idPrefix);
+            }
+            if ($title === '') {
+                $title = $defaultTitle;
+            }
+            if (function_exists('mb_substr')) {
+                $title = mb_substr($title, 0, 120);
+            } else {
+                $title = substr($title, 0, 120);
+            }
+            $title = trim($title) !== '' ? trim($title) : $defaultTitle;
+            $plain = linkInfoPlainText($html);
+            if ($plain === '' && trim(strip_tags($html, '<img><video><iframe><hr>')) === '') {
+                if (!isset($item['id']) && $title === $defaultTitle) {
+                    continue;
+                }
+            }
+            $out[] = [
+                'id' => $id,
+                'title' => $title,
+                'html' => $html,
+                'hidden' => !empty($item['hidden']),
+            ];
+        }
+    }
+    if (!empty($out)) {
+        return array_values($out);
+    }
+
+    $legacy = is_string($legacyHtml) ? $legacyHtml : '';
+    if (trim($legacy) === '') {
+        return [];
+    }
+    $title = $defaultTitle;
+    if (preg_match('/<h[1-6][^>]*>(.*?)<\/h[1-6]>/is', $legacy, $m)) {
+        $heading = linkInfoPlainText($m[1]);
+        if ($heading !== '' && (function_exists('mb_strlen') ? mb_strlen($heading) : strlen($heading)) <= 80) {
+            $title = $heading;
+        }
+    }
+    return [['id' => linkInfoTopicId($idPrefix), 'title' => $title, 'html' => $legacy, 'hidden' => false]];
+}
+
+/** Join visible topics into a single HTML blob for legacy mirror columns. */
+function linkInfoTopicsToRichTextHtml(array $topics, string $defaultTitle = 'Information'): ?string {
+    $visible = [];
+    foreach ($topics as $topic) {
+        if (!is_array($topic)) {
+            continue;
+        }
+        if (!empty($topic['hidden'])) {
+            continue;
+        }
+        $visible[] = $topic;
+    }
+    if (empty($visible)) {
+        return null;
+    }
+    $parts = [];
+    $topics = $visible;
+    foreach ($topics as $topic) {
+        $title = htmlspecialchars((string)($topic['title'] ?? $defaultTitle), ENT_QUOTES | ENT_HTML5, 'UTF-8');
+        $html = (string)($topic['html'] ?? '');
+        $parts[] = '<h2>' . $title . '</h2>' . $html;
+    }
+    $joined = implode('', $parts);
+    return trim($joined) !== '' ? $joined : null;
+}
+
+function linkInfoTopicsCanonicalJson(array $topics): string {
+    $normalized = [];
+    foreach ($topics as $t) {
+        $normalized[] = [
+            'id' => (string)($t['id'] ?? ''),
+            'title' => (string)($t['title'] ?? ''),
+            'html' => (string)($t['html'] ?? ''),
+            'hidden' => !empty($t['hidden']),
+        ];
+    }
+    return json_encode($normalized, JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES) ?: '[]';
+}
+
+function decodeLinkInfoTopicsJson($raw): array {
+    if (!is_string($raw) || trim($raw) === '') {
+        return [];
+    }
+    $decoded = json_decode($raw, true);
+    return is_array($decoded) ? $decoded : [];
+}
+
+function mapLinkContentTopicsFromRow(array $row, string $kind): array {
+    $kind = normalizeLinkContentTopicKind($kind);
+    if ($kind === null) {
+        return [];
+    }
+    $meta = linkContentTopicKindMeta($kind);
+    $fromJson = normalizeLinkInfoTopics(
+        decodeLinkInfoTopicsJson($row[$meta['column']] ?? null),
+        null,
+        $meta['defaultTitle'],
+        $meta['idPrefix']
+    );
+    if (!empty($fromJson)) {
+        return $fromJson;
+    }
+    return normalizeLinkInfoTopics(null, $row[$meta['mirror']] ?? null, $meta['defaultTitle'], $meta['idPrefix']);
+}
+
+function mapLinkInfoTopicsFromRow(array $row): array {
+    return mapLinkContentTopicsFromRow($row, 'info');
+}
+
+function applyLinkContentTopicsToApi(array &$link, array $row, string $kind): void {
+    $kind = normalizeLinkContentTopicKind($kind);
+    if ($kind === null) {
+        return;
+    }
+    $meta = linkContentTopicKindMeta($kind);
+    $topics = mapLinkContentTopicsFromRow($row, $kind);
+    if (!empty($topics)) {
+        $link[$meta['apiKey']] = $topics;
+        $mirrorKey = $kind === 'info' ? 'richTextContent' : ($kind === 'notes' ? 'notes' : 'maintenanceMessage');
+        if (empty($link[$mirrorKey])) {
+            $link[$mirrorKey] = linkInfoTopicsToRichTextHtml($topics, $meta['defaultTitle']);
+        }
+    } else {
+        unset($link[$meta['apiKey']]);
+    }
+}
+
+function applyLinkInfoTopicsToApi(array &$link, array $row): void {
+    applyLinkContentTopicsToApi($link, $row, 'info');
+    applyLinkContentTopicsToApi($link, $row, 'notes');
+    applyLinkContentTopicsToApi($link, $row, 'maintenance');
+}
+
+function linkContentTopicsFromInput($source, string $kind, $legacyHtml = null): array {
+    $kind = normalizeLinkContentTopicKind($kind);
+    if ($kind === null) {
+        return [];
+    }
+    $meta = linkContentTopicKindMeta($kind);
+    if (!is_array($source)) {
+        return normalizeLinkInfoTopics(null, $legacyHtml, $meta['defaultTitle'], $meta['idPrefix']);
+    }
+    $topics = $source[$meta['apiKey']] ?? $source[$meta['snakeKey']] ?? null;
+    if ($legacyHtml === null) {
+        foreach ($meta['legacyKeys'] as $key) {
+            if (array_key_exists($key, $source)) {
+                $legacyHtml = $source[$key];
+                break;
+            }
+        }
+    }
+    return normalizeLinkInfoTopics($topics, $legacyHtml, $meta['defaultTitle'], $meta['idPrefix']);
+}
+
+function linkInfoTopicsFromInput($source, $legacyHtml = null): array {
+    return linkContentTopicsFromInput($source, 'info', $legacyHtml);
+}
+
+function persistLinkContentTopics(PDO $db, string $linkId, $source, string $kind): void {
+    if ($linkId === '') {
+        return;
+    }
+    $kind = normalizeLinkContentTopicKind($kind);
+    if ($kind === null) {
+        return;
+    }
+    ensureLinkInfoTopicsSchema($db);
+    $meta = linkContentTopicKindMeta($kind);
+    $topics = linkContentTopicsFromInput($source, $kind);
+    $json = empty($topics) ? null : linkInfoTopicsCanonicalJson($topics);
+    $mirror = linkInfoTopicsToRichTextHtml($topics, $meta['defaultTitle']);
+    try {
+        if ($json !== null) {
+            $stmt = $db->prepare('UPDATE links SET ' . $meta['column'] . ' = ?, ' . $meta['mirror'] . ' = ? WHERE id = ?');
+            $stmt->execute([$json, $mirror, $linkId]);
+        } else {
+            $stmt = $db->prepare('UPDATE links SET ' . $meta['column'] . ' = NULL WHERE id = ?');
+            $stmt->execute([$linkId]);
+        }
+    } catch (PDOException $e) {
+        error_log('persistLinkContentTopics(' . $kind . '): ' . $e->getMessage());
+    }
+}
+
+function persistLinkInfoTopics(PDO $db, string $linkId, $source): void {
+    persistLinkContentTopics($db, $linkId, $source, 'info');
+    persistLinkContentTopics($db, $linkId, $source, 'notes');
+    persistLinkContentTopics($db, $linkId, $source, 'maintenance');
+}
+
+/**
+ * Before a tile rewrite, snapshot previous content topics when the incoming set differs.
+ * Call while old link rows still exist.
+ */
+function snapshotLinkInfoTopicsBeforeSave(PDO $db, array $incomingTabs, $userId): void {
+    ensureLinkInfoTopicsSchema($db);
+    $incomingById = [];
+    foreach ($incomingTabs as $tab) {
+        if (!is_array($tab)) {
+            continue;
+        }
+        foreach (($tab['sections'] ?? []) as $section) {
+            if (!is_array($section)) {
+                continue;
+            }
+            foreach (($section['links'] ?? []) as $link) {
+                if (!is_array($link) || empty($link['id'])) {
+                    continue;
+                }
+                $incomingById[(string)$link['id']] = $link;
+            }
+        }
+    }
+    if (empty($incomingById)) {
+        return;
+    }
+
+    $placeholders = implode(',', array_fill(0, count($incomingById), '?'));
+    $ids = array_keys($incomingById);
+    try {
+        $stmt = $db->prepare(
+            "SELECT id, info_topics, rich_text_content, notes_topics, notes, maintenance_topics, maintenance_message
+             FROM links WHERE id IN ($placeholders)"
+        );
+        $stmt->execute($ids);
+        $insert = $db->prepare(
+            'INSERT INTO link_info_revisions (link_id, kind, topics_json, created_at, user_id) VALUES (?, ?, ?, ?, ?)'
+        );
+        $now = time();
+        $kinds = ['info', 'notes', 'maintenance'];
+        while ($row = $stmt->fetch(PDO::FETCH_ASSOC)) {
+            $linkId = (string)$row['id'];
+            $incoming = $incomingById[$linkId] ?? [];
+            foreach ($kinds as $kind) {
+                $oldTopics = mapLinkContentTopicsFromRow($row, $kind);
+                if (empty($oldTopics)) {
+                    continue;
+                }
+                $newTopics = linkContentTopicsFromInput($incoming, $kind);
+                $oldJson = linkInfoTopicsCanonicalJson($oldTopics);
+                $newJson = linkInfoTopicsCanonicalJson($newTopics);
+                if ($oldJson === $newJson) {
+                    continue;
+                }
+                $insert->execute([$linkId, $kind, $oldJson, $now, $userId !== null ? (int)$userId : null]);
+                $keep = (int)LINK_INFO_REVISIONS_KEEP;
+                $oldIds = $db->prepare(
+                    'SELECT id FROM link_info_revisions WHERE link_id = ? AND kind = ? ORDER BY created_at DESC, id DESC LIMIT -1 OFFSET ' . $keep
+                );
+                $oldIds->execute([$linkId, $kind]);
+                $toDelete = $oldIds->fetchAll(PDO::FETCH_COLUMN);
+                if (!empty($toDelete)) {
+                    $ph = implode(',', array_fill(0, count($toDelete), '?'));
+                    $db->prepare("DELETE FROM link_info_revisions WHERE id IN ($ph)")->execute($toDelete);
+                }
+            }
+        }
+    } catch (PDOException $e) {
+        error_log('snapshotLinkInfoTopicsBeforeSave: ' . $e->getMessage());
+    }
+}
+
 /** @deprecated Use mapBrokenStatusMetaFromRow */
 function mapBrokenStatusLabelFromRow(array $row): ?string {
     return mapBrokenStatusMetaFromRow($row)['brokenStatusLabel'];
@@ -1604,7 +1985,7 @@ function linkToggleFromInput($link, string $jsKey, array $contentKeys): int {
 
 function linkFeatureToggleInsertValuesFromInput($link): array {
     return [
-        linkToggleFromInput($link, 'notesEnabled', ['notes', 'tooltip', 'notesVideoUrl']),
+        linkToggleFromInput($link, 'notesEnabled', ['notes', 'notesTopics', 'tooltip', 'notesVideoUrl']),
         linkToggleFromInput($link, 'richTextEnabled', ['richTextContent', 'infoVideoUrl']),
         infoShowOpenLinkFromInput($link),
     ];
@@ -2406,6 +2787,7 @@ function initDatabase() {
             ensureLinkMobilePreviewEmulationColumn($db);
             ensureLinkOpenInEmulationColumn($db);
             ensureLinkForceShortUrlColumn($db);
+            ensureLinkInfoTopicsSchema($db);
             ensureEmailOutboxOutageColumns($db);
             ensureMcpTokensTable($db);
             ensureCategoryVisibilityPresetsTable($db);
@@ -2468,6 +2850,7 @@ function initDatabase() {
             ensureLinkMobilePreviewEmulationColumn($db);
             ensureLinkOpenInEmulationColumn($db);
             ensureLinkForceShortUrlColumn($db);
+            ensureLinkInfoTopicsSchema($db);
             ensureEmailOutboxOutageColumns($db);
             ensureMcpTokensTable($db);
             ensureCategoryVisibilityPresetsTable($db);
@@ -3524,6 +3907,7 @@ function initDatabase() {
         ensureEmailOutboxOutageColumns($db);
 
         ensureLinkForceShortUrlColumn($db);
+        ensureLinkInfoTopicsSchema($db);
         
         // Create rich_text_content table
         $db->exec('CREATE TABLE IF NOT EXISTS rich_text_content (

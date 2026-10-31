@@ -131,7 +131,7 @@ const extractSearchLinks = (tile: Tile): Tile['searchLinks'] => {
   }
   const links: NonNullable<Tile['searchLinks']> = [];
   const seen = new Set<string>();
-  const addLinks = (sectionLinks?: { id: string; label: string; url: string; icon?: string; browser?: string; openTarget?: string; notes?: string; tooltip?: string; notesEnabled?: boolean; notesVideoUrl?: string; tooltipStyle?: 'rich' | 'classic'; richTextContent?: string; richTextEnabled?: boolean; infoVideoUrl?: string; infoShowOpenLink?: boolean; maintenanceEnabled?: boolean; maintenanceMessage?: string; maintenanceVideoUrl?: string; health?: any; brokenStatusLabel?: string | null }[]) => {
+  const addLinks = (sectionLinks?: { id: string; label: string; url: string; icon?: string; browser?: string; openTarget?: string; notes?: string; notesTopics?: Array<{ id: string; title: string; html: string }>; tooltip?: string; notesEnabled?: boolean; notesVideoUrl?: string; tooltipStyle?: 'rich' | 'classic'; richTextContent?: string; infoTopics?: Array<{ id: string; title: string; html: string }>; richTextEnabled?: boolean; infoVideoUrl?: string; infoShowOpenLink?: boolean; maintenanceEnabled?: boolean; maintenanceMessage?: string; maintenanceTopics?: Array<{ id: string; title: string; html: string }>; maintenanceVideoUrl?: string; health?: any; brokenStatusLabel?: string | null }[]) => {
     sectionLinks?.forEach((link) => {
       const key = `${(link.label || '').toLowerCase()}|${(link.url || '').toLowerCase()}`;
       if (seen.has(key)) return;
@@ -144,16 +144,19 @@ const extractSearchLinks = (tile: Tile): Tile['searchLinks'] => {
         browser: link.browser,
         openTarget: (link.openTarget as any) || undefined,
         notes: link.notes,
+        notesTopics: link.notesTopics,
         tooltip: link.tooltip,
         notesEnabled: link.notesEnabled,
         notesVideoUrl: link.notesVideoUrl,
         tooltipStyle: link.tooltipStyle,
         richTextContent: link.richTextContent,
+        infoTopics: link.infoTopics,
         richTextEnabled: link.richTextEnabled,
         infoVideoUrl: link.infoVideoUrl,
         infoShowOpenLink: link.infoShowOpenLink,
         maintenanceEnabled: link.maintenanceEnabled,
         maintenanceMessage: link.maintenanceMessage,
+        maintenanceTopics: link.maintenanceTopics,
         maintenanceVideoUrl: link.maintenanceVideoUrl,
         health: link.health,
         shortUrl: (link as { shortUrl?: string }).shortUrl,
@@ -731,6 +734,7 @@ export interface FavoriteLink {
   textColor?: string;
   visibility?: string;
   notes?: string;
+  notesTopics?: Array<{ id: string; title: string; html: string }>;
   tooltip?: string;
   notesEnabled?: boolean;
   notesVideoUrl?: string;
@@ -738,11 +742,13 @@ export interface FavoriteLink {
   browser?: string;
   openTarget?: 'same' | 'tab' | 'window' | 'browser' | 'private';
   richTextContent?: string;
+  infoTopics?: Array<{ id: string; title: string; html: string }>;
   richTextEnabled?: boolean;
   infoVideoUrl?: string;
   infoShowOpenLink?: boolean;
   maintenanceEnabled?: boolean;
   maintenanceMessage?: string;
+  maintenanceTopics?: Array<{ id: string; title: string; html: string }>;
   maintenanceVideoUrl?: string;
   brokenStatusLabel?: string | null;
   brokenStatusNote?: string | null;

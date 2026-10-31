@@ -2328,6 +2328,7 @@ export const MobileTileView: React.FC<MobileTileViewProps> = ({
           linkLabel={linkInfoDialog.link.label}
           linkIcon={linkInfoDialog.link.icon}
           richTextContent={linkInfoDialog.link.richTextContent || ''}
+          infoTopics={linkInfoDialog.link.infoTopics}
           infoVideoUrl={linkInfoDialog.link.infoVideoUrl}
           linkUrl={linkInfoDialog.link.url}
           showOpenLink={linkInfoDialog.link.infoShowOpenLink !== false}

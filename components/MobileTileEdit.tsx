@@ -6,6 +6,7 @@ import { MobileRichTextEditor } from './MobileRichTextEditor';
 import { LinkLabelField } from './LinkLabelField';
 import { LinkMaintenanceVideoField } from './LinkMaintenanceVideoField';
 import { LinkMaintenanceBadge } from './LinkMaintenanceBadge';
+import { LinkInfoTopicsEditor } from './LinkInfoTopicsEditor';
 import { TitleEmojiPicker } from './TitleEmojiPicker';
 import { HierarchyExpandControls } from './TileHierarchyViews';
 import { AccessRestrictionsEditor } from './AccessRestrictionsEditor';
@@ -17,6 +18,7 @@ import { HoverTooltipEditor } from './HoverTooltipEditor';
 import { normalizeLinkTooltipStyle, type LinkTooltipStyle } from '../utils/linkTooltipPreference';
 import { LINK_OPEN_TARGET_OPTIONS, normalizeLinkOpenTarget } from '../utils/openLinkUrl';
 import { formatUserLabel, getUserDisplayName } from '../utils/userDisplay';
+import { linkInfoTopicsToRichTextHtml, normalizeLinkContentTopics, normalizeLinkInfoTopics, type LinkInfoTopic } from '../utils/linkInfoTopics';
 
 interface MobileTileEditProps {
     tile: Tile;
@@ -119,6 +121,7 @@ export const MobileTileEdit: React.FC<MobileTileEditProps> = ({
         visibility: LinkVisibility;
         allowedUsers: number[];
         notes: string;
+        notesTopics: LinkInfoTopic[];
         tooltip: string;
         tooltipStyle: LinkTooltipStyle;
         notesEnabled: boolean;
@@ -126,11 +129,13 @@ export const MobileTileEdit: React.FC<MobileTileEditProps> = ({
         browser: string;
         openTarget: LinkOpenTarget;
         richTextContent: string;
+        infoTopics: LinkInfoTopic[];
         richTextEnabled: boolean;
         infoVideoUrl: string;
         infoShowOpenLink: boolean;
         maintenanceEnabled: boolean;
         maintenanceMessage: string;
+        maintenanceTopics: LinkInfoTopic[];
         maintenanceVideoUrl: string;
     }>>({});
     const [editingLink, setEditingLink] = useState<{ tabId: string; sectionId: string; linkId: string } | null>(null);
@@ -142,6 +147,7 @@ export const MobileTileEdit: React.FC<MobileTileEditProps> = ({
         visibility: LinkVisibility;
         allowedUsers: number[];
         notes: string;
+        notesTopics: LinkInfoTopic[];
         tooltip: string;
         tooltipStyle: LinkTooltipStyle;
         notesEnabled: boolean;
@@ -149,11 +155,13 @@ export const MobileTileEdit: React.FC<MobileTileEditProps> = ({
         browser: string;
         openTarget: LinkOpenTarget;
         richTextContent: string;
+        infoTopics: LinkInfoTopic[];
         richTextEnabled: boolean;
         infoVideoUrl: string;
         infoShowOpenLink: boolean;
         maintenanceEnabled: boolean;
         maintenanceMessage: string;
+        maintenanceTopics: LinkInfoTopic[];
         maintenanceVideoUrl: string;
     }>>({});
     const [linkSearchTerm, setLinkSearchTerm] = useState('');
@@ -247,6 +255,32 @@ export const MobileTileEdit: React.FC<MobileTileEditProps> = ({
         }));
     };
 
+    const emptyNewLinkFormState = (): NonNullable<(typeof newLinkState)[string]> => ({
+        label: '',
+        url: '',
+        icon: '',
+        textColor: '',
+        visibility: 'public',
+        allowedUsers: [],
+        notes: '',
+        notesTopics: [],
+        tooltip: '',
+        tooltipStyle: 'classic',
+        notesEnabled: false,
+        notesVideoUrl: '',
+        browser: 'default',
+        openTarget: 'tab',
+        richTextContent: '',
+        infoTopics: [],
+        richTextEnabled: false,
+        infoVideoUrl: '',
+        infoShowOpenLink: true,
+        maintenanceEnabled: false,
+        maintenanceMessage: '',
+        maintenanceTopics: [],
+        maintenanceVideoUrl: ''
+    });
+
     const handleAddLink = (tabId: string, sectionId: string) => {
         const state = newLinkState[sectionId];
         if (!state || !state.url.trim()) {
@@ -262,19 +296,28 @@ export const MobileTileEdit: React.FC<MobileTileEditProps> = ({
             textColor: state.textColor || undefined,
             visibility: state.visibility || 'public',
             allowedUsers: state.allowedUsers || [],
-            notes: hasVisibleRichText(state.notes) ? state.notes : undefined,
+            notesTopics: Array.isArray(state.notesTopics) && state.notesTopics.length > 0 ? normalizeLinkContentTopics('notes', state.notesTopics) : undefined,
+            notes: (Array.isArray(state.notesTopics) && state.notesTopics.length > 0
+              ? linkInfoTopicsToRichTextHtml(normalizeLinkContentTopics('notes', state.notesTopics), 'Notes')
+              : (hasVisibleRichText(state.notes) ? state.notes : undefined)) || undefined,
             tooltip: hasVisibleRichText(state.tooltip) ? state.tooltip : undefined,
             tooltipStyle: normalizeLinkTooltipStyle(state.tooltipStyle),
             notesEnabled: state.notesEnabled === true,
             notesVideoUrl: state.notesVideoUrl || undefined,
             browser: state.browser || 'default',
             openTarget: normalizeLinkOpenTarget(state.openTarget),
-            richTextContent: state.richTextContent || undefined,
+            infoTopics: Array.isArray(state.infoTopics) && state.infoTopics.length > 0 ? normalizeLinkInfoTopics(state.infoTopics) : undefined,
+            richTextContent: (Array.isArray(state.infoTopics) && state.infoTopics.length > 0
+              ? linkInfoTopicsToRichTextHtml(normalizeLinkInfoTopics(state.infoTopics))
+              : state.richTextContent) || undefined,
             richTextEnabled: state.richTextEnabled === true,
             infoVideoUrl: state.infoVideoUrl || undefined,
             infoShowOpenLink: state.infoShowOpenLink !== false,
             maintenanceEnabled: state.maintenanceEnabled === true,
-            maintenanceMessage: state.maintenanceMessage || undefined,
+            maintenanceTopics: Array.isArray(state.maintenanceTopics) && state.maintenanceTopics.length > 0 ? normalizeLinkContentTopics('maintenance', state.maintenanceTopics) : undefined,
+            maintenanceMessage: (Array.isArray(state.maintenanceTopics) && state.maintenanceTopics.length > 0
+              ? linkInfoTopicsToRichTextHtml(normalizeLinkContentTopics('maintenance', state.maintenanceTopics), 'Maintenance')
+              : state.maintenanceMessage) || undefined,
             maintenanceVideoUrl: state.maintenanceVideoUrl || undefined
         };
 
@@ -293,28 +336,7 @@ export const MobileTileEdit: React.FC<MobileTileEditProps> = ({
         onTabsChange(updatedTabs);
         setNewLinkState(prev => ({
             ...prev,
-            [sectionId]: {
-                label: '',
-                url: '',
-                icon: '',
-                textColor: '',
-                visibility: 'public',
-                allowedUsers: [],
-                notes: '',
-                tooltip: '',
-                tooltipStyle: 'classic',
-                notesEnabled: false,
-                notesVideoUrl: '',
-                browser: 'default',
-                openTarget: 'tab' as LinkOpenTarget,
-                richTextContent: '',
-                richTextEnabled: false,
-                infoVideoUrl: '',
-                infoShowOpenLink: true,
-                maintenanceEnabled: false,
-                maintenanceMessage: '',
-                maintenanceVideoUrl: ''
-            }
+            [sectionId]: emptyNewLinkFormState()
         }));
         setShowAddLinkForm(prev => ({ ...prev, [sectionId]: false }));
     };
@@ -335,6 +357,7 @@ export const MobileTileEdit: React.FC<MobileTileEditProps> = ({
                     visibility: link.visibility || 'public',
                     allowedUsers: link.allowedUsers || [],
                     notes: link.notes || '',
+                    notesTopics: normalizeLinkContentTopics('notes', link.notesTopics, link.notes),
                     tooltip: link.tooltip || '',
                     tooltipStyle: normalizeLinkTooltipStyle(link.tooltipStyle),
                     notesEnabled: isNotesTooltipEnabled(link),
@@ -342,11 +365,13 @@ export const MobileTileEdit: React.FC<MobileTileEditProps> = ({
                     browser: link.browser || 'default',
                     openTarget: normalizeLinkOpenTarget(link.openTarget),
                     richTextContent: link.richTextContent || '',
+                    infoTopics: normalizeLinkInfoTopics(link.infoTopics, link.richTextContent),
                     richTextEnabled: isInfoContentEnabled(link),
                     infoVideoUrl: link.infoVideoUrl || '',
                     infoShowOpenLink: isInfoOpenLinkShown(link),
                     maintenanceEnabled: link.maintenanceEnabled === true,
                     maintenanceMessage: link.maintenanceMessage || '',
+                    maintenanceTopics: normalizeLinkContentTopics('maintenance', link.maintenanceTopics, link.maintenanceMessage),
                     maintenanceVideoUrl: link.maintenanceVideoUrl || ''
                 }
             });
@@ -380,19 +405,28 @@ export const MobileTileEdit: React.FC<MobileTileEditProps> = ({
                                             textColor: state.textColor || undefined,
                                             visibility: state.visibility || 'public',
                                             allowedUsers: state.allowedUsers || [],
-                                            notes: hasVisibleRichText(state.notes) ? state.notes : undefined,
+                                            notesTopics: Array.isArray(state.notesTopics) && state.notesTopics.length > 0 ? normalizeLinkContentTopics('notes', state.notesTopics) : undefined,
+                                            notes: (Array.isArray(state.notesTopics) && state.notesTopics.length > 0
+                                              ? linkInfoTopicsToRichTextHtml(normalizeLinkContentTopics('notes', state.notesTopics), 'Notes')
+                                              : (hasVisibleRichText(state.notes) ? state.notes : undefined)) || undefined,
                                             tooltip: hasVisibleRichText(state.tooltip) ? state.tooltip : undefined,
                                             tooltipStyle: normalizeLinkTooltipStyle(state.tooltipStyle),
                                             notesEnabled: state.notesEnabled === true,
                                             notesVideoUrl: state.notesVideoUrl || undefined,
                                             browser: state.browser || 'default',
                                             openTarget: normalizeLinkOpenTarget(state.openTarget),
-                                            richTextContent: state.richTextContent || undefined,
+                                            infoTopics: Array.isArray(state.infoTopics) && state.infoTopics.length > 0 ? normalizeLinkInfoTopics(state.infoTopics) : undefined,
+                                            richTextContent: (Array.isArray(state.infoTopics) && state.infoTopics.length > 0
+                                              ? linkInfoTopicsToRichTextHtml(normalizeLinkInfoTopics(state.infoTopics))
+                                              : state.richTextContent) || undefined,
                                             richTextEnabled: state.richTextEnabled === true,
                                             infoVideoUrl: state.infoVideoUrl || undefined,
                                             infoShowOpenLink: state.infoShowOpenLink !== false,
                                             maintenanceEnabled: state.maintenanceEnabled === true,
-                                            maintenanceMessage: state.maintenanceMessage || undefined,
+                                            maintenanceTopics: Array.isArray(state.maintenanceTopics) && state.maintenanceTopics.length > 0 ? normalizeLinkContentTopics('maintenance', state.maintenanceTopics) : undefined,
+                                            maintenanceMessage: (Array.isArray(state.maintenanceTopics) && state.maintenanceTopics.length > 0
+                                              ? linkInfoTopicsToRichTextHtml(normalizeLinkContentTopics('maintenance', state.maintenanceTopics), 'Maintenance')
+                                              : state.maintenanceMessage) || undefined,
                                             maintenanceVideoUrl: state.maintenanceVideoUrl || undefined
                                         }
                                         : link
@@ -424,29 +458,6 @@ export const MobileTileEdit: React.FC<MobileTileEditProps> = ({
         });
     };
 
-    const emptyNewLinkFormState = (): NonNullable<(typeof newLinkState)[string]> => ({
-        label: '',
-        url: '',
-        icon: '',
-        textColor: '',
-        visibility: 'public',
-        allowedUsers: [],
-        notes: '',
-        tooltip: '',
-        tooltipStyle: 'classic',
-        notesEnabled: false,
-        notesVideoUrl: '',
-        browser: 'default',
-        openTarget: 'tab',
-        richTextContent: '',
-        richTextEnabled: false,
-        infoVideoUrl: '',
-        infoShowOpenLink: true,
-        maintenanceEnabled: false,
-        maintenanceMessage: '',
-        maintenanceVideoUrl: ''
-    });
-
     const applyMobileLinkState = (
         link: Link,
         state: NonNullable<(typeof editLinkState)[string]>
@@ -458,19 +469,28 @@ export const MobileTileEdit: React.FC<MobileTileEditProps> = ({
         textColor: state.textColor || undefined,
         visibility: state.visibility || 'public',
         allowedUsers: state.allowedUsers || [],
-        notes: hasVisibleRichText(state.notes) ? state.notes : undefined,
+        notesTopics: Array.isArray(state.notesTopics) && state.notesTopics.length > 0 ? normalizeLinkContentTopics('notes', state.notesTopics) : undefined,
+        notes: (Array.isArray(state.notesTopics) && state.notesTopics.length > 0
+          ? linkInfoTopicsToRichTextHtml(normalizeLinkContentTopics('notes', state.notesTopics), 'Notes')
+          : (hasVisibleRichText(state.notes) ? state.notes : undefined)) || undefined,
         tooltip: hasVisibleRichText(state.tooltip) ? state.tooltip : undefined,
         tooltipStyle: normalizeLinkTooltipStyle(state.tooltipStyle),
         notesEnabled: state.notesEnabled === true,
         notesVideoUrl: state.notesVideoUrl || undefined,
         browser: state.browser || 'default',
         openTarget: normalizeLinkOpenTarget(state.openTarget),
-        richTextContent: state.richTextContent || undefined,
+        infoTopics: Array.isArray(state.infoTopics) && state.infoTopics.length > 0 ? normalizeLinkInfoTopics(state.infoTopics) : undefined,
+        richTextContent: (Array.isArray(state.infoTopics) && state.infoTopics.length > 0
+          ? linkInfoTopicsToRichTextHtml(normalizeLinkInfoTopics(state.infoTopics))
+          : state.richTextContent) || undefined,
         richTextEnabled: state.richTextEnabled === true,
         infoVideoUrl: state.infoVideoUrl || undefined,
         infoShowOpenLink: state.infoShowOpenLink !== false,
         maintenanceEnabled: state.maintenanceEnabled === true,
-        maintenanceMessage: state.maintenanceMessage || undefined,
+        maintenanceTopics: Array.isArray(state.maintenanceTopics) && state.maintenanceTopics.length > 0 ? normalizeLinkContentTopics('maintenance', state.maintenanceTopics) : undefined,
+        maintenanceMessage: (Array.isArray(state.maintenanceTopics) && state.maintenanceTopics.length > 0
+          ? linkInfoTopicsToRichTextHtml(normalizeLinkContentTopics('maintenance', state.maintenanceTopics), 'Maintenance')
+          : state.maintenanceMessage) || undefined,
         maintenanceVideoUrl: state.maintenanceVideoUrl || undefined
     });
 
@@ -515,19 +535,28 @@ export const MobileTileEdit: React.FC<MobileTileEditProps> = ({
                 textColor: state.textColor || undefined,
                 visibility: state.visibility || 'public',
                 allowedUsers: state.allowedUsers || [],
-                notes: hasVisibleRichText(state.notes) ? state.notes : undefined,
+                notesTopics: Array.isArray(state.notesTopics) && state.notesTopics.length > 0 ? normalizeLinkContentTopics('notes', state.notesTopics) : undefined,
+                notes: (Array.isArray(state.notesTopics) && state.notesTopics.length > 0
+                  ? linkInfoTopicsToRichTextHtml(normalizeLinkContentTopics('notes', state.notesTopics), 'Notes')
+                  : (hasVisibleRichText(state.notes) ? state.notes : undefined)) || undefined,
                 tooltip: hasVisibleRichText(state.tooltip) ? state.tooltip : undefined,
                 tooltipStyle: normalizeLinkTooltipStyle(state.tooltipStyle),
                 notesEnabled: state.notesEnabled === true,
                 notesVideoUrl: state.notesVideoUrl || undefined,
                 browser: state.browser || 'default',
                 openTarget: normalizeLinkOpenTarget(state.openTarget),
-                richTextContent: state.richTextContent || undefined,
+                infoTopics: Array.isArray(state.infoTopics) && state.infoTopics.length > 0 ? normalizeLinkInfoTopics(state.infoTopics) : undefined,
+                richTextContent: (Array.isArray(state.infoTopics) && state.infoTopics.length > 0
+                  ? linkInfoTopicsToRichTextHtml(normalizeLinkInfoTopics(state.infoTopics))
+                  : state.richTextContent) || undefined,
                 richTextEnabled: state.richTextEnabled === true,
                 infoVideoUrl: state.infoVideoUrl || undefined,
                 infoShowOpenLink: state.infoShowOpenLink !== false,
                 maintenanceEnabled: state.maintenanceEnabled === true,
-                maintenanceMessage: state.maintenanceMessage || undefined,
+                maintenanceTopics: Array.isArray(state.maintenanceTopics) && state.maintenanceTopics.length > 0 ? normalizeLinkContentTopics('maintenance', state.maintenanceTopics) : undefined,
+                maintenanceMessage: (Array.isArray(state.maintenanceTopics) && state.maintenanceTopics.length > 0
+                  ? linkInfoTopicsToRichTextHtml(normalizeLinkContentTopics('maintenance', state.maintenanceTopics), 'Maintenance')
+                  : state.maintenanceMessage) || undefined,
                 maintenanceVideoUrl: state.maintenanceVideoUrl || undefined
             };
             nextTabs = nextTabs.map(t =>
@@ -625,28 +654,7 @@ export const MobileTileEdit: React.FC<MobileTileEditProps> = ({
         setNewLinkState(prev => ({
             ...prev,
             [sectionId]: {
-                ...(prev[sectionId] || {
-                    label: '',
-                    url: '',
-                    icon: '',
-                    textColor: '',
-                    visibility: 'public' as LinkVisibility,
-                    allowedUsers: [],
-                    notes: '',
-                    tooltip: '',
-                tooltipStyle: 'classic',
-                    notesEnabled: false,
-                    notesVideoUrl: '',
-                    browser: 'default',
-                    openTarget: 'tab' as LinkOpenTarget,
-                    richTextContent: '',
-                    richTextEnabled: false,
-                    infoVideoUrl: '',
-                    infoShowOpenLink: true,
-                    maintenanceEnabled: false,
-                    maintenanceMessage: '',
-                    maintenanceVideoUrl: ''
-                }),
+                ...(prev[sectionId] || emptyNewLinkFormState()),
                 [field]: value
             }
         }));
@@ -656,28 +664,7 @@ export const MobileTileEdit: React.FC<MobileTileEditProps> = ({
         setEditLinkState(prev => ({
             ...prev,
             [linkId]: {
-                ...(prev[linkId] || {
-                    label: '',
-                    url: '',
-                    icon: '',
-                    textColor: '',
-                    visibility: 'public' as LinkVisibility,
-                    allowedUsers: [],
-                    notes: '',
-                    tooltip: '',
-                tooltipStyle: 'classic',
-                    notesEnabled: false,
-                    notesVideoUrl: '',
-                    browser: 'default',
-                    openTarget: 'tab' as LinkOpenTarget,
-                    richTextContent: '',
-                    richTextEnabled: false,
-                    infoVideoUrl: '',
-                    infoShowOpenLink: true,
-                    maintenanceEnabled: false,
-                    maintenanceMessage: '',
-                    maintenanceVideoUrl: ''
-                }),
+                ...(prev[linkId] || emptyNewLinkFormState()),
                 [field]: value
             }
         }));
@@ -1397,10 +1384,23 @@ export const MobileTileEdit: React.FC<MobileTileEditProps> = ({
                                                                     <label className="block text-xs font-semibold uppercase tracking-wider text-slate-600 dark:text-slate-400 mb-1.5">
                                                                         Notes (Rich Text)
                                                                     </label>
-                                                                    <MobileRichTextEditor
-                                                                        value={newLinkState[section.id]?.notes || ''}
-                                                                        onChange={(value) => updateNewLinkState(section.id, 'notes', value)}
-                                                                        placeholder="Add notes..."
+                                                                    <LinkInfoTopicsEditor
+                                                                        kind="notes"
+                                                                        accent="amber"
+                                                                        mobile
+                                                                        topics={normalizeLinkContentTopics('notes', newLinkState[section.id]?.notesTopics, newLinkState[section.id]?.notes)}
+                                                                        onChange={(topics) => {
+                                                                            setNewLinkState((prev) => ({
+                                                                                ...prev,
+                                                                                [section.id]: {
+                                                                                    ...(prev[section.id] || emptyNewLinkFormState()),
+                                                                                    notesTopics: topics,
+                                                                                    notes: linkInfoTopicsToRichTextHtml(topics, 'Notes'),
+                                                                                    notesEnabled: true,
+                                                                                },
+                                                                            }));
+                                                                        }}
+                                                                        tileId={tile.id}
                                                                     />
                                                                 </div>
                                                                 <div>
@@ -1465,10 +1465,21 @@ export const MobileTileEdit: React.FC<MobileTileEditProps> = ({
                                                                     <p className="text-xs text-slate-500 dark:text-slate-400 mb-2">
                                                                         If provided, clicking this link will open a rich text dialog instead of navigating to the URL. Viewers can skip the dialog until the information is updated, and reopen it anytime with the View info icon.
                                                                     </p>
-                                                                    <MobileRichTextEditor
-                                                                        value={newLinkState[section.id]?.richTextContent || ''}
-                                                                        onChange={(value) => updateNewLinkState(section.id, 'richTextContent', value)}
-                                                                        placeholder="Enter rich text content..."
+                                                                    <LinkInfoTopicsEditor
+                                                                        mobile
+                                                                        topics={normalizeLinkInfoTopics(newLinkState[section.id]?.infoTopics, newLinkState[section.id]?.richTextContent)}
+                                                                        onChange={(topics) => {
+                                                                            setNewLinkState((prev) => ({
+                                                                                ...prev,
+                                                                                [section.id]: {
+                                                                                    ...(prev[section.id] || emptyNewLinkFormState()),
+                                                                                    infoTopics: topics,
+                                                                                    richTextContent: linkInfoTopicsToRichTextHtml(topics),
+                                                                                    richTextEnabled: true,
+                                                                                },
+                                                                            }));
+                                                                        }}
+                                                                        tileId={tile.id}
                                                                     />
                                                                 </div>
                                                                 <LinkMaintenanceVideoField
@@ -1502,10 +1513,23 @@ export const MobileTileEdit: React.FC<MobileTileEditProps> = ({
                                                                     <label className="block text-xs font-semibold uppercase tracking-wider text-slate-600 dark:text-slate-400 mb-1.5">
                                                                         Maintenance message
                                                                     </label>
-                                                                    <MobileRichTextEditor
-                                                                        value={newLinkState[section.id]?.maintenanceMessage || ''}
-                                                                        onChange={(value) => updateNewLinkState(section.id, 'maintenanceMessage', value)}
-                                                                        placeholder="Describe the maintenance window..."
+                                                                    <LinkInfoTopicsEditor
+                                                                        kind="maintenance"
+                                                                        accent="amber"
+                                                                        mobile
+                                                                        topics={normalizeLinkContentTopics('maintenance', newLinkState[section.id]?.maintenanceTopics, newLinkState[section.id]?.maintenanceMessage)}
+                                                                        onChange={(topics) => {
+                                                                            setNewLinkState((prev) => ({
+                                                                                ...prev,
+                                                                                [section.id]: {
+                                                                                    ...(prev[section.id] || emptyNewLinkFormState()),
+                                                                                    maintenanceTopics: topics,
+                                                                                    maintenanceMessage: linkInfoTopicsToRichTextHtml(topics, 'Maintenance'),
+                                                                                    maintenanceEnabled: true,
+                                                                                },
+                                                                            }));
+                                                                        }}
+                                                                        tileId={tile.id}
                                                                     />
                                                                 </div>
                                                                 <LinkMaintenanceVideoField
@@ -1729,10 +1753,24 @@ export const MobileTileEdit: React.FC<MobileTileEditProps> = ({
                                                                                         <label className="block text-xs font-semibold uppercase tracking-wider text-slate-600 dark:text-slate-400 mb-1.5">
                                                                                             Notes (Rich Text)
                                                                                         </label>
-                                                                                        <MobileRichTextEditor
-                                                                                            value={editLinkState[link.id]?.notes || ''}
-                                                                                            onChange={(value) => updateEditLinkState(link.id, 'notes', value)}
-                                                                                            placeholder="Add notes..."
+                                                                                        <LinkInfoTopicsEditor
+                                                                                            kind="notes"
+                                                                                            accent="amber"
+                                                                                            mobile
+                                                                                            topics={normalizeLinkContentTopics('notes', editLinkState[link.id]?.notesTopics, editLinkState[link.id]?.notes)}
+                                                                                            onChange={(topics) => {
+                                                                                                setEditLinkState((prev) => ({
+                                                                                                    ...prev,
+                                                                                                    [link.id]: {
+                                                                                                        ...prev[link.id],
+                                                                                                        notesTopics: topics,
+                                                                                                        notes: linkInfoTopicsToRichTextHtml(topics, 'Notes'),
+                                                                                                        notesEnabled: true,
+                                                                                                    },
+                                                                                                }));
+                                                                                            }}
+                                                                                            tileId={tile.id}
+                                                                                            linkId={link.id}
                                                                                         />
                                                                                     </div>
                                                                                     <div>
@@ -1797,10 +1835,22 @@ export const MobileTileEdit: React.FC<MobileTileEditProps> = ({
                                                                                         <p className="text-xs text-slate-500 dark:text-slate-400 mb-2">
                                                                                             If provided, clicking this link will open a rich text dialog instead of navigating to the URL. Viewers can skip the dialog until the information is updated, and reopen it anytime with the View info icon.
                                                                                         </p>
-                                                                                        <MobileRichTextEditor
-                                                                                            value={editLinkState[link.id]?.richTextContent || ''}
-                                                                                            onChange={(value) => updateEditLinkState(link.id, 'richTextContent', value)}
-                                                                                            placeholder="Enter rich text content..."
+                                                                                        <LinkInfoTopicsEditor
+                                                                                            mobile
+                                                                                            topics={normalizeLinkInfoTopics(editLinkState[link.id]?.infoTopics, editLinkState[link.id]?.richTextContent)}
+                                                                                            onChange={(topics) => {
+                                                                                                setEditLinkState((prev) => ({
+                                                                                                    ...prev,
+                                                                                                    [link.id]: {
+                                                                                                        ...prev[link.id],
+                                                                                                        infoTopics: topics,
+                                                                                                        richTextContent: linkInfoTopicsToRichTextHtml(topics),
+                                                                                                        richTextEnabled: true,
+                                                                                                    },
+                                                                                                }));
+                                                                                            }}
+                                                                                            tileId={tile.id}
+                                                                                            linkId={link.id}
                                                                                         />
                                                                                     </div>
                                                                                     <LinkMaintenanceVideoField
@@ -1834,10 +1884,24 @@ export const MobileTileEdit: React.FC<MobileTileEditProps> = ({
                                                                                         <label className="block text-xs font-semibold uppercase tracking-wider text-slate-600 dark:text-slate-400 mb-1.5">
                                                                                             Maintenance message
                                                                                         </label>
-                                                                                        <MobileRichTextEditor
-                                                                                            value={editLinkState[link.id]?.maintenanceMessage || ''}
-                                                                                            onChange={(value) => updateEditLinkState(link.id, 'maintenanceMessage', value)}
-                                                                                            placeholder="Describe the maintenance window..."
+                                                                                        <LinkInfoTopicsEditor
+                                                                                            kind="maintenance"
+                                                                                            accent="amber"
+                                                                                            mobile
+                                                                                            topics={normalizeLinkContentTopics('maintenance', editLinkState[link.id]?.maintenanceTopics, editLinkState[link.id]?.maintenanceMessage)}
+                                                                                            onChange={(topics) => {
+                                                                                                setEditLinkState((prev) => ({
+                                                                                                    ...prev,
+                                                                                                    [link.id]: {
+                                                                                                        ...prev[link.id],
+                                                                                                        maintenanceTopics: topics,
+                                                                                                        maintenanceMessage: linkInfoTopicsToRichTextHtml(topics, 'Maintenance'),
+                                                                                                        maintenanceEnabled: true,
+                                                                                                    },
+                                                                                                }));
+                                                                                            }}
+                                                                                            tileId={tile.id}
+                                                                                            linkId={link.id}
                                                                                         />
                                                                                     </div>
                                                                                     <LinkMaintenanceVideoField

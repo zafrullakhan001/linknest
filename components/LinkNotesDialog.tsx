@@ -5,12 +5,14 @@ import { toSpeakableText, useReadAloud } from '../hooks/useReadAloud';
 import { useEscapeToClose } from '../hooks/useEscapeToClose';
 import { ReadAloudButtons, ReadAloudSettingsRow } from './ReadAloudControls';
 import { TinyMceRichTextViewer, type TinyMceRichTextViewerHandle } from './TinyMceRichTextViewer';
+import { normalizeLinkContentTopics, visibleLinkInfoTopics, type LinkInfoTopic } from '../utils/linkInfoTopics';
 
 interface LinkNotesDialogProps {
   isOpen: boolean;
   onClose: () => void;
   linkLabel: string;
   notes: string;
+  notesTopics?: LinkInfoTopic[];
   notesVideoUrl?: string;
 }
 
@@ -162,6 +164,7 @@ export const LinkNotesDialog: React.FC<LinkNotesDialogProps> = ({
   onClose,
   linkLabel,
   notes,
+  notesTopics,
   notesVideoUrl,
 }) => {
   const dialogRef = useRef<HTMLDivElement>(null);
@@ -176,12 +179,24 @@ export const LinkNotesDialog: React.FC<LinkNotesDialogProps> = ({
   const positionRef = useRef({ x: 0, y: 0 });
   const sizeRef = useRef({ width: 0, height: 0 });
 
+  const topics = useMemo(
+    () => visibleLinkInfoTopics(normalizeLinkContentTopics('notes', notesTopics, notes)),
+    [notesTopics, notes]
+  );
+  const [selectedTopicId, setSelectedTopicId] = useState('');
+  useEffect(() => {
+    if (!isOpen) return;
+    setSelectedTopicId(topics[0]?.id || '');
+  }, [isOpen, topics]);
+  const selectedTopic = topics.find((t) => t.id === selectedTopicId) || topics[0] || null;
+  const activeRaw = selectedTopic?.html || (topics.length === 0 ? notes || '' : '');
+
   const plainLabel = useMemo(() => stripHtmlTags(linkLabel || ''), [linkLabel]);
-  const displayHtml = useMemo(() => notesToDisplayHtml(notes || ''), [notes]);
+  const displayHtml = useMemo(() => notesToDisplayHtml(activeRaw || ''), [activeRaw]);
   const hasVideo = !!notesVideoUrl?.trim();
   const speakableText = useMemo(
-    () => toSpeakableText(looksLikeHtml(notes || '') ? notes || '' : displayHtml || notes || ''),
-    [notes, displayHtml]
+    () => toSpeakableText(looksLikeHtml(activeRaw || '') ? activeRaw || '' : displayHtml || activeRaw || ''),
+    [activeRaw, displayHtml]
   );
   const readAloud = useReadAloud({
     text: speakableText,
@@ -310,8 +325,9 @@ export const LinkNotesDialog: React.FC<LinkNotesDialogProps> = ({
 
   const handleCopy = async () => {
     try {
+      const source = activeRaw || notes || '';
       await navigator.clipboard.writeText(
-        looksLikeHtml(notes || '') ? stripHtmlToPlainText(notes || '') : (notes || '')
+        looksLikeHtml(source) ? stripHtmlToPlainText(source) : source
       );
       setCopied(true);
       setTimeout(() => setCopied(false), 2000);
@@ -396,8 +412,8 @@ export const LinkNotesDialog: React.FC<LinkNotesDialogProps> = ({
           <ReadAloudSettingsRow readAloud={readAloud} idPrefix="link-notes" className="mt-2.5" />
         </div>
 
-        {/* Body — optional video + TinyMCE viewer, same engine as the editor */}
-        <div className={`flex-1 min-h-0 bg-slate-50 dark:bg-slate-900/50 ${hasVideo ? 'overflow-y-auto flex flex-col' : 'overflow-hidden'}`}>
+        {/* Body — optional video + topic list + TinyMCE viewer */}
+        <div className={`flex-1 min-h-0 bg-slate-50 dark:bg-slate-900/50 ${hasVideo ? 'overflow-y-auto flex flex-col' : 'overflow-hidden flex flex-col'}`}>
           {hasVideo && (
             <video
               src={notesVideoUrl}
@@ -406,15 +422,51 @@ export const LinkNotesDialog: React.FC<LinkNotesDialogProps> = ({
               className="w-full max-h-72 rounded-lg bg-black shrink-0 mx-auto mt-4 px-5"
             />
           )}
-          {displayHtml ? (
-            <div className={hasVideo ? 'min-h-[220px] h-[280px] shrink-0 mt-3' : 'h-full'}>
-              <TinyMceRichTextViewer ref={viewerRef} html={displayHtml} onEscape={onClose} />
+          {topics.length > 1 ? (
+            <div className="sm:hidden px-4 pt-3 shrink-0">
+              <label className="sr-only" htmlFor="link-notes-topic-select">Topic</label>
+              <select
+                id="link-notes-topic-select"
+                value={selectedTopic?.id || ''}
+                onChange={(e) => setSelectedTopicId(e.target.value)}
+                className="w-full rounded-lg border border-slate-200 dark:border-slate-600 bg-white dark:bg-slate-800 px-3 py-2 text-sm text-slate-900 dark:text-white"
+              >
+                {topics.map((t) => (
+                  <option key={t.id} value={t.id}>{t.title || 'Untitled'}</option>
+                ))}
+              </select>
             </div>
-          ) : hasVideo ? null : (
-            <div className="h-full min-h-[120px] flex flex-col items-center justify-center text-center gap-2 text-slate-400">
-              <p className="text-sm">No notes for this link yet.</p>
+          ) : null}
+          <div className={`flex-1 min-h-0 flex ${hasVideo ? 'mt-3' : ''} ${topics.length > 1 ? 'flex-col sm:flex-row' : ''}`}>
+            {topics.length > 1 ? (
+              <div className="hidden sm:flex sm:flex-col sm:w-44 shrink-0 border-r border-slate-200 dark:border-slate-700 p-2 gap-1 overflow-y-auto">
+                {topics.map((t) => (
+                  <button
+                    key={t.id}
+                    type="button"
+                    onClick={() => setSelectedTopicId(t.id)}
+                    className={`text-left text-xs px-2.5 py-2 rounded-lg font-medium truncate transition-colors ${
+                      t.id === selectedTopic?.id
+                        ? 'bg-blue-600 text-white'
+                        : 'bg-white dark:bg-slate-800 text-slate-700 dark:text-slate-200 hover:bg-slate-100 dark:hover:bg-slate-700'
+                    }`}
+                    title={t.title}
+                  >
+                    {t.title || 'Untitled'}
+                  </button>
+                ))}
+              </div>
+            ) : null}
+            <div className={`flex-1 min-w-0 min-h-0 ${hasVideo ? 'min-h-[220px] h-[280px] shrink-0' : 'h-full'}`}>
+              {displayHtml ? (
+                <TinyMceRichTextViewer ref={viewerRef} html={displayHtml} onEscape={onClose} />
+              ) : hasVideo ? null : (
+                <div className="h-full min-h-[120px] flex flex-col items-center justify-center text-center gap-2 text-slate-400">
+                  <p className="text-sm">No notes for this link yet.</p>
+                </div>
+              )}
             </div>
-          )}
+          </div>
         </div>
 
         {/* Footer */}

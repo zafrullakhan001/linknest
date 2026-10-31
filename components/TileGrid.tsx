@@ -3423,7 +3423,7 @@ export const TileGrid: React.FC<TileGridProps> = ({
   /** Space awaiting a delete decision because it is shared with other users. */
   const [sharedDeleteTile, setSharedDeleteTile] = useState<Tile | null>(null);
   const [compareTileId, setCompareTileId] = useState<string | null>(null);
-  const [favNotesDialogState, setFavNotesDialogState] = useState<{ linkId: string; notes: string; notesVideoUrl?: string; linkLabel: string } | null>(null);
+  const [favNotesDialogState, setFavNotesDialogState] = useState<{ linkId: string; notes: string; notesTopics?: Array<{ id: string; title: string; html: string }>; notesVideoUrl?: string; linkLabel: string } | null>(null);
   const [stagingTiles, setStagingTiles] = useState<Tile[]>([]);
   const tilesRef = useRef(tiles);
   const stagingTilesRef = useRef(stagingTiles);
@@ -8876,6 +8876,7 @@ You may also wrap the array in an object: { "messages": [ ... ] }.
         icon: link.icon,
         browser: link.browser,
         richTextContent: link.richTextContent,
+        infoTopics: link.infoTopics,
         notesVideoUrl: link.notesVideoUrl,
         infoVideoUrl: link.infoVideoUrl,
         maintenanceEnabled: link.maintenanceEnabled,
@@ -10111,7 +10112,7 @@ You may also wrap the array in an object: { "messages": [ ... ] }.
                 }
               }
             }}
-            onOpenNotes={(link) => setFavNotesDialogState({ linkId: link.id, notes: link.notes || '', notesVideoUrl: link.notesVideoUrl, linkLabel: link.label || '' })}
+            onOpenNotes={(link) => setFavNotesDialogState({ linkId: link.id, notes: link.notes || '', notesTopics: link.notesTopics, notesVideoUrl: link.notesVideoUrl, linkLabel: link.label || '' })}
             onOpenLinkInfo={(link) => setLinkInfoDialog({ link })}
             onOpenMaintenance={(link) => setLinkMaintenanceDialog({ link })}
           />
@@ -10744,6 +10745,7 @@ You may also wrap the array in an object: { "messages": [ ... ] }.
                                 notesVideoUrl: link.notesVideoUrl,
                                 browser: link.browser,
                                 richTextContent: link.richTextContent,
+                                infoTopics: link.infoTopics,
                                 richTextEnabled: link.richTextEnabled,
                                 infoVideoUrl: link.infoVideoUrl,
                                 infoShowOpenLink: link.infoShowOpenLink,
@@ -10854,7 +10856,7 @@ You may also wrap the array in an object: { "messages": [ ... ] }.
                 }
               }
             }}
-            onOpenNotes={(link) => setFavNotesDialogState({ linkId: link.id, notes: link.notes || '', notesVideoUrl: link.notesVideoUrl, linkLabel: link.label || '' })}
+            onOpenNotes={(link) => setFavNotesDialogState({ linkId: link.id, notes: link.notes || '', notesTopics: link.notesTopics, notesVideoUrl: link.notesVideoUrl, linkLabel: link.label || '' })}
             onOpenLinkInfo={(link) => setLinkInfoDialog({ link })}
             onOpenMaintenance={(link) => setLinkMaintenanceDialog({ link })}
           />
@@ -15479,6 +15481,7 @@ You may also wrap the array in an object: { "messages": [ ... ] }.
             linkLabel={linkInfoDialog.link.label}
             linkIcon={linkInfoDialog.link.icon}
             richTextContent={linkInfoDialog.link.richTextContent || ''}
+            infoTopics={linkInfoDialog.link.infoTopics}
             infoVideoUrl={linkInfoDialog.link.infoVideoUrl}
             linkUrl={linkInfoDialog.link.url}
             showOpenLink={linkInfoDialog.link.infoShowOpenLink !== false}
@@ -15497,6 +15500,7 @@ You may also wrap the array in an object: { "messages": [ ... ] }.
             linkLabel={linkMaintenanceDialog.link.label}
             linkIcon={linkMaintenanceDialog.link.icon}
             maintenanceMessage={linkMaintenanceDialog.link.maintenanceMessage}
+            maintenanceTopics={linkMaintenanceDialog.link.maintenanceTopics}
             maintenanceVideoUrl={linkMaintenanceDialog.link.maintenanceVideoUrl}
           />
         </Suspense>
@@ -15519,8 +15523,10 @@ You may also wrap the array in an object: { "messages": [ ... ] }.
             onClose={() => setFavNotesDialogState(null)}
             linkLabel={favNotesDialogState.linkLabel || ''}
             notes={favNotesDialogState.notes || ''}
+            notesTopics={favNotesDialogState.notesTopics}
             notesVideoUrl={favNotesDialogState.notesVideoUrl}
           />
+
         </Suspense>
       )}
 

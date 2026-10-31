@@ -506,16 +506,28 @@ function spaceSyncSectionValues(array $section, bool $withAcl): array {
 }
 
 function spaceSyncLinkValues(array $link, string $baseUrl, bool $withAcl): array {
+    $infoTopics = linkContentTopicsFromInput($link, 'info');
+    $notesTopics = linkContentTopicsFromInput($link, 'notes');
+    $maintTopics = linkContentTopicsFromInput($link, 'maintenance');
+    $infoTopicsJson = empty($infoTopics) ? null : linkInfoTopicsCanonicalJson($infoTopics);
+    $notesTopicsJson = empty($notesTopics) ? null : linkInfoTopicsCanonicalJson($notesTopics);
+    $maintTopicsJson = empty($maintTopics) ? null : linkInfoTopicsCanonicalJson($maintTopics);
+    $infoMirror = linkInfoTopicsToRichTextHtml($infoTopics, 'Information');
+    $notesMirror = linkInfoTopicsToRichTextHtml($notesTopics, 'Notes');
+    $maintMirror = linkInfoTopicsToRichTextHtml($maintTopics, 'Maintenance');
     $values = [
         'label' => (string)($link['label'] ?? ''),
         'url' => spaceSyncAbsUrl($baseUrl, $link['url'] ?? '') ?? '',
         'icon' => $link['icon'] ?? null,
-        'notes' => $link['notes'] ?? null,
+        'notes' => $notesMirror ?? ($link['notes'] ?? null),
         'tooltip' => $link['tooltip'] ?? null,
         'text_color' => $link['textColor'] ?? null,
         'position' => isset($link['position']) ? (int)$link['position'] : 0,
         'browser' => $link['browser'] ?? null,
-        'rich_text_content' => $link['richTextContent'] ?? null,
+        'rich_text_content' => $infoMirror ?? ($link['richTextContent'] ?? null),
+        'info_topics' => $infoTopicsJson,
+        'notes_topics' => $notesTopicsJson,
+        'maintenance_topics' => $maintTopicsJson,
         'animation' => $link['animation'] ?? null,
         'notes_enabled' => array_key_exists('notesEnabled', $link) ? spaceSyncBoolInt($link['notesEnabled']) : null,
         'rich_text_enabled' => array_key_exists('richTextEnabled', $link) ? spaceSyncBoolInt($link['richTextEnabled']) : null,
@@ -523,7 +535,7 @@ function spaceSyncLinkValues(array $link, string $baseUrl, bool $withAcl): array
         'notes_video_url' => spaceSyncAbsUrl($baseUrl, $link['notesVideoUrl'] ?? null),
         'info_video_url' => spaceSyncAbsUrl($baseUrl, $link['infoVideoUrl'] ?? null),
         'maintenance_enabled' => array_key_exists('maintenanceEnabled', $link) ? spaceSyncBoolInt($link['maintenanceEnabled']) : null,
-        'maintenance_message' => $link['maintenanceMessage'] ?? null,
+        'maintenance_message' => $maintMirror ?? ($link['maintenanceMessage'] ?? null),
         'maintenance_video_url' => spaceSyncAbsUrl($baseUrl, $link['maintenanceVideoUrl'] ?? null),
         'tooltip_style' => $link['tooltipStyle'] ?? null,
         'open_target' => $link['openTarget'] ?? null,

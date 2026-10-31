@@ -383,16 +383,46 @@ const normalizeImportedLink = (link: any): Link => ({
   allowedUsers: asNumberArray(link.allowedUsers),
   allowedGroups: asNumberArray(link.allowedGroups),
   notes: link.notes || undefined,
+  notesTopics: Array.isArray(link.notesTopics)
+    ? link.notesTopics
+        .filter((t: any) => t && typeof t === 'object')
+        .map((t: any) => ({
+          id: typeof t.id === 'string' ? t.id : `notestopic_${Math.random().toString(36).slice(2, 10)}`,
+          title: typeof t.title === 'string' && t.title.trim() ? t.title.trim() : 'Notes',
+          html: typeof t.html === 'string' ? t.html : '',
+          hidden: t.hidden === true,
+        }))
+    : undefined,
   tooltip: link.tooltip || undefined,
   tooltipStyle: normalizeLinkTooltipStyle(link.tooltipStyle),
   notesEnabled: link.notesEnabled === true,
   notesVideoUrl: typeof link.notesVideoUrl === 'string' ? link.notesVideoUrl : undefined,
     richTextContent: typeof link.richTextContent === 'string' ? link.richTextContent : undefined,
+    infoTopics: Array.isArray(link.infoTopics)
+      ? link.infoTopics
+          .filter((t: any) => t && typeof t === 'object')
+          .map((t: any) => ({
+            id: typeof t.id === 'string' ? t.id : `infotopic_${Math.random().toString(36).slice(2, 10)}`,
+            title: typeof t.title === 'string' && t.title.trim() ? t.title.trim() : 'Information',
+            html: typeof t.html === 'string' ? t.html : '',
+            hidden: t.hidden === true,
+          }))
+      : undefined,
     richTextEnabled: link.richTextEnabled === true,
     infoVideoUrl: typeof link.infoVideoUrl === 'string' ? link.infoVideoUrl : undefined,
     infoShowOpenLink: link.infoShowOpenLink !== false,
     maintenanceEnabled: link.maintenanceEnabled === true,
   maintenanceMessage: typeof link.maintenanceMessage === 'string' ? link.maintenanceMessage : undefined,
+  maintenanceTopics: Array.isArray(link.maintenanceTopics)
+    ? link.maintenanceTopics
+        .filter((t: any) => t && typeof t === 'object')
+        .map((t: any) => ({
+          id: typeof t.id === 'string' ? t.id : `mainttopic_${Math.random().toString(36).slice(2, 10)}`,
+          title: typeof t.title === 'string' && t.title.trim() ? t.title.trim() : 'Maintenance',
+          html: typeof t.html === 'string' ? t.html : '',
+          hidden: t.hidden === true,
+        }))
+    : undefined,
   maintenanceVideoUrl: typeof link.maintenanceVideoUrl === 'string' ? link.maintenanceVideoUrl : undefined,
   mobilePreviewEmulation: link.mobilePreviewEmulation === true || undefined,
   openInEmulation: link.openInEmulation === true || undefined,

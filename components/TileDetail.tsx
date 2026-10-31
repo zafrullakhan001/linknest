@@ -127,6 +127,8 @@ import { RecycleBinPreviewBanner } from './RecycleBinPreviewBanner';
 import { ArchivedSpaceBanner } from './ArchivedSpaceBanner';
 import { AuthSourceBadge } from './AuthSourceBadge';
 import { EditLinkForm } from './EditLinkForm';
+import { LinkInfoTopicsEditor } from './LinkInfoTopicsEditor';
+import { linkInfoTopicsToRichTextHtml, normalizeLinkContentTopics, normalizeLinkInfoTopics } from '../utils/linkInfoTopics';
 import { AddLinkMenu } from './AddLinkMenu';
 import { BulkAddLinksDialog } from './BulkAddLinksDialog';
 import { DeleteDuplicateLinksDialog } from './DeleteDuplicateLinksDialog';
@@ -670,16 +672,19 @@ const cloneLinkItem = (link: Link, opts?: { appendCopyLabel?: boolean }): Link =
     allowedUsers: link.allowedUsers ? [...link.allowedUsers] : undefined,
     allowedGroups: link.allowedGroups ? [...link.allowedGroups] : undefined,
     notes: link.notes,
+    notesTopics: link.notesTopics ? link.notesTopics.map((t) => ({ ...t })) : undefined,
     tooltip: link.tooltip,
     notesEnabled: link.notesEnabled,
     notesVideoUrl: link.notesVideoUrl,
     tooltipStyle: link.tooltipStyle,
     richTextContent: link.richTextContent,
+    infoTopics: link.infoTopics ? link.infoTopics.map((t) => ({ ...t })) : undefined,
     richTextEnabled: link.richTextEnabled,
     infoVideoUrl: link.infoVideoUrl,
     infoShowOpenLink: link.infoShowOpenLink,
     maintenanceEnabled: link.maintenanceEnabled,
     maintenanceMessage: link.maintenanceMessage,
+    maintenanceTopics: link.maintenanceTopics ? link.maintenanceTopics.map((t) => ({ ...t })) : undefined,
     maintenanceVideoUrl: link.maintenanceVideoUrl,
     mobilePreviewEmulation: link.mobilePreviewEmulation,
     openInEmulation: link.openInEmulation,
@@ -1065,7 +1070,7 @@ export const TileDetail: React.FC<TileDetailProps> = ({
     const [editSections, setEditSections] = useState<LinkSection[]>(tile.sections || []);
 
     // Temporary State for Adding Links (keyed by section ID)
-    const [newLinkState, setNewLinkState] = useState<Record<string, { label: string, url: string, icon: string, textColor: string, visibility: LinkVisibility, published: boolean, inheritShortUrls: boolean, forceShortUrl: boolean, brokenStatusLabel: string, brokenStatusNote: string, brokenStatusTone: '' | 'red' | 'amber' | 'slate', brokenStatusExpected: boolean, brokenStatusManual: boolean, brokenStatusFontColor: string, brokenStatusFontWeight: '' | 'normal' | 'bold', brokenStatusFontStyle: '' | 'normal' | 'italic', brokenStatusFontFamily: string, allowedUsers: number[], allowedGroups: number[], notes: string, tooltip: string, tooltipStyle: LinkTooltipStyle, notesEnabled: boolean, notesVideoUrl: string, browser: string, openTarget: LinkOpenTarget, richTextContent: string, richTextEnabled: boolean, infoVideoUrl: string, infoShowOpenLink: boolean, animation: string, accessRestrictions?: AccessRestrictions, maintenanceEnabled: boolean, maintenanceMessage: string, maintenanceVideoUrl: string, mobilePreviewEmulation: boolean, openInEmulation: boolean }>>({});
+    const [newLinkState, setNewLinkState] = useState<Record<string, { label: string, url: string, icon: string, textColor: string, visibility: LinkVisibility, published: boolean, inheritShortUrls: boolean, forceShortUrl: boolean, brokenStatusLabel: string, brokenStatusNote: string, brokenStatusTone: '' | 'red' | 'amber' | 'slate', brokenStatusExpected: boolean, brokenStatusManual: boolean, brokenStatusFontColor: string, brokenStatusFontWeight: '' | 'normal' | 'bold', brokenStatusFontStyle: '' | 'normal' | 'italic', brokenStatusFontFamily: string, allowedUsers: number[], allowedGroups: number[], notes: string, notesTopics: Array<{ id: string; title: string; html: string }>, tooltip: string, tooltipStyle: LinkTooltipStyle, notesEnabled: boolean, notesVideoUrl: string, browser: string, openTarget: LinkOpenTarget, richTextContent: string, infoTopics: Array<{ id: string; title: string; html: string }>, richTextEnabled: boolean, infoVideoUrl: string, infoShowOpenLink: boolean, animation: string, accessRestrictions?: AccessRestrictions, maintenanceEnabled: boolean, maintenanceMessage: string, maintenanceTopics: Array<{ id: string; title: string; html: string }>, maintenanceVideoUrl: string, mobilePreviewEmulation: boolean, openInEmulation: boolean }>>({});
 
     // Selection State for Bulk Actions
     const [selectedLinkIds, setSelectedLinkIds] = useState<string[]>([]);
@@ -1110,7 +1115,7 @@ export const TileDetail: React.FC<TileDetailProps> = ({
         | null
     >(null);
     const [convertingTabSectionToSpace, setConvertingTabSectionToSpace] = useState(false);
-    const [editLinkState, setEditLinkState] = useState<Record<string, { label: string, url: string, icon: string, textColor: string, visibility: LinkVisibility, published: boolean, inheritShortUrls: boolean, forceShortUrl: boolean, brokenStatusLabel: string, brokenStatusNote: string, brokenStatusTone: '' | 'red' | 'amber' | 'slate', brokenStatusExpected: boolean, brokenStatusManual: boolean, brokenStatusFontColor: string, brokenStatusFontWeight: '' | 'normal' | 'bold', brokenStatusFontStyle: '' | 'normal' | 'italic', brokenStatusFontFamily: string, allowedUsers: number[], allowedGroups: number[], notes: string, tooltip: string, tooltipStyle: LinkTooltipStyle, notesEnabled: boolean, notesVideoUrl: string, browser: string, openTarget: LinkOpenTarget, richTextContent: string, richTextEnabled: boolean, infoVideoUrl: string, infoShowOpenLink: boolean, animation: string, accessRestrictions?: AccessRestrictions, maintenanceEnabled: boolean, maintenanceMessage: string, maintenanceVideoUrl: string, mobilePreviewEmulation: boolean, openInEmulation: boolean }>>({});
+    const [editLinkState, setEditLinkState] = useState<Record<string, { label: string, url: string, icon: string, textColor: string, visibility: LinkVisibility, published: boolean, inheritShortUrls: boolean, forceShortUrl: boolean, brokenStatusLabel: string, brokenStatusNote: string, brokenStatusTone: '' | 'red' | 'amber' | 'slate', brokenStatusExpected: boolean, brokenStatusManual: boolean, brokenStatusFontColor: string, brokenStatusFontWeight: '' | 'normal' | 'bold', brokenStatusFontStyle: '' | 'normal' | 'italic', brokenStatusFontFamily: string, allowedUsers: number[], allowedGroups: number[], notes: string, notesTopics: Array<{ id: string; title: string; html: string }>, tooltip: string, tooltipStyle: LinkTooltipStyle, notesEnabled: boolean, notesVideoUrl: string, browser: string, openTarget: LinkOpenTarget, richTextContent: string, infoTopics: Array<{ id: string; title: string; html: string }>, richTextEnabled: boolean, infoVideoUrl: string, infoShowOpenLink: boolean, animation: string, accessRestrictions?: AccessRestrictions, maintenanceEnabled: boolean, maintenanceMessage: string, maintenanceTopics: Array<{ id: string; title: string; html: string }>, maintenanceVideoUrl: string, mobilePreviewEmulation: boolean, openInEmulation: boolean }>>({});
     /** Live URL Safety results keyed by link id (for confirm-on-save). */
     const urlSafetyByLinkRef = useRef<Record<string, UrlSafetyResult | null>>({});
 
@@ -1330,7 +1335,7 @@ export const TileDetail: React.FC<TileDetailProps> = ({
     // Link Search State (for edit mode)
     const [linkSearchTerm, setLinkSearchTerm] = useState('');
     const [hoveredLinkId, setHoveredLinkId] = useState<string | null>(null);
-    const [notesDialogState, setNotesDialogState] = useState<{ linkId: string; notes: string; notesVideoUrl?: string; linkLabel: string } | null>(null);
+    const [notesDialogState, setNotesDialogState] = useState<{ linkId: string; notes: string; notesTopics?: Array<{ id: string; title: string; html: string }>; notesVideoUrl?: string; linkLabel: string } | null>(null);
     const [linkInfoDialog, setLinkInfoDialog] = useState<{ link: Link } | null>(null);
     const [linkMaintenanceDialog, setLinkMaintenanceDialog] = useState<{ link: Link } | null>(null);
     const [qrDialogState, setQrDialogState] = useState<{ url: string; label: string } | null>(null);
@@ -2869,19 +2874,28 @@ export const TileDetail: React.FC<TileDetailProps> = ({
         published: state.published !== false,
         allowedUsers: state.allowedUsers && state.allowedUsers.length > 0 ? state.allowedUsers : undefined,
         allowedGroups: state.allowedGroups && state.allowedGroups.length > 0 ? state.allowedGroups : undefined,
-        notes: hasVisibleRichText(state.notes) ? state.notes?.trim() : undefined,
+        notesTopics: Array.isArray(state.notesTopics) && state.notesTopics.length > 0 ? normalizeLinkContentTopics('notes', state.notesTopics) : undefined,
+        notes: (Array.isArray(state.notesTopics) && state.notesTopics.length > 0
+          ? linkInfoTopicsToRichTextHtml(normalizeLinkContentTopics('notes', state.notesTopics), 'Notes')
+          : (hasVisibleRichText(state.notes) ? state.notes?.trim() : undefined)) || undefined,
         tooltip: hasVisibleRichText(state.tooltip) ? state.tooltip?.trim() : (stripHtmlTags(state.label).trim() || undefined),
         tooltipStyle: normalizeLinkTooltipStyle(state.tooltipStyle),
         notesEnabled: state.notesEnabled === true,
         notesVideoUrl: state.notesVideoUrl?.trim() || undefined,
         browser: state.browser && state.browser !== 'default' ? state.browser : undefined,
         openTarget: normalizeLinkOpenTarget(state.openTarget),
-        richTextContent: state.richTextContent?.trim() || undefined,
+        infoTopics: Array.isArray(state.infoTopics) && state.infoTopics.length > 0 ? normalizeLinkInfoTopics(state.infoTopics) : undefined,
+        richTextContent: (Array.isArray(state.infoTopics) && state.infoTopics.length > 0
+          ? linkInfoTopicsToRichTextHtml(normalizeLinkInfoTopics(state.infoTopics))
+          : state.richTextContent?.trim()) || undefined,
         richTextEnabled: state.richTextEnabled === true,
         infoVideoUrl: state.infoVideoUrl?.trim() || undefined,
         infoShowOpenLink: state.infoShowOpenLink !== false,
         maintenanceEnabled: state.maintenanceEnabled === true,
-        maintenanceMessage: state.maintenanceMessage?.trim() || undefined,
+        maintenanceTopics: Array.isArray(state.maintenanceTopics) && state.maintenanceTopics.length > 0 ? normalizeLinkContentTopics('maintenance', state.maintenanceTopics) : undefined,
+        maintenanceMessage: (Array.isArray(state.maintenanceTopics) && state.maintenanceTopics.length > 0
+          ? linkInfoTopicsToRichTextHtml(normalizeLinkContentTopics('maintenance', state.maintenanceTopics), 'Maintenance')
+          : state.maintenanceMessage?.trim()) || undefined,
         maintenanceVideoUrl: state.maintenanceVideoUrl?.trim() || undefined,
         mobilePreviewEmulation: state.mobilePreviewEmulation === true || undefined,
         openInEmulation: state.openInEmulation === true || undefined,
@@ -2910,19 +2924,28 @@ export const TileDetail: React.FC<TileDetailProps> = ({
         published: state.published !== false,
         allowedUsers: state.allowedUsers && state.allowedUsers.length > 0 ? state.allowedUsers : undefined,
         allowedGroups: state.allowedGroups && state.allowedGroups.length > 0 ? state.allowedGroups : undefined,
-        notes: hasVisibleRichText(state.notes) ? state.notes?.trim() : undefined,
+        notesTopics: Array.isArray(state.notesTopics) && state.notesTopics.length > 0 ? normalizeLinkContentTopics('notes', state.notesTopics) : undefined,
+        notes: (Array.isArray(state.notesTopics) && state.notesTopics.length > 0
+          ? linkInfoTopicsToRichTextHtml(normalizeLinkContentTopics('notes', state.notesTopics), 'Notes')
+          : (hasVisibleRichText(state.notes) ? state.notes?.trim() : undefined)) || undefined,
         tooltip: hasVisibleRichText(state.tooltip) ? state.tooltip?.trim() : (stripHtmlTags(state.label).trim() || undefined),
         tooltipStyle: normalizeLinkTooltipStyle(state.tooltipStyle),
         notesEnabled: state.notesEnabled === true,
         notesVideoUrl: state.notesVideoUrl?.trim() || undefined,
         browser: state.browser && state.browser !== 'default' ? state.browser : undefined,
         openTarget: normalizeLinkOpenTarget(state.openTarget),
-        richTextContent: state.richTextContent?.trim() || undefined,
+        infoTopics: Array.isArray(state.infoTopics) && state.infoTopics.length > 0 ? normalizeLinkInfoTopics(state.infoTopics) : undefined,
+        richTextContent: (Array.isArray(state.infoTopics) && state.infoTopics.length > 0
+          ? linkInfoTopicsToRichTextHtml(normalizeLinkInfoTopics(state.infoTopics))
+          : state.richTextContent?.trim()) || undefined,
         richTextEnabled: state.richTextEnabled === true,
         infoVideoUrl: state.infoVideoUrl?.trim() || undefined,
         infoShowOpenLink: state.infoShowOpenLink !== false,
         maintenanceEnabled: state.maintenanceEnabled === true,
-        maintenanceMessage: state.maintenanceMessage?.trim() || undefined,
+        maintenanceTopics: Array.isArray(state.maintenanceTopics) && state.maintenanceTopics.length > 0 ? normalizeLinkContentTopics('maintenance', state.maintenanceTopics) : undefined,
+        maintenanceMessage: (Array.isArray(state.maintenanceTopics) && state.maintenanceTopics.length > 0
+          ? linkInfoTopicsToRichTextHtml(normalizeLinkContentTopics('maintenance', state.maintenanceTopics), 'Maintenance')
+          : state.maintenanceMessage?.trim()) || undefined,
         maintenanceVideoUrl: state.maintenanceVideoUrl?.trim() || undefined,
         mobilePreviewEmulation: state.mobilePreviewEmulation === true || undefined,
         openInEmulation: state.openInEmulation === true || undefined,
@@ -2963,6 +2986,7 @@ export const TileDetail: React.FC<TileDetailProps> = ({
         allowedUsers: [],
         allowedGroups: [],
         notes: '',
+        notesTopics: [],
         tooltip: '',
         tooltipStyle: 'classic',
         notesEnabled: false,
@@ -2970,6 +2994,7 @@ export const TileDetail: React.FC<TileDetailProps> = ({
         browser: 'default',
         openTarget: 'tab',
         richTextContent: '',
+        infoTopics: [],
         richTextEnabled: false,
         infoVideoUrl: '',
         infoShowOpenLink: true,
@@ -2977,6 +3002,7 @@ export const TileDetail: React.FC<TileDetailProps> = ({
         accessRestrictions: undefined,
         maintenanceEnabled: false,
         maintenanceMessage: '',
+        maintenanceTopics: [],
         maintenanceVideoUrl: '',
         mobilePreviewEmulation: false,
         openInEmulation: false
@@ -4131,7 +4157,7 @@ export const TileDetail: React.FC<TileDetailProps> = ({
         setNewLinkState(prev => ({
             ...prev,
             [sectionId]: {
-                ...(prev[sectionId] || { label: '', url: '', icon: '', textColor: '', visibility: 'public' as LinkVisibility, published: true, inheritShortUrls: true, forceShortUrl: false, brokenStatusLabel: '', brokenStatusNote: '', brokenStatusTone: '' as const, brokenStatusExpected: false, brokenStatusManual: false, brokenStatusFontColor: '', brokenStatusFontWeight: '' as const, brokenStatusFontStyle: '' as const, brokenStatusFontFamily: '', allowedUsers: [], allowedGroups: [], notes: '', tooltip: '', tooltipStyle: 'classic' as LinkTooltipStyle, notesEnabled: false, notesVideoUrl: '', browser: 'default', openTarget: 'tab' as LinkOpenTarget, richTextContent: '', richTextEnabled: false, infoVideoUrl: '', infoShowOpenLink: true, animation: 'inherit', maintenanceEnabled: false, maintenanceMessage: '', maintenanceVideoUrl: '', mobilePreviewEmulation: false, openInEmulation: false }),
+                ...(prev[sectionId] || { label: '', url: '', icon: '', textColor: '', visibility: 'public' as LinkVisibility, published: true, inheritShortUrls: true, forceShortUrl: false, brokenStatusLabel: '', brokenStatusNote: '', brokenStatusTone: '' as const, brokenStatusExpected: false, brokenStatusManual: false, brokenStatusFontColor: '', brokenStatusFontWeight: '' as const, brokenStatusFontStyle: '' as const, brokenStatusFontFamily: '', allowedUsers: [], allowedGroups: [], notes: '', notesTopics: [], tooltip: '', tooltipStyle: 'classic' as LinkTooltipStyle, notesEnabled: false, notesVideoUrl: '', browser: 'default', openTarget: 'tab' as LinkOpenTarget, richTextContent: '', infoTopics: [], richTextEnabled: false, infoVideoUrl: '', infoShowOpenLink: true, animation: 'inherit', maintenanceEnabled: false, maintenanceMessage: '', maintenanceTopics: [], maintenanceVideoUrl: '', mobilePreviewEmulation: false, openInEmulation: false }),
                 [field]: value
             }
         }));
@@ -4173,17 +4199,26 @@ export const TileDetail: React.FC<TileDetailProps> = ({
             published: state.published !== false,
             allowedUsers: state.allowedUsers && state.allowedUsers.length > 0 ? state.allowedUsers : undefined,
             allowedGroups: state.allowedGroups && state.allowedGroups.length > 0 ? state.allowedGroups : undefined,
-            notes: hasVisibleRichText(state.notes) ? state.notes?.trim() : undefined,
+            notesTopics: Array.isArray(state.notesTopics) && state.notesTopics.length > 0 ? normalizeLinkContentTopics('notes', state.notesTopics) : undefined,
+            notes: (Array.isArray(state.notesTopics) && state.notesTopics.length > 0
+              ? linkInfoTopicsToRichTextHtml(normalizeLinkContentTopics('notes', state.notesTopics), 'Notes')
+              : (hasVisibleRichText(state.notes) ? state.notes?.trim() : undefined)) || undefined,
             tooltip: hasVisibleRichText(state.tooltip) ? state.tooltip?.trim() : (stripHtmlTags(state.label).trim() || undefined),
             notesEnabled: state.notesEnabled === true,
             notesVideoUrl: state.notesVideoUrl?.trim() || undefined,
             browser: state.browser && state.browser !== 'default' ? state.browser : undefined,
-            richTextContent: state.richTextContent?.trim() || undefined,
+            infoTopics: Array.isArray(state.infoTopics) && state.infoTopics.length > 0 ? normalizeLinkInfoTopics(state.infoTopics) : undefined,
+            richTextContent: (Array.isArray(state.infoTopics) && state.infoTopics.length > 0
+              ? linkInfoTopicsToRichTextHtml(normalizeLinkInfoTopics(state.infoTopics))
+              : state.richTextContent?.trim()) || undefined,
             richTextEnabled: state.richTextEnabled === true,
             infoVideoUrl: state.infoVideoUrl?.trim() || undefined,
             infoShowOpenLink: state.infoShowOpenLink !== false,
             maintenanceEnabled: state.maintenanceEnabled === true,
-            maintenanceMessage: state.maintenanceMessage?.trim() || undefined,
+            maintenanceTopics: Array.isArray(state.maintenanceTopics) && state.maintenanceTopics.length > 0 ? normalizeLinkContentTopics('maintenance', state.maintenanceTopics) : undefined,
+            maintenanceMessage: (Array.isArray(state.maintenanceTopics) && state.maintenanceTopics.length > 0
+              ? linkInfoTopicsToRichTextHtml(normalizeLinkContentTopics('maintenance', state.maintenanceTopics), 'Maintenance')
+              : state.maintenanceMessage?.trim()) || undefined,
             maintenanceVideoUrl: state.maintenanceVideoUrl?.trim() || undefined,
             mobilePreviewEmulation: state.mobilePreviewEmulation === true || undefined,
             openInEmulation: state.openInEmulation === true || undefined,
@@ -4479,6 +4514,7 @@ export const TileDetail: React.FC<TileDetailProps> = ({
                 allowedUsers: link.allowedUsers || [],
                 allowedGroups: link.allowedGroups || [],
                 notes: link.notes || '',
+                notesTopics: normalizeLinkContentTopics('notes', link.notesTopics, link.notes),
                 tooltip: link.tooltip || '',
                 tooltipStyle: normalizeLinkTooltipStyle(link.tooltipStyle),
                 notesEnabled: isNotesTooltipEnabled(link),
@@ -4486,6 +4522,7 @@ export const TileDetail: React.FC<TileDetailProps> = ({
                 browser: link.browser || 'default',
                 openTarget: normalizeLinkOpenTarget(link.openTarget),
                 richTextContent: link.richTextContent || '',
+                infoTopics: normalizeLinkInfoTopics(link.infoTopics, link.richTextContent),
                 richTextEnabled: isInfoContentEnabled(link),
                 infoVideoUrl: link.infoVideoUrl || '',
                 infoShowOpenLink: isInfoOpenLinkShown(link),
@@ -4504,6 +4541,7 @@ export const TileDetail: React.FC<TileDetailProps> = ({
                 brokenStatusFontFamily: link.brokenStatusFontFamily || '',
                 maintenanceEnabled: link.maintenanceEnabled === true,
                 maintenanceMessage: link.maintenanceMessage || '',
+                maintenanceTopics: normalizeLinkContentTopics('maintenance', link.maintenanceTopics, link.maintenanceMessage),
                 maintenanceVideoUrl: link.maintenanceVideoUrl || '',
                 mobilePreviewEmulation: link.mobilePreviewEmulation === true,
                 openInEmulation: link.openInEmulation === true
@@ -4731,6 +4769,7 @@ export const TileDetail: React.FC<TileDetailProps> = ({
             allowedUsers: linkToClone.allowedUsers ? [...linkToClone.allowedUsers] : undefined,
             allowedGroups: linkToClone.allowedGroups ? [...linkToClone.allowedGroups] : undefined,
             notes: linkToClone.notes,
+            notesTopics: linkToClone.notesTopics ? linkToClone.notesTopics.map((t) => ({ ...t })) : undefined,
             tooltip: linkToClone.tooltip,
             tooltipStyle: linkToClone.tooltipStyle,
             health: linkToClone.health,
@@ -4739,6 +4778,7 @@ export const TileDetail: React.FC<TileDetailProps> = ({
             published: linkToClone.published,
             animation: linkToClone.animation,
             richTextContent: linkToClone.richTextContent,
+            infoTopics: linkToClone.infoTopics ? linkToClone.infoTopics.map((t) => ({ ...t })) : undefined,
             notesEnabled: linkToClone.notesEnabled,
             notesVideoUrl: linkToClone.notesVideoUrl,
             richTextEnabled: linkToClone.richTextEnabled,
@@ -4746,6 +4786,7 @@ export const TileDetail: React.FC<TileDetailProps> = ({
             infoShowOpenLink: linkToClone.infoShowOpenLink,
             maintenanceEnabled: linkToClone.maintenanceEnabled,
             maintenanceMessage: linkToClone.maintenanceMessage,
+            maintenanceTopics: linkToClone.maintenanceTopics ? linkToClone.maintenanceTopics.map((t) => ({ ...t })) : undefined,
             maintenanceVideoUrl: linkToClone.maintenanceVideoUrl,
             mobilePreviewEmulation: linkToClone.mobilePreviewEmulation,
             openInEmulation: linkToClone.openInEmulation,
@@ -5626,6 +5667,7 @@ export const TileDetail: React.FC<TileDetailProps> = ({
                         allowedUsers: linkToClone.allowedUsers ? [...linkToClone.allowedUsers] : undefined,
                         allowedGroups: linkToClone.allowedGroups ? [...linkToClone.allowedGroups] : undefined,
                         notes: linkToClone.notes,
+                        notesTopics: linkToClone.notesTopics ? linkToClone.notesTopics.map((t) => ({ ...t })) : undefined,
                         tooltip: linkToClone.tooltip,
                         tooltipStyle: linkToClone.tooltipStyle,
                         health: linkToClone.health,
@@ -5634,6 +5676,7 @@ export const TileDetail: React.FC<TileDetailProps> = ({
                         published: linkToClone.published,
                         animation: linkToClone.animation,
                         richTextContent: linkToClone.richTextContent,
+                        infoTopics: linkToClone.infoTopics ? linkToClone.infoTopics.map((t) => ({ ...t })) : undefined,
                         notesEnabled: linkToClone.notesEnabled,
                         notesVideoUrl: linkToClone.notesVideoUrl,
                         richTextEnabled: linkToClone.richTextEnabled,
@@ -5641,6 +5684,7 @@ export const TileDetail: React.FC<TileDetailProps> = ({
                         infoShowOpenLink: linkToClone.infoShowOpenLink,
                         maintenanceEnabled: linkToClone.maintenanceEnabled,
                         maintenanceMessage: linkToClone.maintenanceMessage,
+                        maintenanceTopics: linkToClone.maintenanceTopics ? linkToClone.maintenanceTopics.map((t) => ({ ...t })) : undefined,
                         maintenanceVideoUrl: linkToClone.maintenanceVideoUrl,
                         mobilePreviewEmulation: linkToClone.mobilePreviewEmulation,
                         openInEmulation: linkToClone.openInEmulation,
@@ -9903,6 +9947,7 @@ export const TileDetail: React.FC<TileDetailProps> = ({
                                                                                 setNotesDialogState({
                                                                                     linkId: link.id,
                                                                                     notes: link.notes || '',
+                                                                                    notesTopics: link.notesTopics,
                                                                                     notesVideoUrl: link.notesVideoUrl,
                                                                                     linkLabel: link.label || ''
                                                                                 });
@@ -9952,16 +9997,19 @@ export const TileDetail: React.FC<TileDetailProps> = ({
                                                                                         textColor: link.textColor,
                                                                                         visibility: link.visibility,
                                                                                         notes: link.notes,
+                                                                                        notesTopics: link.notesTopics,
                                                                                         tooltip: link.tooltip,
                                                                                         notesEnabled: link.notesEnabled,
                                                                                         notesVideoUrl: link.notesVideoUrl,
                                                                                         browser: link.browser,
                                                                                         richTextContent: link.richTextContent,
+                                                                                        infoTopics: link.infoTopics,
                                                                                         richTextEnabled: link.richTextEnabled,
                                                                                         infoVideoUrl: link.infoVideoUrl,
                                                                                         infoShowOpenLink: link.infoShowOpenLink,
                                                                                         maintenanceEnabled: link.maintenanceEnabled,
                                                                                         maintenanceMessage: link.maintenanceMessage,
+                                                                                        maintenanceTopics: link.maintenanceTopics,
                                                                                         maintenanceVideoUrl: link.maintenanceVideoUrl,
                                                                                         brokenStatusLabel: link.brokenStatusLabel,
                                                                                         brokenStatusNote: link.brokenStatusNote,
@@ -10252,6 +10300,7 @@ export const TileDetail: React.FC<TileDetailProps> = ({
                     onClose={() => setNotesDialogState(null)}
                     linkLabel={notesDialogState?.linkLabel || ''}
                     notes={notesDialogState?.notes || ''}
+                    notesTopics={notesDialogState?.notesTopics}
                     notesVideoUrl={notesDialogState?.notesVideoUrl}
                 />
 
@@ -10273,6 +10322,7 @@ export const TileDetail: React.FC<TileDetailProps> = ({
                             key={`view-quick-${viewQuickEdit.mode}-${linkId}`}
                             link={link}
                             draft={draft}
+                            tileId={tile.id}
                             plain={editLinkPlain}
                             onPlainChange={(nextPlain) => {
                                 setEditLinkPlainColors((prev) => ({ ...prev, [linkId]: nextPlain }));
@@ -10356,9 +10406,20 @@ export const TileDetail: React.FC<TileDetailProps> = ({
                     onAddToNotes={(formattedNotes) => {
                         if (!notesPresetFormState?.linkId) return;
                         const linkId = notesPresetFormState.linkId;
-                        const currentNotes = editLinkState[linkId]?.notes || '';
-                        updateEditLinkState(linkId, 'notes', mergePresetNotesIntoHtml(currentNotes, formattedNotes));
-                        updateEditLinkState(linkId, 'notesEnabled', true);
+                        const draft = editLinkState[linkId];
+                        const topics = normalizeLinkContentTopics('notes', draft?.notesTopics, draft?.notes);
+                        const nextTopics = topics.length > 0
+                            ? [{ ...topics[0], html: mergePresetNotesIntoHtml(topics[0].html || '', formattedNotes) }, ...topics.slice(1)]
+                            : normalizeLinkContentTopics('notes', undefined, mergePresetNotesIntoHtml('', formattedNotes));
+                        setEditLinkState((prev) => ({
+                            ...prev,
+                            [linkId]: {
+                                ...(prev[linkId] || emptyNewLinkFormState()),
+                                notesTopics: nextTopics,
+                                notes: linkInfoTopicsToRichTextHtml(nextTopics, 'Notes'),
+                                notesEnabled: true,
+                            },
+                        }));
                     }}
                 />
 
@@ -10371,6 +10432,7 @@ export const TileDetail: React.FC<TileDetailProps> = ({
                         linkLabel={linkInfoDialog.link.label}
                         linkIcon={linkInfoDialog.link.icon}
                         richTextContent={linkInfoDialog.link.richTextContent || ''}
+                        infoTopics={linkInfoDialog.link.infoTopics}
                         infoVideoUrl={linkInfoDialog.link.infoVideoUrl}
                         linkUrl={viewerLinkUrl({ ...linkInfoDialog.link, shortUrl: shortOf('link', linkInfoDialog.link.id, linkInfoDialog.link.shortUrl) }, effectiveShowShortUrls(showShortUrls, activeViewTab, linkInfoDialog.link)) || linkInfoDialog.link.url}
                         showOpenLink={isInfoOpenLinkShown(linkInfoDialog.link)}
@@ -10387,6 +10449,7 @@ export const TileDetail: React.FC<TileDetailProps> = ({
                         linkLabel={linkMaintenanceDialog.link.label}
                         linkIcon={linkMaintenanceDialog.link.icon}
                         maintenanceMessage={linkMaintenanceDialog.link.maintenanceMessage}
+                        maintenanceTopics={linkMaintenanceDialog.link.maintenanceTopics}
                         maintenanceVideoUrl={linkMaintenanceDialog.link.maintenanceVideoUrl}
                     />
                 )}
@@ -12565,6 +12628,7 @@ export const TileDetail: React.FC<TileDetailProps> = ({
                                                                                             key={link.id}
                                                                                             link={link}
                                                                                             draft={editLinkState[link.id]}
+                                                                                            tileId={tile.id}
                                                                                             plain={editLinkPlain}
                                                                                             onPlainChange={(nextPlain) => {
                                                                                                 setEditLinkPlainColors((prev) => ({ ...prev, [link.id]: nextPlain }));
@@ -13199,11 +13263,22 @@ export const TileDetail: React.FC<TileDetailProps> = ({
                                                                             </div>
                                                                             <div>
                                                                                 <label className="block text-xs font-semibold uppercase tracking-wider text-slate-600 dark:text-slate-400 mb-1.5">Notes (Rich Text)</label>
-                                                                                <SelectableRichTextEditor
-                                                                                    value={newLinkState[section.id]?.notes || ''}
-                                                                                    onChange={(html) => updateNewLinkState(section.id, 'notes', html)}
-                                                                                    placeholder="Add notes..."
-                                                                                    className="min-h-[160px]"
+                                                                                <LinkInfoTopicsEditor
+                                                                                    kind="notes"
+                                                                                    accent="amber"
+                                                                                    topics={normalizeLinkContentTopics('notes', newLinkState[section.id]?.notesTopics, newLinkState[section.id]?.notes)}
+                                                                                    onChange={(topics) => {
+                                                                                        setNewLinkState((prev) => ({
+                                                                                            ...prev,
+                                                                                            [section.id]: {
+                                                                                                ...(prev[section.id] || emptyNewLinkFormState()),
+                                                                                                notesTopics: topics,
+                                                                                                notes: linkInfoTopicsToRichTextHtml(topics, 'Notes'),
+                                                                                                notesEnabled: true,
+                                                                                            },
+                                                                                        }));
+                                                                                    }}
+                                                                                    tileId={tile.id}
                                                                                 />
                                                                             </div>
 
@@ -13232,41 +13307,37 @@ export const TileDetail: React.FC<TileDetailProps> = ({
                                                                                 description="Record a webcam message or upload a video file (WebM, MP4, up to 50MB)."
                                                                             />
 
-                                                                            {/* Rich Text Content */}
+                                                                            {/* Rich Text Content — multi-topic */}
                                                                             <div>
                                                                                 <div className="flex items-center justify-between mb-1.5">
                                                                                     <label className="block text-xs font-semibold uppercase tracking-wider text-slate-600 dark:text-slate-400">
                                                                                         Information Content (Rich Text)
                                                                                     </label>
-                                                                                    <div className="flex items-center gap-2">
-                                                                                        <LinkEditHeaderSwitch
-                                                                                            enabled={!!newLinkState[section.id]?.richTextEnabled}
-                                                                                            onToggle={() => updateNewLinkState(section.id, 'richTextEnabled', !newLinkState[section.id]?.richTextEnabled)}
-                                                                                            onClassName="bg-violet-500"
-                                                                                            labelOn="Disable information content"
-                                                                                            labelOff="Enable information content"
-                                                                                        />
-                                                                                        <button
-                                                                                            type="button"
-                                                                                            onClick={() => {
-                                                                                                const demoContent = '<h2>Welcome to Information Content</h2><p>This is a <strong>sample rich text content</strong> that demonstrates various formatting options available in the editor.</p><h3>Key Features</h3><ul><li>Rich text formatting with <em>bold</em> and <u>underline</u></li><li>Lists and structured content</li><li>Links and embedded content</li><li>Custom styling options</li></ul><h3>Contact Information</h3><p>For more information, please contact:</p><p><strong>Support Team:</strong> support@company.com<br/><strong>Phone:</strong> +1-555-0100</p><blockquote><p>This is an important note or quote that stands out from the regular content.</p></blockquote><p>You can edit this content using the rich text editor toolbar above.</p>';
-                                                                                                updateNewLinkState(section.id, 'richTextContent', demoContent);
-                                                                                                updateNewLinkState(section.id, 'richTextEnabled', true);
-                                                                                            }}
-                                                                                            className="px-3 py-1 text-xs bg-amber-500 hover:bg-amber-600 text-white rounded-lg font-medium transition-colors"
-                                                                                        >
-                                                                                            Demo Fill
-                                                                                        </button>
-                                                                                    </div>
+                                                                                    <LinkEditHeaderSwitch
+                                                                                        enabled={!!newLinkState[section.id]?.richTextEnabled}
+                                                                                        onToggle={() => updateNewLinkState(section.id, 'richTextEnabled', !newLinkState[section.id]?.richTextEnabled)}
+                                                                                        onClassName="bg-violet-500"
+                                                                                        labelOn="Disable information content"
+                                                                                        labelOff="Enable information content"
+                                                                                    />
                                                                                 </div>
                                                                                 <p className="text-xs text-slate-500 dark:text-slate-400 mb-2">
                                                                                     If provided, clicking this link will open a rich text dialog instead of navigating to the URL. Viewers can skip the dialog until the information is updated, and reopen it anytime with the View info icon. Leave empty to open the URL normally.
                                                                                 </p>
-                                                                                <SelectableRichTextEditor
-                                                                                    value={newLinkState[section.id]?.richTextContent || ''}
-                                                                                    onChange={(html) => updateNewLinkState(section.id, 'richTextContent', html)}
-                                                                                    placeholder="Enter rich text content that will be displayed in a dialog when the link is clicked..."
-                                                                                    className="min-h-[200px]"
+                                                                                <LinkInfoTopicsEditor
+                                                                                    topics={normalizeLinkInfoTopics(newLinkState[section.id]?.infoTopics, newLinkState[section.id]?.richTextContent)}
+                                                                                    onChange={(topics) => {
+                                                                                        setNewLinkState((prev) => ({
+                                                                                            ...prev,
+                                                                                            [section.id]: {
+                                                                                                ...(prev[section.id] || emptyNewLinkFormState()),
+                                                                                                infoTopics: topics,
+                                                                                                richTextContent: linkInfoTopicsToRichTextHtml(topics),
+                                                                                                richTextEnabled: true,
+                                                                                            },
+                                                                                        }));
+                                                                                    }}
+                                                                                    tileId={tile.id}
                                                                                 />
                                                                             </div>
 
@@ -13300,11 +13371,22 @@ export const TileDetail: React.FC<TileDetailProps> = ({
                                                                             </div>
                                                                             <div>
                                                                                 <label className="block text-xs font-semibold uppercase tracking-wider text-slate-600 dark:text-slate-400 mb-1.5">Maintenance message (Rich Text)</label>
-                                                                                <SelectableRichTextEditor
-                                                                                    value={newLinkState[section.id]?.maintenanceMessage || ''}
-                                                                                    onChange={(html) => updateNewLinkState(section.id, 'maintenanceMessage', html)}
-                                                                                    placeholder="Describe the maintenance window..."
-                                                                                    className="min-h-[160px]"
+                                                                                <LinkInfoTopicsEditor
+                                                                                    kind="maintenance"
+                                                                                    accent="amber"
+                                                                                    topics={normalizeLinkContentTopics('maintenance', newLinkState[section.id]?.maintenanceTopics, newLinkState[section.id]?.maintenanceMessage)}
+                                                                                    onChange={(topics) => {
+                                                                                        setNewLinkState((prev) => ({
+                                                                                            ...prev,
+                                                                                            [section.id]: {
+                                                                                                ...(prev[section.id] || emptyNewLinkFormState()),
+                                                                                                maintenanceTopics: topics,
+                                                                                                maintenanceMessage: linkInfoTopicsToRichTextHtml(topics, 'Maintenance'),
+                                                                                                maintenanceEnabled: true,
+                                                                                            },
+                                                                                        }));
+                                                                                    }}
+                                                                                    tileId={tile.id}
                                                                                 />
                                                                             </div>
                                                                             <LinkMaintenanceVideoField
@@ -14585,9 +14667,20 @@ export const TileDetail: React.FC<TileDetailProps> = ({
                     onAddToNotes={(formattedNotes) => {
                         if (!notesPresetFormState?.linkId) return;
                         const linkId = notesPresetFormState.linkId;
-                        const currentNotes = editLinkState[linkId]?.notes || '';
-                        updateEditLinkState(linkId, 'notes', mergePresetNotesIntoHtml(currentNotes, formattedNotes));
-                        updateEditLinkState(linkId, 'notesEnabled', true);
+                        const draft = editLinkState[linkId];
+                        const topics = normalizeLinkContentTopics('notes', draft?.notesTopics, draft?.notes);
+                        const nextTopics = topics.length > 0
+                            ? [{ ...topics[0], html: mergePresetNotesIntoHtml(topics[0].html || '', formattedNotes) }, ...topics.slice(1)]
+                            : normalizeLinkContentTopics('notes', undefined, mergePresetNotesIntoHtml('', formattedNotes));
+                        setEditLinkState((prev) => ({
+                            ...prev,
+                            [linkId]: {
+                                ...(prev[linkId] || emptyNewLinkFormState()),
+                                notesTopics: nextTopics,
+                                notes: linkInfoTopicsToRichTextHtml(nextTopics, 'Notes'),
+                                notesEnabled: true,
+                            },
+                        }));
                     }}
                 />
 
