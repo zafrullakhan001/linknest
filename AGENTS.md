@@ -373,6 +373,7 @@ Default credentials:
 - `docs/MEDIA_LIBRARY.md` - Shared media library (images, PDF, audio, video; Admin + floating widget + RTE picker)
 - `docs/APP_UPDATES.md` - In-app App Updates (portable Releases for ArchLinks / ERP3)
 - `docs/RUNTIME_UPDATES.md` - Underlying software (PHP / Node.js / Apache / nginx / Caddy / SQLite): read-only version + patch panel (`Admin → Tools → System Runtime`), cross-platform host detection (Linux distro/package manager, every web server, PHP-FPM, Docker container), vendor indexes, copy-paste upgrade commands per layout, downtime table, platform simulation, procedure changelog
+- `docs/RELEASE_NOTES_4.0.0.md` - LinkNest 4.0.0 major release (schema v114: message board, TOTP, archive/recycle bin, space sync, per-link topics)
 - `docs/RELEASE_NOTES_3.0.0.md` - LinkNest 3.0.0 major release (schema v106 `schema_releases` registry, DB snapshot/rollback, apply steps)
 - `docs/PYTHON_WORKERS.md` - Monitoring + email Python workers; Windows Task Scheduler (`scripts/schedule-monitor-workers.bat`) and Docker entrypoint loop; also documents **scheduled worker speed tests** (host path vs browser path)
 - `docs/SETUP.md` - Detailed setup instructions
@@ -455,7 +456,7 @@ release in the major line) and the exact copy-paste commands for the detected la
 
 See [`docs/APP_UPDATES.md`](docs/APP_UPDATES.md). Double-click [`publish-base-release.bat`](publish-base-release.bat) to publish a portable GitHub Release from the current branch, then apply it from Admin → App Updates.
 
-Current major release: **v3.0.0** — `LINKNEST_SCHEMA_VERSION` **112** (`schema_releases` audit registry, additive/idempotent; 107 adds `tile_messages.tab_ids` + `tile_messages.show_on_card` for Message Board tab scoping, 108 adds `tile_messages.placement` for above/below-tabs banner placement, 109 adds `tile_messages.font_family`/`font_size`/`marquee_seconds` for message fonts and marquee speed, 110 adds `user_two_factor` + `user_two_factor_devices` for per-user TOTP two-factor authentication, 111 adds `tiles.archived_by`/`tiles.archived_by_username` for the Archived-space banner, 112 adds `tiles.sync_source_*` and `sync_source_id` on tabs/sections/links so an imported space can be pulled from the instance it came from — see [`docs/SPACE_SYNC.md`](docs/SPACE_SYNC.md)) with pre-release SQLite snapshots via `php api/snapshot.php`. See [`docs/RELEASE_NOTES_3.0.0.md`](docs/RELEASE_NOTES_3.0.0.md) and [`docs/TWO_FACTOR_AUTH.md`](docs/TWO_FACTOR_AUTH.md).
+Current major release: **v4.0.0** — `LINKNEST_SCHEMA_VERSION` **114** (additive/idempotent from 106: 107–109 Message Board tab scoping, placement, fonts, and marquee speed; 110 per-user TOTP; 111 archive banner actor; 112 cross-instance space sync; 113–114 per-link Information, Notes, and Maintenance topics). See [`docs/RELEASE_NOTES_4.0.0.md`](docs/RELEASE_NOTES_4.0.0.md). Previous major: [`docs/RELEASE_NOTES_3.0.0.md`](docs/RELEASE_NOTES_3.0.0.md).
 
 ## Vanilla Apache + PHP 8.5 (Windows)
 

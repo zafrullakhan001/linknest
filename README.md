@@ -2,8 +2,8 @@
 
 **The self-hosted application portal and link-governance platform for enterprises that run a lot of URLs.**
 
-![version](https://img.shields.io/badge/version-3.0.0-2563eb)
-![schema](https://img.shields.io/badge/database%20schema-109-0d9488)
+![version](https://img.shields.io/badge/version-4.0.0-2563eb)
+![schema](https://img.shields.io/badge/database%20schema-114-0d9488)
 ![PHP](https://img.shields.io/badge/PHP-8.2%2B-777bb4)
 ![React](https://img.shields.io/badge/React-19-61dafb)
 ![SQLite](https://img.shields.io/badge/SQLite-3-003b57)
@@ -522,7 +522,7 @@ linknest/
 | [docs/MULTIPLE_SMTP_SERVERS.md](docs/MULTIPLE_SMTP_SERVERS.md) | Alerting / e-mail server configuration |
 | [docs/PYTHON_WORKERS.md](docs/PYTHON_WORKERS.md) · [docs/CLONED_INSTANCE_SCHEDULING.md](docs/CLONED_INSTANCE_SCHEDULING.md) | Monitor/e-mail workers and scheduling per instance |
 | [docs/REMOTE_WIDGETS_SETUP.md](docs/REMOTE_WIDGETS_SETUP.md) · [docs/SSH_SESSION_SHARED_WORKER.md](docs/SSH_SESSION_SHARED_WORKER.md) | SSH/RDP/VNC widgets, runtime and session continuity |
-| [docs/APP_UPDATES.md](docs/APP_UPDATES.md) · [docs/RUNTIME_UPDATES.md](docs/RUNTIME_UPDATES.md) · [docs/RELEASE_NOTES_3.0.0.md](docs/RELEASE_NOTES_3.0.0.md) | In-app updates, underlying software (PHP / Node) visibility on Windows, Linux/VPS and Docker (distro, web server, PHP-FPM, container, patch commands), portable releases, current release notes |
+| [docs/APP_UPDATES.md](docs/APP_UPDATES.md) · [docs/RUNTIME_UPDATES.md](docs/RUNTIME_UPDATES.md) · [docs/RELEASE_NOTES_4.0.0.md](docs/RELEASE_NOTES_4.0.0.md) | In-app updates, underlying software (PHP / Node) visibility on Windows, Linux/VPS and Docker (distro, web server, PHP-FPM, container, patch commands), portable releases, current release notes |
 | [docs/ADMIN_LOCKOUT_RECOVERY.md](docs/ADMIN_LOCKOUT_RECOVERY.md) | Recover admin access, reset passwords, unlock allow-lists |
 | [docs/PACKAGE_FOR_DEPLOYMENT.md](docs/PACKAGE_FOR_DEPLOYMENT.md) · [docs/WINDOWS_BOOTSTRAP_BUNDLES.md](docs/WINDOWS_BOOTSTRAP_BUNDLES.md) | Windows deploy ZIPs and runtime bundles |
 | [docs/VANILLA_APACHE_PHP85_WINDOWS.md](docs/VANILLA_APACHE_PHP85_WINDOWS.md) · [docs/XAMPP_PHP_UPGRADE.md](docs/XAMPP_PHP_UPGRADE.md) | Apache/PHP host configuration and upgrades |
@@ -546,8 +546,8 @@ Every guide is also readable inside the app: **Help & About → Guides** (served
 
 ## Versioning, schema and upgrades
 
-- Current app version: **3.0.0** (`package.json`, `BUILD_INFO.json`, `LINKNEST_APP_VERSION`).
-- Current database schema: **109** (`LINKNEST_SCHEMA_VERSION` in `api/config.php`). Migrations are additive and
+- Current app version: **4.0.0** (`package.json`, `BUILD_INFO.json`, `LINKNEST_APP_VERSION`).
+- Current database schema: **114** (`LINKNEST_SCHEMA_VERSION` in `api/config.php`). Migrations are additive and
   idempotent; `PRAGMA user_version` plus the `schema_releases` registry record what was applied.
 - Upgrades never touch existing data, uploads, settings or users. A snapshot is taken automatically before
   in-app updates, and you can restore it from **Admin → App Updates → history → restore DB**.
@@ -565,32 +565,11 @@ php scripts/import_database.php data\backups    # restore the newest export/snap
 ---
 
 <div align="center">
-<<<<<<< HEAD
 
 **LinkNest** — one front door for every application URL you run.
 
 Self-hosted · SQLite · no per-user licensing · built for IT teams that manage hundreds of app URLs.
 
-[Repository](https://github.com/zafrullakhan001/linknest) · [Documentation](docs/) · [Release notes](docs/RELEASE_NOTES_3.0.0.md) · in-app **Help → Guides**
+[Repository](https://github.com/zafrullakhan001/linknest) · [Documentation](docs/) · [Release notes](docs/RELEASE_NOTES_4.0.0.md) · in-app **Help → Guides**
 
 </div>
-
-
-=======
-</div>
-
-This contains everything you need to run your app locally.
-
-View your app in AI Studio: https://ai.studio/apps/drive/1yFB-r5cIXBuRnvN_K6nr8m5WQv6_0X1O
-
-## Run Locally
-
-**Prerequisites:**  Node.js
-
-
-1. Install dependencies:
-   `npm install`
-2. Set the `GEMINI_API_KEY` in [.env.local](.env.local) to your Gemini API key
-3. Run the app:
-   `npm run dev`
->>>>>>> 77d1f26fa489885c5c0475108e1302d277c9a624

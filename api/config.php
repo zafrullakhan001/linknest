@@ -137,7 +137,7 @@ if (!defined('SYSTEM_TOKEN')) {
 }
 
 // Bump when schema/migrations in initDatabase() change. Enables fast-path getDB().
-// 114 = Per-link Notes + Maintenance topics (links.notes_topics / maintenance_topics; revisions.kind).
+// 114 = LinkNest 4.0.0 — per-link Notes + Maintenance topics (links.notes_topics / maintenance_topics; revisions.kind).
 // 113 = Per-link Information topics (links.info_topics + link_info_revisions history).
 // 112 = Cross-instance space sync (tiles.sync_source_* and sync_source_id on tabs/sections/links).
 // 111 = Archive banner actor (tiles.archived_by + tiles.archived_by_username).
@@ -153,7 +153,7 @@ if (!defined('LINKNEST_SCHEMA_VERSION')) {
 // Shipped application version, recorded in schema_releases so admins can audit
 // which release migrated this install. Bump together with package.json.
 if (!defined('LINKNEST_APP_VERSION')) {
-    define('LINKNEST_APP_VERSION', '3.0.0');
+    define('LINKNEST_APP_VERSION', '4.0.0');
 }
 
 function getSchemaPatchFlagPath(): string {

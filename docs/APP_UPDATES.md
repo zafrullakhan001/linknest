@@ -255,6 +255,6 @@ Env (optional): `GITHUB_TOKEN` / `GH_TOKEN`.
 - Packager: [`package-for-deployment.ps1`](../package-for-deployment.ps1) / [`package-for-deployment.bat`](../package-for-deployment.bat) — [PACKAGE_FOR_DEPLOYMENT.md](PACKAGE_FOR_DEPLOYMENT.md)
 - Windows new-host bundles (Apache + PHP runtime + app ZIP, GitHub tag `apache-php85-runtime`): [`publish-windows-bootstrap-bundles.bat`](../publish-windows-bootstrap-bundles.bat) — [WINDOWS_BOOTSTRAP_BUNDLES.md](WINDOWS_BOOTSTRAP_BUNDLES.md)
 - Publish script: [`publish-base-release.bat`](../publish-base-release.bat) / [`../scripts/publish-base-release.ps1`](../scripts/publish-base-release.ps1) / [`../scripts/publish-update-release.ps1`](../scripts/publish-update-release.ps1)
-- Release notes for the current major release: [`RELEASE_NOTES_3.0.0.md`](RELEASE_NOTES_3.0.0.md) — schema 106 `schema_releases` registry, live-DB snapshots, rollback
+- Release notes for the current major release: [`RELEASE_NOTES_4.0.0.md`](RELEASE_NOTES_4.0.0.md) — schema 114 (message board, two-factor authentication, archive and recycle bin, space sync, per-link topics). Previous major: [`RELEASE_NOTES_3.0.0.md`](RELEASE_NOTES_3.0.0.md)
 - SSH / VNC deploy: [`REMOTE_WIDGETS_MANUAL_DEPLOY.md`](REMOTE_WIDGETS_MANUAL_DEPLOY.md)
 - Production layout: [`PRODUCTION.md`](PRODUCTION.md)

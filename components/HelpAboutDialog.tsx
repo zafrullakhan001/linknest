@@ -24,7 +24,7 @@ export const HelpAboutDialog: React.FC<HelpAboutDialogProps> = ({
   const { settings } = useSettings();
   const appName = settings?.app_name || 'LinkNest';
   const [activeTab, setActiveTab] = useState<TabType>(initialTab);
-  const [appVersion, setAppVersion] = useState<string>('3.0.0');
+  const [appVersion, setAppVersion] = useState<string>('4.0.0');
 
   type WindowGeom = { x: number; y: number; width: number; height: number };
   const [geom, setGeom] = useState<WindowGeom>({ x: 0, y: 0, width: 1200, height: 800 });
@@ -972,7 +972,7 @@ export const HelpAboutDialog: React.FC<HelpAboutDialogProps> = ({
                       <li>
                         On the <strong>build PC</strong>, push your branch (e.g. <code className="bg-white dark:bg-slate-800 px-1 rounded text-xs">updater</code>), then:
                         <pre className="mt-1 p-2 text-[11px] font-mono bg-white dark:bg-slate-900 rounded border border-emerald-200 dark:border-emerald-800 overflow-x-auto whitespace-pre-wrap">{`$env:GITHUB_TOKEN = 'ghp_…'
-.\\scripts\\publish-update-release.ps1 -Version 3.0.0
+.\\scripts\\publish-update-release.ps1 -Version 4.0.0
 # default BasePath = relative (portable) — do NOT use /linknest`}</pre>
                       </li>
                       <li>
@@ -2121,8 +2121,23 @@ php scripts/reset_admin_password.php admin 'NewStrongPass1!'`}</pre>
               </section>
 
               <section>
-                <h3 className="text-xl font-semibold text-slate-900 dark:text-white mb-3">What&apos;s New in 3.0.0</h3>
+                <h3 className="text-xl font-semibold text-slate-900 dark:text-white mb-3">What&apos;s New in 4.0.0</h3>
                 <div className="bg-emerald-50 dark:bg-emerald-900/20 rounded-lg p-4 space-y-2 text-sm text-slate-700 dark:text-slate-300">
+                  <ul className="list-disc list-inside space-y-1 ml-2">
+                    <li><strong>Major release 4.0.0 (database schema 114):</strong> additive migrations from schema 106. Existing spaces, uploads, users, and settings stay in place. Notes: <code className="text-xs bg-slate-200 dark:bg-slate-800 px-1 rounded">docs/RELEASE_NOTES_4.0.0.md</code></li>
+                    <li><strong>Message Board:</strong> per-tab messages, show on the space card, banner above or below the tabs, font family and size, and marquee speed with a seamless loop</li>
+                    <li><strong>Two-factor authentication:</strong> optional TOTP after a Local or LDAP password, with recovery codes, 30-day trusted browsers, and an admin reset</li>
+                    <li><strong>Archive and Recycle Bin:</strong> archived-space banner (when and who) and a read-only preview of soft-deleted spaces with Restore or Delete forever</li>
+                    <li><strong>Space sync:</strong> pull an imported space from the instance it was exported from</li>
+                    <li><strong>Link topics:</strong> Information, Notes, and Maintenance topics on each link, with revision history</li>
+                    <li><strong>System Runtime:</strong> read-only PHP, Node.js, web server, and SQLite versions plus vendor patch guidance under Admin → Tools → System Runtime</li>
+                    <li><strong>Speed test:</strong> Internet, this server, or a custom server, with an allow-list for server-proxy probes</li>
+                    <li><strong>Mobile:</strong> mobile widgets and a clearer space-page action bar for signed-in users</li>
+                    <li><strong>Monitoring:</strong> recovery emails include downtime details, and updater jobs are audited</li>
+                  </ul>
+                </div>
+                <div className="mt-3 bg-slate-50 dark:bg-slate-900/50 rounded-lg p-4 space-y-2 text-sm text-slate-700 dark:text-slate-300">
+                  <p className="font-medium text-slate-900 dark:text-white">Also in 3.0.0:</p>
                   <ul className="list-disc list-inside space-y-1 ml-2">
                     <li><strong>Major release 3.0.0 (database schema 106):</strong> new <code className="text-xs bg-slate-200 dark:bg-slate-800 px-1 rounded">schema_releases</code> audit registry records which schema and app version migrated this install — admins can read it from <code className="text-xs bg-slate-200 dark:bg-slate-800 px-1 rounded">GET /api/database/info</code> → <code className="text-xs bg-slate-200 dark:bg-slate-800 px-1 rounded">stats.schema_releases</code>. Existing data, uploads, and settings are untouched; see the release notes in <code className="text-xs bg-slate-200 dark:bg-slate-800 px-1 rounded">docs/RELEASE_NOTES_3.0.0.md</code></li>
                     <li><strong>Passkeys (WebAuthn):</strong> Sign in with a device passkey, manage authenticators from the profile menu → Passkeys, with browser-session validation and lockout recovery scripts for admin access</li>

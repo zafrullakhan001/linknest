@@ -1,11 +1,11 @@
 {
-    "appVersion": "3.0.0",
-    "releaseTag": "v3.0.0",
-    "gitCommit": "eb45d7f2493ef82348726a9eea2bd732e8e5ab44",
-    "commitMessage": "feat: Implement LDAP display name synchronization and enhance user management (baseline before the 3.0.0 release commit)",
-    "trackBranch": "linknest-spacefix",
+    "appVersion": "4.0.0",
+    "releaseTag": "v4.0.0",
+    "gitCommit": "a244819ebcba27ba18d9a853cf116639eb4d8eb7",
+    "commitMessage": "feat: update TileDetail component to enhance action bar positioning for authenticated users (baseline before the 4.0.0 release commit)",
+    "trackBranch": "linknest-enhancements2",
     "updatedVia": "manual",
-    "updatedAt": "2026-09-22 10:22:57",
-    "builtAt": "2026-09-22 10:22:57",
-    "buildId": "20260922-102257"
+    "updatedAt": "2026-11-02 09:45:00",
+    "builtAt": "2026-11-02 09:45:00",
+    "buildId": "20261102-094500"
 }

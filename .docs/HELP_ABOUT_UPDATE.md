@@ -3,6 +3,16 @@
 ## Overview
 The Help & About dialog has been comprehensively updated to reflect all new features added to LinkNest.
 
+## Latest: LinkNest 4.0.0 major release (2026-11-02)
+
+- Database: `LINKNEST_SCHEMA_VERSION` **106 → 114** (message board, TOTP, archive banner, space sync, per-link topics). Additive and idempotent.
+- Release notes: [`docs/RELEASE_NOTES_4.0.0.md`](../docs/RELEASE_NOTES_4.0.0.md)
+- About tab: **What's New in 4.0.0**; the 3.0.0 list remains under **Also in 3.0.0**
+- Help fallback version string `3.0.0` → `4.0.0` (About still prefers live `BUILD_INFO.json`)
+- `LINKNEST_APP_VERSION`, `package.json`, and `BUILD_INFO.json` stamped `4.0.0`
+
+---
+
 ## Latest: Runtime (PHP / Node) visibility — read-only (2026-09-30)
 
 - New admin tab **Tools → System Runtime** (`components/RuntimeUpdatesPanel.tsx`): PHP / Node.js / npm / Apache / SQLite / git versions, vendor patches, **Security** badges, downtime reference and copy-paste commands
