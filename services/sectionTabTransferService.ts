@@ -197,6 +197,7 @@ function normalizeImportedSection(raw: unknown, index: number): LinkSection {
     ...pickSectionBackgroundDecoration(s),
     emoji: typeof s.emoji === 'string' ? s.emoji : undefined,
     forceStackedView: typeof s.forceStackedView === 'boolean' ? s.forceStackedView : undefined,
+    ignoreSideBySide: typeof s.ignoreSideBySide === 'boolean' ? s.ignoreSideBySide : undefined,
     visibility:
       s.visibility === 'authenticated' || s.visibility === 'private' || s.visibility === 'public'
         ? s.visibility

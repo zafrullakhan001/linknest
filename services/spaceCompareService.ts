@@ -73,7 +73,7 @@ const ROOT_FIELDS = [
 ] as const;
 
 const TAB_FIELDS = ['title', 'emoji', 'visibility', 'published', 'textColor'] as const;
-const SECTION_FIELDS = ['title', 'emoji', 'visibility', 'published', 'textColor', 'forceStackedView'] as const;
+const SECTION_FIELDS = ['title', 'emoji', 'visibility', 'published', 'textColor', 'forceStackedView', 'ignoreSideBySide'] as const;
 const LINK_FIELDS = [
   'label',
   'url',

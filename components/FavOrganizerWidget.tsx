@@ -560,6 +560,7 @@ export const FavOrganizerWidget: React.FC<FavOrganizerWidgetProps> = ({ onClose 
         "visibleFrom": null,
         "expiresAt": null,
         "forceStackedView": false,
+        "ignoreSideBySide": false,
         "position": 0,
         "links": [{
           "id": "link_1",
@@ -620,6 +621,7 @@ export const FavOrganizerWidget: React.FC<FavOrganizerWidgetProps> = ({ onClose 
         "visibleFrom": null,
         "expiresAt": null,
         "forceStackedView": false,
+        "ignoreSideBySide": false,
         "position": 0,
         "links": [{
           "id": "{UNIQUE_ID}",
@@ -649,6 +651,7 @@ export const FavOrganizerWidget: React.FC<FavOrganizerWidgetProps> = ({ onClose 
       "visibleFrom": null,
       "expiresAt": null,
       "forceStackedView": false,
+      "ignoreSideBySide": false,
       "position": 0,
       "links": [{
         "id": "{UNIQUE_ID}",
@@ -2117,6 +2120,7 @@ Return ONLY valid JSON object. No markdown, no code blocks, no explanations.`;
           visibleFrom: null,
           expiresAt: null,
           forceStackedView: false,
+          ignoreSideBySide: false,
           position: 0,
           links: tile.links.map((link, linkIndex) => ({
             id: generateId('link', linkIndex),
@@ -2235,6 +2239,7 @@ Return ONLY valid JSON object. No markdown, no code blocks, no explanations.`;
           visibleFrom: null,
           expiresAt: null,
           forceStackedView: false,
+          ignoreSideBySide: false,
           position: 0,
           links: tile.links.map((link, linkIndex) => ({
             id: generateId('link', linkIndex),

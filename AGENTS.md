@@ -456,7 +456,7 @@ release in the major line) and the exact copy-paste commands for the detected la
 
 See [`docs/APP_UPDATES.md`](docs/APP_UPDATES.md). Double-click [`publish-base-release.bat`](publish-base-release.bat) to publish a portable GitHub Release from the current branch, then apply it from Admin → App Updates.
 
-Current major release: **v4.0.0** — `LINKNEST_SCHEMA_VERSION` **114** (additive/idempotent from 106: 107–109 Message Board tab scoping, placement, fonts, and marquee speed; 110 per-user TOTP; 111 archive banner actor; 112 cross-instance space sync; 113–114 per-link Information, Notes, and Maintenance topics). See [`docs/RELEASE_NOTES_4.0.0.md`](docs/RELEASE_NOTES_4.0.0.md). Previous major: [`docs/RELEASE_NOTES_3.0.0.md`](docs/RELEASE_NOTES_3.0.0.md).
+Current major release: **v4.0.0** — `LINKNEST_SCHEMA_VERSION` **115** (additive/idempotent from 106: 107–109 Message Board tab scoping, placement, fonts, and marquee speed; 110 per-user TOTP; 111 archive banner actor; 112 cross-instance space sync; 113–114 per-link Information, Notes, and Maintenance topics; 115 `sections.ignore_side_by_side` for full-width sections that ignore side-by-side / grid / other views). See [`docs/RELEASE_NOTES_4.0.0.md`](docs/RELEASE_NOTES_4.0.0.md). Previous major: [`docs/RELEASE_NOTES_3.0.0.md`](docs/RELEASE_NOTES_3.0.0.md).
 
 ## Vanilla Apache + PHP 8.5 (Windows)
 
