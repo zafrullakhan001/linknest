@@ -997,6 +997,7 @@ function handleGetTiles() {
                                 'visibleFrom' => $sectionRow['visible_from'] ?? null,
                                 'expiresAt' => $sectionRow['expires_at'] ?? null,
                                 'forceStackedView' => isset($sectionRow['force_stacked_view']) && $sectionRow['force_stacked_view'] == 1 ? true : false,
+                                'ignoreSideBySide' => isset($sectionRow['ignore_side_by_side']) && $sectionRow['ignore_side_by_side'] == 1 ? true : false,
                                 'inheritShortUrls' => mapInheritShortUrlsFromRow($sectionRow),
                                 'position' => isset($sectionRow['position']) ? (int)$sectionRow['position'] : 0,
                                 'visibility' => $sectionRow['visibility'] ?? 'public',
@@ -1125,6 +1126,7 @@ function handleGetTiles() {
                         'backgroundGradientType' => backgroundDecorationFromRow($sectionRow)['backgroundGradientType'],
                         'backgroundGradientColorPositions' => backgroundDecorationFromRow($sectionRow)['backgroundGradientColorPositions'],
                         'forceStackedView' => isset($sectionRow['force_stacked_view']) && $sectionRow['force_stacked_view'] == 1 ? true : false,
+                                'ignoreSideBySide' => isset($sectionRow['ignore_side_by_side']) && $sectionRow['ignore_side_by_side'] == 1 ? true : false,
                                 'inheritShortUrls' => mapInheritShortUrlsFromRow($sectionRow),
                         'visibility' => $sectionRow['visibility'] ?? 'public',
                         'published' => isContentPublished($sectionRow),
@@ -1669,6 +1671,7 @@ function handleGetTile($tileId) {
                 'visibleFrom' => $sectionRow['visible_from'] ?? null,
                 'expiresAt' => $sectionRow['expires_at'] ?? null,
                 'forceStackedView' => isset($sectionRow['force_stacked_view']) && $sectionRow['force_stacked_view'] == 1 ? true : false,
+                                'ignoreSideBySide' => isset($sectionRow['ignore_side_by_side']) && $sectionRow['ignore_side_by_side'] == 1 ? true : false,
                                 'inheritShortUrls' => mapInheritShortUrlsFromRow($sectionRow),
                 'position' => isset($sectionRow['position']) ? (int)$sectionRow['position'] : 0,
                 'visibility' => $sectionRow['visibility'] ?? 'public',
@@ -1812,6 +1815,7 @@ function handleGetTile($tileId) {
                     'backgroundGradientType' => backgroundDecorationFromRow($sectionRow)['backgroundGradientType'],
                     'backgroundGradientColorPositions' => backgroundDecorationFromRow($sectionRow)['backgroundGradientColorPositions'],
                     'forceStackedView' => isset($sectionRow['force_stacked_view']) && $sectionRow['force_stacked_view'] == 1 ? true : false,
+                                'ignoreSideBySide' => isset($sectionRow['ignore_side_by_side']) && $sectionRow['ignore_side_by_side'] == 1 ? true : false,
                                 'inheritShortUrls' => mapInheritShortUrlsFromRow($sectionRow),
                     'visibility' => $sectionRow['visibility'] ?? 'public',
                     'allowedUsers' => (isset($sectionRow['allowed_users']) && $sectionRow['allowed_users'] ? json_decode($sectionRow['allowed_users'], true) : null) ?? [],
@@ -2222,7 +2226,7 @@ function handleCreateTile() {
                     $secAllowedUsers = isset($section['allowedUsers']) && is_array($section['allowedUsers']) ? json_encode($section['allowedUsers']) : null;
                     $secAllowedGroups = isset($section['allowedGroups']) && is_array($section['allowedGroups']) ? json_encode($section['allowedGroups']) : null;
                     $secPublished = resolvePublishedFlag($section, $user, true);
-                    $sectionStmt = $db->prepare('INSERT INTO sections (id, tile_id, tab_id, title, text_color, background_color, background_style, emoji, visible_from, expires_at, force_stacked_view, position, visibility, allowed_users, allowed_groups, published) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)');
+                    $sectionStmt = $db->prepare('INSERT INTO sections (id, tile_id, tab_id, title, text_color, background_color, background_style, emoji, visible_from, expires_at, force_stacked_view, ignore_side_by_side, position, visibility, allowed_users, allowed_groups, published) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)');
                     $sectionStmt->execute([
                         $sectionId,
                         $tileId,
@@ -2235,6 +2239,7 @@ function handleCreateTile() {
                         $section['visibleFrom'] ?? null,
                         $section['expiresAt'] ?? null,
                         isset($section['forceStackedView']) && $section['forceStackedView'] === true ? 1 : 0,
+                        isset($section['ignoreSideBySide']) && $section['ignoreSideBySide'] === true ? 1 : 0,
                         $sectionPosition,
                         $secVisibility,
                         $secAllowedUsers,
@@ -2355,7 +2360,7 @@ function handleCreateTile() {
             $secVisibility = $section['visibility'] ?? 'public';
             $secAllowedUsers = isset($section['allowedUsers']) && is_array($section['allowedUsers']) ? json_encode($section['allowedUsers']) : null;
             $secAllowedGroups = isset($section['allowedGroups']) && is_array($section['allowedGroups']) ? json_encode($section['allowedGroups']) : null;
-            $sectionStmt = $db->prepare('INSERT INTO sections (id, tile_id, tab_id, title, text_color, background_color, background_style, emoji, visible_from, expires_at, force_stacked_view, position, visibility, allowed_users, allowed_groups) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)');
+            $sectionStmt = $db->prepare('INSERT INTO sections (id, tile_id, tab_id, title, text_color, background_color, background_style, emoji, visible_from, expires_at, force_stacked_view, ignore_side_by_side, position, visibility, allowed_users, allowed_groups) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)');
             $sectionStmt->execute([
                 $sectionId,
                 $tileId,
@@ -2368,6 +2373,7 @@ function handleCreateTile() {
                 $section['visibleFrom'] ?? null,
                 $section['expiresAt'] ?? null,
                 isset($section['forceStackedView']) && $section['forceStackedView'] === true ? 1 : 0,
+                isset($section['ignoreSideBySide']) && $section['ignoreSideBySide'] === true ? 1 : 0,
                 $sectionPosition,
                 $secVisibility,
                 $secAllowedUsers,
@@ -2816,7 +2822,7 @@ function cloneTileLinksAndRichText(PDO $db, string $sourceSectionId, string $new
 function cloneTileSectionRow(PDO $db, array $section, string $newTileId, string $newTabId, int $sectionIndex): void {
     $newSectionId = uniqid('section_', true);
     $sectionPosition = isset($section['position']) ? (int)$section['position'] : $sectionIndex;
-    $sectionInsertStmt = $db->prepare('INSERT INTO sections (id, tile_id, tab_id, title, text_color, background_color, background_style, emoji, visible_from, expires_at, force_stacked_view, position, visibility, allowed_users, allowed_groups, published) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)');
+    $sectionInsertStmt = $db->prepare('INSERT INTO sections (id, tile_id, tab_id, title, text_color, background_color, background_style, emoji, visible_from, expires_at, force_stacked_view, ignore_side_by_side, position, visibility, allowed_users, allowed_groups, published) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)');
     $sectionInsertStmt->execute([
         $newSectionId,
         $newTileId,
@@ -2829,6 +2835,7 @@ function cloneTileSectionRow(PDO $db, array $section, string $newTileId, string 
         $section['visible_from'] ?? null,
         $section['expires_at'] ?? null,
         isset($section['force_stacked_view']) && $section['force_stacked_view'] == 1 ? 1 : 0,
+        isset($section['ignore_side_by_side']) && $section['ignore_side_by_side'] == 1 ? 1 : 0,
         $sectionPosition,
         cloneRowVisibility($section),
         $section['allowed_users'] ?? null,
@@ -3578,7 +3585,7 @@ function handleBulkImport() {
                     $sectionIndex = 0;
                     foreach ($tabData['sections'] as $sectionTitle => $links) {
                         $sectionId = uniqid('section_', true);
-                        $sectionStmt = $db->prepare('INSERT INTO sections (id, tile_id, tab_id, title, text_color, background_color, background_style, force_stacked_view, position) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)');
+                        $sectionStmt = $db->prepare('INSERT INTO sections (id, tile_id, tab_id, title, text_color, background_color, background_style, force_stacked_view, ignore_side_by_side, position) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)');
                         $sectionStmt->execute([
                             $sectionId,
                             $tileId,
@@ -3587,6 +3594,7 @@ function handleBulkImport() {
                             null,
                             null,
                             null,
+                            0,
                             0,
                             $sectionIndex++
                         ]);
@@ -4748,6 +4756,7 @@ function handleGetRecycleBin() {
                     'visibleFrom' => $sectionRow['visible_from'] ?? null,
                     'expiresAt' => $sectionRow['expires_at'] ?? null,
                     'forceStackedView' => isset($sectionRow['force_stacked_view']) && $sectionRow['force_stacked_view'] == 1 ? true : false,
+                                'ignoreSideBySide' => isset($sectionRow['ignore_side_by_side']) && $sectionRow['ignore_side_by_side'] == 1 ? true : false,
                                 'inheritShortUrls' => mapInheritShortUrlsFromRow($sectionRow),
                     'position' => isset($sectionRow['position']) ? (int)$sectionRow['position'] : 0,
                     'visibility' => $sectionRow['visibility'] ?? 'public',
@@ -5156,6 +5165,7 @@ function handleGetArchive() {
                         'visibleFrom' => $sectionRow['visible_from'] ?? null,
                         'expiresAt' => $sectionRow['expires_at'] ?? null,
                         'forceStackedView' => isset($sectionRow['force_stacked_view']) && $sectionRow['force_stacked_view'] == 1 ? true : false,
+                                'ignoreSideBySide' => isset($sectionRow['ignore_side_by_side']) && $sectionRow['ignore_side_by_side'] == 1 ? true : false,
                                 'inheritShortUrls' => mapInheritShortUrlsFromRow($sectionRow),
                         'position' => isset($sectionRow['position']) ? (int)$sectionRow['position'] : 0,
                         'visibility' => $sectionRow['visibility'] ?? 'public',
@@ -5745,6 +5755,7 @@ function getTileForVersion($tileId, $db) {
                 'visibleFrom' => $sectionRow['visible_from'] ?? null,
                 'expiresAt' => $sectionRow['expires_at'] ?? null,
                 'forceStackedView' => isset($sectionRow['force_stacked_view']) && $sectionRow['force_stacked_view'] == 1 ? true : false,
+                                'ignoreSideBySide' => isset($sectionRow['ignore_side_by_side']) && $sectionRow['ignore_side_by_side'] == 1 ? true : false,
                                 'inheritShortUrls' => mapInheritShortUrlsFromRow($sectionRow),
                 'position' => isset($sectionRow['position']) ? (int)$sectionRow['position'] : 0,
                 'visibility' => $sectionRow['visibility'] ?? 'public',
@@ -6653,7 +6664,7 @@ function updateTileInternal($tileId, $data, $db, $user, $isRestore = false, $isF
                         $secAllowedUsers = isset($section['allowedUsers']) && is_array($section['allowedUsers']) ? json_encode($section['allowedUsers']) : null;
                         $secAllowedGroups = isset($section['allowedGroups']) && is_array($section['allowedGroups']) ? json_encode($section['allowedGroups']) : null;
                         $secPublished = resolvePublishedFlag($section, $user, true);
-                        $sectionStmt = $db->prepare('INSERT INTO sections (id, tile_id, tab_id, title, text_color, background_color, background_style, emoji, visible_from, expires_at, force_stacked_view, position, visibility, allowed_users, allowed_groups, published) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)');
+                        $sectionStmt = $db->prepare('INSERT INTO sections (id, tile_id, tab_id, title, text_color, background_color, background_style, emoji, visible_from, expires_at, force_stacked_view, ignore_side_by_side, position, visibility, allowed_users, allowed_groups, published) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)');
                         $sectionStmt->execute([
                             $sectionId,
                             $tileId,
@@ -6666,6 +6677,7 @@ function updateTileInternal($tileId, $data, $db, $user, $isRestore = false, $isF
                             $section['visibleFrom'] ?? null,
                             $section['expiresAt'] ?? null,
                             isset($section['forceStackedView']) && $section['forceStackedView'] === true ? 1 : 0,
+                            isset($section['ignoreSideBySide']) && $section['ignoreSideBySide'] === true ? 1 : 0,
                             $sectionPosition,
                             $secVisibility,
                             $secAllowedUsers,
@@ -6740,7 +6752,7 @@ function updateTileInternal($tileId, $data, $db, $user, $isRestore = false, $isF
             foreach ($data['sections'] as $sectionIndex => $section) {
                 $sectionId = $section['id'] ?? uniqid('section_', true);
                 $sectionPosition = isset($section['position']) ? (int)$section['position'] : $sectionIndex;
-                $sectionStmt = $db->prepare('INSERT INTO sections (id, tile_id, tab_id, title, text_color, background_color, background_style, emoji, force_stacked_view, position) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)');
+                $sectionStmt = $db->prepare('INSERT INTO sections (id, tile_id, tab_id, title, text_color, background_color, background_style, emoji, force_stacked_view, ignore_side_by_side, position) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)');
                 $sectionStmt->execute([
                     $sectionId,
                     $tileId,
@@ -6751,6 +6763,7 @@ function updateTileInternal($tileId, $data, $db, $user, $isRestore = false, $isF
                     encodeBackgroundStyleJson($section),
                     contentEmojiFromInput($section),
                     isset($section['forceStackedView']) && $section['forceStackedView'] === true ? 1 : 0,
+                    isset($section['ignoreSideBySide']) && $section['ignoreSideBySide'] === true ? 1 : 0,
                     $sectionPosition
                 ]);
                 

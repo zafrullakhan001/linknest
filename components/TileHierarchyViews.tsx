@@ -329,6 +329,7 @@ export interface TileHierarchyViewsProps {
   ) => void;
   onUpdateSectionEmoji: (tabId: string, sectionId: string, emoji: string) => void;
   onToggleForceStacked: (tabId: string, sectionId: string, value: boolean) => void;
+  onToggleIgnoreSideBySide: (tabId: string, sectionId: string, value: boolean) => void;
   onImportTab: (afterTabId: string) => void;
   onImportSection: (tabId: string, sectionId: string) => void;
   onScheduleTab: (tabId: string) => void;
@@ -422,6 +423,7 @@ const TabNode: React.FC<
   onUpdateSectionBackgroundDecoration,
   onUpdateSectionEmoji,
   onToggleForceStacked,
+  onToggleIgnoreSideBySide,
   onImportTab,
   onImportSection,
   onScheduleTab,
@@ -581,6 +583,7 @@ const TabNode: React.FC<
               onUpdateSectionBackgroundDecoration={onUpdateSectionBackgroundDecoration}
               onUpdateSectionEmoji={onUpdateSectionEmoji}
               onToggleForceStacked={onToggleForceStacked}
+              onToggleIgnoreSideBySide={onToggleIgnoreSideBySide}
               onImportSection={onImportSection}
               onScheduleSection={onScheduleSection}
               onScheduleLink={onScheduleLink}
@@ -647,6 +650,7 @@ const SectionNode: React.FC<{
   ) => void;
   onUpdateSectionEmoji: (tabId: string, sectionId: string, emoji: string) => void;
   onToggleForceStacked: (tabId: string, sectionId: string, value: boolean) => void;
+  onToggleIgnoreSideBySide: (tabId: string, sectionId: string, value: boolean) => void;
   onImportSection: (tabId: string, sectionId: string) => void;
   onScheduleSection: (tabId: string, sectionId: string) => void;
   onScheduleLink: (tabId: string, sectionId: string, linkId: string) => void;
@@ -685,6 +689,7 @@ const SectionNode: React.FC<{
   onUpdateSectionBackgroundDecoration,
   onUpdateSectionEmoji,
   onToggleForceStacked,
+  onToggleIgnoreSideBySide,
   onImportSection,
   onScheduleSection,
   onScheduleLink,
@@ -739,6 +744,11 @@ const SectionNode: React.FC<{
             {section.forceStackedView && (
               <span className="text-[9px] px-1.5 py-0.5 rounded bg-slate-200 dark:bg-slate-700 text-slate-600 dark:text-slate-300">
                 Stacked
+              </span>
+            )}
+            {section.ignoreSideBySide && (
+              <span className="text-[9px] px-1.5 py-0.5 rounded bg-slate-200 dark:bg-slate-700 text-slate-600 dark:text-slate-300">
+                Full width
               </span>
             )}
           </div>
@@ -799,6 +809,11 @@ const SectionNode: React.FC<{
               id: 'stacked',
               label: section.forceStackedView ? 'Disable force stacked' : 'Force stacked view',
               onClick: () => onToggleForceStacked(tab.id, section.id, !section.forceStackedView),
+            },
+            {
+              id: 'full-width',
+              label: section.ignoreSideBySide ? 'Disable full width' : 'Full width (ignore other views)',
+              onClick: () => onToggleIgnoreSideBySide(tab.id, section.id, !section.ignoreSideBySide),
             },
             {
               id: 'clear-color',

@@ -469,6 +469,8 @@ const normalizeImportedSection = (section: any): LinkSection => {
     emoji: typeof section.emoji === 'string' ? section.emoji : undefined,
     forceStackedView:
       typeof section.forceStackedView === 'boolean' ? section.forceStackedView : undefined,
+    ignoreSideBySide:
+      typeof section.ignoreSideBySide === 'boolean' ? section.ignoreSideBySide : undefined,
     visibility: section.visibility || 'public',
     allowedUsers: asNumberArray(section.allowedUsers),
     allowedGroups: asNumberArray(section.allowedGroups),

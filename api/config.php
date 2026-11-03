@@ -137,6 +137,7 @@ if (!defined('SYSTEM_TOKEN')) {
 }
 
 // Bump when schema/migrations in initDatabase() change. Enables fast-path getDB().
+// 115 = Section full-width opt-out of side-by-side columns (sections.ignore_side_by_side).
 // 112 = Cross-instance space sync (tiles.sync_source_* and sync_source_id on tabs/sections/links).
 // 111 = Archive banner actor (tiles.archived_by + tiles.archived_by_username).
 // 110 = per-user TOTP two-factor authentication (user_two_factor + user_two_factor_devices).
@@ -145,7 +146,7 @@ if (!defined('SYSTEM_TOKEN')) {
 // 107 = Message Board tab scoping (tile_messages.tab_ids + tile_messages.show_on_card).
 // 106 = LinkNest 3.0.0 (schema_releases audit registry).
 if (!defined('LINKNEST_SCHEMA_VERSION')) {
-    define('LINKNEST_SCHEMA_VERSION', 112);
+    define('LINKNEST_SCHEMA_VERSION', 115);
 }
 
 // Shipped application version, recorded in schema_releases so admins can audit
@@ -568,6 +569,30 @@ function ensureTileArchiveActorColumns(PDO $db): void {
         $ensured = true;
     } catch (PDOException $e) {
         error_log('ensureTileArchiveActorColumns warning: ' . $e->getMessage());
+    }
+}
+
+/**
+ * Per-section full-width opt-out of the side-by-side sections grid.
+ * Additive + idempotent so it is safe on the getDB() fast path.
+ */
+function ensureSectionsIgnoreSideBySideColumn(PDO $db): void {
+    static $ensured = false;
+    if ($ensured) {
+        return;
+    }
+    try {
+        $exists = $db->query("SELECT name FROM sqlite_master WHERE type='table' AND name='sections'")->fetchColumn();
+        if (!$exists) {
+            return;
+        }
+        $names = array_column($db->query('PRAGMA table_info(sections)')->fetchAll(PDO::FETCH_ASSOC), 'name');
+        if (!in_array('ignore_side_by_side', $names, true)) {
+            $db->exec('ALTER TABLE sections ADD COLUMN ignore_side_by_side INTEGER DEFAULT 0');
+        }
+        $ensured = true;
+    } catch (PDOException $e) {
+        error_log('ensureSectionsIgnoreSideBySideColumn warning: ' . $e->getMessage());
     }
 }
 
@@ -2411,6 +2436,7 @@ function initDatabase() {
             ensureCategoryVisibilityPresetsTable($db);
             ensureTilesVideoColumns($db);
             ensureTileArchiveActorColumns($db);
+            ensureSectionsIgnoreSideBySideColumn($db);
             require_once __DIR__ . '/space_sync_lib.php';
             ensureSpaceSyncColumns($db);
             ensurePasswordResetColumns($db);
@@ -2473,6 +2499,7 @@ function initDatabase() {
             ensureCategoryVisibilityPresetsTable($db);
             ensureTilesVideoColumns($db);
             ensureTileArchiveActorColumns($db);
+            ensureSectionsIgnoreSideBySideColumn($db);
             require_once __DIR__ . '/space_sync_lib.php';
             ensureSpaceSyncColumns($db);
             ensurePasswordResetColumns($db);
@@ -2782,6 +2809,7 @@ function initDatabase() {
 
         ensureTilesVideoColumns($db);
         ensureTileArchiveActorColumns($db);
+        ensureSectionsIgnoreSideBySideColumn($db);
         require_once __DIR__ . '/space_sync_lib.php';
         ensureSpaceSyncColumns($db);
 
@@ -3298,6 +3326,23 @@ function initDatabase() {
             }
         } catch (PDOException $e) {
             error_log('Sections force_stacked_view migration warning: ' . $e->getMessage());
+        }
+
+        // Migrate existing sections table to add ignore_side_by_side column if it doesn't exist
+        try {
+            $columns = $db->query("PRAGMA table_info(sections)")->fetchAll();
+            $hasIgnoreSideBySide = false;
+            foreach ($columns as $column) {
+                if ($column['name'] === 'ignore_side_by_side') {
+                    $hasIgnoreSideBySide = true;
+                    break;
+                }
+            }
+            if (!$hasIgnoreSideBySide) {
+                $db->exec('ALTER TABLE sections ADD COLUMN ignore_side_by_side INTEGER DEFAULT 0');
+            }
+        } catch (PDOException $e) {
+            error_log('Sections ignore_side_by_side migration warning: ' . $e->getMessage());
         }
         
         // Migrate existing sections table to add position column if it doesn't exist

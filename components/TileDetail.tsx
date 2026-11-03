@@ -758,6 +758,7 @@ const cloneSectionItem = (
         visibleFrom: section.visibleFrom,
         expiresAt: section.expiresAt,
         forceStackedView: section.forceStackedView,
+        ignoreSideBySide: section.ignoreSideBySide,
         inheritShortUrls: section.inheritShortUrls,
         position: opts?.position ?? section.position ?? 0,
         links: links.map((link) => cloneLinkItem(link)),
@@ -1853,8 +1854,14 @@ export const TileDetail: React.FC<TileDetailProps> = ({
         }
     }, [tile.id, sectionLinkLayouts]);
 
-    const getSectionLinkLayout = (section: { id: string; forceStackedView?: boolean }): ViewLayoutMode => {
-        if (section.forceStackedView) return 'stacked';
+    const getSectionLinkLayout = (section: {
+        id: string;
+        forceStackedView?: boolean;
+        ignoreSideBySide?: boolean;
+    }): ViewLayoutMode => {
+        // Full width and Force Stacked both keep links in a vertical stacked list
+        // (ignore top/per-section grid, columns, compact, and QR).
+        if (section.forceStackedView || section.ignoreSideBySide) return 'stacked';
         const layout = syncSectionViews ? viewLayout : (sectionLinkLayouts[section.id] || viewLayout);
         if (layout === 'qr' && !isLinkActionAllowed('qr')) {
             return 'side-by-side';
@@ -3651,6 +3658,18 @@ export const TileDetail: React.FC<TileDetailProps> = ({
                 ...t,
                 sections: t.sections.map(s =>
                     s.id === sectionId ? { ...s, forceStackedView: value } : s
+                )
+            };
+        }));
+    };
+
+    const handleToggleIgnoreSideBySide = (tabId: string, sectionId: string, value: boolean) => {
+        setEditTabs(editTabs.map(t => {
+            if (t.id !== tabId) return t;
+            return {
+                ...t,
+                sections: t.sections.map(s =>
+                    s.id === sectionId ? { ...s, ignoreSideBySide: value } : s
                 )
             };
         }));
@@ -8800,8 +8819,9 @@ export const TileDetail: React.FC<TileDetailProps> = ({
                                 data-qr-print-all=""
                             >
                                 {filteredSections.map((section, sectionIndex) => {
-                                    // Per-section link layout: saved preference > forceStackedView > global view
-                                    const shouldForceStacked = section.forceStackedView === true;
+                                    // Per-section link layout: saved preference > forceStackedView / ignoreSideBySide > global view
+                                    const shouldForceStacked =
+                                        section.forceStackedView === true || section.ignoreSideBySide === true;
                                     const sectionLinkLayout = getSectionLinkLayout(section);
                                     const isQrLayout = sectionLinkLayout === 'qr';
                                     const sectionEntranceClass = isQrLayout
@@ -8851,6 +8871,8 @@ export const TileDetail: React.FC<TileDetailProps> = ({
                                                     : sectionLinkLayout === 'compact'
                                                         ? 'p-4'
                                                         : 'p-6'
+                                            }${
+                                                section.ignoreSideBySide ? ' col-span-full w-full' : ''
                                             }`}
                                             entranceClassName={sectionEntranceClass}
                                             style={{
@@ -11786,6 +11808,7 @@ export const TileDetail: React.FC<TileDetailProps> = ({
                                                 onUpdateSectionBackgroundDecoration={handleUpdateSectionBackgroundDecoration}
                                                 onUpdateSectionEmoji={handleUpdateSectionEmoji}
                                                 onToggleForceStacked={handleToggleForceStacked}
+                                                onToggleIgnoreSideBySide={handleToggleIgnoreSideBySide}
                                                 onImportTab={openTabJsonImport}
                                                 onImportSection={openSectionLinksImport}
                                                 onScheduleTab={(tabId) => setSchedulingDialogTab(tabId)}
@@ -12388,6 +12411,21 @@ export const TileDetail: React.FC<TileDetailProps> = ({
                                                                                 className="w-4 h-4 text-brand-600 bg-slate-100 border-slate-300 rounded focus:ring-brand-500 dark:focus:ring-brand-600 dark:ring-offset-slate-800 focus:ring-2 dark:bg-slate-700 dark:border-slate-600"
                                                                             />
                                                                             <span className="text-xs text-slate-600 dark:text-slate-400">Force Stacked</span>
+                                                                        </label>
+                                                                    </div>
+                                                                    {/* Full width — ignore side-by-side section columns */}
+                                                                    <div className="flex items-center gap-1">
+                                                                        <label
+                                                                            className="flex items-center gap-1.5 cursor-pointer p-1.5 rounded hover:bg-slate-100 dark:hover:bg-slate-700 transition-colors"
+                                                                            title="Keep this section full width and stacked — ignores side-by-side columns and top/per-section grid, columns, compact, and QR views (helps rich-text tables)"
+                                                                        >
+                                                                            <input
+                                                                                type="checkbox"
+                                                                                checked={section.ignoreSideBySide || false}
+                                                                                onChange={(e) => handleToggleIgnoreSideBySide(tab.id, section.id, e.target.checked)}
+                                                                                className="w-4 h-4 text-brand-600 bg-slate-100 border-slate-300 rounded focus:ring-brand-500 dark:focus:ring-brand-600 dark:ring-offset-slate-800 focus:ring-2 dark:bg-slate-700 dark:border-slate-600"
+                                                                            />
+                                                                            <span className="text-xs text-slate-600 dark:text-slate-400 whitespace-nowrap">Full width</span>
                                                                         </label>
                                                                     </div>
                                                                     <button
