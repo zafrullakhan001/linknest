@@ -2638,6 +2638,12 @@ export const RichTextEditor: React.FC<RichTextEditorProps> = ({
                     background-color: #f1f5f9; 
                     font-weight: 600;
                 }
+                /* Let TinyMCE row background colors show through the default th fill. */
+                .rich-text-editor table tr[style*="background-color"] > th,
+                .rich-text-editor table tr[style*="background:"] > th,
+                .rich-text-editor table tr[bgcolor] > th {
+                    background-color: transparent;
+                }
                 .rich-text-editor blockquote { 
                     border-left: 4px solid #4f46e5; 
                     padding-left: 1em; 
