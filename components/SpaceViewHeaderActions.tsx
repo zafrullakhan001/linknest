@@ -176,6 +176,8 @@ export const SpaceViewHeaderActions: React.FC<SpaceViewHeaderActionsProps> = ({
   const canDelete = !recycleBinMode && tile.canDelete === true;
   const canFavorite = !recycleBinMode;
   const canCheckLinks = !recycleBinMode;
+  /** Guests lose Export when the space turns public export off. Editors and admins keep it. */
+  const canExport = tile.allowPublicExport !== false || canEdit || !!user?.is_admin;
   /**
    * Deleting a space that other users can still open needs an explicit decision about their
    * access. `shareCount` covers share invitations (pending + accepted); `allowedUsers` also
@@ -426,9 +428,11 @@ export const SpaceViewHeaderActions: React.FC<SpaceViewHeaderActionsProps> = ({
               {HeaderIcons.compare}
             </SpaceHeaderIconButton>
           )}
-          <SpaceHeaderIconButton title="Export this space as JSON" label="Export" onClick={() => void exportTileToFileAsync(tile)}>
-            {HeaderIcons.export}
-          </SpaceHeaderIconButton>
+          {canExport && (
+            <SpaceHeaderIconButton title="Export this space as JSON" label="Export" onClick={() => void exportTileToFileAsync(tile)}>
+              {HeaderIcons.export}
+            </SpaceHeaderIconButton>
+          )}
           {canEdit && (
             <SpaceHeaderIconButton
               title={linkedToSource ? `Source ${tile.syncSource?.baseUrl}` : 'Link this space to another instance'}
@@ -603,14 +607,16 @@ export const SpaceViewHeaderActions: React.FC<SpaceViewHeaderActionsProps> = ({
                           }}
                         />
                       )}
-                      <SpaceHeaderDrawerButton
-                        label="Export"
-                        icon={HeaderIcons.export}
-                        onClick={() => {
-                          closeMenu();
-                          void exportTileToFileAsync(tile);
-                        }}
-                      />
+                      {canExport && (
+                        <SpaceHeaderDrawerButton
+                          label="Export"
+                          icon={HeaderIcons.export}
+                          onClick={() => {
+                            closeMenu();
+                            void exportTileToFileAsync(tile);
+                          }}
+                        />
+                      )}
                       {canEdit && (
                         <SpaceHeaderDrawerButton
                           label="Source link"

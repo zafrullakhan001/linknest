@@ -90,6 +90,10 @@ if ($path === '/') {
 } elseif (strpos($path, '/auth') === 0) {
     $_SERVER['PATH_INFO'] = substr($path, 5); // Remove '/auth'
     require __DIR__ . '/auth.php';
+} elseif (strpos($path, '/user-transfer') === 0) {
+    $remainingPath = substr($path, 14); // Remove '/user-transfer'
+    $_SERVER['PATH_INFO'] = (empty($remainingPath) || $remainingPath === '/') ? '/' : (($remainingPath[0] === '/') ? $remainingPath : '/' . $remainingPath);
+    require __DIR__ . '/user_transfer.php';
 } elseif (strpos($path, '/user-audit') === 0) {
     $_SERVER['PATH_INFO'] = substr($path, 11);
     require __DIR__ . '/user_audit.php';

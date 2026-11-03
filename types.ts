@@ -432,6 +432,11 @@ export interface Tile {
   showDescription?: boolean | null;
   /** When true, viewers see/copy/QR the recyclable short URL instead of the original destination. */
   showShortUrls?: boolean | null;
+  /**
+   * When false, guests and other non-editors do not see Export.
+   * Editors and admins can always export. Omitted/true = allowed.
+   */
+  allowPublicExport?: boolean | null;
   /** Recyclable LinkNest short URL for this space. */
   shortUrl?: string;
   /**

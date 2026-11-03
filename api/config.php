@@ -664,6 +664,63 @@ function ensureFingerprintRegistryTable(PDO $db): void {
  * Recyclable short URLs: tiles.show_short_urls + short_urls table.
  * Safe to call on the getDB() fast path when user_version already matches SCHEMA_VERSION.
  */
+/**
+ * tiles.allow_public_export: 1 (default) lets any viewer use Export.
+ * 0 hides Export from guests and other non-editors. Editors and admins still can.
+ * Safe on the getDB() fast path when user_version already matches SCHEMA_VERSION.
+ */
+function ensureAllowPublicExportColumn(PDO $db): void {
+    static $ensured = false;
+    if ($ensured) {
+        return;
+    }
+    try {
+        $exists = $db->query("SELECT name FROM sqlite_master WHERE type='table' AND name='tiles'")->fetchColumn();
+        if ($exists) {
+            $columns = $db->query('PRAGMA table_info(tiles)')->fetchAll(PDO::FETCH_ASSOC);
+            $names = array_column($columns, 'name');
+            if (!in_array('allow_public_export', $names, true)) {
+                $db->exec('ALTER TABLE tiles ADD COLUMN allow_public_export INTEGER DEFAULT 1');
+            }
+        }
+        $ensured = true;
+    } catch (PDOException $e) {
+        error_log('ensureAllowPublicExportColumn warning: ' . $e->getMessage());
+    }
+}
+
+/** Missing column or null means export stays allowed (existing spaces). */
+function mapAllowPublicExportFromRow(array $row): bool {
+    if (!array_key_exists('allow_public_export', $row) && !array_key_exists('allowPublicExport', $row)) {
+        return true;
+    }
+    $raw = array_key_exists('allow_public_export', $row) ? $row['allow_public_export'] : $row['allowPublicExport'];
+    return !($raw === 0 || $raw === '0' || $raw === false || $raw === 'false');
+}
+
+function persistAllowPublicExport(PDO $db, string $tileId, $data, ?array $fallbackRow = null): void {
+    if ($tileId === '') {
+        return;
+    }
+    ensureAllowPublicExportColumn($db);
+    $value = null;
+    if (is_array($data) && (array_key_exists('allowPublicExport', $data) || array_key_exists('allow_public_export', $data))) {
+        $raw = array_key_exists('allowPublicExport', $data) ? $data['allowPublicExport'] : $data['allow_public_export'];
+        $value = ($raw === false || $raw === 0 || $raw === '0' || $raw === 'false') ? 0 : 1;
+    } elseif (is_array($fallbackRow)) {
+        $value = mapAllowPublicExportFromRow($fallbackRow) ? 1 : 0;
+    }
+    if ($value === null) {
+        return;
+    }
+    try {
+        $stmt = $db->prepare('UPDATE tiles SET allow_public_export = ? WHERE id = ?');
+        $stmt->execute([$value, $tileId]);
+    } catch (PDOException $e) {
+        error_log('persistAllowPublicExport: ' . $e->getMessage());
+    }
+}
+
 function ensureShortUrlsSchema(PDO $db): void {
     static $ensured = false;
     if ($ensured) {
@@ -2779,6 +2836,7 @@ function initDatabase() {
             ensureTileMessageScopeColumns($db);
             ensureFingerprintRegistryTable($db);
             ensureShortUrlsSchema($db);
+            ensureAllowPublicExportColumn($db);
             ensureInheritShortUrlsColumns($db);
             ensureLinkMaintenanceColumns($db);
             ensureLinkNotesInfoVideoColumns($db);
@@ -2842,6 +2900,7 @@ function initDatabase() {
             ensureAccessRestrictionsColumns($db);
             ensureFingerprintRegistryTable($db);
             ensureShortUrlsSchema($db);
+            ensureAllowPublicExportColumn($db);
             ensureInheritShortUrlsColumns($db);
             ensureLinkMaintenanceColumns($db);
             ensureLinkNotesInfoVideoColumns($db);
@@ -3464,6 +3523,7 @@ function initDatabase() {
         }
 
         ensureShortUrlsSchema($db);
+        ensureAllowPublicExportColumn($db);
         ensureInheritShortUrlsColumns($db);
 
         ensureAccessRestrictionsColumns($db);

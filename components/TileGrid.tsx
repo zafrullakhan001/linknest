@@ -3640,6 +3640,7 @@ export const TileGrid: React.FC<TileGridProps> = ({
   const [newShowTitle, setNewShowTitle] = useState(true);
   const [newShowDescription, setNewShowDescription] = useState(true);
   const [newShowShortUrls, setNewShowShortUrls] = useState(false);
+  const [newAllowPublicExport, setNewAllowPublicExport] = useState(true);
   const [newEmojiImage, setNewEmojiImage] = useState<string>('');
   const [newEmojiImageOpacity, setNewEmojiImageOpacity] = useState(100);
   const [newEmojiImageOffsetX, setNewEmojiImageOffsetX] = useState(0);
@@ -6428,6 +6429,7 @@ You may also wrap the array in an object: { "messages": [ ... ] }.
       showTitle: newShowTitle,
       showDescription: newShowDescription,
       showShortUrls: newShowShortUrls,
+      allowPublicExport: newAllowPublicExport,
       emojiImage: newEmojiImage.trim() || null,
       emojiImageOpacity: newEmojiImage.trim() ? newEmojiImageOpacity : null,
       emojiImageOffsetX: newEmojiImage.trim() ? newEmojiImageOffsetX : null,
@@ -6507,6 +6509,7 @@ You may also wrap the array in an object: { "messages": [ ... ] }.
     setNewShowTitle(true);
     setNewShowDescription(true);
     setNewShowShortUrls(false);
+    setNewAllowPublicExport(true);
     setNewEmojiImage('');
     setNewEmojiImageOpacity(100);
     setNewEmojiImageOffsetX(0);
@@ -7020,6 +7023,7 @@ You may also wrap the array in an object: { "messages": [ ... ] }.
     setNewShowTitle(tile.showTitle !== false);
     setNewShowDescription(tile.showDescription !== false);
     setNewShowShortUrls(tile.showShortUrls === true);
+    setNewAllowPublicExport(tile.allowPublicExport !== false);
     setNewEmojiImage(tile.emojiImage || '');
     setNewEmojiImageOpacity(
       typeof tile.emojiImageOpacity === 'number' ? Math.max(0, Math.min(100, tile.emojiImageOpacity)) : 100
@@ -7335,6 +7339,7 @@ You may also wrap the array in an object: { "messages": [ ... ] }.
       showTitle: newShowTitle,
       showDescription: newShowDescription,
       showShortUrls: newShowShortUrls,
+      allowPublicExport: newAllowPublicExport,
       emojiImage: newEmojiImage.trim() || null,
       emojiImageOpacity: newEmojiImage.trim() ? newEmojiImageOpacity : null,
       emojiImageOffsetX: newEmojiImage.trim() ? newEmojiImageOffsetX : null,
@@ -14132,6 +14137,21 @@ You may also wrap the array in an object: { "messages": [ ... ] }.
                           </div>
                         )}
                       </div>
+                    )}
+
+                    {tileType === 'space' && (
+                      <label className="flex items-start gap-2 cursor-pointer select-none">
+                        <input
+                          type="checkbox"
+                          checked={newAllowPublicExport}
+                          onChange={(e) => setNewAllowPublicExport(e.target.checked)}
+                          className="mt-0.5 w-4 h-4 text-brand-600 focus:ring-brand-500 focus:ring-2 rounded"
+                        />
+                        <span>
+                          <span className="block text-sm text-slate-700 dark:text-slate-300">Allow public export</span>
+                          <span className="block text-xs text-slate-500 dark:text-slate-400">Guests can use Export to download this space as JSON. Editors and admins can always export.</span>
+                        </span>
+                      </label>
                     )}
 
                     <AccessRestrictionsEditor

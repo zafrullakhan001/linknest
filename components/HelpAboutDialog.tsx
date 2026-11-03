@@ -1970,7 +1970,7 @@ docker\\docker-sync-database.bat -Direction Out -HostBasePath "/ArchLinks"`}</pr
                       <li><strong>Local Authentication:</strong> Built-in user management with secure password storage</li>
                       <li><strong>LDAP Integration:</strong> Connect to Active Directory or LDAP servers for centralized user management</li>
                       <li><strong>LDAP User Search:</strong> Prefix search by username, display name, email, CN, or UPN — short names (2+ characters) supported with AD-friendly fallbacks</li>
-                      <li><strong>LDAP Directory Info:</strong> View lock status, account flags, CN/DN, and group membership from User Actions (expand to load)</li>
+                      <li><strong>LDAP Directory Info:</strong> View lock status, account flags, CN/DN, and group membership from User Actions (expand to load; search groups by name or DN)</li>
                       <li><strong>SAML/SSO:</strong> Enterprise Single Sign-On with SAML 2.0 protocol support</li>
                       <li>Multiple authentication sources can coexist</li>
                       <li>User provisioning and synchronization</li>
@@ -2067,7 +2067,7 @@ php scripts/reset_admin_password.php admin 'NewStrongPass1!'`}</pre>
                     <ul className="list-disc list-inside space-y-1 ml-2 text-sm">
                       <li><strong>User Management:</strong> Approve pending users, manage all users, change local user passwords, edit user details</li>
                       <li><strong>User Actions:</strong> Promote/disable users, impersonate, assign roles, toggle auth source; LDAP users show expandable directory info (lock status, CN, groups, and more)</li>
-                      <li><strong>Add LDAP Users:</strong> Search directory with short or partial names; auto-select exact/single matches; detailed errors when LDAP search fails</li>
+                      <li><strong>Add LDAP Users:</strong> Search directory with short or partial names; auto-select exact/single matches; detailed errors when LDAP search fails. Auto-approve is optional when adding an LDAP user or importing LDAP and SAML users.</li>
                       <li><strong>Change Password (Local):</strong> Admins can set a new password for non-admin local accounts from User Actions</li>
                       <li><strong>Teams:</strong> Create teams, add members, attach roles so everyone inherits the same visibility</li>
                       <li><strong>Roles:</strong> Control what people can see — spaces, links, app tabs, and widgets</li>

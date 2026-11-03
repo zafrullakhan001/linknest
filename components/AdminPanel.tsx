@@ -26,6 +26,7 @@ import { RoleTeamsModal } from './RoleTeamsModal';
 import { TeamFormWizard } from './TeamFormWizard';
 import { TeamMembersModal } from './TeamMembersModal';
 import { TeamRolesModal } from './TeamRolesModal';
+import { UserTransferDialog, UserTransferMode } from './UserTransferDialog';
 import { AssignSpaceEditorsWizard } from './AssignSpaceEditorsWizard';
 import { useMobile } from '../hooks/useMobile';
 import { getCustomWidgets, createWidget, updateWidget, deleteWidget, CustomWidget, CreateWidgetRequest, UpdateWidgetRequest } from '../services/widgetService';
@@ -392,6 +393,7 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({ onUserApproved }) => {
   const [ldapUserDetailLoading, setLdapUserDetailLoading] = useState(false);
   const [ldapUserDetailError, setLdapUserDetailError] = useState('');
   const [ldapDirectoryExpanded, setLdapDirectoryExpanded] = useState(false);
+  const [ldapGroupSearch, setLdapGroupSearch] = useState('');
   const [autoDetecting, setAutoDetecting] = useState(false);
   const [syncingLdapNames, setSyncingLdapNames] = useState(false);
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
@@ -646,6 +648,10 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({ onUserApproved }) => {
   const [addUserModal, setAddUserModal] = useState(false);
   const [addUserType, setAddUserType] = useState<'local' | 'ldap' | 'saml'>('local');
 
+  // Portable user export / import (All Users toolbar)
+  const [userTransferOpen, setUserTransferOpen] = useState(false);
+  const [userTransferMode, setUserTransferMode] = useState<UserTransferMode>('export');
+
   // Local user form state
   const [localUsername, setLocalUsername] = useState('');
   const [localEmail, setLocalEmail] = useState('');
@@ -668,6 +674,7 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({ onUserApproved }) => {
   const [ldapUsersText, setLdapUsersText] = useState('');
   const [bulkImportLoading, setBulkImportLoading] = useState(false);
   const [bulkImportResults, setBulkImportResults] = useState<{ results: any; summary: any; message: string } | null>(null);
+  const [autoApproveImport, setAutoApproveImport] = useState(false);
   const [ldapGroupDn, setLdapGroupDn] = useState('');
   const [ldapGroupIncludeNested, setLdapGroupIncludeNested] = useState(true);
   const [ldapGroupMembersLoading, setLdapGroupMembersLoading] = useState(false);
@@ -4087,7 +4094,8 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({ onUserApproved }) => {
         userToAdd.dn,
         userToAdd.displayName,
         serverIndex,
-        addUserNotes.trim() || null
+        addUserNotes.trim() || null,
+        autoApproveImport
       );
       setAddUserModal(false);
       setBulkImportMode(false);
@@ -4101,7 +4109,9 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({ onUserApproved }) => {
       setLdapUsersText('');
       setBulkImportResults(null);
       await loadData();
-      alert('LDAP user added successfully. User is pending admin approval.');
+      alert(autoApproveImport
+        ? 'LDAP user added and approved. They can sign in now.'
+        : 'LDAP user added successfully. User is pending admin approval.');
     } catch (err: any) {
       setError(err.message || 'Failed to add LDAP user');
     } finally {
@@ -4168,7 +4178,7 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({ onUserApproved }) => {
       const serverIndex = ldapServers.length > 0
         ? Math.min(Math.max(0, addUserLdapServerIndex), ldapServers.length - 1)
         : 0;
-      const result = await authService.bulkImportLdapUsers(users, serverIndex);
+      const result = await authService.bulkImportLdapUsers(users, serverIndex, autoApproveImport);
       setBulkImportResults(result);
       setLdapUsersText('');
       await loadData();
@@ -4238,7 +4248,8 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({ onUserApproved }) => {
           dn: u.dn,
           displayName: u.displayName || undefined,
         })),
-        serverIndex
+        serverIndex,
+        autoApproveImport
       );
       setBulkImportResults(result);
       await loadData();
@@ -4263,7 +4274,7 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({ onUserApproved }) => {
     try {
       setSamlImporting(true);
       setError('');
-      const result = await authService.bulkImportSamlUsers(samlImportFile);
+      const result = await authService.bulkImportSamlUsers(samlImportFile, autoApproveImport);
       setBulkImportResults(result);
       setSamlImportFile(null);
       await loadData();
@@ -4450,6 +4461,7 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({ onUserApproved }) => {
     setLdapUserDetail(null);
     setLdapUserDetailError('');
     setLdapDirectoryExpanded(false);
+    setLdapGroupSearch('');
     if (userActionsDialog.open && userActionsDialog.user) {
       setUserActionsNotes(userActionsDialog.user.notes || '');
       setUserActionsNotesError('');
@@ -5283,6 +5295,39 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({ onUserApproved }) => {
                             Sync LDAP Names
                           </>
                         )}
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => {
+                          setUserTransferMode('export');
+                          setUserTransferOpen(true);
+                        }}
+                        disabled={selectedUserIds.size === 0}
+                        className={`${isMobile ? 'px-3 py-2 text-xs' : 'px-4 py-2 text-sm'} bg-teal-600 hover:bg-teal-500 disabled:opacity-50 disabled:cursor-not-allowed text-white rounded-lg font-medium transition-colors flex items-center gap-2 touch-manipulation`}
+                        style={isMobile ? { minHeight: '44px' } : {}}
+                        title={selectedUserIds.size === 0 ? 'Select users in the table to export' : `Export ${selectedUserIds.size} selected user(s) as JSON or CSV`}
+                      >
+                        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor" className="w-4 h-4">
+                          <path d="M10.75 2.75a.75.75 0 00-1.5 0v8.614L6.295 8.235a.75.75 0 10-1.09 1.03l4.25 4.5a.75.75 0 001.09 0l4.25-4.5a.75.75 0 00-1.09-1.03l-2.955 3.129V2.75z" />
+                          <path d="M3.5 12.75a.75.75 0 00-1.5 0v2.5A2.75 2.75 0 004.75 18h10.5A2.75 2.75 0 0018 15.25v-2.5a.75.75 0 00-1.5 0v2.5c0 .69-.56 1.25-1.25 1.25H4.75c-.69 0-1.25-.56-1.25-1.25v-2.5z" />
+                        </svg>
+                        Export{selectedUserIds.size > 0 ? ` (${selectedUserIds.size})` : ''}
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => {
+                          setUserTransferMode('import');
+                          setUserTransferOpen(true);
+                        }}
+                        className={`${isMobile ? 'px-3 py-2 text-xs' : 'px-4 py-2 text-sm'} bg-emerald-600 hover:bg-emerald-500 text-white rounded-lg font-medium transition-colors flex items-center gap-2 touch-manipulation`}
+                        style={isMobile ? { minHeight: '44px' } : {}}
+                        title="Import users from a JSON or CSV file (existing users are skipped)"
+                      >
+                        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor" className="w-4 h-4">
+                          <path d="M9.25 13.25a.75.75 0 001.5 0V4.636l2.955 3.129a.75.75 0 001.09-1.03l-4.25-4.5a.75.75 0 00-1.09 0l-4.25 4.5a.75.75 0 101.09 1.03L9.25 4.636v8.614z" />
+                          <path d="M3.5 12.75a.75.75 0 00-1.5 0v2.5A2.75 2.75 0 004.75 18h10.5A2.75 2.75 0 0018 15.25v-2.5a.75.75 0 00-1.5 0v2.5c0 .69-.56 1.25-1.25 1.25H4.75c-.69 0-1.25-.56-1.25-1.25v-2.5z" />
+                        </svg>
+                        Import
                       </button>
                       <button
                         onClick={openAddUserModal}
@@ -9522,6 +9567,20 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({ onUserApproved }) => {
                             Selected: {samlImportFile.name}
                           </p>
                         )}
+                        <label className="mt-3 flex items-start gap-2 text-sm text-slate-700 dark:text-slate-300">
+                          <input
+                            type="checkbox"
+                            checked={autoApproveImport}
+                            onChange={(e) => setAutoApproveImport(e.target.checked)}
+                            className="mt-0.5 rounded border-slate-300 dark:border-slate-600"
+                          />
+                          <span>
+                            Auto-approve
+                            <span className="block text-xs font-normal text-slate-500 dark:text-slate-400">
+                              Approved users can sign in immediately.
+                            </span>
+                          </span>
+                        </label>
                       </div>
                       <div className="mt-4">
                         <button
@@ -17272,6 +17331,20 @@ node .\\load-tests\\generate-report.js`}
                         Import from an LDAP group DN (preview first), or paste CSV rows: username,email,dn,displayName.
                       </p>
                     </div>
+                    <label className="flex items-start gap-2 text-sm text-slate-700 dark:text-slate-300">
+                      <input
+                        type="checkbox"
+                        checked={autoApproveImport}
+                        onChange={(e) => setAutoApproveImport(e.target.checked)}
+                        className="mt-0.5 rounded border-slate-300 dark:border-slate-600"
+                      />
+                      <span>
+                        Auto-approve
+                        <span className="block text-xs font-normal text-slate-500 dark:text-slate-400">
+                          Approved users can sign in immediately.
+                        </span>
+                      </span>
+                    </label>
                     {ldapServers.length > 1 && (
                       <div>
                         <label className="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-2">
@@ -17503,6 +17576,20 @@ node .\\load-tests\\generate-report.js`}
                         Upload a CSV file with columns: username, email, saml_nameid, displayName. The header row is optional and will be automatically skipped.
                       </p>
                     </div>
+                    <label className="flex items-start gap-2 text-sm text-slate-700 dark:text-slate-300">
+                      <input
+                        type="checkbox"
+                        checked={autoApproveImport}
+                        onChange={(e) => setAutoApproveImport(e.target.checked)}
+                        className="mt-0.5 rounded border-slate-300 dark:border-slate-600"
+                      />
+                      <span>
+                        Auto-approve
+                        <span className="block text-xs font-normal text-slate-500 dark:text-slate-400">
+                          Approved users can sign in immediately.
+                        </span>
+                      </span>
+                    </label>
                     <div>
                       <div className="flex items-center justify-between mb-2">
                         <label className="block text-sm font-medium text-slate-700 dark:text-slate-300">
@@ -17772,6 +17859,20 @@ node .\\load-tests\\generate-report.js`}
                       Helps admins understand who this user is (shown in the users list and Edit User).
                     </p>
                   </div>
+                  <label className="flex items-start gap-2 text-sm text-slate-700 dark:text-slate-300">
+                    <input
+                      type="checkbox"
+                      checked={autoApproveImport}
+                      onChange={(e) => setAutoApproveImport(e.target.checked)}
+                      className="mt-0.5 rounded border-slate-300 dark:border-slate-600"
+                    />
+                    <span>
+                      Auto-approve
+                      <span className="block text-xs font-normal text-slate-500 dark:text-slate-400">
+                        Approved users can sign in immediately.
+                      </span>
+                    </span>
+                  </label>
                 </div>
               )}
 
@@ -18325,6 +18426,16 @@ node .\\load-tests\\generate-report.js`}
           setError('');
         }}
         onSave={handleSaveUserGroup}
+      />
+
+      <UserTransferDialog
+        isOpen={userTransferOpen}
+        mode={userTransferMode}
+        selectedUserIds={Array.from(selectedUserIds)}
+        onClose={() => setUserTransferOpen(false)}
+        onImported={async () => {
+          await loadAllUsers();
+        }}
       />
 
       {/* Group Members Modal */}
@@ -19955,21 +20066,55 @@ node .\\load-tests\\generate-report.js`}
                           </div>
 
                           <div className="border-t border-blue-200/70 dark:border-blue-900/40 pt-3">
-                            <div className="text-xs font-semibold text-slate-700 dark:text-slate-200 mb-2">
-                              Group membership ({ldapUserDetail.groupCount})
-                            </div>
-                            {ldapUserDetail.groups.length === 0 ? (
-                              <p className="text-xs text-slate-500 dark:text-slate-400">No memberOf groups returned (may lack read permission or primary group only).</p>
-                            ) : (
-                              <ul className="max-h-40 overflow-y-auto space-y-1.5 pr-1">
-                                {ldapUserDetail.groups.map((g) => (
-                                  <li key={g.dn} className="text-xs bg-white/70 dark:bg-slate-900/40 border border-blue-100 dark:border-blue-900/40 rounded-lg px-2.5 py-1.5">
-                                    <div className="font-medium text-slate-900 dark:text-slate-100">{g.cn}</div>
-                                    <div className="text-[10px] text-slate-500 dark:text-slate-400 break-all mt-0.5">{g.dn}</div>
-                                  </li>
-                                ))}
-                              </ul>
-                            )}
+                            {(() => {
+                              const groupQuery = ldapGroupSearch.trim().toLowerCase();
+                              const filteredGroups = groupQuery
+                                ? ldapUserDetail.groups.filter(
+                                    (g) =>
+                                      (g.cn || '').toLowerCase().includes(groupQuery) ||
+                                      (g.dn || '').toLowerCase().includes(groupQuery)
+                                  )
+                                : ldapUserDetail.groups;
+                              return (
+                                <>
+                                  <div className="text-xs font-semibold text-slate-700 dark:text-slate-200 mb-2">
+                                    Group membership ({ldapUserDetail.groupCount})
+                                    {groupQuery && ldapUserDetail.groups.length > 0 && (
+                                      <span className="font-normal text-slate-500 dark:text-slate-400">
+                                        {' '}
+                                        — {filteredGroups.length} of {ldapUserDetail.groups.length}
+                                      </span>
+                                    )}
+                                  </div>
+                                  {ldapUserDetail.groups.length === 0 ? (
+                                    <p className="text-xs text-slate-500 dark:text-slate-400">No memberOf groups returned (may lack read permission or primary group only).</p>
+                                  ) : (
+                                    <>
+                                      <input
+                                        type="search"
+                                        value={ldapGroupSearch}
+                                        onChange={(e) => setLdapGroupSearch(e.target.value)}
+                                        placeholder="Search groups"
+                                        aria-label="Search group membership"
+                                        className="w-full mb-2 bg-white dark:bg-slate-900/50 border border-blue-200 dark:border-blue-800 rounded-lg px-3 py-1.5 text-xs text-slate-900 dark:text-white placeholder:text-slate-400 focus:outline-none focus:ring-2 focus:ring-blue-500/40 focus:border-blue-500"
+                                      />
+                                      {filteredGroups.length === 0 ? (
+                                        <p className="text-xs text-slate-500 dark:text-slate-400">No groups match that search.</p>
+                                      ) : (
+                                        <ul className="max-h-40 overflow-y-auto space-y-1.5 pr-1">
+                                          {filteredGroups.map((g) => (
+                                            <li key={g.dn} className="text-xs bg-white/70 dark:bg-slate-900/40 border border-blue-100 dark:border-blue-900/40 rounded-lg px-2.5 py-1.5">
+                                              <div className="font-medium text-slate-900 dark:text-slate-100">{g.cn}</div>
+                                              <div className="text-[10px] text-slate-500 dark:text-slate-400 break-all mt-0.5">{g.dn}</div>
+                                            </li>
+                                          ))}
+                                        </ul>
+                                      )}
+                                    </>
+                                  )}
+                                </>
+                              );
+                            })()}
                           </div>
                         </div>
                       );

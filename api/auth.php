@@ -3397,6 +3397,7 @@ function handleAddLdapUser() {
     $dn = trim($data['dn']);
     $displayName = trim($data['displayName'] ?? '');
     $notes = sanitizeUserNotes($data['notes'] ?? null);
+    $autoApprove = !empty($data['auto_approve']);
     $requestedServerIndex = array_key_exists('ldap_server_index', $data) ? $data['ldap_server_index'] : null;
     
     if (strlen($username) < 1) {
@@ -3497,29 +3498,43 @@ function handleAddLdapUser() {
             sendJSON(['error' => 'Email already exists'], 409);
         }
         
-        // Create user (unapproved by default, as per requirement)
         // Use a random password hash since they should login via LDAP
         $randomPass = bin2hex(random_bytes(16));
         $passwordHash = password_hash($randomPass, PASSWORD_DEFAULT);
+        $approved = $autoApprove ? 1 : 0;
         
-        $stmt = $db->prepare('INSERT INTO users (username, email, password_hash, is_admin, is_approved, auth_source, uuid, notes, display_name, created_at) VALUES (?, ?, ?, 0, 0, ?, ?, ?, ?, ?)');
+        $stmt = $db->prepare('INSERT INTO users (username, email, password_hash, is_admin, is_approved, auth_source, uuid, notes, display_name, created_at) VALUES (?, ?, ?, 0, ?, ?, ?, ?, ?, ?)');
         
-        if ($stmt->execute([$username, $email, $passwordHash, 'ldap', generateUuid(), $notes, $displayName !== '' ? $displayName : null, time()])) {
+        if ($stmt->execute([$username, $email, $passwordHash, $approved, 'ldap', generateUuid(), $notes, $displayName !== '' ? $displayName : null, time()])) {
             $userId = $db->lastInsertId();
             logUserAudit('user.created', [
                 'target_user_id' => (int) $userId,
                 'target_username' => $username,
-                'details' => ['email' => $email, 'source' => 'ldap', 'notes' => $notes ? true : false],
+                'details' => ['email' => $email, 'source' => 'ldap', 'notes' => $notes ? true : false, 'auto_approve' => $autoApprove],
             ]);
+            if ($autoApprove) {
+                logUserAudit('user.approved', [
+                    'target_user_id' => (int) $userId,
+                    'target_username' => $username,
+                    'details' => ['source' => 'ldap', 'auto_approve' => true],
+                ]);
+                try {
+                    auth_email_notify_approved($username, $email);
+                } catch (Throwable $e) {
+                    error_log('[AUTH_EMAIL] add-ldap-user approve notify: ' . $e->getMessage());
+                }
+            }
             sendJSON([
                 'success' => true,
-                'message' => 'LDAP user added successfully. User is pending admin approval.',
+                'message' => $autoApprove
+                    ? 'LDAP user added and approved. They can sign in now.'
+                    : 'LDAP user added successfully. User is pending admin approval.',
                 'user' => [
                     'id' => $userId,
                     'username' => $username,
                     'email' => $email,
                     'auth_source' => 'ldap',
-                    'is_approved' => false,
+                    'is_approved' => $autoApprove,
                     'notes' => $notes
                 ]
             ]);
@@ -4060,6 +4075,8 @@ function handleBulkImportLdapUsers() {
     }
     
     $users = $data['users'];
+    $autoApprove = !empty($data['auto_approve']);
+    $approved = $autoApprove ? 1 : 0;
     $requestedServerIndex = array_key_exists('ldap_server_index', $data) ? $data['ldap_server_index'] : null;
     
     $settings = ldapLoadSettingsFromDb();
@@ -4192,9 +4209,9 @@ function handleBulkImportLdapUsers() {
             $randomPass = bin2hex(random_bytes(16));
             $passwordHash = password_hash($randomPass, PASSWORD_DEFAULT);
             
-            $stmt = $db->prepare('INSERT INTO users (username, email, password_hash, is_admin, is_approved, auth_source, uuid, display_name, created_at) VALUES (?, ?, ?, 0, 0, ?, ?, ?, ?)');
+            $stmt = $db->prepare('INSERT INTO users (username, email, password_hash, is_admin, is_approved, auth_source, uuid, display_name, created_at) VALUES (?, ?, ?, 0, ?, ?, ?, ?, ?)');
             
-            if ($stmt->execute([$username, $email, $passwordHash, 'ldap', generateUuid(), $displayName !== '' ? $displayName : null, time()])) {
+            if ($stmt->execute([$username, $email, $passwordHash, $approved, 'ldap', generateUuid(), $displayName !== '' ? $displayName : null, time()])) {
                 $results['success'][] = [
                     'index' => $index + 1,
                     'id' => (int) $db->lastInsertId(),
@@ -4225,11 +4242,23 @@ function handleBulkImportLdapUsers() {
         'skipped' => count($results['skipped']),
         'errors' => count($results['errors']),
         'total' => $totalProcessed,
+        'auto_approve' => $autoApprove,
     ]);
+    if ($autoApprove && !empty($results['success'])) {
+        logUserAuditForUsers('user.approved', $results['success'], ['source' => 'ldap', 'auto_approve' => true]);
+        foreach ($results['success'] as $created) {
+            try {
+                auth_email_notify_approved((string)($created['username'] ?? ''), (string)($created['email'] ?? ''));
+            } catch (Throwable $e) {
+                error_log('[AUTH_EMAIL] bulk-import-ldap approve notify: ' . $e->getMessage());
+            }
+        }
+    }
     
+    $approvalNote = $autoApprove ? ' Created users were auto-approved.' : '';
     sendJSON([
         'success' => true,
-        'message' => "Processed $totalProcessed users. " . count($results['success']) . " created, " . count($results['skipped']) . " skipped, " . count($results['errors']) . " errors.",
+        'message' => "Processed $totalProcessed users. " . count($results['success']) . " created, " . count($results['skipped']) . " skipped, " . count($results['errors']) . " errors." . $approvalNote,
         'results' => $results,
         'summary' => [
             'total' => $totalProcessed,
@@ -4248,6 +4277,8 @@ function handleBulkImportSamlUsers() {
     }
     
     $file = $_FILES['csv_file'];
+    $autoApprove = !empty($_POST['auto_approve']);
+    $approved = $autoApprove ? 1 : 0;
     
     // Validate file type
     $allowedTypes = ['text/csv', 'text/plain', 'application/csv', 'application/vnd.ms-excel'];
@@ -4385,12 +4416,12 @@ function handleBulkImportSamlUsers() {
             $passwordHash = password_hash(bin2hex(random_bytes(16)), PASSWORD_DEFAULT);
             
             try {
-                $stmt = $db->prepare('INSERT INTO users (username, email, password_hash, is_admin, is_approved, auth_source, saml_nameid, uuid, created_at) VALUES (?, ?, ?, 0, 0, ?, ?, ?, ?)');
-                $stmt->execute([$username, $email, $passwordHash, 'saml', $samlNameId, generateUuid(), time()]);
+                $stmt = $db->prepare('INSERT INTO users (username, email, password_hash, is_admin, is_approved, auth_source, saml_nameid, uuid, created_at) VALUES (?, ?, ?, 0, ?, ?, ?, ?, ?)');
+                $stmt->execute([$username, $email, $passwordHash, $approved, 'saml', $samlNameId, generateUuid(), time()]);
             } catch (PDOException $e) {
                 // If saml_nameid column doesn't exist, insert without it
-                $stmt = $db->prepare('INSERT INTO users (username, email, password_hash, is_admin, is_approved, auth_source, uuid, created_at) VALUES (?, ?, ?, 0, 0, ?, ?, ?)');
-                $stmt->execute([$username, $email, $passwordHash, 'saml', generateUuid(), time()]);
+                $stmt = $db->prepare('INSERT INTO users (username, email, password_hash, is_admin, is_approved, auth_source, uuid, created_at) VALUES (?, ?, ?, 0, ?, ?, ?, ?)');
+                $stmt->execute([$username, $email, $passwordHash, $approved, 'saml', generateUuid(), time()]);
             }
             
             if ($stmt->rowCount() > 0) {
@@ -4422,11 +4453,23 @@ function handleBulkImportSamlUsers() {
         'skipped' => count($results['skipped']),
         'errors' => count($results['errors']),
         'total' => $totalProcessed,
+        'auto_approve' => $autoApprove,
     ]);
+    if ($autoApprove && !empty($results['success'])) {
+        logUserAuditForUsers('user.approved', $results['success'], ['source' => 'saml', 'auto_approve' => true]);
+        foreach ($results['success'] as $created) {
+            try {
+                auth_email_notify_approved((string)($created['username'] ?? ''), (string)($created['email'] ?? ''));
+            } catch (Throwable $e) {
+                error_log('[AUTH_EMAIL] bulk-import-saml approve notify: ' . $e->getMessage());
+            }
+        }
+    }
     
+    $approvalNote = $autoApprove ? ' Created users were auto-approved.' : '';
     sendJSON([
         'success' => true,
-        'message' => "Processed $totalProcessed users. " . count($results['success']) . " created, " . count($results['skipped']) . " skipped, " . count($results['errors']) . " errors.",
+        'message' => "Processed $totalProcessed users. " . count($results['success']) . " created, " . count($results['skipped']) . " skipped, " . count($results['errors']) . " errors." . $approvalNote,
         'results' => $results,
         'summary' => [
             'total' => $totalProcessed,

@@ -234,7 +234,7 @@ function handleGetTiles() {
     // Step 1: Get visible tiles filtered by source_tab
     // Summary mode skips html_content and other heavy columns
     $tileCols = $summaryMode
-        ? 'id, user_id, title, description, emoji, theme_color, "group", position, created_at, visibility, allowed_users, allowed_groups, source_tab, deleted_at, archived_at, is_hyperlink, hyperlink_url, open_in_new_tab, is_video, video_url, video_source, browser, visible_from, expires_at, tile_background_color, tile_gradient_enabled, tile_gradient_colors, tile_gradient_color_positions, tile_gradient_direction, tile_gradient_type, tile_border_radius, tile_text_color, page_animation, links_animation, header_image, header_image_align, header_image_opacity, header_image_offset_x, header_image_offset_y, header_image_zoom, header_image_fit, show_emoji, emoji_image, emoji_image_opacity, emoji_image_offset_x, emoji_image_offset_y, emoji_image_zoom, show_title, show_description, show_short_urls, search_tags, published, access_restrictions'
+        ? 'id, user_id, title, description, emoji, theme_color, "group", position, created_at, visibility, allowed_users, allowed_groups, source_tab, deleted_at, archived_at, is_hyperlink, hyperlink_url, open_in_new_tab, is_video, video_url, video_source, browser, visible_from, expires_at, tile_background_color, tile_gradient_enabled, tile_gradient_colors, tile_gradient_color_positions, tile_gradient_direction, tile_gradient_type, tile_border_radius, tile_text_color, page_animation, links_animation, header_image, header_image_align, header_image_opacity, header_image_offset_x, header_image_offset_y, header_image_zoom, header_image_fit, show_emoji, emoji_image, emoji_image_opacity, emoji_image_offset_x, emoji_image_offset_y, emoji_image_zoom, show_title, show_description, show_short_urls, allow_public_export, search_tags, published, access_restrictions'
         : '*';
     $baseWhere = 'deleted_at IS NULL AND archived_at IS NULL';
     if ($sourceTab === 'staging') {
@@ -587,6 +587,7 @@ function handleGetTiles() {
             'showTitle' => !(isset($row['show_title']) && ((int)$row['show_title'] === 0 || $row['show_title'] === '0' || $row['show_title'] === false)),
             'showDescription' => !(isset($row['show_description']) && ((int)$row['show_description'] === 0 || $row['show_description'] === '0' || $row['show_description'] === false)),
             'showShortUrls' => mapShowShortUrlsFromRow($row),
+            'allowPublicExport' => mapAllowPublicExportFromRow($row),
             'tabs' => [],
             // Recipients this space is shared with (pending + accepted) — owner/admin view only
             'shareCount' => ($user && ((int)($row['user_id'] ?? 0) === (int)$user['id'] || !empty($user['is_admin'])))
@@ -1554,6 +1555,7 @@ function handleGetTile($tileId) {
             'showTitle' => !(isset($row['show_title']) && ((int)$row['show_title'] === 0 || $row['show_title'] === '0' || $row['show_title'] === false)),
             'showDescription' => !(isset($row['show_description']) && ((int)$row['show_description'] === 0 || $row['show_description'] === '0' || $row['show_description'] === false)),
             'showShortUrls' => mapShowShortUrlsFromRow($row),
+            'allowPublicExport' => mapAllowPublicExportFromRow($row),
         'syncSource' => spaceSyncSourceForApi($row),
         'tabs' => [],
         'shareCount' => $shareCount,
@@ -2172,6 +2174,7 @@ function handleCreateTile() {
     }
 
     persistTileShowShortUrls($db, $tileId, $data);
+    persistAllowPublicExport($db, $tileId, $data);
     persistTileSyncSource($db, $tileId, $data);
     
     // Create share invitations for users added to allowed list (they must accept to get access)
@@ -2979,6 +2982,7 @@ function cloneTileRecordAndContents(PDO $db, array $originalTile, string $newTil
     }
 
     persistTileShowShortUrls($db, $newTileId, null, $originalTile);
+    persistAllowPublicExport($db, $newTileId, null, $originalTile);
 
     $sourceTileId = $originalTile['id'];
     $tabStmt = $db->prepare('SELECT * FROM tabs WHERE tile_id = ? ORDER BY position ASC');
@@ -4709,6 +4713,7 @@ function handleGetRecycleBin() {
             'showTitle' => !(isset($row['show_title']) && ((int)$row['show_title'] === 0 || $row['show_title'] === '0' || $row['show_title'] === false)),
             'showDescription' => !(isset($row['show_description']) && ((int)$row['show_description'] === 0 || $row['show_description'] === '0' || $row['show_description'] === false)),
             'showShortUrls' => mapShowShortUrlsFromRow($row),
+            'allowPublicExport' => mapAllowPublicExportFromRow($row),
             'tabs' => []
         ];
         
@@ -5102,6 +5107,7 @@ function handleGetArchive() {
                 'showTitle' => !(isset($row['show_title']) && ((int)$row['show_title'] === 0 || $row['show_title'] === '0' || $row['show_title'] === false)),
                 'showDescription' => !(isset($row['show_description']) && ((int)$row['show_description'] === 0 || $row['show_description'] === '0' || $row['show_description'] === false)),
             'showShortUrls' => mapShowShortUrlsFromRow($row),
+            'allowPublicExport' => mapAllowPublicExportFromRow($row),
                 'tabs' => []
             ];
             
@@ -5732,6 +5738,7 @@ function getTileForVersion($tileId, $db) {
             'showTitle' => !(isset($row['show_title']) && ((int)$row['show_title'] === 0 || $row['show_title'] === '0' || $row['show_title'] === false)),
             'showDescription' => !(isset($row['show_description']) && ((int)$row['show_description'] === 0 || $row['show_description'] === '0' || $row['show_description'] === false)),
             'showShortUrls' => mapShowShortUrlsFromRow($row),
+            'allowPublicExport' => mapAllowPublicExportFromRow($row),
         'tabs' => [],
         'messages' => []
     ];
@@ -6547,6 +6554,7 @@ function updateTileInternal($tileId, $data, $db, $user, $isRestore = false, $isF
         purgeReplacedTileVideoUpload($db, $tileId, $oldVideoUrl, $videoUrl);
 
         persistTileShowShortUrls($db, $tileId, $data, $currentTileData);
+        persistAllowPublicExport($db, $tileId, $data, $currentTileData);
 
         if ($preserveNested) {
             // Metadata-only update: leave tabs, sections, links untouched.
@@ -7070,7 +7078,7 @@ function generateChangelogSummary($old, $new) {
     $changes = [];
     
     // Root level fields
-    $rootFields = ['title', 'description', 'htmlContent', 'group', 'emoji', 'showEmoji', 'showTitle', 'showDescription', 'showShortUrls', 'emojiImage', 'emojiImageOpacity', 'emojiImageOffsetX', 'emojiImageOffsetY', 'emojiImageZoom', 'visibility', 'browser', 'themeColor', 'isHyperlink', 'hyperlinkUrl', 'isVideo', 'videoUrl', 'videoSource', 'pageAnimation', 'linksAnimation', 'headerImage', 'headerImageAlign', 'headerImageOpacity', 'headerImageOffsetX', 'headerImageOffsetY', 'headerImageZoom', 'headerImageFit'];
+    $rootFields = ['title', 'description', 'htmlContent', 'group', 'emoji', 'showEmoji', 'showTitle', 'showDescription', 'showShortUrls', 'allowPublicExport', 'emojiImage', 'emojiImageOpacity', 'emojiImageOffsetX', 'emojiImageOffsetY', 'emojiImageZoom', 'visibility', 'browser', 'themeColor', 'isHyperlink', 'hyperlinkUrl', 'isVideo', 'videoUrl', 'videoSource', 'pageAnimation', 'linksAnimation', 'headerImage', 'headerImageAlign', 'headerImageOpacity', 'headerImageOffsetX', 'headerImageOffsetY', 'headerImageZoom', 'headerImageFit'];
     foreach ($rootFields as $f) {
         $oldVal = is_array($old) ? ($old[$f] ?? null) : null;
         $newVal = is_array($new) ? ($new[$f] ?? null) : null;

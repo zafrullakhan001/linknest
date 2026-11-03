@@ -724,13 +724,14 @@ export const authService = {
     return { user: data.user, message: data.message };
   },
 
-  async addLdapUser(username: string, email: string, dn: string, displayName?: string, ldapServerIndex?: number, notes?: string | null): Promise<{ user: AllUser; message: string }> {
-    const body: { username: string; email: string; dn: string; displayName?: string; ldap_server_index?: number; notes?: string | null } = {
+  async addLdapUser(username: string, email: string, dn: string, displayName?: string, ldapServerIndex?: number, notes?: string | null, autoApprove?: boolean): Promise<{ user: AllUser; message: string }> {
+    const body: { username: string; email: string; dn: string; displayName?: string; ldap_server_index?: number; notes?: string | null; auto_approve: boolean } = {
       username,
       email,
       dn,
       displayName,
-      notes: notes ?? null
+      notes: notes ?? null,
+      auto_approve: !!autoApprove
     };
     if (ldapServerIndex !== undefined && ldapServerIndex !== null) {
       body.ldap_server_index = ldapServerIndex;
@@ -917,9 +918,13 @@ export const authService = {
 
   async bulkImportLdapUsers(
     users: Array<{ username: string; email: string; dn: string; displayName?: string }>,
-    ldapServerIndex?: number
+    ldapServerIndex?: number,
+    autoApprove?: boolean
   ): Promise<{ results: any; summary: any; message: string }> {
-    const body: { users: typeof users; ldap_server_index?: number } = { users };
+    const body: { users: typeof users; ldap_server_index?: number; auto_approve: boolean } = {
+      users,
+      auto_approve: !!autoApprove
+    };
     if (ldapServerIndex !== undefined && ldapServerIndex !== null) {
       body.ldap_server_index = ldapServerIndex;
     }
@@ -943,9 +948,10 @@ export const authService = {
     };
   },
 
-  async bulkImportSamlUsers(csvFile: File): Promise<{ results: any; summary: any; message: string }> {
+  async bulkImportSamlUsers(csvFile: File, autoApprove?: boolean): Promise<{ results: any; summary: any; message: string }> {
     const formData = new FormData();
     formData.append('csv_file', csvFile);
+    formData.append('auto_approve', autoApprove ? '1' : '0');
 
     const response = await fetch(`${API_BASE}/auth/bulk-import-saml`, {
       method: 'POST',
