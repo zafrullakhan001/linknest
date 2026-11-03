@@ -1203,6 +1203,7 @@ export const MobileTileEdit: React.FC<MobileTileEditProps> = ({
                                                             onColorChange={(color) => updateSection(tab.id, section.id, { textColor: color && color.trim() ? color : undefined })}
                                                             onForceStackedChange={(value) => updateSection(tab.id, section.id, { forceStackedView: value })}
                                                             onIgnoreSideBySideChange={(value) => updateSection(tab.id, section.id, { ignoreSideBySide: value })}
+                                                            onShowReadAloudChange={(value) => updateSection(tab.id, section.id, { showReadAloud: value })}
                                                         />
                                                     )}
                                                 </div>

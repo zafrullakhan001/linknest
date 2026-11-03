@@ -48,6 +48,8 @@ interface RichTextBoxedViewProps {
   boxFooterFontSize?: BoxFontSize | null;
   boxHeaderEmoji?: string | null;
   boxImportance?: BoxImportance | null;
+  /** When true, show play / Copilot / voice options for all viewers. Default hidden. */
+  showReadAloud?: boolean;
   className?: string;
   bodyClassName?: string;
 }
@@ -104,6 +106,7 @@ export const RichTextBoxedView: React.FC<RichTextBoxedViewProps> = ({
   boxFooterFontSize,
   boxHeaderEmoji,
   boxImportance,
+  showReadAloud = false,
   className = '',
   bodyClassName = '',
 }) => {
@@ -216,7 +219,7 @@ export const RichTextBoxedView: React.FC<RichTextBoxedViewProps> = ({
     color: contrastText(bodyBg),
   };
 
-  const readAloudButtons = (
+  const readAloudButtons = showReadAloud ? (
     <div className="flex items-center gap-0.5 shrink-0" onMouseDown={(e) => e.preventDefault()}>
       <ReadAloudButtons
         readAloud={readAloud}
@@ -257,9 +260,9 @@ export const RichTextBoxedView: React.FC<RichTextBoxedViewProps> = ({
         </button>
       )}
     </div>
-  );
+  ) : null;
 
-  const readAloudSettings = showReadAloudOptions ? (
+  const readAloudSettings = showReadAloud && showReadAloudOptions ? (
     <div id={`${settingsIdPrefix}-options`}>
       <ReadAloudSettingsRow
         readAloud={readAloud}
@@ -283,10 +286,12 @@ export const RichTextBoxedView: React.FC<RichTextBoxedViewProps> = ({
   if (!boxed) {
     return (
       <div className={className}>
-        <div className="flex flex-col items-stretch gap-1 mb-1.5 -mt-0.5">
-          <div className="flex items-center justify-end">{readAloudButtons}</div>
-          {readAloudSettings}
-        </div>
+        {showReadAloud ? (
+          <div className="flex flex-col items-stretch gap-1 mb-1.5 -mt-0.5">
+            <div className="flex items-center justify-end">{readAloudButtons}</div>
+            {readAloudSettings}
+          </div>
+        ) : null}
         {body}
       </div>
     );
@@ -380,7 +385,7 @@ export const RichTextBoxedView: React.FC<RichTextBoxedViewProps> = ({
               <span aria-hidden>{importance.emoji}</span>
               {importance.label}
             </span>
-            <div style={{ marginLeft: 'auto' }}>{readAloudButtons}</div>
+            {readAloudButtons ? <div style={{ marginLeft: 'auto' }}>{readAloudButtons}</div> : null}
           </div>
           {readAloudSettings}
         </div>

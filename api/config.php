@@ -137,6 +137,7 @@ if (!defined('SYSTEM_TOKEN')) {
 }
 
 // Bump when schema/migrations in initDatabase() change. Enables fast-path getDB().
+// 116 = Section show/hide rich-text read-aloud controls (sections.show_read_aloud).
 // 115 = Section full-width opt-out of side-by-side columns (sections.ignore_side_by_side).
 // 112 = Cross-instance space sync (tiles.sync_source_* and sync_source_id on tabs/sections/links).
 // 111 = Archive banner actor (tiles.archived_by + tiles.archived_by_username).
@@ -146,7 +147,7 @@ if (!defined('SYSTEM_TOKEN')) {
 // 107 = Message Board tab scoping (tile_messages.tab_ids + tile_messages.show_on_card).
 // 106 = LinkNest 3.0.0 (schema_releases audit registry).
 if (!defined('LINKNEST_SCHEMA_VERSION')) {
-    define('LINKNEST_SCHEMA_VERSION', 115);
+    define('LINKNEST_SCHEMA_VERSION', 116);
 }
 
 // Shipped application version, recorded in schema_releases so admins can audit
@@ -594,6 +595,57 @@ function ensureSectionsIgnoreSideBySideColumn(PDO $db): void {
     } catch (PDOException $e) {
         error_log('ensureSectionsIgnoreSideBySideColumn warning: ' . $e->getMessage());
     }
+}
+
+/**
+ * Per-section toggle for rich-text read-aloud controls (play / Copilot / voice options).
+ * Default 0 = hidden (opt-in via section edit). Additive + idempotent for getDB() fast path.
+ */
+function ensureSectionsShowReadAloudColumn(PDO $db): void {
+    static $ensured = false;
+    if ($ensured) {
+        return;
+    }
+    try {
+        $exists = $db->query("SELECT name FROM sqlite_master WHERE type='table' AND name='sections'")->fetchColumn();
+        if (!$exists) {
+            return;
+        }
+        $names = array_column($db->query('PRAGMA table_info(sections)')->fetchAll(PDO::FETCH_ASSOC), 'name');
+        if (!in_array('show_read_aloud', $names, true)) {
+            $db->exec('ALTER TABLE sections ADD COLUMN show_read_aloud INTEGER DEFAULT 0');
+        }
+        // One-shot: early DEFAULT 1 rows flip to opt-in (hidden) so viewers stay clean.
+        $cacheDir = (defined('DB_DIR') ? DB_DIR : (__DIR__ . '/../data')) . DIRECTORY_SEPARATOR . 'cache';
+        if (!is_dir($cacheDir)) {
+            @mkdir($cacheDir, 0755, true);
+        }
+        $optInFlag = $cacheDir . DIRECTORY_SEPARATOR . 'show_read_aloud_opt_in_v1.ok';
+        if (!is_file($optInFlag)) {
+            $db->exec('UPDATE sections SET show_read_aloud = 0');
+            @file_put_contents($optInFlag, (string)time());
+        }
+        $ensured = true;
+    } catch (PDOException $e) {
+        error_log('ensureSectionsShowReadAloudColumn warning: ' . $e->getMessage());
+    }
+}
+
+/** Map DB / API section payload to showReadAloud (default false = hidden). */
+function sectionShowReadAloudFlag($rowOrInput): bool {
+    if (!is_array($rowOrInput)) {
+        return false;
+    }
+    if (array_key_exists('showReadAloud', $rowOrInput)) {
+        return $rowOrInput['showReadAloud'] === true || $rowOrInput['showReadAloud'] === 1 || $rowOrInput['showReadAloud'] === '1';
+    }
+    if (array_key_exists('show_read_aloud', $rowOrInput)) {
+        if ($rowOrInput['show_read_aloud'] === null) {
+            return false;
+        }
+        return (int)$rowOrInput['show_read_aloud'] === 1;
+    }
+    return false;
 }
 
 /**
@@ -2437,6 +2489,7 @@ function initDatabase() {
             ensureTilesVideoColumns($db);
             ensureTileArchiveActorColumns($db);
             ensureSectionsIgnoreSideBySideColumn($db);
+            ensureSectionsShowReadAloudColumn($db);
             require_once __DIR__ . '/space_sync_lib.php';
             ensureSpaceSyncColumns($db);
             ensurePasswordResetColumns($db);
@@ -2500,6 +2553,7 @@ function initDatabase() {
             ensureTilesVideoColumns($db);
             ensureTileArchiveActorColumns($db);
             ensureSectionsIgnoreSideBySideColumn($db);
+            ensureSectionsShowReadAloudColumn($db);
             require_once __DIR__ . '/space_sync_lib.php';
             ensureSpaceSyncColumns($db);
             ensurePasswordResetColumns($db);
@@ -2810,6 +2864,7 @@ function initDatabase() {
         ensureTilesVideoColumns($db);
         ensureTileArchiveActorColumns($db);
         ensureSectionsIgnoreSideBySideColumn($db);
+        ensureSectionsShowReadAloudColumn($db);
         require_once __DIR__ . '/space_sync_lib.php';
         ensureSpaceSyncColumns($db);
 
@@ -3343,6 +3398,23 @@ function initDatabase() {
             }
         } catch (PDOException $e) {
             error_log('Sections ignore_side_by_side migration warning: ' . $e->getMessage());
+        }
+
+        // Migrate existing sections table to add show_read_aloud column if it doesn't exist
+        try {
+            $columns = $db->query("PRAGMA table_info(sections)")->fetchAll();
+            $hasShowReadAloud = false;
+            foreach ($columns as $column) {
+                if ($column['name'] === 'show_read_aloud') {
+                    $hasShowReadAloud = true;
+                    break;
+                }
+            }
+            if (!$hasShowReadAloud) {
+                $db->exec('ALTER TABLE sections ADD COLUMN show_read_aloud INTEGER DEFAULT 0');
+            }
+        } catch (PDOException $e) {
+            error_log('Sections show_read_aloud migration warning: ' . $e->getMessage());
         }
         
         // Migrate existing sections table to add position column if it doesn't exist
