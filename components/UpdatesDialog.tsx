@@ -305,56 +305,51 @@ export const UpdatesPanel: React.FC<{
   const [openRollback, setOpenRollback] = useState(false);
   const [openSettings, setOpenSettings] = useState(false);
   const progressRef = useRef<HTMLDivElement | null>(null);
+  const onUpdateAvailabilityChangeRef = useRef(onUpdateAvailabilityChange);
+  onUpdateAvailabilityChangeRef.current = onUpdateAvailabilityChange;
 
   const commits: UpdaterCommit[] = status?.commitUpdates || [];
   const releases: UpdaterRelease[] = status?.releases || [];
   const history: UpdaterHistoryEntry[] = status?.history || [];
 
-  const notifyAvailability = useCallback(
-    (s: UpdaterStatus | null) => {
-      if (!onUpdateAvailabilityChange) return;
-      onUpdateAvailabilityChange(Boolean(s?.updateAvailable), s?.updateCount ?? 0);
-    },
-    [onUpdateAvailabilityChange]
-  );
-
-  const applyStatus = useCallback(
-    (s: UpdaterStatus) => {
-      setStatus(s);
-      // Never sticky-show a finished success bar; only keep running/error jobs in the panel.
-      const j = s.job;
-      if (j && (j.status === 'running' || j.status === 'error')) {
-        setJob(j);
-      } else {
-        setJob(null);
-      }
-      if (s.error) setError(s.error);
-      else setError(null);
-      notifyAvailability(s);
-      if (s.updateAvailable) setOpenUpdates(true);
-      if ((s.historyCount || 0) > 0) {
-        /* keep rollback collapsed by default on mobile; expand only if user opened */
-      }
-    },
-    [notifyAvailability]
-  );
-
-  const load = useCallback(async () => {
-    setLoading(true);
-    setError(null);
-    try {
-      const s = await getUpdaterStatus();
-      applyStatus(s);
-    } catch (e: any) {
-      setError(e?.message || 'Failed to load updater status');
-    } finally {
-      setLoading(false);
+  const applyStatus = useCallback((s: UpdaterStatus, opts?: { openUpdatesIfAvailable?: boolean }) => {
+    setStatus(s);
+    // Never sticky-show a finished success bar; only keep running/error jobs in the panel.
+    const j = s.job;
+    if (j && (j.status === 'running' || j.status === 'error')) {
+      setJob(j);
+    } else {
+      setJob(null);
     }
-  }, [applyStatus]);
+    if (s.error) setError(s.error);
+    else setError(null);
+    onUpdateAvailabilityChangeRef.current?.(Boolean(s.updateAvailable), s.updateCount ?? 0);
+    if (opts?.openUpdatesIfAvailable && s.updateAvailable) {
+      setOpenUpdates(true);
+    }
+  }, []);
 
   useEffect(() => {
-    load();
-  }, [load]);
+    let cancelled = false;
+    setLoading(true);
+    setError(null);
+    void (async () => {
+      try {
+        const s = await getUpdaterStatus();
+        if (cancelled) return;
+        applyStatus(s);
+      } catch (e: any) {
+        if (!cancelled) {
+          setError(e?.message || 'Failed to load updater status');
+        }
+      } finally {
+        if (!cancelled) setLoading(false);
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [applyStatus]);
 
   useEffect(() => {
     setRepoInput((settings as any)?.updater_repo || status?.repo || 'zafrullakhan001/linknest');
@@ -444,7 +439,7 @@ export const UpdatesPanel: React.FC<{
     setPreview(null);
     try {
       const s = await checkUpdaterReleases();
-      applyStatus(s);
+      applyStatus(s, { openUpdatesIfAvailable: true });
       setOpenUpdates(true);
     } catch (e: any) {
       setError(e?.message || 'Check failed');
@@ -599,7 +594,7 @@ export const UpdatesPanel: React.FC<{
         </div>
       )}
 
-      {loading ? (
+      {loading && !status ? (
         <p className="text-sm text-slate-500">Loading updater status…</p>
       ) : (
         <>

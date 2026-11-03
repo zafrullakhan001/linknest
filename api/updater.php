@@ -137,9 +137,7 @@ function handleUpdaterApply(): void {
         if (!updaterCanApply($caps)) {
             updaterReleaseLock();
             sendJSON([
-                'error' => $caps['mode'] === 'git'
-                    ? 'Git mode requires .git plus git, node, and npm on PATH'
-                    : 'ZIP mode requires ZipArchive and cURL',
+                'error' => updaterApplyBlockedMessage($caps),
             ], 400);
             return;
         }

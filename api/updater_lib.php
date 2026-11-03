@@ -579,7 +579,7 @@ function updaterCapabilities(): array {
     $hasGitDir = is_dir(UPDATER_ROOT . '/.git');
     $gitAvailable = $hasGitDir && updaterCommandExists('git');
     $nodeAvailable = updaterCommandExists('node') && updaterCommandExists('npm');
-    $zipAvailable = class_exists('ZipArchive') && function_exists('curl_init');
+    $zipAvailable = class_exists('ZipArchive') && updaterOutboundHttpAvailable();
     $mode = $gitAvailable ? 'git' : 'zip';
     return [
         'gitAvailable' => $gitAvailable,
@@ -769,78 +769,276 @@ function updaterEnsureGitSafeDirectory(): void {
     updaterRunCommand('git config --global --add safe.directory ' . escapeshellarg($safe), null, 15);
 }
 
-function updaterHttpJson(string $url, bool $forceDownload = false): array {
-    $token = updaterGithubToken();
+function updaterOutboundHttpAvailable(): bool {
+    if (function_exists('curl_init')) {
+        return true;
+    }
+    $flag = strtolower(trim((string)ini_get('allow_url_fopen')));
+    return in_array($flag, ['1', 'on', 'true', 'yes'], true);
+}
+
+function updaterApplyBlockedMessage(array $caps): string {
+    if (($caps['mode'] ?? '') === 'git') {
+        return 'Git mode requires .git plus git, node, and npm on PATH';
+    }
+    if (!class_exists('ZipArchive')) {
+        return 'ZIP mode requires the PHP zip extension (extension=zip in php.ini). Restart the web server after enabling it.';
+    }
+    return 'ZIP mode cannot download from GitHub. Enable extension=curl or allow_url_fopen=On in php.ini, then restart the web server.';
+}
+
+/**
+ * @param list<string> $headers
+ * @return array{status:int,body:string,error:string}
+ */
+function updaterHttpGet(string $url, array $headers, int $timeoutSec, ?string $destPath = null): array {
+    if (function_exists('curl_init')) {
+        return updaterHttpGetCurl($url, $headers, $timeoutSec, $destPath);
+    }
+    if (updaterOutboundHttpAvailable()) {
+        return updaterHttpGetStream($url, $headers, $timeoutSec, $destPath);
+    }
+    throw new RuntimeException(
+        'PHP cannot reach GitHub: enable extension=curl or allow_url_fopen=On in php.ini, then restart the web server.'
+    );
+}
+
+/**
+ * @param list<string> $headers
+ * @return array{status:int,body:string,error:string}
+ */
+function updaterHttpGetCurl(string $url, array $headers, int $timeoutSec, ?string $destPath): array {
     $ch = curl_init($url);
+    if ($ch === false) {
+        return ['status' => 0, 'body' => '', 'error' => 'curl_init failed'];
+    }
+    $fp = null;
+    $opts = [
+        CURLOPT_FOLLOWLOCATION => true,
+        CURLOPT_MAXREDIRS => 5,
+        CURLOPT_TIMEOUT => $timeoutSec,
+        CURLOPT_HTTPHEADER => $headers,
+        // XAMPP Windows often lacks a CA bundle; match other outbound HTTPS in this updater.
+        CURLOPT_SSL_VERIFYPEER => false,
+        CURLOPT_SSL_VERIFYHOST => 0,
+    ];
+    if ($destPath !== null) {
+        $fp = fopen($destPath, 'wb');
+        if ($fp === false) {
+            curl_close($ch);
+            return ['status' => 0, 'body' => '', 'error' => 'Cannot write download to ' . $destPath];
+        }
+        $opts[CURLOPT_FILE] = $fp;
+    } else {
+        $opts[CURLOPT_RETURNTRANSFER] = true;
+    }
+    curl_setopt_array($ch, $opts);
+    $result = curl_exec($ch);
+    $status = (int)curl_getinfo($ch, CURLINFO_HTTP_CODE);
+    $err = (string)curl_error($ch);
+    curl_close($ch);
+    if (is_resource($fp)) {
+        fclose($fp);
+    }
+    if ($result === false) {
+        return ['status' => $status, 'body' => '', 'error' => $err !== '' ? $err : 'unknown error'];
+    }
+    return ['status' => $status, 'body' => is_string($result) ? $result : '', 'error' => $err];
+}
+
+/**
+ * curl-less GET. Follows HTTPS redirects itself and drops Authorization when the host changes,
+ * which is what GitHub asset and zipball downloads do.
+ *
+ * @param list<string> $headers
+ * @return array{status:int,body:string,error:string}
+ */
+function updaterHttpGetStream(string $url, array $headers, int $timeoutSec, ?string $destPath): array {
+    $current = $url;
+    $originalHost = strtolower((string)parse_url($url, PHP_URL_HOST));
+    for ($hop = 0; $hop < 5; $hop++) {
+        $scheme = strtolower((string)parse_url($current, PHP_URL_SCHEME));
+        if ($scheme !== 'https') {
+            return ['status' => 0, 'body' => '', 'error' => 'Refused non-HTTPS URL'];
+        }
+        $hopHeaders = $headers;
+        $host = strtolower((string)parse_url($current, PHP_URL_HOST));
+        if ($host !== $originalHost) {
+            $hopHeaders = array_values(array_filter(
+                $hopHeaders,
+                static fn(string $header): bool => stripos($header, 'Authorization:') !== 0
+            ));
+        }
+        $opened = updaterHttpStreamOpen($current, $hopHeaders, $timeoutSec);
+        if ($opened['handle'] === null) {
+            return ['status' => 0, 'body' => '', 'error' => $opened['error']];
+        }
+        $in = $opened['handle'];
+        $status = $opened['status'];
+        $wrapper = $opened['headers'];
+        if (in_array($status, [301, 302, 303, 307, 308], true)) {
+            $location = updaterHttpHeaderValue($wrapper, 'location');
+            fclose($in);
+            if ($location === null || $location === '') {
+                return ['status' => $status, 'body' => '', 'error' => 'Redirect with no Location'];
+            }
+            $current = updaterResolveRedirect($current, $location);
+            continue;
+        }
+        if ($destPath === null) {
+            $body = (string)stream_get_contents($in);
+            fclose($in);
+            return ['status' => $status, 'body' => $body, 'error' => ''];
+        }
+        $out = fopen($destPath, 'wb');
+        if ($out === false) {
+            fclose($in);
+            return ['status' => 0, 'body' => '', 'error' => 'Cannot write download to ' . $destPath];
+        }
+        $copied = stream_copy_to_stream($in, $out);
+        fclose($in);
+        fclose($out);
+        if ($copied === false || $status < 200 || $status >= 300) {
+            @unlink($destPath);
+            return [
+                'status' => $status,
+                'body' => '',
+                'error' => $copied === false ? 'Failed while saving download' : '',
+            ];
+        }
+        return ['status' => $status, 'body' => '', 'error' => ''];
+    }
+    return ['status' => 0, 'body' => '', 'error' => 'Too many redirects'];
+}
+
+/**
+ * @param list<string> $headers
+ * @return array{handle:resource|null,status:int,error:string,headers:array<int,string>}
+ */
+function updaterHttpStreamOpen(string $url, array $headers, int $timeoutSec): array {
+    $context = stream_context_create([
+        'http' => [
+            'method' => 'GET',
+            'timeout' => $timeoutSec,
+            'header' => implode("\r\n", $headers) . "\r\n",
+            'follow_location' => 0,
+            'ignore_errors' => true,
+            'user_agent' => 'LinkNest-Updater',
+        ],
+        'ssl' => [
+            'verify_peer' => false,
+            'verify_peer_name' => false,
+        ],
+    ]);
+    error_clear_last();
+    $in = @fopen($url, 'rb', false, $context);
+    if ($in === false) {
+        $last = error_get_last();
+        return [
+            'handle' => null,
+            'status' => 0,
+            'error' => is_array($last) ? (string)($last['message'] ?? 'request failed') : 'request failed',
+            'headers' => [],
+        ];
+    }
+    $meta = stream_get_meta_data($in);
+    $wrapper = isset($meta['wrapper_data']) && is_array($meta['wrapper_data']) ? $meta['wrapper_data'] : [];
+    return [
+        'handle' => $in,
+        'status' => updaterHttpStatusFromHeaders($wrapper),
+        'error' => '',
+        'headers' => $wrapper,
+    ];
+}
+
+/** @param array<int, string> $headers */
+function updaterHttpStatusFromHeaders(array $headers): int {
+    $status = 0;
+    foreach ($headers as $line) {
+        if (is_string($line) && preg_match('#^HTTP/\d(?:\.\d)?\s+(\d{3})#', $line, $m)) {
+            $status = (int)$m[1];
+        }
+    }
+    return $status;
+}
+
+/** @param array<int, string> $headers */
+function updaterHttpHeaderValue(array $headers, string $name): ?string {
+    $prefix = strtolower($name) . ':';
+    $value = null;
+    foreach ($headers as $line) {
+        if (!is_string($line) || stripos($line, $prefix) !== 0) {
+            continue;
+        }
+        $value = trim(substr($line, strlen($prefix)));
+    }
+    return $value;
+}
+
+function updaterResolveRedirect(string $current, string $location): string {
+    $location = trim($location);
+    if (preg_match('#^https?://#i', $location)) {
+        return $location;
+    }
+    if (str_starts_with($location, '//')) {
+        return 'https:' . $location;
+    }
+    $parts = parse_url($current);
+    $origin = ($parts['scheme'] ?? 'https') . '://' . ($parts['host'] ?? '');
+    if (isset($parts['port'])) {
+        $origin .= ':' . $parts['port'];
+    }
+    if (str_starts_with($location, '/')) {
+        return $origin . $location;
+    }
+    $path = (string)($parts['path'] ?? '/');
+    $dir = rtrim(str_replace('\\', '/', dirname($path)), '/');
+    return $origin . ($dir === '' ? '' : $dir) . '/' . $location;
+}
+
+/** @return list<string> */
+function updaterGithubRequestHeaders(string $accept): array {
     $headers = [
-        'Accept: application/vnd.github+json',
+        'Accept: ' . $accept,
         'User-Agent: LinkNest-Updater',
         'X-GitHub-Api-Version: 2022-11-28',
     ];
+    $token = updaterGithubToken();
     if ($token !== '') {
         $headers[] = 'Authorization: Bearer ' . $token;
     }
-    curl_setopt_array($ch, [
-        CURLOPT_RETURNTRANSFER => true,
-        CURLOPT_FOLLOWLOCATION => true,
-        CURLOPT_TIMEOUT => $forceDownload ? 600 : 30,
-        CURLOPT_HTTPHEADER => $headers,
-        // XAMPP Windows often lacks a CA bundle; match other outbound HTTPS in this app
-        CURLOPT_SSL_VERIFYPEER => false,
-        CURLOPT_SSL_VERIFYHOST => 0,
-    ]);
-    $body = curl_exec($ch);
-    $status = (int)curl_getinfo($ch, CURLINFO_HTTP_CODE);
-    $err = curl_error($ch);
-    if ($body === false) {
-        throw new RuntimeException('GitHub request failed: ' . ($err ?: 'unknown error'));
+    return $headers;
+}
+
+function updaterHttpJson(string $url, bool $forceDownload = false): array {
+    $res = updaterHttpGet($url, updaterGithubRequestHeaders('application/vnd.github+json'), $forceDownload ? 600 : 30);
+    if ($res['status'] === 0) {
+        throw new RuntimeException('GitHub request failed: ' . ($res['error'] ?: 'unknown error'));
     }
-    if ($status < 200 || $status >= 300) {
-        $repo = updaterRepoSlug();
-        throw new RuntimeException(updaterFormatGithubHttpError($status, is_string($body) ? $body : '', $repo));
+    if ($res['status'] < 200 || $res['status'] >= 300) {
+        throw new RuntimeException(updaterFormatGithubHttpError($res['status'], $res['body'], updaterRepoSlug()));
     }
-    $decoded = json_decode($body, true);
+    $decoded = json_decode($res['body'], true);
     if (!is_array($decoded)) {
         throw new RuntimeException('Invalid JSON from GitHub');
     }
     return $decoded;
 }
 
-function updaterDownloadFile(string $url, string $destPath): void {
+function updaterDownloadToFile(string $url, string $destPath, string $accept, string $failLabel): void {
     $dir = dirname($destPath);
-    if (!is_dir($dir)) {
-        @mkdir($dir, 0755, true);
-    }
-    $token = updaterGithubToken();
-    $ch = curl_init($url);
-    $headers = [
-        'Accept: application/octet-stream',
-        'User-Agent: LinkNest-Updater',
-        'X-GitHub-Api-Version: 2022-11-28',
-    ];
-    if ($token !== '') {
-        $headers[] = 'Authorization: Bearer ' . $token;
-    }
-    $fp = fopen($destPath, 'wb');
-    if ($fp === false) {
+    if (!is_dir($dir) && !@mkdir($dir, 0755, true) && !is_dir($dir)) {
         throw new RuntimeException('Cannot write download to ' . $destPath);
     }
-    curl_setopt_array($ch, [
-        CURLOPT_FILE => $fp,
-        CURLOPT_FOLLOWLOCATION => true,
-        CURLOPT_TIMEOUT => 600,
-        CURLOPT_HTTPHEADER => $headers,
-        CURLOPT_SSL_VERIFYPEER => false,
-        CURLOPT_SSL_VERIFYHOST => 0,
-    ]);
-    $ok = curl_exec($ch);
-    $status = (int)curl_getinfo($ch, CURLINFO_HTTP_CODE);
-    $err = curl_error($ch);
-    fclose($fp);
-    if ($ok === false || $status < 200 || $status >= 300) {
+    $res = updaterHttpGet($url, updaterGithubRequestHeaders($accept), 600, $destPath);
+    if ($res['status'] < 200 || $res['status'] >= 300) {
         @unlink($destPath);
-        throw new RuntimeException('Download failed (HTTP ' . $status . '): ' . ($err ?: 'unknown'));
+        throw new RuntimeException($failLabel . ' (HTTP ' . $res['status'] . '): ' . ($res['error'] ?: 'unknown'));
     }
+}
+
+function updaterDownloadFile(string $url, string $destPath): void {
+    updaterDownloadToFile($url, $destPath, 'application/octet-stream', 'Download failed');
 }
 
 /**
@@ -2093,7 +2291,7 @@ function updaterApplyTarget(array $target, bool $pushHistory = true): void {
         ]);
     } else {
         if (!$caps['zipAvailable']) {
-            throw new RuntimeException('ZIP mode requires ZipArchive and cURL');
+            throw new RuntimeException(updaterApplyBlockedMessage($caps));
         }
         if (!is_dir(UPDATER_TMP_DIR)) {
             @mkdir(UPDATER_TMP_DIR, 0755, true);
@@ -2191,40 +2389,7 @@ function updaterApplyRelease(array $release): void {
 }
 
 function updaterDownloadZipball(string $url, string $destPath): void {
-    $dir = dirname($destPath);
-    if (!is_dir($dir)) {
-        @mkdir($dir, 0755, true);
-    }
-    $token = updaterGithubToken();
-    $ch = curl_init($url);
-    $headers = [
-        'Accept: application/vnd.github+json',
-        'User-Agent: LinkNest-Updater',
-        'X-GitHub-Api-Version: 2022-11-28',
-    ];
-    if ($token !== '') {
-        $headers[] = 'Authorization: Bearer ' . $token;
-    }
-    $fp = fopen($destPath, 'wb');
-    if ($fp === false) {
-        throw new RuntimeException('Cannot write download to ' . $destPath);
-    }
-    curl_setopt_array($ch, [
-        CURLOPT_FILE => $fp,
-        CURLOPT_FOLLOWLOCATION => true,
-        CURLOPT_TIMEOUT => 600,
-        CURLOPT_HTTPHEADER => $headers,
-        CURLOPT_SSL_VERIFYPEER => false,
-        CURLOPT_SSL_VERIFYHOST => 0,
-    ]);
-    $ok = curl_exec($ch);
-    $status = (int)curl_getinfo($ch, CURLINFO_HTTP_CODE);
-    $err = curl_error($ch);
-    fclose($fp);
-    if ($ok === false || $status < 200 || $status >= 300) {
-        @unlink($destPath);
-        throw new RuntimeException('Zipball download failed (HTTP ' . $status . '): ' . ($err ?: 'unknown'));
-    }
+    updaterDownloadToFile($url, $destPath, 'application/vnd.github+json', 'Zipball download failed');
 }
 
 function updaterClearOpcache(): void {

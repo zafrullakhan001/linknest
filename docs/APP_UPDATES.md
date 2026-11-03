@@ -176,7 +176,7 @@ API: `POST /api/updater/rollback` with `{ "historyId": "…", "restoreDatabase":
 
 ### ZIP mode requirements
 
-- PHP `ZipArchive` + cURL
+- PHP `ZipArchive`, plus outbound HTTPS via the `curl` extension or `allow_url_fopen=On` (hosts without `php-curl` use the stream fallback)
 - Prefer Releases with `linknest-update-vX.Y.Z.zip`
 - Commit zipballs do not include `dist/`; without Node the UI stays old
 - Extract allow-list includes `api/`, `dist/`, `components/`, `services/`, `utils/`, `constants/`, `styles/`, `App.tsx`, `types.ts`, `index.css`, etc. (not `data/` / `uploads/`)

@@ -1,4 +1,4 @@
-import React, { useEffect, useRef, useState, lazy, Suspense } from 'react';
+import React, { useCallback, useEffect, useRef, useState, lazy, Suspense } from 'react';
 import { useAuth } from '../contexts/AuthContext';
 import { useSettings, resolveBrandedAssetHref } from '../contexts/SettingsContext';
 import { useMobile } from '../hooks/useMobile';
@@ -79,6 +79,11 @@ export const Navigation: React.FC<NavigationProps> = ({ darkMode, showClock, tog
     const openUpdates = () => setShowUpdatesDialog(true);
     window.addEventListener('openAppUpdates', openUpdates);
     return () => window.removeEventListener('openAppUpdates', openUpdates);
+  }, []);
+
+  const handleUpdateAvailabilityChange = useCallback((available: boolean, count: number) => {
+    setUpdateAvailable(available);
+    setUpdateCount(count);
   }, []);
 
   useEffect(() => {
@@ -393,10 +398,7 @@ export const Navigation: React.FC<NavigationProps> = ({ darkMode, showClock, tog
           <UpdatesDialog
             isOpen={showUpdatesDialog}
             onClose={() => setShowUpdatesDialog(false)}
-            onUpdateAvailabilityChange={(available, count) => {
-              setUpdateAvailable(available);
-              setUpdateCount(count);
-            }}
+            onUpdateAvailabilityChange={handleUpdateAvailabilityChange}
           />
         )}
       </Suspense>
