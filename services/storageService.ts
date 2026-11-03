@@ -22,6 +22,7 @@ const transformTile = (apiTile: any): Tile => {
     showTitle: apiTile.showTitle === false || apiTile.showTitle === 0 || apiTile.showTitle === '0' ? false : true,
     showDescription: apiTile.showDescription === false || apiTile.showDescription === 0 || apiTile.showDescription === '0' ? false : true,
     showShortUrls: apiTile.showShortUrls === true || apiTile.showShortUrls === 1 || apiTile.showShortUrls === '1',
+    allowPublicExport: apiTile.allowPublicExport === true || apiTile.allowPublicExport === 1 || apiTile.allowPublicExport === '1',
     shortUrl: typeof apiTile.shortUrl === 'string' && apiTile.shortUrl ? apiTile.shortUrl : undefined,
     emojiImage: apiTile.emojiImage || undefined,
     emojiImageOpacity: typeof apiTile.emojiImageOpacity === 'number'

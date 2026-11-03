@@ -665,8 +665,8 @@ function ensureFingerprintRegistryTable(PDO $db): void {
  * Safe to call on the getDB() fast path when user_version already matches SCHEMA_VERSION.
  */
 /**
- * tiles.allow_public_export: 1 (default) lets any viewer use Export.
- * 0 hides Export from guests and other non-editors. Editors and admins still can.
+ * tiles.allow_public_export: 0 (default) hides Export from guests and other viewers.
+ * 1 lets any viewer download the space. Editors can always export.
  * Safe on the getDB() fast path when user_version already matches SCHEMA_VERSION.
  */
 function ensureAllowPublicExportColumn(PDO $db): void {
@@ -680,7 +680,27 @@ function ensureAllowPublicExportColumn(PDO $db): void {
             $columns = $db->query('PRAGMA table_info(tiles)')->fetchAll(PDO::FETCH_ASSOC);
             $names = array_column($columns, 'name');
             if (!in_array('allow_public_export', $names, true)) {
-                $db->exec('ALTER TABLE tiles ADD COLUMN allow_public_export INTEGER DEFAULT 1');
+                $db->exec('ALTER TABLE tiles ADD COLUMN allow_public_export INTEGER NOT NULL DEFAULT 0');
+            }
+        }
+        // One-time: rows created while the default was "allowed" are turned off.
+        // Later checks in Edit Space are kept.
+        $marker = false;
+        try {
+            $markerStmt = $db->prepare('SELECT value FROM settings WHERE key = ?');
+            $markerStmt->execute(['allow_public_export_default_off']);
+            $marker = $markerStmt->fetchColumn() === '1';
+        } catch (PDOException $e) {
+            $marker = true;
+        }
+        if (!$marker && $exists) {
+            $db->exec('UPDATE tiles SET allow_public_export = 0');
+            $now = time();
+            $save = $db->prepare('INSERT INTO settings (key, value, updated_at) VALUES (?, ?, ?)
+                ON CONFLICT(key) DO UPDATE SET value = excluded.value, updated_at = excluded.updated_at');
+            $save->execute(['allow_public_export_default_off', '1', $now]);
+            if (function_exists('invalidateGuestTilesListCache')) {
+                invalidateGuestTilesListCache();
             }
         }
         $ensured = true;
@@ -689,13 +709,13 @@ function ensureAllowPublicExportColumn(PDO $db): void {
     }
 }
 
-/** Missing column or null means export stays allowed (existing spaces). */
+/** Missing or null means public export is off. */
 function mapAllowPublicExportFromRow(array $row): bool {
     if (!array_key_exists('allow_public_export', $row) && !array_key_exists('allowPublicExport', $row)) {
-        return true;
+        return false;
     }
     $raw = array_key_exists('allow_public_export', $row) ? $row['allow_public_export'] : $row['allowPublicExport'];
-    return !($raw === 0 || $raw === '0' || $raw === false || $raw === 'false');
+    return $raw === 1 || $raw === '1' || $raw === true;
 }
 
 function persistAllowPublicExport(PDO $db, string $tileId, $data, ?array $fallbackRow = null): void {

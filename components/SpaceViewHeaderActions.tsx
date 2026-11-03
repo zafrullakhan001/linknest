@@ -176,8 +176,8 @@ export const SpaceViewHeaderActions: React.FC<SpaceViewHeaderActionsProps> = ({
   const canDelete = !recycleBinMode && tile.canDelete === true;
   const canFavorite = !recycleBinMode;
   const canCheckLinks = !recycleBinMode;
-  /** Guests lose Export when the space turns public export off. Editors and admins keep it. */
-  const canExport = tile.allowPublicExport !== false || canEdit || !!user?.is_admin;
+  /** Public export is off unless this space opted in. Editors can still export. */
+  const canExport = tile.allowPublicExport === true || canEdit;
   /**
    * Deleting a space that other users can still open needs an explicit decision about their
    * access. `shareCount` covers share invitations (pending + accepted); `allowedUsers` also

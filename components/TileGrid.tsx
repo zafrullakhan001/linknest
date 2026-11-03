@@ -3640,7 +3640,7 @@ export const TileGrid: React.FC<TileGridProps> = ({
   const [newShowTitle, setNewShowTitle] = useState(true);
   const [newShowDescription, setNewShowDescription] = useState(true);
   const [newShowShortUrls, setNewShowShortUrls] = useState(false);
-  const [newAllowPublicExport, setNewAllowPublicExport] = useState(true);
+  const [newAllowPublicExport, setNewAllowPublicExport] = useState(false);
   const [newEmojiImage, setNewEmojiImage] = useState<string>('');
   const [newEmojiImageOpacity, setNewEmojiImageOpacity] = useState(100);
   const [newEmojiImageOffsetX, setNewEmojiImageOffsetX] = useState(0);
@@ -6509,7 +6509,7 @@ You may also wrap the array in an object: { "messages": [ ... ] }.
     setNewShowTitle(true);
     setNewShowDescription(true);
     setNewShowShortUrls(false);
-    setNewAllowPublicExport(true);
+    setNewAllowPublicExport(false);
     setNewEmojiImage('');
     setNewEmojiImageOpacity(100);
     setNewEmojiImageOffsetX(0);
@@ -7023,7 +7023,7 @@ You may also wrap the array in an object: { "messages": [ ... ] }.
     setNewShowTitle(tile.showTitle !== false);
     setNewShowDescription(tile.showDescription !== false);
     setNewShowShortUrls(tile.showShortUrls === true);
-    setNewAllowPublicExport(tile.allowPublicExport !== false);
+    setNewAllowPublicExport(tile.allowPublicExport === true);
     setNewEmojiImage(tile.emojiImage || '');
     setNewEmojiImageOpacity(
       typeof tile.emojiImageOpacity === 'number' ? Math.max(0, Math.min(100, tile.emojiImageOpacity)) : 100
