@@ -44,6 +44,8 @@ interface RichTextContentItemProps {
   expiresAt?: string;
   isSelected?: boolean;
   onToggleSelect?: () => void;
+  /** When true, show read-aloud controls on the viewer (section setting). Default hidden. */
+  showReadAloud?: boolean;
 }
 
 function normalizeAlign(v?: string | null): BoxAlign {
@@ -85,6 +87,7 @@ export const RichTextContentItem = forwardRef<RichTextContentItemHandle, RichTex
     expiresAt,
     isSelected = false,
     onToggleSelect,
+    showReadAloud = false,
   },
   ref
 ) {
@@ -353,6 +356,7 @@ export const RichTextContentItem = forwardRef<RichTextContentItemHandle, RichTex
             boxFooterFontSize={content.boxFooterFontSize}
             boxHeaderEmoji={content.boxHeaderEmoji}
             boxImportance={content.boxImportance}
+            showReadAloud={showReadAloud}
           />
         </div>
 

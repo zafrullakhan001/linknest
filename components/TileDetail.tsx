@@ -764,6 +764,7 @@ const cloneSectionItem = (
         expiresAt: section.expiresAt,
         forceStackedView: section.forceStackedView,
         ignoreSideBySide: section.ignoreSideBySide,
+        showReadAloud: section.showReadAloud,
         inheritShortUrls: section.inheritShortUrls,
         position: opts?.position ?? section.position ?? 0,
         links: links.map((link) => cloneLinkItem(link)),
@@ -3696,6 +3697,18 @@ export const TileDetail: React.FC<TileDetailProps> = ({
                 ...t,
                 sections: t.sections.map(s =>
                     s.id === sectionId ? { ...s, ignoreSideBySide: value } : s
+                )
+            };
+        }));
+    };
+
+    const handleToggleShowReadAloud = (tabId: string, sectionId: string, value: boolean) => {
+        setEditTabs(editTabs.map(t => {
+            if (t.id !== tabId) return t;
+            return {
+                ...t,
+                sections: t.sections.map(s =>
+                    s.id === sectionId ? { ...s, showReadAloud: value } : s
                 )
             };
         }));
@@ -9280,6 +9293,7 @@ export const TileDetail: React.FC<TileDetailProps> = ({
                                                                         boxFooterFontSize={item.boxFooterFontSize}
                                                                         boxHeaderEmoji={item.boxHeaderEmoji}
                                                                         boxImportance={item.boxImportance}
+                                                                        showReadAloud={section.showReadAloud === true}
                                                                     />
                                                                         </div>
                                                                     )}
@@ -12520,6 +12534,21 @@ export const TileDetail: React.FC<TileDetailProps> = ({
                                                                             <span className="text-xs text-slate-600 dark:text-slate-400 whitespace-nowrap">Full width</span>
                                                                         </label>
                                                                     </div>
+                                                                    {/* Show / hide rich-text read-aloud for all viewers (including public) */}
+                                                                    <div className="flex items-center gap-1">
+                                                                        <label
+                                                                            className="flex items-center gap-1.5 cursor-pointer p-1.5 rounded hover:bg-slate-100 dark:hover:bg-slate-700 transition-colors"
+                                                                            title="Show read-aloud controls on rich text in this section for everyone, including public viewers"
+                                                                        >
+                                                                            <input
+                                                                                type="checkbox"
+                                                                                checked={section.showReadAloud === true}
+                                                                                onChange={(e) => handleToggleShowReadAloud(tab.id, section.id, e.target.checked)}
+                                                                                className="w-4 h-4 text-brand-600 bg-slate-100 border-slate-300 rounded focus:ring-brand-500 dark:focus:ring-brand-600 dark:ring-offset-slate-800 focus:ring-2 dark:bg-slate-700 dark:border-slate-600"
+                                                                            />
+                                                                            <span className="text-xs text-slate-600 dark:text-slate-400 whitespace-nowrap">Read aloud</span>
+                                                                        </label>
+                                                                    </div>
                                                                     <button
                                                                         type="button"
                                                                         onClick={() => openSectionLinksImport(tab.id, section.id)}
@@ -12678,6 +12707,7 @@ export const TileDetail: React.FC<TileDetailProps> = ({
                                                                                                 expiresAt={richText.expiresAt}
                                                                                                 isSelected={selectedRichTextIds.includes(richText.id)}
                                                                                                 onToggleSelect={() => toggleRichTextSelection(richText.id)}
+                                                                                                showReadAloud={section.showReadAloud === true}
                                                                                             />
                                                                                         </div>
                                                                                     );

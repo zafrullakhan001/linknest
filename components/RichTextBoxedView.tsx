@@ -1,4 +1,4 @@
-import React, { useCallback, useEffect, useId, useMemo, useRef } from 'react';
+import React, { useCallback, useEffect, useId, useMemo, useRef, useState } from 'react';
 import { linkifyHtml } from '../utils/richTextDisplay';
 import { toSpeakableText, useReadAloud } from '../hooks/useReadAloud';
 import {
@@ -18,6 +18,20 @@ import {
 
 export type BoxAlign = 'left' | 'center' | 'right';
 
+/** Remember whether voice / speed / speaker chips are visible on rich-text viewers. */
+const READ_ALOUD_OPTIONS_STORAGE_KEY = 'linknest-richtext-read-aloud-options';
+
+function readStoredShowReadAloudOptions(): boolean {
+  try {
+    const raw = localStorage.getItem(READ_ALOUD_OPTIONS_STORAGE_KEY);
+    if (raw === '0' || raw === 'false') return false;
+    if (raw === '1' || raw === 'true') return true;
+  } catch {
+    // Ignore private-mode / unavailable storage
+  }
+  return true;
+}
+
 interface RichTextBoxedViewProps {
   content: string;
   boxed?: boolean;
@@ -34,6 +48,8 @@ interface RichTextBoxedViewProps {
   boxFooterFontSize?: BoxFontSize | null;
   boxHeaderEmoji?: string | null;
   boxImportance?: BoxImportance | null;
+  /** When true, show play / Copilot / voice options for all viewers. Default hidden. */
+  showReadAloud?: boolean;
   className?: string;
   bodyClassName?: string;
 }
@@ -90,6 +106,7 @@ export const RichTextBoxedView: React.FC<RichTextBoxedViewProps> = ({
   boxFooterFontSize,
   boxHeaderEmoji,
   boxImportance,
+  showReadAloud = false,
   className = '',
   bodyClassName = '',
 }) => {
@@ -99,6 +116,7 @@ export const RichTextBoxedView: React.FC<RichTextBoxedViewProps> = ({
   const speakingRangeRef = useRef<Range | null>(null);
   const speakMapRef = useRef<DomCharMap | null>(null);
   const settingsIdPrefix = useId();
+  const [showReadAloudOptions, setShowReadAloudOptions] = useState(readStoredShowReadAloudOptions);
   const html = linkifyHtml(content || '');
   const speakableText = useMemo(() => toSpeakableText(content || ''), [content]);
   const readAloud = useReadAloud({
@@ -106,6 +124,18 @@ export const RichTextBoxedView: React.FC<RichTextBoxedViewProps> = ({
     active: true,
     autoStart: false,
   });
+
+  const toggleReadAloudOptions = useCallback(() => {
+    setShowReadAloudOptions((prev) => {
+      const next = !prev;
+      try {
+        localStorage.setItem(READ_ALOUD_OPTIONS_STORAGE_KEY, next ? '1' : '0');
+      } catch {
+        // Ignore private-mode / unavailable storage
+      }
+      return next;
+    });
+  }, []);
 
   const getSelectionInBody = useCallback((): string => {
     const body = bodyRef.current;
@@ -189,7 +219,7 @@ export const RichTextBoxedView: React.FC<RichTextBoxedViewProps> = ({
     color: contrastText(bodyBg),
   };
 
-  const readAloudButtons = (
+  const readAloudButtons = showReadAloud ? (
     <div className="flex items-center gap-0.5 shrink-0" onMouseDown={(e) => e.preventDefault()}>
       <ReadAloudButtons
         readAloud={readAloud}
@@ -198,16 +228,49 @@ export const RichTextBoxedView: React.FC<RichTextBoxedViewProps> = ({
         onBeforeSpeak={captureHighlightBeforeSpeak}
         hideReplay
       />
+      {readAloud.canSpeak && (
+        <button
+          type="button"
+          onClick={toggleReadAloudOptions}
+          className={`p-1 rounded-md transition-colors ${
+            showReadAloudOptions
+              ? 'bg-slate-200 dark:bg-slate-600 text-slate-700 dark:text-slate-100'
+              : 'hover:bg-slate-100 dark:hover:bg-slate-700 text-slate-400 hover:text-slate-600 dark:hover:text-slate-200'
+          }`}
+          title={showReadAloudOptions ? 'Hide read-aloud options' : 'Show read-aloud options'}
+          aria-label={showReadAloudOptions ? 'Hide read-aloud options' : 'Show read-aloud options'}
+          aria-expanded={showReadAloudOptions}
+          aria-controls={`${settingsIdPrefix}-options`}
+        >
+          <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor" className="w-4 h-4" aria-hidden>
+            {showReadAloudOptions ? (
+              <path
+                fillRule="evenodd"
+                d="M14.77 12.79a.75.75 0 01-1.06-.02L10 8.832 6.29 12.77a.75.75 0 11-1.08-1.04l4.25-4.5a.75.75 0 011.08 0l4.25 4.5a.75.75 0 01-.02 1.06z"
+                clipRule="evenodd"
+              />
+            ) : (
+              <path
+                fillRule="evenodd"
+                d="M5.23 7.21a.75.75 0 011.06.02L10 11.168l3.71-3.938a.75.75 0 111.08 1.04l-4.25 4.5a.75.75 0 01-1.08 0l-4.25-4.5a.75.75 0 01.02-1.06z"
+                clipRule="evenodd"
+              />
+            )}
+          </svg>
+        </button>
+      )}
     </div>
-  );
+  ) : null;
 
-  const readAloudSettings = (
-    <ReadAloudSettingsRow
-      readAloud={readAloud}
-      idPrefix={settingsIdPrefix}
-      className="w-full min-w-0"
-    />
-  );
+  const readAloudSettings = showReadAloud && showReadAloudOptions ? (
+    <div id={`${settingsIdPrefix}-options`}>
+      <ReadAloudSettingsRow
+        readAloud={readAloud}
+        idPrefix={settingsIdPrefix}
+        className="w-full min-w-0"
+      />
+    </div>
+  ) : null;
 
   const body = (
     <div ref={hostRef} className="ln-read-aloud-host relative">
@@ -223,10 +286,12 @@ export const RichTextBoxedView: React.FC<RichTextBoxedViewProps> = ({
   if (!boxed) {
     return (
       <div className={className}>
-        <div className="flex flex-col items-stretch gap-1 mb-1.5 -mt-0.5">
-          <div className="flex items-center justify-end">{readAloudButtons}</div>
-          {readAloudSettings}
-        </div>
+        {showReadAloud ? (
+          <div className="flex flex-col items-stretch gap-1 mb-1.5 -mt-0.5">
+            <div className="flex items-center justify-end">{readAloudButtons}</div>
+            {readAloudSettings}
+          </div>
+        ) : null}
         {body}
       </div>
     );
@@ -320,7 +385,7 @@ export const RichTextBoxedView: React.FC<RichTextBoxedViewProps> = ({
               <span aria-hidden>{importance.emoji}</span>
               {importance.label}
             </span>
-            <div style={{ marginLeft: 'auto' }}>{readAloudButtons}</div>
+            {readAloudButtons ? <div style={{ marginLeft: 'auto' }}>{readAloudButtons}</div> : null}
           </div>
           {readAloudSettings}
         </div>

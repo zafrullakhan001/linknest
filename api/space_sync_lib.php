@@ -499,6 +499,7 @@ function spaceSyncSectionValues(array $section, bool $withAcl): array {
         'background_style' => encodeBackgroundStyleJson($section),
         'force_stacked_view' => !empty($section['forceStackedView']) ? 1 : 0,
         'ignore_side_by_side' => !empty($section['ignoreSideBySide']) ? 1 : 0,
+        'show_read_aloud' => sectionShowReadAloudFlag($section) ? 1 : 0,
     ];
     if ($withAcl) {
         $values = array_merge($values, spaceSyncAcl($section));

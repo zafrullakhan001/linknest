@@ -374,6 +374,8 @@ export interface LinkSection {
   forceStackedView?: boolean; // Force stacked view for this section regardless of global view preference
   /** When true, this section spans the full row and uses a stacked link list (ignores side-by-side columns and grid/columns/compact/QR views). */
   ignoreSideBySide?: boolean;
+  /** When true, show rich-text read-aloud controls for everyone (including public viewers). Default hidden. */
+  showReadAloud?: boolean;
   position?: number; // Position in the tab (for sorting)
   /** Recyclable LinkNest short URL for this section. */
   shortUrl?: string;

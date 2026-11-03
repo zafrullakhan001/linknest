@@ -501,6 +501,8 @@ const normalizeImportedSection = (section: any): LinkSection => {
       typeof section.forceStackedView === 'boolean' ? section.forceStackedView : undefined,
     ignoreSideBySide:
       typeof section.ignoreSideBySide === 'boolean' ? section.ignoreSideBySide : undefined,
+    showReadAloud:
+      typeof section.showReadAloud === 'boolean' ? section.showReadAloud : undefined,
     visibility: section.visibility || 'public',
     allowedUsers: asNumberArray(section.allowedUsers),
     allowedGroups: asNumberArray(section.allowedGroups),

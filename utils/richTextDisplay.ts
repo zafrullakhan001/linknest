@@ -94,8 +94,69 @@ const FONT_SIZE_ATTR_MAP: Record<string, string> = {
   '7': '2rem',
 };
 
+/** True when a CSS/bgcolor value is a real paint (not empty / transparent / inherit). */
+function isAuthorBackground(value: string | null | undefined): boolean {
+  if (!value) return false;
+  const v = value.trim().toLowerCase();
+  return v !== '' && v !== 'transparent' && v !== 'inherit' && v !== 'initial' && v !== 'unset' && v !== 'none';
+}
+
+/** Read background from inline style, then legacy bgcolor. */
+function readAuthorBackground(el: Element): string | null {
+  const htmlEl = el as HTMLElement;
+  const fromStyle =
+    htmlEl.style?.getPropertyValue('background-color') ||
+    htmlEl.style?.backgroundColor ||
+    htmlEl.style?.getPropertyValue('background') ||
+    '';
+  if (isAuthorBackground(fromStyle)) return fromStyle.trim();
+  const bgcolor = el.getAttribute('bgcolor');
+  if (isAuthorBackground(bgcolor)) return (bgcolor || '').trim();
+  return null;
+}
+
+/**
+ * TinyMCE often stores row/column colors on <tr>, <col>, or bgcolor — not on each
+ * cell. Viewer CSS paints every <th>, which hides those. Copy the effective color
+ * onto cells so promoteEditorFonts can force it with !important.
+ */
+function promoteTableCellBackgrounds(root: Element): void {
+  root.querySelectorAll('table').forEach((table) => {
+    const colBgs: (string | null)[] = [];
+    table.querySelectorAll('col').forEach((col) => {
+      const span = Math.max(1, parseInt(col.getAttribute('span') || '1', 10) || 1);
+      const bg = readAuthorBackground(col);
+      for (let i = 0; i < span; i++) colBgs.push(bg);
+    });
+
+    table.querySelectorAll('tr').forEach((tr) => {
+      const rowBg = readAuthorBackground(tr);
+      let colIndex = 0;
+      Array.from(tr.children).forEach((cell) => {
+        if (cell.tagName !== 'TD' && cell.tagName !== 'TH') return;
+        const colspan = Math.max(1, parseInt(cell.getAttribute('colspan') || '1', 10) || 1);
+        const cellBg = readAuthorBackground(cell);
+        let colBg: string | null = null;
+        for (let i = 0; i < colspan; i++) {
+          const candidate = colBgs[colIndex + i] || null;
+          if (candidate) {
+            colBg = candidate;
+            break;
+          }
+        }
+        const effective = cellBg || rowBg || colBg;
+        if (effective) {
+          (cell as HTMLElement).style.setProperty('background-color', effective, 'important');
+        }
+        colIndex += colspan;
+      });
+    });
+  });
+}
+
 /** Keep editor inline styles against theme CSS that uses !important. */
 function promoteEditorFonts(root: Element): void {
+  promoteTableCellBackgrounds(root);
   const styled = root.querySelectorAll<HTMLElement>('[style]');
   styled.forEach((el) => {
     const family = el.style.fontFamily;

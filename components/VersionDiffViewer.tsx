@@ -233,7 +233,7 @@ export const VersionDiffViewer: React.FC<VersionDiffViewerProps> = ({
             const fieldDiffs = diffObjects(tabA, tabB, ['title', 'position', 'textColor', 'backgroundColor', 'backgroundGradientEnabled', 'backgroundGradientColors', 'backgroundGradientDirection', 'backgroundGradientType', 'backgroundGradientColorPositions', 'visibility', 'allowedUsers', 'visibleFrom', 'expiresAt']);
 
             // Compare Sections
-            const sectionsDiff = diffArray(tabA.sections || [], tabB.sections || [], ['title', 'position', 'textColor', 'backgroundColor', 'backgroundGradientEnabled', 'backgroundGradientColors', 'backgroundGradientDirection', 'backgroundGradientType', 'backgroundGradientColorPositions', 'visibility', 'allowedUsers', 'visibleFrom', 'expiresAt', 'forceStackedView', 'ignoreSideBySide'], (secA, secB) => {
+            const sectionsDiff = diffArray(tabA.sections || [], tabB.sections || [], ['title', 'position', 'textColor', 'backgroundColor', 'backgroundGradientEnabled', 'backgroundGradientColors', 'backgroundGradientDirection', 'backgroundGradientType', 'backgroundGradientColorPositions', 'visibility', 'allowedUsers', 'visibleFrom', 'expiresAt', 'forceStackedView', 'ignoreSideBySide', 'showReadAloud'], (secA, secB) => {
                 // Compare Links
                 const linksDiff = diffArray(
                     secA.links || [],

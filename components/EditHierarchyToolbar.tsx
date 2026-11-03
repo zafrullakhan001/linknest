@@ -227,6 +227,7 @@ interface SectionToolbarProps {
     onColorChange: (color: string) => void;
     onForceStackedChange: (value: boolean) => void;
     onIgnoreSideBySideChange: (value: boolean) => void;
+    onShowReadAloudChange: (value: boolean) => void;
 }
 
 export const SectionEditActionToolbar: React.FC<SectionToolbarProps> = ({
@@ -238,6 +239,7 @@ export const SectionEditActionToolbar: React.FC<SectionToolbarProps> = ({
     onColorChange,
     onForceStackedChange,
     onIgnoreSideBySideChange,
+    onShowReadAloudChange,
 }) => {
     const showShorts = effectiveShowShortUrls(handlers.showShortUrls, tab, section);
     const importing = !!handlers.importingSectionLinks?.[section.id];
@@ -307,6 +309,19 @@ export const SectionEditActionToolbar: React.FC<SectionToolbarProps> = ({
                     className="w-4 h-4 text-brand-600 bg-slate-100 border-slate-300 rounded focus:ring-brand-500 dark:bg-slate-700 dark:border-slate-600"
                 />
                 <span className="text-xs text-slate-600 dark:text-slate-400 whitespace-nowrap">Full width</span>
+            </label>
+            <label
+                className="flex items-center gap-1.5 cursor-pointer p-1.5 rounded-lg hover:bg-slate-100 dark:hover:bg-slate-700"
+                title="Show read-aloud controls on rich text in this section for everyone, including public viewers"
+                style={{ minHeight: 44 }}
+            >
+                <input
+                    type="checkbox"
+                    checked={section.showReadAloud === true}
+                    onChange={(e) => onShowReadAloudChange(e.target.checked)}
+                    className="w-4 h-4 text-brand-600 bg-slate-100 border-slate-300 rounded focus:ring-brand-500 dark:bg-slate-700 dark:border-slate-600"
+                />
+                <span className="text-xs text-slate-600 dark:text-slate-400 whitespace-nowrap">Read aloud</span>
             </label>
             <button
                 type="button"

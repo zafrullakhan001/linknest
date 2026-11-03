@@ -8454,6 +8454,17 @@ input[type="search"]::-ms-clear {
   background-color: #334155;
 }
 
+/* Let TinyMCE row background colors show through the default th fill.
+   Cell-level inline styles already win; bgcolor/col colors are promoted in JS. */
+.ln-tinymce-content table tr[style*="background-color"] > th,
+.ln-tinymce-content table tr[style*="background:"] > th,
+.ln-tinymce-content table tr[bgcolor] > th,
+.dark .ln-tinymce-content table tr[style*="background-color"] > th,
+.dark .ln-tinymce-content table tr[style*="background:"] > th,
+.dark .ln-tinymce-content table tr[bgcolor] > th {
+  background-color: transparent;
+}
+
 .ln-tinymce-content table[border]:not([border="0"]):not([style*="border-width"]) th,
 .ln-tinymce-content table[border]:not([border="0"]):not([style*="border-width"]) td {
   border-width: 1px;
