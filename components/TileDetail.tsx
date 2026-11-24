@@ -10623,8 +10623,9 @@ export const TileDetail: React.FC<TileDetailProps> = ({
                         canAddLinks={tile.canAddLinks !== false}
                         canDeleteTabs={tile.canDeleteTabs !== false}
                         canDeleteSections={tile.canDeleteSections !== false}
+                        canDeleteLinks={tile.canDeleteLinks !== false}
                         onClose={() => setShowContentTransfer(false)}
-                        onApply={async ({ tabs: nextTabs, messages: nextMessages, action }) => {
+                        onApply={async ({ tabs: nextTabs, messages: nextMessages, action, detail }) => {
                             const updated: Tile = {
                                 ...tile,
                                 tabs: nextTabs,
@@ -10642,7 +10643,13 @@ export const TileDetail: React.FC<TileDetailProps> = ({
                                     ? 'Merged into this space.'
                                     : action === 'split'
                                         ? 'Split into new tabs.'
-                                        : 'Imported into this space.'
+                                        : action === 'copy'
+                                            ? 'Copied sections.'
+                                            : action === 'move'
+                                                ? 'Moved sections.'
+                                                : action === 'dedupe'
+                                                    ? detail || 'Removed duplicate links.'
+                                                    : 'Imported into this space.'
                             );
                         }}
                     />
@@ -13963,8 +13970,9 @@ export const TileDetail: React.FC<TileDetailProps> = ({
                         canAddLinks={tile.canAddLinks !== false}
                         canDeleteTabs={tile.canDeleteTabs !== false}
                         canDeleteSections={tile.canDeleteSections !== false}
+                        canDeleteLinks={tile.canDeleteLinks !== false}
                         onClose={() => setShowContentTransfer(false)}
-                        onApply={async ({ tabs: nextTabs, messages: nextMessages, action }) => {
+                        onApply={async ({ tabs: nextTabs, messages: nextMessages, action, detail }) => {
                             if (isEditing) {
                                 setEditTabs(nextTabs);
                                 if (nextMessages) {
@@ -13982,7 +13990,13 @@ export const TileDetail: React.FC<TileDetailProps> = ({
                                         ? 'Merged in the editor. Save the space to keep these changes.'
                                         : action === 'split'
                                             ? 'Split in the editor. Save the space to keep these changes.'
-                                            : 'Imported into the editor. Save the space to keep these changes.'
+                                            : action === 'copy'
+                                                ? 'Copied sections in the editor. Save the space to keep these changes.'
+                                                : action === 'move'
+                                                    ? 'Moved sections in the editor. Save the space to keep these changes.'
+                                                    : action === 'dedupe'
+                                                        ? `${detail || 'Removed duplicate links.'} Save the space to keep these changes.`
+                                                        : 'Imported into the editor. Save the space to keep these changes.'
                                 );
                                 return;
                             }
@@ -14003,7 +14017,13 @@ export const TileDetail: React.FC<TileDetailProps> = ({
                                     ? 'Merged into this space.'
                                     : action === 'split'
                                         ? 'Split into new tabs.'
-                                        : 'Imported into this space.'
+                                        : action === 'copy'
+                                            ? 'Copied sections.'
+                                            : action === 'move'
+                                                ? 'Moved sections.'
+                                                : action === 'dedupe'
+                                                    ? detail || 'Removed duplicate links.'
+                                                    : 'Imported into this space.'
                             );
                         }}
                     />

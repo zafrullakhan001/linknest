@@ -1,5 +1,11 @@
 import { Link, LinkSection, RichTextContent, Tab, TileMessage } from '../types';
 import { pickSectionBackgroundDecoration } from '../utils/sectionBackgroundColor';
+import {
+  countRemovableDuplicates,
+  dedupeLinksByUrl,
+  findDuplicateLinkGroups,
+  type DuplicateLinkGroup,
+} from '../utils/sectionDuplicateLinks';
 import { generateUuid } from './idService';
 
 const generateId = () => generateUuid();
@@ -890,4 +896,216 @@ export const splitLinksIntoSection = (
     ...tabMetaFromSource(sourceTab),
   };
   return nextTabs.concat([newTab]).map((t, i) => ({ ...t, position: i }));
+};
+
+/**
+ * Copy or move selected sections from one tab to another in the same space.
+ * Move keeps section/link ids. Copy clones with fresh ids via cloneSectionForImport.
+ */
+export const copyOrMoveSections = (
+  existingTabs: Tab[],
+  sourceTabId: string,
+  sectionIdsOrdered: string[],
+  targetTabId: string,
+  mode: 'copy' | 'move'
+): Tab[] => {
+  if (sourceTabId === targetTabId) {
+    throw new Error('Choose a different destination tab.');
+  }
+  if (sectionIdsOrdered.length < 1) {
+    throw new Error('Select at least one section to copy or move.');
+  }
+
+  const uniqueOrdered: string[] = [];
+  const seen = new Set<string>();
+  for (const id of sectionIdsOrdered) {
+    if (seen.has(id)) continue;
+    seen.add(id);
+    uniqueOrdered.push(id);
+  }
+  if (uniqueOrdered.length < 1) {
+    throw new Error('Select at least one section to copy or move.');
+  }
+
+  const sourceIdx = existingTabs.findIndex((t) => t.id === sourceTabId);
+  const targetIdx = existingTabs.findIndex((t) => t.id === targetTabId);
+  if (sourceIdx === -1) {
+    throw new Error('Source tab was not found.');
+  }
+  if (targetIdx === -1) {
+    throw new Error('Destination tab was not found.');
+  }
+
+  const sourceTab = existingTabs[sourceIdx];
+  const sourceSections = Array.isArray(sourceTab.sections) ? [...sourceTab.sections] : [];
+  const byId = new Map(sourceSections.map((s) => [s.id, s]));
+  for (const id of uniqueOrdered) {
+    if (!byId.has(id)) {
+      throw new Error('One of the selected sections was not found in the source tab.');
+    }
+  }
+
+  const selected = uniqueOrdered.map((id) => byId.get(id)!);
+  const removeIds = new Set(uniqueOrdered);
+
+  return existingTabs.map((t, i) => {
+    if (i === sourceIdx) {
+      if (mode === 'move') {
+        const remaining = sourceSections
+          .filter((s) => !removeIds.has(s.id))
+          .map((s, si) => ({ ...s, position: si }));
+        return { ...t, sections: remaining };
+      }
+      return t;
+    }
+    if (i === targetIdx) {
+      const existing = Array.isArray(t.sections) ? [...t.sections] : [];
+      const start = existing.length;
+      const incoming =
+        mode === 'copy'
+          ? selected.map((s, si) => cloneSectionForImport(s, start + si))
+          : selected.map((s, si) => ({ ...s, position: start + si }));
+      const nextSections = [...existing, ...incoming].map((s, si) => ({ ...s, position: si }));
+      return { ...t, sections: nextSections };
+    }
+    return t;
+  });
+};
+
+export interface DedupeLinksResult {
+  tabs: Tab[];
+  removed: number;
+}
+
+/**
+ * Remove duplicate links (same normalized URL) from one section, keeping the first.
+ */
+export const dedupeSectionLinks = (
+  existingTabs: Tab[],
+  tabId: string,
+  sectionId: string
+): DedupeLinksResult => {
+  const tabIdx = existingTabs.findIndex((t) => t.id === tabId);
+  if (tabIdx === -1) {
+    throw new Error('Tab was not found.');
+  }
+  const tab = existingTabs[tabIdx];
+  const sections = Array.isArray(tab.sections) ? [...tab.sections] : [];
+  const secIdx = sections.findIndex((s) => s.id === sectionId);
+  if (secIdx === -1) {
+    throw new Error('Section was not found.');
+  }
+  const section = sections[secIdx];
+  const { links, removed } = dedupeLinksByUrl(section.links || []);
+  if (removed === 0) {
+    return { tabs: existingTabs, removed: 0 };
+  }
+  sections[secIdx] = { ...section, links };
+  const nextTabs = existingTabs.map((t, i) =>
+    i === tabIdx ? { ...t, sections } : t
+  );
+  return { tabs: nextTabs, removed };
+};
+
+/**
+ * Remove duplicate links within each section of a tab (first kept per URL per section).
+ */
+export const dedupeTabLinks = (existingTabs: Tab[], tabId: string): DedupeLinksResult => {
+  const tabIdx = existingTabs.findIndex((t) => t.id === tabId);
+  if (tabIdx === -1) {
+    throw new Error('Tab was not found.');
+  }
+  const tab = existingTabs[tabIdx];
+  let removed = 0;
+  const sections = (tab.sections || []).map((section) => {
+    const result = dedupeLinksByUrl(section.links || []);
+    removed += result.removed;
+    return result.removed > 0 ? { ...section, links: result.links } : section;
+  });
+  if (removed === 0) {
+    return { tabs: existingTabs, removed: 0 };
+  }
+  const nextTabs = existingTabs.map((t, i) =>
+    i === tabIdx ? { ...t, sections } : t
+  );
+  return { tabs: nextTabs, removed };
+};
+
+/**
+ * Remove duplicate links within every section of every tab (first kept per URL per section).
+ */
+export const dedupeSpaceLinks = (existingTabs: Tab[]): DedupeLinksResult => {
+  let removed = 0;
+  const nextTabs = existingTabs.map((tab) => {
+    let tabChanged = false;
+    const sections = (tab.sections || []).map((section) => {
+      const result = dedupeLinksByUrl(section.links || []);
+      removed += result.removed;
+      if (result.removed > 0) {
+        tabChanged = true;
+        return { ...section, links: result.links };
+      }
+      return section;
+    });
+    return tabChanged ? { ...tab, sections } : tab;
+  });
+  if (removed === 0) {
+    return { tabs: existingTabs, removed: 0 };
+  }
+  return { tabs: nextTabs, removed };
+};
+
+export type DedupeScope = 'section' | 'tab' | 'space';
+
+/** Preview how many duplicate links would be removed from a section, tab, or whole space. */
+export const countDedupeRemovals = (
+  tabs: Tab[],
+  scope: DedupeScope,
+  tabId?: string,
+  sectionId?: string
+): number => {
+  return listDedupePreviewGroups(tabs, scope, tabId, sectionId).reduce(
+    (sum, row) => sum + countRemovableDuplicates(row.groups),
+    0
+  );
+};
+
+export type DedupePreviewSection = {
+  tabId: string;
+  tabTitle: string;
+  sectionId: string;
+  sectionTitle: string;
+  groups: DuplicateLinkGroup[];
+};
+
+/** Groups of duplicate URLs for the Dedup preview UI (section, tab, or whole space). */
+export const listDedupePreviewGroups = (
+  tabs: Tab[],
+  scope: DedupeScope,
+  tabId?: string,
+  sectionId?: string
+): DedupePreviewSection[] => {
+  const targetTabs =
+    scope === 'space'
+      ? tabs
+      : tabs.filter((t) => t.id === tabId);
+  const out: DedupePreviewSection[] = [];
+  for (const tab of targetTabs) {
+    const sections =
+      scope === 'section'
+        ? (tab.sections || []).filter((s) => s.id === sectionId)
+        : tab.sections || [];
+    for (const section of sections) {
+      const groups = findDuplicateLinkGroups(section.links || []);
+      if (groups.length === 0) continue;
+      out.push({
+        tabId: tab.id,
+        tabTitle: tab.title || 'Untitled tab',
+        sectionId: section.id,
+        sectionTitle: section.title || 'Untitled section',
+        groups,
+      });
+    }
+  }
+  return out;
 };

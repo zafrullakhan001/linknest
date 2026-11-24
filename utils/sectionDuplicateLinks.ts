@@ -85,3 +85,27 @@ export function plainLinkLabel(label: string): string {
     .replace(/&gt;/gi, '>')
     .trim();
 }
+
+/**
+ * Keep the first link for each normalized URL; drop later duplicates.
+ * Returns the filtered list and how many links were removed.
+ */
+export function dedupeLinksByUrl(links: Link[]): { links: Link[]; removed: number } {
+  const seen = new Set<string>();
+  const out: Link[] = [];
+  let removed = 0;
+  for (const link of links || []) {
+    const key = normalizeUrlForDuplicateKey(link.url || '');
+    if (!key) {
+      out.push(link);
+      continue;
+    }
+    if (seen.has(key)) {
+      removed += 1;
+      continue;
+    }
+    seen.add(key);
+    out.push(link);
+  }
+  return { links: out, removed };
+}

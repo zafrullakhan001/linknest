@@ -232,7 +232,12 @@ export const SpaceViewHeaderActions: React.FC<SpaceViewHeaderActionsProps> = ({
   }, [isAuthenticated, onAuthRequired, onUpdateTiles, tile.canEdit, tile.id, user?.is_admin]);
 
   const handleContentTransferApply = useCallback(
-    async (payload: { tabs: Tab[]; messages?: Tile['messages']; action: 'import' | 'merge' | 'split' }) => {
+    async (payload: {
+      tabs: Tab[];
+      messages?: Tile['messages'];
+      action: 'import' | 'merge' | 'split' | 'copy' | 'move' | 'dedupe';
+      detail?: string;
+    }) => {
       const updated: Tile = {
         ...tile,
         tabs: payload.tabs,
@@ -252,7 +257,13 @@ export const SpaceViewHeaderActions: React.FC<SpaceViewHeaderActionsProps> = ({
           ? 'Merged into this space.'
           : payload.action === 'split'
             ? 'Split into new tabs.'
-            : 'Imported into this space.'
+            : payload.action === 'copy'
+              ? 'Copied sections.'
+              : payload.action === 'move'
+                ? 'Moved sections.'
+                : payload.action === 'dedupe'
+                  ? payload.detail || 'Removed duplicate links.'
+                  : 'Imported into this space.'
       );
     },
     [allTiles, onUpdateTiles, tile]
@@ -960,6 +971,7 @@ export const SpaceViewHeaderActions: React.FC<SpaceViewHeaderActionsProps> = ({
             canAddLinks={tile.canAddLinks !== false}
             canDeleteTabs={tile.canDeleteTabs !== false}
             canDeleteSections={tile.canDeleteSections !== false}
+            canDeleteLinks={tile.canDeleteLinks !== false}
             onClose={() => setShowTransfer(false)}
             onApply={handleContentTransferApply}
           />

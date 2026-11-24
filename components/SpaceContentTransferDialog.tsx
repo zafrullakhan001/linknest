@@ -1,6 +1,6 @@
 import React, { useMemo, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
-import { LinkSection, Tab, TileMessage } from '../types';
+import { Link, LinkSection, Tab, TileMessage } from '../types';
 import { useEscapeToClose } from '../hooks/useEscapeToClose';
 import { SpaceModalHeader } from './SpaceFormChrome';
 import {
@@ -11,16 +11,26 @@ import {
   mergeSectionsIntoOne,
   mergeTabsIntoOne,
   parseContentTransfer,
+  copyOrMoveSections,
+  countDedupeRemovals,
+  dedupeSectionLinks,
+  dedupeSpaceLinks,
+  dedupeTabLinks,
+  listDedupePreviewGroups,
   splitLinksIntoSection,
   splitSectionsIntoTabs,
   type ParsedContentTransfer,
 } from '../services/sectionTabTransferService';
+import { plainLinkLabel } from '../utils/sectionDuplicateLinks';
+import { getDisplayUrl } from '../utils/urlDisplay';
 
 export type SpaceContentApplyPayload = {
   tabs: Tab[];
   messages?: TileMessage[];
   /** How the change was produced (for success messaging). */
-  action: 'import' | 'merge' | 'split';
+  action: 'import' | 'merge' | 'split' | 'copy' | 'move' | 'dedupe';
+  /** Extra detail for success messaging (e.g. dedupe removed count). */
+  detail?: string;
 };
 
 export type SpaceContentTransferDialogProps = {
@@ -32,6 +42,7 @@ export type SpaceContentTransferDialogProps = {
   canAddLinks?: boolean;
   canDeleteTabs?: boolean;
   canDeleteSections?: boolean;
+  canDeleteLinks?: boolean;
   onClose: () => void;
   /**
    * Apply imported or merged tabs (and remapped messages when tabs were merged).
@@ -42,7 +53,7 @@ export type SpaceContentTransferDialogProps = {
   onImport?: (nextTabs: Tab[]) => void | Promise<void>;
 };
 
-type Mode = 'export' | 'import' | 'merge' | 'split';
+type Mode = 'export' | 'import' | 'merge' | 'split' | 'move' | 'dedupe';
 type Scope = 'tabs' | 'sections';
 
 const toggleOrdered = (ordered: string[], id: string, checked: boolean): string[] => {
@@ -62,6 +73,7 @@ export const SpaceContentTransferDialog: React.FC<SpaceContentTransferDialogProp
   canAddLinks = true,
   canDeleteTabs = true,
   canDeleteSections = true,
+  canDeleteLinks = true,
   onClose,
   onApply,
   onImport,
@@ -99,6 +111,17 @@ export const SpaceContentTransferDialog: React.FC<SpaceContentTransferDialogProp
     () => tabs[0]?.id || ''
   );
   const [splitLinksNewTabTitle, setSplitLinksNewTabTitle] = useState('');
+  /** Move/copy sections between tabs. */
+  const [moveOp, setMoveOp] = useState<'copy' | 'move'>('move');
+  const [moveSourceTabId, setMoveSourceTabId] = useState<string>(() => tabs[0]?.id || '');
+  const [moveTargetTabId, setMoveTargetTabId] = useState<string>(() => tabs[1]?.id || tabs[0]?.id || '');
+  const [moveSectionIdsOrdered, setMoveSectionIdsOrdered] = useState<string[]>([]);
+  /** Dedup links by URL in a section, tab, or whole space. */
+  const [dedupeScope, setDedupeScope] = useState<'section' | 'tab' | 'space'>('section');
+  const [dedupeTabId, setDedupeTabId] = useState<string>(() => tabs[0]?.id || '');
+  const [dedupeSectionId, setDedupeSectionId] = useState<string>(
+    () => tabs[0]?.sections?.[0]?.id || ''
+  );
 
   const [parsed, setParsed] = useState<ParsedContentTransfer | null>(null);
   const [importFileName, setImportFileName] = useState('');
@@ -323,6 +346,61 @@ export const SpaceContentTransferDialog: React.FC<SpaceContentTransferDialogProp
     }
   };
 
+  const handleMoveConfirm = async () => {
+    setError(null);
+    setBusy(true);
+    try {
+      if (moveOp === 'copy' && !canAddSections) {
+        throw new Error('You do not have permission to add sections to this space.');
+      }
+      if (tabs.length < 2) {
+        throw new Error('Need at least two tabs to copy or move sections between them.');
+      }
+      const nextTabs = copyOrMoveSections(
+        tabs,
+        moveSourceTabId,
+        moveSectionIdsOrdered,
+        moveTargetTabId,
+        moveOp
+      );
+      await applyResult({ tabs: nextTabs, action: moveOp });
+      onClose();
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Copy/move failed.');
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  const handleDedupeConfirm = async () => {
+    setError(null);
+    setBusy(true);
+    try {
+      if (!canDeleteLinks) {
+        throw new Error('You do not have permission to delete links in this space.');
+      }
+      const result =
+        dedupeScope === 'space'
+          ? dedupeSpaceLinks(tabs)
+          : dedupeScope === 'tab'
+            ? dedupeTabLinks(tabs, dedupeTabId)
+            : dedupeSectionLinks(tabs, dedupeTabId, dedupeSectionId);
+      if (result.removed === 0) {
+        throw new Error('No duplicate links found for the selected scope.');
+      }
+      await applyResult({
+        tabs: result.tabs,
+        action: 'dedupe',
+        detail: `Removed ${result.removed} duplicate link${result.removed === 1 ? '' : 's'}.`,
+      });
+      onClose();
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Dedup failed.');
+    } finally {
+      setBusy(false);
+    }
+  };
+
   const exportReady =
     scope === 'tabs'
       ? selectedTabIds.size > 0
@@ -359,6 +437,98 @@ export const SpaceContentTransferDialog: React.FC<SpaceContentTransferDialogProp
         !!sectionsSourceTab &&
         canAddTabs &&
         (splitDest === 'per-section' || splitNewTabTitle.trim().length > 0);
+
+  const moveSourceTab = useMemo(
+    () => tabs.find((t) => t.id === moveSourceTabId) || tabs[0],
+    [tabs, moveSourceTabId]
+  );
+
+  const moveReady =
+    moveSectionIdsOrdered.length >= 1 &&
+    !!moveSourceTabId &&
+    !!moveTargetTabId &&
+    moveSourceTabId !== moveTargetTabId &&
+    tabs.length >= 2 &&
+    (moveOp === 'move' || canAddSections);
+
+  const dedupeTab = useMemo(
+    () => tabs.find((t) => t.id === dedupeTabId) || tabs[0],
+    [tabs, dedupeTabId]
+  );
+
+  const dedupePreviewSections = useMemo(
+    () =>
+      listDedupePreviewGroups(
+        tabs,
+        dedupeScope,
+        dedupeTabId,
+        dedupeScope === 'section' ? dedupeSectionId : undefined
+      ),
+    [tabs, dedupeScope, dedupeTabId, dedupeSectionId]
+  );
+
+  const dedupePreviewCount = useMemo(
+    () =>
+      countDedupeRemovals(
+        tabs,
+        dedupeScope,
+        dedupeTabId,
+        dedupeScope === 'section' ? dedupeSectionId : undefined
+      ),
+    [tabs, dedupeScope, dedupeTabId, dedupeSectionId]
+  );
+
+  const renderDedupeLinkRow = (link: Link, kind: 'keep' | 'dup') => {
+    const label = plainLinkLabel(link.label) || '(untitled)';
+    return (
+      <div
+        key={link.id}
+        className={`flex items-start gap-2 px-2.5 py-1.5 rounded-lg border ${
+          kind === 'keep'
+            ? 'border-emerald-200/80 bg-emerald-50/50 dark:border-emerald-900/40 dark:bg-emerald-950/20'
+            : 'border-amber-200/70 bg-amber-50/40 dark:border-amber-900/40 dark:bg-amber-950/15'
+        }`}
+      >
+        <div className="min-w-0 flex-1">
+          <div className="text-sm font-medium text-slate-900 dark:text-white truncate">{label}</div>
+          <div className="text-xs font-mono text-slate-500 dark:text-slate-400 truncate" title={link.url}>
+            {getDisplayUrl(link.url, 56) || link.url}
+          </div>
+        </div>
+        <span
+          className={`text-[10px] font-semibold uppercase tracking-wide px-1.5 py-0.5 rounded shrink-0 ${
+            kind === 'keep'
+              ? 'bg-emerald-200/80 text-emerald-900 dark:bg-emerald-900/50 dark:text-emerald-200'
+              : 'bg-amber-200/80 text-amber-900 dark:bg-amber-900/50 dark:text-amber-200'
+          }`}
+        >
+          {kind === 'keep' ? 'Keep' : 'Remove'}
+        </span>
+      </div>
+    );
+  };
+
+  const dedupeReady =
+    canDeleteLinks &&
+    dedupePreviewCount > 0 &&
+    (dedupeScope === 'space' ||
+      (dedupeScope === 'tab' && !!dedupeTabId) ||
+      (dedupeScope === 'section' && !!dedupeTabId && !!dedupeSectionId));
+
+  const switchDedupeTab = (tabId: string) => {
+    setDedupeTabId(tabId);
+    const tab = tabs.find((t) => t.id === tabId);
+    setDedupeSectionId(tab?.sections?.[0]?.id || '');
+  };
+
+  const switchMoveSourceTab = (tabId: string) => {
+    setMoveSourceTabId(tabId);
+    setMoveSectionIdsOrdered([]);
+    if (tabId === moveTargetTabId) {
+      const other = tabs.find((t) => t.id !== tabId);
+      if (other) setMoveTargetTabId(other.id);
+    }
+  };
 
   const primaryTabId = mergeTabIdsOrdered[0];
   const primarySectionId = mergeSectionIdsOrdered[0];
@@ -475,7 +645,7 @@ export const SpaceContentTransferDialog: React.FC<SpaceContentTransferDialogProp
             subtitle={
               spaceTitle
                 ? `Inside “${spaceTitle}”`
-                : 'Export, import, merge, or split tabs and sections'
+                : 'Export, import, merge, split, move, or dedupe'
             }
             onClose={onClose}
           />
@@ -483,7 +653,7 @@ export const SpaceContentTransferDialog: React.FC<SpaceContentTransferDialogProp
 
         <div className="px-6 pb-2">
           <div className="inline-flex flex-wrap rounded-xl border border-slate-200 dark:border-slate-700 p-1 bg-slate-50 dark:bg-slate-900/50 gap-0.5">
-            {(['export', 'import', 'merge', 'split'] as Mode[]).map((m) => (
+            {(['export', 'import', 'merge', 'split', 'move', 'dedupe'] as Mode[]).map((m) => (
               <button
                 key={m}
                 type="button"
@@ -503,7 +673,11 @@ export const SpaceContentTransferDialog: React.FC<SpaceContentTransferDialogProp
                     ? 'Import'
                     : m === 'merge'
                       ? 'Merge'
-                      : 'Split'}
+                      : m === 'split'
+                        ? 'Split'
+                        : m === 'move'
+                          ? 'Move'
+                          : 'Dedup'}
               </button>
             ))}
           </div>
@@ -588,52 +762,87 @@ export const SpaceContentTransferDialog: React.FC<SpaceContentTransferDialogProp
                 ) : null}
               </div>
 
+              {!parsed || parsed.kind === 'sections' || parsed.kind === 'links' ? (
+                <div className="rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900/40 px-3 py-3 space-y-3">
+                  <p className="text-xs text-slate-500 dark:text-slate-400">
+                    {parsed?.kind === 'links'
+                      ? 'Choose the tab and section that should receive these links.'
+                      : parsed?.kind === 'sections'
+                        ? 'Choose which tab should receive the imported section(s).'
+                        : 'If you import sections or links, they are added into the tab (and section) you pick below. Tab exports create new tabs and ignore this.'}
+                  </p>
+                  <label className="block space-y-1.5">
+                    <span className="text-xs font-semibold uppercase tracking-wide text-slate-500 dark:text-slate-400">
+                      Import into tab
+                    </span>
+                    <select
+                      className="w-full rounded-lg border-2 border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900 px-3 py-2 text-sm"
+                      value={targetTab?.id || ''}
+                      onChange={(e) => switchTargetTab(e.target.value)}
+                    >
+                      {tabs.map((t) => (
+                        <option key={t.id} value={t.id}>
+                          {t.title || 'Untitled tab'}
+                          {t.sections?.length
+                            ? ` (${t.sections.length} section${t.sections.length === 1 ? '' : 's'})`
+                            : ''}
+                        </option>
+                      ))}
+                    </select>
+                  </label>
+                  {(!parsed || parsed.kind === 'links') && (
+                    <label className="block space-y-1.5">
+                      <span className="text-xs font-semibold uppercase tracking-wide text-slate-500 dark:text-slate-400">
+                        Import into section
+                        {!parsed ? (
+                          <span className="normal-case font-normal text-slate-400 dark:text-slate-500">
+                            {' '}
+                            (links exports only)
+                          </span>
+                        ) : null}
+                      </span>
+                      <select
+                        className="w-full rounded-lg border-2 border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900 px-3 py-2 text-sm"
+                        value={targetSectionId}
+                        onChange={(e) => setTargetSectionId(e.target.value)}
+                        disabled={parsed?.kind === 'links' ? !(targetTab?.sections || []).length : false}
+                      >
+                        {(targetTab?.sections || []).length === 0 ? (
+                          <option value="">No sections in this tab</option>
+                        ) : (
+                          (targetTab?.sections || []).map((s) => (
+                            <option key={s.id} value={s.id}>
+                              {s.title || 'Untitled section'}
+                            </option>
+                          ))
+                        )}
+                      </select>
+                    </label>
+                  )}
+                  {parsed?.kind === 'sections' && parsed.sourceTabTitle ? (
+                    <p className="text-xs text-slate-500 dark:text-slate-400">
+                      Export came from tab &ldquo;{parsed.sourceTabTitle}&rdquo;
+                      {targetTab?.title === parsed.sourceTabTitle ? ' (matched above).' : '.'}
+                    </p>
+                  ) : null}
+                </div>
+              ) : null}
+
               {parsed ? (
-                <div className="rounded-xl border border-emerald-200 dark:border-emerald-900/50 bg-emerald-50/80 dark:bg-emerald-950/30 px-3 py-3 space-y-3">
+                <div className="rounded-xl border border-emerald-200 dark:border-emerald-900/50 bg-emerald-50/80 dark:bg-emerald-950/30 px-3 py-3 space-y-2">
                   <p className="text-sm font-medium text-emerald-900 dark:text-emerald-100">
                     Ready to import: {describeContentTransfer(parsed)}
                   </p>
                   <p className="text-xs text-emerald-800/80 dark:text-emerald-200/80">
-                    Items are added as copies with new ids. Existing tabs and sections are left in place.
+                    {parsed.kind === 'tabs'
+                      ? 'New tabs will be added to this space. Existing tabs stay as they are.'
+                      : parsed.kind === 'sections'
+                        ? `Sections will be appended to “${targetTab?.title || 'Untitled tab'}”.`
+                        : `Links will be appended to “${
+                            (targetTab?.sections || []).find((s) => s.id === targetSectionId)?.title ||
+                            'Untitled section'
+                          }” in “${targetTab?.title || 'Untitled tab'}”.`}
                   </p>
-
-                  {(parsed.kind === 'sections' || parsed.kind === 'links') && (
-                    <label className="block space-y-1.5">
-                      <span className="text-xs font-semibold uppercase tracking-wide text-emerald-800 dark:text-emerald-200">
-                        Add into tab
-                      </span>
-                      <select
-                        className="w-full rounded-lg border-2 border-emerald-200 dark:border-emerald-800 bg-white dark:bg-slate-900 px-3 py-2 text-sm"
-                        value={targetTab?.id || ''}
-                        onChange={(e) => switchTargetTab(e.target.value)}
-                      >
-                        {tabs.map((t) => (
-                          <option key={t.id} value={t.id}>
-                            {t.title || 'Untitled tab'}
-                          </option>
-                        ))}
-                      </select>
-                    </label>
-                  )}
-
-                  {parsed.kind === 'links' && (
-                    <label className="block space-y-1.5">
-                      <span className="text-xs font-semibold uppercase tracking-wide text-emerald-800 dark:text-emerald-200">
-                        Add into section
-                      </span>
-                      <select
-                        className="w-full rounded-lg border-2 border-emerald-200 dark:border-emerald-800 bg-white dark:bg-slate-900 px-3 py-2 text-sm"
-                        value={targetSectionId}
-                        onChange={(e) => setTargetSectionId(e.target.value)}
-                      >
-                        {(targetTab?.sections || []).map((s) => (
-                          <option key={s.id} value={s.id}>
-                            {s.title || 'Untitled section'}
-                          </option>
-                        ))}
-                      </select>
-                    </label>
-                  )}
                 </div>
               ) : null}
             </>
@@ -957,6 +1166,223 @@ export const SpaceContentTransferDialog: React.FC<SpaceContentTransferDialogProp
             </>
           ) : null}
 
+          {mode === 'move' ? (
+            <>
+              <p className="text-xs text-slate-500 dark:text-slate-400">
+                Copy keeps the originals and adds clones with new ids. Move relocates the selected sections into the destination tab.
+              </p>
+              <div className="flex gap-2">
+                <button
+                  type="button"
+                  className={`flex-1 rounded-xl border px-3 py-2 text-sm font-semibold transition-colors ${
+                    moveOp === 'move'
+                      ? 'border-brand-500 bg-brand-50 text-brand-800 dark:bg-brand-950/40 dark:text-brand-200'
+                      : 'border-slate-200 dark:border-slate-700 text-slate-600 dark:text-slate-300'
+                  }`}
+                  onClick={() => setMoveOp('move')}
+                >
+                  Move
+                </button>
+                <button
+                  type="button"
+                  className={`flex-1 rounded-xl border px-3 py-2 text-sm font-semibold transition-colors ${
+                    moveOp === 'copy'
+                      ? 'border-brand-500 bg-brand-50 text-brand-800 dark:bg-brand-950/40 dark:text-brand-200'
+                      : 'border-slate-200 dark:border-slate-700 text-slate-600 dark:text-slate-300'
+                  }`}
+                  onClick={() => setMoveOp('copy')}
+                >
+                  Copy
+                </button>
+              </div>
+              {tabs.length < 2 ? (
+                <p className="text-sm text-amber-700 dark:text-amber-300 bg-amber-50 dark:bg-amber-950/30 rounded-lg px-3 py-2">
+                  This space needs at least two tabs to copy or move sections between them.
+                </p>
+              ) : (
+                <div className="space-y-3">
+                  <label className="block space-y-1.5">
+                    <span className="text-xs font-semibold uppercase tracking-wide text-slate-500 dark:text-slate-400">
+                      From tab
+                    </span>
+                    <select
+                      className="w-full rounded-lg border-2 border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900 px-3 py-2 text-sm"
+                      value={moveSourceTab?.id || ''}
+                      onChange={(e) => switchMoveSourceTab(e.target.value)}
+                    >
+                      {tabs.map((t) => (
+                        <option key={t.id} value={t.id}>
+                          {t.title || 'Untitled tab'}
+                        </option>
+                      ))}
+                    </select>
+                  </label>
+                  <label className="block space-y-1.5">
+                    <span className="text-xs font-semibold uppercase tracking-wide text-slate-500 dark:text-slate-400">
+                      To tab
+                    </span>
+                    <select
+                      className="w-full rounded-lg border-2 border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900 px-3 py-2 text-sm"
+                      value={moveTargetTabId}
+                      onChange={(e) => setMoveTargetTabId(e.target.value)}
+                    >
+                      {tabs
+                        .filter((t) => t.id !== moveSourceTabId)
+                        .map((t) => (
+                          <option key={t.id} value={t.id}>
+                            {t.title || 'Untitled tab'}
+                          </option>
+                        ))}
+                    </select>
+                  </label>
+                  {checklist(
+                    (moveSourceTab?.sections || []).map((s: LinkSection) => ({
+                      id: s.id,
+                      label: s.title || 'Untitled section',
+                      hint: `${s.links?.length || 0} link${(s.links?.length || 0) === 1 ? '' : 's'}`,
+                    })),
+                    moveSectionIdsOrdered,
+                    (id, checked) =>
+                      setMoveSectionIdsOrdered((prev) => toggleOrdered(prev, id, checked)),
+                    (all) =>
+                      setMoveSectionIdsOrdered(
+                        all ? (moveSourceTab?.sections || []).map((s) => s.id) : []
+                      )
+                  )}
+                </div>
+              )}
+            </>
+          ) : null}
+
+          {mode === 'dedupe' ? (
+            <>
+              <p className="text-xs text-slate-500 dark:text-slate-400">
+                Remove links with the same URL, keeping the first occurrence in each section. Section, tab, or whole space (all tabs) — duplicates are never matched across different sections.
+              </p>
+              <div className="flex gap-2">
+                <button
+                  type="button"
+                  className={`flex-1 rounded-xl border px-3 py-2 text-sm font-semibold transition-colors ${
+                    dedupeScope === 'section'
+                      ? 'border-brand-500 bg-brand-50 text-brand-800 dark:bg-brand-950/40 dark:text-brand-200'
+                      : 'border-slate-200 dark:border-slate-700 text-slate-600 dark:text-slate-300'
+                  }`}
+                  onClick={() => setDedupeScope('section')}
+                >
+                  Section
+                </button>
+                <button
+                  type="button"
+                  className={`flex-1 rounded-xl border px-3 py-2 text-sm font-semibold transition-colors ${
+                    dedupeScope === 'tab'
+                      ? 'border-brand-500 bg-brand-50 text-brand-800 dark:bg-brand-950/40 dark:text-brand-200'
+                      : 'border-slate-200 dark:border-slate-700 text-slate-600 dark:text-slate-300'
+                  }`}
+                  onClick={() => setDedupeScope('tab')}
+                >
+                  Whole tab
+                </button>
+                <button
+                  type="button"
+                  className={`flex-1 rounded-xl border px-3 py-2 text-sm font-semibold transition-colors ${
+                    dedupeScope === 'space'
+                      ? 'border-brand-500 bg-brand-50 text-brand-800 dark:bg-brand-950/40 dark:text-brand-200'
+                      : 'border-slate-200 dark:border-slate-700 text-slate-600 dark:text-slate-300'
+                  }`}
+                  onClick={() => setDedupeScope('space')}
+                >
+                  Whole space
+                </button>
+              </div>
+              <div className="space-y-3">
+                {dedupeScope !== 'space' ? (
+                  <label className="block space-y-1.5">
+                    <span className="text-xs font-semibold uppercase tracking-wide text-slate-500 dark:text-slate-400">
+                      Tab
+                    </span>
+                    <select
+                      className="w-full rounded-lg border-2 border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900 px-3 py-2 text-sm"
+                      value={dedupeTab?.id || ''}
+                      onChange={(e) => switchDedupeTab(e.target.value)}
+                    >
+                      {tabs.map((t) => (
+                        <option key={t.id} value={t.id}>
+                          {t.title || 'Untitled tab'}
+                        </option>
+                      ))}
+                    </select>
+                  </label>
+                ) : null}
+                {dedupeScope === 'section' ? (
+                  <label className="block space-y-1.5">
+                    <span className="text-xs font-semibold uppercase tracking-wide text-slate-500 dark:text-slate-400">
+                      Section
+                    </span>
+                    <select
+                      className="w-full rounded-lg border-2 border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900 px-3 py-2 text-sm"
+                      value={dedupeSectionId}
+                      onChange={(e) => setDedupeSectionId(e.target.value)}
+                    >
+                      {(dedupeTab?.sections || []).map((s) => (
+                        <option key={s.id} value={s.id}>
+                          {s.title || 'Untitled section'}
+                        </option>
+                      ))}
+                    </select>
+                  </label>
+                ) : null}
+                <div
+                  className={`rounded-xl border px-3 py-3 text-sm ${
+                    dedupePreviewCount > 0
+                      ? 'border-emerald-200 dark:border-emerald-900/50 bg-emerald-50/80 dark:bg-emerald-950/30 text-emerald-900 dark:text-emerald-100'
+                      : 'border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-900/40 text-slate-600 dark:text-slate-300'
+                  }`}
+                >
+                  {dedupePreviewCount > 0
+                    ? `Ready to remove ${dedupePreviewCount} duplicate link${dedupePreviewCount === 1 ? '' : 's'} (first copy of each URL is kept).`
+                    : 'No duplicate URLs found in this scope.'}
+                </div>
+                {dedupePreviewSections.length > 0 ? (
+                  <div className="space-y-3 max-h-56 overflow-y-auto pr-0.5">
+                    {dedupePreviewSections.map((section) => (
+                      <div key={`${section.tabId}:${section.sectionId}`} className="space-y-2">
+                        {dedupeScope !== 'section' || dedupePreviewSections.length > 1 ? (
+                          <div className="text-[11px] font-semibold uppercase tracking-wide text-slate-500 dark:text-slate-400">
+                            {dedupeScope === 'space'
+                              ? `${section.tabTitle} · ${section.sectionTitle}`
+                              : section.sectionTitle}
+                          </div>
+                        ) : null}
+                        {section.groups.map((g) => (
+                          <section
+                            key={`${section.sectionId}:${g.key}`}
+                            className="rounded-xl border border-slate-200 dark:border-slate-700 overflow-hidden"
+                          >
+                            <div className="flex items-center justify-between gap-2 px-3 py-2 bg-slate-50 dark:bg-slate-900/50 border-b border-slate-100 dark:border-slate-700/80">
+                              <p
+                                className="text-xs font-mono text-slate-700 dark:text-slate-300 truncate"
+                                title={g.url}
+                              >
+                                {getDisplayUrl(g.url, 64) || g.url}
+                              </p>
+                              <span className="text-[11px] text-slate-500 shrink-0">
+                                {1 + g.duplicates.length} copies
+                              </span>
+                            </div>
+                            <div className="p-2 space-y-1.5 bg-white/80 dark:bg-slate-900/40">
+                              {renderDedupeLinkRow(g.keep, 'keep')}
+                              {g.duplicates.map((d) => renderDedupeLinkRow(d, 'dup'))}
+                            </div>
+                          </section>
+                        ))}
+                      </div>
+                    ))}
+                  </div>
+                ) : null}
+              </div>
+            </>
+          ) : null}
+
           {error ? (
             <p className="text-sm text-red-600 dark:text-red-400 bg-red-50 dark:bg-red-950/30 rounded-lg px-3 py-2">
               {error}
@@ -1015,6 +1441,36 @@ export const SpaceContentTransferDialog: React.FC<SpaceContentTransferDialogProp
                 : splitKind === 'links'
                   ? 'Split into new section'
                   : 'Split into new tabs'}
+            </button>
+          ) : null}
+          {mode === 'move' ? (
+            <button
+              type="button"
+              className="rounded-lg px-4 py-2 text-sm font-semibold bg-brand-600 hover:bg-brand-700 text-white disabled:opacity-40"
+              disabled={!moveReady || busy}
+              onClick={() => void handleMoveConfirm()}
+            >
+              {busy
+                ? moveOp === 'copy'
+                  ? 'Copying…'
+                  : 'Moving…'
+                : moveOp === 'copy'
+                  ? 'Copy sections'
+                  : 'Move sections'}
+            </button>
+          ) : null}
+          {mode === 'dedupe' ? (
+            <button
+              type="button"
+              className="rounded-lg px-4 py-2 text-sm font-semibold bg-brand-600 hover:bg-brand-700 text-white disabled:opacity-40"
+              disabled={!dedupeReady || busy}
+              onClick={() => void handleDedupeConfirm()}
+            >
+              {busy
+                ? 'Removing…'
+                : dedupePreviewCount > 0
+                  ? `Remove ${dedupePreviewCount} duplicate${dedupePreviewCount === 1 ? '' : 's'}`
+                  : 'No duplicates'}
             </button>
           ) : null}
         </div>
