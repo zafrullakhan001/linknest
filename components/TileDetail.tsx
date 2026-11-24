@@ -10617,12 +10617,19 @@ export const TileDetail: React.FC<TileDetailProps> = ({
                     <SpaceContentTransferDialog
                         tabs={Array.isArray(tile.tabs) ? tile.tabs : []}
                         spaceTitle={tile.title}
+                        messages={tile.messages}
                         canAddTabs={tile.canAddTabs !== false}
                         canAddSections={tile.canAddSections !== false}
                         canAddLinks={tile.canAddLinks !== false}
+                        canDeleteTabs={tile.canDeleteTabs !== false}
+                        canDeleteSections={tile.canDeleteSections !== false}
                         onClose={() => setShowContentTransfer(false)}
-                        onImport={async (nextTabs) => {
-                            const updated: Tile = { ...tile, tabs: nextTabs };
+                        onApply={async ({ tabs: nextTabs, messages: nextMessages, action }) => {
+                            const updated: Tile = {
+                                ...tile,
+                                tabs: nextTabs,
+                                ...(nextMessages ? { messages: nextMessages } : {}),
+                            };
                             await saveTile(updated, true);
                             onUpdateTiles(
                                 allTiles.map((t) => (t.id === tile.id ? updated : t)),
@@ -10630,7 +10637,13 @@ export const TileDetail: React.FC<TileDetailProps> = ({
                                 false,
                                 true
                             );
-                            alert('Imported into this space.');
+                            alert(
+                                action === 'merge'
+                                    ? 'Merged into this space.'
+                                    : action === 'split'
+                                        ? 'Split into new tabs.'
+                                        : 'Imported into this space.'
+                            );
                         }}
                     />
                 )}
@@ -13944,17 +13957,40 @@ export const TileDetail: React.FC<TileDetailProps> = ({
                     <SpaceContentTransferDialog
                         tabs={isEditing ? editTabs : (Array.isArray(tile.tabs) ? tile.tabs : [])}
                         spaceTitle={isEditing ? (editTitle || tile.title) : tile.title}
+                        messages={tile.messages}
                         canAddTabs={tile.canAddTabs !== false}
                         canAddSections={tile.canAddSections !== false}
                         canAddLinks={tile.canAddLinks !== false}
+                        canDeleteTabs={tile.canDeleteTabs !== false}
+                        canDeleteSections={tile.canDeleteSections !== false}
                         onClose={() => setShowContentTransfer(false)}
-                        onImport={async (nextTabs) => {
+                        onApply={async ({ tabs: nextTabs, messages: nextMessages, action }) => {
                             if (isEditing) {
                                 setEditTabs(nextTabs);
-                                alert('Imported into the editor. Save the space to keep these changes.');
+                                if (nextMessages) {
+                                    onUpdateTiles(
+                                        allTiles.map((t) =>
+                                            t.id === tile.id ? { ...t, messages: nextMessages } : t
+                                        ),
+                                        true,
+                                        false,
+                                        true
+                                    );
+                                }
+                                alert(
+                                    action === 'merge'
+                                        ? 'Merged in the editor. Save the space to keep these changes.'
+                                        : action === 'split'
+                                            ? 'Split in the editor. Save the space to keep these changes.'
+                                            : 'Imported into the editor. Save the space to keep these changes.'
+                                );
                                 return;
                             }
-                            const updated: Tile = { ...tile, tabs: nextTabs };
+                            const updated: Tile = {
+                                ...tile,
+                                tabs: nextTabs,
+                                ...(nextMessages ? { messages: nextMessages } : {}),
+                            };
                             await saveTile(updated, true);
                             onUpdateTiles(
                                 allTiles.map((t) => (t.id === tile.id ? updated : t)),
@@ -13962,7 +13998,13 @@ export const TileDetail: React.FC<TileDetailProps> = ({
                                 false,
                                 true
                             );
-                            alert('Imported into this space.');
+                            alert(
+                                action === 'merge'
+                                    ? 'Merged into this space.'
+                                    : action === 'split'
+                                        ? 'Split into new tabs.'
+                                        : 'Imported into this space.'
+                            );
                         }}
                     />
                 )}

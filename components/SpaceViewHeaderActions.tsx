@@ -231,9 +231,13 @@ export const SpaceViewHeaderActions: React.FC<SpaceViewHeaderActionsProps> = ({
     }
   }, [isAuthenticated, onAuthRequired, onUpdateTiles, tile.canEdit, tile.id, user?.is_admin]);
 
-  const handleContentTransferImport = useCallback(
-    async (nextTabs: Tab[]) => {
-      const updated: Tile = { ...tile, tabs: nextTabs };
+  const handleContentTransferApply = useCallback(
+    async (payload: { tabs: Tab[]; messages?: Tile['messages']; action: 'import' | 'merge' | 'split' }) => {
+      const updated: Tile = {
+        ...tile,
+        tabs: payload.tabs,
+        ...(payload.messages ? { messages: payload.messages } : {}),
+      };
       await saveTile(updated, true);
       const fresh = await getTile(tile.id);
       const merged = fresh ?? updated;
@@ -243,7 +247,13 @@ export const SpaceViewHeaderActions: React.FC<SpaceViewHeaderActionsProps> = ({
         false,
         true
       );
-      alert('Imported into this space.');
+      alert(
+        payload.action === 'merge'
+          ? 'Merged into this space.'
+          : payload.action === 'split'
+            ? 'Split into new tabs.'
+            : 'Imported into this space.'
+      );
     },
     [allTiles, onUpdateTiles, tile]
   );
@@ -944,11 +954,14 @@ export const SpaceViewHeaderActions: React.FC<SpaceViewHeaderActionsProps> = ({
           <SpaceContentTransferDialog
             tabs={Array.isArray(tile.tabs) ? tile.tabs : []}
             spaceTitle={tile.title}
+            messages={tile.messages}
             canAddTabs={tile.canAddTabs !== false}
             canAddSections={tile.canAddSections !== false}
             canAddLinks={tile.canAddLinks !== false}
+            canDeleteTabs={tile.canDeleteTabs !== false}
+            canDeleteSections={tile.canDeleteSections !== false}
             onClose={() => setShowTransfer(false)}
-            onImport={handleContentTransferImport}
+            onApply={handleContentTransferApply}
           />
         </Suspense>
       )}

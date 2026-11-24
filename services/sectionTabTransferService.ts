@@ -1,4 +1,4 @@
-import { Link, LinkSection, RichTextContent, Tab } from '../types';
+import { Link, LinkSection, RichTextContent, Tab, TileMessage } from '../types';
 import { pickSectionBackgroundDecoration } from '../utils/sectionBackgroundColor';
 import { generateUuid } from './idService';
 
@@ -482,4 +482,412 @@ export const describeContentTransfer = (parsed: ParsedContentTransfer): string =
     return `${n} link${n === 1 ? '' : 's'}`;
   }
   return 'Empty import';
+};
+
+export interface MergeTabsResult {
+  tabs: Tab[];
+  messages?: TileMessage[];
+}
+
+/**
+ * Remap Message Board tab scopes when tabs are removed/merged into a survivor.
+ * Removed tab ids that appeared in a message become the primary tab id.
+ */
+const remapMessageTabIds = (
+  messages: TileMessage[] | undefined,
+  removedIds: Set<string>,
+  primaryId: string
+): TileMessage[] | undefined => {
+  if (!messages || messages.length === 0) return messages;
+  let changed = false;
+  const next = messages.map((msg) => {
+    if (!Array.isArray(msg.tabIds) || msg.tabIds.length === 0) return msg;
+    const remapped = Array.from(
+      new Set(
+        msg.tabIds.map((id) => (removedIds.has(id) ? primaryId : id))
+      )
+    );
+    if (
+      remapped.length === msg.tabIds.length &&
+      remapped.every((id, i) => id === msg.tabIds![i])
+    ) {
+      return msg;
+    }
+    changed = true;
+    return { ...msg, tabIds: remapped };
+  });
+  return changed ? next : messages;
+};
+
+/**
+ * Merge 2+ tabs into the first selected (primary). Other selected tabs' sections
+ * are appended; those tabs are removed. Link/section ids are moved, not cloned.
+ */
+export const mergeTabsIntoOne = (
+  existingTabs: Tab[],
+  selectedIdsOrdered: string[],
+  messages?: TileMessage[]
+): MergeTabsResult => {
+  if (selectedIdsOrdered.length < 2) {
+    throw new Error('Select at least two tabs to merge.');
+  }
+  const uniqueOrdered: string[] = [];
+  const seen = new Set<string>();
+  for (const id of selectedIdsOrdered) {
+    if (seen.has(id)) continue;
+    seen.add(id);
+    uniqueOrdered.push(id);
+  }
+  if (uniqueOrdered.length < 2) {
+    throw new Error('Select at least two tabs to merge.');
+  }
+
+  const byId = new Map(existingTabs.map((t) => [t.id, t]));
+  for (const id of uniqueOrdered) {
+    if (!byId.has(id)) {
+      throw new Error('One of the selected tabs was not found.');
+    }
+  }
+
+  const primaryId = uniqueOrdered[0];
+  const primary = byId.get(primaryId)!;
+  const removedIds = new Set(uniqueOrdered.slice(1));
+
+  if (existingTabs.length - removedIds.size < 1) {
+    throw new Error('Merging these tabs would leave the space with no tabs.');
+  }
+
+  const appendedSections: LinkSection[] = [];
+  for (const id of uniqueOrdered.slice(1)) {
+    const tab = byId.get(id)!;
+    for (const section of tab.sections || []) {
+      appendedSections.push(section);
+    }
+  }
+
+  const mergedPrimary: Tab = {
+    ...primary,
+    sections: [...(primary.sections || []), ...appendedSections].map((s, i) => ({
+      ...s,
+      position: i,
+    })),
+  };
+
+  const nextTabs = existingTabs
+    .filter((t) => !removedIds.has(t.id))
+    .map((t) => (t.id === primaryId ? mergedPrimary : t))
+    .map((t, i) => ({ ...t, position: i }));
+
+  return {
+    tabs: nextTabs,
+    messages: remapMessageTabIds(messages, removedIds, primaryId),
+  };
+};
+
+/**
+ * Merge 2+ sections in the same tab into the first selected (primary).
+ * Links and rich-text blocks from the others are appended; those sections are removed.
+ */
+export const mergeSectionsIntoOne = (
+  existingTabs: Tab[],
+  tabId: string,
+  selectedSectionIdsOrdered: string[]
+): Tab[] => {
+  if (selectedSectionIdsOrdered.length < 2) {
+    throw new Error('Select at least two sections to merge.');
+  }
+  const uniqueOrdered: string[] = [];
+  const seen = new Set<string>();
+  for (const id of selectedSectionIdsOrdered) {
+    if (seen.has(id)) continue;
+    seen.add(id);
+    uniqueOrdered.push(id);
+  }
+  if (uniqueOrdered.length < 2) {
+    throw new Error('Select at least two sections to merge.');
+  }
+
+  const tabIdx = existingTabs.findIndex((t) => t.id === tabId);
+  if (tabIdx === -1) {
+    throw new Error('Target tab was not found.');
+  }
+  const tab = existingTabs[tabIdx];
+  const sections = Array.isArray(tab.sections) ? [...tab.sections] : [];
+  const byId = new Map(sections.map((s) => [s.id, s]));
+  for (const id of uniqueOrdered) {
+    if (!byId.has(id)) {
+      throw new Error('One of the selected sections was not found in this tab.');
+    }
+  }
+
+  const primaryId = uniqueOrdered[0];
+  const primary = byId.get(primaryId)!;
+  const removedIds = new Set(uniqueOrdered.slice(1));
+
+  const extraLinks: Link[] = [];
+  const extraRich: RichTextContent[] = [];
+  for (const id of uniqueOrdered.slice(1)) {
+    const sec = byId.get(id)!;
+    for (const link of sec.links || []) extraLinks.push(link);
+    for (const rt of sec.richTextContent || []) extraRich.push(rt);
+  }
+
+  const mergedPrimary: LinkSection = {
+    ...primary,
+    links: [...(primary.links || []), ...extraLinks],
+    richTextContent: (() => {
+      const combined = [...(primary.richTextContent || []), ...extraRich];
+      return combined.length > 0
+        ? combined.map((rt, i) => ({ ...rt, position: typeof rt.position === 'number' ? rt.position : i }))
+        : undefined;
+    })(),
+  };
+
+  const nextSections = sections
+    .filter((s) => !removedIds.has(s.id))
+    .map((s) => (s.id === primaryId ? mergedPrimary : s))
+    .map((s, i) => ({ ...s, position: i }));
+
+  const nextTabs = existingTabs.map((t, i) =>
+    i === tabIdx ? { ...t, sections: nextSections } : t
+  );
+  return nextTabs;
+};
+
+export type SplitSectionsOptions =
+  | { mode?: 'per-section' }
+  | { mode: 'single-tab'; newTabTitle: string };
+
+const tabMetaFromSource = (sourceTab: Tab): Pick<
+  Tab,
+  | 'visibility'
+  | 'published'
+  | 'allowedUsers'
+  | 'allowedGroups'
+  | 'visibleFrom'
+  | 'expiresAt'
+  | 'accessRestrictions'
+  | 'inheritShortUrls'
+> => ({
+  visibility: sourceTab.visibility,
+  published: sourceTab.published,
+  allowedUsers: sourceTab.allowedUsers ? [...sourceTab.allowedUsers] : undefined,
+  allowedGroups: sourceTab.allowedGroups ? [...sourceTab.allowedGroups] : undefined,
+  visibleFrom: sourceTab.visibleFrom,
+  expiresAt: sourceTab.expiresAt,
+  accessRestrictions: sourceTab.accessRestrictions
+    ? JSON.parse(JSON.stringify(sourceTab.accessRestrictions))
+    : undefined,
+  inheritShortUrls: sourceTab.inheritShortUrls,
+});
+
+/**
+ * Move selected sections out of a source tab into new tab(s).
+ * - per-section (default): one new tab per section; title from the section.
+ * - single-tab: all selected sections go into one new tab with `newTabTitle`.
+ * Sections keep their ids/links/rich text. New tabs inherit visibility/schedule/
+ * short-URL inherit from the source tab.
+ */
+export const splitSectionsIntoTabs = (
+  existingTabs: Tab[],
+  sourceTabId: string,
+  sectionIdsOrdered: string[],
+  options: SplitSectionsOptions = {}
+): Tab[] => {
+  if (sectionIdsOrdered.length < 1) {
+    throw new Error('Select at least one section to split into a new tab.');
+  }
+
+  const uniqueOrdered: string[] = [];
+  const seen = new Set<string>();
+  for (const id of sectionIdsOrdered) {
+    if (seen.has(id)) continue;
+    seen.add(id);
+    uniqueOrdered.push(id);
+  }
+  if (uniqueOrdered.length < 1) {
+    throw new Error('Select at least one section to split into a new tab.');
+  }
+
+  const tabIdx = existingTabs.findIndex((t) => t.id === sourceTabId);
+  if (tabIdx === -1) {
+    throw new Error('Source tab was not found.');
+  }
+  const sourceTab = existingTabs[tabIdx];
+  const sections = Array.isArray(sourceTab.sections) ? [...sourceTab.sections] : [];
+  const byId = new Map(sections.map((s) => [s.id, s]));
+  for (const id of uniqueOrdered) {
+    if (!byId.has(id)) {
+      throw new Error('One of the selected sections was not found in this tab.');
+    }
+  }
+
+  const removeIds = new Set(uniqueOrdered);
+  const remaining = sections
+    .filter((s) => !removeIds.has(s.id))
+    .map((s, i) => ({ ...s, position: i }));
+
+  const meta = tabMetaFromSource(sourceTab);
+  let newTabs: Tab[];
+
+  if (options.mode === 'single-tab') {
+    const title = String(options.newTabTitle || '').trim();
+    if (!title) {
+      throw new Error('Enter a name for the new tab.');
+    }
+    const movedSections = uniqueOrdered.map((id, i) => {
+      const section = byId.get(id)!;
+      return { ...section, position: i };
+    });
+    newTabs = [
+      {
+        id: generateId(),
+        title,
+        position: existingTabs.length,
+        sections: movedSections,
+        ...meta,
+      },
+    ];
+  } else {
+    newTabs = uniqueOrdered.map((id, i) => {
+      const section = byId.get(id)!;
+      const moved: LinkSection = { ...section, position: 0 };
+      return {
+        id: generateId(),
+        title: String(section.title || '').trim() || 'Untitled tab',
+        position: existingTabs.length + i,
+        sections: [moved],
+        ...meta,
+      };
+    });
+  }
+
+  return existingTabs
+    .map((t, i) => (i === tabIdx ? { ...t, sections: remaining } : t))
+    .concat(newTabs)
+    .map((t, i) => ({ ...t, position: i }));
+};
+
+export type SplitLinksDestination =
+  | { kind: 'same-tab' }
+  | { kind: 'existing-tab'; targetTabId: string }
+  | { kind: 'new-tab'; newTabTitle: string };
+
+/**
+ * Move selected links out of a section into a new named section.
+ * Destination can be the same tab, another existing tab, or a brand-new tab.
+ * Links keep their ids; remaining links stay in the source section.
+ * New section inherits visibility / schedule from the source section.
+ */
+export const splitLinksIntoSection = (
+  existingTabs: Tab[],
+  tabId: string,
+  sourceSectionId: string,
+  linkIdsOrdered: string[],
+  newSectionTitle: string,
+  destination: SplitLinksDestination = { kind: 'same-tab' }
+): Tab[] => {
+  const title = String(newSectionTitle || '').trim();
+  if (!title) {
+    throw new Error('Enter a name for the new section.');
+  }
+  if (linkIdsOrdered.length < 1) {
+    throw new Error('Select at least one link to move into a new section.');
+  }
+
+  const uniqueOrdered: string[] = [];
+  const seen = new Set<string>();
+  for (const id of linkIdsOrdered) {
+    if (seen.has(id)) continue;
+    seen.add(id);
+    uniqueOrdered.push(id);
+  }
+  if (uniqueOrdered.length < 1) {
+    throw new Error('Select at least one link to move into a new section.');
+  }
+
+  const tabIdx = existingTabs.findIndex((t) => t.id === tabId);
+  if (tabIdx === -1) {
+    throw new Error('Source tab was not found.');
+  }
+  const sourceTab = existingTabs[tabIdx];
+  const sections = Array.isArray(sourceTab.sections) ? [...sourceTab.sections] : [];
+  const secIdx = sections.findIndex((s) => s.id === sourceSectionId);
+  if (secIdx === -1) {
+    throw new Error('Source section was not found.');
+  }
+  const sourceSection = sections[secIdx];
+  const links = Array.isArray(sourceSection.links) ? [...sourceSection.links] : [];
+  const byId = new Map(links.map((l) => [l.id, l]));
+  for (const id of uniqueOrdered) {
+    if (!byId.has(id)) {
+      throw new Error('One of the selected links was not found in this section.');
+    }
+  }
+
+  const removeIds = new Set(uniqueOrdered);
+  const remainingLinks = links.filter((l) => !removeIds.has(l.id));
+  const movedLinks = uniqueOrdered.map((id) => byId.get(id)!);
+
+  const makeNewSection = (position: number): LinkSection => ({
+    id: generateId(),
+    title,
+    position,
+    links: movedLinks,
+    visibility: sourceSection.visibility,
+    published: sourceSection.published,
+    allowedUsers: sourceSection.allowedUsers ? [...sourceSection.allowedUsers] : undefined,
+    allowedGroups: sourceSection.allowedGroups ? [...sourceSection.allowedGroups] : undefined,
+    visibleFrom: sourceSection.visibleFrom,
+    expiresAt: sourceSection.expiresAt,
+    inheritShortUrls: sourceSection.inheritShortUrls,
+  });
+
+  // Always strip moved links from the source section first.
+  let nextTabs = existingTabs.map((t, i) => {
+    if (i !== tabIdx) return t;
+    const nextSections = sections
+      .map((s, si) => (si === secIdx ? { ...s, links: remainingLinks } : s))
+      .map((s, si) => ({ ...s, position: si }));
+    return { ...t, sections: nextSections };
+  });
+
+  if (destination.kind === 'same-tab') {
+    return nextTabs.map((t, i) => {
+      if (i !== tabIdx) return t;
+      const nextSections = [...(t.sections || []), makeNewSection(t.sections?.length || 0)].map(
+        (s, si) => ({ ...s, position: si })
+      );
+      return { ...t, sections: nextSections };
+    });
+  }
+
+  if (destination.kind === 'existing-tab') {
+    const targetId = destination.targetTabId;
+    const targetIdx = nextTabs.findIndex((t) => t.id === targetId);
+    if (targetIdx === -1) {
+      throw new Error('Destination tab was not found.');
+    }
+    return nextTabs.map((t, i) => {
+      if (i !== targetIdx) return t;
+      const nextSections = [...(t.sections || []), makeNewSection(t.sections?.length || 0)].map(
+        (s, si) => ({ ...s, position: si })
+      );
+      return { ...t, sections: nextSections };
+    });
+  }
+
+  // new-tab
+  const newTabTitle = String(destination.newTabTitle || '').trim();
+  if (!newTabTitle) {
+    throw new Error('Enter a name for the new tab.');
+  }
+  const newTab: Tab = {
+    id: generateId(),
+    title: newTabTitle,
+    position: nextTabs.length,
+    sections: [makeNewSection(0)],
+    ...tabMetaFromSource(sourceTab),
+  };
+  return nextTabs.concat([newTab]).map((t, i) => ({ ...t, position: i }));
 };
