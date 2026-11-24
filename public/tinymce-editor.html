@@ -1,0 +1,754 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <meta name="robots" content="noindex, nofollow, noarchive, nosnippet" />
+  <title>TinyMCE Editor</title>
+  <meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self' 'unsafe-inline' 'unsafe-eval'; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; font-src 'self' data: https://fonts.gstatic.com; img-src 'self' data: https: blob:; media-src 'self' blob:; connect-src 'self'; frame-src 'self' https://www.youtube.com https://www.youtube-nocookie.com; child-src 'self' https://www.youtube.com https://www.youtube-nocookie.com; frame-ancestors 'self'" />
+  <style>
+    html, body { height: 100%; margin: 0; }
+    body { background: #fff; }
+    body.dark { background: #0f172a; }
+    #wrap { height: 100%; box-sizing: border-box; padding: 8px; }
+    body.view { background: #f8fafc; }
+    body.view.dark { background: #0f172a; }
+    body.view #wrap { padding: 0; }
+    body.view .tox-tinymce { border: none !important; height: 100% !important; }
+    body.view .tox-editor-header,
+    body.view .tox-statusbar { display: none !important; }
+    body.view .tox-edit-area { border: none !important; }
+    body.view .tox-sidebar-wrap,
+    body.view .tox-edit-area,
+    body.view .tox-edit-area__iframe { height: 100% !important; }
+    .error { font-family: system-ui, sans-serif; padding: 16px; color: #b91c1c; }
+  </style>
+  <!-- Keep in sync with utils/richTextFonts.ts -->
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+  <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Alex+Brush&family=Allura&family=Caveat:wght@400%3B700&family=Cookie&family=Courgette&family=Dancing+Script:wght@400%3B700&family=Great+Vibes&family=Homemade+Apple&family=Indie+Flower&family=Kaushan+Script&family=Lato:wght@400%3B700&family=Lobster&family=Lora:wght@400%3B700&family=Merriweather:wght@400%3B700&family=Montserrat:wght@400%3B700&family=Nunito:wght@400%3B700&family=Open+Sans:wght@400%3B700&family=Oswald:wght@400%3B700&family=Pacifico&family=Pinyon+Script&family=Playfair+Display:wght@400%3B700&family=Poppins:wght@400%3B700&family=Roboto:wght@400%3B700&family=Roboto+Mono:wght@400%3B700&family=Sacramento&family=Satisfy&family=Shadows+Into+Light&family=Source+Code+Pro:wght@400%3B700&family=Tangerine:wght@400%3B700&family=Yellowtail&display=swap" />
+</head>
+<body>
+  <div id="wrap"><textarea id="editor"></textarea></div>
+  <script>
+    (function () {
+      var MSG = 'linknest-tinymce';
+      var params = new URLSearchParams(location.search);
+      var dark = params.get('dark') === '1';
+      var viewMode = params.get('mode') === 'view';
+      var iframeMode = viewMode ? 'view' : 'edit';
+      if (dark) document.body.classList.add('dark');
+      if (viewMode) document.body.classList.add('view');
+
+      function tinymceUiOpen() {
+        return !!(
+          document.querySelector('.tox-dialog-wrap') ||
+          document.querySelector('.tox-menu') ||
+          document.querySelector('.tox-swatches') ||
+          document.querySelector('.tox-collection--grid')
+        );
+      }
+
+      function postToParent(type, extra) {
+        var payload = { source: MSG, type: type, mode: iframeMode };
+        if (extra) {
+          Object.keys(extra).forEach(function (key) {
+            payload[key] = extra[key];
+          });
+        }
+        window.parent.postMessage(payload, '*');
+      }
+
+      function requestClose() {
+        postToParent(viewMode ? 'escape' : 'close');
+      }
+
+      /** Last non-empty selection in the editor (kept across blur so read-aloud can use it). */
+      var cachedSelectedText = '';
+
+      function readEditorSelectionText(editor) {
+        try {
+          if (!editor || !editor.selection) return '';
+          var text = editor.selection.getContent({ format: 'text' }) || '';
+          return String(text).replace(/\s+/g, ' ').trim();
+        } catch (err) {
+          return '';
+        }
+      }
+
+      function bindEditorEscape(editor) {
+        function onEscapeKey(e) {
+          if (e.key !== 'Escape' && e.key !== 'Esc') return;
+          if (!viewMode && tinymceUiOpen()) return;
+          e.preventDefault();
+          e.stopPropagation();
+          requestClose();
+        }
+        // Outer iframe document already has a listener; bind the nested content doc/win.
+        try {
+          var doc = editor.getDoc && editor.getDoc();
+          if (doc) doc.addEventListener('keydown', onEscapeKey, true);
+        } catch (err) { /* ignore */ }
+        try {
+          var win = editor.getWin && editor.getWin();
+          if (win) win.addEventListener('keydown', onEscapeKey, true);
+        } catch (err2) { /* ignore */ }
+      }
+
+      function bindSelectionCache(editor) {
+        if (!viewMode) return;
+        var highlightStyleId = 'ln-read-aloud-highlight-style';
+        var cachedRange = null;
+        var speakMap = null;
+
+        function ensureHighlightStyle(doc) {
+          if (!doc || doc.getElementById(highlightStyleId)) return;
+          var style = doc.createElement('style');
+          style.id = highlightStyleId;
+          style.textContent =
+            '::highlight(ln-read-aloud),::highlight(ln-read-aloud-current){' +
+            'background-color:transparent;color:inherit;' +
+            'text-decoration:underline;text-decoration-color:#f97316;' +
+            'text-decoration-thickness:0.15em;text-underline-offset:0.12em;}' +
+            'mark.ln-read-aloud-mark{background:transparent;color:inherit;' +
+            'border-bottom:2px solid #f97316;padding:0;}';
+          (doc.head || doc.documentElement).appendChild(style);
+        }
+
+        function clearDomMarks(doc) {
+          if (!doc) return;
+          var marks = doc.querySelectorAll('mark.ln-read-aloud-mark');
+          marks.forEach(function (mark) {
+            var parent = mark.parentNode;
+            if (!parent) return;
+            while (mark.firstChild) parent.insertBefore(mark.firstChild, mark);
+            parent.removeChild(mark);
+            parent.normalize();
+          });
+        }
+
+        function clearCssHighlights(win) {
+          if (!win || !win.CSS || !win.CSS.highlights) return;
+          win.CSS.highlights.delete('ln-read-aloud');
+          win.CSS.highlights.delete('ln-read-aloud-trail');
+          win.CSS.highlights.delete('ln-read-aloud-current');
+        }
+
+        function clearHighlight() {
+          cachedRange = null;
+          speakMap = null;
+          try {
+            var doc = editor.getDoc && editor.getDoc();
+            var body = editor.getBody && editor.getBody();
+            clearCssHighlights(doc && doc.defaultView);
+            clearDomMarks(doc);
+            clearOverlayLayer(doc, body);
+          } catch (err) { /* ignore */ }
+        }
+
+        function buildSpeakMap(limitRange) {
+          var doc = editor.getDoc && editor.getDoc();
+          var body = editor.getBody && editor.getBody();
+          if (!doc || !body) return null;
+          var walker = doc.createTreeWalker(body, NodeFilter.SHOW_TEXT);
+          var positions = [];
+          var text = '';
+          var pendingSpace = false;
+          var started = false;
+
+          function inLimit(node, offset) {
+            if (!limitRange) return true;
+            try {
+              var probe = doc.createRange();
+              probe.setStart(node, offset);
+              probe.setEnd(node, Math.min(offset + 1, node.data.length));
+              return (
+                probe.compareBoundaryPoints(Range.START_TO_START, limitRange) >= 0 &&
+                probe.compareBoundaryPoints(Range.END_TO_START, limitRange) < 0
+              );
+            } catch (err) {
+              return true;
+            }
+          }
+
+          var node = walker.nextNode();
+          while (node) {
+            var value = node.data || '';
+            for (var i = 0; i < value.length; i++) {
+              if (!inLimit(node, i)) continue;
+              var ch = value.charAt(i);
+              if (/\s/.test(ch)) {
+                if (started) pendingSpace = true;
+                continue;
+              }
+              if (pendingSpace) {
+                text += ' ';
+                positions.push({ node: node, offset: i });
+                pendingSpace = false;
+              }
+              text += ch;
+              positions.push({ node: node, offset: i });
+              started = true;
+            }
+            node = walker.nextNode();
+          }
+          return text ? { text: text, positions: positions } : null;
+        }
+
+        function rangeFromMap(map, start, end) {
+          if (!map || !map.positions.length) return null;
+          var lo = Math.max(0, Math.min(start, map.positions.length - 1));
+          var hiExclusive = Math.max(lo + 1, Math.min(end, map.positions.length));
+          var hi = hiExclusive - 1;
+          var a = map.positions[lo];
+          var b = map.positions[hi];
+          if (!a || !b) return null;
+          try {
+            var doc = a.node.ownerDocument;
+            var range = doc.createRange();
+            range.setStart(a.node, a.offset);
+            range.setEnd(b.node, Math.min(b.offset + 1, b.node.data.length));
+            return range;
+          } catch (err) {
+            return null;
+          }
+        }
+
+        function ensureOverlayLayer(doc, body) {
+          if (!doc || !body) return null;
+          var layer = body.parentNode && body.parentNode.querySelector
+            ? body.parentNode.querySelector('[data-ln-read-aloud-overlay]')
+            : null;
+          if (layer) return layer;
+          var host = body.parentNode;
+          if (!host) return null;
+          if (host.style && (!host.style.position || host.style.position === 'static')) {
+            var pos = doc.defaultView && doc.defaultView.getComputedStyle
+              ? doc.defaultView.getComputedStyle(host).position
+              : '';
+            if (!pos || pos === 'static') host.style.position = 'relative';
+          }
+          layer = doc.createElement('div');
+          layer.setAttribute('data-ln-read-aloud-overlay', '1');
+          layer.setAttribute('aria-hidden', 'true');
+          layer.style.cssText = 'position:absolute;inset:0;pointer-events:none;z-index:5;overflow:visible;';
+          host.appendChild(layer);
+          return layer;
+        }
+
+        function clearOverlayLayer(doc, body) {
+          try {
+            var host = body && body.parentNode;
+            var layer = host && host.querySelector
+              ? host.querySelector('[data-ln-read-aloud-overlay]')
+              : null;
+            if (layer) layer.innerHTML = '';
+          } catch (err) { /* ignore */ }
+        }
+
+        function paintOverlays(doc, body, range, bg, extra) {
+          if (!doc || !body || !range) return;
+          var layer = ensureOverlayLayer(doc, body);
+          if (!layer) return;
+          var host = layer.parentNode;
+          var cRect = host.getBoundingClientRect();
+          var rects = range.getClientRects();
+          for (var i = 0; i < rects.length; i++) {
+            var rect = rects[i];
+            if (rect.width < 0.5 || rect.height < 0.5) continue;
+            var thickness = Math.max(2, Math.min(3, Math.round(rect.height * 0.12)));
+            var el = doc.createElement('div');
+            el.style.cssText =
+              'position:absolute;pointer-events:none;border-radius:1px;' +
+              'left:' + (rect.left - cRect.left + (host.scrollLeft || 0)) + 'px;' +
+              'top:' + (rect.bottom - cRect.top + (host.scrollTop || 0) - thickness) + 'px;' +
+              'width:' + rect.width + 'px;' +
+              'height:' + thickness + 'px;' +
+              'background:' + (bg || '#f97316') + ';' + (extra || '');
+            layer.appendChild(el);
+          }
+        }
+
+        function applyTrail(charIndex, charLength) {
+          try {
+            var doc = editor.getDoc && editor.getDoc();
+            var body = editor.getBody && editor.getBody();
+            if (!doc || !body) return;
+            ensureHighlightStyle(doc);
+            var win = doc.defaultView;
+            if (!speakMap) {
+              speakMap = buildSpeakMap(cachedRange);
+            }
+            if (!speakMap) speakMap = buildSpeakMap(null);
+            if (!speakMap) return;
+            var idx = Math.max(0, Math.min(charIndex || 0, speakMap.text.length));
+            var len = Math.max(1, charLength || 1);
+            var wordEnd = Math.min(idx + len, speakMap.text.length);
+            var current = rangeFromMap(speakMap, idx, wordEnd);
+            clearCssHighlights(win);
+            clearDomMarks(doc);
+            clearOverlayLayer(doc, body);
+            // Orange underline under the current spoken word only.
+            paintOverlays(doc, body, current, '#f97316');
+            if (win && win.CSS && win.CSS.highlights && typeof win.Highlight === 'function') {
+              if (current) win.CSS.highlights.set('ln-read-aloud-current', new win.Highlight(current));
+            }
+            if (current && current.startContainer) {
+              try {
+                var n = current.startContainer.nodeType === 3
+                  ? current.startContainer.parentElement
+                  : current.startContainer;
+                if (n && n.scrollIntoView) n.scrollIntoView({ block: 'nearest', inline: 'nearest' });
+              } catch (errScroll) { /* ignore */ }
+            }
+          } catch (err) { /* ignore */ }
+        }
+
+        function applyHighlight() {
+          try {
+            var rng = editor.selection && editor.selection.getRng ? editor.selection.getRng() : null;
+            var text = readEditorSelectionText(editor);
+            if ((!rng || rng.collapsed) && cachedRange) {
+              rng = cachedRange;
+            } else if (rng && !rng.collapsed && text) {
+              cachedRange = rng.cloneRange();
+            }
+            speakMap = buildSpeakMap(rng && !rng.collapsed ? rng : cachedRange);
+            if (!speakMap) speakMap = buildSpeakMap(null);
+            applyTrail(0, 1);
+          } catch (err) { /* ignore */ }
+        }
+
+        editor.on('SelectionChange', function () {
+          var text = readEditorSelectionText(editor);
+          var hasFocus = false;
+          try {
+            hasFocus = !!editor.hasFocus && editor.hasFocus();
+          } catch (err) { /* ignore */ }
+          if (text) {
+            cachedSelectedText = text;
+            try {
+              var rng = editor.selection.getRng();
+              if (rng && !rng.collapsed) cachedRange = rng.cloneRange();
+            } catch (err2) { /* ignore */ }
+          } else if (hasFocus) {
+            cachedSelectedText = '';
+            cachedRange = null;
+          }
+        });
+        window.__linknestGetSelectedText = function () {
+          var live = readEditorSelectionText(editor);
+          if (live) return live;
+          return cachedSelectedText || '';
+        };
+        window.__linknestSetSelectionHighlight = function (on) {
+          if (on) applyHighlight();
+          else clearHighlight();
+        };
+        window.__linknestSetSpeakProgress = function (charIndex, charLength) {
+          applyTrail(charIndex || 0, charLength || 1);
+        };
+      }
+
+      document.addEventListener('keydown', function (e) {
+        if (e.key !== 'Escape' && e.key !== 'Esc') return;
+        if (!viewMode && tinymceUiOpen()) return;
+        e.preventDefault();
+        e.stopPropagation();
+        requestClose();
+      }, true);
+
+      var tinymceBase = new URL('./tinymce/', document.baseURI).href.replace(/\/?$/, '');
+      var googleFontsHref = 'https://fonts.googleapis.com/css2?family=Alex+Brush&family=Allura&family=Caveat:wght@400%3B700&family=Cookie&family=Courgette&family=Dancing+Script:wght@400%3B700&family=Great+Vibes&family=Homemade+Apple&family=Indie+Flower&family=Kaushan+Script&family=Lato:wght@400%3B700&family=Lobster&family=Lora:wght@400%3B700&family=Merriweather:wght@400%3B700&family=Montserrat:wght@400%3B700&family=Nunito:wght@400%3B700&family=Open+Sans:wght@400%3B700&family=Oswald:wght@400%3B700&family=Pacifico&family=Pinyon+Script&family=Playfair+Display:wght@400%3B700&family=Poppins:wght@400%3B700&family=Roboto:wght@400%3B700&family=Roboto+Mono:wght@400%3B700&family=Sacramento&family=Satisfy&family=Shadows+Into+Light&family=Source+Code+Pro:wght@400%3B700&family=Tangerine:wght@400%3B700&family=Yellowtail&display=swap';
+      // Keep in sync with utils/richTextFonts.ts
+      var fontFamilyFormats = [
+        "Arial=Arial, Helvetica, sans-serif",
+        "Arial Black='Arial Black', Gadget, sans-serif",
+        "Calibri=Calibri, Candara, Segoe, sans-serif",
+        "Century Gothic='Century Gothic', AppleGothic, sans-serif",
+        "Helvetica=Helvetica, Arial, sans-serif",
+        "Lato=Lato, Helvetica, sans-serif",
+        "Lucida Sans='Lucida Sans Unicode', 'Lucida Grande', sans-serif",
+        "Montserrat=Montserrat, 'Helvetica Neue', sans-serif",
+        "Nunito=Nunito, Geneva, sans-serif",
+        "Open Sans='Open Sans', Arial, sans-serif",
+        "Oswald=Oswald, Impact, sans-serif",
+        "Poppins=Poppins, 'Segoe UI', sans-serif",
+        "Roboto=Roboto, Arial, sans-serif",
+        "Segoe UI='Segoe UI', Tahoma, Geneva, sans-serif",
+        "Tahoma=Tahoma, Geneva, sans-serif",
+        "Trebuchet MS='Trebuchet MS', Helvetica, sans-serif",
+        "Verdana=Verdana, Geneva, sans-serif",
+        "Book Antiqua='Book Antiqua', Palatino, serif",
+        "Cambria=Cambria, Georgia, serif",
+        "Garamond=Garamond, Baskerville, serif",
+        "Georgia=Georgia, 'Times New Roman', serif",
+        "Lora=Lora, Georgia, serif",
+        "Merriweather=Merriweather, Georgia, serif",
+        "Palatino='Palatino Linotype', Palatino, serif",
+        "Playfair Display='Playfair Display', Georgia, serif",
+        "Times New Roman='Times New Roman', Times, serif",
+        "Andale Mono='Andale Mono', Monaco, monospace",
+        "Consolas=Consolas, Monaco, monospace",
+        "Courier New='Courier New', Courier, monospace",
+        "Lucida Console='Lucida Console', Monaco, monospace",
+        "Roboto Mono='Roboto Mono', Consolas, monospace",
+        "Source Code Pro='Source Code Pro', Consolas, monospace",
+        "Terminal=Terminal, Monaco, monospace",
+        "Alex Brush='Alex Brush', 'Segoe Script', cursive",
+        "Allura=Allura, 'Segoe Script', cursive",
+        "Apple Chancery='Apple Chancery', 'Dancing Script', cursive",
+        "Bradley Hand='Bradley Hand ITC', 'Segoe Print', Caveat, cursive",
+        "Brush Script='Brush Script MT', 'Segoe Script', 'Alex Brush', cursive",
+        "Caveat=Caveat, 'Segoe Print', cursive",
+        "Comic Sans MS='Comic Sans MS', 'Comic Sans', cursive",
+        "Cookie=Cookie, 'Segoe Script', cursive",
+        "Courgette=Courgette, 'Segoe Script', cursive",
+        "Dancing Script='Dancing Script', 'Segoe Script', cursive",
+        "Edwardian Script='Edwardian Script ITC', 'Great Vibes', cursive",
+        "Freestyle Script='Freestyle Script', 'Dancing Script', cursive",
+        "French Script='French Script MT', 'Great Vibes', cursive",
+        "Great Vibes='Great Vibes', 'Segoe Script', cursive",
+        "Homemade Apple='Homemade Apple', 'Lucida Handwriting', cursive",
+        "Indie Flower='Indie Flower', 'Comic Sans MS', cursive",
+        "Kaushan Script='Kaushan Script', 'Segoe Script', cursive",
+        "Lobster=Lobster, Impact, cursive",
+        "Lucida Calligraphy='Lucida Calligraphy', 'Great Vibes', cursive",
+        "Lucida Handwriting='Lucida Handwriting', 'Dancing Script', cursive",
+        "Monotype Corsiva='Monotype Corsiva', 'Dancing Script', cursive",
+        "Pacifico=Pacifico, 'Segoe Script', cursive",
+        "Pinyon Script='Pinyon Script', 'Great Vibes', cursive",
+        "Sacramento=Sacramento, 'Segoe Script', cursive",
+        "Satisfy=Satisfy, 'Segoe Script', cursive",
+        "Segoe Print='Segoe Print', Caveat, cursive",
+        "Segoe Script='Segoe Script', 'Dancing Script', cursive",
+        "Shadows Into Light='Shadows Into Light', 'Comic Sans MS', cursive",
+        "Tangerine=Tangerine, 'Great Vibes', cursive",
+        "Yellowtail=Yellowtail, 'Segoe Script', cursive",
+        "Impact=Impact, Haettenschweiler, sans-serif",
+        "Symbol=Symbol, serif",
+        "Webdings=Webdings, sans-serif",
+        "Wingdings=Wingdings, 'Zapf Dingbats'"
+      ].join(';');
+      var script = document.createElement('script');
+      script.src = tinymceBase + '/tinymce.min.js';
+      script.onerror = function () {
+        document.body.innerHTML = '<p class="error">Could not load TinyMCE from ' + tinymceBase + '</p>';
+      };
+      script.onload = function () {
+        if (!window.tinymce) {
+          document.body.innerHTML = '<p class="error">TinyMCE loaded but window.tinymce is missing.</p>';
+          return;
+        }
+        var contentStyle =
+          '@import url("' + googleFontsHref + '"); ' +
+          'body { font-family: Georgia, "Times New Roman", Times, serif; font-size: 16px; line-height: 1.5; } ' +
+          (viewMode ? 'body { padding: 16px 20px; } ' : '') +
+          'body.mce-content-body li.ln-li-space, body.mce-content-body li.ln-li-space-1, body.mce-content-body li[data-ln-space="1"] { margin-bottom: 1em !important; } ' +
+          'body.mce-content-body li.ln-li-space-2, body.mce-content-body li[data-ln-space="2"] { margin-bottom: 2em !important; } ' +
+          'body.mce-content-body li.ln-li-space-3, body.mce-content-body li[data-ln-space="3"] { margin-bottom: 3em !important; } ' +
+          'body.mce-content-body li.ln-li-space-4, body.mce-content-body li[data-ln-space="4"] { margin-bottom: 4em !important; } ' +
+          'body.mce-content-body li.ln-li-space-5, body.mce-content-body li[data-ln-space="5"] { margin-bottom: 5em !important; }';
+        var initConfig = {
+          selector: '#editor',
+          license_key: 'gpl',
+          base_url: tinymceBase,
+          suffix: '.min',
+          height: '100%',
+          branding: false,
+          promotion: false,
+          plugins:
+            'accordion advlist anchor autolink autosave charmap code codesample directionality ' +
+            'emoticons fullscreen help image importcss insertdatetime link lists media nonbreaking ' +
+            'pagebreak preview quickbars searchreplace table visualblocks visualchars wordcount',
+          skin: dark ? 'oxide-dark' : 'oxide',
+          content_css: dark ? 'dark' : 'default',
+          font_css: googleFontsHref,
+          font_family_formats: fontFamilyFormats,
+          content_style:
+            contentStyle +
+            ' img,video,iframe{max-width:100%;height:auto;} ' +
+            ' video,audio,iframe{display:block;margin:0.75em 0;} ' +
+            ' video{min-height:120px;background:#0f172a;} ' +
+            ' iframe{aspect-ratio:16/9;border:0;} ' +
+            ' audio{width:100%;}',
+          convert_urls: false,
+          relative_urls: false,
+          browser_spellcheck: !viewMode,
+          resize: false,
+          image_advtab: true,
+          image_caption: true,
+          image_title: true,
+          image_description: true,
+          media_live_embeds: true,
+          link_context_toolbar: true,
+          link_default_target: '_blank',
+          link_assume_external_targets: true,
+          table_use_colgroups: true,
+          table_toolbar:
+            'tableprops tabledelete | tableinsertrowbefore tableinsertrowafter tabledeleterow | ' +
+            'tableinsertcolbefore tableinsertcolafter tabledeletecol | tablemergecells tablesplitcells | ' +
+            'tablecellprops tablerowprops',
+          table_appearance_options: true,
+          table_grid: true,
+          table_resize_bars: true,
+          table_style_by_css: true,
+          advlist_bullet_styles: 'default,circle,square',
+          advlist_number_styles: 'default,lower-alpha,lower-greek,lower-roman,upper-alpha,upper-roman',
+          fontsize_formats: '8pt 9pt 10pt 11pt 12pt 14pt 16pt 18pt 20pt 22pt 24pt 26pt 28pt 36pt 48pt 60pt 72pt',
+          line_height_formats: '0.8 1 1.1 1.2 1.3 1.4 1.5 1.6 1.8 2 2.5 3',
+          block_formats:
+            'Paragraph=p; Heading 1=h1; Heading 2=h2; Heading 3=h3; Heading 4=h4; Heading 5=h5; Heading 6=h6; ' +
+            'Preformatted=pre; Blockquote=blockquote; Div=div',
+          style_formats_merge: true,
+          insertdatetime_formats: ['%Y-%m-%d', '%H:%M:%S', '%I:%M %p', '%D', '%Y-%m-%d %H:%M', '%b %d, %Y'],
+          insertdatetime_element: true,
+          nonbreaking_force_tab: true,
+          pagebreak_separator: '<div style="page-break-before: always;"></div>',
+          codesample_languages: [
+            { text: 'HTML/XML', value: 'markup' },
+            { text: 'JavaScript', value: 'javascript' },
+            { text: 'TypeScript', value: 'typescript' },
+            { text: 'CSS', value: 'css' },
+            { text: 'PHP', value: 'php' },
+            { text: 'SQL', value: 'sql' },
+            { text: 'Python', value: 'python' },
+            { text: 'Java', value: 'java' },
+            { text: 'C', value: 'c' },
+            { text: 'C++', value: 'cpp' },
+            { text: 'C#', value: 'csharp' },
+            { text: 'JSON', value: 'json' },
+            { text: 'Bash', value: 'bash' },
+            { text: 'PowerShell', value: 'powershell' },
+            { text: 'Markdown', value: 'markdown' },
+            { text: 'Plain text', value: 'plaintext' }
+          ],
+          autosave_ask_before_unload: true,
+          autosave_interval: '30s',
+          autosave_retention: '30m',
+          visualblocks_default_state: false,
+          visualchars_default_state: false,
+          extended_valid_elements:
+            '+li[data-ln-space|class|style],' +
+            'video[src|controls|controlslist|width|height|poster|preload|playsinline|style|class|muted|autoplay|loop],' +
+            'audio[src|controls|preload|style|class],' +
+            'source[src|type],' +
+            'iframe[src|width|height|title|frameborder|allow|allowfullscreen|referrerpolicy|style|class|scrolling|name|id]',
+          highlight_on_focus: !viewMode,
+          object_resizing: !viewMode
+        };
+        if (viewMode) {
+          initConfig.readonly = true;
+          initConfig.menubar = false;
+          initConfig.toolbar = false;
+          initConfig.statusbar = false;
+          initConfig.quickbars_selection_toolbar = false;
+          initConfig.quickbars_insert_toolbar = false;
+          initConfig.contextmenu = false;
+        } else {
+          initConfig.menubar = 'file edit insert view format tools table help';
+          initConfig.menu = {
+            file: {
+              title: 'File',
+              items: 'newdocument restoredraft | preview print'
+            },
+            edit: {
+              title: 'Edit',
+              items: 'undo redo | cut copy paste pastetext | selectall | searchreplace'
+            },
+            insert: {
+              title: 'Insert',
+              items:
+                'image link media mediamanager codesample inserttable | charmap emoticons hr | ' +
+                'pagebreak nonbreaking anchor | insertdatetime | accordion accordiontoggle accordionremove'
+            },
+            view: {
+              title: 'View',
+              items: 'code | visualaid visualchars visualblocks | preview fullscreen'
+            },
+            format: {
+              title: 'Format',
+              items:
+                'bold italic underline strikethrough superscript subscript | ' +
+                'styles blocks fontfamily fontsize align lineheight | forecolor backcolor | removeformat'
+            },
+            tools: {
+              title: 'Tools',
+              items: 'code wordcount | restoredraft'
+            },
+            table: {
+              title: 'Table',
+              items: 'inserttable | cell row column | tableprops deletetable'
+            },
+            help: { title: 'Help', items: 'help' }
+          };
+          initConfig.toolbar_mode = 'wrap';
+          initConfig.toolbar = [
+            'undo redo | cut copy paste pastetext | selectall remove | print newdocument restoredraft | searchreplace',
+            'bold italic underline strikethrough | superscript subscript | forecolor backcolor | removeformat',
+            'alignleft aligncenter alignright alignjustify alignnone | lineheight | ltr rtl | outdent indent',
+            'styles blocks fontfamily fontsize fontsizeinput | h1 h2 h3 h4 h5 h6 | blockquote hr',
+            'bullist numlist listitemspace | accordion accordiontoggle accordionremove | link unlink openlink anchor image media mediamanager table',
+            'charmap emoticons codesample insertdatetime nonbreaking pagebreak | code fullscreen preview visualblocks visualchars wordcount help'
+          ];
+          initConfig.quickbars_selection_toolbar =
+            'bold italic underline strikethrough | quicklink h2 h3 blockquote | removeformat';
+          initConfig.quickbars_insert_toolbar = 'quickimage quicktable media hr accordion codesample';
+          initConfig.contextmenu = 'link image table lists accordion';
+          initConfig.statusbar = true;
+        }
+        initConfig.setup = function (editor) {
+            editor.ui.registry.addButton('mediamanager', {
+              text: 'Insert Media',
+              tooltip: 'Insert from Media Library (images, video, YouTube…)',
+              onAction: function () {
+                postToParent('openMediaManager');
+              }
+            });
+            editor.ui.registry.addMenuItem('mediamanager', {
+              text: 'Media Library…',
+              onAction: function () {
+                postToParent('openMediaManager');
+              }
+            });
+            var emit = function () {
+              if (viewMode) return;
+              postToParent('change', { html: editor.getContent() });
+            };
+            var LI_SPACE_LEGACY = 'ln-li-space';
+            var currentListItem = function () {
+              return editor.dom.getParent(editor.selection.getNode(), 'li');
+            };
+            var getListItemSpaceLevel = function (li) {
+              if (!li) return 0;
+              var fromData = parseInt(editor.dom.getAttrib(li, 'data-ln-space') || '', 10);
+              if (fromData >= 1 && fromData <= 5) return fromData;
+              for (var i = 5; i >= 1; i--) {
+                if (editor.dom.hasClass(li, 'ln-li-space-' + i)) return i;
+              }
+              if (editor.dom.hasClass(li, LI_SPACE_LEGACY)) return 1;
+              return 0;
+            };
+            var writeListItemSpace = function (li, level) {
+              editor.dom.removeClass(li, LI_SPACE_LEGACY);
+              for (var i = 1; i <= 5; i++) {
+                editor.dom.removeClass(li, 'ln-li-space-' + i);
+              }
+              editor.dom.setAttrib(li, 'data-ln-space', null);
+              editor.dom.setStyle(li, 'margin-bottom', '');
+              if (level >= 1 && level <= 5) {
+                editor.dom.addClass(li, 'ln-li-space-' + level);
+                editor.dom.setAttrib(li, 'data-ln-space', String(level));
+                editor.dom.setStyle(li, 'margin-bottom', level + 'em');
+              }
+            };
+            var applyListItemSpace = function (level) {
+              var li = currentListItem();
+              if (!li) return;
+              editor.undoManager.transact(function () {
+                writeListItemSpace(li, level);
+              });
+              editor.nodeChanged();
+              emit();
+            };
+            var syncListItemSpacesFromMarkup = function () {
+              var lis = editor.dom.select('li');
+              for (var i = 0; i < lis.length; i++) {
+                var level = getListItemSpaceLevel(lis[i]);
+                if (level > 0) writeListItemSpace(lis[i], level);
+              }
+            };
+            var listSpaceMenuItems = function () {
+              var current = getListItemSpaceLevel(currentListItem());
+              var items = [{
+                type: 'togglemenuitem',
+                text: 'None',
+                active: current === 0,
+                onAction: function () { applyListItemSpace(0); }
+              }];
+              for (var n = 1; n <= 5; n++) {
+                (function (level) {
+                  items.push({
+                    type: 'togglemenuitem',
+                    text: String(level),
+                    active: current === level,
+                    onAction: function () { applyListItemSpace(level); }
+                  });
+                })(n);
+              }
+              return items;
+            };
+            if (!viewMode) {
+              editor.ui.registry.addMenuButton('listitemspace', {
+                tooltip: 'Space after list item',
+                text: 'List space',
+                icon: 'line-height',
+                fetch: function (callback) {
+                  callback(listSpaceMenuItems());
+                },
+                onSetup: function (api) {
+                  var update = function () {
+                    api.setEnabled(!!currentListItem());
+                  };
+                  editor.on('NodeChange', update);
+                  update();
+                  return function () {
+                    editor.off('NodeChange', update);
+                  };
+                }
+              });
+              editor.on('change input undo redo KeyUp', emit);
+            } else {
+              editor.on('click', function (e) {
+                var target = e.target;
+                if (editor.dom.getParent(target, 'summary, details, button, [data-mce-accordion]')) return;
+                var anchor = editor.dom.getParent(target, 'a');
+                if (!anchor) return;
+                var href = editor.dom.getAttrib(anchor, 'href') || anchor.href || '';
+                if (!href || /^\s*javascript:/i.test(href)) return;
+                e.preventDefault();
+                e.stopPropagation();
+                if (/^(mailto:|tel:)/i.test(href)) {
+                  window.open(href, '_blank');
+                  return;
+                }
+                if (/^https?:/i.test(href)) {
+                  window.open(href, '_blank', 'noopener,noreferrer');
+                }
+              });
+            }
+            editor.on('SetContent', syncListItemSpacesFromMarkup);
+            editor.on('init', function () {
+              if (viewMode && editor.mode && typeof editor.mode.set === 'function') {
+                editor.mode.set('readonly');
+              }
+              bindEditorEscape(editor);
+              bindSelectionCache(editor);
+              postToParent('ready');
+            });
+          };
+          window.tinymce.init(initConfig);
+        };
+      document.head.appendChild(script);
+
+      window.addEventListener('message', function (e) {
+        if (!e.data || e.data.source !== MSG) return;
+        var ed = window.tinymce && window.tinymce.get('editor');
+        if (!ed) return;
+        if (e.data.type === 'set') {
+          cachedSelectedText = '';
+          ed.setContent(e.data.html || '');
+        }
+        if (e.data.type === 'get') {
+          postToParent('content', { html: ed.getContent() });
+        }
+        if (e.data.type === 'insertHtml' && typeof e.data.html === 'string') {
+          ed.focus();
+          ed.insertContent(e.data.html);
+          postToParent('change', { html: ed.getContent() });
+        }
+      });
+    })();
+  </script>
+</body>
+</html>

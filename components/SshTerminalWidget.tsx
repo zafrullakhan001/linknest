@@ -1,0 +1,8398 @@
+import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { Terminal } from '@xterm/xterm';
+import { FitAddon } from '@xterm/addon-fit';
+import { WebLinksAddon } from '@xterm/addon-web-links';
+import '@xterm/xterm/css/xterm.css';
+import { useAuth } from '../contexts/AuthContext';
+import { useSettings } from '../contexts/SettingsContext';
+import { isEscapeDialogOpen } from '../hooks/useEscapeToClose';
+import { createTile } from '../services/storageService';
+import type { Link, LinkSection, Tab, Tile } from '../types';
+import {
+  sshConnectionService,
+  type SavedSshConnection,
+  type SshConnectionAppearance,
+  type RemoteConnectionProtocol,
+  type SshTermType,
+  SSH_CONNECTION_COLORS,
+  SSH_TERM_TYPES,
+  DEFAULT_SSH_TERM_TYPE,
+  normalizeSshColor,
+  normalizeSshAppearance,
+  normalizeSshCategory,
+  normalizeSshSortOrder,
+  normalizeConnectionProtocol,
+  normalizeSshTermType,
+} from '../services/sshConnectionService';
+import {
+  buildAutoTargetUrl,
+  parseAutoTargetUrl,
+  sshGatewayService,
+  type SshGatewayStatus,
+} from '../services/sshGatewayService';
+import type { OpenSshTerminalDetail } from '../utils/sshLink';
+import { buildSshLinkUrl } from '../utils/sshLink';
+import {
+  sshSessionBridge,
+  loadPersistedLiveTabs,
+  savePersistedLiveTabs,
+  clearPersistedLiveTabs,
+  type PersistedLiveTab,
+} from '../services/sshSessionBridge';
+import { useSshFloatWindowDrag } from './FloatingSshTerminalWidget';
+import { RdpSessionPane } from './RdpSessionPane';
+import { XtermZoomSafeHost } from './XtermZoomSafeHost';
+import {
+  SshConnectionSidebarList,
+  mergeCategoryOrder,
+  categoryAccentColor,
+  categoryLabel,
+  categoryKey,
+  normalizeSshSidebarChrome,
+  sshSidebarChromeCssVars,
+  DEFAULT_SSH_SIDEBAR_CHROME,
+  CALM_SSH_SIDEBAR_CHROME,
+  type SshCategoryMetaMap,
+  type SshColorMode,
+  type SshListViewMode,
+  type SshSidebarChromeTheme,
+} from './SshConnectionSidebarList';
+
+interface SshTerminalWidgetProps {
+  onClose?: () => void;
+  /** Request from App (ssh:// click) — requestId changes on every open. */
+  pendingOpen?: (OpenSshTerminalDetail & { requestId: number }) | null;
+  onPendingOpenConsumed?: () => void;
+}
+
+const IDLE_NOTICE = 'Click a saved connection to open a session — or fill Easy / RDP settings and Connect.';
+
+const WS_STORAGE_KEY = 'linknest.sshTerminal.wsUrl.v1';
+const HOST_STORAGE_KEY = 'linknest.sshTerminal.host.v1';
+const PORT_STORAGE_KEY = 'linknest.sshTerminal.port.v1';
+const USER_STORAGE_KEY = 'linknest.sshTerminal.username.v1';
+const MODE_STORAGE_KEY = 'linknest.sshTerminal.mode.v1';
+const X11_STORAGE_KEY = 'linknest.sshTerminal.x11.v1';
+const CONNECTIONS_STORAGE_KEY = 'linknest.sshTerminal.savedConnections.v1';
+const LIST_DENSITY_KEY = 'linknest.sshTerminal.listDensity.v1';
+const COLOR_MODE_KEY = 'linknest.sshTerminal.colorMode.v1';
+const SIDEBAR_CHROME_KEY = 'linknest.sshTerminal.sidebarChrome.v1';
+const CATEGORY_ORDER_KEY = 'linknest.sshTerminal.categoryOrder.v1';
+const CATEGORY_COLLAPSED_KEY = 'linknest.sshTerminal.categoryCollapsed.v1';
+const CATEGORY_META_KEY = 'linknest.sshTerminal.categoryMeta.v1';
+const RECYCLED_CATEGORIES_KEY = 'linknest.sshTerminal.recycledCategories.v1';
+const PANEL_OPEN_KEY = 'linknest.sshTerminal.panelOpen.v1';
+const PANEL_WIDTH_KEY = 'linknest.sshTerminal.panelWidth.v1';
+const CMD_BAR_HEIGHT_KEY = 'linknest.sshTerminal.cmdBarHeight.v1';
+const TERM_FONT_SIZE_KEY = 'linknest.sshTerminal.termFontSize.v1';
+const TERM_FONT_FAMILY_KEY = 'linknest.sshTerminal.termFontFamily.v1';
+const TERM_BG_COLOR_KEY = 'linknest.sshTerminal.termBgColor.v1';
+const TERM_FG_COLOR_KEY = 'linknest.sshTerminal.termFgColor.v1';
+const TERM_CURSOR_COLOR_KEY = 'linknest.sshTerminal.termCursorColor.v1';
+const TERM_SELECTION_BG_KEY = 'linknest.sshTerminal.termSelectionBg.v1';
+const TERM_THEME_PRESET_KEY = 'linknest.sshTerminal.themePreset.v1';
+const TERM_ANSI_KEY = 'linknest.sshTerminal.termAnsi.v1';
+const CMD_FONT_SIZE_KEY = 'linknest.sshTerminal.cmdFontSize.v1';
+const TAB_BAR_HEIGHT_KEY = 'linknest.sshTerminal.tabBarHeight.v1';
+const TAB_BAR_FONT_SIZE_KEY = 'linknest.sshTerminal.tabBarFontSize.v1';
+const SKIP_BAR_HEIGHT_KEY = 'linknest.sshTerminal.skipBarHeight.v1';
+const SKIP_BAR_FONT_SIZE_KEY = 'linknest.sshTerminal.skipBarFontSize.v1';
+const VIEW_MODE_KEY = 'linknest.sshTerminal.viewMode.v1';
+const PANE_SHARES_KEY = 'linknest.sshTerminal.paneShares.v1';
+const GRID_COL_SHARES_KEY = 'linknest.sshTerminal.gridColShares.v1';
+const GRID_ROW_SHARES_KEY = 'linknest.sshTerminal.gridRowShares.v1';
+const PANE_SHARE_MIN = 0.15;
+const PANEL_MIN_WIDTH = 160;
+const PANEL_MAX_WIDTH = 420;
+const DEFAULT_MAX_SSH_TABS = 8;
+const CMD_BAR_MIN_HEIGHT = 100;
+const CMD_BAR_DEFAULT_HEIGHT = 112;
+const CMD_BAR_MAX_HEIGHT = 360;
+const TERM_FONT_SIZE_MIN = 11;
+const TERM_FONT_SIZE_MAX = 24;
+const CMD_FONT_SIZE_MIN = 12;
+const CMD_FONT_SIZE_MAX = 22;
+const TAB_BAR_HEIGHT_MIN = 28;
+const TAB_BAR_HEIGHT_MAX = 52;
+const TAB_BAR_HEIGHT_DEFAULT = 34;
+const TAB_BAR_FONT_MIN = 11;
+const TAB_BAR_FONT_MAX = 18;
+const TAB_BAR_FONT_DEFAULT = 13;
+const SKIP_BAR_HEIGHT_MIN = 24;
+const SKIP_BAR_HEIGHT_MAX = 48;
+const SKIP_BAR_HEIGHT_DEFAULT = 30;
+const SKIP_BAR_FONT_MIN = 10;
+const SKIP_BAR_FONT_MAX = 16;
+const SKIP_BAR_FONT_DEFAULT = 12;
+const DEFAULT_TERM_BG_COLOR = '#020617';
+const DEFAULT_TERM_FG_COLOR = '#e2e8f0';
+const DEFAULT_TERM_CURSOR_COLOR = '#38bdf8';
+const DEFAULT_TERM_SELECTION_BG = '#1e3a5f';
+
+interface TermAnsiPalette {
+  black?: string;
+  red?: string;
+  green?: string;
+  yellow?: string;
+  blue?: string;
+  magenta?: string;
+  cyan?: string;
+  white?: string;
+  brightBlack?: string;
+  brightRed?: string;
+  brightGreen?: string;
+  brightYellow?: string;
+  brightBlue?: string;
+  brightMagenta?: string;
+  brightCyan?: string;
+  brightWhite?: string;
+}
+
+interface TermThemePreset {
+  id: string;
+  label: string;
+  background: string;
+  foreground: string;
+  cursor: string;
+  selectionBackground: string;
+  ansi?: TermAnsiPalette;
+}
+
+const TERM_THEME_PRESETS: TermThemePreset[] = [
+  {
+    id: 'linknest',
+    label: 'LinkNest',
+    background: '#020617',
+    foreground: '#e2e8f0',
+    cursor: '#38bdf8',
+    selectionBackground: '#1e3a5f',
+  },
+  {
+    id: 'dracula',
+    label: 'Dracula',
+    background: '#282a36',
+    foreground: '#f8f8f2',
+    cursor: '#f8f8f2',
+    selectionBackground: '#44475a',
+    ansi: {
+      black: '#21222c',
+      red: '#ff5555',
+      green: '#50fa7b',
+      yellow: '#f1fa8c',
+      blue: '#bd93f9',
+      magenta: '#ff79c6',
+      cyan: '#8be9fd',
+      white: '#f8f8f2',
+      brightBlack: '#6272a4',
+      brightRed: '#ff6e6e',
+      brightGreen: '#69ff94',
+      brightYellow: '#ffffa5',
+      brightBlue: '#d6acff',
+      brightMagenta: '#ff92df',
+      brightCyan: '#a4ffff',
+      brightWhite: '#ffffff',
+    },
+  },
+  {
+    id: 'solarized-dark',
+    label: 'Solarized Dark',
+    background: '#002b36',
+    foreground: '#839496',
+    cursor: '#93a1a1',
+    selectionBackground: '#073642',
+    ansi: {
+      black: '#073642',
+      red: '#dc322f',
+      green: '#859900',
+      yellow: '#b58900',
+      blue: '#268bd2',
+      magenta: '#d33682',
+      cyan: '#2aa198',
+      white: '#eee8d5',
+      brightBlack: '#002b36',
+      brightRed: '#cb4b16',
+      brightGreen: '#586e75',
+      brightYellow: '#657b83',
+      brightBlue: '#839496',
+      brightMagenta: '#6c71c4',
+      brightCyan: '#93a1a1',
+      brightWhite: '#fdf6e3',
+    },
+  },
+  {
+    id: 'solarized-light',
+    label: 'Solarized Light',
+    background: '#fdf6e3',
+    foreground: '#657b83',
+    cursor: '#586e75',
+    selectionBackground: '#eee8d5',
+    ansi: {
+      black: '#073642',
+      red: '#dc322f',
+      green: '#859900',
+      yellow: '#b58900',
+      blue: '#268bd2',
+      magenta: '#d33682',
+      cyan: '#2aa198',
+      white: '#eee8d5',
+      brightBlack: '#002b36',
+      brightRed: '#cb4b16',
+      brightGreen: '#586e75',
+      brightYellow: '#657b83',
+      brightBlue: '#839496',
+      brightMagenta: '#6c71c4',
+      brightCyan: '#93a1a1',
+      brightWhite: '#fdf6e3',
+    },
+  },
+  {
+    id: 'monokai',
+    label: 'Monokai',
+    background: '#272822',
+    foreground: '#f8f8f2',
+    cursor: '#f8f8f0',
+    selectionBackground: '#49483e',
+    ansi: {
+      black: '#272822',
+      red: '#f92672',
+      green: '#a6e22e',
+      yellow: '#f4bf75',
+      blue: '#66d9ef',
+      magenta: '#ae81ff',
+      cyan: '#a1efe4',
+      white: '#f8f8f2',
+      brightBlack: '#75715e',
+      brightRed: '#f92672',
+      brightGreen: '#a6e22e',
+      brightYellow: '#f4bf75',
+      brightBlue: '#66d9ef',
+      brightMagenta: '#ae81ff',
+      brightCyan: '#a1efe4',
+      brightWhite: '#f9f8f5',
+    },
+  },
+  {
+    id: 'one-dark',
+    label: 'One Dark',
+    background: '#282c34',
+    foreground: '#abb2bf',
+    cursor: '#528bff',
+    selectionBackground: '#3e4451',
+    ansi: {
+      black: '#282c34',
+      red: '#e06c75',
+      green: '#98c379',
+      yellow: '#e5c07b',
+      blue: '#61afef',
+      magenta: '#c678dd',
+      cyan: '#56b6c2',
+      white: '#abb2bf',
+      brightBlack: '#5c6370',
+      brightRed: '#e06c75',
+      brightGreen: '#98c379',
+      brightYellow: '#e5c07b',
+      brightBlue: '#61afef',
+      brightMagenta: '#c678dd',
+      brightCyan: '#56b6c2',
+      brightWhite: '#ffffff',
+    },
+  },
+  {
+    id: 'nord',
+    label: 'Nord',
+    background: '#2e3440',
+    foreground: '#d8dee9',
+    cursor: '#d8dee9',
+    selectionBackground: '#434c5e',
+    ansi: {
+      black: '#3b4252',
+      red: '#bf616a',
+      green: '#a3be8c',
+      yellow: '#ebcb8b',
+      blue: '#81a1c1',
+      magenta: '#b48ead',
+      cyan: '#88c0d0',
+      white: '#e5e9f0',
+      brightBlack: '#4c566a',
+      brightRed: '#bf616a',
+      brightGreen: '#a3be8c',
+      brightYellow: '#ebcb8b',
+      brightBlue: '#81a1c1',
+      brightMagenta: '#b48ead',
+      brightCyan: '#8fbcbb',
+      brightWhite: '#eceff4',
+    },
+  },
+  {
+    id: 'tokyo-night',
+    label: 'Tokyo Night',
+    background: '#1a1b26',
+    foreground: '#c0caf5',
+    cursor: '#c0caf5',
+    selectionBackground: '#33467c',
+    ansi: {
+      black: '#15161e',
+      red: '#f7768e',
+      green: '#9ece6a',
+      yellow: '#e0af68',
+      blue: '#7aa2f7',
+      magenta: '#bb9af7',
+      cyan: '#7dcfff',
+      white: '#a9b1d6',
+      brightBlack: '#414868',
+      brightRed: '#f7768e',
+      brightGreen: '#9ece6a',
+      brightYellow: '#e0af68',
+      brightBlue: '#7aa2f7',
+      brightMagenta: '#bb9af7',
+      brightCyan: '#7dcfff',
+      brightWhite: '#c0caf5',
+    },
+  },
+  {
+    id: 'catppuccin-mocha',
+    label: 'Catppuccin Mocha',
+    background: '#1e1e2e',
+    foreground: '#cdd6f4',
+    cursor: '#f5e0dc',
+    selectionBackground: '#45475a',
+    ansi: {
+      black: '#45475a',
+      red: '#f38ba8',
+      green: '#a6e3a1',
+      yellow: '#f9e2af',
+      blue: '#89b4fa',
+      magenta: '#f5c2e7',
+      cyan: '#94e2d5',
+      white: '#bac2de',
+      brightBlack: '#585b70',
+      brightRed: '#f38ba8',
+      brightGreen: '#a6e3a1',
+      brightYellow: '#f9e2af',
+      brightBlue: '#89b4fa',
+      brightMagenta: '#f5c2e7',
+      brightCyan: '#94e2d5',
+      brightWhite: '#a6adc8',
+    },
+  },
+  {
+    id: 'gruvbox-dark',
+    label: 'Gruvbox Dark',
+    background: '#282828',
+    foreground: '#ebdbb2',
+    cursor: '#ebdbb2',
+    selectionBackground: '#504945',
+    ansi: {
+      black: '#282828',
+      red: '#cc241d',
+      green: '#98971a',
+      yellow: '#d79921',
+      blue: '#458588',
+      magenta: '#b16286',
+      cyan: '#689d6a',
+      white: '#a89984',
+      brightBlack: '#928374',
+      brightRed: '#fb4934',
+      brightGreen: '#b8bb26',
+      brightYellow: '#fabd2f',
+      brightBlue: '#83a598',
+      brightMagenta: '#d3869b',
+      brightCyan: '#8ec07c',
+      brightWhite: '#ebdbb2',
+    },
+  },
+  {
+    id: 'github-dark',
+    label: 'GitHub Dark',
+    background: '#0d1117',
+    foreground: '#c9d1d9',
+    cursor: '#58a6ff',
+    selectionBackground: '#264f78',
+    ansi: {
+      black: '#484f58',
+      red: '#ff7b72',
+      green: '#3fb950',
+      yellow: '#d29922',
+      blue: '#58a6ff',
+      magenta: '#bc8cff',
+      cyan: '#39c5cf',
+      white: '#b1bac4',
+      brightBlack: '#6e7681',
+      brightRed: '#ffa198',
+      brightGreen: '#56d364',
+      brightYellow: '#e3b341',
+      brightBlue: '#79c0ff',
+      brightMagenta: '#d2a8ff',
+      brightCyan: '#56d4dd',
+      brightWhite: '#f0f6fc',
+    },
+  },
+  {
+    id: 'campbell',
+    label: 'Windows Campbell',
+    background: '#0c0c0c',
+    foreground: '#cccccc',
+    cursor: '#ffffff',
+    selectionBackground: '#264f78',
+    ansi: {
+      black: '#0c0c0c',
+      red: '#c50f1f',
+      green: '#13a10e',
+      yellow: '#c19c00',
+      blue: '#0037da',
+      magenta: '#881798',
+      cyan: '#3a96dd',
+      white: '#cccccc',
+      brightBlack: '#767676',
+      brightRed: '#e74856',
+      brightGreen: '#16c60c',
+      brightYellow: '#f9f1a5',
+      brightBlue: '#3b78ff',
+      brightMagenta: '#b4009e',
+      brightCyan: '#61d6d6',
+      brightWhite: '#f2f2f2',
+    },
+  },
+  {
+    id: 'ubuntu',
+    label: 'Ubuntu',
+    background: '#300a24',
+    foreground: '#eeeeee',
+    cursor: '#eeeeee',
+    selectionBackground: '#5e2750',
+    ansi: {
+      black: '#2e3436',
+      red: '#cc0000',
+      green: '#4e9a06',
+      yellow: '#c4a000',
+      blue: '#3465a4',
+      magenta: '#75507b',
+      cyan: '#06989a',
+      white: '#d3d7cf',
+      brightBlack: '#555753',
+      brightRed: '#ef2929',
+      brightGreen: '#8ae234',
+      brightYellow: '#fce94f',
+      brightBlue: '#729fcf',
+      brightMagenta: '#ad7fa8',
+      brightCyan: '#34e2e2',
+      brightWhite: '#eeeeec',
+    },
+  },
+  {
+    id: 'powershell',
+    label: 'PowerShell Blue',
+    background: '#012456',
+    foreground: '#f6f6f6',
+    cursor: '#f6f6f6',
+    selectionBackground: '#0e4a8a',
+    ansi: {
+      black: '#0c0c0c',
+      red: '#c50f1f',
+      green: '#13a10e',
+      yellow: '#c19c00',
+      blue: '#0037da',
+      magenta: '#881798',
+      cyan: '#3a96dd',
+      white: '#cccccc',
+      brightBlack: '#767676',
+      brightRed: '#e74856',
+      brightGreen: '#16c60c',
+      brightYellow: '#f9f1a5',
+      brightBlue: '#3b78ff',
+      brightMagenta: '#b4009e',
+      brightCyan: '#61d6d6',
+      brightWhite: '#f2f2f2',
+    },
+  },
+  {
+    id: 'ayu-dark',
+    label: 'Ayu Dark',
+    background: '#0b0e14',
+    foreground: '#bfbdb6',
+    cursor: '#e6b450',
+    selectionBackground: '#1b2733',
+    ansi: {
+      black: '#11151c',
+      red: '#ea6c73',
+      green: '#7fd962',
+      yellow: '#f9af4f',
+      blue: '#53bdfa',
+      magenta: '#cda1fa',
+      cyan: '#90e1c6',
+      white: '#c7c7c7',
+      brightBlack: '#686868',
+      brightRed: '#f07178',
+      brightGreen: '#aad94c',
+      brightYellow: '#ffb454',
+      brightBlue: '#59c2ff',
+      brightMagenta: '#d2a6ff',
+      brightCyan: '#95e6cb',
+      brightWhite: '#ffffff',
+    },
+  },
+];
+
+const TERM_FONT_PRESETS: Array<{
+  id: string;
+  label: string;
+  value: string;
+  group: 'Monospace' | 'Sans / Serif' | 'Cursive / Script';
+}> = [
+  {
+    id: 'system',
+    label: 'System Mono',
+    group: 'Monospace',
+    value:
+      'ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", "Courier New", monospace',
+  },
+  {
+    id: 'cascadia',
+    label: 'Cascadia Code',
+    group: 'Monospace',
+    value: '"Cascadia Code", "Cascadia Mono", Consolas, "Courier New", monospace',
+  },
+  {
+    id: 'consolas',
+    label: 'Consolas',
+    group: 'Monospace',
+    value: 'Consolas, "Courier New", monospace',
+  },
+  {
+    id: 'courier-new',
+    label: 'Courier New',
+    group: 'Monospace',
+    value: '"Courier New", Courier, monospace',
+  },
+  {
+    id: 'fira',
+    label: 'Fira Code',
+    group: 'Monospace',
+    value: '"Fira Code", "Fira Mono", Menlo, Consolas, monospace',
+  },
+  {
+    id: 'jetbrains',
+    label: 'JetBrains Mono',
+    group: 'Monospace',
+    value: '"JetBrains Mono", Menlo, Consolas, monospace',
+  },
+  {
+    id: 'source',
+    label: 'Source Code Pro',
+    group: 'Monospace',
+    value: '"Source Code Pro", Consolas, Menlo, monospace',
+  },
+  {
+    id: 'ibm-plex',
+    label: 'IBM Plex Mono',
+    group: 'Monospace',
+    value: '"IBM Plex Mono", Consolas, Menlo, monospace',
+  },
+  {
+    id: 'hack',
+    label: 'Hack',
+    group: 'Monospace',
+    value: 'Hack, Menlo, Consolas, monospace',
+  },
+  {
+    id: 'inconsolata',
+    label: 'Inconsolata',
+    group: 'Monospace',
+    value: 'Inconsolata, Consolas, monospace',
+  },
+  {
+    id: 'roboto-mono',
+    label: 'Roboto Mono',
+    group: 'Monospace',
+    value: '"Roboto Mono", Consolas, monospace',
+  },
+  {
+    id: 'ubuntu-mono',
+    label: 'Ubuntu Mono',
+    group: 'Monospace',
+    value: '"Ubuntu Mono", Consolas, monospace',
+  },
+  {
+    id: 'sf-mono',
+    label: 'SF Mono / Menlo',
+    group: 'Monospace',
+    value: 'SFMono-Regular, Menlo, Monaco, Consolas, monospace',
+  },
+  {
+    id: 'space-mono',
+    label: 'Space Mono',
+    group: 'Monospace',
+    value: '"Space Mono", Consolas, monospace',
+  },
+  {
+    id: 'inter',
+    label: 'Inter',
+    group: 'Sans / Serif',
+    value: 'Inter, system-ui, -apple-system, Segoe UI, Roboto, sans-serif',
+  },
+  {
+    id: 'segoe-ui',
+    label: 'Segoe UI',
+    group: 'Sans / Serif',
+    value: '"Segoe UI", system-ui, sans-serif',
+  },
+  {
+    id: 'arial',
+    label: 'Arial',
+    group: 'Sans / Serif',
+    value: 'Arial, Helvetica, sans-serif',
+  },
+  {
+    id: 'verdana',
+    label: 'Verdana',
+    group: 'Sans / Serif',
+    value: 'Verdana, Geneva, sans-serif',
+  },
+  {
+    id: 'georgia',
+    label: 'Georgia',
+    group: 'Sans / Serif',
+    value: 'Georgia, "Times New Roman", Times, serif',
+  },
+  {
+    id: 'times',
+    label: 'Times New Roman',
+    group: 'Sans / Serif',
+    value: '"Times New Roman", Times, serif',
+  },
+  {
+    id: 'palatino',
+    label: 'Palatino',
+    group: 'Sans / Serif',
+    value: 'Palatino, "Palatino Linotype", "Book Antiqua", serif',
+  },
+  {
+    id: 'garamond',
+    label: 'Garamond',
+    group: 'Sans / Serif',
+    value: 'Garamond, "EB Garamond", Georgia, serif',
+  },
+  {
+    id: 'cursive-system',
+    label: 'System Cursive',
+    group: 'Cursive / Script',
+    value: 'cursive',
+  },
+  {
+    id: 'segoe-script',
+    label: 'Segoe Script',
+    group: 'Cursive / Script',
+    value: '"Segoe Script", "Comic Sans MS", cursive',
+  },
+  {
+    id: 'segoe-print',
+    label: 'Segoe Print',
+    group: 'Cursive / Script',
+    value: '"Segoe Print", "Comic Sans MS", cursive',
+  },
+  {
+    id: 'comic-sans',
+    label: 'Comic Sans',
+    group: 'Cursive / Script',
+    value: '"Comic Sans MS", "Comic Sans", cursive',
+  },
+  {
+    id: 'brush-script',
+    label: 'Brush Script',
+    group: 'Cursive / Script',
+    value: '"Brush Script MT", "Segoe Script", cursive',
+  },
+  {
+    id: 'lucida-handwriting',
+    label: 'Lucida Handwriting',
+    group: 'Cursive / Script',
+    value: '"Lucida Handwriting", "Segoe Script", cursive',
+  },
+  {
+    id: 'apple-chancery',
+    label: 'Apple Chancery',
+    group: 'Cursive / Script',
+    value: '"Apple Chancery", "Bradley Hand", cursive',
+  },
+  {
+    id: 'bradley-hand',
+    label: 'Bradley Hand',
+    group: 'Cursive / Script',
+    value: '"Bradley Hand", "Segoe Script", cursive',
+  },
+  {
+    id: 'snell-roundhand',
+    label: 'Snell Roundhand',
+    group: 'Cursive / Script',
+    value: '"Snell Roundhand", "Apple Chancery", cursive',
+  },
+  {
+    id: 'zapfino',
+    label: 'Zapfino',
+    group: 'Cursive / Script',
+    value: 'Zapfino, "Snell Roundhand", cursive',
+  },
+  {
+    id: 'pacifico',
+    label: 'Pacifico',
+    group: 'Cursive / Script',
+    value: 'Pacifico, "Segoe Script", cursive',
+  },
+  {
+    id: 'dancing-script',
+    label: 'Dancing Script',
+    group: 'Cursive / Script',
+    value: '"Dancing Script", "Segoe Script", cursive',
+  },
+  {
+    id: 'great-vibes',
+    label: 'Great Vibes',
+    group: 'Cursive / Script',
+    value: '"Great Vibes", "Brush Script MT", cursive',
+  },
+  {
+    id: 'satisfy',
+    label: 'Satisfy',
+    group: 'Cursive / Script',
+    value: 'Satisfy, "Segoe Script", cursive',
+  },
+];
+
+const TERM_FONT_GROUPS = ['Monospace', 'Sans / Serif', 'Cursive / Script'] as const;
+
+const DEFAULT_TERM_FONT_FAMILY = TERM_FONT_PRESETS[0].value;
+
+type ConnState = 'idle' | 'connecting' | 'connected' | 'disconnected' | 'error';
+type ConnectMode = 'auto' | 'ws';
+type TerminalViewMode = 'single' | 'grid' | 'stack-v' | 'stack-h';
+
+const VIEW_MODE_OPTIONS: Array<{
+  id: TerminalViewMode;
+  label: string;
+  description: string;
+}> = [
+  { id: 'single', label: 'Single', description: 'One terminal at a time (tabs)' },
+  { id: 'grid', label: 'Grid', description: 'Tile terminals in a grid' },
+  { id: 'stack-v', label: 'Stack vertical', description: 'Stack terminals top to bottom' },
+  { id: 'stack-h', label: 'Stack horizontal', description: 'Stack terminals side by side' },
+];
+
+interface SessionTab {
+  id: string;
+  title: string;
+  connectionId: string | null;
+  status: ConnState;
+  statusMessage: string;
+  kind?: 'ssh' | 'rdp'; // default ssh
+  rdpUrl?: string;
+  /** When true, skip this tab for Send all / Ctrl+C / Multi-paste */
+  excludeFromMulti?: boolean;
+  /** Snapshot so a running tab can be duplicated into a new session */
+  duplicateSource?: {
+    kind: 'ssh' | 'rdp';
+    connectionId: string | null;
+    wsUrl?: string;
+    rdpUrl?: string;
+    mode?: ConnectMode;
+    host?: string;
+    port?: number;
+    username?: string;
+    x11?: boolean;
+  };
+}
+
+interface SessionHandle {
+  term: Terminal | null;
+  fit: FitAddon | null;
+  ws: WebSocket | null;
+  gatewaySessionId: string | null;
+  /** When true, I/O goes through SharedWorker (survives page refresh). */
+  useBridge?: boolean;
+  bridgeUnsub?: (() => void) | null;
+}
+
+const CMD = {
+  OUTPUT: '0',
+  SET_WINDOW_TITLE: '1',
+  SET_PREFERENCES: '2',
+  INPUT: '0',
+  RESIZE_TERMINAL: '1',
+} as const;
+
+function normalizeWsUrl(raw: string): string {
+  const trimmed = raw.trim();
+  if (!trimmed) return '';
+  if (/^auto:\/\//i.test(trimmed)) return trimmed;
+  if (/^ssh:\/\//i.test(trimmed)) return trimmed;
+  if (/^wss?:\/\//i.test(trimmed)) return trimmed;
+  if (/^https:\/\//i.test(trimmed)) return `wss://${trimmed.slice(8)}`;
+  if (/^http:\/\//i.test(trimmed)) return `ws://${trimmed.slice(7)}`;
+  return `ws://${trimmed}`;
+}
+
+function parseTags(raw: string): string[] {
+  const seen = new Set<string>();
+  const out: string[] = [];
+  for (const part of raw.split(/[,#]+/)) {
+    const tag = part.trim().toLowerCase().replace(/\s+/g, '-');
+    if (!tag || seen.has(tag)) continue;
+    seen.add(tag);
+    out.push(tag);
+  }
+  return out;
+}
+
+function loadLocalConnections(): SavedSshConnection[] {
+  try {
+    const raw = localStorage.getItem(CONNECTIONS_STORAGE_KEY);
+    if (!raw) return [];
+    const parsed = JSON.parse(raw);
+    if (!Array.isArray(parsed)) return [];
+    return parsed
+      .filter((c) => c && typeof c.id === 'string' && typeof c.wsUrl === 'string' && typeof c.name === 'string')
+      .map((c, index) => ({
+        id: c.id,
+        name: String(c.name),
+        wsUrl: String(c.wsUrl),
+        protocol: normalizeConnectionProtocol(c.protocol),
+        tags: Array.isArray(c.tags) ? c.tags.map(String) : [],
+        notes: typeof c.notes === 'string' && c.notes ? c.notes : undefined,
+        color: normalizeSshColor(c.color),
+        appearance: normalizeSshAppearance(c.appearance),
+        category: normalizeSshCategory(c.category),
+        sortOrder: normalizeSshSortOrder(c.sortOrder ?? index),
+        createdAt: typeof c.createdAt === 'number' ? c.createdAt : Date.now(),
+        lastUsedAt: typeof c.lastUsedAt === 'number' ? c.lastUsedAt : undefined,
+        archivedAt:
+          c.archivedAt == null ? null : Number(c.archivedAt) > 0 ? Number(c.archivedAt) : null,
+        deletedAt: c.deletedAt == null ? null : Number(c.deletedAt) > 0 ? Number(c.deletedAt) : null,
+      }));
+  } catch {
+    return [];
+  }
+}
+
+export type SshLibraryScope = 'active' | 'archived' | 'recycle';
+
+export interface SshRecycledCategory {
+  name: string;
+  color?: string;
+  deletedAt: number;
+  connectionIds: string[];
+}
+
+function loadRecycledCategories(accountKey: string): SshRecycledCategory[] {
+  try {
+    const raw = localStorage.getItem(categoryAccountStorageKey(RECYCLED_CATEGORIES_KEY, accountKey));
+    if (!raw) return [];
+    const parsed = JSON.parse(raw);
+    if (!Array.isArray(parsed)) return [];
+    return parsed
+      .filter((item) => item && typeof item.name === 'string' && item.name.trim())
+      .map((item) => ({
+        name: normalizeSshCategory(item.name),
+        color: item.color ? normalizeSshColor(item.color) : undefined,
+        deletedAt: typeof item.deletedAt === 'number' ? item.deletedAt : Date.now(),
+        connectionIds: Array.isArray(item.connectionIds)
+          ? item.connectionIds.map(String).filter(Boolean)
+          : [],
+      }))
+      .filter((item) => item.name);
+  } catch {
+    return [];
+  }
+}
+
+function loadListDensity(): SshListViewMode {
+  try {
+    const raw = localStorage.getItem(LIST_DENSITY_KEY);
+    if (raw === 'compact' || raw === 'tree' || raw === 'cards' || raw === 'simple') return raw;
+    return 'cards';
+  } catch {
+    return 'cards';
+  }
+}
+
+function loadColorMode(): SshColorMode {
+  try {
+    const raw = localStorage.getItem(COLOR_MODE_KEY);
+    if (raw === 'vivid' || raw === 'calm') return raw;
+    return 'calm';
+  } catch {
+    return 'calm';
+  }
+}
+
+function loadSidebarChrome(mode: SshColorMode): SshSidebarChromeTheme {
+  try {
+    const raw = localStorage.getItem(SIDEBAR_CHROME_KEY);
+    if (raw) {
+      const parsed = normalizeSshSidebarChrome(JSON.parse(raw));
+      // Migrate older calm themes that used near-black active controls.
+      const active = parsed.controlActiveBg.replace('#', '').toLowerCase();
+      if (
+        mode === 'calm' &&
+        (active === '1e293b' || active === '0f172a' || active === '020617' || active === '000000')
+      ) {
+        return {
+          ...parsed,
+          panelBg: CALM_SSH_SIDEBAR_CHROME.panelBg,
+          controlActiveBg: CALM_SSH_SIDEBAR_CHROME.controlActiveBg,
+          controlActiveFg: CALM_SSH_SIDEBAR_CHROME.controlActiveFg,
+          controlActiveBorder: CALM_SSH_SIDEBAR_CHROME.controlActiveBorder,
+        };
+      }
+      return parsed;
+    }
+  } catch {
+    // ignore
+  }
+  return mode === 'calm' ? { ...CALM_SSH_SIDEBAR_CHROME } : { ...DEFAULT_SSH_SIDEBAR_CHROME };
+}
+
+const SIDEBAR_FONT_PRESETS: Array<{ id: string; label: string; value: string }> = [
+  { id: 'system', label: 'System', value: 'ui-sans-serif, system-ui, sans-serif' },
+  { id: 'segoe', label: 'Segoe UI', value: '"Segoe UI", ui-sans-serif, system-ui, sans-serif' },
+  { id: 'arial', label: 'Arial', value: 'Arial, Helvetica, sans-serif' },
+  { id: 'verdana', label: 'Verdana', value: 'Verdana, Geneva, sans-serif' },
+  { id: 'tahoma', label: 'Tahoma', value: 'Tahoma, Geneva, sans-serif' },
+  { id: 'trebuchet', label: 'Trebuchet MS', value: '"Trebuchet MS", Helvetica, sans-serif' },
+  { id: 'georgia', label: 'Georgia', value: 'Georgia, "Times New Roman", serif' },
+  { id: 'times', label: 'Times New Roman', value: '"Times New Roman", Times, serif' },
+  { id: 'palatino', label: 'Palatino', value: 'Palatino, "Palatino Linotype", "Book Antiqua", serif' },
+  { id: 'garamond', label: 'Garamond', value: 'Garamond, "Times New Roman", serif' },
+  { id: 'consolas', label: 'Consolas', value: 'Consolas, "Courier New", monospace' },
+  { id: 'courier', label: 'Courier New', value: '"Courier New", Courier, monospace' },
+  { id: 'lucida-console', label: 'Lucida Console', value: '"Lucida Console", Monaco, monospace' },
+  // Cursive / script (OS-dependent; falls back to generic cursive)
+  { id: 'segoe-script', label: 'Segoe Script', value: '"Segoe Script", "Apple Chancery", "Comic Sans MS", cursive' },
+  { id: 'comic', label: 'Comic Sans', value: '"Comic Sans MS", "Comic Sans", "Chalkboard SE", cursive' },
+  { id: 'brush', label: 'Brush Script', value: '"Brush Script MT", "Segoe Script", cursive' },
+  { id: 'lucida-hand', label: 'Lucida Handwriting', value: '"Lucida Handwriting", "Apple Chancery", cursive' },
+  { id: 'bradley', label: 'Bradley Hand', value: '"Bradley Hand", "Bradley Hand ITC", "Segoe Script", cursive' },
+  { id: 'snell', label: 'Snell Roundhand', value: '"Snell Roundhand", "Apple Chancery", "Segoe Script", cursive' },
+  { id: 'palace', label: 'Palace Script', value: '"Palace Script MT", "Brush Script MT", cursive' },
+  { id: 'edwardian', label: 'Edwardian Script', value: '"Edwardian Script ITC", "Snell Roundhand", cursive' },
+  { id: 'french-script', label: 'French Script', value: '"French Script MT", "Brush Script MT", cursive' },
+  { id: 'cursive', label: 'Generic cursive', value: 'cursive' },
+];
+
+/** Category prefs are per account so they never leak across signed-in users on the same browser. */
+function categoryAccountStorageKey(base: string, accountKey: string): string {
+  return `${base}.${accountKey}`;
+}
+
+function readCategoryStorageRaw(base: string, accountKey: string): string | null {
+  try {
+    const scoped = localStorage.getItem(categoryAccountStorageKey(base, accountKey));
+    if (scoped) return scoped;
+    // One-time guest migration from legacy unscoped keys only (never reuse for signed-in users).
+    if (accountKey === 'guest') {
+      return localStorage.getItem(base);
+    }
+    return null;
+  } catch {
+    return null;
+  }
+}
+
+function loadCategoryOrder(accountKey: string): string[] {
+  try {
+    const raw = readCategoryStorageRaw(CATEGORY_ORDER_KEY, accountKey);
+    if (!raw) return [];
+    const parsed = JSON.parse(raw);
+    if (!Array.isArray(parsed)) return [];
+    return parsed.map((c) => normalizeSshCategory(c)).filter(Boolean);
+  } catch {
+    return [];
+  }
+}
+
+function loadCollapsedCategories(accountKey: string): Record<string, boolean> {
+  try {
+    const raw = readCategoryStorageRaw(CATEGORY_COLLAPSED_KEY, accountKey);
+    if (!raw) return {};
+    const parsed = JSON.parse(raw);
+    if (!parsed || typeof parsed !== 'object' || Array.isArray(parsed)) return {};
+    const out: Record<string, boolean> = {};
+    for (const [k, v] of Object.entries(parsed)) {
+      out[k] = Boolean(v);
+    }
+    return out;
+  } catch {
+    return {};
+  }
+}
+
+function loadCategoryMeta(accountKey: string): SshCategoryMetaMap {
+  try {
+    const raw = readCategoryStorageRaw(CATEGORY_META_KEY, accountKey);
+    if (!raw) return {};
+    const parsed = JSON.parse(raw);
+    if (!parsed || typeof parsed !== 'object' || Array.isArray(parsed)) return {};
+    const out: SshCategoryMetaMap = {};
+    for (const [k, v] of Object.entries(parsed)) {
+      const key = k === '__uncategorized__' ? '' : normalizeSshCategory(k);
+      if (k !== '' && k !== '__uncategorized__' && !key) continue;
+      if (!v || typeof v !== 'object') continue;
+      out[key] = { color: normalizeSshColor((v as { color?: unknown }).color) };
+    }
+    return out;
+  } catch {
+    return {};
+  }
+}
+
+function normalizeImportedCategoryMeta(raw: unknown): SshCategoryMetaMap {
+  if (!raw || typeof raw !== 'object' || Array.isArray(raw)) return {};
+  const out: SshCategoryMetaMap = {};
+  for (const [k, v] of Object.entries(raw as Record<string, unknown>)) {
+    const key = k === '__uncategorized__' ? '' : normalizeSshCategory(k);
+    if (k !== '' && k !== '__uncategorized__' && !key) continue;
+    if (!v || typeof v !== 'object' || Array.isArray(v)) continue;
+    out[key] = { color: normalizeSshColor((v as { color?: unknown }).color) };
+  }
+  return out;
+}
+
+function normalizeImportedCollapsedCategories(raw: unknown): Record<string, boolean> {
+  if (!raw || typeof raw !== 'object' || Array.isArray(raw)) return {};
+  const out: Record<string, boolean> = {};
+  for (const [k, v] of Object.entries(raw as Record<string, unknown>)) {
+    const key = k === '' ? '__uncategorized__' : String(k);
+    out[key] = Boolean(v);
+  }
+  return out;
+}
+
+function normalizeImportedCategoryOrder(raw: unknown): string[] {
+  if (!Array.isArray(raw)) return [];
+  const seen = new Set<string>();
+  const out: string[] = [];
+  for (const item of raw) {
+    const k = normalizeSshCategory(item);
+    if (!k || seen.has(k)) continue;
+    seen.add(k);
+    out.push(k);
+  }
+  return out;
+}
+
+function persistLocalConnections(list: SavedSshConnection[]) {
+  try {
+    localStorage.setItem(CONNECTIONS_STORAGE_KEY, JSON.stringify(list));
+  } catch {
+    // ignore
+  }
+}
+
+function newId(): string {
+  return `ssh_${Date.now().toString(36)}_${Math.random().toString(36).slice(2, 8)}`;
+}
+
+function loadPanelWidth(): number {
+  try {
+    const raw = localStorage.getItem(PANEL_WIDTH_KEY);
+    if (!raw) return 220;
+    const n = Number.parseInt(raw, 10);
+    if (!Number.isFinite(n)) return 220;
+    return Math.min(PANEL_MAX_WIDTH, Math.max(PANEL_MIN_WIDTH, n));
+  } catch {
+    return 220;
+  }
+}
+
+function loadCmdBarHeight(): number {
+  try {
+    const raw = localStorage.getItem(CMD_BAR_HEIGHT_KEY);
+    if (!raw) return CMD_BAR_DEFAULT_HEIGHT;
+    const n = Number.parseInt(raw, 10);
+    if (!Number.isFinite(n)) return CMD_BAR_DEFAULT_HEIGHT;
+    return Math.min(CMD_BAR_MAX_HEIGHT, Math.max(CMD_BAR_MIN_HEIGHT, n));
+  } catch {
+    return CMD_BAR_DEFAULT_HEIGHT;
+  }
+}
+
+function loadClampedInt(key: string, fallback: number, min: number, max: number): number {
+  try {
+    const raw = localStorage.getItem(key);
+    if (!raw) return fallback;
+    const n = Number.parseInt(raw, 10);
+    if (!Number.isFinite(n)) return fallback;
+    return Math.min(max, Math.max(min, n));
+  } catch {
+    return fallback;
+  }
+}
+
+function loadTermFontFamily(): string {
+  try {
+    const raw = localStorage.getItem(TERM_FONT_FAMILY_KEY);
+    if (!raw) return DEFAULT_TERM_FONT_FAMILY;
+    const match = TERM_FONT_PRESETS.find((p) => p.id === raw || p.value === raw);
+    return match?.value || DEFAULT_TERM_FONT_FAMILY;
+  } catch {
+    return DEFAULT_TERM_FONT_FAMILY;
+  }
+}
+
+function normalizeHexColor(raw: string, fallback: string): string {
+  const s = String(raw || '').trim();
+  if (/^#[0-9a-fA-F]{6}$/.test(s)) return s.toLowerCase();
+  if (/^#[0-9a-fA-F]{3}$/.test(s)) {
+    const r = s[1];
+    const g = s[2];
+    const b = s[3];
+    return `#${r}${r}${g}${g}${b}${b}`.toLowerCase();
+  }
+  return fallback;
+}
+
+function loadTermColor(key: string, fallback: string): string {
+  try {
+    const raw = localStorage.getItem(key);
+    if (!raw) return fallback;
+    return normalizeHexColor(raw, fallback);
+  } catch {
+    return fallback;
+  }
+}
+
+function loadThemePresetId(): string {
+  try {
+    const raw = localStorage.getItem(TERM_THEME_PRESET_KEY);
+    if (!raw) return 'linknest';
+    if (raw === 'custom') return 'custom';
+    if (TERM_THEME_PRESETS.some((p) => p.id === raw)) return raw;
+  } catch {
+    // ignore
+  }
+  return 'linknest';
+}
+
+function loadTermAnsi(): TermAnsiPalette {
+  try {
+    const raw = localStorage.getItem(TERM_ANSI_KEY);
+    if (!raw) {
+      const preset = TERM_THEME_PRESETS.find((p) => p.id === loadThemePresetId());
+      return { ...(preset?.ansi || {}) };
+    }
+    const parsed = JSON.parse(raw);
+    return parsed && typeof parsed === 'object' ? (parsed as TermAnsiPalette) : {};
+  } catch {
+    return {};
+  }
+}
+
+function ansiFromPreset(preset: TermThemePreset | undefined): TermAnsiPalette {
+  return { ...(preset?.ansi || {}) };
+}
+
+function buildXtermTheme(opts: {
+  background: string;
+  foreground: string;
+  cursor: string;
+  selectionBackground: string;
+  ansi?: TermAnsiPalette;
+}) {
+  return {
+    background: opts.background,
+    foreground: opts.foreground,
+    cursor: opts.cursor,
+    cursorAccent: opts.background,
+    selectionBackground: opts.selectionBackground,
+    ...(opts.ansi || {}),
+  };
+}
+
+function clampTermFontSize(n: number): number {
+  return Math.min(TERM_FONT_SIZE_MAX, Math.max(TERM_FONT_SIZE_MIN, Math.round(n)));
+}
+
+function resolveFontFamily(raw: string | undefined): string {
+  if (!raw) return DEFAULT_TERM_FONT_FAMILY;
+  const match = TERM_FONT_PRESETS.find((p) => p.id === raw || p.value === raw);
+  return match?.value || raw || DEFAULT_TERM_FONT_FAMILY;
+}
+
+function defaultConnectionAppearance(): SshConnectionAppearance {
+  const presetId = loadThemePresetId();
+  const preset = TERM_THEME_PRESETS.find((p) => p.id === presetId);
+  return {
+    themePresetId: presetId,
+    fontSize: loadClampedInt(TERM_FONT_SIZE_KEY, 14, TERM_FONT_SIZE_MIN, TERM_FONT_SIZE_MAX),
+    fontFamily: loadTermFontFamily(),
+    bgColor: loadTermColor(TERM_BG_COLOR_KEY, preset?.background || DEFAULT_TERM_BG_COLOR),
+    fgColor: loadTermColor(TERM_FG_COLOR_KEY, preset?.foreground || DEFAULT_TERM_FG_COLOR),
+    cursorColor: loadTermColor(TERM_CURSOR_COLOR_KEY, preset?.cursor || DEFAULT_TERM_CURSOR_COLOR),
+    selectionBg: loadTermColor(TERM_SELECTION_BG_KEY, preset?.selectionBackground || DEFAULT_TERM_SELECTION_BG),
+    ansi: loadTermAnsi() as Record<string, string>,
+    termType: DEFAULT_SSH_TERM_TYPE,
+  };
+}
+
+function mergeConnectionAppearance(raw?: SshConnectionAppearance | null): {
+  themePresetId: string;
+  fontSize: number;
+  fontFamily: string;
+  bgColor: string;
+  fgColor: string;
+  cursorColor: string;
+  selectionBg: string;
+  ansi: TermAnsiPalette;
+  termType: SshTermType;
+} {
+  const base = defaultConnectionAppearance();
+  const a = normalizeSshAppearance(raw) || {};
+  const themePresetId =
+    typeof a.themePresetId === 'string' && (a.themePresetId === 'custom' || TERM_THEME_PRESETS.some((p) => p.id === a.themePresetId))
+      ? a.themePresetId
+      : base.themePresetId || 'linknest';
+  const preset = TERM_THEME_PRESETS.find((p) => p.id === themePresetId);
+  return {
+    themePresetId,
+    fontSize: clampTermFontSize(a.fontSize ?? base.fontSize ?? 14),
+    fontFamily: resolveFontFamily(a.fontFamily || base.fontFamily),
+    bgColor: normalizeHexColor(a.bgColor || base.bgColor || '', preset?.background || DEFAULT_TERM_BG_COLOR),
+    fgColor: normalizeHexColor(a.fgColor || base.fgColor || '', preset?.foreground || DEFAULT_TERM_FG_COLOR),
+    cursorColor: normalizeHexColor(a.cursorColor || base.cursorColor || '', preset?.cursor || DEFAULT_TERM_CURSOR_COLOR),
+    selectionBg: normalizeHexColor(
+      a.selectionBg || base.selectionBg || '',
+      preset?.selectionBackground || DEFAULT_TERM_SELECTION_BG
+    ),
+    ansi: (a.ansi && Object.keys(a.ansi).length ? a.ansi : base.ansi || {}) as TermAnsiPalette,
+    termType: normalizeSshTermType(a.termType ?? base.termType),
+  };
+}
+
+function loadViewMode(): TerminalViewMode {
+  try {
+    const raw = localStorage.getItem(VIEW_MODE_KEY);
+    if (raw === 'single' || raw === 'grid' || raw === 'stack-v' || raw === 'stack-h') return raw;
+  } catch {
+    // ignore
+  }
+  return 'single';
+}
+
+function loadShareArray(key: string, fallbackLen = 0): number[] {
+  try {
+    const raw = localStorage.getItem(key);
+    if (!raw) return Array.from({ length: fallbackLen }, () => 1);
+    const parsed = JSON.parse(raw);
+    if (!Array.isArray(parsed)) return Array.from({ length: fallbackLen }, () => 1);
+    const shares = parsed
+      .map((n) => (typeof n === 'number' && Number.isFinite(n) && n > 0 ? n : 1))
+      .filter((n) => n > 0);
+    if (shares.length === 0) return Array.from({ length: fallbackLen }, () => 1);
+    return shares;
+  } catch {
+    return Array.from({ length: fallbackLen }, () => 1);
+  }
+}
+
+function normalizeShareArray(prev: number[], length: number): number[] {
+  if (length <= 0) return [];
+  if (prev.length === length) return prev;
+  if (prev.length > length) return prev.slice(0, length);
+  return [...prev, ...Array.from({ length: length - prev.length }, () => 1)];
+}
+
+function persistShareArray(key: string, shares: number[]) {
+  try {
+    localStorage.setItem(key, JSON.stringify(shares));
+  } catch {
+    // ignore
+  }
+}
+
+function redistributeAdjacentShares(
+  shares: number[],
+  leftIndex: number,
+  deltaShare: number
+): number[] {
+  if (leftIndex < 0 || leftIndex >= shares.length - 1) return shares;
+  const a = shares[leftIndex];
+  const b = shares[leftIndex + 1];
+  const sum = a + b;
+  const min = Math.min(PANE_SHARE_MIN, sum / 2);
+  const nextA = Math.min(sum - min, Math.max(min, a + deltaShare));
+  const next = shares.slice();
+  next[leftIndex] = nextA;
+  next[leftIndex + 1] = sum - nextA;
+  return next;
+}
+
+function shareBoundaryPct(shares: number[], afterIndex: number): number {
+  const total = shares.reduce((acc, n) => acc + n, 0) || 1;
+  let sum = 0;
+  for (let i = 0; i < afterIndex; i++) sum += shares[i] || 0;
+  return (sum / total) * 100;
+}
+
+function formatTabTags(tags: string[] | undefined | null): string {
+  if (!tags || tags.length === 0) return '';
+  return ` [${tags.join(', ')}]`;
+}
+
+/** Plain ASCII dump of the full xterm buffer (scrollback + viewport). */
+function getTerminalPlainText(term: Terminal): string {
+  const buffer = term.buffer.active;
+  const lines: string[] = [];
+  for (let i = 0; i < buffer.length; i++) {
+    const line = buffer.getLine(i);
+    if (!line) continue;
+    lines.push(line.translateToString(true));
+  }
+  // Trim trailing blank lines
+  while (lines.length > 0 && lines[lines.length - 1].trim() === '') {
+    lines.pop();
+  }
+  return lines.join('\n');
+}
+
+function sanitizeExportFilename(raw: string): string {
+  const base = String(raw || 'terminal')
+    .replace(/[<>:"/\\|?*\x00-\x1f]/g, '_')
+    .replace(/\s+/g, '_')
+    .replace(/_+/g, '_')
+    .replace(/^_|_$/g, '')
+    .slice(0, 80);
+  return base || 'terminal';
+}
+
+function downloadTextFile(filename: string, content: string) {
+  const blob = new Blob([content], { type: 'text/plain;charset=utf-8' });
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement('a');
+  a.href = url;
+  a.download = filename;
+  document.body.appendChild(a);
+  a.click();
+  a.remove();
+  URL.revokeObjectURL(url);
+}
+
+function textDecoderDecode(data: ArrayBuffer | string): string {
+  if (typeof data === 'string') return data;
+  return new TextDecoder().decode(data);
+}
+
+function parseTtydFrame(data: ArrayBuffer | Blob | string): { cmd: string; payload: Uint8Array | string } | null {
+  if (typeof data === 'string') {
+    if (!data) return null;
+    return { cmd: data[0], payload: data.slice(1) };
+  }
+  if (data instanceof ArrayBuffer) {
+    const bytes = new Uint8Array(data);
+    if (bytes.length === 0) return null;
+    return { cmd: String.fromCharCode(bytes[0]), payload: bytes.subarray(1) };
+  }
+  return null;
+}
+
+export const SshTerminalWidget: React.FC<SshTerminalWidgetProps> = ({
+  onClose,
+  pendingOpen,
+  onPendingOpenConsumed,
+}) => {
+  const { isAuthenticated, user } = useAuth();
+  const authUserKey = isAuthenticated && user?.id != null ? `user:${user.id}` : 'guest';
+  const authUsername = (user?.username || '').trim();
+  const { settings } = useSettings();
+  const brandName = (settings.app_name || '').trim() || 'LinkNest';
+  const sessionHandlesRef = useRef<Map<string, SessionHandle>>(new Map());
+  const tabHostsRef = useRef<Map<string, HTMLDivElement | null>>(new Map());
+  const activeTabIdRef = useRef<string | null>(null);
+  const fileInputRef = useRef<HTMLInputElement>(null);
+  const widgetRootRef = useRef<HTMLDivElement>(null);
+  const panelWidthRef = useRef(loadPanelWidth());
+  const panelResizeCleanupRef = useRef<(() => void) | null>(null);
+  const cmdBarHeightRef = useRef(loadCmdBarHeight());
+  const cmdBarResizeCleanupRef = useRef<(() => void) | null>(null);
+  const paneSharesRef = useRef<number[]>(loadShareArray(PANE_SHARES_KEY));
+  const gridColSharesRef = useRef<number[]>(loadShareArray(GRID_COL_SHARES_KEY));
+  const gridRowSharesRef = useRef<number[]>(loadShareArray(GRID_ROW_SHARES_KEY));
+  const paneResizeCleanupRef = useRef<(() => void) | null>(null);
+  const tileLayoutRef = useRef<HTMLDivElement | null>(null);
+  const encoderRef = useRef(new TextEncoder());
+  const floatWindowDrag = useSshFloatWindowDrag();
+
+  const [connectMode, setConnectMode] = useState<ConnectMode>(() => {
+    const saved = localStorage.getItem(MODE_STORAGE_KEY) as ConnectMode | null;
+    if (saved === 'auto' || saved === 'ws') return saved;
+    return 'auto';
+  });
+  const [sshHost, setSshHost] = useState(() => localStorage.getItem(HOST_STORAGE_KEY) || '');
+  const [sshPort, setSshPort] = useState(() => localStorage.getItem(PORT_STORAGE_KEY) || '22');
+  const [sshUsername, setSshUsername] = useState(() => localStorage.getItem(USER_STORAGE_KEY) || '');
+  const [sshUrlDraft, setSshUrlDraft] = useState('');
+  const [x11Forward, setX11Forward] = useState(() => localStorage.getItem(X11_STORAGE_KEY) === 'true');
+  const [termType, setTermType] = useState<SshTermType>(DEFAULT_SSH_TERM_TYPE);
+  const [gatewayAvailable, setGatewayAvailable] = useState<boolean | null>(null);
+  const [gatewayHint, setGatewayHint] = useState<string | null>(null);
+  const [maxSshTabs, setMaxSshTabs] = useState(DEFAULT_MAX_SSH_TABS);
+  const [gatewayUsage, setGatewayUsage] = useState<SshGatewayStatus['usage'] | null>(null);
+  const [gatewaySessions, setGatewaySessions] = useState<SshGatewayStatus['sessions']>([]);
+  const [showGatewayUsage, setShowGatewayUsage] = useState(false);
+  const [guiHint, setGuiHint] = useState<string | null>(null);
+  const [guiDisplayReady, setGuiDisplayReady] = useState<boolean | null>(null);
+
+  const [wsUrl, setWsUrl] = useState(() => localStorage.getItem(WS_STORAGE_KEY) || 'ws://localhost:7681/ws');
+  const [tabs, setTabs] = useState<SessionTab[]>([]);
+  const [activeTabId, setActiveTabId] = useState<string | null>(null);
+  const [showSettings, setShowSettings] = useState(false);
+  const [settingsPane, setSettingsPane] = useState<'connection' | 'appearance'>('connection');
+  const [isFullscreen, setIsFullscreen] = useState(false);
+  const [viewMode, setViewMode] = useState<TerminalViewMode>(() => loadViewMode());
+  const [viewMenuOpen, setViewMenuOpen] = useState(false);
+  const viewMenuRef = useRef<HTMLDivElement>(null);
+  const multiView = viewMode !== 'single';
+  const [broadcastCmd, setBroadcastCmd] = useState('');
+  const [panelOpen, setPanelOpen] = useState(() => localStorage.getItem(PANEL_OPEN_KEY) !== 'false');
+  const [panelWidth, setPanelWidth] = useState(() => loadPanelWidth());
+  const [isResizingPanel, setIsResizingPanel] = useState(false);
+  const [cmdBarHeight, setCmdBarHeight] = useState(() => loadCmdBarHeight());
+  const [isResizingCmdBar, setIsResizingCmdBar] = useState(false);
+  const [paneShares, setPaneShares] = useState<number[]>(() => loadShareArray(PANE_SHARES_KEY));
+  const [gridColShares, setGridColShares] = useState<number[]>(() => loadShareArray(GRID_COL_SHARES_KEY));
+  const [gridRowShares, setGridRowShares] = useState<number[]>(() => loadShareArray(GRID_ROW_SHARES_KEY));
+  const [isResizingPanes, setIsResizingPanes] = useState(false);
+  const [termFontSize, setTermFontSize] = useState(() =>
+    loadClampedInt(TERM_FONT_SIZE_KEY, 14, TERM_FONT_SIZE_MIN, TERM_FONT_SIZE_MAX)
+  );
+  const [termFontFamily, setTermFontFamily] = useState(() => loadTermFontFamily());
+  const [termBgColor, setTermBgColor] = useState(() =>
+    loadTermColor(TERM_BG_COLOR_KEY, DEFAULT_TERM_BG_COLOR)
+  );
+  const [termFgColor, setTermFgColor] = useState(() =>
+    loadTermColor(TERM_FG_COLOR_KEY, DEFAULT_TERM_FG_COLOR)
+  );
+  const [termCursorColor, setTermCursorColor] = useState(() =>
+    loadTermColor(TERM_CURSOR_COLOR_KEY, DEFAULT_TERM_CURSOR_COLOR)
+  );
+  const [termSelectionBg, setTermSelectionBg] = useState(() =>
+    loadTermColor(TERM_SELECTION_BG_KEY, DEFAULT_TERM_SELECTION_BG)
+  );
+  const [themePresetId, setThemePresetId] = useState(() => loadThemePresetId());
+  const [termAnsi, setTermAnsi] = useState<TermAnsiPalette>(() => loadTermAnsi());
+  const [cmdFontSize, setCmdFontSize] = useState(() =>
+    loadClampedInt(CMD_FONT_SIZE_KEY, 14, CMD_FONT_SIZE_MIN, CMD_FONT_SIZE_MAX)
+  );
+  const [tabBarHeight, setTabBarHeight] = useState(() =>
+    loadClampedInt(TAB_BAR_HEIGHT_KEY, TAB_BAR_HEIGHT_DEFAULT, TAB_BAR_HEIGHT_MIN, TAB_BAR_HEIGHT_MAX)
+  );
+  const [tabBarFontSize, setTabBarFontSize] = useState(() =>
+    loadClampedInt(TAB_BAR_FONT_SIZE_KEY, TAB_BAR_FONT_DEFAULT, TAB_BAR_FONT_MIN, TAB_BAR_FONT_MAX)
+  );
+  const [skipBarHeight, setSkipBarHeight] = useState(() =>
+    loadClampedInt(SKIP_BAR_HEIGHT_KEY, SKIP_BAR_HEIGHT_DEFAULT, SKIP_BAR_HEIGHT_MIN, SKIP_BAR_HEIGHT_MAX)
+  );
+  const [skipBarFontSize, setSkipBarFontSize] = useState(() =>
+    loadClampedInt(SKIP_BAR_FONT_SIZE_KEY, SKIP_BAR_FONT_DEFAULT, SKIP_BAR_FONT_MIN, SKIP_BAR_FONT_MAX)
+  );
+  const [storageReady, setStorageReady] = useState(!isAuthenticated);
+  const [saving, setSaving] = useState(false);
+
+  const [connections, setConnections] = useState<SavedSshConnection[]>(() =>
+    isAuthenticated ? [] : loadLocalConnections()
+  );
+  const [activeConnectionId, setActiveConnectionId] = useState<string | null>(null);
+  const [filterQuery, setFilterQuery] = useState('');
+  const [filterTag, setFilterTag] = useState<string | null>(null);
+
+  const [draftName, setDraftName] = useState('');
+  const [draftTags, setDraftTags] = useState('');
+  const [draftNotes, setDraftNotes] = useState('');
+  const [draftCategory, setDraftCategory] = useState('');
+  const [draftColor, setDraftColor] = useState<string>(SSH_CONNECTION_COLORS[0]);
+  const [draftProtocol, setDraftProtocol] = useState<RemoteConnectionProtocol>('ssh');
+  const [editingId, setEditingId] = useState<string | null>(null);
+  const [notice, setNotice] = useState(IDLE_NOTICE);
+  const [listDensity, setListDensity] = useState<SshListViewMode>(() => loadListDensity());
+  const [colorMode, setColorMode] = useState<SshColorMode>(() => loadColorMode());
+  const [sidebarChrome, setSidebarChrome] = useState<SshSidebarChromeTheme>(() =>
+    loadSidebarChrome(loadColorMode())
+  );
+  const [showSidebarThemeDesigner, setShowSidebarThemeDesigner] = useState(false);
+  const [categoryScope, setCategoryScope] = useState(authUserKey);
+  const [categoryOrder, setCategoryOrder] = useState<string[]>(() => loadCategoryOrder(authUserKey));
+  const [collapsedCategories, setCollapsedCategories] = useState<Record<string, boolean>>(
+    () => loadCollapsedCategories(authUserKey)
+  );
+  const [categoryMeta, setCategoryMeta] = useState<SshCategoryMetaMap>(() => loadCategoryMeta(authUserKey));
+  const [recycledCategories, setRecycledCategories] = useState<SshRecycledCategory[]>(() =>
+    loadRecycledCategories(authUserKey)
+  );
+  const [libraryScope, setLibraryScope] = useState<SshLibraryScope>('active');
+  const [creatingPrivateSpace, setCreatingPrivateSpace] = useState(false);
+  const [cloningCategory, setCloningCategory] = useState(false);
+
+  const useServer = Boolean(isAuthenticated);
+
+  const activeTab = useMemo(
+    () => tabs.find((t) => t.id === activeTabId) ?? null,
+    [tabs, activeTabId]
+  );
+  const status: ConnState = activeTab?.status ?? 'idle';
+  const statusMessage = activeTab?.statusMessage ?? notice;
+
+  useEffect(() => {
+    activeTabIdRef.current = activeTabId;
+  }, [activeTabId]);
+
+  const tabsRef = useRef(tabs);
+  useEffect(() => {
+    tabsRef.current = tabs;
+  }, [tabs]);
+
+  const connectionsRef = useRef(connections);
+  useEffect(() => {
+    connectionsRef.current = connections;
+  }, [connections]);
+
+  const editingIdRef = useRef(editingId);
+  useEffect(() => {
+    editingIdRef.current = editingId;
+  }, [editingId]);
+
+  const appearanceDraftRef = useRef({
+    themePresetId,
+    fontSize: termFontSize,
+    fontFamily: termFontFamily,
+    bgColor: termBgColor,
+    fgColor: termFgColor,
+    cursorColor: termCursorColor,
+    selectionBg: termSelectionBg,
+    ansi: termAnsi as Record<string, string>,
+    termType,
+  });
+  appearanceDraftRef.current = {
+    themePresetId,
+    fontSize: termFontSize,
+    fontFamily: termFontFamily,
+    bgColor: termBgColor,
+    fgColor: termFgColor,
+    cursorColor: termCursorColor,
+    selectionBg: termSelectionBg,
+    ansi: termAnsi as Record<string, string>,
+    termType,
+  };
+
+  const snapshotDraftAppearance = useCallback((): SshConnectionAppearance => {
+    return { ...appearanceDraftRef.current };
+  }, []);
+
+  const loadAppearanceIntoForm = useCallback((raw?: SshConnectionAppearance | null) => {
+    const a = mergeConnectionAppearance(raw);
+    setThemePresetId(a.themePresetId);
+    setTermFontSize(a.fontSize);
+    setTermFontFamily(a.fontFamily);
+    setTermBgColor(a.bgColor);
+    setTermFgColor(a.fgColor);
+    setTermCursorColor(a.cursorColor);
+    setTermSelectionBg(a.selectionBg);
+    setTermAnsi(a.ansi);
+    setTermType(a.termType);
+  }, []);
+
+  const applyAppearanceToConnectionTabs = useCallback(
+    (
+      connectionId: string | null | undefined,
+      appearance: {
+        fontSize: number;
+        fontFamily: string;
+        bgColor: string;
+        fgColor: string;
+        cursorColor: string;
+        selectionBg: string;
+        ansi: TermAnsiPalette;
+      }
+    ) => {
+      if (!connectionId) return 0;
+      const theme = buildXtermTheme({
+        background: appearance.bgColor,
+        foreground: appearance.fgColor,
+        cursor: appearance.cursorColor,
+        selectionBackground: appearance.selectionBg,
+        ansi: appearance.ansi,
+      });
+      let applied = 0;
+      for (const tab of tabsRef.current) {
+        if (tab.connectionId !== connectionId) continue;
+        if ((tab.kind || 'ssh') === 'rdp') continue;
+        const handle = sessionHandlesRef.current.get(tab.id);
+        if (!handle?.term) continue;
+        try {
+          handle.term.options.fontSize = appearance.fontSize;
+          handle.term.options.fontFamily = appearance.fontFamily;
+          handle.term.options.theme = theme;
+          handle.term.refresh(0, Math.max(0, handle.term.rows - 1));
+          handle.fit?.fit();
+          applied += 1;
+        } catch {
+          // ignore
+        }
+      }
+      return applied;
+    },
+    []
+  );
+
+  const applyAppearanceToTabId = useCallback(
+    (
+      tabId: string,
+      appearance: {
+        fontSize: number;
+        fontFamily: string;
+        bgColor: string;
+        fgColor: string;
+        cursorColor: string;
+        selectionBg: string;
+        ansi: TermAnsiPalette;
+      }
+    ) => {
+      const handle = sessionHandlesRef.current.get(tabId);
+      if (!handle?.term) return;
+      try {
+        handle.term.options.fontSize = appearance.fontSize;
+        handle.term.options.fontFamily = appearance.fontFamily;
+        handle.term.options.theme = buildXtermTheme({
+          background: appearance.bgColor,
+          foreground: appearance.fgColor,
+          cursor: appearance.cursorColor,
+          selectionBackground: appearance.selectionBg,
+          ansi: appearance.ansi,
+        });
+        handle.term.refresh(0, Math.max(0, handle.term.rows - 1));
+        handle.fit?.fit();
+      } catch {
+        // ignore
+      }
+    },
+    []
+  );
+
+  const resolveTabAppearance = useCallback((tab: SessionTab) => {
+    const cid = tab.connectionId || null;
+    if (cid && editingIdRef.current === cid) {
+      return mergeConnectionAppearance(appearanceDraftRef.current);
+    }
+    if (cid) {
+      const saved = connectionsRef.current.find((c) => c.id === cid);
+      return mergeConnectionAppearance(saved?.appearance);
+    }
+    return mergeConnectionAppearance(appearanceDraftRef.current);
+  }, []);
+
+  const applyQuickTitleBarAppearance = useCallback(
+    (
+      tab: SessionTab,
+      patch: Partial<{
+        fontSize: number;
+        fontFamily: string;
+        bgColor: string;
+        fgColor: string;
+      }>
+    ) => {
+      if ((tab.kind || 'ssh') === 'rdp') return;
+      const current = resolveTabAppearance(tab);
+      const colorsTouched = patch.bgColor != null || patch.fgColor != null;
+      const next = {
+        ...current,
+        ...patch,
+        themePresetId: colorsTouched ? 'custom' : current.themePresetId,
+      };
+      const appearancePayload: SshConnectionAppearance = {
+        themePresetId: next.themePresetId,
+        fontSize: next.fontSize,
+        fontFamily: next.fontFamily,
+        bgColor: next.bgColor,
+        fgColor: next.fgColor,
+        cursorColor: next.cursorColor,
+        selectionBg: next.selectionBg,
+        ansi: next.ansi as Record<string, string>,
+        termType: next.termType,
+      };
+
+      const cid = tab.connectionId || null;
+      if (cid) {
+        applyAppearanceToConnectionTabs(cid, next);
+        const nextList = connectionsRef.current.map((c) =>
+          c.id === cid
+            ? { ...c, appearance: normalizeSshAppearance(appearancePayload) || undefined }
+            : c
+        );
+        connectionsRef.current = nextList;
+        setConnections(nextList);
+        if (!useServer) {
+          persistLocalConnections(nextList);
+        } else {
+          void sshConnectionService
+            .update(cid, { appearance: normalizeSshAppearance(appearancePayload) || undefined })
+            .then((updated) => {
+              setConnections((prev) => prev.map((c) => (c.id === cid ? updated : c)));
+            })
+            .catch(() => {
+              // keep local optimistic update
+            });
+        }
+        if (editingIdRef.current === cid) {
+          loadAppearanceIntoForm(appearancePayload);
+        }
+      } else {
+        applyAppearanceToTabId(tab.id, next);
+        if (patch.fontSize != null) setTermFontSize(next.fontSize);
+        if (patch.fontFamily != null) setTermFontFamily(next.fontFamily);
+        if (patch.bgColor != null) {
+          setThemePresetId('custom');
+          setTermBgColor(next.bgColor);
+        }
+        if (patch.fgColor != null) {
+          setThemePresetId('custom');
+          setTermFgColor(next.fgColor);
+        }
+      }
+    },
+    [
+      applyAppearanceToConnectionTabs,
+      applyAppearanceToTabId,
+      loadAppearanceIntoForm,
+      resolveTabAppearance,
+      useServer,
+    ]
+  );
+
+  // After exit / last tab closed, don't leave "Connecting…" stuck in the header
+  useEffect(() => {
+    if (tabs.length === 0) {
+      setNotice(IDLE_NOTICE);
+      setActiveTabId(null);
+    }
+  }, [tabs.length]);
+
+  const updateTab = useCallback((tabId: string, patch: Partial<SessionTab>) => {
+    setTabs((prev) => prev.map((t) => (t.id === tabId ? { ...t, ...patch } : t)));
+  }, []);
+
+  useEffect(() => {
+    try {
+      localStorage.setItem(MODE_STORAGE_KEY, connectMode);
+      localStorage.setItem(HOST_STORAGE_KEY, sshHost);
+      localStorage.setItem(PORT_STORAGE_KEY, sshPort);
+      localStorage.setItem(USER_STORAGE_KEY, sshUsername);
+      localStorage.setItem(X11_STORAGE_KEY, x11Forward ? 'true' : 'false');
+    } catch {
+      // ignore
+    }
+  }, [connectMode, sshHost, sshPort, sshUsername, x11Forward]);
+
+  // Keep pasteable ssh:// in sync with Easy fields (PAM usernames are percent-encoded).
+  useEffect(() => {
+    const built = buildSshLinkUrl(sshUsername, sshHost, Number.parseInt(sshPort, 10) || 22);
+    setSshUrlDraft(built);
+  }, [sshHost, sshPort, sshUsername]);
+
+  const applySshUrlPaste = useCallback((raw: string, opts?: { quiet?: boolean }): boolean => {
+    const parsed = parseAutoTargetUrl(raw.trim());
+    if (!parsed) {
+      if (!opts?.quiet) {
+        setNotice('Invalid ssh:// URL. Example: ssh://user@host:22 (encode \\ as %5C, + as %2B)');
+      }
+      return false;
+    }
+    setConnectMode('auto');
+    setDraftProtocol('ssh');
+    setSshHost(parsed.host);
+    setSshPort(String(parsed.port));
+    setSshUsername(parsed.username);
+    setSshUrlDraft(buildSshLinkUrl(parsed.username, parsed.host, parsed.port));
+    setDraftName((prev) =>
+      prev.trim()
+        ? prev
+        : `${parsed.username}@${parsed.host}${parsed.port !== 22 ? `:${parsed.port}` : ''}`
+    );
+    if (!opts?.quiet) {
+      setNotice(`Filled from ssh:// — ${parsed.username}@${parsed.host}:${parsed.port}`);
+    }
+    return true;
+  }, []);
+
+  useEffect(() => {
+    if (!useServer) {
+      setGatewayAvailable(false);
+      setGatewayHint(null);
+      setGatewayUsage(null);
+      setGatewaySessions([]);
+      setGuiDisplayReady(null);
+      setGuiHint(null);
+      return;
+    }
+    let cancelled = false;
+    const loadStatus = async () => {
+      try {
+        const st = await sshGatewayService.status();
+        if (cancelled) return;
+        setGatewayAvailable(Boolean(st.available));
+        if (!st.available) {
+          if (st.enabled === false) {
+            setGatewayHint(
+              st.hint ||
+                'SSH Gateway add-on is disabled. An administrator can re-enable it under Admin → Add-ons → SSH Gateway.'
+            );
+          } else {
+            const parts: string[] = [];
+            if (st.ttydFound === false || (Array.isArray(st.missing) && st.missing.includes('ttyd'))) {
+              parts.push('ttyd missing (deploy bin/ttyd.exe or set Admin → Add-ons → SSH Gateway)');
+            }
+            if (st.sshFound === false || (Array.isArray(st.missing) && st.missing.includes('ssh'))) {
+              parts.push('OpenSSH ssh.exe missing (install OpenSSH Client)');
+            }
+            setGatewayHint(st.hint || (parts.length ? parts.join(' · ') : 'SSH gateway unavailable — check Admin → Add-ons → SSH Gateway'));
+          }
+        } else {
+          setGatewayHint(null);
+        }
+        if (typeof st.maxConnections === 'number' && st.maxConnections >= 1) {
+          setMaxSshTabs(Math.floor(st.maxConnections));
+        }
+        setGatewayUsage(st.usage ?? null);
+        setGatewaySessions(Array.isArray(st.sessions) ? st.sessions : []);
+        setGuiDisplayReady(st.gui?.displayReachable ?? null);
+        setGuiHint(st.gui?.hint || null);
+      } catch {
+        if (!cancelled) {
+          setGatewayAvailable(false);
+          setGatewayHint('Could not reach SSH gateway status API — sign in and refresh, then confirm bin/ttyd.exe is deployed.');
+          setGatewayUsage(null);
+          setGatewaySessions([]);
+          setGuiDisplayReady(null);
+        }
+      }
+    };
+    void loadStatus();
+    const intervalMs = showGatewayUsage ? 10000 : x11Forward ? 8000 : 20000;
+    const t = window.setInterval(() => {
+      void loadStatus();
+    }, intervalMs);
+    return () => {
+      cancelled = true;
+      window.clearInterval(t);
+    };
+  }, [useServer, x11Forward, showGatewayUsage]);
+
+  const allTags = useMemo(() => {
+    const set = new Set<string>();
+    connections.forEach((c) => c.tags.forEach((t) => set.add(t)));
+    return Array.from(set).sort();
+  }, [connections]);
+
+  const filteredConnections = useMemo(() => {
+    const q = filterQuery.trim().toLowerCase();
+    return connections
+      .filter((c) => {
+        const deleted = Boolean(c.deletedAt && c.deletedAt > 0);
+        const archived = Boolean(c.archivedAt && c.archivedAt > 0);
+        if (libraryScope === 'recycle') {
+          if (!deleted) return false;
+        } else if (libraryScope === 'archived') {
+          if (deleted || !archived) return false;
+        } else if (deleted || archived) {
+          return false;
+        }
+        if (filterTag && !c.tags.includes(filterTag)) return false;
+        if (!q) return true;
+        const cat = normalizeSshCategory(c.category).toLowerCase();
+        return (
+          c.name.toLowerCase().includes(q) ||
+          c.wsUrl.toLowerCase().includes(q) ||
+          (c.notes || '').toLowerCase().includes(q) ||
+          cat.includes(q) ||
+          c.tags.some((t) => t.includes(q)) ||
+          (() => {
+            const a = parseAutoTargetUrl(c.wsUrl);
+            if (!a) return false;
+            return (
+              a.host.toLowerCase().includes(q) ||
+              a.username.toLowerCase().includes(q) ||
+              String(a.port).includes(q)
+            );
+          })()
+        );
+      })
+      .sort((a, b) => {
+        const catCmp = normalizeSshCategory(a.category).localeCompare(
+          normalizeSshCategory(b.category),
+          undefined,
+          { sensitivity: 'base' }
+        );
+        if (catCmp !== 0) return catCmp;
+        const so = normalizeSshSortOrder(a.sortOrder) - normalizeSshSortOrder(b.sortOrder);
+        if (so !== 0) return so;
+        return a.name.localeCompare(b.name, undefined, { sensitivity: 'base' });
+      });
+  }, [connections, filterQuery, filterTag, libraryScope]);
+
+  const libraryCounts = useMemo(() => {
+    let active = 0;
+    let archived = 0;
+    let recycle = 0;
+    for (const c of connections) {
+      const deleted = Boolean(c.deletedAt && c.deletedAt > 0);
+      const archivedFlag = Boolean(c.archivedAt && c.archivedAt > 0);
+      if (deleted) recycle += 1;
+      else if (archivedFlag) archived += 1;
+      else active += 1;
+    }
+    return {
+      active,
+      archived,
+      recycle: recycle + recycledCategories.length,
+    };
+  }, [connections, recycledCategories.length]);
+
+  const knownCategories = useMemo(() => mergeCategoryOrder(categoryOrder, connections), [categoryOrder, connections]);
+
+  useEffect(() => {
+    setCategoryOrder((prev) => {
+      const merged = mergeCategoryOrder(prev, connections);
+      if (merged.length === prev.length && merged.every((v, i) => v === prev[i])) return prev;
+      return merged;
+    });
+  }, [connections]);
+
+  // Reload category prefs whenever the signed-in account (or guest) changes.
+  useEffect(() => {
+    if (authUserKey === categoryScope) return;
+    setCategoryOrder(loadCategoryOrder(authUserKey));
+    setCollapsedCategories(loadCollapsedCategories(authUserKey));
+    setCategoryMeta(loadCategoryMeta(authUserKey));
+    setRecycledCategories(loadRecycledCategories(authUserKey));
+    setCategoryScope(authUserKey);
+    setLibraryScope('active');
+  }, [authUserKey, categoryScope]);
+
+  useEffect(() => {
+    try {
+      localStorage.setItem(LIST_DENSITY_KEY, listDensity);
+    } catch {
+      // ignore
+    }
+  }, [listDensity]);
+
+  useEffect(() => {
+    try {
+      localStorage.setItem(COLOR_MODE_KEY, colorMode);
+    } catch {
+      // ignore
+    }
+  }, [colorMode]);
+
+  useEffect(() => {
+    try {
+      localStorage.setItem(SIDEBAR_CHROME_KEY, JSON.stringify(sidebarChrome));
+    } catch {
+      // ignore
+    }
+  }, [sidebarChrome]);
+
+  const patchSidebarChrome = useCallback((patch: Partial<SshSidebarChromeTheme>) => {
+    setSidebarChrome((prev) => normalizeSshSidebarChrome({ ...prev, ...patch }));
+  }, []);
+
+  const sidebarToggleClass = useCallback(
+    (active: boolean) =>
+      active
+        ? 'border font-semibold'
+        : 'border font-semibold opacity-80 hover:opacity-100',
+    []
+  );
+
+  const sidebarToggleStyle = useCallback(
+    (active: boolean): React.CSSProperties =>
+      active
+        ? {
+            backgroundColor: 'var(--ssh-side-ctrl-active-bg)',
+            color: 'var(--ssh-side-ctrl-active-fg)',
+            borderColor: 'var(--ssh-side-ctrl-active-border)',
+          }
+        : {
+            backgroundColor: 'var(--ssh-side-ctrl-bg)',
+            color: 'var(--ssh-side-ctrl-fg)',
+            borderColor: 'var(--ssh-side-ctrl-border)',
+          },
+    []
+  );
+  useEffect(() => {
+    if (categoryScope !== authUserKey) return;
+    try {
+      localStorage.setItem(
+        categoryAccountStorageKey(CATEGORY_ORDER_KEY, authUserKey),
+        JSON.stringify(categoryOrder)
+      );
+    } catch {
+      // ignore
+    }
+  }, [categoryOrder, categoryScope, authUserKey]);
+
+  useEffect(() => {
+    if (categoryScope !== authUserKey) return;
+    try {
+      localStorage.setItem(
+        categoryAccountStorageKey(CATEGORY_COLLAPSED_KEY, authUserKey),
+        JSON.stringify(collapsedCategories)
+      );
+    } catch {
+      // ignore
+    }
+  }, [collapsedCategories, categoryScope, authUserKey]);
+
+  useEffect(() => {
+    if (categoryScope !== authUserKey) return;
+    try {
+      localStorage.setItem(
+        categoryAccountStorageKey(CATEGORY_META_KEY, authUserKey),
+        JSON.stringify(categoryMeta)
+      );
+    } catch {
+      // ignore
+    }
+  }, [categoryMeta, categoryScope, authUserKey]);
+
+  useEffect(() => {
+    if (categoryScope !== authUserKey) return;
+    try {
+      localStorage.setItem(
+        categoryAccountStorageKey(RECYCLED_CATEGORIES_KEY, authUserKey),
+        JSON.stringify(recycledCategories)
+      );
+    } catch {
+      // ignore
+    }
+  }, [recycledCategories, categoryScope, authUserKey]);
+
+  const updateConnectionsLocal = useCallback((next: SavedSshConnection[]) => {
+    setConnections(next);
+    persistLocalConnections(next);
+  }, []);
+
+  const persistConnectionOrder = useCallback(
+    async (next: SavedSshConnection[]) => {
+      setConnections(next);
+      if (!useServer) {
+        persistLocalConnections(next);
+        return;
+      }
+      try {
+        const saved = await sshConnectionService.reorder(
+          next.map((c) => ({
+            id: c.id,
+            category: normalizeSshCategory(c.category),
+            sortOrder: normalizeSshSortOrder(c.sortOrder),
+          }))
+        );
+        setConnections(saved);
+      } catch (err) {
+        setNotice(err instanceof Error ? err.message : 'Failed to save connection order');
+      }
+    },
+    [useServer]
+  );
+
+  useEffect(() => {
+    let cancelled = false;
+    const load = async () => {
+      // Always clear first so a previous account's list never flashes / sticks.
+      setConnections([]);
+      setActiveConnectionId(null);
+      setEditingId(null);
+      setFilterQuery('');
+      setFilterTag(null);
+
+      if (!useServer) {
+        setConnections(loadLocalConnections());
+        setStorageReady(true);
+        return;
+      }
+      setStorageReady(false);
+      try {
+        const list = await sshConnectionService.list();
+        if (!cancelled) {
+          setConnections(list);
+          setStorageReady(true);
+        }
+      } catch (err) {
+        console.error('Failed to load SSH connections', err);
+        if (!cancelled) {
+          // Do not fall back to guest localStorage while signed in — that leaks other sessions' drafts.
+          setConnections([]);
+          setNotice(err instanceof Error ? err.message : 'Failed to load saved connections');
+          setStorageReady(true);
+        }
+      }
+    };
+    void load();
+    return () => {
+      cancelled = true;
+    };
+  }, [useServer, authUserKey]);
+
+  const stopGatewayFor = useCallback(async (gatewaySessionId: string | null | undefined) => {
+    if (!gatewaySessionId) return;
+    try {
+      await sshGatewayService.stop(gatewaySessionId);
+    } catch {
+      // ignore
+    }
+  }, []);
+
+  /** Tabs whose WebSocket is being closed on purpose (UI close / reconnect) — skip auto-close-on-exit. */
+  const intentionalWsCloseRef = useRef(new Set<string>());
+  /** When true, unmount should destroy bridge sessions (widget closed). Refresh leaves them alive. */
+  const destroySessionsOnUnmountRef = useRef(false);
+  const restoreDoneRef = useRef(false);
+
+  const disposeSessionHandle = useCallback((tabId: string, opts?: { keepHost?: boolean; destroyBridge?: boolean }) => {
+    const handle = sessionHandlesRef.current.get(tabId);
+    if (!handle) return null;
+
+    try {
+      handle.bridgeUnsub?.();
+    } catch {
+      // ignore
+    }
+    handle.bridgeUnsub = null;
+
+    if (handle.useBridge) {
+      if (opts?.destroyBridge) {
+        sshSessionBridge.close(tabId);
+      } else {
+        sshSessionBridge.detach(tabId);
+      }
+    } else if (handle.ws) {
+      intentionalWsCloseRef.current.add(tabId);
+      try {
+        handle.ws.close();
+      } catch {
+        // ignore
+      }
+    }
+    handle.ws = null;
+    try {
+      handle.term?.dispose();
+    } catch {
+      // ignore
+    }
+    handle.term = null;
+    handle.fit = null;
+    const host = tabHostsRef.current.get(tabId);
+    if (host && !opts?.keepHost) {
+      host.innerHTML = '';
+    }
+    const gw = handle.gatewaySessionId;
+    if (opts?.destroyBridge) {
+      handle.gatewaySessionId = null;
+    }
+    sessionHandlesRef.current.set(tabId, handle);
+    return gw;
+  }, []);
+
+  const closeTab = useCallback(
+    async (tabId: string) => {
+      const handle = sessionHandlesRef.current.get(tabId);
+      const gw = handle?.gatewaySessionId ?? null;
+      disposeSessionHandle(tabId, { destroyBridge: true });
+      sessionHandlesRef.current.delete(tabId);
+      tabHostsRef.current.delete(tabId);
+      void stopGatewayFor(gw);
+
+      setTabs((prev) => {
+        const next = prev.filter((t) => t.id !== tabId);
+        setActiveTabId((current) => {
+          if (current !== tabId) return current;
+          return next.length ? next[next.length - 1].id : null;
+        });
+        return next;
+      });
+    },
+    [disposeSessionHandle, stopGatewayFor]
+  );
+
+  const requestClose = useCallback(async () => {
+    const live = tabsRef.current.filter(
+      (t) => t.status === 'connected' || t.status === 'connecting'
+    );
+    if (live.length > 0) {
+      const ok = window.confirm('Kill all terminals and close?');
+      if (!ok) return;
+      destroySessionsOnUnmountRef.current = true;
+      const ids = tabsRef.current.map((t) => t.id);
+      for (const id of ids) {
+        await closeTab(id);
+      }
+    } else {
+      destroySessionsOnUnmountRef.current = true;
+    }
+    clearPersistedLiveTabs();
+    try {
+      sshSessionBridge.closeAll();
+    } catch {
+      // ignore
+    }
+    sshSessionBridge.closeKeeperWindow();
+    onClose?.();
+  }, [closeTab, onClose]);
+
+  useEffect(() => {
+    const onExternalClose = () => {
+      void requestClose();
+    };
+    window.addEventListener('requestCloseSshTerminal', onExternalClose);
+    return () => window.removeEventListener('requestCloseSshTerminal', onExternalClose);
+  }, [requestClose]);
+
+  const toggleFullscreen = useCallback(async () => {
+    const el = widgetRootRef.current;
+    if (!el) return;
+    try {
+      if (document.fullscreenElement === el) {
+        await document.exitFullscreen();
+      } else if (document.fullscreenElement) {
+        await document.exitFullscreen();
+        setPanelOpen(true);
+        await el.requestFullscreen();
+      } else {
+        setPanelOpen(true);
+        await el.requestFullscreen();
+      }
+    } catch {
+      setNotice('Fullscreen is not available in this browser/context');
+    }
+  }, []);
+
+  const markLastUsed = useCallback(
+    async (connectionId: string | null | undefined) => {
+      if (!connectionId) return;
+      const now = Date.now();
+      setConnections((prev) => {
+        const next = prev.map((c) => (c.id === connectionId ? { ...c, lastUsedAt: now } : c));
+        if (!useServer) persistLocalConnections(next);
+        return next;
+      });
+      if (useServer) {
+        try {
+          await sshConnectionService.update(connectionId, { lastUsedAt: now });
+        } catch {
+          // non-fatal
+        }
+      }
+    },
+    [useServer]
+  );
+
+  const sendResize = useCallback((tabId?: string | null) => {
+    const id = tabId ?? activeTabIdRef.current;
+    if (!id) return;
+    const handle = sessionHandlesRef.current.get(id);
+    const term = handle?.term;
+    if (!term) return;
+    const msg = CMD.RESIZE_TERMINAL + JSON.stringify({ columns: term.cols, rows: term.rows });
+    const bytes = encoderRef.current.encode(msg);
+    if (handle?.useBridge) {
+      sshSessionBridge.send(id, bytes);
+      return;
+    }
+    const ws = handle?.ws;
+    if (!ws || ws.readyState !== WebSocket.OPEN) return;
+    ws.send(bytes);
+  }, []);
+
+  const sendRawInputToTab = useCallback((tabId: string, payload: string): boolean => {
+    const handle = sessionHandlesRef.current.get(tabId);
+    if (!handle) return false;
+    const bytes = encoderRef.current.encode(CMD.INPUT + payload);
+    if (handle.useBridge) {
+      sshSessionBridge.send(tabId, bytes);
+      return true;
+    }
+    const ws = handle.ws;
+    if (!ws || ws.readyState !== WebSocket.OPEN) return false;
+    try {
+      ws.send(bytes);
+      return true;
+    } catch {
+      return false;
+    }
+  }, []);
+
+  const fitSessions = useCallback(
+    (ids?: string[] | null) => {
+      const list = ids && ids.length ? ids : Array.from(sessionHandlesRef.current.keys());
+      for (const id of list) {
+        try {
+          const handle = sessionHandlesRef.current.get(id);
+          if (!handle?.fit || !handle.term) continue;
+          handle.fit.fit();
+          try {
+            handle.term.refresh(0, Math.max(0, handle.term.rows - 1));
+          } catch {
+            // ignore
+          }
+          sendResize(id);
+        } catch {
+          // ignore
+        }
+      }
+    },
+    [sendResize]
+  );
+
+  const broadcastToAll = useCallback(
+    (raw: string) => {
+      const text = raw.replace(/\r\n/g, '\n');
+      if (!text) return;
+      const payload = text.endsWith('\n') ? text : `${text}\n`;
+      let sent = 0;
+      for (const tab of tabs) {
+        if ((tab.kind || 'ssh') === 'rdp') continue;
+        if (tab.excludeFromMulti) continue;
+        if (tab.status !== 'connected') continue;
+        if (sendRawInputToTab(tab.id, payload)) sent += 1;
+      }
+      setNotice(
+        sent > 0
+          ? `Sent to ${sent} terminal${sent === 1 ? '' : 's'}`
+          : 'No included terminals to receive the command'
+      );
+    },
+    [tabs, sendRawInputToTab]
+  );
+
+  const sendKeyToAll = useCallback(
+    (payload: string, label: string) => {
+      let sent = 0;
+      for (const tab of tabs) {
+        if ((tab.kind || 'ssh') === 'rdp') continue;
+        if (tab.excludeFromMulti) continue;
+        if (tab.status !== 'connected') continue;
+        if (sendRawInputToTab(tab.id, payload)) sent += 1;
+      }
+      setNotice(
+        sent > 0
+          ? `Sent ${label} to ${sent} terminal${sent === 1 ? '' : 's'}`
+          : `No included terminals to receive ${label}`
+      );
+    },
+    [tabs, sendRawInputToTab]
+  );
+
+  const interruptAll = useCallback(() => {
+    // ASCII ETX — Ctrl+C
+    sendKeyToAll('\x03', 'Ctrl+C');
+  }, [sendKeyToAll]);
+
+  const suspendAll = useCallback(() => {
+    // ASCII SUB — Ctrl+Z
+    sendKeyToAll('\x1a', 'Ctrl+Z');
+  }, [sendKeyToAll]);
+
+  const eofAll = useCallback(() => {
+    // ASCII EOT — Ctrl+D
+    sendKeyToAll('\x04', 'Ctrl+D');
+  }, [sendKeyToAll]);
+
+  const enterAll = useCallback(() => {
+    // CR — Enter
+    sendKeyToAll('\r', 'Enter');
+  }, [sendKeyToAll]);
+
+  const arrowUpAll = useCallback(() => {
+    // CSI CUU — Up arrow (shell history / cursor)
+    sendKeyToAll('\x1b[A', '↑');
+  }, [sendKeyToAll]);
+
+  const arrowDownAll = useCallback(() => {
+    // CSI CUD — Down arrow (shell history / cursor)
+    sendKeyToAll('\x1b[B', '↓');
+  }, [sendKeyToAll]);
+
+  const pasteToAll = useCallback(async () => {
+    let text = '';
+    try {
+      text = await navigator.clipboard.readText();
+    } catch {
+      setNotice('Clipboard paste was blocked — allow clipboard access first');
+      return;
+    }
+    if (!text) {
+      setNotice('Clipboard is empty');
+      return;
+    }
+
+    let sent = 0;
+    for (const tab of tabs) {
+      if ((tab.kind || 'ssh') === 'rdp') continue;
+      if (tab.excludeFromMulti) continue;
+      if (tab.status !== 'connected') continue;
+      const handle = sessionHandlesRef.current.get(tab.id);
+      if (!handle) continue;
+      try {
+        if (handle.term) {
+          // Prefer xterm paste so bracketed-paste mode is honored when available
+          handle.term.paste(text);
+          sent += 1;
+        } else if (sendRawInputToTab(tab.id, text)) {
+          sent += 1;
+        }
+      } catch {
+        // ignore
+      }
+    }
+    setNotice(
+      sent > 0
+        ? `Pasted to ${sent} terminal${sent === 1 ? '' : 's'}`
+        : 'No included terminals to paste into'
+    );
+  }, [tabs, sendRawInputToTab]);
+
+  const tileCols = useMemo(() => {
+    const n = tabs.length;
+    if (n <= 1) return 1;
+    if (n === 2) return 2;
+    if (n <= 4) return 2;
+    if (n <= 6) return 3;
+    return 4;
+  }, [tabs.length]);
+
+  const tileRows = useMemo(
+    () => Math.max(1, Math.ceil(Math.max(tabs.length, 1) / tileCols)),
+    [tabs.length, tileCols]
+  );
+
+  useEffect(() => {
+    setPaneShares((prev) => {
+      const next = normalizeShareArray(prev, tabs.length);
+      paneSharesRef.current = next;
+      return next;
+    });
+  }, [tabs.length]);
+
+  useEffect(() => {
+    setGridColShares((prev) => {
+      const next = normalizeShareArray(prev, tileCols);
+      gridColSharesRef.current = next;
+      return next;
+    });
+  }, [tileCols]);
+
+  useEffect(() => {
+    setGridRowShares((prev) => {
+      const next = normalizeShareArray(prev, tileRows);
+      gridRowSharesRef.current = next;
+      return next;
+    });
+  }, [tileRows]);
+
+  useEffect(() => {
+    paneSharesRef.current = paneShares;
+  }, [paneShares]);
+
+  useEffect(() => {
+    gridColSharesRef.current = gridColShares;
+  }, [gridColShares]);
+
+  useEffect(() => {
+    gridRowSharesRef.current = gridRowShares;
+  }, [gridRowShares]);
+
+  useEffect(() => {
+    const onFs = () => {
+      const active = document.fullscreenElement === widgetRootRef.current;
+      setIsFullscreen(active);
+      window.setTimeout(() => fitSessions(), 80);
+    };
+    document.addEventListener('fullscreenchange', onFs);
+    return () => document.removeEventListener('fullscreenchange', onFs);
+  }, [fitSessions]);
+
+  const waitForTabHost = useCallback(async (tabId: string): Promise<HTMLDivElement | null> => {
+    for (let i = 0; i < 30; i++) {
+      const el = tabHostsRef.current.get(tabId);
+      if (el) return el;
+      await new Promise<void>((r) => requestAnimationFrame(() => r()));
+    }
+    return tabHostsRef.current.get(tabId) ?? null;
+  }, []);
+
+  const connectTo = useCallback(
+    async (opts?: {
+      wsUrl?: string;
+      connectionId?: string | null;
+      connectionName?: string;
+      host?: string;
+      port?: number;
+      username?: string;
+      mode?: ConnectMode;
+      x11?: boolean;
+      termType?: string;
+    }) => {
+      if (sessionHandlesRef.current.size >= maxSshTabs) {
+        setNotice(`Maximum of ${maxSshTabs} open sessions. Close a tab first.`);
+        return;
+      }
+
+      // Open the keeper immediately while we still have the Connect click gesture
+      // (async awaits below would otherwise get blocked by popup blockers).
+      if (typeof SharedWorker !== 'undefined') {
+        sshSessionBridge.ensureKeeperWindow();
+      }
+
+      const mode = opts?.mode ?? connectMode;
+      let url = normalizeWsUrl(opts?.wsUrl ?? wsUrl);
+      const nextConnectionId = opts?.connectionId !== undefined ? opts.connectionId : activeConnectionId;
+      const nextName = opts?.connectionName;
+      const tabId = `tab_${Date.now().toString(36)}_${Math.random().toString(36).slice(2, 7)}`;
+      const tabTitle = (nextName || '').trim() || (opts?.host ? `${opts.username || sshUsername}@${opts.host}` : 'Session');
+      const autoFromUrlEarly = parseAutoTargetUrl(url);
+      const wantAutoEarly =
+        mode === 'auto' || Boolean(autoFromUrlEarly) || (Boolean(opts?.host) && Boolean(opts?.username));
+      const sourceHost = (opts?.host ?? autoFromUrlEarly?.host ?? '').trim() || undefined;
+      const sourceUsername = (opts?.username ?? autoFromUrlEarly?.username ?? '').trim() || undefined;
+      const sourcePort =
+        opts?.port ?? autoFromUrlEarly?.port ?? (Number.parseInt(sshPort, 10) || 22);
+
+      sessionHandlesRef.current.set(tabId, {
+        term: null,
+        fit: null,
+        ws: null,
+        gatewaySessionId: null,
+      });
+      setTabs((prev) => [
+        ...prev,
+        {
+          id: tabId,
+          title: tabTitle || 'Session',
+          connectionId: nextConnectionId,
+          status: 'connecting',
+          statusMessage: 'Starting session…',
+          excludeFromMulti: false,
+          duplicateSource: {
+            kind: 'ssh',
+            connectionId: nextConnectionId ?? null,
+            wsUrl: url || undefined,
+            mode: wantAutoEarly ? 'auto' : 'ws',
+            host: sourceHost,
+            port: sourcePort,
+            username: sourceUsername,
+            x11: opts?.x11 ?? x11Forward,
+          },
+        },
+      ]);
+      setActiveTabId(tabId);
+      setActiveConnectionId(nextConnectionId ?? null);
+      setShowSettings(false);
+
+      const failTab = (message: string) => {
+        const handle = sessionHandlesRef.current.get(tabId);
+        const gw = handle?.gatewaySessionId ?? null;
+        if (handle) handle.gatewaySessionId = null;
+        disposeSessionHandle(tabId, { destroyBridge: true });
+        sessionHandlesRef.current.delete(tabId);
+        tabHostsRef.current.delete(tabId);
+        void stopGatewayFor(gw);
+        setTabs((prev) => {
+          const next = prev.filter((t) => t.id !== tabId);
+          setActiveTabId((current) => {
+            if (current !== tabId) return current;
+            return next.length ? next[next.length - 1].id : null;
+          });
+          return next;
+        });
+        setNotice(message);
+        setShowSettings(true);
+        setSettingsPane('connection');
+      };
+
+      const autoFromUrl = parseAutoTargetUrl(url);
+      const wantAuto =
+        mode === 'auto' || Boolean(autoFromUrl) || (Boolean(opts?.host) && Boolean(opts?.username));
+
+      if (wantAuto) {
+        if (!useServer) {
+          failTab(`Sign in to use automatic SSH (${brandName} starts ttyd for you). Or switch to WebSocket URL mode.`);
+          return;
+        }
+        const host = (opts?.host ?? autoFromUrl?.host ?? sshHost).trim();
+        const username = (opts?.username ?? autoFromUrl?.username ?? sshUsername).trim();
+        const port = opts?.port ?? autoFromUrl?.port ?? (Number.parseInt(sshPort, 10) || 22);
+        const resolvedTermType = normalizeSshTermType(
+          opts?.termType ??
+            (nextConnectionId
+              ? connectionsRef.current.find((c) => c.id === nextConnectionId)?.appearance?.termType
+              : undefined) ??
+            termType
+        );
+        if (!host || !username) {
+          failTab('Host and username are required.');
+          return;
+        }
+        const title = nextName?.trim() || `${username}@${host}`;
+        updateTab(tabId, {
+          title,
+          statusMessage:
+            (opts?.x11 ?? x11Forward)
+              ? `Starting SSH+GUI gateway to ${username}@${host}:${port}…`
+              : `Starting SSH gateway to ${username}@${host}:${port}…`,
+        });
+        try {
+          let session = await sshGatewayService.start({
+            host,
+            port,
+            username,
+            x11: opts?.x11 ?? x11Forward,
+            termType: resolvedTermType,
+          });
+          const handle = sessionHandlesRef.current.get(tabId);
+          if (handle) handle.gatewaySessionId = session.sessionId;
+          url = session.wsUrl;
+          setWsUrl(url);
+          setSshHost(host);
+          setSshPort(String(port));
+          setSshUsername(username);
+          setConnectMode('auto');
+          updateTab(tabId, {
+            duplicateSource: {
+              kind: 'ssh',
+              connectionId: nextConnectionId ?? null,
+              wsUrl: url,
+              mode: 'auto',
+              host,
+              port,
+              username,
+              x11: opts?.x11 ?? x11Forward,
+            },
+          });
+        } catch (err) {
+          const msg = err instanceof Error ? err.message : 'Failed to start SSH gateway';
+          // Orphan ttyd processes can remain after UI tabs are closed and still count toward the max.
+          if (/too many active ssh gateways|gateway_limit/i.test(msg) && sessionHandlesRef.current.size <= 1) {
+            try {
+              const cleared = await sshGatewayService.stopAll();
+              const session = await sshGatewayService.start({
+                host,
+                port,
+                username,
+                x11: opts?.x11 ?? x11Forward,
+                termType: resolvedTermType,
+              });
+              const handle = sessionHandlesRef.current.get(tabId);
+              if (handle) handle.gatewaySessionId = session.sessionId;
+              url = session.wsUrl;
+              setWsUrl(url);
+              setSshHost(host);
+              setSshPort(String(port));
+              setSshUsername(username);
+              setConnectMode('auto');
+              updateTab(tabId, {
+                duplicateSource: {
+                  kind: 'ssh',
+                  connectionId: nextConnectionId ?? null,
+                  wsUrl: url,
+                  mode: 'auto',
+                  host,
+                  port,
+                  username,
+                  x11: opts?.x11 ?? x11Forward,
+                },
+              });
+              if (cleared.stopped > 0) {
+                setNotice(`Cleared ${cleared.stopped} leftover gateway(s), then connected`);
+              }
+            } catch (err2) {
+              failTab(err2 instanceof Error ? err2.message : msg);
+              return;
+            }
+          } else {
+            failTab(msg);
+            return;
+          }
+        }
+      }
+
+      if (!url || /^auto:\/\//i.test(url)) {
+        failTab('WebSocket URL is required.');
+        return;
+      }
+
+      updateTab(tabId, {
+        status: 'connecting',
+        statusMessage: `Connecting to ${nextName || url}…`,
+      });
+
+      try {
+        localStorage.setItem(WS_STORAGE_KEY, url);
+      } catch {
+        // ignore
+      }
+
+      const hostEl = await waitForTabHost(tabId);
+      if (!hostEl) {
+        failTab('Terminal surface is not ready.');
+        return;
+      }
+
+      const appearance = (() => {
+        const cid = nextConnectionId ?? null;
+        if (cid && editingIdRef.current === cid) {
+          return mergeConnectionAppearance(appearanceDraftRef.current);
+        }
+        if (cid) {
+          const saved = connectionsRef.current.find((c) => c.id === cid);
+          return mergeConnectionAppearance(saved?.appearance);
+        }
+        return mergeConnectionAppearance(appearanceDraftRef.current);
+      })();
+
+      const term = new Terminal({
+        cursorBlink: true,
+        fontSize: appearance.fontSize,
+        lineHeight: 1.25,
+        letterSpacing: 0,
+        fontFamily: appearance.fontFamily,
+        // Right-click pastes; selection is left-drag only
+        rightClickSelectsWord: false,
+        theme: buildXtermTheme({
+          background: appearance.bgColor,
+          foreground: appearance.fgColor,
+          cursor: appearance.cursorColor,
+          selectionBackground: appearance.selectionBg,
+          ansi: appearance.ansi,
+        }),
+      });
+      const fit = new FitAddon();
+      term.loadAddon(fit);
+      term.loadAddon(new WebLinksAddon());
+      hostEl.innerHTML = '';
+      term.open(hostEl);
+
+      // Select → copy on mouse-up (when a selection exists)
+      const copySelectionIfAny = () => {
+        const text = term.getSelection();
+        if (!text) return;
+        void navigator.clipboard.writeText(text).catch(() => undefined);
+      };
+      const onMouseUpCopy = (ev: MouseEvent) => {
+        if (ev.button !== 0) return;
+        // Let xterm finalize selection first
+        window.setTimeout(copySelectionIfAny, 0);
+      };
+      hostEl.addEventListener('mouseup', onMouseUpCopy);
+
+      // Right-click → paste (block browser context menu)
+      const pasteFromClipboard = (ev: Event) => {
+        ev.preventDefault();
+        ev.stopPropagation();
+        void navigator.clipboard
+          .readText()
+          .then((text) => {
+            if (text) term.paste(text);
+          })
+          .catch(() => undefined);
+      };
+      hostEl.addEventListener('contextmenu', pasteFromClipboard);
+
+      // Keyboard: Ctrl/Cmd+C copies selection; Ctrl/Cmd+V pastes
+      term.attachCustomKeyEventHandler((ev) => {
+        const mod = ev.ctrlKey || ev.metaKey;
+        if (!mod || ev.type !== 'keydown') return true;
+        const key = ev.key.toLowerCase();
+        if (key === 'c' && term.hasSelection()) {
+          copySelectionIfAny();
+          return false;
+        }
+        if (key === 'v') {
+          pasteFromClipboard(ev);
+          return false;
+        }
+        return true;
+      });
+
+      requestAnimationFrame(() => {
+        try {
+          fit.fit();
+          term.refresh(0, Math.max(0, term.rows - 1));
+        } catch {
+          // ignore
+        }
+      });
+
+      const handle = sessionHandlesRef.current.get(tabId);
+      if (!handle) {
+        try {
+          term.dispose();
+        } catch {
+          // ignore
+        }
+        failTab('Session was closed.');
+        return;
+      }
+      handle.term = term;
+      handle.fit = fit;
+
+      const sendInput = (data: string) => {
+        const bytes = encoderRef.current.encode(CMD.INPUT + data);
+        if (handle.useBridge) {
+          sshSessionBridge.send(tabId, bytes);
+          return;
+        }
+        if (handle.ws && handle.ws.readyState === WebSocket.OPEN) {
+          handle.ws.send(bytes);
+        }
+      };
+
+      let helloSent = false;
+      const onConnected = (opts?: { sendHello?: boolean }) => {
+        try {
+          fit.fit();
+        } catch {
+          // ignore
+        }
+        const wantHello = opts?.sendHello !== false && !helloSent;
+        if (wantHello) {
+          helloSent = true;
+          const cols = Math.max(term.cols || 80, 2);
+          const rows = Math.max(term.rows || 24, 1);
+          const hello = JSON.stringify({ AuthToken: '', columns: cols, rows });
+          if (handle.useBridge) {
+            sshSessionBridge.send(tabId, encoderRef.current.encode(hello));
+          } else if (handle.ws && handle.ws.readyState === WebSocket.OPEN) {
+            handle.ws.send(encoderRef.current.encode(hello));
+          }
+        }
+        if (activeTabIdRef.current === tabId) term.focus();
+        updateTab(tabId, {
+          status: 'connected',
+          statusMessage: nextName ? `Connected · ${nextName}` : 'Connected — enter SSH password if prompted',
+        });
+        void markLastUsed(nextConnectionId);
+        window.setTimeout(() => {
+          try {
+            fit.fit();
+            sendResize(tabId);
+            if (activeTabIdRef.current === tabId) term.focus();
+          } catch {
+            // ignore
+          }
+        }, 80);
+      };
+
+      const handleOutputBuffer = (buf: ArrayBuffer) => {
+        const frame = parseTtydFrame(buf);
+        if (!frame) return;
+        const { cmd, payload } = frame;
+        if (cmd === CMD.OUTPUT) {
+          term.write(payload);
+        } else if (cmd === CMD.SET_WINDOW_TITLE) {
+          const title = typeof payload === 'string' ? payload : new TextDecoder().decode(payload);
+          updateTab(tabId, {
+            statusMessage: nextName ? `${nextName} · ${title}` : title,
+            title: nextName?.trim() || title.split(' ')[0] || 'Session',
+          });
+        }
+      };
+
+      const handleNaturalClose = (evCode?: number) => {
+        const code = typeof evCode === 'number' ? evCode : 0;
+        const abnormal = code === 1006 || code === 0 || (code > 0 && code < 1000);
+        let bufferText = '';
+        try {
+          const buf = term?.buffer?.active;
+          if (buf) {
+            const lines: string[] = [];
+            const start = Math.max(0, buf.baseY + buf.cursorY - 12);
+            const end = buf.baseY + buf.cursorY;
+            for (let i = start; i <= end; i++) {
+              const line = buf.getLine(i)?.translateToString(true)?.trim();
+              if (line) lines.push(line);
+            }
+            bufferText = lines.join('\n');
+          }
+        } catch {
+          // ignore
+        }
+        const remoteClosed = /connection closed by|permission denied|authentication failed|secureauth|access denied/i.test(
+          bufferText
+        );
+        if (remoteClosed) {
+          updateTab(tabId, {
+            status: 'error',
+            statusMessage:
+              'Remote SSH closed the session after login/MFA (see terminal). Check SecureAuth code, PAM target, and account access — the WSS tunnel was working.',
+          });
+          return;
+        }
+        if (abnormal) {
+          updateTab(tabId, {
+            status: 'error',
+            statusMessage:
+              'SSH tunnel closed after connect (often MFA / proxy). Confirm Apache gateway proxy uses HTTP/1.1 only, then Connect again.',
+          });
+          return;
+        }
+        if (sessionHandlesRef.current.has(tabId)) {
+          void closeTab(tabId);
+        }
+      };
+
+      const openDirectWebSocket = (): boolean => {
+        let ws: WebSocket;
+        try {
+          ws = new WebSocket(url, ['tty']);
+        } catch (err) {
+          failTab(err instanceof Error ? err.message : 'Failed to open WebSocket');
+          return false;
+        }
+
+        ws.binaryType = 'arraybuffer';
+        handle.ws = ws;
+        handle.useBridge = false;
+        try {
+          handle.bridgeUnsub?.();
+        } catch {
+          // ignore
+        }
+        handle.bridgeUnsub = null;
+
+        ws.onopen = () => onConnected({ sendHello: true });
+
+        ws.onmessage = (ev) => {
+          handleOutputBuffer(ev.data as ArrayBuffer);
+        };
+
+        ws.onerror = () => {
+          updateTab(tabId, {
+            status: 'error',
+            statusMessage: `WebSocket error — cannot reach ${url}. If Easy mode was used, ttyd may have exited; try Connect again.`,
+          });
+        };
+
+        ws.onclose = (ev) => {
+          const intentional = intentionalWsCloseRef.current.delete(tabId);
+          if (intentional) {
+            const current = sessionHandlesRef.current.get(tabId);
+            if (current) {
+              current.ws = null;
+              const gw = current.gatewaySessionId ?? null;
+              current.gatewaySessionId = null;
+              void stopGatewayFor(gw);
+            }
+            return;
+          }
+          handleNaturalClose(typeof ev?.code === 'number' ? ev.code : 0);
+        };
+        return true;
+      };
+
+      const bridgeOk = sshSessionBridge.isAvailable() && (await sshSessionBridge.ensureReady());
+      if (bridgeOk) {
+        handle.useBridge = true;
+        const unsub = sshSessionBridge.subscribe(tabId, {
+          onMessage: (data) => handleOutputBuffer(data),
+          onReplay: (data) => handleOutputBuffer(data),
+          onStatus: (status, detail) => {
+            if (status === 'open') {
+              onConnected({ sendHello: true });
+              return;
+            }
+            if (status === 'error') {
+              updateTab(tabId, {
+                status: 'error',
+                statusMessage: `WebSocket error — cannot reach ${url}. If Easy mode was used, ttyd may have exited; try Connect again.`,
+              });
+              return;
+            }
+            if (status === 'closed') {
+              if (detail?.intentional) return;
+              handleNaturalClose(detail?.code);
+            }
+          },
+          onOpenError: (message) => {
+            // Prefer falling back to a page WebSocket over failing the tab.
+            console.warn('[ssh] bridge open error, falling back to direct WebSocket:', message);
+            try {
+              unsub();
+            } catch {
+              // ignore
+            }
+            handle.bridgeUnsub = null;
+            handle.useBridge = false;
+            if (!handle.ws) openDirectWebSocket();
+          },
+        });
+        handle.bridgeUnsub = unsub;
+
+        const gwId = handle.gatewaySessionId;
+        try {
+          const opened = await sshSessionBridge.open(tabId, url, {
+            gatewaySessionId: gwId,
+            meta: {
+              title: tabTitle,
+              connectionId: nextConnectionId,
+              duplicateSource: {
+                kind: 'ssh',
+                connectionId: nextConnectionId ?? null,
+                wsUrl: url,
+                mode: wantAuto ? 'auto' : 'ws',
+                host: sourceHost,
+                port: sourcePort,
+                username: sourceUsername,
+                x11: opts?.x11 ?? x11Forward,
+              },
+            },
+          });
+          sshSessionBridge.updateMeta(tabId, { gatewaySessionId: gwId });
+          // Keep SharedWorker alive across main-page refresh (single-tab reload kills workers otherwise).
+          const keeperOk = sshSessionBridge.ensureKeeperWindow();
+          if (!keeperOk) {
+            setNotice(
+              'Allow pop-ups for LinkNest so the SSH session keeper can keep your shell alive across refresh'
+            );
+          }
+          if (opened.resumed && (opened.status === 'open' || opened.status === 'connecting')) {
+            if (opened.status === 'open') onConnected({ sendHello: false });
+          }
+        } catch (err) {
+          console.warn('[ssh] SharedWorker unavailable, using direct WebSocket:', err);
+          try {
+            unsub();
+          } catch {
+            // ignore
+          }
+          handle.bridgeUnsub = null;
+          handle.useBridge = false;
+          if (!openDirectWebSocket()) return;
+        }
+      } else if (!openDirectWebSocket()) {
+        return;
+      }
+
+      term.onData((data) => {
+        sendInput(data);
+      });
+
+      term.onResize(() => {
+        sendResize(tabId);
+      });
+    },
+    [
+      connectMode,
+      wsUrl,
+      sshHost,
+      sshPort,
+      sshUsername,
+      x11Forward,
+      activeConnectionId,
+      maxSshTabs,
+      useServer,
+      brandName,
+      disposeSessionHandle,
+      stopGatewayFor,
+      updateTab,
+      markLastUsed,
+      waitForTabHost,
+      sendResize,
+      closeTab,
+      termType,
+    ]);
+
+  const copyActiveSelection = useCallback(async () => {
+    const id = activeTabIdRef.current;
+    if (!id) {
+      setNotice('No active terminal');
+      return;
+    }
+    const tab = tabsRef.current.find((t) => t.id === id);
+    if (tab?.kind === 'rdp') {
+      setNotice('Use the RDP gateway UI to copy text');
+      return;
+    }
+    const term = sessionHandlesRef.current.get(id)?.term;
+    const text = term?.getSelection() || '';
+    if (!text.trim()) {
+      setNotice('Select text in the terminal first, then Copy');
+      return;
+    }
+    try {
+      await navigator.clipboard.writeText(text);
+      setNotice('Copied to clipboard');
+    } catch {
+      setNotice('Clipboard copy was blocked by the browser');
+    }
+  }, []);
+
+  const exportTerminalAscii = useCallback((tabId?: string | null) => {
+    const id = tabId || activeTabIdRef.current;
+    if (!id) {
+      setNotice('No active terminal');
+      return;
+    }
+    const tab = tabsRef.current.find((t) => t.id === id);
+    if (!tab) {
+      setNotice('Terminal tab not found');
+      return;
+    }
+    if (tab.kind === 'rdp') {
+      setNotice('ASCII export is only available for SSH terminals');
+      return;
+    }
+    const term = sessionHandlesRef.current.get(id)?.term;
+    if (!term) {
+      setNotice('Terminal is not ready yet');
+      return;
+    }
+    const text = getTerminalPlainText(term);
+    if (!text.trim()) {
+      setNotice('Terminal buffer is empty — nothing to export');
+      return;
+    }
+    const stamp = new Date().toISOString().replace(/[:.]/g, '-').slice(0, 19);
+    const filename = `${sanitizeExportFilename(tab.title)}_${stamp}.txt`;
+    try {
+      downloadTextFile(filename, text.endsWith('\n') ? text : `${text}\n`);
+      setNotice(`Exported ${filename}`);
+    } catch {
+      setNotice('Failed to export terminal text');
+    }
+  }, []);
+
+  const pasteIntoActive = useCallback(async () => {
+    const id = activeTabIdRef.current;
+    if (!id) {
+      setNotice('No active terminal');
+      return;
+    }
+    const tab = tabsRef.current.find((t) => t.id === id);
+    if (tab?.kind === 'rdp') {
+      setNotice('Use the RDP gateway UI to paste text');
+      return;
+    }
+    const handle = sessionHandlesRef.current.get(id);
+    const term = handle?.term;
+    const connected =
+      Boolean(term) &&
+      (handle?.useBridge || (handle?.ws && handle.ws.readyState === WebSocket.OPEN));
+    if (!term || !connected) {
+      setNotice('Terminal is not connected');
+      return;
+    }
+    try {
+      const text = await navigator.clipboard.readText();
+      if (!text) {
+        setNotice('Clipboard is empty');
+        return;
+      }
+      term.paste(text);
+      term.focus();
+      setNotice('Pasted from clipboard');
+    } catch {
+      setNotice('Clipboard paste was blocked — allow clipboard access or use Ctrl+V');
+    }
+  }, []);
+
+  const onHostZoomCompensated = useCallback(() => {
+    window.setTimeout(() => {
+      try {
+        fitSessions();
+      } catch {
+        // ignore
+      }
+    }, 40);
+  }, [fitSessions]);
+
+  const connect = useCallback(() => {
+    if (connectMode === 'auto') {
+      const fromDraft = parseAutoTargetUrl(sshUrlDraft.trim());
+      if (fromDraft) {
+        setSshHost(fromDraft.host);
+        setSshPort(String(fromDraft.port));
+        setSshUsername(fromDraft.username);
+        void connectTo({
+          mode: 'auto',
+          host: fromDraft.host,
+          port: fromDraft.port,
+          username: fromDraft.username,
+          wsUrl: buildAutoTargetUrl(fromDraft.username, fromDraft.host, fromDraft.port),
+        });
+        return;
+      }
+    }
+    if (connectMode === 'ws') {
+      const fromWs = parseAutoTargetUrl(wsUrl.trim());
+      if (fromWs) {
+        setConnectMode('auto');
+        setSshHost(fromWs.host);
+        setSshPort(String(fromWs.port));
+        setSshUsername(fromWs.username);
+        void connectTo({
+          mode: 'auto',
+          host: fromWs.host,
+          port: fromWs.port,
+          username: fromWs.username,
+          wsUrl: buildAutoTargetUrl(fromWs.username, fromWs.host, fromWs.port),
+        });
+        return;
+      }
+    }
+    void connectTo();
+  }, [connectMode, connectTo, sshUrlDraft, wsUrl]);
+
+  const sshUrlForConnection = useCallback((c: SavedSshConnection): string | null => {
+    if (normalizeConnectionProtocol(c.protocol) === 'rdp') return null;
+    const a = parseAutoTargetUrl(c.wsUrl);
+    if (!a) return null;
+    return buildSshLinkUrl(a.username, a.host, a.port) || null;
+  }, []);
+
+  const copySshUrlForConnection = useCallback(async (c: SavedSshConnection) => {
+    if (normalizeConnectionProtocol(c.protocol) === 'rdp') {
+      setNotice('RDP connections use https:// gateway URLs, not ssh://');
+      return;
+    }
+    const url = sshUrlForConnection(c);
+    if (!url) {
+      setNotice(
+        `“${c.name}” is Advanced WebSocket-only. Open Settings → Easy (ssh://), fill host/user/port, Save, then use Copy ssh:// link.`
+      );
+      return;
+    }
+    try {
+      await navigator.clipboard.writeText(url);
+      setNotice(`Copied ssh:// for “${c.name}” — paste as a tile link`);
+    } catch {
+      setNotice(`Clipboard blocked. Select and copy: ${url}`);
+    }
+  }, [sshUrlForConnection]);
+
+  const connectRdp = useCallback(
+    (opts?: { url?: string; connectionId?: string; connectionName?: string }) => {
+      if (sessionHandlesRef.current.size >= maxSshTabs) {
+        setNotice(`Maximum of ${maxSshTabs} open sessions. Close a tab first.`);
+        return;
+      }
+
+      const url = String(opts?.url ?? wsUrl).trim();
+      if (!/^https?:\/\//i.test(url)) {
+        setNotice('RDP gateway must be an http:// or https:// page URL');
+        setShowSettings(true);
+        setSettingsPane('connection');
+        return;
+      }
+
+      const nextConnectionId = opts?.connectionId !== undefined ? opts.connectionId : activeConnectionId;
+      const nextName = (opts?.connectionName || '').trim() || 'RDP';
+      const tabId = `tab_${Date.now().toString(36)}_${Math.random().toString(36).slice(2, 7)}`;
+
+      sessionHandlesRef.current.set(tabId, {
+        term: null,
+        fit: null,
+        ws: null,
+        gatewaySessionId: null,
+      });
+      setTabs((prev) => [
+        ...prev,
+        {
+          id: tabId,
+          title: nextName,
+          connectionId: nextConnectionId ?? null,
+          status: 'connecting',
+          statusMessage: 'Loading RDP gateway…',
+          kind: 'rdp',
+          rdpUrl: url,
+          duplicateSource: {
+            kind: 'rdp',
+            connectionId: nextConnectionId ?? null,
+            rdpUrl: url,
+          },
+        },
+      ]);
+      setActiveTabId(tabId);
+      setActiveConnectionId(nextConnectionId ?? null);
+      setWsUrl(url);
+      setShowSettings(false);
+      setNotice(`Connecting RDP “${nextName}”…`);
+      void markLastUsed(nextConnectionId);
+    },
+    [wsUrl, activeConnectionId, markLastUsed, maxSshTabs]
+  );
+
+  const duplicateTab = useCallback(
+    (tabId: string) => {
+      const tab = tabsRef.current.find((t) => t.id === tabId);
+      if (!tab) return;
+      if (sessionHandlesRef.current.size >= maxSshTabs) {
+        setNotice(`Maximum of ${maxSshTabs} open sessions. Close a tab first.`);
+        return;
+      }
+
+      const src = tab.duplicateSource;
+      const isRdp = (tab.kind || src?.kind || 'ssh') === 'rdp';
+
+      if (isRdp) {
+        const url = (src?.rdpUrl || tab.rdpUrl || '').trim();
+        if (!url) {
+          setNotice('Cannot duplicate — this RDP tab has no gateway URL.');
+          return;
+        }
+        connectRdp({
+          url,
+          connectionId: tab.connectionId || undefined,
+          connectionName: tab.title,
+        });
+        setNotice(`Duplicated “${tab.title}”`);
+        return;
+      }
+
+      const conn =
+        tab.connectionId != null
+          ? connectionsRef.current.find((c) => c.id === tab.connectionId)
+          : undefined;
+      if (conn && normalizeConnectionProtocol(conn.protocol) !== 'rdp') {
+        const auto = parseAutoTargetUrl(conn.wsUrl);
+        void connectTo({
+          wsUrl: conn.wsUrl,
+          connectionId: conn.id,
+          connectionName: conn.name,
+          mode: auto ? 'auto' : 'ws',
+          host: auto?.host,
+          port: auto?.port,
+          username: auto?.username,
+          x11: src?.x11 ?? x11Forward,
+        });
+        setNotice(`Duplicated “${tab.title}”`);
+        return;
+      }
+
+      if (src?.kind === 'ssh') {
+        void connectTo({
+          wsUrl: src.wsUrl,
+          connectionId: src.connectionId,
+          connectionName: tab.title,
+          mode: src.mode,
+          host: src.host,
+          port: src.port,
+          username: src.username,
+          x11: src.x11 ?? x11Forward,
+        });
+        setNotice(`Duplicated “${tab.title}”`);
+        return;
+      }
+
+      setNotice('Cannot duplicate this tab — open it again from Connections or Settings.');
+    },
+    [connectRdp, connectTo, maxSshTabs, x11Forward]
+  );
+
+  const selectTab = useCallback(
+    (tabId: string) => {
+      setActiveTabId(tabId);
+      const tab = tabs.find((t) => t.id === tabId);
+      if (tab?.connectionId) setActiveConnectionId(tab.connectionId);
+      requestAnimationFrame(() => {
+        const handle = sessionHandlesRef.current.get(tabId);
+        try {
+          handle?.fit?.fit();
+          sendResize(tabId);
+          handle?.term?.focus();
+        } catch {
+          // ignore
+        }
+      });
+    },
+    [tabs, sendResize]
+  );
+
+  useEffect(() => {
+    return () => {
+      const destroy = destroySessionsOnUnmountRef.current;
+      if (!destroy) {
+        try {
+          const list = tabsRef.current;
+          if (list.length) {
+            const payload: PersistedLiveTab[] = list.map((t) => {
+              const handle = sessionHandlesRef.current.get(t.id);
+              return {
+                id: t.id,
+                title: t.title,
+                connectionId: t.connectionId,
+                status: t.status,
+                statusMessage: t.statusMessage,
+                kind: t.kind || 'ssh',
+                rdpUrl: t.rdpUrl,
+                excludeFromMulti: t.excludeFromMulti,
+                gatewaySessionId: handle?.gatewaySessionId ?? null,
+                wsUrl: t.duplicateSource?.wsUrl || null,
+                duplicateSource: t.duplicateSource,
+              };
+            });
+            savePersistedLiveTabs({
+              tabs: payload,
+              activeTabId: activeTabIdRef.current,
+              savedAt: Date.now(),
+            });
+          }
+        } catch {
+          // ignore
+        }
+      }
+      const ids = Array.from(sessionHandlesRef.current.keys());
+      for (const id of ids) {
+        const handle = sessionHandlesRef.current.get(id);
+        const gw = handle?.gatewaySessionId ?? null;
+        disposeSessionHandle(id, { destroyBridge: destroy });
+        if (destroy) {
+          void stopGatewayFor(gw);
+        }
+      }
+      sessionHandlesRef.current.clear();
+      tabHostsRef.current.clear();
+      if (destroy) {
+        try {
+          sshSessionBridge.closeAll();
+        } catch {
+          // ignore
+        }
+        clearPersistedLiveTabs();
+      } else {
+        try {
+          sshSessionBridge.detachAll();
+        } catch {
+          // ignore
+        }
+      }
+    };
+  }, [disposeSessionHandle, stopGatewayFor]);
+
+  const persistLiveTabsNow = useCallback(() => {
+    if (destroySessionsOnUnmountRef.current) {
+      clearPersistedLiveTabs();
+      return;
+    }
+    // Avoid wiping sessionStorage before the one-shot restore effect runs.
+    if (!restoreDoneRef.current) return;
+    const list = tabsRef.current;
+    if (!list.length) {
+      clearPersistedLiveTabs();
+      return;
+    }
+    const payload: PersistedLiveTab[] = list.map((t) => {
+      const handle = sessionHandlesRef.current.get(t.id);
+      return {
+        id: t.id,
+        title: t.title,
+        connectionId: t.connectionId,
+        status: t.status,
+        statusMessage: t.statusMessage,
+        kind: t.kind || 'ssh',
+        rdpUrl: t.rdpUrl,
+        excludeFromMulti: t.excludeFromMulti,
+        gatewaySessionId: handle?.gatewaySessionId ?? null,
+        wsUrl: t.duplicateSource?.wsUrl || null,
+        duplicateSource: t.duplicateSource,
+      };
+    });
+    savePersistedLiveTabs({
+      tabs: payload,
+      activeTabId: activeTabIdRef.current,
+      savedAt: Date.now(),
+    });
+  }, []);
+
+  useEffect(() => {
+    persistLiveTabsNow();
+  }, [tabs, activeTabId, persistLiveTabsNow]);
+
+  useEffect(() => {
+    const onPageHide = () => persistLiveTabsNow();
+    window.addEventListener('pagehide', onPageHide);
+    return () => window.removeEventListener('pagehide', onPageHide);
+  }, [persistLiveTabsNow]);
+
+  const reattachSshFromBridge = useCallback(
+    async (tab: PersistedLiveTab) => {
+      const tabId = tab.id;
+      const hostEl = await waitForTabHost(tabId);
+      if (!hostEl) return false;
+
+      const appearance = (() => {
+        const cid = tab.connectionId ?? null;
+        if (cid && editingIdRef.current === cid) {
+          return mergeConnectionAppearance(appearanceDraftRef.current);
+        }
+        if (cid) {
+          const saved = connectionsRef.current.find((c) => c.id === cid);
+          return mergeConnectionAppearance(saved?.appearance);
+        }
+        return mergeConnectionAppearance(appearanceDraftRef.current);
+      })();
+
+      const term = new Terminal({
+        cursorBlink: true,
+        fontSize: appearance.fontSize,
+        lineHeight: 1.25,
+        letterSpacing: 0,
+        fontFamily: appearance.fontFamily,
+        rightClickSelectsWord: false,
+        theme: buildXtermTheme({
+          background: appearance.bgColor,
+          foreground: appearance.fgColor,
+          cursor: appearance.cursorColor,
+          selectionBackground: appearance.selectionBg,
+          ansi: appearance.ansi,
+        }),
+      });
+      const fit = new FitAddon();
+      term.loadAddon(fit);
+      term.loadAddon(new WebLinksAddon());
+      hostEl.innerHTML = '';
+      term.open(hostEl);
+
+      const handle =
+        sessionHandlesRef.current.get(tabId) ||
+        ({
+          term: null,
+          fit: null,
+          ws: null,
+          gatewaySessionId: tab.gatewaySessionId ?? null,
+          useBridge: true,
+        } as SessionHandle);
+      handle.term = term;
+      handle.fit = fit;
+      handle.useBridge = true;
+      handle.gatewaySessionId = tab.gatewaySessionId ?? handle.gatewaySessionId ?? null;
+      sessionHandlesRef.current.set(tabId, handle);
+
+      const handleOutputBuffer = (buf: ArrayBuffer) => {
+        const frame = parseTtydFrame(buf);
+        if (!frame) return;
+        const { cmd, payload } = frame;
+        if (cmd === CMD.OUTPUT) {
+          term.write(payload);
+        } else if (cmd === CMD.SET_WINDOW_TITLE) {
+          const title = typeof payload === 'string' ? payload : new TextDecoder().decode(payload);
+          updateTab(tabId, {
+            statusMessage: tab.title ? `${tab.title} · ${title}` : title,
+          });
+        }
+      };
+
+      const unsub = sshSessionBridge.subscribe(tabId, {
+        onMessage: (data) => handleOutputBuffer(data),
+        onReplay: (data) => handleOutputBuffer(data),
+        onStatus: (status, detail) => {
+          if (status === 'open') {
+            updateTab(tabId, {
+              status: 'connected',
+              statusMessage: 'Reattached after refresh — session kept alive',
+            });
+            window.setTimeout(() => {
+              try {
+                fit.fit();
+                sendResize(tabId);
+                term.focus();
+              } catch {
+                // ignore
+              }
+            }, 40);
+            return;
+          }
+          if (status === 'closed' && !detail?.intentional) {
+            void closeTab(tabId);
+          }
+        },
+      });
+      handle.bridgeUnsub = unsub;
+
+      term.onData((data) => {
+        sshSessionBridge.send(tabId, encoderRef.current.encode(CMD.INPUT + data));
+      });
+      term.onResize(() => sendResize(tabId));
+
+      try {
+        const info = await sshSessionBridge.attach(tabId);
+        if (info.gatewaySessionId) handle.gatewaySessionId = info.gatewaySessionId;
+        updateTab(tabId, {
+          status: info.status === 'open' ? 'connected' : 'connecting',
+          statusMessage:
+            info.status === 'open'
+              ? 'Reattached after refresh — session kept alive'
+              : 'Reattaching SSH session…',
+        });
+        if (info.status === 'open') {
+          try {
+            fit.fit();
+            sendResize(tabId);
+            term.focus();
+          } catch {
+            // ignore
+          }
+          sshSessionBridge.ensureKeeperWindow();
+        }
+        return true;
+      } catch {
+        try {
+          unsub();
+          term.dispose();
+        } catch {
+          // ignore
+        }
+        sessionHandlesRef.current.delete(tabId);
+        return false;
+      }
+    },
+    [waitForTabHost, updateTab, sendResize, closeTab]
+  );
+
+  useEffect(() => {
+    if (restoreDoneRef.current) return;
+    let cancelled = false;
+
+    const run = async () => {
+      try {
+        const persisted = loadPersistedLiveTabs();
+        if (!persisted?.tabs?.length) return;
+
+        const bridgeLive = (await sshSessionBridge.ensureReady())
+        ? await sshSessionBridge.list()
+        : [];
+        if (cancelled) return;
+        const liveMap = new Map(bridgeLive.map((s) => [s.id, s]));
+
+        const shellTabs: SessionTab[] = [];
+        const reattachList: PersistedLiveTab[] = [];
+        const reconnectList: PersistedLiveTab[] = [];
+
+        for (const t of persisted.tabs) {
+          const kind = t.kind || t.duplicateSource?.kind || 'ssh';
+          if (kind === 'rdp') {
+            shellTabs.push({
+              id: t.id,
+              title: t.title,
+              connectionId: t.connectionId,
+              status: 'connected',
+              statusMessage: t.statusMessage || 'RDP session',
+              kind: 'rdp',
+              rdpUrl: t.rdpUrl || t.duplicateSource?.rdpUrl,
+              excludeFromMulti: t.excludeFromMulti,
+              duplicateSource: t.duplicateSource as SessionTab['duplicateSource'],
+            });
+            continue;
+          }
+
+          const live = liveMap.get(t.id);
+          if (live && (live.status === 'open' || live.status === 'connecting')) {
+            shellTabs.push({
+              id: t.id,
+              title: t.title,
+              connectionId: t.connectionId,
+              status: 'connecting',
+              statusMessage: 'Reattaching SSH session…',
+              kind: 'ssh',
+              excludeFromMulti: t.excludeFromMulti,
+              duplicateSource: t.duplicateSource as SessionTab['duplicateSource'],
+            });
+            sessionHandlesRef.current.set(t.id, {
+              term: null,
+              fit: null,
+              ws: null,
+              gatewaySessionId: (live.gatewaySessionId as string) || t.gatewaySessionId || null,
+              useBridge: true,
+            });
+            reattachList.push({
+              ...t,
+              gatewaySessionId: (live.gatewaySessionId as string) || t.gatewaySessionId || null,
+              wsUrl: live.wsUrl || t.wsUrl,
+            });
+          } else if (t.duplicateSource || t.connectionId) {
+            reconnectList.push(t);
+          }
+        }
+
+        if (shellTabs.length) {
+          setTabs(shellTabs);
+          const preferred =
+            persisted.activeTabId && shellTabs.some((t) => t.id === persisted.activeTabId)
+              ? persisted.activeTabId
+              : shellTabs[0].id;
+          setActiveTabId(preferred);
+        }
+
+        await new Promise<void>((r) => requestAnimationFrame(() => r()));
+        if (cancelled) return;
+
+        let attached = 0;
+        for (const t of reattachList) {
+          if (cancelled) return;
+          const ok = await reattachSshFromBridge(t);
+          if (ok) attached += 1;
+          else reconnectList.push(t);
+        }
+
+        for (const t of reconnectList) {
+          if (cancelled) return;
+          const src = t.duplicateSource;
+          const kind = t.kind || src?.kind || 'ssh';
+          if (kind === 'rdp') {
+            const url = (src?.rdpUrl || t.rdpUrl || '').trim();
+            if (url) {
+              connectRdp({
+                url,
+                connectionId: src?.connectionId ?? t.connectionId,
+                connectionName: t.title,
+              });
+            }
+            continue;
+          }
+          await connectTo({
+            wsUrl: src?.wsUrl,
+            connectionId: src?.connectionId ?? t.connectionId,
+            connectionName: t.title,
+            host: src?.host,
+            port: src?.port,
+            username: src?.username,
+            mode: (src?.mode as ConnectMode | undefined) || undefined,
+            x11: src?.x11,
+          });
+        }
+
+        if (attached > 0) {
+          setNotice(
+            `Kept ${attached} SSH session${attached === 1 ? '' : 's'} alive across refresh (close the widget to disconnect)`
+          );
+        }
+      } finally {
+        restoreDoneRef.current = true;
+        // Persist whatever we have after restore settles.
+        window.setTimeout(() => persistLiveTabsNow(), 0);
+      }
+    };
+
+    void run();
+    return () => {
+      cancelled = true;
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
+  useEffect(() => {
+    try {
+      localStorage.setItem(PANEL_OPEN_KEY, panelOpen ? 'true' : 'false');
+    } catch {
+      // ignore
+    }
+  }, [panelOpen]);
+
+  useEffect(() => {
+    panelWidthRef.current = panelWidth;
+    try {
+      localStorage.setItem(PANEL_WIDTH_KEY, String(panelWidth));
+    } catch {
+      // ignore
+    }
+  }, [panelWidth]);
+
+  useEffect(() => {
+    cmdBarHeightRef.current = cmdBarHeight;
+    try {
+      localStorage.setItem(CMD_BAR_HEIGHT_KEY, String(cmdBarHeight));
+    } catch {
+      // ignore
+    }
+  }, [cmdBarHeight]);
+
+  useEffect(() => {
+    try {
+      localStorage.setItem(TERM_FONT_SIZE_KEY, String(termFontSize));
+      localStorage.setItem(CMD_FONT_SIZE_KEY, String(cmdFontSize));
+      localStorage.setItem(TAB_BAR_HEIGHT_KEY, String(tabBarHeight));
+      localStorage.setItem(TAB_BAR_FONT_SIZE_KEY, String(tabBarFontSize));
+      localStorage.setItem(SKIP_BAR_HEIGHT_KEY, String(skipBarHeight));
+      localStorage.setItem(SKIP_BAR_FONT_SIZE_KEY, String(skipBarFontSize));
+      const preset = TERM_FONT_PRESETS.find((p) => p.value === termFontFamily);
+      localStorage.setItem(TERM_FONT_FAMILY_KEY, preset?.id || 'system');
+      localStorage.setItem(TERM_BG_COLOR_KEY, termBgColor);
+      localStorage.setItem(TERM_FG_COLOR_KEY, termFgColor);
+      localStorage.setItem(TERM_CURSOR_COLOR_KEY, termCursorColor);
+      localStorage.setItem(TERM_SELECTION_BG_KEY, termSelectionBg);
+      localStorage.setItem(TERM_THEME_PRESET_KEY, themePresetId);
+      localStorage.setItem(TERM_ANSI_KEY, JSON.stringify(termAnsi || {}));
+    } catch {
+      // ignore
+    }
+  }, [
+    termFontSize,
+    termFontFamily,
+    termBgColor,
+    termFgColor,
+    termCursorColor,
+    termSelectionBg,
+    themePresetId,
+    termAnsi,
+    cmdFontSize,
+    tabBarHeight,
+    tabBarFontSize,
+    skipBarHeight,
+    skipBarFontSize,
+  ]);
+
+  useEffect(() => {
+    // Only live-apply to open terminals for the connection currently being edited
+    if (!editingId) return;
+    const appearance = mergeConnectionAppearance(snapshotDraftAppearance());
+    applyAppearanceToConnectionTabs(editingId, appearance);
+    window.setTimeout(() => {
+      try {
+        fitSessions();
+      } catch {
+        // ignore
+      }
+    }, 40);
+  }, [
+    editingId,
+    termFontSize,
+    termFontFamily,
+    termBgColor,
+    termFgColor,
+    termCursorColor,
+    termSelectionBg,
+    termAnsi,
+    fitSessions,
+    snapshotDraftAppearance,
+    applyAppearanceToConnectionTabs,
+  ]);
+
+  useEffect(() => {
+    window.setTimeout(() => {
+      try {
+        fitSessions();
+      } catch {
+        // ignore
+      }
+    }, 40);
+  }, [tabBarHeight, skipBarHeight, fitSessions]);
+
+  const applyThemePreset = useCallback((presetId: string, opts?: { quiet?: boolean }) => {
+    const preset = TERM_THEME_PRESETS.find((p) => p.id === presetId);
+    if (!preset) return;
+    setThemePresetId(preset.id);
+    setTermBgColor(preset.background);
+    setTermFgColor(preset.foreground);
+    setTermCursorColor(preset.cursor);
+    setTermSelectionBg(preset.selectionBackground);
+    setTermAnsi(ansiFromPreset(preset));
+    if (!opts?.quiet) {
+      setNotice(
+        editingIdRef.current
+          ? `Applied “${preset.label}” to this connection’s open terminals`
+          : `Theme “${preset.label}” set for this connection (save to keep)`
+      );
+    }
+  }, []);
+
+  const resetAllAppearance = useCallback(() => {
+    const linknest = TERM_THEME_PRESETS.find((p) => p.id === 'linknest');
+    setTermFontFamily(DEFAULT_TERM_FONT_FAMILY);
+    setTermFontSize(14);
+    setCmdFontSize(14);
+    setTabBarHeight(TAB_BAR_HEIGHT_DEFAULT);
+    setTabBarFontSize(TAB_BAR_FONT_DEFAULT);
+    setSkipBarHeight(SKIP_BAR_HEIGHT_DEFAULT);
+    setSkipBarFontSize(SKIP_BAR_FONT_DEFAULT);
+    setCmdBarHeight(CMD_BAR_DEFAULT_HEIGHT);
+    cmdBarHeightRef.current = CMD_BAR_DEFAULT_HEIGHT;
+    setThemePresetId('linknest');
+    setTermBgColor(linknest?.background || DEFAULT_TERM_BG_COLOR);
+    setTermFgColor(linknest?.foreground || DEFAULT_TERM_FG_COLOR);
+    setTermCursorColor(linknest?.cursor || DEFAULT_TERM_CURSOR_COLOR);
+    setTermSelectionBg(linknest?.selectionBackground || DEFAULT_TERM_SELECTION_BG);
+    setTermAnsi(ansiFromPreset(linknest));
+    try {
+      localStorage.setItem(TERM_FONT_SIZE_KEY, '14');
+      localStorage.setItem(CMD_FONT_SIZE_KEY, '14');
+      localStorage.setItem(TAB_BAR_HEIGHT_KEY, String(TAB_BAR_HEIGHT_DEFAULT));
+      localStorage.setItem(TAB_BAR_FONT_SIZE_KEY, String(TAB_BAR_FONT_DEFAULT));
+      localStorage.setItem(SKIP_BAR_HEIGHT_KEY, String(SKIP_BAR_HEIGHT_DEFAULT));
+      localStorage.setItem(SKIP_BAR_FONT_SIZE_KEY, String(SKIP_BAR_FONT_DEFAULT));
+      localStorage.setItem(TERM_FONT_FAMILY_KEY, 'system');
+      localStorage.setItem(CMD_BAR_HEIGHT_KEY, String(CMD_BAR_DEFAULT_HEIGHT));
+      localStorage.setItem(TERM_THEME_PRESET_KEY, 'linknest');
+      localStorage.setItem(TERM_BG_COLOR_KEY, linknest?.background || DEFAULT_TERM_BG_COLOR);
+      localStorage.setItem(TERM_FG_COLOR_KEY, linknest?.foreground || DEFAULT_TERM_FG_COLOR);
+      localStorage.setItem(TERM_CURSOR_COLOR_KEY, linknest?.cursor || DEFAULT_TERM_CURSOR_COLOR);
+      localStorage.setItem(TERM_SELECTION_BG_KEY, linknest?.selectionBackground || DEFAULT_TERM_SELECTION_BG);
+      localStorage.setItem(TERM_ANSI_KEY, JSON.stringify(ansiFromPreset(linknest)));
+    } catch {
+      // ignore
+    }
+    setNotice('Appearance reset to original defaults');
+  }, []);
+
+  const markThemeCustom = useCallback(() => {
+    setThemePresetId('custom');
+  }, []);
+
+  const clearAllTerminals = useCallback(() => {
+    broadcastToAll('clear');
+  }, [broadcastToAll]);
+
+  useEffect(() => {
+    return () => {
+      panelResizeCleanupRef.current?.();
+      panelResizeCleanupRef.current = null;
+      cmdBarResizeCleanupRef.current?.();
+      cmdBarResizeCleanupRef.current = null;
+      paneResizeCleanupRef.current?.();
+      paneResizeCleanupRef.current = null;
+    };
+  }, []);
+
+  useEffect(() => {
+    const onWinResize = () => {
+      try {
+        if (multiView) {
+          fitSessions();
+        } else {
+          const id = activeTabIdRef.current;
+          if (!id) return;
+          sessionHandlesRef.current.get(id)?.fit?.fit();
+          sendResize(id);
+        }
+      } catch {
+        // ignore
+      }
+    };
+    window.addEventListener('resize', onWinResize);
+    return () => window.removeEventListener('resize', onWinResize);
+  }, [sendResize, multiView, fitSessions]);
+
+  // Refit when panel toggles / settings / tab switch / tile mode changes layout
+  useEffect(() => {
+    const t = window.setTimeout(() => {
+      try {
+        if (multiView) {
+          fitSessions();
+        } else {
+          const id = activeTabId;
+          if (!id) return;
+          sessionHandlesRef.current.get(id)?.fit?.fit();
+          sendResize(id);
+          sessionHandlesRef.current.get(id)?.term?.focus();
+        }
+      } catch {
+        // ignore
+      }
+    }, 60);
+    return () => window.clearTimeout(t);
+  }, [
+    panelOpen,
+    panelWidth,
+    showSettings,
+    activeTabId,
+    isFullscreen,
+    multiView,
+    viewMode,
+    cmdBarHeight,
+    paneShares,
+    gridColShares,
+    gridRowShares,
+    sendResize,
+    fitSessions,
+  ]);
+
+  useEffect(() => {
+    try {
+      localStorage.setItem(VIEW_MODE_KEY, viewMode);
+    } catch {
+      // ignore
+    }
+  }, [viewMode]);
+
+  useEffect(() => {
+    if (!viewMenuOpen) return;
+    const onDown = (ev: MouseEvent) => {
+      const el = viewMenuRef.current;
+      if (!el) return;
+      if (ev.target instanceof Node && !el.contains(ev.target)) {
+        setViewMenuOpen(false);
+      }
+    };
+    const onKey = (ev: KeyboardEvent) => {
+      if (ev.key === 'Escape') setViewMenuOpen(false);
+    };
+    window.addEventListener('mousedown', onDown);
+    window.addEventListener('keydown', onKey);
+    return () => {
+      window.removeEventListener('mousedown', onDown);
+      window.removeEventListener('keydown', onKey);
+    };
+  }, [viewMenuOpen]);
+
+  const startPanelResize = (e: React.PointerEvent) => {
+    e.preventDefault();
+    e.stopPropagation();
+    panelResizeCleanupRef.current?.();
+    panelResizeCleanupRef.current = null;
+    setIsResizingPanel(true);
+
+    const startX = e.clientX;
+    const startWidth = panelWidthRef.current;
+
+    const onMove = (ev: PointerEvent) => {
+      const dx = ev.clientX - startX;
+      const next = Math.min(PANEL_MAX_WIDTH, Math.max(PANEL_MIN_WIDTH, startWidth + dx));
+      panelWidthRef.current = next;
+      setPanelWidth(next);
+    };
+
+    const onUp = () => {
+      panelResizeCleanupRef.current?.();
+      panelResizeCleanupRef.current = null;
+      setIsResizingPanel(false);
+      try {
+        localStorage.setItem(PANEL_WIDTH_KEY, String(panelWidthRef.current));
+      } catch {
+        // ignore
+      }
+    };
+
+    window.addEventListener('pointermove', onMove);
+    window.addEventListener('pointerup', onUp, { once: true });
+    window.addEventListener('pointercancel', onUp, { once: true });
+    panelResizeCleanupRef.current = () => {
+      window.removeEventListener('pointermove', onMove);
+    };
+  };
+
+  const startCmdBarResize = (e: React.PointerEvent) => {
+    e.preventDefault();
+    e.stopPropagation();
+    cmdBarResizeCleanupRef.current?.();
+    cmdBarResizeCleanupRef.current = null;
+    setIsResizingCmdBar(true);
+
+    const startY = e.clientY;
+    const startHeight = cmdBarHeightRef.current;
+
+    const onMove = (ev: PointerEvent) => {
+      // Drag up → taller bar
+      const dy = startY - ev.clientY;
+      const next = Math.min(CMD_BAR_MAX_HEIGHT, Math.max(CMD_BAR_MIN_HEIGHT, startHeight + dy));
+      cmdBarHeightRef.current = next;
+      setCmdBarHeight(next);
+    };
+
+    const onUp = () => {
+      cmdBarResizeCleanupRef.current?.();
+      cmdBarResizeCleanupRef.current = null;
+      setIsResizingCmdBar(false);
+      try {
+        localStorage.setItem(CMD_BAR_HEIGHT_KEY, String(cmdBarHeightRef.current));
+      } catch {
+        // ignore
+      }
+      window.setTimeout(() => {
+        try {
+          fitSessions();
+        } catch {
+          // ignore
+        }
+      }, 40);
+    };
+
+    window.addEventListener('pointermove', onMove);
+    window.addEventListener('pointerup', onUp, { once: true });
+    window.addEventListener('pointercancel', onUp, { once: true });
+    cmdBarResizeCleanupRef.current = () => {
+      window.removeEventListener('pointermove', onMove);
+    };
+  };
+
+  const startStackPaneResize = (e: React.PointerEvent, leftIndex: number, axis: 'x' | 'y') => {
+    e.preventDefault();
+    e.stopPropagation();
+    paneResizeCleanupRef.current?.();
+    paneResizeCleanupRef.current = null;
+    setIsResizingPanes(true);
+
+    const startCoord = axis === 'x' ? e.clientX : e.clientY;
+    const startShares = paneSharesRef.current.slice();
+    const pairSum = (startShares[leftIndex] || 1) + (startShares[leftIndex + 1] || 1);
+
+    const onMove = (ev: PointerEvent) => {
+      const el = tileLayoutRef.current;
+      if (!el) return;
+      const size = axis === 'x' ? el.clientWidth : el.clientHeight;
+      if (size <= 0) return;
+      const deltaPx = (axis === 'x' ? ev.clientX : ev.clientY) - startCoord;
+      const deltaShare = (deltaPx / size) * pairSum;
+      const next = redistributeAdjacentShares(startShares, leftIndex, deltaShare);
+      paneSharesRef.current = next;
+      setPaneShares(next);
+    };
+
+    const onUp = () => {
+      paneResizeCleanupRef.current?.();
+      paneResizeCleanupRef.current = null;
+      setIsResizingPanes(false);
+      persistShareArray(PANE_SHARES_KEY, paneSharesRef.current);
+      window.setTimeout(() => {
+        try {
+          fitSessions();
+        } catch {
+          // ignore
+        }
+      }, 40);
+    };
+
+    window.addEventListener('pointermove', onMove);
+    window.addEventListener('pointerup', onUp, { once: true });
+    window.addEventListener('pointercancel', onUp, { once: true });
+    paneResizeCleanupRef.current = () => {
+      window.removeEventListener('pointermove', onMove);
+    };
+  };
+
+  const startGridTrackResize = (
+    e: React.PointerEvent,
+    track: 'col' | 'row',
+    leftIndex: number
+  ) => {
+    e.preventDefault();
+    e.stopPropagation();
+    paneResizeCleanupRef.current?.();
+    paneResizeCleanupRef.current = null;
+    setIsResizingPanes(true);
+
+    const startCoord = track === 'col' ? e.clientX : e.clientY;
+    const startShares =
+      track === 'col' ? gridColSharesRef.current.slice() : gridRowSharesRef.current.slice();
+    const pairSum = (startShares[leftIndex] || 1) + (startShares[leftIndex + 1] || 1);
+
+    const onMove = (ev: PointerEvent) => {
+      const el = tileLayoutRef.current;
+      if (!el) return;
+      const size = track === 'col' ? el.clientWidth : el.clientHeight;
+      if (size <= 0) return;
+      const deltaPx = (track === 'col' ? ev.clientX : ev.clientY) - startCoord;
+      const deltaShare = (deltaPx / size) * pairSum;
+      const next = redistributeAdjacentShares(startShares, leftIndex, deltaShare);
+      if (track === 'col') {
+        gridColSharesRef.current = next;
+        setGridColShares(next);
+      } else {
+        gridRowSharesRef.current = next;
+        setGridRowShares(next);
+      }
+    };
+
+    const onUp = () => {
+      paneResizeCleanupRef.current?.();
+      paneResizeCleanupRef.current = null;
+      setIsResizingPanes(false);
+      persistShareArray(GRID_COL_SHARES_KEY, gridColSharesRef.current);
+      persistShareArray(GRID_ROW_SHARES_KEY, gridRowSharesRef.current);
+      window.setTimeout(() => {
+        try {
+          fitSessions();
+        } catch {
+          // ignore
+        }
+      }, 40);
+    };
+
+    window.addEventListener('pointermove', onMove);
+    window.addEventListener('pointerup', onUp, { once: true });
+    window.addEventListener('pointercancel', onUp, { once: true });
+    paneResizeCleanupRef.current = () => {
+      window.removeEventListener('pointermove', onMove);
+    };
+  };
+
+  const onPaneTitleBarPointerDown = (e: React.PointerEvent) => {
+    const target = e.target;
+    if (!(target instanceof Element)) return;
+    if (target.closest('button, input, label, a, select, textarea')) return;
+    floatWindowDrag?.startDrag(e);
+  };
+
+  useEffect(() => {
+    const handleEscape = (e: KeyboardEvent) => {
+      if (e.key !== 'Escape' && e.key !== 'Esc') return;
+      if (e.ctrlKey || e.shiftKey || e.metaKey || e.altKey) return;
+      if (isEscapeDialogOpen()) return;
+      if (document.fullscreenElement) {
+        // Let the browser exit fullscreen; don't also close the widget
+        return;
+      }
+      e.preventDefault();
+      e.stopPropagation();
+      void requestClose();
+    };
+    window.addEventListener('keydown', handleEscape, true);
+    return () => window.removeEventListener('keydown', handleEscape, true);
+  }, [requestClose]);
+
+  const applyConnection = useCallback(
+    (c: SavedSshConnection, autoConnect: boolean) => {
+      setActiveConnectionId(c.id);
+      setDraftName(c.name);
+      setDraftTags(c.tags.join(', '));
+      setDraftNotes(c.notes || '');
+      setDraftCategory(normalizeSshCategory(c.category));
+      setDraftColor(normalizeSshColor(c.color));
+      setEditingId(c.id);
+      const protocol = normalizeConnectionProtocol(c.protocol);
+      setDraftProtocol(protocol);
+      loadAppearanceIntoForm(c.appearance);
+
+      if (protocol === 'rdp') {
+        setWsUrl(c.wsUrl);
+        setShowSettings(!autoConnect);
+        if (!autoConnect) setSettingsPane('connection');
+        setNotice(autoConnect ? `Connecting to “${c.name}”…` : `Loaded “${c.name}”`);
+        if (autoConnect) {
+          connectRdp({
+            url: c.wsUrl,
+            connectionId: c.id,
+            connectionName: c.name,
+          });
+        }
+        return;
+      }
+
+      const auto = parseAutoTargetUrl(c.wsUrl);
+      if (auto) {
+        setConnectMode('auto');
+        setSshHost(auto.host);
+        setSshPort(String(auto.port));
+        setSshUsername(auto.username);
+        setWsUrl(c.wsUrl);
+      } else {
+        setConnectMode('ws');
+        setWsUrl(c.wsUrl);
+      }
+      setShowSettings(!autoConnect);
+      if (!autoConnect) setSettingsPane('connection');
+      setNotice(autoConnect ? `Connecting to “${c.name}”…` : `Loaded “${c.name}”`);
+      if (autoConnect) {
+        void connectTo({
+          wsUrl: c.wsUrl,
+          connectionId: c.id,
+          connectionName: c.name,
+          mode: auto ? 'auto' : 'ws',
+          host: auto?.host,
+          port: auto?.port,
+          username: auto?.username,
+          termType: normalizeSshTermType(c.appearance?.termType),
+        });
+      }
+    },
+    [connectTo, connectRdp, loadAppearanceIntoForm]
+  );
+
+  const connectMany = useCallback(
+    (list: SavedSshConnection[]) => {
+      if (!list.length) {
+        setNotice('No connections selected');
+        return;
+      }
+      const openCount = sessionHandlesRef.current.size;
+      const slots = Math.max(0, maxSshTabs - openCount);
+      if (slots <= 0) {
+        setNotice(`Maximum of ${maxSshTabs} open sessions. Close a tab first.`);
+        return;
+      }
+      const toRun = list.slice(0, slots);
+      const skipped = list.length - toRun.length;
+      toRun.forEach((c, index) => {
+        const protocol = normalizeConnectionProtocol(c.protocol);
+        if (protocol === 'rdp') {
+          connectRdp({
+            url: c.wsUrl,
+            connectionId: c.id,
+            connectionName: c.name,
+          });
+          return;
+        }
+        const auto = parseAutoTargetUrl(c.wsUrl);
+        void connectTo({
+          wsUrl: c.wsUrl,
+          connectionId: c.id,
+          connectionName: c.name,
+          mode: auto ? 'auto' : 'ws',
+          host: auto?.host,
+          port: auto?.port,
+          username: auto?.username,
+          termType: normalizeSshTermType(c.appearance?.termType),
+        });
+        if (index === toRun.length - 1) {
+          setActiveConnectionId(c.id);
+        }
+      });
+      setNotice(
+        skipped > 0
+          ? `Opened ${toRun.length} session${toRun.length === 1 ? '' : 's'}; skipped ${skipped} (tab limit ${maxSshTabs})`
+          : `Opening ${toRun.length} session${toRun.length === 1 ? '' : 's'}…`
+      );
+    },
+    [connectTo, connectRdp, maxSshTabs]
+  );
+
+  const renameCategory = useCallback(
+    async (fromRaw: string, toRaw: string) => {
+      const from = normalizeSshCategory(fromRaw);
+      const to = normalizeSshCategory(toRaw);
+      if (!from || !to || from === to) return;
+      if (connections.some((c) => normalizeSshCategory(c.category) === to)) {
+        // Allow merge into existing category name
+      }
+      const next = connections.map((c) =>
+        normalizeSshCategory(c.category) === from ? { ...c, category: to } : c
+      );
+      setConnections(next);
+      setCategoryOrder((prev) => {
+        const without = prev.filter((c) => normalizeSshCategory(c) !== from && normalizeSshCategory(c) !== to);
+        const insertAt = Math.max(
+          0,
+          prev.findIndex((c) => normalizeSshCategory(c) === from)
+        );
+        const merged = [...without];
+        merged.splice(insertAt === -1 ? merged.length : insertAt, 0, to);
+        return mergeCategoryOrder(merged, next);
+      });
+      setCollapsedCategories((prev) => {
+        const out = { ...prev };
+        if (Object.prototype.hasOwnProperty.call(out, from)) {
+          out[to] = out[from];
+          delete out[from];
+        }
+        return out;
+      });
+      setCategoryMeta((prev) => {
+        const out = { ...prev };
+        if (out[from]) {
+          out[to] = out[from];
+          delete out[from];
+        } else if (!out[to]) {
+          out[to] = { color: categoryAccentColor(from, prev) };
+        }
+        return out;
+      });
+      if (normalizeSshCategory(draftCategory) === from) setDraftCategory(to);
+      try {
+        await persistConnectionOrder(next);
+        setNotice(`Renamed category to “${to}”`);
+      } catch (err) {
+        setNotice(err instanceof Error ? err.message : 'Failed to rename category');
+      }
+    },
+    [connections, draftCategory, persistConnectionOrder]
+  );
+
+  const createPrivateSpaceFromCategories = useCallback(
+    async (categoryKeys: string[], layout: 'sections' | 'tabs') => {
+      if (!isAuthenticated || user?.id == null) {
+        setNotice('Sign in to create a private space from categories');
+        return;
+      }
+      const userId = user.id;
+      const cats = categoryKeys.map((c) => categoryKey(c));
+      if (cats.length === 0) {
+        setNotice('Select at least one category');
+        return;
+      }
+
+      const makeId = (prefix: string) =>
+        `${prefix}_${Date.now().toString(36)}_${Math.random().toString(36).slice(2, 8)}`;
+
+      const linksForCategory = (cat: string): Link[] => {
+        const items = connections
+          .filter((c) => categoryKey(c.category) === cat)
+          .slice()
+          .sort((a, b) => normalizeSshSortOrder(a.sortOrder) - normalizeSshSortOrder(b.sortOrder));
+        const links: Link[] = [];
+        for (const c of items) {
+          const protocol = normalizeConnectionProtocol(c.protocol);
+          let url: string | null = null;
+          let icon = '🖥️';
+          if (protocol === 'rdp') {
+            url = (c.wsUrl || '').trim() || null;
+            icon = '🪟';
+          } else {
+            url = sshUrlForConnection(c);
+            icon = '⌨️';
+          }
+          if (!url) continue;
+          links.push({
+            id: makeId('link'),
+            label: c.name,
+            url,
+            icon,
+            visibility: 'private',
+            allowedUsers: [userId],
+            notes: c.notes || undefined,
+            position: links.length,
+          });
+        }
+        return links;
+      };
+
+      const buckets = cats
+        .map((cat) => ({ cat, label: categoryLabel(cat), links: linksForCategory(cat) }))
+        .filter((b) => b.links.length > 0);
+
+      if (buckets.length === 0) {
+        setNotice('No pasteable SSH/RDP links in the selected categories (Easy ssh:// or RDP URL required)');
+        return;
+      }
+
+      const defaultTitle =
+        buckets.length === 1
+          ? `SSH · ${buckets[0].label}`
+          : `SSH · ${buckets.map((b) => b.label).join(', ')}`;
+      const prompted = window.prompt('Private space title', defaultTitle);
+      if (prompted == null) return;
+      const title = prompted.trim() || defaultTitle;
+
+      let tabs: Tab[];
+      if (layout === 'tabs') {
+        tabs = buckets.map((b, tabIndex) => ({
+          id: makeId('tab'),
+          title: b.label,
+          position: tabIndex,
+          visibility: 'private' as const,
+          allowedUsers: [userId],
+          sections: [
+            {
+              id: makeId('sec'),
+              title: 'Connections',
+              position: 0,
+              visibility: 'private' as const,
+              allowedUsers: [userId],
+              links: b.links,
+            },
+          ],
+        }));
+      } else {
+        tabs = [
+          {
+            id: makeId('tab'),
+            title: buckets.length === 1 ? buckets[0].label : 'SSH',
+            position: 0,
+            visibility: 'private' as const,
+            allowedUsers: [userId],
+            sections: buckets.map((b, secIndex) => ({
+              id: makeId('sec'),
+              title: buckets.length === 1 ? 'Connections' : b.label,
+              position: secIndex,
+              visibility: 'private' as const,
+              allowedUsers: [userId],
+              links: b.links,
+            })),
+          },
+        ];
+      }
+
+      const tile: Tile = {
+        id: makeId('tile'),
+        title,
+        description: `Private SSH links from ${buckets.map((b) => b.label).join(', ')}`,
+        emoji: '🖥️',
+        themeColor: 'sky',
+        tabs,
+        createdAt: Date.now(),
+        visibility: 'private',
+        published: true,
+        allowedUsers: [userId],
+        group: 'SSH',
+      };
+
+      setCreatingPrivateSpace(true);
+      try {
+        await createTile(tile);
+        window.dispatchEvent(new CustomEvent('linknest-tiles-refresh'));
+        setNotice(
+          `Created private space “${title}” with ${buckets.reduce((n, b) => n + b.links.length, 0)} link(s) — open the Private tab`
+        );
+      } catch (err) {
+        setNotice(err instanceof Error ? err.message : 'Failed to create private space');
+      } finally {
+        setCreatingPrivateSpace(false);
+      }
+    },
+    [connections, isAuthenticated, sshUrlForConnection, user?.id]
+  );
+
+  // Handle open from ssh:// space links (App → pendingOpen)
+  useEffect(() => {
+    if (!pendingOpen?.requestId || !pendingOpen.host) return;
+    if (!storageReady) return;
+
+    const req = pendingOpen;
+    onPendingOpenConsumed?.();
+
+    const port = req.port && req.port > 0 ? req.port : 22;
+    const username = (req.username || '').trim();
+    const name =
+      (req.connectionName || '').trim() ||
+      (username ? `${username}@${req.host}${port !== 22 ? `:${port}` : ''}` : req.host);
+
+    setConnectMode('auto');
+    setSshHost(req.host);
+    setSshPort(String(port));
+    if (username) setSshUsername(username);
+    setDraftName(name);
+    setDraftProtocol('ssh');
+    setEditingId(null);
+
+    const match = connections.find((c) => {
+      const a = parseAutoTargetUrl(c.wsUrl);
+      if (!a) return false;
+      if (a.host.toLowerCase() !== req.host.toLowerCase()) return false;
+      if (a.port !== port) return false;
+      if (username && a.username !== username) return false;
+      return true;
+    });
+
+    const shouldConnect = req.autoConnect !== false && Boolean(username || match);
+    if (match) {
+      applyConnection(match, shouldConnect);
+      return;
+    }
+
+    setActiveConnectionId(null);
+    if (shouldConnect && username) {
+      setShowSettings(false);
+      setNotice(`Connecting to ${name}…`);
+      void connectTo({
+        mode: 'auto',
+        host: req.host,
+        port,
+        username,
+        connectionName: name,
+      });
+    } else {
+      setShowSettings(true);
+      setSettingsPane('connection');
+      setNotice(
+        username
+          ? `Ready: ${name} — click Connect`
+          : `Host ${req.host} loaded — enter username and Connect`
+      );
+    }
+  }, [
+    pendingOpen?.requestId,
+    storageReady,
+    connections,
+    applyConnection,
+    connectTo,
+    onPendingOpenConsumed,
+    pendingOpen,
+  ]);
+
+  const saveCurrentConnection = async () => {
+    let url = '';
+    let name = draftName.trim();
+
+    if (draftProtocol === 'rdp') {
+      url = wsUrl.trim();
+      if (!/^https?:\/\//i.test(url)) {
+        setNotice('RDP gateway URL must start with https:// or http://');
+        return;
+      }
+      if (!name) {
+        try {
+          name = new URL(url).hostname || 'RDP gateway';
+        } catch {
+          name = 'RDP gateway';
+        }
+      }
+    } else if (connectMode === 'auto') {
+      const host = sshHost.trim();
+      const username = sshUsername.trim();
+      const port = Number.parseInt(sshPort, 10) || 22;
+      if (!host || !username) {
+        const fromUrl = parseAutoTargetUrl(sshUrlDraft.trim());
+        if (fromUrl) {
+          url = buildAutoTargetUrl(fromUrl.username, fromUrl.host, fromUrl.port);
+          if (!name) name = `${fromUrl.username}@${fromUrl.host}:${fromUrl.port}`;
+        } else {
+          setNotice('Enter host and username (or paste an ssh:// URL) before saving.');
+          return;
+        }
+      } else {
+        url = buildAutoTargetUrl(username, host, port);
+        if (!name) name = `${username}@${host}:${port}`;
+      }
+    } else {
+      const raw = wsUrl.trim();
+      const fromSsh = parseAutoTargetUrl(raw);
+      if (fromSsh) {
+        url = buildAutoTargetUrl(fromSsh.username, fromSsh.host, fromSsh.port);
+        if (!name) name = `${fromSsh.username}@${fromSsh.host}:${fromSsh.port}`;
+      } else {
+        url = normalizeWsUrl(raw);
+        if (!url || /^auto:\/\//i.test(url) || /^ssh:\/\//i.test(url)) {
+          setNotice('Enter a WebSocket URL before saving.');
+          return;
+        }
+        if (!name) name = url.replace(/^wss?:\/\//i, '').split('/')[0] || 'SSH host';
+      }
+    }
+    const tags = parseTags(draftTags);
+    const notes = draftNotes.trim() || undefined;
+    const category = normalizeSshCategory(draftCategory);
+    const color = normalizeSshColor(draftColor);
+    const protocol = draftProtocol;
+    const appearance = snapshotDraftAppearance();
+    const nextSortOrder = (() => {
+      if (editingId) {
+        const existing = connections.find((c) => c.id === editingId);
+        if (existing && normalizeSshCategory(existing.category) === category) {
+          return normalizeSshSortOrder(existing.sortOrder);
+        }
+      }
+      const siblings = connections.filter((c) => normalizeSshCategory(c.category) === category);
+      const max = siblings.reduce((m, c) => Math.max(m, normalizeSshSortOrder(c.sortOrder)), -1);
+      return max + 1;
+    })();
+
+    setSaving(true);
+    try {
+      if (useServer) {
+        if (editingId) {
+          const updated = await sshConnectionService.update(editingId, {
+            name,
+            wsUrl: url,
+            tags,
+            notes: notes || '',
+            color,
+            protocol,
+            appearance,
+            category,
+            sortOrder: nextSortOrder,
+          });
+          setConnections((prev) => prev.map((c) => (c.id === editingId ? updated : c)));
+          setActiveConnectionId(editingId);
+          setNotice(`Updated “${name}”`);
+        } else {
+          const created = await sshConnectionService.create({
+            name,
+            wsUrl: url,
+            tags,
+            notes,
+            color,
+            protocol,
+            appearance,
+            category,
+            sortOrder: nextSortOrder,
+          });
+          setConnections((prev) => [created, ...prev]);
+          setActiveConnectionId(created.id);
+          setEditingId(created.id);
+          setNotice(`Saved “${name}”`);
+        }
+      } else if (editingId) {
+        updateConnectionsLocal(
+          connections.map((c) =>
+            c.id === editingId
+              ? {
+                  ...c,
+                  name,
+                  wsUrl: url,
+                  protocol,
+                  tags,
+                  notes,
+                  color,
+                  appearance,
+                  category,
+                  sortOrder: nextSortOrder,
+                }
+              : c
+          )
+        );
+        setActiveConnectionId(editingId);
+        setNotice(`Updated “${name}”`);
+      } else {
+        const created: SavedSshConnection = {
+          id: newId(),
+          name,
+          wsUrl: url,
+          protocol,
+          tags,
+          notes,
+          color,
+          appearance,
+          category,
+          sortOrder: nextSortOrder,
+          createdAt: Date.now(),
+        };
+        updateConnectionsLocal([created, ...connections]);
+        setActiveConnectionId(created.id);
+        setEditingId(created.id);
+        setNotice(`Saved “${name}”`);
+      }
+      if (category) {
+        setCategoryOrder((prev) => mergeCategoryOrder(prev, [{ category } as SavedSshConnection]));
+        setCategoryMeta((prev) =>
+          prev[category] ? prev : { ...prev, [category]: { color: categoryAccentColor(category, prev) } }
+        );
+      }
+      setWsUrl(url);
+    } catch (err) {
+      setNotice(err instanceof Error ? err.message : 'Failed to save connection');
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  const startNewDraft = () => {
+    setEditingId(null);
+    setActiveConnectionId(null);
+    setDraftName('');
+    setDraftTags('');
+    setDraftNotes('');
+    setDraftCategory('');
+    setDraftProtocol('ssh');
+    setDraftColor(SSH_CONNECTION_COLORS[Math.floor(Math.random() * SSH_CONNECTION_COLORS.length)]);
+    loadAppearanceIntoForm(defaultConnectionAppearance());
+    setShowSettings(true);
+    setSettingsPane('connection');
+    setNotice('New connection — fill URL, name, tags, then Save.');
+  };
+
+  const exportConnectionsJson = () => {
+    const metaOut: SshCategoryMetaMap = { ...categoryMeta };
+    // Ensure every ordered / used category has a color entry for round-trip fidelity.
+    for (const cat of mergeCategoryOrder(categoryOrder, connections)) {
+      if (!metaOut[cat]) {
+        metaOut[cat] = { color: categoryAccentColor(cat, categoryMeta) };
+      }
+    }
+    if (connections.some((c) => !normalizeSshCategory(c.category)) && !metaOut['']) {
+      metaOut[''] = { color: categoryAccentColor('', categoryMeta) };
+    }
+
+    const collapsedOut: Record<string, boolean> = {};
+    for (const [k, v] of Object.entries(collapsedCategories)) {
+      collapsedOut[k || '__uncategorized__'] = Boolean(v);
+    }
+
+    const payload = {
+      version: 2,
+      type: 'linknest-ssh-connections',
+      exportedAt: new Date().toISOString(),
+      categoryOrder: mergeCategoryOrder(categoryOrder, connections),
+      categoryMeta: metaOut,
+      collapsedCategories: collapsedOut,
+      recycledCategories,
+      connections: connections.map(
+        ({
+          id,
+          name,
+          wsUrl: u,
+          protocol,
+          tags,
+          notes,
+          color,
+          appearance,
+          category,
+          sortOrder,
+          createdAt,
+          lastUsedAt,
+          archivedAt,
+          deletedAt,
+        }) => ({
+          id,
+          name,
+          wsUrl: u,
+          protocol: normalizeConnectionProtocol(protocol),
+          tags,
+          notes,
+          color: normalizeSshColor(color),
+          appearance: normalizeSshAppearance(appearance) || undefined,
+          category: normalizeSshCategory(category),
+          sortOrder: normalizeSshSortOrder(sortOrder),
+          createdAt,
+          lastUsedAt,
+          archivedAt: archivedAt && archivedAt > 0 ? archivedAt : null,
+          deletedAt: deletedAt && deletedAt > 0 ? deletedAt : null,
+        })
+      ),
+    };
+    const blob = new Blob([JSON.stringify(payload, null, 2)], { type: 'application/json' });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = `linknest-ssh-connections-${new Date().toISOString().slice(0, 10)}.json`;
+    document.body.appendChild(a);
+    a.click();
+    a.remove();
+    URL.revokeObjectURL(url);
+    const catCount = payload.categoryOrder.length;
+    setNotice(
+      `Exported ${connections.length} connection${connections.length === 1 ? '' : 's'}` +
+        (catCount ? ` and ${catCount} categor${catCount === 1 ? 'y' : 'ies'}` : '')
+    );
+  };
+
+  const applyImportedCategoryPrefs = (
+    parsed: Record<string, unknown> | null,
+    importedConnections: SavedSshConnection[]
+  ) => {
+    if (!parsed || Array.isArray(parsed)) {
+      setCategoryOrder((prev) => mergeCategoryOrder(prev, importedConnections));
+      return;
+    }
+
+    const importedOrder = normalizeImportedCategoryOrder(parsed.categoryOrder);
+    setCategoryOrder((prev) => mergeCategoryOrder([...importedOrder, ...prev], importedConnections));
+
+    const importedMeta = normalizeImportedCategoryMeta(parsed.categoryMeta);
+    if (Object.keys(importedMeta).length > 0) {
+      setCategoryMeta((prev) => ({ ...prev, ...importedMeta }));
+    } else {
+      setCategoryMeta((prev) => {
+        const next = { ...prev };
+        for (const cat of mergeCategoryOrder([], importedConnections)) {
+          if (!next[cat]) next[cat] = { color: categoryAccentColor(cat, prev) };
+        }
+        return next;
+      });
+    }
+
+    const importedCollapsed = normalizeImportedCollapsedCategories(parsed.collapsedCategories);
+    if (Object.keys(importedCollapsed).length > 0) {
+      setCollapsedCategories((prev) => ({ ...prev, ...importedCollapsed }));
+    }
+  };
+
+  const importConnectionsJson = async (file: File) => {
+    try {
+      const text = await file.text();
+      const parsed = JSON.parse(text);
+      const list = Array.isArray(parsed)
+        ? parsed
+        : Array.isArray(parsed?.connections)
+          ? parsed.connections
+          : null;
+      if (!list) {
+        setNotice('Invalid JSON: expected { connections: [...], categoryOrder?, categoryMeta? } or an array.');
+        return;
+      }
+
+      const incoming: SavedSshConnection[] = [];
+      for (const item of list) {
+        if (!item || typeof item.wsUrl !== 'string') continue;
+        const protocol = normalizeConnectionProtocol(item.protocol);
+        const urlRaw = String(item.wsUrl).trim();
+        const url =
+          protocol === 'rdp'
+            ? urlRaw
+            : normalizeWsUrl(urlRaw);
+        if (!url) continue;
+        if (protocol === 'rdp' && !/^https?:\/\//i.test(url)) continue;
+        incoming.push({
+          id: typeof item.id === 'string' && item.id ? item.id : newId(),
+          name:
+            typeof item.name === 'string' && item.name.trim()
+              ? item.name.trim()
+              : protocol === 'rdp'
+                ? (() => {
+                    try {
+                      return new URL(url).hostname || 'RDP gateway';
+                    } catch {
+                      return 'RDP gateway';
+                    }
+                  })()
+                : url.replace(/^wss?:\/\//i, '').split('/')[0] || 'SSH host',
+          wsUrl: url,
+          protocol,
+          tags: Array.isArray(item.tags) ? parseTags(item.tags.join(',')) : parseTags(String(item.tags || '')),
+          notes: typeof item.notes === 'string' && item.notes.trim() ? item.notes.trim() : undefined,
+          color: normalizeSshColor(item.color),
+          appearance: normalizeSshAppearance(item.appearance),
+          category: normalizeSshCategory(item.category),
+          sortOrder: normalizeSshSortOrder(item.sortOrder ?? item.sort_order ?? incoming.length),
+          createdAt: typeof item.createdAt === 'number' ? item.createdAt : Date.now(),
+          lastUsedAt: typeof item.lastUsedAt === 'number' ? item.lastUsedAt : undefined,
+          archivedAt:
+            item.archivedAt == null
+              ? null
+              : Number(item.archivedAt) > 0
+                ? Number(item.archivedAt)
+                : null,
+          deletedAt:
+            item.deletedAt == null
+              ? null
+              : Number(item.deletedAt) > 0
+                ? Number(item.deletedAt)
+                : null,
+        });
+      }
+
+      const parsedObj =
+        parsed && typeof parsed === 'object' && !Array.isArray(parsed)
+          ? (parsed as Record<string, unknown>)
+          : null;
+      if (parsedObj && Array.isArray(parsedObj.recycledCategories)) {
+        const fromFile: SshRecycledCategory[] = [];
+        for (const item of parsedObj.recycledCategories) {
+          if (!item || typeof item !== 'object') continue;
+          const row = item as Record<string, unknown>;
+          if (typeof row.name !== 'string' || !row.name.trim()) continue;
+          fromFile.push({
+            name: normalizeSshCategory(row.name),
+            color: row.color ? normalizeSshColor(String(row.color)) : undefined,
+            deletedAt: typeof row.deletedAt === 'number' ? row.deletedAt : Date.now(),
+            connectionIds: Array.isArray(row.connectionIds)
+              ? row.connectionIds.map(String).filter(Boolean)
+              : [],
+          });
+        }
+        if (fromFile.length > 0) {
+          setRecycledCategories((prev) => {
+            const byName = new Map(prev.map((r) => [r.name, r]));
+            for (const r of fromFile) {
+              const existing = byName.get(r.name);
+              if (!existing) {
+                byName.set(r.name, r);
+                continue;
+              }
+              byName.set(r.name, {
+                ...existing,
+                color: r.color || existing.color,
+                deletedAt: Math.max(existing.deletedAt, r.deletedAt),
+                connectionIds: Array.from(new Set([...existing.connectionIds, ...r.connectionIds])),
+              });
+            }
+            return Array.from(byName.values());
+          });
+        }
+      }
+      const fileCategoryOrder = normalizeImportedCategoryOrder(parsedObj?.categoryOrder);
+      // Allow importing category prefs even when the file has empty categories and no connections.
+      if (incoming.length === 0 && fileCategoryOrder.length === 0 && !parsedObj?.categoryMeta) {
+        setNotice('No valid connections or categories found in that file.');
+        return;
+      }
+
+      if (useServer) {
+        let merged = connections;
+        if (incoming.length > 0) {
+          merged = await sshConnectionService.bulkUpsert(incoming);
+          setConnections(merged);
+        }
+        applyImportedCategoryPrefs(parsedObj, incoming.length > 0 ? merged : incoming);
+        const catBits = fileCategoryOrder.length
+          ? `, ${fileCategoryOrder.length} categor${fileCategoryOrder.length === 1 ? 'y' : 'ies'}`
+          : parsedObj?.categoryMeta
+            ? ', category colors'
+            : '';
+        setNotice(
+          incoming.length > 0
+            ? `Imported / merged ${incoming.length} connection(s)${catBits}`
+            : `Imported category preferences${catBits}`
+        );
+        return;
+      }
+
+      const byKey = new Map<string, SavedSshConnection>();
+      connections.forEach((c) => byKey.set(`${c.name}||${c.wsUrl}`, c));
+      let added = 0;
+      let updated = 0;
+      for (const item of incoming) {
+        const key = `${item.name}||${item.wsUrl}`;
+        const existing = byKey.get(key) || byKey.get(`||${item.wsUrl}`);
+        // Prefer exact name+url; also merge duplicates by wsUrl alone
+        const urlOnly = Array.from(byKey.values()).find((c) => c.wsUrl === item.wsUrl);
+        if (urlOnly) {
+          byKey.delete(`${urlOnly.name}||${urlOnly.wsUrl}`);
+          byKey.set(key, {
+            ...urlOnly,
+            name: item.name,
+            protocol: item.protocol,
+            tags: item.tags,
+            notes: item.notes,
+            color: normalizeSshColor(item.color || urlOnly.color),
+            appearance: item.appearance || urlOnly.appearance,
+            category: normalizeSshCategory(item.category),
+            sortOrder: normalizeSshSortOrder(item.sortOrder),
+            lastUsedAt: item.lastUsedAt || urlOnly.lastUsedAt,
+            archivedAt: item.archivedAt ?? urlOnly.archivedAt ?? null,
+            deletedAt: item.deletedAt ?? urlOnly.deletedAt ?? null,
+          });
+          updated += 1;
+        } else if (existing) {
+          byKey.set(key, {
+            ...existing,
+            protocol: item.protocol,
+            tags: item.tags,
+            notes: item.notes,
+            color: normalizeSshColor(item.color || existing.color),
+            appearance: item.appearance || existing.appearance,
+            category: normalizeSshCategory(item.category),
+            sortOrder: normalizeSshSortOrder(item.sortOrder),
+            lastUsedAt: item.lastUsedAt || existing.lastUsedAt,
+            archivedAt: item.archivedAt ?? existing.archivedAt ?? null,
+            deletedAt: item.deletedAt ?? existing.deletedAt ?? null,
+          });
+          updated += 1;
+        } else {
+          byKey.set(key, {
+            ...item,
+            id: newId(),
+            color: normalizeSshColor(item.color),
+            category: normalizeSshCategory(item.category),
+            sortOrder: normalizeSshSortOrder(item.sortOrder),
+          });
+          added += 1;
+        }
+      }
+      const nextList = Array.from(byKey.values());
+      if (incoming.length > 0) {
+        updateConnectionsLocal(nextList);
+      }
+      applyImportedCategoryPrefs(parsedObj, incoming.length > 0 ? nextList : incoming);
+      const catBits = fileCategoryOrder.length
+        ? ` · ${fileCategoryOrder.length} categor${fileCategoryOrder.length === 1 ? 'y' : 'ies'}`
+        : '';
+      setNotice(
+        incoming.length > 0
+          ? `Imported ${added} new, updated ${updated}${catBits}`
+          : `Imported category preferences${catBits}`
+      );
+    } catch (err) {
+      setNotice(err instanceof Error ? err.message : 'Failed to import JSON');
+    }
+  };
+
+  const liveTabsForConnection = useCallback(
+    (connectionId: string) =>
+      tabs.filter(
+        (t) =>
+          t.connectionId === connectionId &&
+          (t.status === 'connected' || t.status === 'connecting')
+      ),
+    [tabs]
+  );
+
+  const tabsForConnection = useCallback(
+    (connectionId: string) => tabs.filter((t) => t.connectionId === connectionId),
+    [tabs]
+  );
+
+  const disconnectConnectionSessions = useCallback(
+    async (connectionId: string) => {
+      const ids = tabs
+        .filter((t) => t.connectionId === connectionId)
+        .map((t) => t.id);
+      for (const tabId of ids) {
+        await closeTab(tabId);
+      }
+      if (ids.length) {
+        setNotice(
+          ids.length === 1
+            ? 'Disconnected session for this host'
+            : `Disconnected ${ids.length} sessions for this host`
+        );
+      }
+    },
+    [tabs, closeTab]
+  );
+
+  const patchConnectionLocal = useCallback(
+    (id: string, patch: Partial<SavedSshConnection>) => {
+      const next = connections.map((c) => (c.id === id ? { ...c, ...patch } : c));
+      if (useServer) setConnections(next);
+      else updateConnectionsLocal(next);
+      return next;
+    },
+    [connections, updateConnectionsLocal, useServer]
+  );
+
+  const softDeleteConnection = async (id: string, opts?: { skipConfirm?: boolean }) => {
+    const target = connections.find((c) => c.id === id);
+    if (!target) return;
+    if (target.deletedAt) return;
+
+    const live = liveTabsForConnection(id);
+    const related = tabsForConnection(id);
+    if (!opts?.skipConfirm) {
+      if (live.length > 0) {
+        const ok = window.confirm(
+          `“${target.name}” has ${live.length} live terminal session${live.length === 1 ? '' : 's'}.\n\nDisconnect and move to Recycle Bin?`
+        );
+        if (!ok) return;
+        await disconnectConnectionSessions(id);
+      } else if (related.length > 0) {
+        const ok = window.confirm(
+          `“${target.name}” has ${related.length} open tab${related.length === 1 ? '' : 's'}.\n\nClose those tabs and move to Recycle Bin?`
+        );
+        if (!ok) return;
+        await disconnectConnectionSessions(id);
+      } else if (!window.confirm(`Move “${target.name}” to Recycle Bin?`)) {
+        return;
+      }
+    } else if (live.length > 0 || related.length > 0) {
+      await disconnectConnectionSessions(id);
+    }
+
+    const now = Date.now();
+    try {
+      if (useServer) {
+        const updated = await sshConnectionService.remove(id);
+        if (updated) {
+          setConnections((prev) => prev.map((c) => (c.id === id ? updated : c)));
+        } else {
+          patchConnectionLocal(id, { deletedAt: now, archivedAt: null });
+        }
+      } else {
+        patchConnectionLocal(id, { deletedAt: now, archivedAt: null });
+      }
+      if (editingId === id) {
+        setEditingId(null);
+        setDraftName('');
+        setDraftTags('');
+        setDraftNotes('');
+        setDraftCategory('');
+        setDraftColor(SSH_CONNECTION_COLORS[0]);
+      }
+      if (activeConnectionId === id) setActiveConnectionId(null);
+      setNotice(`Moved “${target.name}” to Recycle Bin`);
+    } catch (err) {
+      setNotice(err instanceof Error ? err.message : 'Failed to delete connection');
+    }
+  };
+
+  const archiveConnection = async (id: string, opts?: { skipConfirm?: boolean }) => {
+    const target = connections.find((c) => c.id === id);
+    if (!target || target.deletedAt) return;
+    if (target.archivedAt) return;
+    if (!opts?.skipConfirm && !window.confirm(`Archive “${target.name}”?`)) return;
+    const now = Date.now();
+    try {
+      if (useServer) {
+        const updated = await sshConnectionService.update(id, { archivedAt: now, deletedAt: null });
+        setConnections((prev) => prev.map((c) => (c.id === id ? updated : c)));
+      } else {
+        patchConnectionLocal(id, { archivedAt: now, deletedAt: null });
+      }
+      setNotice(`Archived “${target.name}”`);
+    } catch (err) {
+      setNotice(err instanceof Error ? err.message : 'Failed to archive connection');
+    }
+  };
+
+  const restoreConnection = async (id: string, opts?: { skipNotice?: boolean }) => {
+    const target = connections.find((c) => c.id === id);
+    if (!target) return;
+    try {
+      if (useServer) {
+        const updated = await sshConnectionService.update(id, { deletedAt: null, archivedAt: null });
+        setConnections((prev) => prev.map((c) => (c.id === id ? updated : c)));
+      } else {
+        patchConnectionLocal(id, { deletedAt: null, archivedAt: null });
+      }
+      setRecycledCategories((prev) =>
+        prev.map((rc) => ({
+          ...rc,
+          connectionIds: rc.connectionIds.filter((cid) => cid !== id),
+        }))
+      );
+      if (!opts?.skipNotice) setNotice(`Restored “${target.name}”`);
+    } catch (err) {
+      setNotice(err instanceof Error ? err.message : 'Failed to restore connection');
+    }
+  };
+
+  const restoreSelectedConnections = async (ids: string[]) => {
+    const unique = Array.from(new Set(ids)).filter(Boolean);
+    if (unique.length === 0) return;
+    const idSet = new Set(unique);
+    try {
+      if (useServer) {
+        const updatedList = [...connections];
+        for (const id of idSet) {
+          const updated = await sshConnectionService.update(id, { deletedAt: null, archivedAt: null });
+          const idx = updatedList.findIndex((c) => c.id === id);
+          if (idx >= 0) updatedList[idx] = updated;
+        }
+        setConnections(updatedList);
+      } else {
+        updateConnectionsLocal(
+          connections.map((c) =>
+            idSet.has(c.id) ? { ...c, deletedAt: null, archivedAt: null } : c
+          )
+        );
+      }
+      setRecycledCategories((prev) =>
+        prev.map((rc) => ({
+          ...rc,
+          connectionIds: rc.connectionIds.filter((cid) => !idSet.has(cid)),
+        }))
+      );
+      setNotice(`Restored ${unique.length} connection${unique.length === 1 ? '' : 's'}`);
+      setLibraryScope('active');
+    } catch (err) {
+      setNotice(err instanceof Error ? err.message : 'Failed to restore connections');
+    }
+  };
+
+  const purgeSelectedConnections = async (ids: string[]) => {
+    const unique = Array.from(new Set(ids)).filter(Boolean);
+    if (unique.length === 0) return;
+    if (
+      !window.confirm(
+        `Permanently delete ${unique.length} connection${unique.length === 1 ? '' : 's'}? This cannot be undone.`
+      )
+    ) {
+      return;
+    }
+    const idSet = new Set(unique);
+    try {
+      if (useServer) {
+        for (const id of idSet) {
+          await sshConnectionService.remove(id, { permanent: true });
+        }
+      }
+      const next = connections.filter((c) => !idSet.has(c.id));
+      if (useServer) setConnections(next);
+      else updateConnectionsLocal(next);
+      setRecycledCategories((prev) =>
+        prev.map((rc) => ({
+          ...rc,
+          connectionIds: rc.connectionIds.filter((cid) => !idSet.has(cid)),
+        }))
+      );
+      setNotice(`Permanently deleted ${unique.length} connection${unique.length === 1 ? '' : 's'}`);
+    } catch (err) {
+      setNotice(err instanceof Error ? err.message : 'Failed to permanently delete connections');
+    }
+  };
+
+  const purgeConnection = async (id: string, opts?: { skipConfirm?: boolean }) => {
+    const target = connections.find((c) => c.id === id);
+    if (!target) return;
+    if (!opts?.skipConfirm && !window.confirm(`Permanently delete “${target.name}”? This cannot be undone.`)) {
+      return;
+    }
+    try {
+      if (useServer) {
+        await sshConnectionService.remove(id, { permanent: true });
+      }
+      const next = connections.filter((c) => c.id !== id);
+      if (useServer) setConnections(next);
+      else updateConnectionsLocal(next);
+      setRecycledCategories((prev) =>
+        prev.map((rc) => ({
+          ...rc,
+          connectionIds: rc.connectionIds.filter((cid) => cid !== id),
+        }))
+      );
+      setNotice(`Permanently deleted “${target.name}”`);
+    } catch (err) {
+      setNotice(err instanceof Error ? err.message : 'Failed to permanently delete connection');
+    }
+  };
+
+  /** Soft-delete (recycle bin). Kept name for existing call sites. */
+  const deleteConnection = async (id: string) => softDeleteConnection(id);
+
+  const archiveConnectionsInCategory = async (catRaw: string, onlyIds?: string[]) => {
+    const cat = categoryKey(catRaw);
+    const targets = connections.filter((c) => {
+      if (categoryKey(c.category) !== cat) return false;
+      if (c.deletedAt || c.archivedAt) return false;
+      if (onlyIds && !onlyIds.includes(c.id)) return false;
+      return true;
+    });
+    if (targets.length === 0) {
+      setNotice('No active connections to archive');
+      return;
+    }
+    const label = onlyIds ? 'selected connection(s)' : `category “${categoryLabel(cat)}”`;
+    if (!window.confirm(`Archive ${targets.length} ${label}?`)) return;
+    const now = Date.now();
+    try {
+      if (useServer) {
+        const updatedList = [...connections];
+        for (const t of targets) {
+          const updated = await sshConnectionService.update(t.id, { archivedAt: now, deletedAt: null });
+          const idx = updatedList.findIndex((c) => c.id === t.id);
+          if (idx >= 0) updatedList[idx] = updated;
+        }
+        setConnections(updatedList);
+      } else {
+        const ids = new Set(targets.map((t) => t.id));
+        updateConnectionsLocal(
+          connections.map((c) =>
+            ids.has(c.id) ? { ...c, archivedAt: now, deletedAt: null } : c
+          )
+        );
+      }
+      setNotice(`Archived ${targets.length} connection${targets.length === 1 ? '' : 's'}`);
+      setLibraryScope('archived');
+    } catch (err) {
+      setNotice(err instanceof Error ? err.message : 'Failed to archive connections');
+    }
+  };
+
+  const deleteConnectionsInCategory = async (catRaw: string, onlyIds?: string[]) => {
+    const cat = categoryKey(catRaw);
+    const targets = connections.filter((c) => {
+      if (categoryKey(c.category) !== cat) return false;
+      if (c.deletedAt) return false;
+      if (onlyIds && !onlyIds.includes(c.id)) return false;
+      return true;
+    });
+    if (targets.length === 0) {
+      setNotice('No connections to delete');
+      return;
+    }
+    const label = onlyIds ? 'selected connection(s)' : `all connections in “${categoryLabel(cat)}”`;
+    if (!window.confirm(`Move ${targets.length} ${label} to Recycle Bin?`)) return;
+    const now = Date.now();
+    try {
+      for (const t of targets) {
+        const live = liveTabsForConnection(t.id);
+        if (live.length > 0 || tabsForConnection(t.id).length > 0) {
+          await disconnectConnectionSessions(t.id);
+        }
+      }
+      if (useServer) {
+        const updatedList = [...connections];
+        for (const t of targets) {
+          const updated = await sshConnectionService.remove(t.id);
+          if (updated) {
+            const idx = updatedList.findIndex((c) => c.id === t.id);
+            if (idx >= 0) updatedList[idx] = updated;
+          } else {
+            const idx = updatedList.findIndex((c) => c.id === t.id);
+            if (idx >= 0) updatedList[idx] = { ...updatedList[idx], deletedAt: now, archivedAt: null };
+          }
+        }
+        setConnections(updatedList);
+      } else {
+        const ids = new Set(targets.map((t) => t.id));
+        updateConnectionsLocal(
+          connections.map((c) =>
+            ids.has(c.id) ? { ...c, deletedAt: now, archivedAt: null } : c
+          )
+        );
+      }
+      setNotice(`Moved ${targets.length} connection${targets.length === 1 ? '' : 's'} to Recycle Bin`);
+      setLibraryScope('recycle');
+    } catch (err) {
+      setNotice(err instanceof Error ? err.message : 'Failed to delete connections');
+    }
+  };
+
+  const deleteCategory = async (catRaw: string) => {
+    const cat = categoryKey(catRaw);
+    if (!cat) {
+      setNotice('Uncategorized cannot be deleted as a category — delete its connections instead');
+      return;
+    }
+    const targets = connections.filter(
+      (c) => categoryKey(c.category) === cat && !c.deletedAt
+    );
+    if (
+      !window.confirm(
+        `Delete category “${cat}”${targets.length ? ` and move its ${targets.length} connection(s) to Recycle Bin` : ''}? You can restore both from Recycle Bin.`
+      )
+    ) {
+      return;
+    }
+    const now = Date.now();
+    const ids = targets.map((t) => t.id);
+    try {
+      for (const t of targets) {
+        if (liveTabsForConnection(t.id).length > 0 || tabsForConnection(t.id).length > 0) {
+          await disconnectConnectionSessions(t.id);
+        }
+      }
+      if (useServer) {
+        const updatedList = [...connections];
+        for (const t of targets) {
+          const updated = await sshConnectionService.remove(t.id);
+          const idx = updatedList.findIndex((c) => c.id === t.id);
+          if (idx < 0) continue;
+          updatedList[idx] = updated || { ...updatedList[idx], deletedAt: now, archivedAt: null };
+        }
+        setConnections(updatedList);
+      } else {
+        const idSet = new Set(ids);
+        updateConnectionsLocal(
+          connections.map((c) =>
+            idSet.has(c.id) ? { ...c, deletedAt: now, archivedAt: null } : c
+          )
+        );
+      }
+      setRecycledCategories((prev) => {
+        const without = prev.filter((r) => r.name !== cat);
+        return [
+          {
+            name: cat,
+            color: categoryMeta[cat]?.color || categoryAccentColor(cat, categoryMeta),
+            deletedAt: now,
+            connectionIds: ids,
+          },
+          ...without,
+        ];
+      });
+      setCategoryOrder((prev) => prev.filter((c) => normalizeSshCategory(c) !== cat));
+      setCollapsedCategories((prev) => {
+        const next = { ...prev };
+        delete next[cat];
+        return next;
+      });
+      if (normalizeSshCategory(draftCategory) === cat) setDraftCategory('');
+      setNotice(`Category “${cat}” moved to Recycle Bin`);
+      setLibraryScope('recycle');
+    } catch (err) {
+      setNotice(err instanceof Error ? err.message : 'Failed to delete category');
+    }
+  };
+
+  const archiveCategory = async (catRaw: string) => {
+    await archiveConnectionsInCategory(catRaw);
+  };
+
+  const restoreCategoryFromBin = async (catName: string) => {
+    const cat = normalizeSshCategory(catName);
+    if (!cat) return;
+    const tombstone = recycledCategories.find((r) => r.name === cat);
+    const ids = new Set(
+      (tombstone?.connectionIds || []).length
+        ? tombstone!.connectionIds
+        : connections.filter((c) => categoryKey(c.category) === cat && c.deletedAt).map((c) => c.id)
+    );
+    try {
+      if (useServer) {
+        const updatedList = [...connections];
+        for (const id of ids) {
+          const updated = await sshConnectionService.update(id, { deletedAt: null, archivedAt: null });
+          const idx = updatedList.findIndex((c) => c.id === id);
+          if (idx >= 0) updatedList[idx] = updated;
+        }
+        setConnections(updatedList);
+      } else {
+        updateConnectionsLocal(
+          connections.map((c) =>
+            ids.has(c.id) ? { ...c, deletedAt: null, archivedAt: null } : c
+          )
+        );
+      }
+      setCategoryOrder((prev) => mergeCategoryOrder(prev, [{ category: cat } as SavedSshConnection]));
+      if (tombstone?.color) {
+        setCategoryMeta((prev) => ({ ...prev, [cat]: { color: normalizeSshColor(tombstone.color) } }));
+      }
+      setRecycledCategories((prev) => prev.filter((r) => r.name !== cat));
+      setCollapsedCategories((prev) => ({ ...prev, [cat]: false }));
+      setLibraryScope('active');
+      setNotice(`Restored category “${cat}” and ${ids.size} connection${ids.size === 1 ? '' : 's'}`);
+    } catch (err) {
+      setNotice(err instanceof Error ? err.message : 'Failed to restore category');
+    }
+  };
+
+  const purgeCategoryFromBin = async (catName: string) => {
+    const cat = normalizeSshCategory(catName);
+    if (!cat) return;
+    const tombstone = recycledCategories.find((r) => r.name === cat);
+    const ids = new Set([
+      ...(tombstone?.connectionIds || []),
+      ...connections.filter((c) => categoryKey(c.category) === cat && c.deletedAt).map((c) => c.id),
+    ]);
+    if (
+      !window.confirm(
+        `Permanently delete category “${cat}” and ${ids.size} connection${ids.size === 1 ? '' : 's'}? This cannot be undone.`
+      )
+    ) {
+      return;
+    }
+    try {
+      if (useServer) {
+        for (const id of ids) {
+          await sshConnectionService.remove(id, { permanent: true });
+        }
+        setConnections((prev) => prev.filter((c) => !ids.has(c.id)));
+      } else {
+        updateConnectionsLocal(connections.filter((c) => !ids.has(c.id)));
+      }
+      setRecycledCategories((prev) => prev.filter((r) => r.name !== cat));
+      setCategoryMeta((prev) => {
+        const next = { ...prev };
+        delete next[cat];
+        return next;
+      });
+      setNotice(`Permanently deleted category “${cat}”`);
+    } catch (err) {
+      setNotice(err instanceof Error ? err.message : 'Failed to permanently delete category');
+    }
+  };
+
+  const cloneConnection = async (c: SavedSshConnection) => {
+    const baseName = (c.name || 'Connection').trim() || 'Connection';
+    const name = `${baseName} (copy)`;
+    const tags = Array.isArray(c.tags) ? [...c.tags] : [];
+    const notes = c.notes || undefined;
+    const color = normalizeSshColor(c.color);
+    const protocol = normalizeConnectionProtocol(c.protocol);
+    const appearance = normalizeSshAppearance(c.appearance) || undefined;
+    const category = normalizeSshCategory(c.category);
+    const siblings = connections.filter((x) => normalizeSshCategory(x.category) === category);
+    const sortOrder =
+      siblings.reduce((m, x) => Math.max(m, normalizeSshSortOrder(x.sortOrder)), -1) + 1;
+
+    try {
+      let created: SavedSshConnection;
+      if (useServer) {
+        created = await sshConnectionService.create({
+          name,
+          wsUrl: c.wsUrl,
+          tags,
+          notes,
+          color,
+          protocol,
+          appearance: appearance || undefined,
+          category,
+          sortOrder,
+        });
+        setConnections((prev) => [created, ...prev]);
+      } else {
+        created = {
+          id: `ssh_local_${Date.now().toString(36)}_${Math.random().toString(36).slice(2, 8)}`,
+          name,
+          wsUrl: c.wsUrl,
+          protocol,
+          tags,
+          notes,
+          color,
+          appearance: appearance || undefined,
+          category,
+          sortOrder,
+          createdAt: Date.now(),
+          lastUsedAt: undefined,
+        };
+        updateConnectionsLocal([created, ...connections]);
+      }
+      setActiveConnectionId(created.id);
+      setEditingId(created.id);
+      applyConnection(created, false);
+      setNotice(`Cloned “${baseName}” → “${name}”`);
+    } catch (err) {
+      setNotice(err instanceof Error ? err.message : 'Failed to clone connection');
+    }
+  };
+
+  const cloneCategory = useCallback(
+    async (fromRaw: string) => {
+      const from = categoryKey(fromRaw);
+      const fromLabel = categoryLabel(from);
+      const suggested =
+        from === ''
+          ? 'Uncategorized (copy)'
+          : from.toLowerCase().endsWith('(copy)')
+            ? `${from} 2`
+            : `${from} (copy)`;
+      const prompted = window.prompt(`Clone category “${fromLabel}” as…`, suggested);
+      if (prompted == null) return;
+      const to = normalizeSshCategory(prompted);
+      if (!to) {
+        setNotice('Category name cannot be empty');
+        return;
+      }
+      if (to === from) {
+        setNotice('Choose a different category name for the clone');
+        return;
+      }
+      if (connections.some((c) => categoryKey(c.category) === to) || categoryOrder.includes(to)) {
+        const ok = window.confirm(
+          `Category “${to}” already exists. Add cloned connections into it?`
+        );
+        if (!ok) return;
+      }
+
+      const sourceItems = connections
+        .filter((c) => categoryKey(c.category) === from)
+        .slice()
+        .sort((a, b) => normalizeSshSortOrder(a.sortOrder) - normalizeSshSortOrder(b.sortOrder));
+
+      setCloningCategory(true);
+      try {
+        const createdList: SavedSshConnection[] = [];
+        let sortOrder =
+          connections
+            .filter((c) => categoryKey(c.category) === to)
+            .reduce((m, x) => Math.max(m, normalizeSshSortOrder(x.sortOrder)), -1) + 1;
+
+        for (const c of sourceItems) {
+          const name = (c.name || 'Connection').trim() || 'Connection';
+          const tags = Array.isArray(c.tags) ? [...c.tags] : [];
+          const notes = c.notes || undefined;
+          const color = normalizeSshColor(c.color);
+          const protocol = normalizeConnectionProtocol(c.protocol);
+          const appearance = normalizeSshAppearance(c.appearance) || undefined;
+
+          if (useServer) {
+            const created = await sshConnectionService.create({
+              name,
+              wsUrl: c.wsUrl,
+              tags,
+              notes,
+              color,
+              protocol,
+              appearance: appearance || undefined,
+              category: to,
+              sortOrder,
+            });
+            createdList.push(created);
+          } else {
+            createdList.push({
+              id: `ssh_local_${Date.now().toString(36)}_${Math.random().toString(36).slice(2, 8)}`,
+              name,
+              wsUrl: c.wsUrl,
+              protocol,
+              tags,
+              notes,
+              color,
+              appearance: appearance || undefined,
+              category: to,
+              sortOrder,
+              createdAt: Date.now(),
+              lastUsedAt: undefined,
+            });
+          }
+          sortOrder += 1;
+        }
+
+        if (useServer) {
+          setConnections((prev) => [...createdList, ...prev]);
+        } else {
+          updateConnectionsLocal([...createdList, ...connections]);
+        }
+
+        setCategoryOrder((prev) => mergeCategoryOrder(prev, [{ category: to } as SavedSshConnection]));
+        setCollapsedCategories((prev) => ({ ...prev, [to]: false }));
+        setCategoryMeta((prev) => ({
+          ...prev,
+          [to]: {
+            color: prev[to]?.color || categoryAccentColor(from, prev) || categoryAccentColor(to, prev),
+          },
+        }));
+        setDraftCategory(to);
+
+        setNotice(
+          sourceItems.length === 0
+            ? `Created empty category “${to}”`
+            : `Cloned category “${fromLabel}” → “${to}” (${createdList.length} connection${createdList.length === 1 ? '' : 's'})`
+        );
+      } catch (err) {
+        setNotice(err instanceof Error ? err.message : 'Failed to clone category');
+      } finally {
+        setCloningCategory(false);
+      }
+    },
+    [categoryMeta, categoryOrder, connections, updateConnectionsLocal, useServer]
+  );
+
+  const statusColor =
+    status === 'connected'
+      ? 'text-emerald-600 dark:text-emerald-400'
+      : status === 'connecting'
+        ? 'text-amber-600 dark:text-amber-400'
+        : status === 'error'
+          ? 'text-red-600 dark:text-red-400'
+          : 'text-slate-500 dark:text-slate-400';
+
+  return (
+    <div
+      ref={widgetRootRef}
+      className={`w-full h-full flex flex-col bg-white dark:bg-slate-800 overflow-hidden ${
+        isFullscreen
+          ? 'rounded-none border-0 shadow-none'
+          : 'rounded-2xl shadow-2xl border border-slate-200 dark:border-slate-700'
+      }`}
+    >
+      <div className="px-3 py-2 border-b border-slate-200 dark:border-slate-700 flex items-center justify-between gap-2 shrink-0 bg-slate-50 dark:bg-slate-900/40">
+        <div className="min-w-0 flex items-center gap-2">
+          <button
+            type="button"
+            onClick={() => setPanelOpen((v) => !v)}
+            className="p-1 rounded-md hover:bg-slate-200 dark:hover:bg-slate-700 text-slate-500 dark:text-slate-300 shrink-0"
+            title={panelOpen ? 'Hide saved connections' : 'Show saved connections'}
+            aria-label="Toggle connections panel"
+          >
+            <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" strokeWidth={2} stroke="currentColor" className="w-4 h-4">
+              {panelOpen ? (
+                <path strokeLinecap="round" strokeLinejoin="round" d="M18.75 4.5l-7.5 7.5 7.5 7.5" />
+              ) : (
+                <path strokeLinecap="round" strokeLinejoin="round" d="M5.25 4.5l7.5 7.5-7.5 7.5" />
+              )}
+            </svg>
+          </button>
+          <div className="min-w-0">
+            <h3 className="text-sm font-bold text-slate-900 dark:text-white truncate">SSH / RDP</h3>
+            <p className={`text-[11px] truncate ${statusColor}`}>{statusMessage}</p>
+          </div>
+        </div>
+        <div className="flex items-center gap-1 shrink-0">
+          <div className="relative" ref={viewMenuRef}>
+            <button
+              type="button"
+              onClick={() => setViewMenuOpen((v) => !v)}
+              disabled={tabs.length === 0}
+              className={`p-1.5 rounded-md border transition-colors disabled:opacity-40 ${
+                multiView
+                  ? 'border-sky-500 bg-sky-600 text-white hover:bg-sky-500'
+                  : 'border-slate-200 dark:border-slate-600 text-slate-600 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-700'
+              }`}
+              title="Terminal layout views"
+              aria-label="Terminal layout views"
+              aria-haspopup="menu"
+              aria-expanded={viewMenuOpen}
+            >
+              {viewMode === 'stack-v' ? (
+                <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" strokeWidth={1.8} stroke="currentColor" className="w-4 h-4">
+                  <path strokeLinecap="round" strokeLinejoin="round" d="M3.75 5.25h16.5M3.75 12h16.5m-16.5 6.75h16.5" />
+                </svg>
+              ) : viewMode === 'stack-h' ? (
+                <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" strokeWidth={1.8} stroke="currentColor" className="w-4 h-4">
+                  <path strokeLinecap="round" strokeLinejoin="round" d="M5.25 3.75v16.5M12 3.75v16.5m6.75-16.5v16.5" />
+                </svg>
+              ) : viewMode === 'grid' ? (
+                <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" strokeWidth={1.8} stroke="currentColor" className="w-4 h-4">
+                  <path strokeLinecap="round" strokeLinejoin="round" d="M3.75 6A2.25 2.25 0 016 3.75h2.25A2.25 2.25 0 0110.5 6v2.25a2.25 2.25 0 01-2.25 2.25H6a2.25 2.25 0 01-2.25-2.25V6zM13.5 6a2.25 2.25 0 012.25-2.25H18A2.25 2.25 0 0120.25 6v2.25A2.25 2.25 0 0118 10.5h-2.25a2.25 2.25 0 01-2.25-2.25V6zM3.75 15.75A2.25 2.25 0 016 13.5h2.25a2.25 2.25 0 012.25 2.25V18A2.25 2.25 0 018.25 20.25H6A2.25 2.25 0 013.75 18v-2.25zM13.5 15.75a2.25 2.25 0 012.25-2.25H18a2.25 2.25 0 012.25 2.25V18A2.25 2.25 0 0118 20.25h-2.25a2.25 2.25 0 01-2.25-2.25v-2.25z" />
+                </svg>
+              ) : (
+                <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" strokeWidth={1.8} stroke="currentColor" className="w-4 h-4">
+                  <path strokeLinecap="round" strokeLinejoin="round" d="M5.25 4.5h13.5A1.75 1.75 0 0120.5 6.25v11.5A1.75 1.75 0 0118.75 19.5H5.25A1.75 1.75 0 013.5 17.75V6.25A1.75 1.75 0 015.25 4.5z" />
+                </svg>
+              )}
+            </button>
+            {viewMenuOpen && (
+              <div
+                role="menu"
+                className="absolute right-0 top-full mt-1 z-40 w-56 rounded-lg border border-slate-200 dark:border-slate-600 bg-white dark:bg-slate-800 shadow-lg py-1 overflow-hidden"
+              >
+                {VIEW_MODE_OPTIONS.map((opt) => {
+                  const active = viewMode === opt.id;
+                  return (
+                    <button
+                      key={opt.id}
+                      type="button"
+                      role="menuitemradio"
+                      aria-checked={active}
+                      onClick={() => {
+                        setViewMode(opt.id);
+                        setViewMenuOpen(false);
+                      }}
+                      className={`w-full text-left px-3 py-2 flex items-start gap-2.5 transition-colors ${
+                        active
+                          ? 'bg-sky-50 dark:bg-sky-950/40 text-sky-800 dark:text-sky-200'
+                          : 'text-slate-700 dark:text-slate-200 hover:bg-slate-50 dark:hover:bg-slate-700/60'
+                      }`}
+                    >
+                      <span className="mt-0.5 shrink-0 text-slate-500 dark:text-slate-400">
+                        {opt.id === 'single' && (
+                          <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" strokeWidth={1.8} stroke="currentColor" className="w-4 h-4">
+                            <path strokeLinecap="round" strokeLinejoin="round" d="M5.25 4.5h13.5A1.75 1.75 0 0120.5 6.25v11.5A1.75 1.75 0 0118.75 19.5H5.25A1.75 1.75 0 013.5 17.75V6.25A1.75 1.75 0 015.25 4.5z" />
+                          </svg>
+                        )}
+                        {opt.id === 'grid' && (
+                          <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" strokeWidth={1.8} stroke="currentColor" className="w-4 h-4">
+                            <path strokeLinecap="round" strokeLinejoin="round" d="M3.75 6A2.25 2.25 0 016 3.75h2.25A2.25 2.25 0 0110.5 6v2.25a2.25 2.25 0 01-2.25 2.25H6a2.25 2.25 0 01-2.25-2.25V6zM13.5 6a2.25 2.25 0 012.25-2.25H18A2.25 2.25 0 0120.25 6v2.25A2.25 2.25 0 0118 10.5h-2.25a2.25 2.25 0 01-2.25-2.25V6zM3.75 15.75A2.25 2.25 0 016 13.5h2.25a2.25 2.25 0 012.25 2.25V18A2.25 2.25 0 018.25 20.25H6A2.25 2.25 0 013.75 18v-2.25zM13.5 15.75a2.25 2.25 0 012.25-2.25H18a2.25 2.25 0 012.25 2.25V18A2.25 2.25 0 0118 20.25h-2.25a2.25 2.25 0 01-2.25-2.25v-2.25z" />
+                          </svg>
+                        )}
+                        {opt.id === 'stack-v' && (
+                          <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" strokeWidth={1.8} stroke="currentColor" className="w-4 h-4">
+                            <path strokeLinecap="round" strokeLinejoin="round" d="M3.75 5.25h16.5M3.75 12h16.5m-16.5 6.75h16.5" />
+                          </svg>
+                        )}
+                        {opt.id === 'stack-h' && (
+                          <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" strokeWidth={1.8} stroke="currentColor" className="w-4 h-4">
+                            <path strokeLinecap="round" strokeLinejoin="round" d="M5.25 3.75v16.5M12 3.75v16.5m6.75-16.5v16.5" />
+                          </svg>
+                        )}
+                      </span>
+                      <span className="min-w-0">
+                        <span className="block text-[12px] font-semibold">{opt.label}</span>
+                        <span className="block text-[10px] text-slate-500 dark:text-slate-400 leading-snug">
+                          {opt.description}
+                        </span>
+                      </span>
+                    </button>
+                  );
+                })}
+              </div>
+            )}
+          </div>
+          <button
+            type="button"
+            onClick={() => void toggleFullscreen()}
+            className={`p-1.5 rounded-md border transition-colors ${
+              isFullscreen
+                ? 'border-orange-400 bg-orange-500 text-white hover:bg-orange-600'
+                : 'border-slate-200 dark:border-slate-600 text-slate-600 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-700'
+            }`}
+            title={isFullscreen ? 'Exit fullscreen (Esc)' : 'Fullscreen (panel + tabs + terminal)'}
+            aria-label={isFullscreen ? 'Exit fullscreen' : 'Enter fullscreen'}
+            aria-pressed={isFullscreen}
+          >
+            {isFullscreen ? (
+              <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" strokeWidth={1.8} stroke="currentColor" className="w-4 h-4">
+                <path strokeLinecap="round" strokeLinejoin="round" d="M9 9V4.5M9 9H4.5M9 9L3.75 3.75M9 15v4.5M9 15H4.5M9 15l-5.25 5.25M15 9h4.5M15 9V4.5M15 9l5.25-5.25M15 15h4.5M15 15v4.5m0-4.5l5.25 5.25" />
+              </svg>
+            ) : (
+              <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" strokeWidth={1.8} stroke="currentColor" className="w-4 h-4">
+                <path strokeLinecap="round" strokeLinejoin="round" d="M3.75 3.75v4.5m0-4.5h4.5m-4.5 0L9 9M3.75 20.25v-4.5m0 4.5h4.5m-4.5 0L9 15M20.25 3.75h-4.5m4.5 0v4.5m0-4.5L15 9m5.25 11.25h-4.5m4.5 0v-4.5m0 4.5L15 15" />
+              </svg>
+            )}
+          </button>
+          {!isFullscreen && (
+            <button
+              type="button"
+              onClick={() => void requestClose()}
+              className="p-1 rounded-md hover:bg-slate-200 dark:hover:bg-slate-700 text-slate-400 hover:text-slate-700 dark:hover:text-slate-200"
+              title="Close"
+              aria-label="Close"
+            >
+              <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" strokeWidth={2} stroke="currentColor" className="w-4 h-4">
+                <path strokeLinecap="round" strokeLinejoin="round" d="M6 18L18 6M6 6l12 12" />
+              </svg>
+            </button>
+          )}
+        </div>
+      </div>
+
+      <div className="flex-1 min-h-0 flex">
+        {panelOpen && (
+          <aside
+            className={`relative shrink-0 border-r flex flex-col min-h-0 ssh-sidebar-chrome ${
+              isResizingPanel ? 'select-none' : ''
+            } ${colorMode === 'calm' ? 'ssh-sidebar-calm' : ''}`}
+            style={{ width: panelWidth, ...sshSidebarChromeCssVars(sidebarChrome) }}
+          >
+            <div
+              role="separator"
+              aria-orientation="vertical"
+              aria-label="Resize saved connections panel"
+              title="Drag to resize"
+              onPointerDown={startPanelResize}
+              className={`absolute top-0 right-0 z-20 h-full w-1.5 -mr-0.5 cursor-col-resize group ${
+                isResizingPanel ? 'bg-brand-500/50' : 'bg-transparent hover:bg-brand-400/40'
+              }`}
+            >
+              <span className="absolute top-1/2 right-0 -translate-y-1/2 translate-x-1/2 w-1 h-8 rounded-full bg-slate-300 dark:bg-slate-600 opacity-0 group-hover:opacity-100 transition-opacity pointer-events-none" />
+            </div>
+            <div
+              className="p-2 border-b space-y-2 shrink-0"
+              style={{ borderColor: 'var(--ssh-side-border)' }}
+            >
+              <div className="flex items-center justify-between gap-1">
+                <p
+                  className="text-[11px] font-semibold uppercase tracking-wide truncate"
+                  style={{ color: 'var(--ssh-side-header)' }}
+                  title={
+                    useServer
+                      ? `Private connections for ${authUsername || 'this account'} only`
+                      : 'Guest saves stay in this browser only — not shared with signed-in accounts'
+                  }
+                >
+                  {useServer
+                    ? `Saved · ${authUsername || 'account'}`
+                    : 'Saved · guest (this browser)'}
+                </p>
+                <div className="flex items-center gap-0.5 shrink-0 flex-wrap justify-end">
+                  <button
+                    type="button"
+                    onClick={() => setListDensity('cards')}
+                    className={`px-1.5 py-0.5 text-[9px] rounded ${sidebarToggleClass(listDensity === 'cards')}`}
+                    style={sidebarToggleStyle(listDensity === 'cards')}
+                    title="Card view"
+                  >
+                    Cards
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setListDensity('compact')}
+                    className={`px-1.5 py-0.5 text-[9px] rounded ${sidebarToggleClass(listDensity === 'compact')}`}
+                    style={sidebarToggleStyle(listDensity === 'compact')}
+                    title="Compact row view"
+                  >
+                    Compact
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setListDensity('tree')}
+                    className={`px-1.5 py-0.5 text-[9px] rounded ${sidebarToggleClass(listDensity === 'tree')}`}
+                    style={sidebarToggleStyle(listDensity === 'tree')}
+                    title="Tree view — categories as folders"
+                  >
+                    Tree
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setListDensity('simple')}
+                    className={`px-1.5 py-0.5 text-[9px] rounded ${sidebarToggleClass(listDensity === 'simple')}`}
+                    style={sidebarToggleStyle(listDensity === 'simple')}
+                    title="Simple tree — category and name, with Start / Stop / Clone / Duplicate"
+                  >
+                    Simple
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setColorMode((m) => {
+                        const next = m === 'calm' ? 'vivid' : 'calm';
+                        // Apply calm/vivid chrome presets only when user hasn't heavily customized —
+                        // always refresh active-control colors so Calm never stays black.
+                        setSidebarChrome((prev) => {
+                          const preset = next === 'calm' ? CALM_SSH_SIDEBAR_CHROME : DEFAULT_SSH_SIDEBAR_CHROME;
+                          return normalizeSshSidebarChrome({
+                            ...prev,
+                            panelBg: preset.panelBg,
+                            controlActiveBg: preset.controlActiveBg,
+                            controlActiveFg: preset.controlActiveFg,
+                            controlActiveBorder: preset.controlActiveBorder,
+                          });
+                        });
+                        return next;
+                      });
+                    }}
+                    className={`px-1.5 py-0.5 text-[9px] rounded ${sidebarToggleClass(colorMode === 'calm')}`}
+                    style={sidebarToggleStyle(colorMode === 'calm')}
+                    title={
+                      colorMode === 'calm'
+                        ? 'Calm colors on — click for vivid rainbow accents'
+                        : 'Vivid colors on — click for calm low-color mode'
+                    }
+                    aria-pressed={colorMode === 'calm'}
+                  >
+                    {colorMode === 'calm' ? 'Calm' : 'Vivid'}
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setShowSidebarThemeDesigner((v) => !v)}
+                    className={`px-1.5 py-0.5 text-[9px] rounded ${sidebarToggleClass(showSidebarThemeDesigner)}`}
+                    style={sidebarToggleStyle(showSidebarThemeDesigner)}
+                    title="Design left panel fonts and control colors"
+                    aria-expanded={showSidebarThemeDesigner}
+                  >
+                    Theme
+                  </button>
+                </div>
+              </div>
+              {showSidebarThemeDesigner && (
+                <div
+                  className="rounded-lg border p-2 space-y-2 text-[10px] shadow-sm"
+                  style={{
+                    backgroundColor: 'var(--ssh-side-ctrl-bg)',
+                    borderColor: 'var(--ssh-side-ctrl-border)',
+                    color: 'var(--ssh-side-row)',
+                  }}
+                >
+                  <div className="flex items-center justify-between gap-2">
+                    <p className="font-semibold" style={{ color: 'var(--ssh-side-header)' }}>
+                      Left panel theme
+                    </p>
+                    <div className="flex gap-1">
+                      <button
+                        type="button"
+                        className="px-1.5 py-0.5 rounded border"
+                        style={sidebarToggleStyle(false)}
+                        onClick={() =>
+                          setSidebarChrome(
+                            colorMode === 'calm'
+                              ? { ...CALM_SSH_SIDEBAR_CHROME }
+                              : { ...DEFAULT_SSH_SIDEBAR_CHROME }
+                          )
+                        }
+                      >
+                        Reset
+                      </button>
+                      <button
+                        type="button"
+                        className="px-1.5 py-0.5 rounded border"
+                        style={sidebarToggleStyle(false)}
+                        onClick={() => setShowSidebarThemeDesigner(false)}
+                      >
+                        Close
+                      </button>
+                    </div>
+                  </div>
+                  <div className="grid grid-cols-2 gap-1.5">
+                    {(
+                      [
+                        ['panelBg', 'Panel BG'],
+                        ['panelBorder', 'Panel border'],
+                        ['headerFg', 'Header text'],
+                        ['controlBg', 'Control BG'],
+                        ['controlFg', 'Control text'],
+                        ['controlBorder', 'Control border'],
+                        ['controlActiveBg', 'Active BG'],
+                        ['controlActiveFg', 'Active text'],
+                        ['controlActiveBorder', 'Active border'],
+                        ['accentBg', 'Connect BG'],
+                        ['accentFg', 'Connect text'],
+                        ['rowFg', 'Row text'],
+                        ['mutedFg', 'Muted text'],
+                      ] as Array<[keyof SshSidebarChromeTheme, string]>
+                    ).map(([key, label]) => (
+                      <label key={key} className="flex items-center justify-between gap-1 min-w-0">
+                        <span className="truncate" style={{ color: 'var(--ssh-side-muted)' }}>
+                          {label}
+                        </span>
+                        <input
+                          type="color"
+                          value={
+                            /^#[0-9a-fA-F]{6}$/.test(String(sidebarChrome[key]))
+                              ? String(sidebarChrome[key])
+                              : '#64748b'
+                          }
+                          onChange={(e) => patchSidebarChrome({ [key]: e.target.value })}
+                          className="h-5 w-7 cursor-pointer rounded border-0 bg-transparent p-0"
+                          title={label}
+                        />
+                      </label>
+                    ))}
+                  </div>
+                  <label className="flex items-center justify-between gap-2">
+                    <span style={{ color: 'var(--ssh-side-muted)' }}>Font</span>
+                    <select
+                      value={
+                        SIDEBAR_FONT_PRESETS.find((p) => p.value === sidebarChrome.fontFamily)?.id ||
+                        'system'
+                      }
+                      onChange={(e) => {
+                        const preset = SIDEBAR_FONT_PRESETS.find((p) => p.id === e.target.value);
+                        if (preset) patchSidebarChrome({ fontFamily: preset.value });
+                      }}
+                      className="h-6 max-w-[9.5rem] rounded border px-1 text-[10px]"
+                      style={{
+                        backgroundColor: 'var(--ssh-side-ctrl-bg)',
+                        color: 'var(--ssh-side-ctrl-fg)',
+                        borderColor: 'var(--ssh-side-ctrl-border)',
+                      }}
+                    >
+                      {SIDEBAR_FONT_PRESETS.map((p) => (
+                        <option key={p.id} value={p.id}>
+                          {p.label}
+                        </option>
+                      ))}
+                    </select>
+                  </label>
+                  <label className="flex items-center justify-between gap-2">
+                    <span style={{ color: 'var(--ssh-side-muted)' }}>
+                      Size {sidebarChrome.fontSizePx}px
+                    </span>
+                    <input
+                      type="range"
+                      min={10}
+                      max={18}
+                      step={1}
+                      value={sidebarChrome.fontSizePx}
+                      onChange={(e) =>
+                        patchSidebarChrome({ fontSizePx: Number.parseInt(e.target.value, 10) || 12 })
+                      }
+                      className="w-28"
+                    />
+                  </label>
+                  <p
+                    className="text-[11px] truncate rounded border px-1.5 py-1"
+                    style={{
+                      borderColor: 'var(--ssh-side-ctrl-border)',
+                      color: 'var(--ssh-side-row)',
+                      fontFamily: 'var(--ssh-side-font)',
+                    }}
+                    title="Preview"
+                  >
+                    Preview: Saved connections · zafar@host:22
+                  </p>
+                </div>
+              )}
+              <div className="flex flex-wrap items-center gap-1">
+                <button
+                  type="button"
+                  onClick={startNewDraft}
+                  className="p-1.5 rounded-md border hover:opacity-90"
+                  style={{
+                    backgroundColor: 'var(--ssh-side-ctrl-bg)',
+                    color: 'var(--ssh-side-ctrl-fg)',
+                    borderColor: 'var(--ssh-side-ctrl-border)',
+                  }}
+                  title="New connection draft"
+                  aria-label="New connection draft"
+                >
+                  <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" strokeWidth={2} stroke="currentColor" className="w-3.5 h-3.5">
+                    <path strokeLinecap="round" strokeLinejoin="round" d="M12 4.5v15m7.5-7.5h-15" />
+                  </svg>
+                </button>
+                <button
+                  type="button"
+                  onClick={() => {
+                    const name = window.prompt('New category name');
+                    if (name == null) return;
+                    const cat = normalizeSshCategory(name);
+                    if (!cat) {
+                      setNotice('Category name cannot be empty');
+                      return;
+                    }
+                    setCategoryOrder((prev) => mergeCategoryOrder(prev, [{ category: cat } as SavedSshConnection]));
+                    setCollapsedCategories((prev) => ({ ...prev, [cat]: false }));
+                    setCategoryMeta((prev) =>
+                      prev[cat]
+                        ? prev
+                        : {
+                            ...prev,
+                            [cat]: { color: categoryAccentColor(cat, prev) },
+                          }
+                    );
+                    setDraftCategory(cat);
+                    setNotice(`Category “${cat}” ready — assign it when saving a connection, or drag cards into it`);
+                  }}
+                  className="p-1.5 rounded-md border hover:opacity-90"
+                  style={{
+                    backgroundColor: 'var(--ssh-side-ctrl-bg)',
+                    color: 'var(--ssh-side-ctrl-fg)',
+                    borderColor: 'var(--ssh-side-ctrl-border)',
+                  }}
+                  title="Add category"
+                  aria-label="Add category"
+                >
+                  <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" strokeWidth={1.8} stroke="currentColor" className="w-3.5 h-3.5">
+                    <path strokeLinecap="round" strokeLinejoin="round" d="M2.25 12.75V12A2.25 2.25 0 014.5 9.75h15A2.25 2.25 0 0121.75 12v.75m-8.69-6.44l-2.12-2.12a1.5 1.5 0 00-1.061-.44H4.5A2.25 2.25 0 002.25 6v2.25m8.69-6.44l2.12 2.12a1.5 1.5 0 001.061.44H19.5a2.25 2.25 0 012.25 2.25v2.25" />
+                  </svg>
+                </button>
+                <button
+                  type="button"
+                  onClick={exportConnectionsJson}
+                  disabled={connections.length === 0}
+                  className="p-1.5 rounded-md border hover:opacity-90 disabled:opacity-40"
+                  style={{
+                    backgroundColor: 'var(--ssh-side-ctrl-bg)',
+                    color: 'var(--ssh-side-ctrl-fg)',
+                    borderColor: 'var(--ssh-side-ctrl-border)',
+                  }}
+                  title="Export connections, categories, colors & order as JSON"
+                  aria-label="Export connections and categories as JSON"
+                >
+                  <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" strokeWidth={1.8} stroke="currentColor" className="w-3.5 h-3.5">
+                    <path strokeLinecap="round" strokeLinejoin="round" d="M3 16.5v2.25A2.25 2.25 0 005.25 21h13.5A2.25 2.25 0 0021 18.75V16.5M16.5 12L12 16.5m0 0L7.5 12m4.5 4.5V3" />
+                  </svg>
+                </button>
+                <button
+                  type="button"
+                  onClick={() => fileInputRef.current?.click()}
+                  className="p-1.5 rounded-md border hover:opacity-90"
+                  style={{
+                    backgroundColor: 'var(--ssh-side-ctrl-bg)',
+                    color: 'var(--ssh-side-ctrl-fg)',
+                    borderColor: 'var(--ssh-side-ctrl-border)',
+                  }}
+                  title="Import connections & categories from JSON"
+                  aria-label="Import connections and categories from JSON"
+                >
+                  <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" strokeWidth={1.8} stroke="currentColor" className="w-3.5 h-3.5">
+                    <path strokeLinecap="round" strokeLinejoin="round" d="M3 16.5v2.25A2.25 2.25 0 005.25 21h13.5A2.25 2.25 0 0021 18.75V16.5m-13.5-9L12 3m0 0l4.5 4.5M12 3v13.5" />
+                  </svg>
+                </button>
+                <input
+                  ref={fileInputRef}
+                  type="file"
+                  accept="application/json,.json"
+                  className="hidden"
+                  onChange={(e) => {
+                    const file = e.target.files?.[0];
+                    e.target.value = '';
+                    if (file) void importConnectionsJson(file);
+                  }}
+                />
+                <button
+                  type="button"
+                  onClick={() => {
+                    if (draftProtocol === 'rdp') connectRdp();
+                    else void connect();
+                  }}
+                  disabled={tabs.length >= maxSshTabs}
+                  className="px-2 py-1 text-[10px] font-semibold rounded-md disabled:opacity-50 hover:opacity-90"
+                  style={{
+                    backgroundColor: 'var(--ssh-side-accent-bg)',
+                    color: 'var(--ssh-side-accent-fg)',
+                  }}
+                  title={tabs.length >= maxSshTabs ? `Maximum ${maxSshTabs} sessions` : 'Open a new session tab'}
+                >
+                  {status === 'connected' || status === 'connecting' ? 'New tab' : 'Connect'}
+                </button>
+              </div>
+              <input
+                type="search"
+                value={filterQuery}
+                onChange={(e) => setFilterQuery(e.target.value)}
+                placeholder="Filter name, URL, tag…"
+                className="w-full h-7 px-2 text-[11px] rounded-md border"
+                style={{
+                  backgroundColor: 'var(--ssh-side-ctrl-bg)',
+                  color: 'var(--ssh-side-row)',
+                  borderColor: 'var(--ssh-side-ctrl-border)',
+                }}
+              />
+              {allTags.length > 0 && (
+                <div className="flex flex-wrap gap-1 max-h-16 overflow-y-auto">
+                  <button
+                    type="button"
+                    onClick={() => setFilterTag(null)}
+                    className="px-1.5 py-0.5 text-[10px] rounded-full border"
+                    style={sidebarToggleStyle(!filterTag)}
+                  >
+                    All
+                  </button>
+                  {allTags.map((tag) => (
+                    <button
+                      key={tag}
+                      type="button"
+                      onClick={() => setFilterTag((t) => (t === tag ? null : tag))}
+                      className="px-1.5 py-0.5 text-[10px] rounded-full border"
+                      style={
+                        filterTag === tag
+                          ? {
+                              backgroundColor: 'var(--ssh-side-accent-bg)',
+                              color: 'var(--ssh-side-accent-fg)',
+                              borderColor: 'var(--ssh-side-accent-bg)',
+                            }
+                          : sidebarToggleStyle(false)
+                      }
+                    >
+                      #{tag}
+                    </button>
+                  ))}
+                </div>
+              )}
+            </div>
+
+            <div className="flex-1 min-h-0 overflow-y-auto p-1.5 space-y-1">
+              {!storageReady ? (
+                <p className="text-[11px] text-slate-400 dark:text-slate-500 px-1.5 py-3 text-center">Loading…</p>
+              ) : connections.length === 0 && recycledCategories.length === 0 ? (
+                <p className="text-[11px] text-slate-400 dark:text-slate-500 px-1.5 py-3 text-center leading-relaxed">
+                  No saved connections yet for {useServer ? (authUsername || 'this account') : 'guest (this browser)'}.
+                  Open Settings after creating one with <strong>+</strong>, then click <strong>Save</strong>.
+                  {useServer
+                    ? ' Each signed-in user has a private list — other accounts (including other admins) cannot see these.'
+                    : ' Guest saves stay in this browser only and are separate from signed-in accounts.'}
+                </p>
+              ) : (
+                <SshConnectionSidebarList
+                  connections={connections}
+                  filteredConnections={filteredConnections}
+                  view={listDensity}
+                  colorMode={colorMode}
+                  activeConnectionId={activeConnectionId}
+                  showSettings={showSettings}
+                  maxSshTabs={maxSshTabs}
+                  tabsCount={tabs.length}
+                  filterActive={Boolean(filterQuery.trim() || filterTag)}
+                  categoryOrder={knownCategories}
+                  categoryMeta={categoryMeta}
+                  collapsedCategories={collapsedCategories}
+                  onToggleCategory={(cat) => {
+                    const key = cat || '__uncategorized__';
+                    setCollapsedCategories((prev) => ({ ...prev, [key]: !prev[key] }));
+                  }}
+                  onSetCategoriesCollapsed={(keys, collapsed) => {
+                    setCollapsedCategories((prev) => {
+                      const next = { ...prev };
+                      for (const cat of keys) {
+                        next[cat || '__uncategorized__'] = collapsed;
+                      }
+                      return next;
+                    });
+                  }}
+                  onCategoryOrderChange={(next) => setCategoryOrder(mergeCategoryOrder(next, connections))}
+                  onCategoryColorChange={(cat, color) => {
+                    const key = normalizeSshCategory(cat);
+                    setCategoryMeta((prev) => ({
+                      ...prev,
+                      [key]: { color: normalizeSshColor(color) },
+                    }));
+                  }}
+                  onCategoryRename={(from, to) => void renameCategory(from, to)}
+                  onConnectMany={connectMany}
+                  canCreatePrivateSpace={useServer && Boolean(user?.id)}
+                  creatingPrivateSpace={creatingPrivateSpace}
+                  cloningCategory={cloningCategory}
+                  onCloneCategory={(cat) => void cloneCategory(cat)}
+                  onCreatePrivateSpace={(cats, layout) => void createPrivateSpaceFromCategories(cats, layout)}
+                  libraryScope={libraryScope}
+                  onLibraryScopeChange={setLibraryScope}
+                  recycledCategories={recycledCategories}
+                  activeCount={libraryCounts.active}
+                  archivedCount={libraryCounts.archived}
+                  recycleCount={libraryCounts.recycle}
+                  onArchiveCategory={(cat) => void archiveCategory(cat)}
+                  onDeleteCategory={(cat) => void deleteCategory(cat)}
+                  onArchiveSelected={(cat, ids) => void archiveConnectionsInCategory(cat, ids)}
+                  onDeleteSelected={(cat, ids) => void deleteConnectionsInCategory(cat, ids)}
+                  onRestoreSelected={(ids) => void restoreSelectedConnections(ids)}
+                  onPurgeSelected={(ids) => void purgeSelectedConnections(ids)}
+                  onRestoreCategory={(cat) => void restoreCategoryFromBin(cat)}
+                  onPurgeCategory={(cat) => void purgeCategoryFromBin(cat)}
+                  onRestoreConnection={(id) => void restoreConnection(id)}
+                  onPurgeConnection={(id) => void purgeConnection(id)}
+                  onConnectionsChange={(next) => setConnections(next)}
+                  onReorderCommit={(next) => void persistConnectionOrder(next)}
+                  liveCountFor={(id) => liveTabsForConnection(id).length}
+                  canDisconnect={(id) =>
+                    liveTabsForConnection(id).length > 0 || tabsForConnection(id).length > 0
+                  }
+                  sshUrlFor={(c) =>
+                    normalizeConnectionProtocol(c.protocol) === 'rdp' ? null : sshUrlForConnection(c)
+                  }
+                  onConnect={(c) => applyConnection(c, true)}
+                  onDisconnect={(id) => void disconnectConnectionSessions(id)}
+                  onEdit={(c) => applyConnection(c, false)}
+                  onClone={(c) => void cloneConnection(c)}
+                  onDuplicate={(c) => applyConnection(c, true)}
+                  onCopySsh={(c) => void copySshUrlForConnection(c)}
+                  onDelete={(id) => void deleteConnection(id)}
+                  onSettings={(c) => applyConnection(c, false)}
+                />
+              )}
+            </div>
+          </aside>
+        )}
+
+        <div className="flex-1 min-w-0 min-h-0 flex flex-col">
+          {showSettings && (
+            <div className="shrink-0 border-b border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 flex flex-col max-h-[58%] min-h-0">
+              {/* Sticky top actions */}
+              <div className="sticky top-0 z-20 flex items-center justify-between gap-2 px-3 py-2 border-b border-slate-200 dark:border-slate-700 bg-white/95 dark:bg-slate-800/95 backdrop-blur-sm">
+                <div className="min-w-0">
+                  <p className="text-[12px] font-semibold text-slate-800 dark:text-slate-100 truncate">
+                    {editingId ? 'Update connection' : 'New connection'}
+                  </p>
+                  <p className="text-[10px] text-slate-500 dark:text-slate-400 truncate">
+                    {draftName.trim() || (draftProtocol === 'rdp' ? 'RDP gateway' : 'SSH host')}
+                  </p>
+                </div>
+                <div className="flex items-center gap-1.5 shrink-0">
+                  {draftProtocol === 'ssh' && (
+                      <button
+                        type="button"
+                        onClick={async () => {
+                          const fromFields = buildSshLinkUrl(
+                            sshUsername,
+                            sshHost,
+                            Number.parseInt(sshPort, 10) || 22
+                          );
+                          const fromDraft = parseAutoTargetUrl(sshUrlDraft.trim());
+                          const editing = editingId
+                            ? connections.find((c) => c.id === editingId)
+                            : undefined;
+                          const fromEditing = editing ? sshUrlForConnection(editing) : null;
+                          const url =
+                            fromFields ||
+                            (fromDraft
+                              ? buildSshLinkUrl(fromDraft.username, fromDraft.host, fromDraft.port)
+                              : '') ||
+                            fromEditing ||
+                            '';
+                          if (!url) {
+                            setNotice('Fill Easy host + username (or paste ssh://) first, then Copy');
+                            return;
+                          }
+                          try {
+                            await navigator.clipboard.writeText(url);
+                            setNotice('Copied ssh:// URL — paste it as a tile link');
+                          } catch {
+                            setNotice('Clipboard copy was blocked');
+                          }
+                        }}
+                        className="px-2.5 py-1.5 text-[11px] font-semibold rounded-md bg-sky-600 hover:bg-sky-700 text-white shadow-sm"
+                        title="Copy ssh:// for a tile / space link"
+                      >
+                        Copy ssh://
+                      </button>
+                    )}
+                  <button
+                    type="button"
+                    onClick={() => void saveCurrentConnection()}
+                    disabled={saving}
+                    className="px-3 py-1.5 text-[11px] font-semibold rounded-md bg-brand-600 hover:bg-brand-700 text-white disabled:opacity-50 shadow-sm"
+                    title={editingId ? 'Update saved connection' : 'Save connection'}
+                  >
+                    {saving ? 'Saving…' : editingId ? 'Update' : 'Save'}
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setShowSettings(false)}
+                    className="inline-flex items-center justify-center h-8 w-8 rounded-md border border-slate-200 dark:border-slate-600 text-slate-600 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-700"
+                    title="Close settings"
+                    aria-label="Close settings"
+                  >
+                    <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" strokeWidth={2.2} stroke="currentColor" className="w-3.5 h-3.5">
+                      <path strokeLinecap="round" strokeLinejoin="round" d="M6 18L18 6M6 6l12 12" />
+                    </svg>
+                  </button>
+                </div>
+              </div>
+
+              {/* Pane switcher */}
+              <div className="px-3 pt-2 pb-1 flex gap-1 shrink-0">
+                <button
+                  type="button"
+                  onClick={() => setSettingsPane('connection')}
+                  className={`px-2.5 py-1 text-[11px] font-semibold rounded-md border transition-colors ${
+                    settingsPane === 'connection'
+                      ? 'bg-slate-800 text-white border-slate-800 dark:bg-slate-200 dark:text-slate-900 dark:border-slate-200'
+                      : 'border-slate-200 dark:border-slate-600 text-slate-600 dark:text-slate-300 hover:bg-slate-50 dark:hover:bg-slate-700/50'
+                  }`}
+                >
+                  Connection
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setSettingsPane('appearance')}
+                  className={`px-2.5 py-1 text-[11px] font-semibold rounded-md border transition-colors ${
+                    settingsPane === 'appearance'
+                      ? 'bg-slate-800 text-white border-slate-800 dark:bg-slate-200 dark:text-slate-900 dark:border-slate-200'
+                      : 'border-slate-200 dark:border-slate-600 text-slate-600 dark:text-slate-300 hover:bg-slate-50 dark:hover:bg-slate-700/50'
+                  }`}
+                >
+                  Appearance
+                </button>
+              </div>
+
+              <div className="flex-1 min-h-0 overflow-y-auto px-3 py-2 space-y-3">
+                {settingsPane === 'appearance' ? (
+                  <div className="space-y-3">
+                    <section className="rounded-lg border border-sky-200 dark:border-sky-800/60 bg-sky-50/70 dark:bg-sky-950/30 p-2.5 space-y-2">
+                      <div>
+                        <h4 className="text-[11px] font-semibold uppercase tracking-wide text-sky-700 dark:text-sky-300">
+                          Global UI bars
+                        </h4>
+                        <p className="text-[10px] text-slate-500 dark:text-slate-400">
+                          Applies to all sessions — tab strip and multi-view Skip bars
+                        </p>
+                      </div>
+                      <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
+                        <label className="block text-[11px] font-medium text-slate-600 dark:text-slate-300">
+                          Tab bar height
+                          <div className="mt-1 flex items-center gap-1">
+                            <button
+                              type="button"
+                              onClick={() =>
+                                setTabBarHeight((n) => Math.max(TAB_BAR_HEIGHT_MIN, n - 2))
+                              }
+                              className="h-8 w-8 rounded-md border border-slate-200 dark:border-slate-600 text-slate-700 dark:text-slate-200 hover:bg-slate-100 dark:hover:bg-slate-800"
+                              title="Shorter tab bar"
+                            >
+                              −
+                            </button>
+                            <input
+                              type="number"
+                              min={TAB_BAR_HEIGHT_MIN}
+                              max={TAB_BAR_HEIGHT_MAX}
+                              value={tabBarHeight}
+                              onChange={(e) => {
+                                const n = Number.parseInt(e.target.value, 10);
+                                if (!Number.isFinite(n)) return;
+                                setTabBarHeight(
+                                  Math.min(TAB_BAR_HEIGHT_MAX, Math.max(TAB_BAR_HEIGHT_MIN, n))
+                                );
+                              }}
+                              className="w-14 h-8 px-1 text-center text-xs rounded-md border border-slate-200 dark:border-slate-600 bg-white dark:bg-slate-900"
+                            />
+                            <button
+                              type="button"
+                              onClick={() =>
+                                setTabBarHeight((n) => Math.min(TAB_BAR_HEIGHT_MAX, n + 2))
+                              }
+                              className="h-8 w-8 rounded-md border border-slate-200 dark:border-slate-600 text-slate-700 dark:text-slate-200 hover:bg-slate-100 dark:hover:bg-slate-800"
+                              title="Taller tab bar"
+                            >
+                              +
+                            </button>
+                          </div>
+                        </label>
+                        <label className="block text-[11px] font-medium text-slate-600 dark:text-slate-300">
+                          Tab bar font
+                          <div className="mt-1 flex items-center gap-1">
+                            <button
+                              type="button"
+                              onClick={() =>
+                                setTabBarFontSize((n) => Math.max(TAB_BAR_FONT_MIN, n - 1))
+                              }
+                              className="h-8 w-8 rounded-md border border-slate-200 dark:border-slate-600 text-slate-700 dark:text-slate-200 hover:bg-slate-100 dark:hover:bg-slate-800"
+                              title="Smaller tab font"
+                            >
+                              A−
+                            </button>
+                            <input
+                              type="number"
+                              min={TAB_BAR_FONT_MIN}
+                              max={TAB_BAR_FONT_MAX}
+                              value={tabBarFontSize}
+                              onChange={(e) => {
+                                const n = Number.parseInt(e.target.value, 10);
+                                if (!Number.isFinite(n)) return;
+                                setTabBarFontSize(
+                                  Math.min(TAB_BAR_FONT_MAX, Math.max(TAB_BAR_FONT_MIN, n))
+                                );
+                              }}
+                              className="w-14 h-8 px-1 text-center text-xs rounded-md border border-slate-200 dark:border-slate-600 bg-white dark:bg-slate-900"
+                            />
+                            <button
+                              type="button"
+                              onClick={() =>
+                                setTabBarFontSize((n) => Math.min(TAB_BAR_FONT_MAX, n + 1))
+                              }
+                              className="h-8 w-8 rounded-md border border-slate-200 dark:border-slate-600 text-slate-700 dark:text-slate-200 hover:bg-slate-100 dark:hover:bg-slate-800"
+                              title="Larger tab font"
+                            >
+                              A+
+                            </button>
+                          </div>
+                        </label>
+                        <label className="block text-[11px] font-medium text-slate-600 dark:text-slate-300">
+                          Skip bar height
+                          <div className="mt-1 flex items-center gap-1">
+                            <button
+                              type="button"
+                              onClick={() =>
+                                setSkipBarHeight((n) => Math.max(SKIP_BAR_HEIGHT_MIN, n - 2))
+                              }
+                              className="h-8 w-8 rounded-md border border-slate-200 dark:border-slate-600 text-slate-700 dark:text-slate-200 hover:bg-slate-100 dark:hover:bg-slate-800"
+                              title="Shorter skip bar"
+                            >
+                              −
+                            </button>
+                            <input
+                              type="number"
+                              min={SKIP_BAR_HEIGHT_MIN}
+                              max={SKIP_BAR_HEIGHT_MAX}
+                              value={skipBarHeight}
+                              onChange={(e) => {
+                                const n = Number.parseInt(e.target.value, 10);
+                                if (!Number.isFinite(n)) return;
+                                setSkipBarHeight(
+                                  Math.min(SKIP_BAR_HEIGHT_MAX, Math.max(SKIP_BAR_HEIGHT_MIN, n))
+                                );
+                              }}
+                              className="w-14 h-8 px-1 text-center text-xs rounded-md border border-slate-200 dark:border-slate-600 bg-white dark:bg-slate-900"
+                            />
+                            <button
+                              type="button"
+                              onClick={() =>
+                                setSkipBarHeight((n) => Math.min(SKIP_BAR_HEIGHT_MAX, n + 2))
+                              }
+                              className="h-8 w-8 rounded-md border border-slate-200 dark:border-slate-600 text-slate-700 dark:text-slate-200 hover:bg-slate-100 dark:hover:bg-slate-800"
+                              title="Taller skip bar"
+                            >
+                              +
+                            </button>
+                          </div>
+                        </label>
+                        <label className="block text-[11px] font-medium text-slate-600 dark:text-slate-300">
+                          Skip bar font
+                          <div className="mt-1 flex items-center gap-1">
+                            <button
+                              type="button"
+                              onClick={() =>
+                                setSkipBarFontSize((n) => Math.max(SKIP_BAR_FONT_MIN, n - 1))
+                              }
+                              className="h-8 w-8 rounded-md border border-slate-200 dark:border-slate-600 text-slate-700 dark:text-slate-200 hover:bg-slate-100 dark:hover:bg-slate-800"
+                              title="Smaller skip bar font"
+                            >
+                              A−
+                            </button>
+                            <input
+                              type="number"
+                              min={SKIP_BAR_FONT_MIN}
+                              max={SKIP_BAR_FONT_MAX}
+                              value={skipBarFontSize}
+                              onChange={(e) => {
+                                const n = Number.parseInt(e.target.value, 10);
+                                if (!Number.isFinite(n)) return;
+                                setSkipBarFontSize(
+                                  Math.min(SKIP_BAR_FONT_MAX, Math.max(SKIP_BAR_FONT_MIN, n))
+                                );
+                              }}
+                              className="w-14 h-8 px-1 text-center text-xs rounded-md border border-slate-200 dark:border-slate-600 bg-white dark:bg-slate-900"
+                            />
+                            <button
+                              type="button"
+                              onClick={() =>
+                                setSkipBarFontSize((n) => Math.min(SKIP_BAR_FONT_MAX, n + 1))
+                              }
+                              className="h-8 w-8 rounded-md border border-slate-200 dark:border-slate-600 text-slate-700 dark:text-slate-200 hover:bg-slate-100 dark:hover:bg-slate-800"
+                              title="Larger skip bar font"
+                            >
+                              A+
+                            </button>
+                          </div>
+                        </label>
+                      </div>
+                      <p
+                        className="truncate rounded border border-slate-200 dark:border-slate-700 px-2 py-1 bg-slate-900 text-slate-100"
+                        style={{ fontSize: tabBarFontSize, minHeight: Math.min(tabBarHeight, 40) }}
+                      >
+                        Preview tab: user@host<span className="text-sky-300 font-semibold"> [prod]</span>
+                      </p>
+                    </section>
+
+                    <div className="flex items-center justify-between gap-2 rounded-lg border border-slate-200 dark:border-slate-600 bg-white dark:bg-slate-900/60 px-2.5 py-2">
+                      <div className="min-w-0">
+                        <p className="text-[11px] font-semibold text-slate-700 dark:text-slate-200">
+                          {editingId ? 'Connection appearance' : 'Appearance defaults'}
+                        </p>
+                        <p className="text-[10px] text-slate-500 dark:text-slate-400 truncate">
+                          {editingId
+                            ? 'Applies only to this connection’s open terminals'
+                            : 'Saved with the connection — does not change other hosts'}
+                        </p>
+                      </div>
+                      <button
+                        type="button"
+                        onClick={() => resetAllAppearance()}
+                        className="shrink-0 px-2.5 py-1.5 text-[11px] font-semibold rounded-md border border-amber-300 dark:border-amber-700 bg-amber-50 dark:bg-amber-950/40 text-amber-800 dark:text-amber-200 hover:bg-amber-100 dark:hover:bg-amber-900/50"
+                        title="Reset all appearance settings to original defaults"
+                      >
+                        Reset all
+                      </button>
+                    </div>
+                    <section className="rounded-lg border border-slate-200 dark:border-slate-600 bg-slate-50/80 dark:bg-slate-900/40 p-2.5 space-y-2">
+                      <div className="flex items-center justify-between gap-2">
+                        <h4 className="text-[11px] font-semibold uppercase tracking-wide text-slate-500 dark:text-slate-400">
+                          Theme presets
+                        </h4>
+                        <span className="text-[10px] text-slate-500 dark:text-slate-400">
+                          {themePresetId === 'custom'
+                            ? 'Custom'
+                            : TERM_THEME_PRESETS.find((p) => p.id === themePresetId)?.label || 'LinkNest'}
+                        </span>
+                      </div>
+                      <div className="grid grid-cols-2 sm:grid-cols-3 gap-1.5 max-h-36 overflow-y-auto pr-0.5">
+                        {TERM_THEME_PRESETS.map((preset) => {
+                          const active = themePresetId === preset.id;
+                          return (
+                            <button
+                              key={preset.id}
+                              type="button"
+                              onClick={() => applyThemePreset(preset.id)}
+                              className={`text-left rounded-md border px-1.5 py-1 transition-colors ${
+                                active
+                                  ? 'border-sky-500 ring-1 ring-sky-400/50'
+                                  : 'border-slate-200 dark:border-slate-600 hover:border-slate-300 dark:hover:border-slate-500'
+                              }`}
+                              title={`Apply ${preset.label} (this connection only)`}
+                            >
+                              <span
+                                className="flex items-center gap-1.5 rounded px-1.5 py-1 text-[10px] font-mono truncate"
+                                style={{
+                                  backgroundColor: preset.background,
+                                  color: preset.foreground,
+                                  border: `1px solid ${preset.selectionBackground}`,
+                                }}
+                              >
+                                <span
+                                  className="w-1.5 h-3 rounded-sm shrink-0"
+                                  style={{ backgroundColor: preset.cursor }}
+                                  aria-hidden
+                                />
+                                {preset.label}
+                              </span>
+                            </button>
+                          );
+                        })}
+                      </div>
+                      <p className="text-[10px] text-slate-500 dark:text-slate-400">
+                        Applies live to this connection’s open terminals only — click Update to save.
+                      </p>
+                    </section>
+
+                    <section className="rounded-lg border border-slate-200 dark:border-slate-600 bg-slate-50/80 dark:bg-slate-900/40 p-2.5 space-y-2">
+                      <h4 className="text-[11px] font-semibold uppercase tracking-wide text-slate-500 dark:text-slate-400">
+                        Font
+                      </h4>
+                      <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
+                        <label className="block text-[11px] font-medium text-slate-600 dark:text-slate-300">
+                          Family
+                          <select
+                            value={TERM_FONT_PRESETS.find((p) => p.value === termFontFamily)?.id || 'system'}
+                            onChange={(e) => {
+                              const preset = TERM_FONT_PRESETS.find((p) => p.id === e.target.value);
+                              setTermFontFamily(preset?.value || DEFAULT_TERM_FONT_FAMILY);
+                            }}
+                            className="mt-1 w-full h-8 px-2 text-xs rounded-md border border-slate-200 dark:border-slate-600 bg-white dark:bg-slate-900 text-slate-900 dark:text-slate-100"
+                            style={{ fontFamily: termFontFamily }}
+                          >
+                            {TERM_FONT_GROUPS.map((group) => (
+                              <optgroup key={group} label={group}>
+                                {TERM_FONT_PRESETS.filter((p) => p.group === group).map((p) => (
+                                  <option key={p.id} value={p.id} style={{ fontFamily: p.value }}>
+                                    {p.label}
+                                  </option>
+                                ))}
+                              </optgroup>
+                            ))}
+                          </select>
+                        </label>
+                        <label className="block text-[11px] font-medium text-slate-600 dark:text-slate-300">
+                          Terminal size
+                          <div className="mt-1 flex items-center gap-1">
+                            <button
+                              type="button"
+                              onClick={() => setTermFontSize((n) => Math.max(TERM_FONT_SIZE_MIN, n - 1))}
+                              className="h-8 w-8 rounded-md border border-slate-200 dark:border-slate-600 text-slate-700 dark:text-slate-200 hover:bg-slate-100 dark:hover:bg-slate-800"
+                              title="Smaller terminal font"
+                            >
+                              A−
+                            </button>
+                            <input
+                              type="number"
+                              min={TERM_FONT_SIZE_MIN}
+                              max={TERM_FONT_SIZE_MAX}
+                              value={termFontSize}
+                              onChange={(e) => {
+                                const n = Number.parseInt(e.target.value, 10);
+                                if (!Number.isFinite(n)) return;
+                                setTermFontSize(Math.min(TERM_FONT_SIZE_MAX, Math.max(TERM_FONT_SIZE_MIN, n)));
+                              }}
+                              className="w-14 h-8 px-1 text-center text-xs rounded-md border border-slate-200 dark:border-slate-600 bg-white dark:bg-slate-900"
+                            />
+                            <button
+                              type="button"
+                              onClick={() => setTermFontSize((n) => Math.min(TERM_FONT_SIZE_MAX, n + 1))}
+                              className="h-8 w-8 rounded-md border border-slate-200 dark:border-slate-600 text-slate-700 dark:text-slate-200 hover:bg-slate-100 dark:hover:bg-slate-800"
+                              title="Larger terminal font"
+                            >
+                              A+
+                            </button>
+                          </div>
+                        </label>
+                        <label className="block text-[11px] font-medium text-slate-600 dark:text-slate-300 sm:col-span-2">
+                          Command bar size
+                          <div className="mt-1 flex items-center gap-1">
+                            <button
+                              type="button"
+                              onClick={() => setCmdFontSize((n) => Math.max(CMD_FONT_SIZE_MIN, n - 1))}
+                              className="h-8 w-8 rounded-md border border-slate-200 dark:border-slate-600 text-slate-700 dark:text-slate-200 hover:bg-slate-100 dark:hover:bg-slate-800"
+                              title="Smaller command font"
+                            >
+                              A−
+                            </button>
+                            <input
+                              type="number"
+                              min={CMD_FONT_SIZE_MIN}
+                              max={CMD_FONT_SIZE_MAX}
+                              value={cmdFontSize}
+                              onChange={(e) => {
+                                const n = Number.parseInt(e.target.value, 10);
+                                if (!Number.isFinite(n)) return;
+                                setCmdFontSize(Math.min(CMD_FONT_SIZE_MAX, Math.max(CMD_FONT_SIZE_MIN, n)));
+                              }}
+                              className="w-14 h-8 px-1 text-center text-xs rounded-md border border-slate-200 dark:border-slate-600 bg-white dark:bg-slate-900"
+                            />
+                            <button
+                              type="button"
+                              onClick={() => setCmdFontSize((n) => Math.min(CMD_FONT_SIZE_MAX, n + 1))}
+                              className="h-8 w-8 rounded-md border border-slate-200 dark:border-slate-600 text-slate-700 dark:text-slate-200 hover:bg-slate-100 dark:hover:bg-slate-800"
+                              title="Larger command font"
+                            >
+                              A+
+                            </button>
+                            <span
+                              className="ml-2 text-[10px] truncate px-2 py-1 rounded border border-slate-200 dark:border-slate-700"
+                              style={{
+                                fontFamily: termFontFamily,
+                                fontSize: cmdFontSize,
+                                backgroundColor: termBgColor,
+                                color: termFgColor,
+                              }}
+                            >
+                              Aa Bb 123
+                            </span>
+                          </div>
+                        </label>
+                      </div>
+                      <span
+                        className="block text-[11px] truncate px-2 py-1.5 rounded border border-slate-200 dark:border-slate-700"
+                        style={{
+                          fontFamily: termFontFamily,
+                          backgroundColor: termBgColor,
+                          color: termFgColor,
+                        }}
+                      >
+                        The quick brown fox — Aa Bb 123
+                      </span>
+                    </section>
+
+                    <section className="rounded-lg border border-slate-200 dark:border-slate-600 bg-slate-50/80 dark:bg-slate-900/40 p-2.5 space-y-2">
+                      <div className="flex items-center justify-between gap-2">
+                        <h4 className="text-[11px] font-semibold uppercase tracking-wide text-slate-500 dark:text-slate-400">
+                          Colors
+                        </h4>
+                        <button
+                          type="button"
+                          onClick={() => applyThemePreset('linknest')}
+                          className="h-7 px-2 text-[10px] rounded-md border border-slate-200 dark:border-slate-600 text-slate-600 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-800"
+                          title="Reset colors to LinkNest theme only"
+                        >
+                          Reset colors
+                        </button>
+                      </div>
+                      <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
+                        <label className="block text-[11px] font-medium text-slate-600 dark:text-slate-300">
+                          Background
+                          <div className="mt-1 flex items-center gap-1.5">
+                            <input
+                              type="color"
+                              value={normalizeHexColor(termBgColor, DEFAULT_TERM_BG_COLOR)}
+                              onChange={(e) => {
+                                markThemeCustom();
+                                setTermBgColor(normalizeHexColor(e.target.value, DEFAULT_TERM_BG_COLOR));
+                              }}
+                              className="h-8 w-10 rounded border border-slate-200 dark:border-slate-600 bg-white dark:bg-slate-900 cursor-pointer p-0.5"
+                              title="Terminal background color"
+                            />
+                            <input
+                              type="text"
+                              value={termBgColor}
+                              onChange={(e) => {
+                                const next = e.target.value.trim();
+                                if (/^#[0-9a-fA-F]{0,6}$/.test(next)) {
+                                  markThemeCustom();
+                                  setTermBgColor(next.toLowerCase());
+                                }
+                              }}
+                              onBlur={() =>
+                                setTermBgColor(normalizeHexColor(termBgColor, DEFAULT_TERM_BG_COLOR))
+                              }
+                              className="flex-1 min-w-0 h-8 px-2 text-xs rounded-md border border-slate-200 dark:border-slate-600 bg-white dark:bg-slate-900 font-mono"
+                              spellCheck={false}
+                            />
+                          </div>
+                        </label>
+                        <label className="block text-[11px] font-medium text-slate-600 dark:text-slate-300">
+                          Foreground
+                          <div className="mt-1 flex items-center gap-1.5">
+                            <input
+                              type="color"
+                              value={normalizeHexColor(termFgColor, DEFAULT_TERM_FG_COLOR)}
+                              onChange={(e) => {
+                                markThemeCustom();
+                                setTermFgColor(normalizeHexColor(e.target.value, DEFAULT_TERM_FG_COLOR));
+                              }}
+                              className="h-8 w-10 rounded border border-slate-200 dark:border-slate-600 bg-white dark:bg-slate-900 cursor-pointer p-0.5"
+                              title="Terminal foreground color"
+                            />
+                            <input
+                              type="text"
+                              value={termFgColor}
+                              onChange={(e) => {
+                                const next = e.target.value.trim();
+                                if (/^#[0-9a-fA-F]{0,6}$/.test(next)) {
+                                  markThemeCustom();
+                                  setTermFgColor(next.toLowerCase());
+                                }
+                              }}
+                              onBlur={() =>
+                                setTermFgColor(normalizeHexColor(termFgColor, DEFAULT_TERM_FG_COLOR))
+                              }
+                              className="flex-1 min-w-0 h-8 px-2 text-xs rounded-md border border-slate-200 dark:border-slate-600 bg-white dark:bg-slate-900 font-mono"
+                              spellCheck={false}
+                            />
+                          </div>
+                        </label>
+                      </div>
+                      <p className="text-[10px] text-slate-500 dark:text-slate-400">
+                        Drag the multi-command bar’s top edge to resize height. Appearance changes apply only to the connection you are editing.
+                      </p>
+                    </section>
+                  </div>
+                ) : (
+                  <div className="space-y-3">
+                    <section className="rounded-lg border border-slate-200 dark:border-slate-600 bg-slate-50/80 dark:bg-slate-900/40 p-2.5 space-y-2">
+                      <h4 className="text-[11px] font-semibold uppercase tracking-wide text-slate-500 dark:text-slate-400">
+                        Type &amp; mode
+                      </h4>
+                      <div className="flex flex-wrap gap-1">
+                        <button
+                          type="button"
+                          onClick={() => setDraftProtocol('ssh')}
+                          className={`px-2.5 py-1 text-[11px] rounded-md border ${
+                            draftProtocol === 'ssh'
+                              ? 'bg-slate-800 text-white border-slate-800 dark:bg-slate-200 dark:text-slate-900'
+                              : 'border-slate-200 dark:border-slate-600 text-slate-600 dark:text-slate-300'
+                          }`}
+                        >
+                          SSH
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => setDraftProtocol('rdp')}
+                          className={`px-2.5 py-1 text-[11px] rounded-md border ${
+                            draftProtocol === 'rdp'
+                              ? 'bg-slate-800 text-white border-slate-800 dark:bg-slate-200 dark:text-slate-900'
+                              : 'border-slate-200 dark:border-slate-600 text-slate-600 dark:text-slate-300'
+                          }`}
+                        >
+                          RDP
+                        </button>
+                        {draftProtocol === 'ssh' && (
+                          <>
+                            <button
+                              type="button"
+                              onClick={() => setConnectMode('auto')}
+                              className={`px-2.5 py-1 text-[11px] rounded-md border ${
+                                connectMode === 'auto'
+                                  ? 'bg-brand-600 text-white border-brand-600'
+                                  : 'border-slate-200 dark:border-slate-600 text-slate-600 dark:text-slate-300'
+                              }`}
+                            >
+                              Easy (ssh://)
+                            </button>
+                            <button
+                              type="button"
+                              onClick={() => setConnectMode('ws')}
+                              className={`px-2.5 py-1 text-[11px] rounded-md border ${
+                                connectMode === 'ws'
+                                  ? 'bg-brand-600 text-white border-brand-600'
+                                  : 'border-slate-200 dark:border-slate-600 text-slate-600 dark:text-slate-300'
+                              }`}
+                            >
+                              Advanced (WebSocket)
+                            </button>
+                          </>
+                        )}
+                      </div>
+                    </section>
+
+                    <section className="rounded-lg border border-slate-200 dark:border-slate-600 bg-slate-50/80 dark:bg-slate-900/40 p-2.5 space-y-2">
+                      <h4 className="text-[11px] font-semibold uppercase tracking-wide text-slate-500 dark:text-slate-400">
+                        Details
+                      </h4>
+                      <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
+                        <label className="block text-[11px] font-medium text-slate-600 dark:text-slate-300">
+                          Name
+                          <input
+                            type="text"
+                            value={draftName}
+                            onChange={(e) => setDraftName(e.target.value)}
+                            placeholder="Prod bastion"
+                            className="mt-1 w-full h-8 px-2 text-xs rounded-md border border-slate-200 dark:border-slate-600 bg-white dark:bg-slate-900 text-slate-900 dark:text-slate-100"
+                          />
+                        </label>
+                        <label className="block text-[11px] font-medium text-slate-600 dark:text-slate-300">
+                          Category
+                          <input
+                            type="text"
+                            list="ssh-connection-categories"
+                            value={draftCategory}
+                            onChange={(e) => setDraftCategory(e.target.value)}
+                            placeholder="Production / Lab / …"
+                            className="mt-1 w-full h-8 px-2 text-xs rounded-md border border-slate-200 dark:border-slate-600 bg-white dark:bg-slate-900 text-slate-900 dark:text-slate-100"
+                          />
+                          <datalist id="ssh-connection-categories">
+                            {knownCategories.map((cat) => (
+                              <option key={cat} value={cat} />
+                            ))}
+                          </datalist>
+                        </label>
+                        <label className="block text-[11px] font-medium text-slate-600 dark:text-slate-300 sm:col-span-2">
+                          Tags (comma-separated)
+                          <input
+                            type="text"
+                            value={draftTags}
+                            onChange={(e) => setDraftTags(e.target.value)}
+                            placeholder="prod, bastion, linux"
+                            className="mt-1 w-full h-8 px-2 text-xs rounded-md border border-slate-200 dark:border-slate-600 bg-white dark:bg-slate-900 text-slate-900 dark:text-slate-100"
+                          />
+                        </label>
+                      </div>
+                      <div>
+                        <p className="text-[11px] font-medium text-slate-600 dark:text-slate-300 mb-1.5">Color</p>
+                        <div className="flex flex-wrap items-center gap-1.5">
+                          {SSH_CONNECTION_COLORS.map((hex) => {
+                            const selected = normalizeSshColor(draftColor) === hex;
+                            return (
+                              <button
+                                key={hex}
+                                type="button"
+                                onClick={() => setDraftColor(hex)}
+                                className={`h-6 w-6 rounded-full border-2 transition-transform ${
+                                  selected
+                                    ? 'border-slate-900 dark:border-white scale-110 ring-2 ring-offset-1 ring-slate-400 dark:ring-offset-slate-800'
+                                    : 'border-white dark:border-slate-700 shadow-sm hover:scale-105'
+                                }`}
+                                style={{ backgroundColor: hex }}
+                                title={hex}
+                                aria-label={`Color ${hex}`}
+                                aria-pressed={selected}
+                              />
+                            );
+                          })}
+                        </div>
+                      </div>
+                      <label className="block text-[11px] font-medium text-slate-600 dark:text-slate-300">
+                        Notes (optional)
+                        <input
+                          type="text"
+                          value={draftNotes}
+                          onChange={(e) => setDraftNotes(e.target.value)}
+                          placeholder="Jump host via VPN"
+                          className="mt-1 w-full h-8 px-2 text-xs rounded-md border border-slate-200 dark:border-slate-600 bg-white dark:bg-slate-900 text-slate-900 dark:text-slate-100"
+                        />
+                      </label>
+                    </section>
+
+                    <section className="rounded-lg border border-slate-200 dark:border-slate-600 bg-slate-50/80 dark:bg-slate-900/40 p-2.5 space-y-2">
+                      <h4 className="text-[11px] font-semibold uppercase tracking-wide text-slate-500 dark:text-slate-400">
+                        Target
+                      </h4>
+                      {draftProtocol === 'rdp' ? (
+                        <div className="space-y-2">
+                          <label className="block text-[11px] font-medium text-slate-600 dark:text-slate-300">
+                            RDP gateway URL
+                            <input
+                              type="url"
+                              value={wsUrl}
+                              onChange={(e) => setWsUrl(e.target.value)}
+                              placeholder="https://guac.example.com/"
+                              className="mt-1 w-full h-8 px-2 text-xs rounded-md border border-slate-200 dark:border-slate-600 bg-white dark:bg-slate-900 text-slate-900 dark:text-slate-100 font-mono"
+                              spellCheck={false}
+                              autoComplete="off"
+                            />
+                          </label>
+                          <p className="text-[10px] text-slate-500 dark:text-slate-400 leading-snug">
+                            Embeds your Guacamole / web RDP page in a session tab. Passwords stay in the gateway — {brandName} never stores them.
+                          </p>
+                        </div>
+                      ) : connectMode === 'auto' ? (
+                        <>
+                          <label className="block text-[11px] font-medium text-slate-600 dark:text-slate-300">
+                            SSH URL
+                            <div className="mt-1 flex gap-1.5">
+                              <input
+                                type="text"
+                                value={sshUrlDraft}
+                                onChange={(e) => setSshUrlDraft(e.target.value)}
+                                onPaste={(e) => {
+                                  const text = e.clipboardData.getData('text');
+                                  if (/^(ssh|auto):\/\//i.test(text.trim())) {
+                                    e.preventDefault();
+                                    applySshUrlPaste(text);
+                                  }
+                                }}
+                                onBlur={() => {
+                                  const t = sshUrlDraft.trim();
+                                  if (/^(ssh|auto):\/\//i.test(t)) applySshUrlPaste(t, { quiet: true });
+                                }}
+                                onKeyDown={(e) => {
+                                  if (e.key === 'Enter') {
+                                    e.preventDefault();
+                                    applySshUrlPaste(sshUrlDraft);
+                                  }
+                                }}
+                                placeholder="ssh://user@host:4422"
+                                title="Paste an ssh:// URL to fill host, port, and username (PAM: encode \ as %5C)"
+                                className="flex-1 min-w-0 h-8 px-2 text-xs rounded-md border border-slate-200 dark:border-slate-600 bg-white dark:bg-slate-900 text-slate-900 dark:text-slate-100 font-mono"
+                                spellCheck={false}
+                                autoComplete="off"
+                              />
+                              <button
+                                type="button"
+                                onClick={() => applySshUrlPaste(sshUrlDraft)}
+                                className="shrink-0 h-8 px-2 text-[11px] rounded-md border border-slate-200 dark:border-slate-600 text-slate-700 dark:text-slate-200 hover:bg-slate-100 dark:hover:bg-slate-800"
+                                title="Parse SSH URL into host / port / username"
+                              >
+                                Apply
+                              </button>
+                              <button
+                                type="button"
+                                onClick={async () => {
+                                  const url =
+                                    sshUrlDraft.trim() ||
+                                    buildSshLinkUrl(
+                                      sshUsername,
+                                      sshHost,
+                                      Number.parseInt(sshPort, 10) || 22
+                                    );
+                                  if (!url) {
+                                    setNotice('Enter host and username first to copy ssh://');
+                                    return;
+                                  }
+                                  try {
+                                    await navigator.clipboard.writeText(url);
+                                    setNotice('Copied ssh:// URL');
+                                  } catch {
+                                    setNotice('Clipboard copy was blocked');
+                                  }
+                                }}
+                                className="shrink-0 h-8 px-2 text-[11px] rounded-md border border-slate-200 dark:border-slate-600 text-slate-700 dark:text-slate-200 hover:bg-slate-100 dark:hover:bg-slate-800"
+                                title="Copy ssh:// URL for space links or sharing"
+                              >
+                                Copy
+                              </button>
+                            </div>
+                          </label>
+                          <p className="text-[10px] text-slate-500 dark:text-slate-400 leading-snug">
+                            Paste <code className="font-mono">ssh://user@host:port</code> to fill the fields below.
+                            For PAM, encode <code className="font-mono">\</code> as{' '}
+                            <code className="font-mono">%5C</code> and <code className="font-mono">+</code> as{' '}
+                            <code className="font-mono">%2B</code>.
+                          </p>
+                          <div className="grid grid-cols-1 sm:grid-cols-3 gap-2">
+                            <label className="block text-[11px] font-medium text-slate-600 dark:text-slate-300 sm:col-span-2">
+                              Host
+                              <input
+                                type="text"
+                                value={sshHost}
+                                onChange={(e) => {
+                                  const v = e.target.value;
+                                  if (/^(ssh|auto):\/\//i.test(v.trim())) {
+                                    applySshUrlPaste(v);
+                                    return;
+                                  }
+                                  setSshHost(v);
+                                }}
+                                placeholder="pam.example.com"
+                                className="mt-1 w-full h-8 px-2 text-xs rounded-md border border-slate-200 dark:border-slate-600 bg-white dark:bg-slate-900 text-slate-900 dark:text-slate-100 font-mono"
+                                spellCheck={false}
+                                autoComplete="off"
+                              />
+                            </label>
+                            <label className="block text-[11px] font-medium text-slate-600 dark:text-slate-300">
+                              Port
+                              <input
+                                type="number"
+                                min={1}
+                                max={65535}
+                                value={sshPort}
+                                onChange={(e) => setSshPort(e.target.value)}
+                                placeholder="22"
+                                className="mt-1 w-full h-8 px-2 text-xs rounded-md border border-slate-200 dark:border-slate-600 bg-white dark:bg-slate-900 text-slate-900 dark:text-slate-100 font-mono"
+                              />
+                            </label>
+                          </div>
+                          <label className="block text-[11px] font-medium text-slate-600 dark:text-slate-300">
+                            Username
+                            <input
+                              type="text"
+                              value={sshUsername}
+                              onChange={(e) => setSshUsername(e.target.value)}
+                              placeholder="user or domain\user+target…"
+                              title="Supports PAM / privileged-access usernames (\, +, custom ports)."
+                              className="mt-1 w-full h-8 px-2 text-xs rounded-md border border-slate-200 dark:border-slate-600 bg-white dark:bg-slate-900 text-slate-900 dark:text-slate-100 font-mono"
+                              spellCheck={false}
+                              autoComplete="off"
+                            />
+                          </label>
+                          <p className="text-[10px] text-slate-500 dark:text-slate-400 leading-snug">
+                            PAM-friendly: long usernames with `\`, `+`, and non-22 ports (e.g. 4489) are passed verbatim to SSH.
+                          </p>
+                          <div className="rounded-md border border-slate-200 dark:border-slate-600 p-2 space-y-2 bg-white/70 dark:bg-slate-950/30">
+                            <label className="block text-[11px] font-semibold text-slate-700 dark:text-slate-200">
+                              Terminal type (TERM)
+                              <select
+                                value={termType}
+                                onChange={(e) => setTermType(normalizeSshTermType(e.target.value))}
+                                className="mt-1 w-full h-8 px-2 text-xs rounded-md border border-slate-200 dark:border-slate-600 bg-white dark:bg-slate-900 text-slate-900 dark:text-slate-100 font-mono"
+                              >
+                                {SSH_TERM_TYPES.map((t) => (
+                                  <option key={t} value={t}>
+                                    {t}
+                                  </option>
+                                ))}
+                              </select>
+                            </label>
+                            <p className="text-[10px] text-slate-500 dark:text-slate-400 leading-snug">
+                              Sent to the remote PTY via ttyd. Default <code className="font-mono">xterm-256color</code>{' '}
+                              works on most hosts. Changing TERM on a live session requires Start again.
+                            </p>
+                          </div>
+                          <div className="rounded-md border border-slate-200 dark:border-slate-600 p-2 space-y-2 bg-white/70 dark:bg-slate-950/30">
+                            <p className="text-[11px] font-semibold text-slate-700 dark:text-slate-200">Session type (via ttyd)</p>
+                            <div className="flex flex-wrap gap-1">
+                              <button
+                                type="button"
+                                onClick={() => setX11Forward(false)}
+                                className={`px-2 py-1 text-[11px] rounded-md border ${
+                                  !x11Forward
+                                    ? 'bg-slate-800 text-white border-slate-800 dark:bg-slate-200 dark:text-slate-900'
+                                    : 'border-slate-200 dark:border-slate-600 text-slate-600 dark:text-slate-300'
+                                }`}
+                              >
+                                Terminal only
+                              </button>
+                              <button
+                                type="button"
+                                onClick={() => setX11Forward(true)}
+                                className={`px-2 py-1 text-[11px] rounded-md border ${
+                                  x11Forward
+                                    ? 'bg-brand-600 text-white border-brand-600'
+                                    : 'border-slate-200 dark:border-slate-600 text-slate-600 dark:text-slate-300'
+                                }`}
+                              >
+                                Terminal + GUI (X11)
+                              </button>
+                            </div>
+                            {x11Forward && (
+                              <div className="text-[10px] text-slate-600 dark:text-slate-300 space-y-1.5 leading-relaxed">
+                                <p className="font-medium text-slate-700 dark:text-slate-200">
+                                  GUI setup ({brandName} starts ttyd with <code className="font-mono">ssh -Y</code>):
+                                </p>
+                                <ol className="list-decimal list-inside space-y-0.5 ml-0.5">
+                                  <li>
+                                    Install{' '}
+                                    <a
+                                      href="https://sourceforge.net/projects/vcxsrv/"
+                                      target="_blank"
+                                      rel="noreferrer"
+                                      className="text-brand-600 dark:text-brand-400 underline"
+                                    >
+                                      VcXsrv
+                                    </a>{' '}
+                                    (or X410) on this Windows PC
+                                  </li>
+                                  <li>
+                                    Start XLaunch → Multiple windows → Start no client → enable{' '}
+                                    <strong>Disable access control</strong> → finish
+                                  </li>
+                                  <li>
+                                    Docker: DISPLAY <code className="font-mono">host.docker.internal:0.0</code>. Local XAMPP:{' '}
+                                    <code className="font-mono">127.0.0.1:0.0</code>.
+                                  </li>
+                                  <li>
+                                    On Linux: <code className="font-mono">X11Forwarding yes</code> in sshd, restart sshd
+                                  </li>
+                                  <li>
+                                    Connect, then run e.g. <code className="font-mono">xclock</code>
+                                  </li>
+                                </ol>
+                                <p
+                                  className={
+                                    guiDisplayReady
+                                      ? 'text-emerald-600 dark:text-emerald-400'
+                                      : 'text-amber-600 dark:text-amber-400'
+                                  }
+                                >
+                                  {guiDisplayReady === true
+                                    ? 'X server detected — GUI forwarding is ready.'
+                                    : guiDisplayReady === false
+                                      ? guiHint || 'X server not detected yet — start VcXsrv, then Connect.'
+                                      : 'Checking X server…'}
+                                </p>
+                              </div>
+                            )}
+                          </div>
+                          {!useServer && (
+                            <p className="text-[10px] text-amber-600 dark:text-amber-400">
+                              Sign in to use Easy mode (server starts ttyd). Guests can use Advanced WebSocket URL mode.
+                            </p>
+                          )}
+                          {useServer && gatewayAvailable === false && (
+                            <p className="text-[10px] text-amber-600 dark:text-amber-400">
+                              {gatewayHint || (
+                                <>
+                                  ttyd was not found on this server. Deploy{' '}
+                                  <code className="font-mono">bin/ttyd.exe</code> with the package, or install with{' '}
+                                  <code className="font-mono">winget install tsl0922.ttyd --source winget</code> then set
+                                  Admin → Add-ons → SSH Gateway.
+                                </>
+                              )}
+                            </p>
+                          )}
+                          {useServer && (
+                            <div className="rounded-md border border-amber-200 dark:border-amber-900/50 bg-amber-50/80 dark:bg-amber-950/30 px-2 py-1.5 space-y-1">
+                              <div className="flex items-center justify-between gap-2 flex-wrap">
+                                <p className="text-[10px] font-medium text-slate-700 dark:text-slate-200">
+                                  Gateway quota
+                                  {gatewayUsage
+                                    ? `: ${gatewayUsage.mine.sessions}/${gatewayUsage.mine.maxConnections} yours · ${gatewayUsage.global.sessions}/${gatewayUsage.global.portCapacity} global`
+                                    : `: tabs ${tabs.length}/${maxSshTabs}`}
+                                  {gatewayUsage?.mine.memoryHuman
+                                    ? ` · mem ${gatewayUsage.mine.memoryHuman}`
+                                    : ''}
+                                </p>
+                                <div className="flex items-center gap-1 shrink-0">
+                                  <button
+                                    type="button"
+                                    onClick={async () => {
+                                      if (
+                                        !window.confirm(
+                                          'Stop all leftover ttyd gateways for your account? Open SSH tabs will disconnect.'
+                                        )
+                                      ) {
+                                        return;
+                                      }
+                                      try {
+                                        const r = await sshGatewayService.stopAll();
+                                        setNotice(
+                                          `Stopped ${r.stopped} leftover gateway(s)` +
+                                            (r.sweptUntracked ? ` (+${r.sweptUntracked} untracked)` : '')
+                                        );
+                                        const st = await sshGatewayService.status();
+                                        setGatewayUsage(st.usage ?? null);
+                                        setGatewaySessions(Array.isArray(st.sessions) ? st.sessions : []);
+                                        if (typeof st.maxConnections === 'number' && st.maxConnections >= 1) {
+                                          setMaxSshTabs(Math.floor(st.maxConnections));
+                                        }
+                                      } catch (err) {
+                                        setNotice(err instanceof Error ? err.message : 'Failed to stop leftovers');
+                                      }
+                                    }}
+                                    className="text-[10px] px-1.5 py-0.5 rounded border border-amber-500 bg-amber-100 dark:bg-amber-900/50 text-amber-900 dark:text-amber-100 font-semibold hover:bg-amber-200 dark:hover:bg-amber-900"
+                                  >
+                                    Kill leftovers
+                                  </button>
+                                  <button
+                                    type="button"
+                                    onClick={() => setShowGatewayUsage((v) => !v)}
+                                    className="text-[10px] px-1.5 py-0.5 rounded border border-slate-300 dark:border-slate-600 text-slate-600 dark:text-slate-300 hover:bg-white dark:hover:bg-slate-800"
+                                  >
+                                    {showGatewayUsage ? 'Hide' : 'Details'}
+                                  </button>
+                                </div>
+                              </div>
+                              {showGatewayUsage && (
+                                <div className="text-[10px] text-slate-500 dark:text-slate-400 space-y-1">
+                                  {gatewayUsage ? (
+                                    <>
+                                      <p>
+                                        Your memory: {gatewayUsage.mine.memoryHuman || '0 B'} · Global ttyd memory:{' '}
+                                        {gatewayUsage.global.memoryHuman || '0 B'}
+                                        {typeof gatewayUsage.mine.clientless === 'number' &&
+                                        gatewayUsage.mine.clientless > 0
+                                          ? ` · ${gatewayUsage.mine.clientless} clientless (auto-kill ~${Math.round((gatewayUsage.idleSec || 600) / 60)}m)`
+                                          : ''}
+                                        {gatewayUsage.host?.memoryAvailableHuman
+                                          ? ` · Host free ${gatewayUsage.host.memoryAvailableHuman}`
+                                          : ''}
+                                        {gatewayUsage.host?.cpuCount ? ` · ${gatewayUsage.host.cpuCount} CPU` : ''}
+                                      </p>
+                                      {gatewaySessions.length > 0 ? (
+                                        <ul className="space-y-0.5 max-h-28 overflow-y-auto">
+                                          {gatewaySessions.map((s) => (
+                                            <li key={s.sessionId} className="flex justify-between gap-2 font-mono">
+                                              <span className="truncate">
+                                                {(s.username || '?') + '@' + (s.host || '?')}:{s.port ?? 22}
+                                                {s.orphan ? ' (no client)' : ''}
+                                              </span>
+                                              <span className="shrink-0 tabular-nums">
+                                                {s.memory?.totalHuman || '—'}
+                                              </span>
+                                            </li>
+                                          ))}
+                                        </ul>
+                                      ) : (
+                                        <p>No active Easy-mode ttyd sessions for your account.</p>
+                                      )}
+                                    </>
+                                  ) : (
+                                    <p>Loading gateway usage…</p>
+                                  )}
+                                  <p className="text-slate-400">
+                                    Leftovers remain after refresh/reconnect while ttyd keeps listening. Use Kill leftovers to free quota.
+                                  </p>
+                                </div>
+                              )}
+                            </div>
+                          )}
+                        </>
+                      ) : (
+                        <label className="block text-[11px] font-medium text-slate-600 dark:text-slate-300">
+                          WebSocket URL (manual ttyd)
+                          <input
+                            type="text"
+                            value={wsUrl}
+                            onChange={(e) => setWsUrl(e.target.value)}
+                            placeholder="ws://localhost:7681/ws"
+                            className="mt-1 w-full h-8 px-2 text-xs rounded-md border border-slate-200 dark:border-slate-600 bg-white dark:bg-slate-900 text-slate-900 dark:text-slate-100"
+                            spellCheck={false}
+                            autoComplete="off"
+                          />
+                        </label>
+                      )}
+                    </section>
+
+                    <p className="text-[10px] text-slate-400 dark:text-slate-500 leading-relaxed px-0.5">
+                      {draftProtocol === 'rdp' ? (
+                        <>
+                          Save an https:// Guacamole (or similar) URL, then Connect to embed it. Passwords stay in the gateway.
+                          {useServer
+                            ? ` Saved only for ${authUsername || 'your account'} (private).`
+                            : ' Guest saves stay in this browser and stay separate from signed-in accounts.'}
+                        </>
+                      ) : (
+                        <>
+                          Use <strong>Update</strong> / <strong>Save</strong> to keep this connection. Passwords are never saved.
+                          {useServer
+                            ? ` Saved only for ${authUsername || 'your account'} (private — not shared with other users or admins).`
+                            : ' Guest saves stay in this browser and stay separate from signed-in accounts.'}
+                        </>
+                      )}
+                    </p>
+                  </div>
+                )}
+              </div>
+
+              {/* Sticky bottom actions */}
+              <div className="sticky bottom-0 z-20 flex items-center justify-between gap-2 px-3 py-2 border-t border-slate-200 dark:border-slate-700 bg-white/95 dark:bg-slate-800/95 backdrop-blur-sm">
+                <p className="text-[10px] text-slate-500 dark:text-slate-400 min-w-0 truncate">
+                  {settingsPane === 'appearance'
+                    ? editingId
+                      ? 'Appearance applies only to this connection’s open terminals'
+                      : 'Appearance will be saved with this new connection'
+                    : editingId
+                      ? 'Edit fields, then Update to save changes'
+                      : 'Fill connection details, then Save'}
+                </p>
+                <div className="flex items-center gap-1.5 shrink-0">
+                  <button
+                    type="button"
+                    onClick={() => setShowSettings(false)}
+                    className="px-2.5 py-1.5 text-[11px] font-medium rounded-md border border-slate-200 dark:border-slate-600 text-slate-600 dark:text-slate-300 hover:bg-slate-50 dark:hover:bg-slate-700"
+                  >
+                    Close
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => void saveCurrentConnection()}
+                    disabled={saving}
+                    className="px-3 py-1.5 text-[11px] font-semibold rounded-md bg-brand-600 hover:bg-brand-700 text-white disabled:opacity-50 shadow-sm"
+                    title={editingId ? 'Update saved connection' : 'Save connection'}
+                  >
+                    {saving ? 'Saving…' : editingId ? 'Update' : 'Save'}
+                  </button>
+                </div>
+              </div>
+            </div>
+          )}
+
+          <div
+            className="relative flex-1 min-h-0 overflow-hidden flex flex-col"
+            style={{ backgroundColor: termBgColor }}
+          >
+            {tabs.length > 0 && (
+              <div
+                className="shrink-0 flex items-center gap-0.5 px-1 border-b border-slate-800 bg-slate-900 overflow-x-auto"
+                style={{ minHeight: tabBarHeight, height: tabBarHeight }}
+              >
+                {tabs.map((tab) => {
+                  const active = tab.id === activeTabId;
+                  const conn = tab.connectionId
+                    ? connections.find((c) => c.id === tab.connectionId)
+                    : undefined;
+                  const connColor = normalizeSshColor(conn?.color || draftColor);
+                  const tagSuffix = formatTabTags(conn?.tags);
+                  const tabLabel = `${tab.title}${tagSuffix}`;
+                  const checkSize = Math.max(12, Math.min(18, Math.round(tabBarFontSize * 0.95)));
+                  return (
+                    <div
+                      key={tab.id}
+                      className={`group flex items-center gap-1 max-w-[18rem] shrink-0 rounded-md border overflow-hidden ${
+                        active
+                          ? 'bg-slate-800 text-slate-100'
+                          : 'bg-transparent text-slate-400 hover:bg-slate-800/60 hover:text-slate-200'
+                      }`}
+                      style={{
+                        borderColor: active ? connColor : `${connColor}66`,
+                        boxShadow: active ? `inset 3px 0 0 ${connColor}` : undefined,
+                        height: Math.max(22, tabBarHeight - 6),
+                      }}
+                    >
+                      <button
+                        type="button"
+                        onClick={() => selectTab(tab.id)}
+                        className="flex items-center gap-1.5 min-w-0 text-left pl-1.5 pr-0.5 h-full"
+                        title={tab.statusMessage || tabLabel}
+                      >
+                        <span
+                          className={`w-2.5 h-2.5 rounded-full shrink-0 ring-1 ring-black/25 ${
+                            tab.status === 'connecting' ? 'animate-pulse' : ''
+                          }`}
+                          style={{
+                            backgroundColor: connColor,
+                            outline:
+                              tab.status === 'connected'
+                                ? '1px solid rgba(52, 211, 153, 0.9)'
+                                : tab.status === 'error'
+                                  ? '1px solid rgba(248, 113, 113, 0.9)'
+                                  : undefined,
+                            outlineOffset: 1,
+                          }}
+                          aria-hidden
+                        />
+                        <span
+                          className="truncate font-medium"
+                          style={{ fontSize: tabBarFontSize }}
+                        >
+                          {tab.title}
+                          {tagSuffix ? (
+                            <span className="text-sky-300/90 font-semibold">{tagSuffix}</span>
+                          ) : null}
+                        </span>
+                      </button>
+                      {(tab.kind || 'ssh') !== 'rdp' && (
+                        <label
+                          className={`flex items-center shrink-0 px-0.5 cursor-pointer h-full ${
+                            tab.excludeFromMulti ? 'text-amber-400' : 'text-slate-500 hover:text-slate-300'
+                          }`}
+                          title={
+                            tab.excludeFromMulti
+                              ? 'Excluded from multi-exec (Send all / Ctrl+C / Multi-paste) — click to include'
+                              : 'Include in multi-exec — check to exclude from Send all / Ctrl+C / Multi-paste'
+                          }
+                          onClick={(e) => e.stopPropagation()}
+                        >
+                          <input
+                            type="checkbox"
+                            checked={Boolean(tab.excludeFromMulti)}
+                            onChange={(e) =>
+                              updateTab(tab.id, { excludeFromMulti: e.target.checked })
+                            }
+                            className="rounded border-slate-600 bg-slate-900 text-amber-500 focus:ring-amber-500/40 focus:ring-offset-0 cursor-pointer"
+                            style={{ width: checkSize, height: checkSize }}
+                            aria-label={
+                              tab.excludeFromMulti
+                                ? `Include ${tabLabel} in multi-exec`
+                                : `Exclude ${tabLabel} from multi-exec`
+                            }
+                          />
+                        </label>
+                      )}
+                      <button
+                        type="button"
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          duplicateTab(tab.id);
+                        }}
+                        className="p-0.5 rounded opacity-60 hover:opacity-100 hover:bg-slate-700 text-sky-300 mr-0.5"
+                        title="Duplicate this session in a new tab"
+                        aria-label={`Duplicate ${tabLabel}`}
+                      >
+                        <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" strokeWidth={1.8} stroke="currentColor" className="w-3.5 h-3.5" aria-hidden>
+                          <path strokeLinecap="round" strokeLinejoin="round" d="M16.5 8.25V6.75A2.25 2.25 0 0014.25 4.5h-7.5A2.25 2.25 0 004.5 6.75v7.5A2.25 2.25 0 006.75 16.5h1.5" />
+                          <path strokeLinecap="round" strokeLinejoin="round" d="M9.75 9.75h7.5A2.25 2.25 0 0119.5 12v7.5a2.25 2.25 0 01-2.25 2.25h-7.5A2.25 2.25 0 017.5 19.5V12a2.25 2.25 0 012.25-2.25z" />
+                        </svg>
+                      </button>
+                      <button
+                        type="button"
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          void closeTab(tab.id);
+                        }}
+                        className="p-0.5 rounded opacity-60 hover:opacity-100 hover:bg-slate-700 text-slate-300 mr-0.5"
+                        title="Close tab"
+                        aria-label={`Close ${tabLabel}`}
+                      >
+                        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor" className="w-3.5 h-3.5">
+                          <path d="M6.28 5.22a.75.75 0 00-1.06 1.06L8.94 10l-3.72 3.72a.75.75 0 101.06 1.06L10 11.06l3.72 3.72a.75.75 0 101.06-1.06L11.06 10l3.72-3.72a.75.75 0 00-1.06-1.06L10 8.94 6.28 5.22z" />
+                        </svg>
+                      </button>
+                    </div>
+                  );
+                })}
+                <div className="ml-auto flex items-center gap-1 shrink-0 pr-0.5">
+                  {activeTabId && (
+                    <button
+                      type="button"
+                      onClick={() => duplicateTab(activeTabId)}
+                      className="px-1.5 h-6 text-[10px] font-semibold rounded border border-sky-700/70 text-sky-200 hover:bg-sky-950/50"
+                      title="Duplicate the active session in a new tab"
+                    >
+                      Duplicate
+                    </button>
+                  )}
+                  {(activeTab?.kind || 'ssh') !== 'rdp' && (
+                    <>
+                      <button
+                        type="button"
+                        onClick={() => void copyActiveSelection()}
+                        className="px-1.5 h-6 text-[10px] font-semibold rounded border border-slate-700 text-slate-300 hover:bg-slate-800 hover:text-white"
+                        title="Selection auto-copies; or click Copy"
+                      >
+                        Copy
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => void pasteIntoActive()}
+                        className="px-1.5 h-6 text-[10px] font-semibold rounded border border-slate-700 text-slate-300 hover:bg-slate-800 hover:text-white"
+                        title="Paste (or right-click in the terminal)"
+                      >
+                        Paste
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => exportTerminalAscii(activeTabId)}
+                        className="px-1.5 h-6 text-[10px] font-semibold rounded border border-emerald-700/70 text-emerald-200 hover:bg-emerald-950/50"
+                        title="Export complete terminal text to a .txt file"
+                      >
+                        Export
+                      </button>
+                    </>
+                  )}
+                  <button
+                    type="button"
+                    onClick={() => {
+                      if (!useServer) return;
+                      setShowSettings(true);
+                      setSettingsPane('connection');
+                      setShowGatewayUsage(true);
+                    }}
+                    className="px-1.5 text-[10px] text-slate-500 hover:text-sky-300"
+                    title={
+                      gatewayUsage
+                        ? `Your ttyd ${gatewayUsage.mine.sessions}/${gatewayUsage.mine.maxConnections} (${gatewayUsage.mine.memoryHuman || '0 B'}) · Global ${gatewayUsage.global.sessions}/${gatewayUsage.global.portCapacity} (${gatewayUsage.global.memoryHuman || '0 B'}) — click for details`
+                        : `Open sessions ${tabs.length}/${maxSshTabs}`
+                    }
+                  >
+                    {tabs.length}/{maxSshTabs}
+                    {gatewayUsage ? ` · ${gatewayUsage.mine.memoryHuman || '0 B'}` : ''}
+                  </button>
+                  {useServer && (
+                    <button
+                      type="button"
+                      onClick={async () => {
+                        if (
+                          !window.confirm(
+                            'Stop all leftover ttyd gateways for your account? Open SSH tabs will disconnect.'
+                          )
+                        ) {
+                          return;
+                        }
+                        try {
+                          const r = await sshGatewayService.stopAll();
+                          setNotice(
+                            `Stopped ${r.stopped} leftover gateway(s)` +
+                              (r.sweptUntracked ? ` (+${r.sweptUntracked} untracked)` : '')
+                          );
+                          const st = await sshGatewayService.status();
+                          setGatewayUsage(st.usage ?? null);
+                          setGatewaySessions(Array.isArray(st.sessions) ? st.sessions : []);
+                          if (typeof st.maxConnections === 'number' && st.maxConnections >= 1) {
+                            setMaxSshTabs(Math.floor(st.maxConnections));
+                          }
+                        } catch (err) {
+                          setNotice(err instanceof Error ? err.message : 'Failed to stop leftovers');
+                        }
+                      }}
+                      className="px-1.5 h-6 text-[10px] font-semibold rounded border border-amber-600/80 text-amber-200 hover:bg-amber-950/50"
+                      title="Kill leftover ttyd processes that still count against your quota"
+                    >
+                      Kill leftovers
+                    </button>
+                  )}
+                </div>
+              </div>
+            )}
+
+            <div
+              className={`relative flex-1 min-h-0 overflow-hidden ${
+                isResizingPanes ? 'select-none' : ''
+              }`}
+            >
+            <div
+              ref={tileLayoutRef}
+              className={
+                viewMode === 'grid'
+                  ? 'absolute inset-0 grid gap-1 p-1 overflow-hidden'
+                  : viewMode === 'stack-v'
+                    ? 'absolute inset-0 flex flex-col p-1 overflow-hidden'
+                    : viewMode === 'stack-h'
+                      ? 'absolute inset-0 flex flex-row p-1 overflow-hidden'
+                      : 'absolute inset-0 overflow-hidden'
+              }
+              style={
+                viewMode === 'grid'
+                  ? {
+                      gridTemplateColumns: normalizeShareArray(gridColShares, tileCols)
+                        .map((s) => `minmax(0, ${s}fr)`)
+                        .join(' '),
+                      gridTemplateRows: normalizeShareArray(gridRowShares, tileRows)
+                        .map((s) => `minmax(0, ${s}fr)`)
+                        .join(' '),
+                    }
+                  : undefined
+              }
+            >
+              {tabs.map((tab, tabIndex) => {
+                const conn = tab.connectionId
+                  ? connections.find((c) => c.id === tab.connectionId)
+                  : undefined;
+                const connColor = normalizeSshColor(conn?.color || draftColor);
+                const tagSuffix = formatTabTags(conn?.tags);
+                const skipCheckSize = Math.max(12, Math.min(18, Math.round(skipBarFontSize)));
+                const isActive = tab.id === activeTabId;
+                const paneShare = normalizeShareArray(paneShares, tabs.length)[tabIndex] ?? 1;
+                const stackFlex =
+                  multiView && (viewMode === 'stack-h' || viewMode === 'stack-v')
+                    ? { flex: `${paneShare} 1 0%` }
+                    : undefined;
+                const titleGrabClass = floatWindowDrag
+                  ? floatWindowDrag.isDragging
+                    ? 'cursor-grabbing'
+                    : 'cursor-grab'
+                  : '';
+                const tabAppearance = resolveTabAppearance(tab);
+                const paneBg =
+                  multiView && (tab.kind || 'ssh') !== 'rdp'
+                    ? tabAppearance.bgColor
+                    : termBgColor;
+
+                const pane = (
+                  <div
+                    className={
+                      multiView
+                        ? `min-h-0 min-w-0 flex flex-col rounded-md border overflow-hidden transition-[box-shadow,border-color] duration-200 ${
+                            isActive
+                              ? 'ring-2 ring-orange-400/80 border-orange-400/70 shadow-[0_0_0_1px_rgba(251,146,60,0.35)]'
+                              : 'opacity-90'
+                          }`
+                        : `absolute inset-0 flex flex-col overflow-hidden ${
+                            isActive ? 'z-10 visible' : 'z-0 invisible pointer-events-none'
+                          }`
+                    }
+                    style={
+                      multiView
+                        ? {
+                            borderColor: isActive ? undefined : `${connColor}66`,
+                            backgroundColor: paneBg,
+                            ...stackFlex,
+                          }
+                        : { backgroundColor: paneBg }
+                    }
+                    aria-hidden={!multiView && !isActive}
+                    onMouseDown={() => {
+                      if (multiView) selectTab(tab.id);
+                    }}
+                  >
+                    {multiView && (
+                      <div
+                        className={`shrink-0 flex items-center gap-1 px-1.5 font-medium border-b transition-colors duration-200 ${titleGrabClass} ${
+                          isActive
+                            ? 'bg-orange-500/25 text-orange-50 border-orange-400/50'
+                            : 'bg-slate-900/80 text-slate-300 border-slate-800'
+                        }`}
+                        style={{
+                          boxShadow: isActive
+                            ? `inset 4px 0 0 #f97316, inset 0 -1px 0 rgba(249,115,22,0.35)`
+                            : `inset 3px 0 0 ${connColor}`,
+                          minHeight: skipBarHeight,
+                          height: skipBarHeight,
+                          fontSize: skipBarFontSize,
+                        }}
+                        onPointerDown={onPaneTitleBarPointerDown}
+                      >
+                        <span
+                          className={`rounded-full shrink-0 ring-2 ${
+                            isActive
+                              ? 'animate-pulse ring-orange-300 shadow-[0_0_8px_rgba(249,115,22,0.85)]'
+                              : 'ring-black/25'
+                          }`}
+                          style={{
+                            width: isActive ? 11 : 10,
+                            height: isActive ? 11 : 10,
+                            backgroundColor: isActive ? '#f97316' : connColor,
+                          }}
+                          aria-hidden
+                          title={isActive ? 'Active terminal' : undefined}
+                        />
+                        <span
+                          className="truncate min-w-0 max-w-[28%] pointer-events-none"
+                          title={floatWindowDrag ? `${tab.title} — drag bar to move window` : tab.title}
+                        >
+                          {tab.title}
+                          {tagSuffix ? (
+                            <span
+                              className={`font-semibold ${
+                                isActive ? 'text-orange-200' : 'text-sky-300/90'
+                              }`}
+                            >
+                              {tagSuffix}
+                            </span>
+                          ) : null}
+                        </span>
+                        {(tab.kind || 'ssh') !== 'rdp' && (
+                          <div
+                            className="flex items-center gap-0.5 shrink-0 min-w-0 flex-1 justify-end overflow-hidden"
+                            onPointerDown={(e) => e.stopPropagation()}
+                            onMouseDown={(e) => e.stopPropagation()}
+                            title="Quick terminal appearance"
+                          >
+                            <select
+                              value={
+                                TERM_FONT_PRESETS.find((p) => p.value === tabAppearance.fontFamily)
+                                  ?.id || 'system'
+                              }
+                              onChange={(e) => {
+                                const preset = TERM_FONT_PRESETS.find((p) => p.id === e.target.value);
+                                applyQuickTitleBarAppearance(tab, {
+                                  fontFamily: preset?.value || DEFAULT_TERM_FONT_FAMILY,
+                                });
+                              }}
+                              className={`h-5 max-w-[7.5rem] min-w-0 px-0.5 rounded border text-[9px] leading-none cursor-pointer ${
+                                isActive
+                                  ? 'border-orange-300/50 bg-orange-950/40 text-orange-50'
+                                  : 'border-slate-600 bg-slate-950 text-slate-200'
+                              }`}
+                              style={{ fontFamily: tabAppearance.fontFamily }}
+                              title="Font family"
+                              aria-label={`Font for ${tab.title}`}
+                            >
+                              {TERM_FONT_GROUPS.map((group) => (
+                                <optgroup key={group} label={group}>
+                                  {TERM_FONT_PRESETS.filter((p) => p.group === group).map((p) => (
+                                    <option key={p.id} value={p.id} style={{ fontFamily: p.value }}>
+                                      {p.label}
+                                    </option>
+                                  ))}
+                                </optgroup>
+                              ))}
+                            </select>
+                            <button
+                              type="button"
+                              onClick={(e) => {
+                                e.stopPropagation();
+                                applyQuickTitleBarAppearance(tab, {
+                                  fontSize: Math.max(TERM_FONT_SIZE_MIN, tabAppearance.fontSize - 1),
+                                });
+                              }}
+                              className={`h-5 w-5 shrink-0 rounded border text-[9px] font-bold leading-none cursor-pointer ${
+                                isActive
+                                  ? 'border-orange-300/50 text-orange-50 hover:bg-orange-500/30'
+                                  : 'border-slate-600 text-slate-300 hover:bg-slate-800'
+                              }`}
+                              title="Smaller font"
+                              aria-label={`Smaller font for ${tab.title}`}
+                            >
+                              A−
+                            </button>
+                            <span
+                              className={`shrink-0 w-5 text-center tabular-nums text-[9px] font-semibold pointer-events-none ${
+                                isActive ? 'text-orange-100' : 'text-slate-400'
+                              }`}
+                              title="Font size"
+                            >
+                              {tabAppearance.fontSize}
+                            </span>
+                            <button
+                              type="button"
+                              onClick={(e) => {
+                                e.stopPropagation();
+                                applyQuickTitleBarAppearance(tab, {
+                                  fontSize: Math.min(TERM_FONT_SIZE_MAX, tabAppearance.fontSize + 1),
+                                });
+                              }}
+                              className={`h-5 w-5 shrink-0 rounded border text-[9px] font-bold leading-none cursor-pointer ${
+                                isActive
+                                  ? 'border-orange-300/50 text-orange-50 hover:bg-orange-500/30'
+                                  : 'border-slate-600 text-slate-300 hover:bg-slate-800'
+                              }`}
+                              title="Larger font"
+                              aria-label={`Larger font for ${tab.title}`}
+                            >
+                              A+
+                            </button>
+                            <label
+                              className="relative shrink-0 h-5 w-5 rounded border overflow-hidden cursor-pointer"
+                              style={{
+                                borderColor: isActive ? 'rgba(253,186,116,0.5)' : '#475569',
+                                backgroundColor: tabAppearance.fgColor,
+                              }}
+                              title="Foreground color"
+                            >
+                              <input
+                                type="color"
+                                value={normalizeHexColor(tabAppearance.fgColor, DEFAULT_TERM_FG_COLOR)}
+                                onChange={(e) => {
+                                  applyQuickTitleBarAppearance(tab, {
+                                    fgColor: normalizeHexColor(e.target.value, DEFAULT_TERM_FG_COLOR),
+                                  });
+                                }}
+                                className="absolute inset-0 opacity-0 cursor-pointer"
+                                aria-label={`Foreground color for ${tab.title}`}
+                              />
+                            </label>
+                            <label
+                              className="relative shrink-0 h-5 w-5 rounded border overflow-hidden cursor-pointer"
+                              style={{
+                                borderColor: isActive ? 'rgba(253,186,116,0.5)' : '#475569',
+                                backgroundColor: tabAppearance.bgColor,
+                              }}
+                              title="Background color"
+                            >
+                              <input
+                                type="color"
+                                value={normalizeHexColor(tabAppearance.bgColor, DEFAULT_TERM_BG_COLOR)}
+                                onChange={(e) => {
+                                  applyQuickTitleBarAppearance(tab, {
+                                    bgColor: normalizeHexColor(e.target.value, DEFAULT_TERM_BG_COLOR),
+                                  });
+                                }}
+                                className="absolute inset-0 opacity-0 cursor-pointer"
+                                aria-label={`Background color for ${tab.title}`}
+                              />
+                            </label>
+                          </div>
+                        )}
+                        {isActive && (
+                          <span
+                            className="shrink-0 px-1.5 py-0.5 rounded bg-orange-500/90 text-white font-bold uppercase tracking-wide pointer-events-none"
+                            style={{ fontSize: Math.max(9, skipBarFontSize - 2) }}
+                          >
+                            Active
+                          </span>
+                        )}
+                        {(tab.kind || 'ssh') !== 'rdp' && (
+                          <button
+                            type="button"
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              exportTerminalAscii(tab.id);
+                            }}
+                            className={`shrink-0 px-1.5 py-0.5 rounded border font-semibold cursor-pointer ${
+                              isActive
+                                ? 'border-orange-300/50 text-orange-50 hover:bg-orange-500/30'
+                                : 'border-emerald-700/60 text-emerald-200 hover:bg-emerald-950/50'
+                            }`}
+                            style={{ fontSize: Math.max(9, skipBarFontSize - 1) }}
+                            title="Export complete terminal text to a .txt file"
+                          >
+                            Export
+                          </button>
+                        )}
+                        {(tab.kind || 'ssh') !== 'rdp' && (
+                          <label
+                            className={`flex items-center gap-1 shrink-0 cursor-pointer ${
+                              tab.excludeFromMulti
+                                ? 'text-amber-300'
+                                : isActive
+                                  ? 'text-orange-100/80'
+                                  : 'text-slate-500'
+                            }`}
+                            title={
+                              tab.excludeFromMulti
+                                ? 'Excluded from multi-exec — click to include'
+                                : 'Check to exclude from multi-exec'
+                            }
+                            onClick={(e) => e.stopPropagation()}
+                          >
+                            <input
+                              type="checkbox"
+                              checked={Boolean(tab.excludeFromMulti)}
+                              onChange={(e) =>
+                                updateTab(tab.id, { excludeFromMulti: e.target.checked })
+                              }
+                              className="rounded border-slate-600 bg-slate-900 text-amber-500 focus:ring-amber-500/40 focus:ring-offset-0 cursor-pointer"
+                              style={{ width: skipCheckSize, height: skipCheckSize }}
+                            />
+                            <span
+                              className="uppercase tracking-wide font-semibold"
+                              style={{ fontSize: Math.max(9, skipBarFontSize - 1) }}
+                            >
+                              {tab.excludeFromMulti ? 'Skip' : 'Multi'}
+                            </span>
+                          </label>
+                        )}
+                        <span
+                          className={`shrink-0 pointer-events-none ${isActive ? 'text-orange-100/70' : 'text-slate-500'}`}
+                          style={{ fontSize: Math.max(9, skipBarFontSize - 1) }}
+                        >
+                          {tab.status}
+                        </span>
+                        <button
+                          type="button"
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            duplicateTab(tab.id);
+                          }}
+                          className={`shrink-0 px-1.5 py-0.5 rounded border font-semibold leading-none cursor-pointer ${
+                            isActive
+                              ? 'border-sky-300/70 bg-sky-600/80 text-white hover:bg-sky-500'
+                              : 'border-sky-700/70 bg-sky-950/50 text-sky-300 hover:bg-sky-900/70 hover:text-sky-100'
+                          }`}
+                          style={{ fontSize: Math.max(10, skipBarFontSize - 1) }}
+                          title={`Duplicate ${tab.title} in a new tab`}
+                          aria-label={`Duplicate ${tab.title}`}
+                        >
+                          ⧉
+                        </button>
+                        <button
+                          type="button"
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            void closeTab(tab.id);
+                          }}
+                          className={`shrink-0 px-1.5 py-0.5 rounded border font-bold leading-none cursor-pointer ${
+                            isActive
+                              ? 'border-rose-400/70 bg-rose-600/80 text-white hover:bg-rose-500'
+                              : 'border-rose-700/70 bg-rose-950/50 text-rose-300 hover:bg-rose-900/70 hover:text-rose-100'
+                          }`}
+                          style={{ fontSize: Math.max(11, skipBarFontSize) }}
+                          title={`Disconnect and close ${tab.title}`}
+                          aria-label={`Disconnect ${tab.title}`}
+                        >
+                          [x]
+                        </button>
+                      </div>
+                    )}
+                    {tab.kind === 'rdp' ? (
+                      <div className="relative flex-1 min-h-0 overflow-hidden">
+                        <RdpSessionPane
+                          url={tab.rdpUrl || ''}
+                          title={tab.title}
+                          active={isActive || multiView}
+                          onStatus={(s, m) =>
+                            updateTab(tab.id, {
+                              status: s,
+                              statusMessage: m || '',
+                            })
+                          }
+                        />
+                      </div>
+                    ) : (
+                      <XtermZoomSafeHost
+                        className="relative flex-1 min-h-0"
+                        onZoomCompensated={onHostZoomCompensated}
+                        ref={(el) => {
+                          if (el) tabHostsRef.current.set(tab.id, el);
+                          else tabHostsRef.current.delete(tab.id);
+                        }}
+                      />
+                    )}
+                  </div>
+                );
+
+                if (
+                  multiView &&
+                  (viewMode === 'stack-h' || viewMode === 'stack-v') &&
+                  tabIndex < tabs.length - 1
+                ) {
+                  const axis = viewMode === 'stack-h' ? 'x' : 'y';
+                  return (
+                    <React.Fragment key={tab.id}>
+                      {pane}
+                      <div
+                        role="separator"
+                        aria-orientation={axis === 'x' ? 'vertical' : 'horizontal'}
+                        aria-label="Resize terminal panes"
+                        title="Drag to resize panes"
+                        onPointerDown={(e) => startStackPaneResize(e, tabIndex, axis)}
+                        className={
+                          axis === 'x'
+                            ? `shrink-0 self-stretch w-1.5 z-10 cursor-col-resize rounded-full ${
+                                isResizingPanes ? 'bg-brand-500/50' : 'bg-transparent hover:bg-brand-400/40'
+                              }`
+                            : `shrink-0 self-stretch h-1.5 z-10 cursor-row-resize rounded-full ${
+                                isResizingPanes ? 'bg-brand-500/50' : 'bg-transparent hover:bg-brand-400/40'
+                              }`
+                        }
+                      />
+                    </React.Fragment>
+                  );
+                }
+
+                return <React.Fragment key={tab.id}>{pane}</React.Fragment>;
+              })}
+              {tabs.length === 0 && (
+                <div className="absolute inset-0 flex items-center justify-center pointer-events-none">
+                  <div className="text-center px-4">
+                    <div className="mx-auto mb-2 w-10 h-10 rounded-xl bg-slate-800 text-slate-300 flex items-center justify-center">
+                      <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" className="w-5 h-5">
+                        <polyline points="4 17 10 11 4 5" />
+                        <line x1="12" y1="19" x2="20" y2="19" />
+                      </svg>
+                    </div>
+                    <p className="text-xs text-slate-400">
+                      {connections.length
+                        ? `Click a saved connection to open a session tab (up to ${maxSshTabs})`
+                        : 'Connect or pick a saved host — each session opens in its own tab'}
+                    </p>
+                  </div>
+                </div>
+              )}
+            </div>
+              {multiView &&
+                viewMode === 'grid' &&
+                tabs.length > 1 &&
+                normalizeShareArray(gridColShares, tileCols)
+                  .slice(0, -1)
+                  .map((_, i) => {
+                    const cols = normalizeShareArray(gridColShares, tileCols);
+                    const pct = shareBoundaryPct(cols, i + 1);
+                    return (
+                      <div
+                        key={`grid-col-split-${i}`}
+                        role="separator"
+                        aria-orientation="vertical"
+                        aria-label="Resize terminal columns"
+                        title="Drag to resize columns"
+                        onPointerDown={(e) => startGridTrackResize(e, 'col', i)}
+                        className={`absolute z-10 w-1.5 -ml-[3px] cursor-col-resize rounded-full ${
+                          isResizingPanes ? 'bg-brand-500/50' : 'bg-transparent hover:bg-brand-400/40'
+                        }`}
+                        style={{
+                          left: `calc(0.25rem + (100% - 0.5rem) * ${pct / 100})`,
+                          top: '0.25rem',
+                          bottom: '0.25rem',
+                        }}
+                      />
+                    );
+                  })}
+              {multiView &&
+                viewMode === 'grid' &&
+                tabs.length > 1 &&
+                tileRows > 1 &&
+                normalizeShareArray(gridRowShares, tileRows)
+                  .slice(0, -1)
+                  .map((_, i) => {
+                    const rows = normalizeShareArray(gridRowShares, tileRows);
+                    const pct = shareBoundaryPct(rows, i + 1);
+                    return (
+                      <div
+                        key={`grid-row-split-${i}`}
+                        role="separator"
+                        aria-orientation="horizontal"
+                        aria-label="Resize terminal rows"
+                        title="Drag to resize rows"
+                        onPointerDown={(e) => startGridTrackResize(e, 'row', i)}
+                        className={`absolute z-10 h-1.5 -mt-[3px] cursor-row-resize rounded-full ${
+                          isResizingPanes ? 'bg-brand-500/50' : 'bg-transparent hover:bg-brand-400/40'
+                        }`}
+                        style={{
+                          top: `calc(0.25rem + (100% - 0.5rem) * ${pct / 100})`,
+                          left: '0.25rem',
+                          right: '0.25rem',
+                        }}
+                      />
+                    );
+                  })}
+            </div>
+
+            {(() => {
+              const sshTabs = tabs.filter((t) => (t.kind || 'ssh') !== 'rdp');
+              const includedTabs = sshTabs.filter((t) => !t.excludeFromMulti);
+              const includedConnected = includedTabs.filter((t) => t.status === 'connected').length;
+              const activeIsRdp = (activeTab?.kind || 'ssh') === 'rdp';
+              if (sshTabs.length === 0 || activeIsRdp) return null;
+              return (
+              <div
+                className={`shrink-0 border-t border-slate-800 bg-slate-900 relative flex flex-col ${
+                  isResizingCmdBar ? 'select-none' : ''
+                }`}
+                style={{ height: cmdBarHeight }}
+              >
+                <div
+                  role="separator"
+                  aria-orientation="horizontal"
+                  aria-label="Resize command bar"
+                  title="Drag to resize command bar"
+                  onPointerDown={startCmdBarResize}
+                  className={`absolute left-0 right-0 top-0 h-2 z-10 cursor-ns-resize flex items-start justify-center ${
+                    isResizingCmdBar ? 'bg-sky-500/30' : 'hover:bg-sky-400/20'
+                  }`}
+                >
+                  <span
+                    className={`mt-0.5 h-0.5 w-10 rounded-full ${
+                      isResizingCmdBar ? 'bg-sky-400' : 'bg-slate-600'
+                    }`}
+                  />
+                </div>
+                <div className="flex-1 min-h-0 flex items-stretch gap-2 px-2 pt-2.5 pb-1.5 overflow-hidden">
+                  <span className="text-[10px] font-semibold uppercase tracking-wide text-sky-400 shrink-0 self-start mt-1.5">
+                    All
+                  </span>
+                  <textarea
+                    value={broadcastCmd}
+                    onChange={(e) => setBroadcastCmd(e.target.value)}
+                    onKeyDown={(e) => {
+                      // Ctrl+A–Z (except V) → send control char to included terminals
+                      if (e.ctrlKey && !e.metaKey && !e.altKey && e.key.length === 1) {
+                        const lower = e.key.toLowerCase();
+                        if (lower === 'v') {
+                          // Keep Ctrl+V as paste into the command bar
+                          return;
+                        }
+                        if (lower >= 'a' && lower <= 'z') {
+                          e.preventDefault();
+                          e.stopPropagation();
+                          const ctrlChar = String.fromCharCode(lower.charCodeAt(0) - 96);
+                          sendKeyToAll(ctrlChar, `Ctrl+${lower.toUpperCase()}`);
+                          return;
+                        }
+                        if (e.key === '\\') {
+                          e.preventDefault();
+                          e.stopPropagation();
+                          sendKeyToAll('\x1c', 'Ctrl+\\');
+                          return;
+                        }
+                        if (e.key === ']') {
+                          e.preventDefault();
+                          e.stopPropagation();
+                          sendKeyToAll('\x1d', 'Ctrl+]');
+                          return;
+                        }
+                        if (e.key === '[') {
+                          e.preventDefault();
+                          e.stopPropagation();
+                          sendKeyToAll('\x1b', 'Ctrl+[');
+                          return;
+                        }
+                      }
+                      // Arrow keys → send CSI sequences to included terminals
+                      if (
+                        !e.ctrlKey &&
+                        !e.metaKey &&
+                        !e.altKey &&
+                        (e.key === 'ArrowUp' ||
+                          e.key === 'ArrowDown' ||
+                          e.key === 'ArrowLeft' ||
+                          e.key === 'ArrowRight')
+                      ) {
+                        e.preventDefault();
+                        e.stopPropagation();
+                        const arrowMap: Record<string, { payload: string; label: string }> = {
+                          ArrowUp: { payload: '\x1b[A', label: '↑' },
+                          ArrowDown: { payload: '\x1b[B', label: '↓' },
+                          ArrowRight: { payload: '\x1b[C', label: '→' },
+                          ArrowLeft: { payload: '\x1b[D', label: '←' },
+                        };
+                        const arrow = arrowMap[e.key];
+                        if (arrow) sendKeyToAll(arrow.payload, arrow.label);
+                        return;
+                      }
+                      if (e.key === 'Enter' && !e.shiftKey && !e.ctrlKey && !e.metaKey) {
+                        e.preventDefault();
+                        const cmd = broadcastCmd;
+                        setBroadcastCmd('');
+                        broadcastToAll(cmd);
+                      }
+                    }}
+                    placeholder={
+                      includedConnected > 0
+                        ? `Command to ${includedConnected} included SSH terminal${includedConnected === 1 ? '' : 's'}… (Enter send · Shift+Enter newline · Ctrl+key / arrows send)`
+                        : 'No included connected terminals — uncheck a tab’s exclude box'
+                    }
+                    className="flex-1 min-w-0 min-h-0 resize-none px-2.5 py-1.5 rounded-md border border-slate-700 bg-slate-950 text-slate-100 placeholder:text-slate-500 leading-relaxed tracking-wide"
+                    style={{
+                      fontFamily: termFontFamily,
+                      fontSize: cmdFontSize,
+                    }}
+                    spellCheck={false}
+                    autoComplete="off"
+                    wrap="soft"
+                  />
+                  <div className="grid grid-cols-3 gap-1 shrink-0 self-center content-center max-h-full overflow-hidden">
+                    <button
+                      type="button"
+                      onClick={() => {
+                        const cmd = broadcastCmd;
+                        setBroadcastCmd('');
+                        broadcastToAll(cmd);
+                      }}
+                      disabled={!broadcastCmd.trim() || includedConnected === 0}
+                      className="px-2.5 h-7 text-[11px] font-semibold rounded-md bg-sky-600 hover:bg-sky-500 text-white disabled:opacity-40 whitespace-nowrap"
+                      title="Send to all included connected SSH terminals"
+                    >
+                      Send all
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => interruptAll()}
+                      disabled={includedConnected === 0}
+                      className="px-2.5 h-7 text-[11px] font-semibold rounded-md border border-rose-700/70 bg-rose-950/60 hover:bg-rose-900/70 text-rose-200 disabled:opacity-40 font-mono whitespace-nowrap"
+                      title="Send Ctrl+C to all included connected SSH terminals"
+                    >
+                      Ctrl+C
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => suspendAll()}
+                      disabled={includedConnected === 0}
+                      className="px-2.5 h-7 text-[11px] font-semibold rounded-md border border-orange-700/70 bg-orange-950/50 hover:bg-orange-900/60 text-orange-200 disabled:opacity-40 font-mono whitespace-nowrap"
+                      title="Send Ctrl+Z to all included connected SSH terminals"
+                    >
+                      Ctrl+Z
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => void pasteToAll()}
+                      disabled={includedConnected === 0}
+                      className="px-2.5 h-7 text-[11px] font-semibold rounded-md border border-emerald-700/70 bg-emerald-950/50 hover:bg-emerald-900/60 text-emerald-200 disabled:opacity-40 whitespace-nowrap"
+                      title="Paste clipboard into all included connected SSH terminals"
+                    >
+                      Multi-paste
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => eofAll()}
+                      disabled={includedConnected === 0}
+                      className="px-2.5 h-7 text-[11px] font-semibold rounded-md border border-fuchsia-700/70 bg-fuchsia-950/50 hover:bg-fuchsia-900/60 text-fuchsia-200 disabled:opacity-40 font-mono whitespace-nowrap"
+                      title="Send Ctrl+D to all included connected SSH terminals"
+                    >
+                      Ctrl+D
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => enterAll()}
+                      disabled={includedConnected === 0}
+                      className="px-2.5 h-7 text-[11px] font-semibold rounded-md border border-indigo-700/70 bg-indigo-950/50 hover:bg-indigo-900/60 text-indigo-200 disabled:opacity-40 font-mono whitespace-nowrap"
+                      title="Send Enter to all included connected SSH terminals"
+                    >
+                      Enter
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => clearAllTerminals()}
+                      disabled={includedConnected === 0}
+                      className="px-2.5 h-7 text-[11px] font-semibold rounded-md border border-slate-600 bg-slate-800 hover:bg-slate-700 text-slate-200 disabled:opacity-40 font-mono whitespace-nowrap"
+                      title="Run clear on all included connected SSH terminals"
+                    >
+                      Clear
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => arrowUpAll()}
+                      disabled={includedConnected === 0}
+                      className="px-2.5 h-7 text-[11px] font-semibold rounded-md border border-cyan-700/70 bg-cyan-950/50 hover:bg-cyan-900/60 text-cyan-200 disabled:opacity-40 font-mono whitespace-nowrap"
+                      title="Send ↑ to all included connected SSH terminals (previous history)"
+                    >
+                      ↑
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => arrowDownAll()}
+                      disabled={includedConnected === 0}
+                      className="px-2.5 h-7 text-[11px] font-semibold rounded-md border border-cyan-700/70 bg-cyan-950/50 hover:bg-cyan-900/60 text-cyan-200 disabled:opacity-40 font-mono whitespace-nowrap"
+                      title="Send ↓ to all included connected SSH terminals (next history)"
+                    >
+                      ↓
+                    </button>
+                  </div>
+                </div>
+              </div>
+              );
+            })()}
+          </div>
+        </div>
+      </div>
+    </div>
+  );
+};
+
+export default SshTerminalWidget;

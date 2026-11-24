@@ -40,6 +40,113 @@ if (!extension_loaded('ldap')) {
     ]);
 }
 
+/**
+ * Decode common Active Directory AcceptSecurityContext "data XXX" hex codes.
+ * See: https://ldapwiki.com/wiki/Wiki.jsp?page=Common%20Active%20Directory%20Bind%20Errors
+ */
+function ldapTestExplainAdBindData($diagnosticMessage): string {
+    if (!is_string($diagnosticMessage) || $diagnosticMessage === '') {
+        return '';
+    }
+    if (!preg_match('/\bdata\s+([0-9a-fA-F]+)\b/', $diagnosticMessage, $m)) {
+        return '';
+    }
+    $code = strtolower($m[1]);
+    $map = [
+        '525' => 'User not found (wrong Bind DN / account name).',
+        '52e' => 'Invalid credentials — wrong password (or wrong account).',
+        '530' => 'Not permitted to logon at this time (logon hours).',
+        '531' => 'Not permitted to logon from this workstation.',
+        '532' => 'Password expired — reset the service account password in AD.',
+        '533' => 'Account disabled in Active Directory.',
+        '701' => 'Account expired in Active Directory.',
+        '773' => 'User must reset password before login (pwdLastSet / must change).',
+        '775' => 'Account is LOCKED OUT in Active Directory. Unlock the service account in ADUC, then retry.',
+    ];
+    if (!isset($map[$code])) {
+        return "AD subcode data {$code} (see Microsoft LDAP bind error data codes).";
+    }
+    return $map[$code];
+}
+
+/**
+ * Resolve bind password from the admin test form.
+ * UI normally sends plaintext (already decrypted by settings GET).
+ * Encrypted blobs are decrypted when recognized; fake-encrypted plaintext is kept as-is.
+ */
+function ldapTestResolveBindPassword($pass): string {
+    if ($pass === null) {
+        return '';
+    }
+    $pass = trim((string)$pass);
+    if ($pass === '') {
+        return '';
+    }
+    if (function_exists('isMaskedPasswordPlaceholder') && isMaskedPasswordPlaceholder($pass)) {
+        throw new Exception(
+            'Bind password looks like a masked placeholder (asterisks). ' .
+            'Clear the field, re-type the real password, Save Server, then test again.'
+        );
+    }
+    if (!isLikelyEncryptedPassword($pass)) {
+        return $pass;
+    }
+    try {
+        return (string)decryptPassword($pass);
+    } catch (Exception $e) {
+        // Unusual plaintext that only *looked* encrypted — bind with the raw value
+        return $pass;
+    }
+}
+
+/**
+ * Load a stored bind password from ldap_servers (or legacy flat key) when the test
+ * form left the password blank ("keep existing").
+ */
+function ldapTestLoadStoredBindPassword(int $serverIndex, string $hostHint = ''): string {
+    try {
+        $db = getDB();
+        $stmt = $db->prepare("SELECT value FROM settings WHERE key = 'ldap_servers' LIMIT 1");
+        $stmt->execute();
+        $row = $stmt->fetch();
+        if ($row && !empty($row['value'])) {
+            $servers = json_decode($row['value'], true);
+            if (is_array($servers)) {
+                $candidate = null;
+                if ($serverIndex >= 0 && isset($servers[$serverIndex]) && is_array($servers[$serverIndex])) {
+                    $candidate = $servers[$serverIndex];
+                } elseif ($hostHint !== '') {
+                    foreach ($servers as $server) {
+                        if (!is_array($server)) {
+                            continue;
+                        }
+                        if (strcasecmp((string)($server['server'] ?? ''), $hostHint) === 0) {
+                            $candidate = $server;
+                            break;
+                        }
+                    }
+                }
+                if ($candidate !== null) {
+                    $stored = $candidate['bind_password'] ?? '';
+                    if (is_string($stored) && trim($stored) !== '') {
+                        return ldapTestResolveBindPassword($stored);
+                    }
+                }
+            }
+        }
+        // Legacy flat key fallback
+        $flatStmt = $db->prepare("SELECT value FROM settings WHERE key = 'ldap_bind_password' LIMIT 1");
+        $flatStmt->execute();
+        $flatRow = $flatStmt->fetch();
+        if ($flatRow && is_string($flatRow['value'] ?? null) && trim((string)$flatRow['value']) !== '') {
+            return ldapTestResolveBindPassword($flatRow['value']);
+        }
+    } catch (Exception $e) {
+        error_log('ldap_test: failed loading stored bind password: ' . $e->getMessage());
+    }
+    return '';
+}
+
 try {
     // Connect
     $ldap = @ldap_connect($uri);
@@ -91,24 +198,55 @@ try {
     }
     
     // First, bind with service account (if configured) or anonymously
-    $serviceBindDn = $data['ldap_bind_dn'] ?? '';
-    $serviceBindPass = $data['ldap_bind_password'] ?? '';
-    
-    // Decrypt password if it's encrypted (handles both encrypted and plain text for backward compatibility)
-    if (!empty($serviceBindPass)) {
-        try {
-            $serviceBindPass = decryptPassword($serviceBindPass);
-        } catch (Exception $e) {
-            // If decryption fails, assume it's plain text (backward compatibility)
-        }
+    $serviceBindDn = trim((string)($data['ldap_bind_dn'] ?? ''));
+    $serviceBindPass = ldapTestResolveBindPassword($data['ldap_bind_password'] ?? '');
+    // If the UI left password blank (keep existing / already saved via Save Server), load from DB
+    if ($serviceBindDn !== '' && $serviceBindPass === '') {
+        $serverIndex = isset($data['ldap_server_index']) ? (int)$data['ldap_server_index'] : -1;
+        $hostHint = trim((string)($data['ldap_server'] ?? ''));
+        $serviceBindPass = ldapTestLoadStoredBindPassword($serverIndex, $hostHint);
     }
+    $passLen = strlen($serviceBindPass);
     
     $bound = false;
     
-    if (!empty($serviceBindDn) && !empty($serviceBindPass)) {
+    if ($serviceBindDn !== '' && $serviceBindPass === '') {
+        throw new Exception(
+            "Bind DN is set but bind password is empty (not in the form and not found in saved settings).\n" .
+            "Enter the service account password and click Save Server, then test again.\n" .
+            "If the password field was blank after deploy, the old encryption key may not have transferred — retyping and saving fixes it."
+        );
+    }
+    
+    if ($serviceBindDn !== '' && $serviceBindPass !== '') {
         $bound = @ldap_bind($ldap, $serviceBindDn, $serviceBindPass);
         if (!$bound) {
-            throw new Exception("Service account bind failed: " . ldap_error($ldap));
+            $ldapErr = ldap_error($ldap);
+            $errno = function_exists('ldap_errno') ? ldap_errno($ldap) : null;
+            $diag = '';
+            if (defined('LDAP_OPT_DIAGNOSTIC_MESSAGE')) {
+                @ldap_get_option($ldap, LDAP_OPT_DIAGNOSTIC_MESSAGE, $diag);
+            }
+            $msg = "Service account bind failed: {$ldapErr}";
+            if ($errno !== null) {
+                $msg .= " (LDAP errno {$errno})";
+            }
+            if (is_string($diag) && $diag !== '') {
+                $msg .= "\nServer diagnostic: {$diag}";
+                $explained = ldapTestExplainAdBindData($diag);
+                if ($explained !== '') {
+                    $msg .= "\nMeaning: {$explained}";
+                }
+            }
+            $msg .= "\nBind DN used: {$serviceBindDn}";
+            $msg .= "\nPassword length: {$passLen} characters (value not shown)";
+            $msg .= "\nURI: {$uri}";
+            $msg .= "\n\nTips for Active Directory:";
+            $msg .= "\n• Prefer BIND DN as user@domain.com or DOMAIN\\username (not only CN=... unless that DN is exact).";
+            $msg .= "\n• Use the eye icon to confirm the saved password has no extra spaces.";
+            $msg .= "\n• Account must be enabled and allowed to bind (not locked / expired).";
+            $msg .= "\n• After changing the password here, click Save Server before Test Connection.";
+            throw new Exception($msg);
         }
     } else {
         $bound = @ldap_bind($ldap); // Anonymous bind
@@ -128,7 +266,10 @@ try {
         
         if (!empty($userDnTemplate)) {
             // Use DN template for direct bind
-            $userDn = str_replace('{username}', ldap_escape_dn($testUsername), $userDnTemplate);
+            // Handle case sensitivity (same as login flow)
+            $caseSensitive = !empty($data['ldap_case_sensitive']) && $data['ldap_case_sensitive'] == '1';
+            $bindUsername = $caseSensitive ? $testUsername : strtolower($testUsername);
+            $userDn = str_replace('{username}', ldap_escape_dn($bindUsername), $userDnTemplate);
             $userBind = @ldap_bind($ldap, $userDn, $testPassword);
             if ($userBind) {
                 sendJSON([
@@ -150,7 +291,10 @@ try {
             }
             
             // Escape username and replace in filter template
-            $safeUsername = ldap_escape_filter($testUsername);
+            // Handle case sensitivity (same as login flow)
+            $caseSensitive = !empty($data['ldap_case_sensitive']) && $data['ldap_case_sensitive'] == '1';
+            $searchUsername = $caseSensitive ? $testUsername : strtolower($testUsername);
+            $safeUsername = ldap_escape_filter($searchUsername);
             $filter = str_replace('{username}', $safeUsername, $filterTemplate);
             
             // Determine search scope
@@ -182,7 +326,16 @@ try {
             
             $entries = @ldap_get_entries($ldap, $result);
             if ($entries === false || $entries['count'] == 0) {
-                throw new Exception("User '$testUsername' not found in LDAP directory");
+                $errorMsg = "User '$testUsername' not found in LDAP directory";
+                $errorMsg .= "\nSearch base: $searchBase";
+                $errorMsg .= "\nFilter used: $filter";
+                $errorMsg .= "\nSearch scope: $searchScope";
+                if (isset($caseSensitive)) {
+                    $errorMsg .= "\nCase sensitive: " . ($caseSensitive ? 'Yes' : 'No');
+                    $errorMsg .= "\nSearched username: " . ($caseSensitive ? $testUsername : strtolower($testUsername));
+                }
+                $errorMsg .= "\n\nTip: If you entered the username with @domain (e.g., user@domain.com), try using just the username part (e.g., user) if your LDAP filter expects only the username.";
+                throw new Exception($errorMsg);
             }
             
             $userEntry = $entries[0];
@@ -193,9 +346,12 @@ try {
             if ($userBind) {
                 // Extract user info
                 $email = '';
-                if (isset($userEntry['mail']) && is_array($userEntry['mail']) && isset($userEntry['mail'][0])) {
+                $customEmailAttr = strtolower(trim((string)($data['ldap_email_attribute'] ?? '')));
+                if ($customEmailAttr !== '' && isset($userEntry[$customEmailAttr][0])) {
+                    $email = $userEntry[$customEmailAttr][0];
+                } elseif (isset($userEntry['mail'][0])) {
                     $email = $userEntry['mail'][0];
-                } elseif (isset($userEntry['userprincipalname']) && is_array($userEntry['userprincipalname']) && isset($userEntry['userprincipalname'][0])) {
+                } elseif (isset($userEntry['userprincipalname'][0])) {
                     $email = $userEntry['userprincipalname'][0];
                 }
                 
@@ -206,18 +362,29 @@ try {
                     $displayName = $userEntry['cn'][0];
                 }
                 
+                $mailDomains = [];
+                if ($email !== '') {
+                    $mailDomains = rememberLdapMailDomainsFromEmails($email);
+                }
+                
                 $message = "Successfully authenticated user '$testUsername'";
                 if ($displayName) {
                     $message .= " ($displayName)";
                 }
                 if ($email) {
                     $message .= " - Email: $email";
+                    $mailDomain = emailDomainFromAddress($email);
+                    if ($mailDomain) {
+                        $message .= "\nLearned LDAP mail domain for auto-detect: @" . $mailDomain;
+                    }
                 }
                 $message .= " - DN: $userDn";
                 
                 sendJSON([
                     'success' => true,
-                    'message' => $message
+                    'message' => $message,
+                    'email' => $email,
+                    'ldap_mail_domains' => $mailDomains
                 ]);
             } else {
                 throw new Exception("User authentication failed: " . ldap_error($ldap));
@@ -227,7 +394,7 @@ try {
         // No test credentials provided, just test connection and service account bind
         sendJSON([
             'success' => true,
-            'message' => 'Successfully connected to LDAP server' . (!empty($serviceBindDn) ? " (service account bind successful)" : " (anonymous bind successful)")
+            'message' => 'Successfully connected to LDAP server' . ($serviceBindDn !== '' ? " (service account bind successful)" : " (anonymous bind successful)")
         ]);
     }
     

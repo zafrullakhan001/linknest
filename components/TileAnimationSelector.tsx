@@ -2,8 +2,10 @@ import React, { useState, useEffect, useRef, useMemo } from 'react';
 import { createPortal } from 'react-dom';
 import { preferenceService } from '../services/preferenceService';
 import { useAuth } from '../contexts/AuthContext';
+import { useSettings } from '../contexts/SettingsContext';
 
 export type TileAnimation =
+    | 'inherit'
     | 'none'
     | 'fade-in'
     | 'slide-up'
@@ -113,7 +115,16 @@ export type TileAnimation =
     | 'pop-out-in-2' | 'expand-in' | 'contract-reveal-in' | 'bounce-scale-in' | 'elastic-scale-in' | 'swing-scale-in' | 'roll-scale-in' | 'twirl-scale-in' | 'spiral-scale-in' | 'wave-scale-in'
     | 'blur-swipe-up' | 'blur-swipe-down' | 'blur-swipe-left' | 'blur-swipe-right' | 'focus-swipe-in' | 'glow-swipe-in' | 'color-swipe-in' | 'mask-swipe-in' | 'gradient-swipe-in' | 'texture-swipe-in'
     | 'skid-up' | 'skid-down' | 'skid-left' | 'skid-right' | 'drift-in' | 'brake-in' | 'accelerate-in' | 'cruise-in' | 'jump-in' | 'dive-in'
-    | 'heartbeat-2' | 'breathing-in' | 'flutter-in' | 'vibrate-fast' | 'jiggle-in' | 'wiggle-in' | 'tremble-in' | 'throb-in' | 'pulse-burst-in' | 'finale-mega-in';
+    | 'heartbeat-2' | 'breathing-in' | 'flutter-in' | 'vibrate-fast' | 'jiggle-in' | 'wiggle-in' | 'tremble-in' | 'throb-in' | 'pulse-burst-in' | 'finale-mega-in'
+    | 'leaf-drop' | 'feather-float' | 'snow-settle' | 'petal-fall' | 'dust-settle' | 'silk-drape' | 'velvet-slide' | 'cotton-drift' | 'mist-descend' | 'dew-form'
+    | 'water-ripple' | 'pond-ripple' | 'lake-calm' | 'ocean-swell' | 'tide-in' | 'wave-gentle' | 'stream-flow' | 'rain-drop' | 'drizzle-in' | 'puddle-form'
+    | 'cloud-drift' | 'fog-roll' | 'haze-settle' | 'vapor-rise' | 'smoke-curl' | 'steam-wisp' | 'breeze-sway' | 'wind-gentle' | 'air-float' | 'bubble-rise'
+    | 'honey-drip' | 'syrup-pour' | 'oil-spread' | 'ink-diffuse' | 'paint-blend' | 'watercolor-bleed' | 'gradient-wash' | 'color-fade' | 'tint-spread' | 'shade-deepen'
+    | 'sand-pour' | 'grain-settle' | 'powder-dust' | 'ash-fall' | 'ember-fade' | 'glow-dim' | 'light-soften' | 'shadow-lengthen' | 'dusk-settle' | 'dawn-break'
+    | 'silk-unfurl' | 'ribbon-wave' | 'fabric-billow' | 'curtain-sway' | 'banner-flutter' | 'flag-ripple' | 'cloth-settle' | 'veil-lift' | 'scarf-drift' | 'sheet-float'
+    | 'paper-glide' | 'page-turn' | 'book-open' | 'scroll-unfurl' | 'origami-fold' | 'card-flip-slow' | 'letter-settle' | 'note-drift' | 'document-slide' | 'parchment-roll'
+    | 'ice-melt' | 'frost-form' | 'crystal-grow' | 'snowflake-settle' | 'icicle-drip' | 'glacier-shift' | 'frozen-thaw' | 'chill-spread' | 'winter-breath' | 'arctic-drift'
+    | 'zen-settle' | 'meditation-calm' | 'peaceful-rest' | 'tranquil-ease' | 'serene-float' | 'harmony-balance' | 'gentle-rest' | 'soft-landing' | 'calm-descent' | 'quiet-settle';
 
 export type TileDecoration =
     | 'none'
@@ -145,6 +156,13 @@ interface DecorationOption {
     description: string;
     icon: string;
 }
+
+const INHERIT_OPTION: AnimationOption = {
+    id: 'inherit',
+    name: 'Inherit',
+    description: 'Use space default for all links',
+    icon: '↩️',
+};
 
 const ANIMATION_OPTIONS: AnimationOption[] = [
     { id: 'none', name: 'None', description: 'No animation', icon: '⭕' },
@@ -347,6 +365,96 @@ const ANIMATION_OPTIONS: AnimationOption[] = [
     { id: 'throb-in', name: 'Throb In', description: 'Strong pulse', icon: '💓' },
     { id: 'pulse-burst-in', name: 'Pulse Burst', description: 'Explosive pulse', icon: '💥' },
     { id: 'finale-mega-in', name: 'Grand Finale', description: 'Ultimate reveal', icon: '🏆' },
+    { id: 'leaf-drop', name: 'Leaf Drop', description: 'Gentle leaf falling', icon: '🍂' },
+    { id: 'feather-float', name: 'Feather Float', description: 'Light as a feather', icon: '🪶' },
+    { id: 'snow-settle', name: 'Snow Settle', description: 'Soft snow landing', icon: '❄️' },
+    { id: 'petal-fall', name: 'Petal Fall', description: 'Flower petal drift', icon: '🌸' },
+    { id: 'dust-settle', name: 'Dust Settle', description: 'Particles settling', icon: '✨' },
+    { id: 'silk-drape', name: 'Silk Drape', description: 'Smooth silk flow', icon: '🎀' },
+    { id: 'velvet-slide', name: 'Velvet Slide', description: 'Luxurious glide', icon: '🎭' },
+    { id: 'cotton-drift', name: 'Cotton Drift', description: 'Soft cotton float', icon: '☁️' },
+    { id: 'mist-descend', name: 'Mist Descend', description: 'Gentle mist fall', icon: '🌫️' },
+    { id: 'dew-form', name: 'Dew Form', description: 'Morning dew appear', icon: '💧' },
+    { id: 'water-ripple', name: 'Water Ripple', description: 'Rippling water', icon: '🌊' },
+    { id: 'pond-ripple', name: 'Pond Ripple', description: 'Calm pond waves', icon: '💧' },
+    { id: 'lake-calm', name: 'Lake Calm', description: 'Peaceful lake', icon: '🏞️' },
+    { id: 'ocean-swell', name: 'Ocean Swell', description: 'Ocean wave rise', icon: '🌊' },
+    { id: 'tide-in', name: 'Tide In', description: 'Tide coming in', icon: '🌊' },
+    { id: 'wave-gentle', name: 'Wave Gentle', description: 'Soft wave motion', icon: '〰️' },
+    { id: 'stream-flow', name: 'Stream Flow', description: 'Flowing stream', icon: '💧' },
+    { id: 'rain-drop', name: 'Rain Drop', description: 'Single raindrop', icon: '💧' },
+    { id: 'drizzle-in', name: 'Drizzle In', description: 'Light rain', icon: '🌧️' },
+    { id: 'puddle-form', name: 'Puddle Form', description: 'Puddle forming', icon: '💧' },
+    { id: 'cloud-drift', name: 'Cloud Drift', description: 'Cloud floating by', icon: '☁️' },
+    { id: 'fog-roll', name: 'Fog Roll', description: 'Rolling fog', icon: '🌫️' },
+    { id: 'haze-settle', name: 'Haze Settle', description: 'Hazy atmosphere', icon: '🌫️' },
+    { id: 'vapor-rise', name: 'Vapor Rise', description: 'Steam rising', icon: '♨️' },
+    { id: 'smoke-curl', name: 'Smoke Curl', description: 'Curling smoke', icon: '💨' },
+    { id: 'steam-wisp', name: 'Steam Wisp', description: 'Wispy steam', icon: '♨️' },
+    { id: 'breeze-sway', name: 'Breeze Sway', description: 'Gentle breeze', icon: '🍃' },
+    { id: 'wind-gentle', name: 'Wind Gentle', description: 'Soft wind', icon: '💨' },
+    { id: 'air-float', name: 'Air Float', description: 'Floating on air', icon: '💨' },
+    { id: 'bubble-rise', name: 'Bubble Rise', description: 'Bubble floating up', icon: '🫧' },
+    { id: 'honey-drip', name: 'Honey Drip', description: 'Thick honey flow', icon: '🍯' },
+    { id: 'syrup-pour', name: 'Syrup Pour', description: 'Syrup pouring', icon: '🥞' },
+    { id: 'oil-spread', name: 'Oil Spread', description: 'Oil spreading', icon: '💧' },
+    { id: 'ink-diffuse', name: 'Ink Diffuse', description: 'Ink in water', icon: '🖋️' },
+    { id: 'paint-blend', name: 'Paint Blend', description: 'Paint mixing', icon: '🎨' },
+    { id: 'watercolor-bleed', name: 'Watercolor', description: 'Watercolor bleed', icon: '🎨' },
+    { id: 'gradient-wash', name: 'Gradient Wash', description: 'Color gradient', icon: '🌈' },
+    { id: 'color-fade', name: 'Color Fade', description: 'Fading colors', icon: '🎨' },
+    { id: 'tint-spread', name: 'Tint Spread', description: 'Tint spreading', icon: '🎨' },
+    { id: 'shade-deepen', name: 'Shade Deepen', description: 'Deepening shade', icon: '🌑' },
+    { id: 'sand-pour', name: 'Sand Pour', description: 'Sand pouring', icon: '⏳' },
+    { id: 'grain-settle', name: 'Grain Settle', description: 'Grains settling', icon: '🌾' },
+    { id: 'powder-dust', name: 'Powder Dust', description: 'Powder dusting', icon: '✨' },
+    { id: 'ash-fall', name: 'Ash Fall', description: 'Ash falling', icon: '🌋' },
+    { id: 'ember-fade', name: 'Ember Fade', description: 'Fading ember', icon: '🔥' },
+    { id: 'glow-dim', name: 'Glow Dim', description: 'Dimming glow', icon: '💡' },
+    { id: 'light-soften', name: 'Light Soften', description: 'Softening light', icon: '🕯️' },
+    { id: 'shadow-lengthen', name: 'Shadow Grow', description: 'Shadow lengthens', icon: '🌒' },
+    { id: 'dusk-settle', name: 'Dusk Settle', description: 'Evening falling', icon: '🌆' },
+    { id: 'dawn-break', name: 'Dawn Break', description: 'Morning arrives', icon: '🌅' },
+    { id: 'silk-unfurl', name: 'Silk Unfurl', description: 'Silk unfolding', icon: '🎀' },
+    { id: 'ribbon-wave', name: 'Ribbon Wave', description: 'Ribbon waving', icon: '🎀' },
+    { id: 'fabric-billow', name: 'Fabric Billow', description: 'Fabric billowing', icon: '👗' },
+    { id: 'curtain-sway', name: 'Curtain Sway', description: 'Curtain swaying', icon: '🪟' },
+    { id: 'banner-flutter', name: 'Banner Flutter', description: 'Banner fluttering', icon: '🚩' },
+    { id: 'flag-ripple', name: 'Flag Ripple', description: 'Flag rippling', icon: '🏴' },
+    { id: 'cloth-settle', name: 'Cloth Settle', description: 'Cloth settling', icon: '🧺' },
+    { id: 'veil-lift', name: 'Veil Lift', description: 'Veil lifting', icon: '👰' },
+    { id: 'scarf-drift', name: 'Scarf Drift', description: 'Scarf drifting', icon: '🧣' },
+    { id: 'sheet-float', name: 'Sheet Float', description: 'Sheet floating', icon: '🛏️' },
+    { id: 'paper-glide', name: 'Paper Glide', description: 'Paper gliding', icon: '📄' },
+    { id: 'page-turn', name: 'Page Turn', description: 'Page turning', icon: '📖' },
+    { id: 'book-open', name: 'Book Open', description: 'Book opening', icon: '📚' },
+    { id: 'scroll-unfurl', name: 'Scroll Unfurl', description: 'Scroll unrolling', icon: '📜' },
+    { id: 'origami-fold', name: 'Origami Fold', description: 'Origami folding', icon: '🦢' },
+    { id: 'card-flip-slow', name: 'Card Flip', description: 'Slow card flip', icon: '🃏' },
+    { id: 'letter-settle', name: 'Letter Settle', description: 'Letter landing', icon: '✉️' },
+    { id: 'note-drift', name: 'Note Drift', description: 'Note drifting', icon: '📝' },
+    { id: 'document-slide', name: 'Document Slide', description: 'Document sliding', icon: '📄' },
+    { id: 'parchment-roll', name: 'Parchment Roll', description: 'Parchment rolling', icon: '📜' },
+    { id: 'ice-melt', name: 'Ice Melt', description: 'Ice melting', icon: '🧊' },
+    { id: 'frost-form', name: 'Frost Form', description: 'Frost forming', icon: '❄️' },
+    { id: 'crystal-grow', name: 'Crystal Grow', description: 'Crystal growing', icon: '💎' },
+    { id: 'snowflake-settle', name: 'Snowflake', description: 'Snowflake landing', icon: '❄️' },
+    { id: 'icicle-drip', name: 'Icicle Drip', description: 'Icicle dripping', icon: '🧊' },
+    { id: 'glacier-shift', name: 'Glacier Shift', description: 'Glacier moving', icon: '🏔️' },
+    { id: 'frozen-thaw', name: 'Frozen Thaw', description: 'Ice thawing', icon: '🧊' },
+    { id: 'chill-spread', name: 'Chill Spread', description: 'Cold spreading', icon: '❄️' },
+    { id: 'winter-breath', name: 'Winter Breath', description: 'Frosty breath', icon: '🌬️' },
+    { id: 'arctic-drift', name: 'Arctic Drift', description: 'Arctic wind', icon: '🧊' },
+    { id: 'zen-settle', name: 'Zen Settle', description: 'Zen calmness', icon: '🧘' },
+    { id: 'meditation-calm', name: 'Meditation', description: 'Meditative calm', icon: '🕉️' },
+    { id: 'peaceful-rest', name: 'Peaceful Rest', description: 'Peaceful resting', icon: '☮️' },
+    { id: 'tranquil-ease', name: 'Tranquil Ease', description: 'Tranquil motion', icon: '🌊' },
+    { id: 'serene-float', name: 'Serene Float', description: 'Serene floating', icon: '🕊️' },
+    { id: 'harmony-balance', name: 'Harmony', description: 'Balanced harmony', icon: '☯️' },
+    { id: 'gentle-rest', name: 'Gentle Rest', description: 'Gentle resting', icon: '🌙' },
+    { id: 'soft-landing', name: 'Soft Landing', description: 'Soft touchdown', icon: '🪂' },
+    { id: 'calm-descent', name: 'Calm Descent', description: 'Calm descending', icon: '🍃' },
+    { id: 'quiet-settle', name: 'Quiet Settle', description: 'Quiet settling', icon: '🤫' },
 ];
 
 const DECORATION_OPTIONS: DecorationOption[] = [
@@ -367,26 +475,129 @@ const DECORATION_OPTIONS: DecorationOption[] = [
     { id: 'summer', name: 'Summer', description: 'Sun decoration', icon: '☀️' },
 ];
 
+export const DEFAULT_TILE_ANIMATION: TileAnimation = 'fade-in';
 const ANIMATION_STORAGE_KEY = 'linknest_tile_animation';
 const DECORATION_STORAGE_KEY = 'linknest_tile_decoration';
+
+export function isTileAnimationId(value: string | null | undefined): value is TileAnimation {
+    return !!value && value !== 'inherit' && ANIMATION_OPTIONS.some(opt => opt.id === value);
+}
+
+export function normalizeTileAnimation(value: string | null | undefined): TileAnimation {
+    return isTileAnimationId(value) ? value : DEFAULT_TILE_ANIMATION;
+}
+
+function readLocalTileAnimation(): TileAnimation | null {
+    try {
+        if (typeof localStorage === 'undefined') return null;
+        const stored = localStorage.getItem(ANIMATION_STORAGE_KEY);
+        return isTileAnimationId(stored) ? stored : null;
+    } catch {
+        return null;
+    }
+}
+
+export function resolveViewerTileAnimation(
+    userPref: string | null | undefined,
+    stored: string | null | undefined,
+    publicDefault: string | null | undefined
+): TileAnimation {
+    if (isTileAnimationId(userPref)) return userPref;
+    if (isTileAnimationId(stored)) return stored;
+    return normalizeTileAnimation(publicDefault);
+}
 
 interface TileAnimationSelectorProps {
     onAnimationChange?: (animation: TileAnimation) => void;
     onDecorationChange?: (decoration: TileDecoration) => void;
+    compact?: boolean;
+    /** Controlled animation value (e.g. per-link selection). */
+    value?: TileAnimation;
+    /** When false, selection is local only and does not update global tile preferences. Default true. */
+    persistGlobal?: boolean;
+    /** Hide festive decorations tab (useful for per-link animation picker). */
+    animationsOnly?: boolean;
+    /** Show Inherit (space default) as the first choice — for per-link selectors. */
+    includeInherit?: boolean;
+    scopeLabel?: string;
+    scopeHint?: string;
+    buttonTitle?: string;
+    /** Controlled open state for the picker dialog. */
+    open?: boolean;
+    /** Called when the picker opens or closes. */
+    onOpenChange?: (open: boolean) => void;
+    /** Hide the trigger button (use with controlled `open` from an external control). */
+    hideTrigger?: boolean;
 }
 
-export const TileAnimationSelector: React.FC<TileAnimationSelectorProps> = ({ onAnimationChange, onDecorationChange }) => {
-    const [selectedAnimation, setSelectedAnimation] = useState<TileAnimation>('fade-in');
+export const TileAnimationSelector: React.FC<TileAnimationSelectorProps> = ({
+    onAnimationChange,
+    onDecorationChange,
+    compact = false,
+    value,
+    persistGlobal = true,
+    animationsOnly = false,
+    includeInherit = false,
+    scopeLabel,
+    scopeHint,
+    buttonTitle,
+    open,
+    onOpenChange,
+    hideTrigger = false,
+}) => {
+    const [selectedAnimation, setSelectedAnimation] = useState<TileAnimation>(
+        value || (includeInherit ? 'inherit' : DEFAULT_TILE_ANIMATION)
+    );
     const [selectedDecoration, setSelectedDecoration] = useState<TileDecoration>('none');
     const [activeTab, setActiveTab] = useState<'animations' | 'decorations'>('animations');
-    const [isOpen, setIsOpen] = useState(false);
+    const [uncontrolledOpen, setUncontrolledOpen] = useState(false);
+    const isControlled = open !== undefined;
+    const isOpen = isControlled ? open : uncontrolledOpen;
+    const setIsOpen = (next: boolean | ((prev: boolean) => boolean)) => {
+        const resolved = typeof next === 'function' ? next(isOpen) : next;
+        if (!isControlled) setUncontrolledOpen(resolved);
+        onOpenChange?.(resolved);
+    };
     const [searchQuery, setSearchQuery] = useState('');
     const buttonRef = useRef<HTMLButtonElement>(null);
+    const panelRef = useRef<HTMLDivElement>(null);
     const [dropdownPosition, setDropdownPosition] = useState({ top: 0, left: 0 });
+    const [isDragging, setIsDragging] = useState(false);
+    const [dragOffset, setDragOffset] = useState({ x: 0, y: 0 });
+    const [previewKey, setPreviewKey] = useState(0);
     const { user } = useAuth();
+    const { settings } = useSettings();
+    const publicDefaultAnimation = normalizeTileAnimation(settings.public_tile_animation);
 
-    // Load preferences from database or localStorage on mount
+    const replayPreview = () => setPreviewKey((k) => k + 1);
+
+    // Sync controlled value for local / per-item mode
     useEffect(() => {
+        if (persistGlobal) return;
+        if (includeInherit && (value === 'inherit' || !value)) {
+            setSelectedAnimation('inherit');
+        } else if (value && ANIMATION_OPTIONS.find(opt => opt.id === value)) {
+            setSelectedAnimation(value);
+        } else if (value === 'none' || !value) {
+            setSelectedAnimation('none');
+        }
+    }, [persistGlobal, value, includeInherit]);
+
+    // Load preferences from database or localStorage on mount (global mode only)
+    useEffect(() => {
+        if (!persistGlobal) {
+            if (includeInherit && (value === 'inherit' || !value)) {
+                setSelectedAnimation('inherit');
+                return;
+            }
+            if (value && ANIMATION_OPTIONS.find(opt => opt.id === value)) {
+                setSelectedAnimation(value);
+                return;
+            }
+            setSelectedAnimation(includeInherit ? 'inherit' : 'none');
+            return;
+        }
+
         const loadPreferences = async () => {
             let anim: TileAnimation | null = null;
             let decor: TileDecoration | null = null;
@@ -395,8 +606,8 @@ export const TileAnimationSelector: React.FC<TileAnimationSelectorProps> = ({ on
                 // Try to load from database first
                 try {
                     const prefs = await preferenceService.getPreferences();
-                    if (prefs[ANIMATION_STORAGE_KEY]) {
-                        anim = prefs[ANIMATION_STORAGE_KEY] as TileAnimation;
+                    if (isTileAnimationId(prefs[ANIMATION_STORAGE_KEY])) {
+                        anim = prefs[ANIMATION_STORAGE_KEY];
                     }
                     if (prefs[DECORATION_STORAGE_KEY]) {
                         decor = prefs[DECORATION_STORAGE_KEY] as TileDecoration;
@@ -407,17 +618,19 @@ export const TileAnimationSelector: React.FC<TileAnimationSelectorProps> = ({ on
             }
 
             // Fallback to localStorage if not in database or guest
+            const stored = readLocalTileAnimation();
             if (!anim) {
-                anim = localStorage.getItem(ANIMATION_STORAGE_KEY) as TileAnimation | null;
+                anim = stored;
             }
             if (!decor) {
                 decor = localStorage.getItem(DECORATION_STORAGE_KEY) as TileDecoration | null;
             }
 
-            // Apply loaded values
-            if (anim && ANIMATION_OPTIONS.find(opt => opt.id === anim)) {
-                setSelectedAnimation(anim);
-                onAnimationChange?.(anim);
+            // Personal choice wins; otherwise use the admin public default (do not persist it yet)
+            const resolved = resolveViewerTileAnimation(anim, stored, publicDefaultAnimation);
+            setSelectedAnimation(resolved);
+            if (anim) {
+                onAnimationChange?.(resolved);
             }
 
             if (decor && DECORATION_OPTIONS.find(opt => opt.id === decor)) {
@@ -448,57 +661,136 @@ export const TileAnimationSelector: React.FC<TileAnimationSelectorProps> = ({ on
             window.removeEventListener('linknest-tile-animation-change', handleCustomAnimChange);
             window.removeEventListener('linknest-tile-decoration-change', handleCustomDecorChange);
         };
-    }, [user, onAnimationChange, onDecorationChange]);
+    }, [user, onAnimationChange, onDecorationChange, persistGlobal, value, publicDefaultAnimation]);
 
-    // Update dropdown position when opened
+    // Update dropdown position when opened — clamp so the full panel (incl. Done) stays on-screen
     useEffect(() => {
-        if (isOpen && buttonRef.current) {
-            const rect = buttonRef.current.getBoundingClientRect();
+        if (isOpen) {
+            const dropdownWidth = Math.min(360, window.innerWidth - 32);
+            const maxPanelHeight = Math.min(520, window.innerHeight - 32);
+            const viewportWidth = window.innerWidth;
+            const viewportHeight = window.innerHeight;
+            const rect = buttonRef.current?.getBoundingClientRect();
+            const hasUsableTrigger = !!rect && rect.width > 0 && rect.height > 0 && !hideTrigger;
+
+            let leftPosition: number;
+            let topPosition: number;
+
+            if (viewportWidth < 640 || !hasUsableTrigger) {
+                leftPosition = Math.max(16, (viewportWidth - dropdownWidth) / 2);
+                topPosition = hasUsableTrigger
+                    ? rect!.bottom + 8
+                    : Math.max(16, (viewportHeight - maxPanelHeight) / 2);
+            } else {
+                leftPosition = Math.min(
+                    rect!.right - dropdownWidth,
+                    viewportWidth - dropdownWidth - 16
+                );
+                leftPosition = Math.max(16, leftPosition);
+                topPosition = rect!.bottom + 8;
+            }
+
+            // Keep the full panel in the viewport (footer/Done must remain reachable)
+            topPosition = Math.max(16, Math.min(topPosition, viewportHeight - maxPanelHeight - 16));
+            leftPosition = Math.max(16, Math.min(leftPosition, viewportWidth - dropdownWidth - 16));
+
             setDropdownPosition({
-                top: rect.bottom + window.scrollY + 8,
-                left: rect.right + window.scrollX - 320, // 320px is the dropdown width
+                top: topPosition,
+                left: leftPosition,
             });
+            setIsDragging(false);
+            setPreviewKey((k) => k + 1);
         }
+    }, [isOpen, hideTrigger]);
+
+    // Esc closes the animation/decoration picker on all screen sizes
+    useEffect(() => {
+        if (!isOpen) return;
+        const onKeyDown = (e: KeyboardEvent) => {
+            if (e.key === 'Escape' || e.key === 'Esc') {
+                e.preventDefault();
+                e.stopPropagation();
+                setIsOpen(false);
+            }
+        };
+        window.addEventListener('keydown', onKeyDown, true);
+        return () => window.removeEventListener('keydown', onKeyDown, true);
     }, [isOpen]);
+
+    const handleDragHeaderMouseDown = (e: React.MouseEvent<HTMLDivElement>) => {
+        // Allow dragging from tab buttons and empty header chrome so the panel is always movable
+        if ((e.target as HTMLElement).closest('input, textarea, a')) return;
+        setDragOffset({
+            x: e.clientX - dropdownPosition.left,
+            y: e.clientY - dropdownPosition.top,
+        });
+        setIsDragging(true);
+        e.preventDefault();
+    };
+
+    useEffect(() => {
+        if (!isDragging) return;
+        const handleMouseMove = (e: MouseEvent) => {
+            const panelWidth = panelRef.current?.offsetWidth ?? Math.min(360, window.innerWidth - 32);
+            const panelHeight = panelRef.current?.offsetHeight ?? Math.min(520, window.innerHeight - 32);
+            const left = Math.max(8, Math.min(e.clientX - dragOffset.x, window.innerWidth - panelWidth - 8));
+            const top = Math.max(8, Math.min(e.clientY - dragOffset.y, window.innerHeight - panelHeight - 8));
+            setDropdownPosition({ top, left });
+        };
+        const handleMouseUp = () => setIsDragging(false);
+        window.addEventListener('mousemove', handleMouseMove);
+        window.addEventListener('mouseup', handleMouseUp);
+        return () => {
+            window.removeEventListener('mousemove', handleMouseMove);
+            window.removeEventListener('mouseup', handleMouseUp);
+        };
+    }, [isDragging, dragOffset]);
 
     const handleAnimationSelect = async (animation: TileAnimation) => {
         setSelectedAnimation(animation);
-        localStorage.setItem(ANIMATION_STORAGE_KEY, animation);
-        if (user) {
-            try {
-                await preferenceService.updatePreferences({ [ANIMATION_STORAGE_KEY]: animation });
-            } catch (error) {
-                console.error('Failed to save animation to database:', error);
+        setPreviewKey((k) => k + 1);
+        if (persistGlobal) {
+            localStorage.setItem(ANIMATION_STORAGE_KEY, animation);
+            if (user) {
+                try {
+                    await preferenceService.updatePreferences({ [ANIMATION_STORAGE_KEY]: animation });
+                } catch (error) {
+                    console.error('Failed to save animation to database:', error);
+                }
             }
+            // Notify other components in the same window
+            window.dispatchEvent(new CustomEvent('linknest-tile-animation-change', { detail: { animation } }));
         }
         onAnimationChange?.(animation);
-        // Notify other components in the same window
-        window.dispatchEvent(new CustomEvent('linknest-tile-animation-change', { detail: { animation } }));
     };
 
     const handleDecorationSelect = async (decoration: TileDecoration) => {
         setSelectedDecoration(decoration);
-        localStorage.setItem(DECORATION_STORAGE_KEY, decoration);
-        if (user) {
-            try {
-                await preferenceService.updatePreferences({ [DECORATION_STORAGE_KEY]: decoration });
-            } catch (error) {
-                console.error('Failed to save decoration to database:', error);
+        setPreviewKey((k) => k + 1);
+        if (persistGlobal) {
+            localStorage.setItem(DECORATION_STORAGE_KEY, decoration);
+            if (user) {
+                try {
+                    await preferenceService.updatePreferences({ [DECORATION_STORAGE_KEY]: decoration });
+                } catch (error) {
+                    console.error('Failed to save decoration to database:', error);
+                }
             }
+            // Notify other components in the same window
+            window.dispatchEvent(new CustomEvent('linknest-tile-decoration-change', { detail: { decoration } }));
         }
         onDecorationChange?.(decoration);
-        // Notify other components in the same window
-        window.dispatchEvent(new CustomEvent('linknest-tile-decoration-change', { detail: { decoration } }));
     };
 
     const filteredAnimations = useMemo(() => {
         const query = searchQuery.toLowerCase();
-        return ANIMATION_OPTIONS.map((opt, index) => ({ ...opt, index: index + 1 })).filter(opt =>
+        const options = includeInherit ? [INHERIT_OPTION, ...ANIMATION_OPTIONS] : ANIMATION_OPTIONS;
+        return options.map((opt, index) => ({ ...opt, index: index + 1 })).filter(opt =>
             opt.name.toLowerCase().includes(query) ||
             opt.description.toLowerCase().includes(query) ||
             opt.index.toString() === query
         );
-    }, [searchQuery]);
+    }, [searchQuery, includeInherit]);
 
     const filteredDecorations = useMemo(() => {
         const query = searchQuery.toLowerCase();
@@ -509,86 +801,105 @@ export const TileAnimationSelector: React.FC<TileAnimationSelectorProps> = ({ on
         );
     }, [searchQuery]);
 
-    const selectedAnimationOption = ANIMATION_OPTIONS.find(opt => opt.id === selectedAnimation) || ANIMATION_OPTIONS[0];
+    const allAnimationOptions = includeInherit ? [INHERIT_OPTION, ...ANIMATION_OPTIONS] : ANIMATION_OPTIONS;
+    const selectedAnimationOption = allAnimationOptions.find(opt => opt.id === selectedAnimation) || allAnimationOptions[0];
     const selectedDecorationOption = DECORATION_OPTIONS.find(opt => opt.id === selectedDecoration) || DECORATION_OPTIONS[0];
 
     return (
         <>
             {/* Trigger Button */}
-            <div className="flex items-center gap-2">
+            {!hideTrigger && (
+            <div className="flex items-center">
                 <button
                     ref={buttonRef}
                     onClick={() => setIsOpen(!isOpen)}
-                    className="flex items-center gap-2 px-3 py-2 rounded-lg bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 hover:border-brand-500 dark:hover:border-brand-500 transition-all shadow-sm hover:shadow-md"
-                    title="Select tile animation and decoration"
+                    className={compact
+                        ? "p-1.5 rounded-full hover:bg-slate-100 dark:hover:bg-slate-800 text-slate-600 dark:text-slate-400 transition-all flex items-center justify-center"
+                        : "flex items-center gap-2 px-3 py-2 rounded-lg bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 hover:border-brand-500 dark:hover:border-brand-500 transition-all shadow-sm hover:shadow-md"
+                    }
+                    title={buttonTitle || (persistGlobal ? 'Select tile animation and decoration' : 'Select link animation')}
                 >
-                    <span className="text-lg">{selectedAnimationOption.icon}</span>
-                    <div className="flex flex-col items-start">
-                        <span className="text-[10px] font-bold uppercase tracking-wider text-slate-400">
-                            Style
-                        </span>
-                        <span className="text-xs font-medium text-slate-700 dark:text-slate-300">
-                            {selectedAnimationOption.name} {selectedDecoration !== 'none' && `+ ${selectedDecorationOption.icon}`}
-                        </span>
-                    </div>
+                    {!compact && (
+                        <>
+                            <span className="text-lg">{selectedAnimationOption.icon}</span>
+                            <div className="flex flex-col items-start">
+                                <span className="text-[10px] font-bold uppercase tracking-wider text-slate-400">
+                                    {persistGlobal ? 'Style' : 'Animation'}
+                                </span>
+                                <span className="text-xs font-medium text-slate-700 dark:text-slate-300">
+                                    {selectedAnimationOption.name} {persistGlobal && selectedDecoration !== 'none' && `+ ${selectedDecorationOption.icon}`}
+                                </span>
+                            </div>
+                        </>
+                    )}
                     <svg
                         xmlns="http://www.w3.org/2000/svg"
                         viewBox="0 0 20 20"
                         fill="currentColor"
-                        className={`w-4 h-4 text-slate-400 transition-transform ${isOpen ? 'rotate-180' : ''}`}
+                        className={`${compact ? 'w-5 h-5' : 'w-4 h-4'} text-slate-400 transition-transform ${isOpen ? 'rotate-180' : ''}`}
                     >
                         <path fillRule="evenodd" d="M5.23 7.21a.75.75 0 011.06.02L10 11.168l3.71-3.938a.75.75 0 111.08 1.04l-4.25 4.5a.75.75 0 01-1.08 0l-4.25-4.5a.75.75 0 01.02-1.06z" clipRule="evenodd" />
                     </svg>
                 </button>
             </div>
+            )}
 
             {/* Dropdown Menu - Rendered via Portal */}
             {isOpen && createPortal(
                 <>
-                    {/* Backdrop */}
+                    {/* Backdrop blocks the page; close only with Done (or Escape). */}
                     <div
-                        className="fixed inset-0 z-[9999]"
-                        onClick={() => setIsOpen(false)}
+                        className="fixed inset-0 z-[10060] bg-black/20"
+                        aria-hidden="true"
                     />
 
                     {/* Options Panel */}
                     <div
-                        className="fixed w-[360px] bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-xl shadow-2xl z-[10000] overflow-hidden"
+                        ref={panelRef}
+                        className="fixed w-[min(360px,calc(100vw-32px))] max-h-[min(520px,calc(100vh-32px))] flex flex-col bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-xl shadow-2xl z-[10070] overflow-hidden"
                         style={{
                             top: `${dropdownPosition.top}px`,
                             left: `${dropdownPosition.left}px`,
                         }}
+                        onMouseDown={(e) => e.stopPropagation()}
+                        onClick={(e) => e.stopPropagation()}
                     >
                         {/* Tabs */}
-                        <div className="flex border-b border-slate-200 dark:border-slate-700">
+                        <div className="flex border-b border-slate-200 dark:border-slate-700 shrink-0">
                             <button
                                 onClick={() => setActiveTab('animations')}
-                                className={`flex-1 py-3 text-xs font-bold uppercase tracking-wider transition-colors ${activeTab === 'animations'
+                                className={`${animationsOnly ? 'w-full' : 'flex-1'} py-3 text-xs font-bold uppercase tracking-wider transition-colors ${activeTab === 'animations'
                                     ? 'text-brand-600 border-b-2 border-brand-500 bg-brand-50/50 dark:bg-brand-500/5'
                                     : 'text-slate-500 hover:text-slate-700 hover:bg-slate-50 dark:hover:bg-slate-900'
                                     }`}
                             >
                                 ✨ Animations ({ANIMATION_OPTIONS.length})
                             </button>
-                            <button
-                                onClick={() => setActiveTab('decorations')}
-                                className={`flex-1 py-3 text-xs font-bold uppercase tracking-wider transition-colors ${activeTab === 'decorations'
-                                    ? 'text-brand-600 border-b-2 border-brand-500 bg-brand-50/50 dark:bg-brand-500/5'
-                                    : 'text-slate-500 hover:text-slate-700 hover:bg-slate-50 dark:hover:bg-slate-900'
-                                    }`}
-                            >
-                                🎄 Festive ({DECORATION_OPTIONS.length})
-                            </button>
+                            {!animationsOnly && (
+                                <button
+                                    onClick={() => setActiveTab('decorations')}
+                                    className={`flex-1 py-3 text-xs font-bold uppercase tracking-wider transition-colors ${activeTab === 'decorations'
+                                        ? 'text-brand-600 border-b-2 border-brand-500 bg-brand-50/50 dark:bg-brand-500/5'
+                                        : 'text-slate-500 hover:text-slate-700 hover:bg-slate-50 dark:hover:bg-slate-900'
+                                        }`}
+                                >
+                                    🎄 Festive ({DECORATION_OPTIONS.length})
+                                </button>
+                            )}
                         </div>
 
-                        {/* Search & Header */}
-                        <div className="p-3 bg-slate-50 dark:bg-slate-900 border-b border-slate-200 dark:border-slate-700">
+                        {/* Search & Header — drag handle */}
+                        <div
+                            onMouseDown={handleDragHeaderMouseDown}
+                            className={`p-3 bg-slate-50 dark:bg-slate-900 border-b border-slate-200 dark:border-slate-700 shrink-0 select-none ${isDragging ? 'cursor-grabbing' : 'cursor-grab'}`}
+                            title="Drag to move"
+                        >
                             <div className="flex items-center justify-between mb-2">
                                 <span className="text-[10px] font-black uppercase tracking-tighter text-brand-600 dark:text-brand-400">
-                                    Global Visual Engine
+                                    {scopeLabel || (persistGlobal ? 'Global Visual Engine' : 'Link Animation')}
                                 </span>
                                 <span className="text-[9px] font-bold text-slate-400 bg-slate-200 dark:bg-slate-700 px-1.5 py-0.5 rounded-full">
-                                    Affects Tiles & Monitoring
+                                    {scopeHint || (persistGlobal ? 'Affects Tiles & Monitoring' : 'This link only')}
                                 </span>
                             </div>
                             <div className="relative">
@@ -609,16 +920,64 @@ export const TileAnimationSelector: React.FC<TileAnimationSelectorProps> = ({ on
                                     <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z" />
                                 </svg>
                             </div>
+
+                            {/* Sample link — live entrance animation preview */}
+                            <div
+                                className="mt-2 overflow-hidden rounded-lg border border-dashed border-slate-200 dark:border-slate-600 bg-white/80 dark:bg-slate-800/60 p-2"
+                                onMouseDown={(e) => e.stopPropagation()}
+                            >
+                                <div className="flex items-center justify-between mb-1.5">
+                                    <span className="text-[9px] font-bold text-slate-400 uppercase tracking-wider">Link preview</span>
+                                    <button
+                                        type="button"
+                                        onClick={replayPreview}
+                                        className="text-[9px] font-bold uppercase tracking-wider text-brand-600 dark:text-brand-400 hover:underline"
+                                    >
+                                        Replay
+                                    </button>
+                                </div>
+                                <div className="overflow-hidden rounded-lg">
+                                    <div
+                                        key={previewKey}
+                                        className={`
+                                            linknest-anim-preview-link flex items-center gap-2 rounded-lg
+                                            bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700
+                                            px-2.5 py-2 shadow-sm
+                                            ${getTileAnimationClass(selectedAnimation)}
+                                            ${!animationsOnly ? getTileDecorationClass(selectedDecoration) : ''}
+                                        `}
+                                    >
+                                        <div className="w-8 h-8 rounded-lg bg-brand-500/15 text-brand-600 dark:text-brand-400 flex items-center justify-center text-sm shrink-0 select-none">
+                                            {selectedAnimationOption.icon}
+                                        </div>
+                                        <div className="min-w-0 flex-1">
+                                            <div className="text-xs font-semibold text-slate-700 dark:text-slate-200 truncate">
+                                                Sample Link
+                                            </div>
+                                            <div className="text-[10px] text-slate-400 dark:text-slate-500 truncate">
+                                                {selectedAnimation === 'none' || selectedAnimation === 'inherit'
+                                                    ? selectedAnimationOption.description
+                                                    : 'example.com/link'}
+                                            </div>
+                                        </div>
+                                    </div>
+                                </div>
+                            </div>
                         </div>
 
-                        {/* Options Grid */}
-                        <div className="max-h-96 overflow-y-auto p-2">
-                            {activeTab === 'animations' ? (
+                        {/* Options Grid — scrolls; footer stays pinned */}
+                        <div className="flex-1 min-h-0 overflow-y-auto p-2">
+                            {(animationsOnly || activeTab === 'animations') ? (
                                 <div className="grid grid-cols-2 gap-2">
                                     {filteredAnimations.map((option) => (
                                         <button
                                             key={option.id}
-                                            onClick={() => handleAnimationSelect(option.id)}
+                                            type="button"
+                                            onClick={(e) => {
+                                                e.preventDefault();
+                                                e.stopPropagation();
+                                                void handleAnimationSelect(option.id);
+                                            }}
                                             className={`
                         p-3 rounded-lg text-left transition-all relative
                         ${selectedAnimation === option.id
@@ -647,7 +1006,12 @@ export const TileAnimationSelector: React.FC<TileAnimationSelectorProps> = ({ on
                                     {filteredDecorations.map((option) => (
                                         <button
                                             key={option.id}
-                                            onClick={() => handleDecorationSelect(option.id)}
+                                            type="button"
+                                            onClick={(e) => {
+                                                e.preventDefault();
+                                                e.stopPropagation();
+                                                void handleDecorationSelect(option.id);
+                                            }}
                                             className={`
                         p-3 rounded-lg text-left transition-all relative
                         ${selectedDecoration === option.id
@@ -675,19 +1039,23 @@ export const TileAnimationSelector: React.FC<TileAnimationSelectorProps> = ({ on
                         </div>
 
                         {/* Footer / Actions */}
-                        <div className="p-3 border-t border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-900">
+                        <div className="p-3 border-t border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-900 shrink-0">
                             <div className="flex items-center justify-between">
                                 <div className="flex flex-col">
                                     <span className="text-[10px] font-bold text-slate-400 uppercase tracking-wider">Preview Active</span>
-                                    <span className="text-[10px] text-slate-500">#{selectedAnimationOption.name} + {selectedDecorationOption.name}</span>
+                                    <span className="text-[10px] text-slate-500">
+                                        #{selectedAnimationOption.name}{persistGlobal && !animationsOnly ? ` + ${selectedDecorationOption.name}` : ''}
+                                    </span>
                                 </div>
                                 <div className="flex items-center gap-2">
                                     <button
+                                        type="button"
                                         onClick={() => {
-                                            const tiles = document.querySelectorAll('.linknest-tile-animated');
+                                            replayPreview();
+                                            const selector = persistGlobal ? '.linknest-tile-animated' : '.linknest-content-link';
+                                            const tiles = document.querySelectorAll(selector);
                                             tiles.forEach((tile) => {
                                                 const element = tile as HTMLElement;
-                                                const currentAnim = element.style.animation;
                                                 element.style.animation = 'none';
                                                 setTimeout(() => { element.style.animation = ''; }, 10);
                                             });
@@ -697,6 +1065,7 @@ export const TileAnimationSelector: React.FC<TileAnimationSelectorProps> = ({ on
                                         Replay
                                     </button>
                                     <button
+                                        type="button"
                                         onClick={() => setIsOpen(false)}
                                         className="px-4 py-1.5 text-xs font-bold bg-brand-600 text-white hover:bg-brand-700 rounded-md transition-colors shadow-sm"
                                     >
@@ -715,30 +1084,36 @@ export const TileAnimationSelector: React.FC<TileAnimationSelectorProps> = ({ on
 
 // Hook to get the current animation and decoration
 export const useTileAnimation = () => {
-    const [animation, setAnimation] = useState<TileAnimation>('fade-in');
-    const [decoration, setDecoration] = useState<TileDecoration>('none');
-
+    const { settings } = useSettings();
+    const publicDefaultAnimation = normalizeTileAnimation(settings.public_tile_animation);
     const { user } = useAuth();
+
+    const [animation, setAnimation] = useState<TileAnimation>(() => (
+        readLocalTileAnimation() ?? publicDefaultAnimation
+    ));
+    const [decoration, setDecoration] = useState<TileDecoration>('none');
 
     useEffect(() => {
         const loadPreferences = async () => {
-            let anim: TileAnimation | null = null;
+            let userPref: TileAnimation | null = null;
             let decor: TileDecoration | null = null;
 
             if (user) {
                 try {
                     const prefs = await preferenceService.getPreferences();
-                    if (prefs[ANIMATION_STORAGE_KEY]) anim = prefs[ANIMATION_STORAGE_KEY] as TileAnimation;
+                    if (isTileAnimationId(prefs[ANIMATION_STORAGE_KEY])) {
+                        userPref = prefs[ANIMATION_STORAGE_KEY];
+                    }
                     if (prefs[DECORATION_STORAGE_KEY]) decor = prefs[DECORATION_STORAGE_KEY] as TileDecoration;
                 } catch (error) {
                     console.error('Failed to load preferences from database:', error);
                 }
             }
 
-            if (!anim) anim = localStorage.getItem(ANIMATION_STORAGE_KEY) as TileAnimation | null;
+            const stored = readLocalTileAnimation();
             if (!decor) decor = localStorage.getItem(DECORATION_STORAGE_KEY) as TileDecoration | null;
 
-            if (anim) setAnimation(anim);
+            setAnimation(resolveViewerTileAnimation(userPref, stored, publicDefaultAnimation));
             if (decor) setDecoration(decor);
         };
 
@@ -766,14 +1141,14 @@ export const useTileAnimation = () => {
             window.removeEventListener('linknest-tile-animation-change' as any, handleCustomAnimChange);
             window.removeEventListener('linknest-tile-decoration-change' as any, handleCustomDecorChange);
         };
-    }, [user]);
+    }, [user, publicDefaultAnimation]);
 
     return { animation, decoration };
 };
 
 // Helper functions for class names
 export const getTileAnimationClass = (animation: TileAnimation): string => {
-    if (animation === 'none') return '';
+    if (animation === 'none' || animation === 'inherit') return '';
     return `tile-anim-${animation}`;
 };
 
@@ -781,3 +1156,25 @@ export const getTileDecorationClass = (decoration: TileDecoration): string => {
     if (decoration === 'none') return '';
     return `tile-decor-${decoration}`;
 };
+
+export const getAnimationOption = (animation?: string | null) => {
+    if (animation === 'inherit') return INHERIT_OPTION;
+    if (!animation) return ANIMATION_OPTIONS[0];
+    return ANIMATION_OPTIONS.find(opt => opt.id === animation) || ANIMATION_OPTIONS[0];
+};
+
+/** Resolve effective link entrance animation (inherit → space default). */
+export const resolveLinkAnimation = (
+    linkAnimation?: string | null,
+    spaceLinksAnimation?: string | null
+): TileAnimation => {
+    if (linkAnimation && linkAnimation !== 'inherit') {
+        return linkAnimation as TileAnimation;
+    }
+    if (spaceLinksAnimation && spaceLinksAnimation !== 'none' && spaceLinksAnimation !== 'inherit') {
+        return spaceLinksAnimation as TileAnimation;
+    }
+    return 'none';
+};
+
+export { ANIMATION_OPTIONS, INHERIT_OPTION };

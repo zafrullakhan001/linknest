@@ -84,12 +84,20 @@ function performMonitorCheck($monitor, $options = []) {
         switch ($monitor['type']) {
             case 'url':
                 return checkUrl($monitor['target'], $opts);
+            case 'headers':
+                return checkHttpHeaders($monitor['target'], $monitor['keyword'] ?? null, $opts);
             case 'keyword':
                 return checkKeyword($monitor['target'], $monitor['keyword'], $opts);
             case 'port':
                 return checkPort($monitor['target'], $monitor['port'], $opts);
             case 'ping':
                 return checkPing($monitor['target'], $opts);
+            case 'ssl':
+                return checkSsl($monitor['target'], $monitor['keyword'] ?? null, $opts);
+            case 'dns':
+                return checkDns($monitor['target'], $monitor['keyword'] ?? null, $opts);
+            case 'json':
+                return checkJson($monitor['target'], $monitor['keyword'], $opts);
             default:
                 return ['status' => 'down', 'details' => 'Invalid monitor type'];
         }
@@ -128,7 +136,7 @@ function performMonitorCheck($monitor, $options = []) {
 
     // Apply warning threshold logic (consecutive failure gating)
     $rawStatus = strtolower(trim((string)($checkRes['status'] ?? 'down')));
-    if ($rawStatus !== 'up' && $rawStatus !== 'down') {
+    if ($rawStatus !== 'up' && $rawStatus !== 'down' && $rawStatus !== 'warning') {
         $rawStatus = 'down';
     }
     $rawDetails = (string)($checkRes['details'] ?? '');
@@ -228,7 +236,11 @@ function performMonitorCheck($monitor, $options = []) {
             if ($normalizedStatus === 'down') {
                 error_log("[EMAIL] Triggering DOWN notification for monitor {$monitor['id']} - Previous status: " . ($prevStatus ?? 'null/unknown') . ", Current: $status");
                 sendNotification($monitor, "DOWN: {$monitor['name']} is unreachable. Error: $details", 'down', $responseTime, $now);
-            } 
+            }
+            elseif (($monitor['type'] ?? '') === 'ssl' && $normalizedStatus === 'warning' && $normalizedPrevStatus !== 'warning') {
+                error_log("[EMAIL] Triggering SSL WARNING notification for monitor {$monitor['id']}");
+                sendNotification($monitor, "WARNING: {$monitor['name']} certificate is approaching expiry. $details", 'down', $responseTime, $now);
+            }
             // Send UP notification when status changes from a "not up" state back to UP
             // WARNING is a down-like transitional state (below threshold), so treat WARNING->UP as recovery too.
             elseif (($normalizedPrevStatus === 'down' || $normalizedPrevStatus === 'warning') && $normalizedStatus === 'up') {
@@ -302,8 +314,6 @@ function checkUrl($url, $opts = []) {
     $info = curl_getinfo($ch);
     $error = curl_error($ch);
     $errno = curl_errno($ch);
-    curl_close($ch);
-    
     if ($exec === false || $errno !== 0) {
         // Handle timeout specifically
         if ($errno === CURLE_OPERATION_TIMEDOUT || $errno === CURLE_OPERATION_TIMEOUTED) {
@@ -318,6 +328,138 @@ function checkUrl($url, $opts = []) {
     } else {
         return ['status' => 'down', 'details' => "HTTP $code"];
     }
+}
+
+/**
+ * curl -I style check: read HTTP headers only, do not follow redirects.
+ * Optional keyword is matched against the raw header block (name or value).
+ */
+function checkHttpHeaders($url, $keyword = null, $opts = []) {
+    if (!filter_var($url, FILTER_VALIDATE_URL)) {
+        return ['status' => 'down', 'details' => 'Invalid URL'];
+    }
+
+    $timeout = isset($opts['timeout']) ? (int)$opts['timeout'] : 5;
+    $connectTimeout = isset($opts['connect_timeout']) ? (int)$opts['connect_timeout'] : 3;
+    $needle = trim((string)$keyword);
+    $ua = (getAppName() ?: 'LinkNest') . ' Monitor/1.0';
+
+    $probe = function (string $method) use ($url, $timeout, $connectTimeout, $ua) {
+        $rawHeaders = '';
+        $ch = curl_init();
+        $curlOpts = [
+            CURLOPT_URL => $url,
+            CURLOPT_RETURNTRANSFER => true,
+            CURLOPT_FOLLOWLOCATION => false,
+            CURLOPT_TIMEOUT => $timeout,
+            CURLOPT_CONNECTTIMEOUT => $connectTimeout,
+            CURLOPT_SSL_VERIFYPEER => false,
+            CURLOPT_SSL_VERIFYHOST => 0,
+            CURLOPT_HEADER => false,
+            CURLOPT_NOBODY => ($method === 'HEAD'),
+            CURLOPT_USERAGENT => $ua,
+            CURLOPT_HTTPHEADER => [
+                'Accept: */*',
+                'Cache-Control: no-cache',
+                'Connection: close',
+            ],
+            CURLOPT_FRESH_CONNECT => true,
+            CURLOPT_FORBID_REUSE => true,
+            CURLOPT_HEADERFUNCTION => function ($ch, $header) use (&$rawHeaders) {
+                $rawHeaders .= $header;
+                return strlen($header);
+            },
+        ];
+        if ($method === 'GET') {
+            $curlOpts[CURLOPT_HTTPGET] = true;
+            $curlOpts[CURLOPT_NOBODY] = false;
+            $curlOpts[CURLOPT_WRITEFUNCTION] = function ($ch, $data) {
+                return 0;
+            };
+        }
+        curl_setopt_array($ch, $curlOpts);
+        curl_exec($ch);
+        $info = curl_getinfo($ch);
+        $error = curl_error($ch);
+        $errno = curl_errno($ch);
+        curl_close($ch);
+
+        $code = (int)($info['http_code'] ?? 0);
+        $timedOut = ($errno === CURLE_OPERATION_TIMEDOUT || $errno === CURLE_OPERATION_TIMEOUTED);
+        $abortedAfterHeaders = ($method === 'GET' && $errno === CURLE_WRITE_ERROR && $code > 0);
+        $ok = $abortedAfterHeaders || ($errno === 0 && $code > 0);
+
+        return [
+            'ok' => $ok,
+            'code' => $code,
+            'errno' => $errno,
+            'error' => $error,
+            'timed_out' => $timedOut,
+            'headers' => $rawHeaders,
+            'method' => $method,
+        ];
+    };
+
+    $result = $probe('HEAD');
+    $headFailed = !$result['ok'] || in_array($result['code'], [405, 501], true);
+    if ($headFailed && !$result['timed_out']) {
+        $getResult = $probe('GET');
+        if ($getResult['ok'] || ($getResult['code'] > 0 && !$getResult['timed_out'])) {
+            $result = $getResult;
+        }
+    }
+
+    if ($result['timed_out'] && $result['code'] === 0) {
+        return ['status' => 'down', 'details' => 'Connection timeout'];
+    }
+    if (!$result['ok'] && $result['code'] === 0) {
+        return ['status' => 'down', 'details' => 'Connection failed: ' . ($result['error'] ?: 'Unknown error')];
+    }
+
+    $code = (int)$result['code'];
+    $details = formatHttpHeaderMonitorDetails($code, $result['headers'], $result['method']);
+
+    if ($needle !== '') {
+        if (stripos($result['headers'], $needle) === false) {
+            return ['status' => 'down', 'details' => "Header '$needle' not found ($details)"];
+        }
+        if ($code >= 200 && $code < 400) {
+            return ['status' => 'up', 'details' => "Header match ($details)"];
+        }
+        return ['status' => 'down', 'details' => $details];
+    }
+
+    if ($code >= 200 && $code < 400) {
+        return ['status' => 'up', 'details' => $details];
+    }
+    return ['status' => 'down', 'details' => $details];
+}
+
+function formatHttpHeaderMonitorDetails(int $code, string $rawHeaders, string $method): string {
+    $interesting = ['location', 'server', 'content-type', 'www-authenticate', 'cache-control'];
+    $parts = ['HTTP ' . $code];
+    $seen = [];
+    $lines = preg_split("/\r\n|\n|\r/", $rawHeaders) ?: [];
+    foreach ($lines as $line) {
+        if (strpos($line, ':') === false) {
+            continue;
+        }
+        [$name, $value] = explode(':', $line, 2);
+        $lk = strtolower(trim($name));
+        if (!in_array($lk, $interesting, true) || isset($seen[$lk])) {
+            continue;
+        }
+        $seen[$lk] = true;
+        $val = trim($value);
+        if (strlen($val) > 180) {
+            $val = substr($val, 0, 177) . '...';
+        }
+        $parts[] = trim($name) . ': ' . $val;
+    }
+    if (strtoupper($method) === 'GET') {
+        $parts[] = 'GET fallback';
+    }
+    return implode(' | ', $parts);
 }
 
 function checkKeyword($url, $keyword, $opts = []) {
@@ -355,8 +497,6 @@ function checkKeyword($url, $keyword, $opts = []) {
     $info = curl_getinfo($ch);
     $error = curl_error($ch);
     $errno = curl_errno($ch);
-    curl_close($ch);
-    
     if ($body === false || $errno !== 0) {
         // Handle timeout specifically
         if ($errno === CURLE_OPERATION_TIMEDOUT || $errno === CURLE_OPERATION_TIMEOUTED) {
@@ -493,6 +633,200 @@ function checkPing($target, $opts = []) {
     return ['status' => 'down', 'details' => 'Ping failed: ' . $err];
 }
 
+function checkSsl($target, $warnDaysRaw, $opts = []) {
+    $host = trim((string)$target);
+    $port = 443;
+
+    if (preg_match('#^https?://#i', $host)) {
+        $parsed = parse_url($host);
+        if (!empty($parsed['host'])) {
+            $host = $parsed['host'];
+        }
+        if (!empty($parsed['port'])) {
+            $port = (int)$parsed['port'];
+        }
+    } else {
+        $host = preg_replace('#^https?://#i', '', $host);
+        $host = explode('/', $host)[0];
+        if (strpos($host, ':') !== false) {
+            [$host, $p] = explode(':', $host, 2);
+            $port = (int)$p;
+        }
+    }
+
+    if ($host === '' || !preg_match('/^[a-zA-Z0-9\.\-:]+$/', $host)) {
+        return ['status' => 'down', 'details' => 'Invalid host for SSL check'];
+    }
+
+    $warnDays = 30;
+    if ($warnDaysRaw !== null && trim((string)$warnDaysRaw) !== '') {
+        $warnDays = max(1, min(365, (int)$warnDaysRaw));
+    }
+
+    $timeout = isset($opts['timeout']) ? (int)$opts['timeout'] : 8;
+    $ctx = stream_context_create([
+        'ssl' => [
+            'capture_peer_cert' => true,
+            'verify_peer' => false,
+            'verify_peer_name' => false,
+        ],
+    ]);
+
+    $fp = @stream_socket_client("ssl://{$host}:{$port}", $errno, $errstr, $timeout, STREAM_CLIENT_CONNECT, $ctx);
+    if (!$fp) {
+        return ['status' => 'down', 'details' => "SSL connection failed: $errstr"];
+    }
+
+    $params = stream_context_get_params($fp);
+    fclose($fp);
+
+    if (empty($params['options']['ssl']['peer_certificate'])) {
+        return ['status' => 'down', 'details' => 'Could not read SSL certificate'];
+    }
+
+    $cert = openssl_x509_parse($params['options']['ssl']['peer_certificate']);
+    if (!$cert || empty($cert['validTo_time_t'])) {
+        return ['status' => 'down', 'details' => 'Invalid certificate data'];
+    }
+
+    $daysRemaining = (int)floor(($cert['validTo_time_t'] - time()) / 86400);
+    if ($daysRemaining < 0) {
+        return ['status' => 'down', 'details' => 'Certificate expired ' . abs($daysRemaining) . ' days ago'];
+    }
+    if ($daysRemaining <= $warnDays) {
+        return ['status' => 'warning', 'details' => "Certificate expires in $daysRemaining days (threshold: $warnDays)"];
+    }
+
+    return ['status' => 'up', 'details' => "Certificate valid ($daysRemaining days remaining)"];
+}
+
+function checkDns($target, $expectedRaw, $opts = []) {
+    $host = trim((string)$target);
+    $host = preg_replace('#^https?://#i', '', $host);
+    $host = explode('/', $host)[0];
+    $host = explode(':', $host)[0];
+
+    if ($host === '' || !preg_match('/^[a-zA-Z0-9]([a-zA-Z0-9\.\-]*[a-zA-Z0-9])?$/', $host)) {
+        return ['status' => 'down', 'details' => 'Invalid hostname for DNS check'];
+    }
+
+    if (filter_var($host, FILTER_VALIDATE_IP)) {
+        return ['status' => 'up', 'details' => 'Target is an IP address (DNS lookup skipped)'];
+    }
+
+    $recordsA = @dns_get_record($host, DNS_A);
+    $recordsAAAA = @dns_get_record($host, DNS_AAAA);
+    $ips = [];
+    if (is_array($recordsA)) {
+        foreach ($recordsA as $r) {
+            if (!empty($r['ip'])) {
+                $ips[] = $r['ip'];
+            }
+        }
+    }
+    if (is_array($recordsAAAA)) {
+        foreach ($recordsAAAA as $r) {
+            if (!empty($r['ipv6'])) {
+                $ips[] = $r['ipv6'];
+            }
+        }
+    }
+
+    if (empty($ips)) {
+        return ['status' => 'down', 'details' => 'No DNS records found'];
+    }
+
+    $expected = trim((string)($expectedRaw ?? ''));
+    if ($expected !== '') {
+        $found = false;
+        foreach ($ips as $ip) {
+            if ($ip === $expected || stripos($ip, $expected) !== false) {
+                $found = true;
+                break;
+            }
+        }
+        if (!$found) {
+            return ['status' => 'down', 'details' => "Expected '$expected' not in DNS (" . implode(', ', $ips) . ")"];
+        }
+        return ['status' => 'up', 'details' => "DNS matches expected ($expected)"];
+    }
+
+    return ['status' => 'up', 'details' => 'DNS resolved: ' . implode(', ', array_slice($ips, 0, 4))];
+}
+
+function checkJson($url, $keyword, $opts = []) {
+    if (!filter_var($url, FILTER_VALIDATE_URL)) {
+        return ['status' => 'down', 'details' => 'Invalid URL'];
+    }
+    if (empty(trim((string)$keyword))) {
+        return ['status' => 'down', 'details' => 'No JSON check expression specified'];
+    }
+
+    $timeout = isset($opts['timeout']) ? (int)$opts['timeout'] : 8;
+    $connectTimeout = isset($opts['connect_timeout']) ? (int)$opts['connect_timeout'] : 3;
+
+    $ch = curl_init();
+    curl_setopt_array($ch, [
+        CURLOPT_URL => $url,
+        CURLOPT_RETURNTRANSFER => true,
+        CURLOPT_FOLLOWLOCATION => true,
+        CURLOPT_TIMEOUT => $timeout,
+        CURLOPT_CONNECTTIMEOUT => $connectTimeout,
+        CURLOPT_SSL_VERIFYPEER => false,
+        CURLOPT_SSL_VERIFYHOST => 0,
+        CURLOPT_USERAGENT => (getAppName() ?: 'LinkNest') . ' Monitor/1.0',
+        CURLOPT_HTTPHEADER => ['Accept: application/json, */*', 'Connection: close'],
+    ]);
+
+    $body = curl_exec($ch);
+    $info = curl_getinfo($ch);
+    $errno = curl_errno($ch);
+    $error = curl_error($ch);
+    curl_close($ch);
+
+    if ($body === false || $errno !== 0) {
+        if ($errno === CURLE_OPERATION_TIMEDOUT || $errno === CURLE_OPERATION_TIMEOUTED) {
+            return ['status' => 'down', 'details' => 'Connection timeout'];
+        }
+        return ['status' => 'down', 'details' => 'Connection failed: ' . ($error ?: 'Unknown error')];
+    }
+
+    $code = (int)($info['http_code'] ?? 0);
+    if ($code < 200 || $code >= 400) {
+        return ['status' => 'down', 'details' => "HTTP $code"];
+    }
+
+    $data = json_decode($body, true);
+    if (!is_array($data) && !is_object($data)) {
+        return ['status' => 'down', 'details' => 'Response is not valid JSON'];
+    }
+    if (is_object($data)) {
+        $data = (array)$data;
+    }
+
+    $expr = trim((string)$keyword);
+    if (strpos($expr, ':') !== false) {
+        [$key, $expected] = explode(':', $expr, 2);
+        $key = trim($key);
+        $expected = trim($expected);
+        $actual = $data[$key] ?? null;
+        if ($actual === null) {
+            return ['status' => 'down', 'details' => "JSON key '$key' not found"];
+        }
+        $actualStr = is_bool($actual) ? ($actual ? 'true' : 'false') : (string)$actual;
+        if (strcasecmp($actualStr, $expected) === 0) {
+            return ['status' => 'up', 'details' => "JSON $key=$actualStr (HTTP $code)"];
+        }
+        return ['status' => 'down', 'details' => "JSON $key=$actualStr, expected $expected"];
+    }
+
+    $haystack = strtolower(json_encode($data));
+    if (stripos($haystack, strtolower($expr)) !== false) {
+        return ['status' => 'up', 'details' => "JSON contains '$expr' (HTTP $code)"];
+    }
+    return ['status' => 'down', 'details' => "JSON value '$expr' not found"];
+}
+
 /**
  * Send notifications using the advanced notification system
  */
@@ -531,7 +865,12 @@ function sendAdvancedNotifications($monitor, $newStatus, $prevStatus, $details, 
         $triggersToCheck[] = 'down';
         $triggersToCheck[] = 'both';
         error_log("[EMAIL] Status changed to DOWN - checking 'down' and 'both' triggers");
-    } 
+    }
+    elseif (($monitor['type'] ?? '') === 'ssl' && $newStatus === 'warning' && $normalizedPrevStatus !== 'warning') {
+        $triggersToCheck[] = 'down';
+        $triggersToCheck[] = 'both';
+        error_log("[EMAIL] SSL status changed to WARNING (approaching expiry) - checking 'down' and 'both' triggers");
+    }
     // Send notification when status changes from a "not up" state to 'up'
     // WARNING is a down-like transitional state (below threshold), so treat WARNING->UP as recovery too.
     elseif ($newStatus === 'up' && ($normalizedPrevStatus === 'down' || $normalizedPrevStatus === 'warning')) {
@@ -564,9 +903,10 @@ function sendAdvancedNotifications($monitor, $newStatus, $prevStatus, $details, 
     }
     
     $now = time();
-    $currentHour = (int)date('H');
-    $currentMinute = (int)date('i');
-    $currentDayOfWeek = (int)date('w'); // 0 = Sunday, 6 = Saturday
+    $notifyNow = getMonitorNotificationLocalDateTime();
+    $currentHour = (int)$notifyNow->format('H');
+    $currentMinute = (int)$notifyNow->format('i');
+    $currentDayOfWeek = (int)$notifyNow->format('w'); // 0 = Sunday, 6 = Saturday
     
     foreach ($rules as $rule) {
         error_log("[EMAIL] Processing rule ID: {$rule['id']}, name: {$rule['name']}");
@@ -600,6 +940,7 @@ function sendAdvancedNotifications($monitor, $newStatus, $prevStatus, $details, 
         
         // Prepare email content with template variables
         $subject = replaceTemplateVariables($rule['subject_template'], $monitor, $newStatus, $details, $responseTime);
+        $subject = ln_ensure_monitor_email_subject_has_status($subject, (string)$newStatus, (string)($monitor['name'] ?? ''));
         $body = replaceTemplateVariables($rule['body_template'], $monitor, $newStatus, $details, $responseTime);
         
         error_log("[EMAIL] Rule {$rule['id']} - Prepared email - subject: $subject");
@@ -678,7 +1019,7 @@ function sendEmailMultiWithRuleFromOverride(array $toList, array $ccList, $subje
         (string)$details,
         $responseTime,
         time(),
-        (string)$body,
+        null,
         $appName
     );
 
@@ -854,7 +1195,7 @@ function sendNotification($monitor, $message, $statusTrigger = 'both', $response
     if (!empty($recipients)) {
         // Build templated subject/body (monitor overrides), fallback to existing message
         $appName = getAppName() ?: 'LinkNest';
-        $defaultSubjectTpl = "[{$appName} Monitor] {monitor_name} Status Update";
+        $defaultSubjectTpl = "[{$appName} Monitor] {monitor_name} - {status}";
         $defaultBodyTpl =
             "{status}: {monitor_name}\n" .
             "Target: {monitor_target}\n" .
@@ -870,6 +1211,7 @@ function sendNotification($monitor, $message, $statusTrigger = 'both', $response
         $effectiveStatus = ($statusTrigger === 'up' || $statusTrigger === 'down') ? $statusTrigger : 'both';
         $detailsForTemplate = $message; // includes "DOWN/UP: ..." plus error; good fallback for {details}
         $subject = replaceTemplateVariables($subjectTpl, $monitor, $effectiveStatus, $detailsForTemplate, $responseTime);
+        $subject = ln_ensure_monitor_email_subject_has_status($subject, $effectiveStatus, (string)($monitor['name'] ?? ''));
         $bodyText = replaceTemplateVariables($bodyTpl, $monitor, $effectiveStatus, $detailsForTemplate, $responseTime);
 
         $ts = is_int($checkedAt) ? $checkedAt : time();
@@ -884,7 +1226,7 @@ function sendNotification($monitor, $message, $statusTrigger = 'both', $response
             $detailsForTemplate,
             $responseTime,
             $ts,
-            $bodyText,
+            null,
             $appName
         );
 

@@ -1,7 +1,7 @@
 @echo off
-REM Clone LinkNest to a new folder with all necessary files
-REM Usage: clone-linknest.bat <new-folder-name> [--source <path>] [--target <path>] [--assets] [--database]
-REM Example: clone-linknest.bat myspaces --source C:\xampp\htdocs\linknest --target C:\projects --assets --database
+REM Clone LinkNest to a sibling folder on the host (not Docker or WSL).
+REM Usage: clone-linknest.bat <new-folder-name> [--source <path>] [--target <path>] [--preset empty|structure|full|demo]
+REM Example: clone-linknest.bat myspaces --preset full
 
 setlocal enabledelayedexpansion
 
@@ -10,30 +10,37 @@ set "SCRIPT_DIR=%~dp0"
 
 :main
 
+if defined WSL_DISTRO_NAME goto refuse_not_host
+if defined WSL_INTEROP goto refuse_not_host
+if exist "/.dockerenv" goto refuse_not_host
+if "%LINKNEST_DOCKER%"=="1" goto refuse_not_host
+
 if "%~1"=="" (
     echo.
-    echo Usage: clone-linknest.bat ^<new-folder-name^> [--source ^<path^>] [--target ^<path^>] [--assets] [--database]
+    echo Usage: clone-linknest.bat ^<new-folder-name^> [--source ^<path^>] [--target ^<path^>] [--preset empty^|structure^|full^|demo]
+    echo.
+    echo Host filesystem only. In Docker, rebuild with redeploy-docker.bat instead.
     echo.
     echo Parameters:
     echo   new-folder-name  Name of the new folder to create
-    echo   --source ^<path^>   Source directory to clone from ^(optional, default: current directory^)
+    echo   --source ^<path^>   Source directory to clone from ^(optional^)
     echo   --target ^<path^>   Target directory where folder will be created ^(optional^)
-    echo   --assets         Copy logos and favicon from uploads folder
-    echo   --database       Copy database file from data folder
+    echo   --preset empty^|structure^|full^|demo   Clone content preset ^(default: empty^)
+    echo   --assets / --database  Legacy flags ^(both = full, database = structure^)
     echo.
     echo Examples:
     echo   clone-linknest.bat myspaces
-    echo   clone-linknest.bat myspaces --target C:\projects
-    echo   clone-linknest.bat myspaces --source C:\xampp\htdocs\linknest
-    echo   clone-linknest.bat myspaces --assets --database
-    echo   clone-linknest.bat myspaces --source C:\other\linknest --target C:\projects --assets
+    echo   clone-linknest.bat myspaces --preset full
+    echo   clone-linknest.bat myspaces --source C:\xampp\htdocs\linknest --preset structure
     echo.
     exit /b 1
 )
 
 set "NEW_FOLDER=%~1"
+set "PRESET="
 set "COPY_ASSETS=0"
 set "COPY_DATABASE=0"
+set "COPY_ALL_UPLOADS=0"
 set "TARGET_PATH="
 set "SOURCE_PATH="
 
@@ -53,12 +60,43 @@ if /i "%~1"=="--target" (
     shift
     goto parse_params
 )
+if /i "%~1"=="--preset" (
+    set "PRESET=%~2"
+    shift
+    shift
+    goto parse_params
+)
+if /i "%~1"=="--empty" set "PRESET=empty"
+if /i "%~1"=="--structure" set "PRESET=structure"
+if /i "%~1"=="--full" set "PRESET=full"
+if /i "%~1"=="--demo" set "PRESET=demo"
 if /i "%~1"=="--assets" set "COPY_ASSETS=1"
 if /i "%~1"=="--database" set "COPY_DATABASE=1"
 if /i "%~1"=="--databases" set "COPY_DATABASE=1"
 shift
 goto parse_params
 :params_done
+if not defined PRESET (
+    if "%COPY_DATABASE%"=="1" if "%COPY_ASSETS%"=="1" set "PRESET=full"
+)
+if not defined PRESET (
+    if "%COPY_DATABASE%"=="1" set "PRESET=structure"
+)
+if not defined PRESET set "PRESET=empty"
+if /i not "%PRESET%"=="empty" if /i not "%PRESET%"=="structure" if /i not "%PRESET%"=="full" if /i not "%PRESET%"=="demo" (
+    echo ERROR: Unknown preset "%PRESET%" ^(use empty, structure, full, or demo^)
+    exit /b 1
+)
+set "COPY_DATABASE=0"
+set "COPY_ALL_UPLOADS=0"
+if /i "%PRESET%"=="full" (
+    set "COPY_DATABASE=1"
+    set "COPY_ALL_UPLOADS=1"
+)
+if /i "%PRESET%"=="structure" (
+    set "COPY_DATABASE=1"
+    set "COPY_ALL_UPLOADS=1"
+)
 REM Get absolute paths
 REM SCRIPT_DIR is already set at the start
 REM Determine source directory
@@ -104,6 +142,7 @@ echo ========================================
 echo.
 echo Source: %CURRENT_DIR%
 echo Target: %TARGET_DIR%
+echo Preset: %PRESET%
 echo.
 
 REM Check if target folder already exists
@@ -190,6 +229,12 @@ if exist "%CURRENT_DIR%\.gitignore" (
 )
 copy "%CURRENT_DIR%\README.md" "%TARGET_DIR%\" >nul 2>&1
 if errorlevel 1 set "COPY_ERROR=1"
+if exist "%CURRENT_DIR%\AGENTS.md" copy "%CURRENT_DIR%\AGENTS.md" "%TARGET_DIR%\" >nul 2>&1
+if exist "%CURRENT_DIR%\composer.json" copy "%CURRENT_DIR%\composer.json" "%TARGET_DIR%\" >nul 2>&1
+if exist "%CURRENT_DIR%\novnc.d.ts" copy "%CURRENT_DIR%\novnc.d.ts" "%TARGET_DIR%\" >nul 2>&1
+if exist "%CURRENT_DIR%\package-for-deployment.bat" copy "%CURRENT_DIR%\package-for-deployment.bat" "%TARGET_DIR%\" >nul 2>&1
+if exist "%CURRENT_DIR%\redeploy-docker.bat" copy "%CURRENT_DIR%\redeploy-docker.bat" "%TARGET_DIR%\" >nul 2>&1
+if exist "%CURRENT_DIR%\redeploy-docker.sh" copy "%CURRENT_DIR%\redeploy-docker.sh" "%TARGET_DIR%\" >nul 2>&1
 if exist "%CURRENT_DIR%\bulk-import-template.csv" (
     copy "%CURRENT_DIR%\bulk-import-template.csv" "%TARGET_DIR%\" >nul 2>&1
     if errorlevel 1 set "COPY_ERROR=1"
@@ -218,6 +263,50 @@ xcopy "%CURRENT_DIR%\services" "%TARGET_DIR%\services" /E /I /Y /Q >nul 2>&1
 
 echo   - Copying src directory...
 xcopy "%CURRENT_DIR%\src" "%TARGET_DIR%\src" /E /I /Y /Q >nul 2>&1
+if exist "%CURRENT_DIR%\analytics" (
+    echo   - Copying analytics directory...
+    xcopy "%CURRENT_DIR%\analytics" "%TARGET_DIR%\analytics" /E /I /Y /Q >nul 2>&1
+)
+if exist "%CURRENT_DIR%\bin" (
+    echo   - Copying bin directory...
+    xcopy "%CURRENT_DIR%\bin" "%TARGET_DIR%\bin" /E /I /Y /Q >nul 2>&1
+)
+if exist "%CURRENT_DIR%\config" (
+    echo   - Copying config directory...
+    xcopy "%CURRENT_DIR%\config" "%TARGET_DIR%\config" /E /I /Y /Q >nul 2>&1
+)
+if exist "%CURRENT_DIR%\hooks" (
+    echo   - Copying hooks directory...
+    xcopy "%CURRENT_DIR%\hooks" "%TARGET_DIR%\hooks" /E /I /Y /Q >nul 2>&1
+)
+if exist "%CURRENT_DIR%\migrations" (
+    echo   - Copying migrations directory...
+    xcopy "%CURRENT_DIR%\migrations" "%TARGET_DIR%\migrations" /E /I /Y /Q >nul 2>&1
+)
+if exist "%CURRENT_DIR%\utils" (
+    echo   - Copying utils directory...
+    xcopy "%CURRENT_DIR%\utils" "%TARGET_DIR%\utils" /E /I /Y /Q >nul 2>&1
+)
+if exist "%CURRENT_DIR%\public" (
+    echo   - Copying public directory...
+    xcopy "%CURRENT_DIR%\public" "%TARGET_DIR%\public" /E /I /Y /Q >nul 2>&1
+)
+if exist "%CURRENT_DIR%\docker" (
+    echo   - Copying docker directory...
+    xcopy "%CURRENT_DIR%\docker" "%TARGET_DIR%\docker" /E /I /Y /Q >nul 2>&1
+)
+if exist "%CURRENT_DIR%\docs" (
+    echo   - Copying docs directory...
+    xcopy "%CURRENT_DIR%\docs" "%TARGET_DIR%\docs" /E /I /Y /Q >nul 2>&1
+)
+if exist "%CURRENT_DIR%\land" (
+    echo   - Copying land directory...
+    xcopy "%CURRENT_DIR%\land" "%TARGET_DIR%\land" /E /I /Y /Q >nul 2>&1
+)
+if exist "%CURRENT_DIR%\extensions" (
+    echo   - Copying extensions directory...
+    xcopy "%CURRENT_DIR%\extensions" "%TARGET_DIR%\extensions" /E /I /Y /Q >nul 2>&1
+)
 
 echo   - Creating data directory...
 mkdir "%TARGET_DIR%\data" 2>nul
@@ -285,16 +374,12 @@ popd
 echo     Total: !SCRIPT_COUNT! script files copied to target folder
 
 
-REM Copy assets if requested
-if not "%COPY_ASSETS%"=="1" goto skip_assets
-echo   - Copying logos and favicon...
-if exist "%CURRENT_DIR%\uploads\logo_*.*" (
-    copy "%CURRENT_DIR%\uploads\logo_*.*" "%TARGET_DIR%\uploads\" >nul 2>&1
-    echo     Copied logo files
-)
-if exist "%CURRENT_DIR%\uploads\favicon_*.*" (
-    copy "%CURRENT_DIR%\uploads\favicon_*.*" "%TARGET_DIR%\uploads\" >nul 2>&1
-    echo     Copied favicon files
+REM Copy uploads for full / structure presets
+if not "%COPY_ALL_UPLOADS%"=="1" goto skip_assets
+echo   - Copying all uploads...
+if exist "%CURRENT_DIR%\uploads" (
+    xcopy "%CURRENT_DIR%\uploads" "%TARGET_DIR%\uploads" /E /I /Y /Q >nul 2>&1
+    echo     Copied uploads folder
 )
 :skip_assets
 
@@ -307,19 +392,21 @@ if not "%COPY_DATABASE%"=="1" goto skip_database
             echo     ERROR: Failed to copy database file
         ) else (
             echo     Copied database: data/linknest.db
-            echo   - Encrypting LDAP passwords in copied database...
-            if exist "%TARGET_DIR%\scripts\encrypt_ldap_passwords.php" (
-                cd /d "%TARGET_DIR%"
-                php "%TARGET_DIR%\scripts\encrypt_ldap_passwords.php" 2>nul
-                if errorlevel 1 (
-                    echo     WARNING: Failed to encrypt LDAP passwords in copied database
-                    echo     Please run: php scripts\encrypt_ldap_passwords.php manually
+            if /i "%PRESET%"=="full" (
+                echo   - Encrypting LDAP passwords in copied database...
+                if exist "%TARGET_DIR%\scripts\encrypt_ldap_passwords.php" (
+                    cd /d "%TARGET_DIR%"
+                    php "%TARGET_DIR%\scripts\encrypt_ldap_passwords.php" 2>nul
+                    if errorlevel 1 (
+                        echo     WARNING: Failed to encrypt LDAP passwords in copied database
+                        echo     Please run: php scripts\encrypt_ldap_passwords.php manually
+                    ) else (
+                        echo     Successfully encrypted LDAP passwords ^(if any were found^)
+                    )
+                    cd /d "%CURRENT_DIR%"
                 ) else (
-                    echo     Successfully encrypted LDAP passwords ^(if any were found^)
+                    echo     NOTE: encrypt_ldap_passwords.php not found, skipping encryption
                 )
-                cd /d "%CURRENT_DIR%"
-            ) else (
-                echo     NOTE: encrypt_ldap_passwords.php not found, skipping encryption
             )
         )
     ) else (
@@ -344,6 +431,13 @@ echo # GEMINI_API_KEY=your-api-key-here
 ) > "%TARGET_DIR%\.env"
 
 echo   Created .env with VITE_BASE_PATH=/%NEW_FOLDER%
+
+echo [3b/7] Applying preset and install identity...
+php "%TARGET_DIR%\scripts\apply-clone-preset.php" "%TARGET_DIR%" "%NEW_FOLDER%" "%PRESET%" "http://localhost/%NEW_FOLDER%/"
+if errorlevel 1 (
+    echo ERROR: Failed to apply clone preset / install identity
+    exit /b 1
+)
 
 REM Install dependencies
 echo [4/7] Installing npm dependencies...
@@ -448,7 +542,11 @@ echo.
 echo ## Cloning This Instance
 echo.
 echo You can clone this instance using the scripts in the scripts folder:
-echo   scripts\clone-linknest.bat new-instance-name
+echo   scripts\clone-linknest.bat new-instance-name --preset empty
+echo Docker/WSL: use redeploy-docker.bat instead of Admin folder clone.
+echo.
+echo Preset: %PRESET%
+echo Isolated login cookie: data\install_identity.php
 echo.
 ) > "%TARGET_DIR%\DEPLOYMENT.md"
 
@@ -461,21 +559,33 @@ echo Clone Complete!
 echo ========================================
 echo.
 echo New instance created at: %TARGET_DIR%
+echo Preset: %PRESET%
 echo.
 echo Next steps:
 echo 1. Access the application at: http://localhost/%NEW_FOLDER%/
-echo 2. Login with default credentials: admin / admin123
+if /i "%PRESET%"=="full" (
+    echo 2. Login with the same credentials as the source instance
+) else if /i "%PRESET%"=="demo" (
+    echo 2. Login as admin / admin123 or demo1-demo10 / password
+) else (
+    echo 2. Login with default credentials: admin / admin123
+)
 echo 3. Change the admin password in the Admin Panel
 echo.
 if "%COPY_DATABASE%"=="1" (
     echo Database file: %TARGET_DIR%\data\linknest.db
-    echo (Copied from source)
+    echo (Copied from source, then preset applied)
 ) else (
     echo Database file: %TARGET_DIR%\data\linknest.db
-    echo (Will be created on first use)
+    echo (Initialized for this clone)
 )
 echo.
 pause
+exit /b 0
+
+:refuse_not_host
+echo Clone is not available in Docker or WSL mode. Please go with Docker clone or redeploy via Docker container.
+exit /b 1
 
 :resolve_path
 set "RESOLVE_RESULT=%~f1"

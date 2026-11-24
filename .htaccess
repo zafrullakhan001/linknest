@@ -1,8 +1,22 @@
-# Enable directory access and file serving
-Options -Indexes +FollowSymLinks
+# Hide server version information on error pages
+ServerSignature Off
 
-# Set proper MIME types for JavaScript modules
+# Custom Premium Error Pages (Inline HTML to avoid path issues across deployments)
+ErrorDocument 403 "<!DOCTYPE html><html lang='en'><head><meta charset='UTF-8'><meta name='viewport' content='width=device-width, initial-scale=1.0'><title>403 - Access Denied</title><style>body{margin:0;padding:0;font-family:'Inter',system-ui,'Segoe UI',Roboto,Helvetica,Arial,sans-serif;background:#0f172a;color:#f1f5f9;display:flex;align-items:center;justify-content:center;height:100vh;text-align:center;overflow:hidden}.container{max-width:600px;padding:2rem;position:relative}.glow{position:absolute;top:50%;left:50%;transform:translate(-50%,-50%);width:300px;height:300px;background:#3b82f6;filter:blur(100px);opacity:.2;z-index:-1;border-radius:50%}h1{font-size:8rem;margin:0;line-height:1;background:linear-gradient(135deg,#60a5fa,#a855f7);-webkit-background-clip:text;-webkit-text-fill-color:transparent}h2{font-size:2rem;margin:1rem 0;font-weight:500}p{color:#94a3b8;font-size:1.1rem;margin-bottom:2rem;line-height:1.6}.btn{display:inline-block;padding:.75rem 2rem;background:rgba(255,255,255,.1);color:#fff;text-decoration:none;border-radius:9999px;border:1px solid rgba(255,255,255,.2);font-weight:500;transition:all .3s ease;backdrop-filter:blur(10px)}.btn:hover{background:rgba(255,255,255,.2);transform:translateY(-2px);border-color:rgba(255,255,255,.4)}.icon{display:inline-block;margin-bottom:1rem;color:#f43f5e}</style></head><body><div class='container'><div class='glow'></div><div class='icon'><svg width='64' height='64' viewBox='0 0 24 24' fill='none' stroke='currentColor' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'><rect x='3' y='11' width='18' height='11' rx='2' ry='2'></rect><path d='M7 11V7a5 5 0 0110 0v4'></path></svg></div><h1>403</h1><h2>Access Denied</h2><p>Sorry, you don't have permission to access this directory or file. The resource might be restricted.</p><a href='javascript:history.back()' class='btn'>Go Back</a></div></body></html>"
+ErrorDocument 404 "<!DOCTYPE html><html lang='en'><head><meta charset='UTF-8'><meta name='viewport' content='width=device-width, initial-scale=1.0'><title>404 - Not Found</title><style>body{margin:0;padding:0;font-family:'Inter',system-ui,'Segoe UI',Roboto,Helvetica,Arial,sans-serif;background:#0f172a;color:#f1f5f9;display:flex;align-items:center;justify-content:center;height:100vh;text-align:center;overflow:hidden}.container{max-width:600px;padding:2rem;position:relative}.glow{position:absolute;top:50%;left:50%;transform:translate(-50%,-50%);width:300px;height:300px;background:#f59e0b;filter:blur(100px);opacity:.2;z-index:-1;border-radius:50%}h1{font-size:8rem;margin:0;line-height:1;background:linear-gradient(135deg,#fbbf24,#ea580c);-webkit-background-clip:text;-webkit-text-fill-color:transparent}h2{font-size:2rem;margin:1rem 0;font-weight:500}p{color:#94a3b8;font-size:1.1rem;margin-bottom:2rem;line-height:1.6}.btn{display:inline-block;padding:.75rem 2rem;background:rgba(255,255,255,.1);color:#fff;text-decoration:none;border-radius:9999px;border:1px solid rgba(255,255,255,.2);font-weight:500;transition:all .3s ease;backdrop-filter:blur(10px)}.btn:hover{background:rgba(255,255,255,.2);transform:translateY(-2px);border-color:rgba(255,255,255,.4)}.icon{display:inline-block;margin-bottom:1rem;color:#fbbf24}</style></head><body><div class='container'><div class='glow'></div><div class='icon'><svg width='64' height='64' viewBox='0 0 24 24' fill='none' stroke='currentColor' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'><circle cx='12' cy='12' r='10'></circle><line x1='12' y1='8' x2='12' y2='12'></line><line x1='12' y1='16' x2='12.01' y2='16'></line></svg></div><h1>404</h1><h2>Page Not Found</h2><p>Sorry, the page you are looking for doesn't exist or has been moved.</p><a href='javascript:history.back()' class='btn'>Go Back</a></div></body></html>"
+
+
+# Enable directory access and file serving
+# MultiViews maps /api/tiles/... onto tiles.php and /api/.../clone onto clone.php,
+# which 403s PATH_INFO when the category name contains spaces (%20).
+Options -Indexes -MultiViews +FollowSymLinks
+
+# Set default charset to UTF-8
+AddDefaultCharset UTF-8
 <IfModule mod_mime.c>
+    # Set charset for text files
+    AddCharset UTF-8 .html .htm .php .css .js .json .txt .xml
+    
     # JavaScript files
     AddType application/javascript .js
     AddType application/javascript .mjs
@@ -20,12 +34,34 @@ Options -Indexes +FollowSymLinks
     AddType text/css .css
     
     # HTML files
-    AddType text/html .html .htm
+    AddType text/html;charset=UTF-8 .html .htm
 </IfModule>
 
 # Enable PHP for API routes
+# Pass Authorization to PHP so MCP Bearer tokens survive CGI/FastCGI/rewrite.
+<IfModule mod_setenvif.c>
+    SetEnvIf Authorization "(.+)" HTTP_AUTHORIZATION=$1
+</IfModule>
+<IfModule mod_cgi.c>
+    CGIPassAuth On
+</IfModule>
+
 <IfModule mod_rewrite.c>
     RewriteEngine On
+
+    # Never serve SQLite, JSON exports, or snapshots from data/
+    RewriteRule (^|/)data/ - [F,L]
+
+    RewriteCond %{HTTP:Authorization} .
+    RewriteRule .* - [E=HTTP_AUTHORIZATION:%{HTTP:Authorization}]
+
+    # robots.txt must never fall through to the SPA
+    RewriteRule (^|/)robots\.txt$ robots.txt [L]
+
+    # NOTE: Do NOT proxy _ln_sshgw here when apache/linknest-gateway-proxy.conf
+    # is loaded in httpd.conf (double proxy corrupts WebSocket close frames after MFA).
+    # Server-level ProxyPassMatch handles wss://host/<folder>/_ln_sshgw/<port>/ws
+    # Keep SPA from swallowing those paths:
     
     # FIRST: Allow direct access to dist/ directory and its files (including assets)
     RewriteCond %{REQUEST_URI} ^.*/dist/
@@ -36,7 +72,12 @@ Options -Indexes +FollowSymLinks
     RewriteCond %{REQUEST_URI} ^.*/api/
     RewriteCond %{REQUEST_URI} !api/index\.php
     RewriteCond %{REQUEST_FILENAME} !-f
-    RewriteRule ^api/(.*)$ api/index.php?path=$1 [L,QSA]
+    # BCTLS escapes spaces/CTL in $1 so category names like "BUSINESS IT SERVICES"
+    # do not produce an unescaped query string that Apache 2.4 rejects with 403.
+    RewriteRule ^api/(.*)$ api/index.php?path=$1 [BCTLS,L,QSA]
+
+    # Recyclable short URLs: /s/{code} → s.php
+    RewriteRule ^s/([A-Za-z0-9]+)$ s.php?code=$1 [L,QSA]
 
     # Allow direct access to uploads/ directory
     RewriteCond %{REQUEST_URI} ^.*/uploads/
@@ -47,12 +88,47 @@ Options -Indexes +FollowSymLinks
     RewriteCond %{REQUEST_URI} ^.*/assets/
     RewriteCond %{REQUEST_FILENAME} !-f
     RewriteRule ^assets/(.*)$ dist/assets/$1 [L]
+
+    # Boot / launcher scripts (Vite public/ → dist/)
+    RewriteCond %{REQUEST_URI} ln-boot-theme\.js$
+    RewriteCond %{REQUEST_FILENAME} !-f
+    RewriteRule (^|/)ln-boot-theme\.js$ dist/ln-boot-theme.js [L]
+    RewriteCond %{REQUEST_URI} ln-load-browser-launcher\.js$
+    RewriteCond %{REQUEST_FILENAME} !-f
+    RewriteRule (^|/)ln-load-browser-launcher\.js$ dist/ln-load-browser-launcher.js [L]
+
+    # SSH SharedWorker (Vite public/ → dist/); avoid SPA HTML 404 for worker fetch
+    RewriteCond %{REQUEST_URI} ssh-session-shared-worker\.js$
+    RewriteCond %{REQUEST_FILENAME} !-f
+    RewriteRule (^|/)ssh-session-shared-worker\.js$ dist/ssh-session-shared-worker.js [L]
+
+    # SSH session keeper helper page
+    RewriteCond %{REQUEST_URI} ssh-session-keepalive\.html$
+    RewriteCond %{REQUEST_FILENAME} !-f
+    RewriteRule (^|/)ssh-session-keepalive\.html$ dist/ssh-session-keepalive.html [L]
+
+    # TinyMCE iframe host (Vite public/ → dist/)
+    RewriteCond %{REQUEST_URI} tinymce-editor\.html$
+    RewriteCond %{REQUEST_FILENAME} !-f
+    RewriteRule (^|/)tinymce-editor\.html$ dist/tinymce-editor.html [L]
+
+    # TinyMCE self-hosted runtime (Vite public/tinymce → dist/tinymce)
+    # Without this, /tinymce/*.js returns the HTML 404 page and TinyMCE fails to load.
+    RewriteCond %{REQUEST_URI} /tinymce/
+    RewriteCond %{REQUEST_FILENAME} !-f
+    RewriteRule (^|/)tinymce/(.*)$ dist/tinymce/$2 [L]
+
+    # Mermaid (Help & About diagrams) — Vite public/vendor → dist/vendor
+    RewriteCond %{REQUEST_URI} /vendor/mermaid\.min\.js$
+    RewriteCond %{REQUEST_FILENAME} !-f
+    RewriteRule (^|/)vendor/mermaid\.min\.js$ dist/vendor/mermaid.min.js [L]
     
     # Block direct access to source files in production
     RewriteCond %{DOCUMENT_ROOT}%{REQUEST_URI}dist/index.html -f
     RewriteCond %{REQUEST_URI} \.(tsx?|jsx?)$
     RewriteCond %{REQUEST_URI} !dist/
     RewriteCond %{REQUEST_URI} !api/
+    RewriteCond %{REQUEST_URI} !/vendor/
     RewriteRule . - [F,L]
     
     # PRODUCTION MODE: If dist/index.html exists, always serve from dist/
@@ -61,17 +137,22 @@ Options -Indexes +FollowSymLinks
     RewriteCond %{REQUEST_URI} ^/?$
     RewriteRule ^(.*)$ dist/index.html [L]
     
-    # Block direct access to root index.html in production (redirect to dist)
+    # Serve built index via internal rewrite (no 301 — browsers cache permanent redirects)
     RewriteCond %{DOCUMENT_ROOT}%{REQUEST_URI}dist/index.html -f
     RewriteCond %{REQUEST_URI} index\.html?$
-    RewriteRule ^index\.html?$ dist/index.html [L,R=301]
+    RewriteRule ^index\.html?$ dist/index.html [L]
     
     # Production: Force serve dist/index.html for all other SPA routes
     RewriteCond %{DOCUMENT_ROOT}%{REQUEST_URI}dist/index.html -f
     RewriteCond %{REQUEST_URI} !api/
+    RewriteCond %{REQUEST_URI} !/s/
     RewriteCond %{REQUEST_URI} !dist/
     RewriteCond %{REQUEST_URI} !assets/
     RewriteCond %{REQUEST_URI} !uploads/
+    RewriteCond %{REQUEST_URI} !/tinymce/
+    RewriteCond %{REQUEST_URI} !tinymce-editor\.html$
+    RewriteCond %{REQUEST_URI} !/_ln_sshgw/
+    RewriteCond %{REQUEST_URI} !/_ln_vncgw/
     RewriteCond %{REQUEST_URI} !\.(js|css|png|jpg|jpeg|gif|ico|svg|woff|woff2|ttf|eot)$
     RewriteCond %{REQUEST_FILENAME} !-f
     RewriteCond %{REQUEST_FILENAME} !-d
@@ -82,10 +163,45 @@ Options -Indexes +FollowSymLinks
     RewriteCond %{REQUEST_FILENAME} !-f
     RewriteCond %{REQUEST_FILENAME} !-d
     RewriteCond %{REQUEST_URI} !api/
+    RewriteCond %{REQUEST_URI} !/s/
     RewriteRule . index.html [L]
 </IfModule>
 
 # DirectoryIndex: Prefer dist/index.html in production
 <IfModule mod_dir.c>
     DirectoryIndex dist/index.html index.html
+</IfModule>
+
+# Prevent browsers / proxies from sticking on an old SPA shell after deploy.
+# Hashed Vite assets can be cached forever; HTML / SW must always revalidate.
+<IfModule mod_headers.c>
+    Header always set X-Robots-Tag "noindex, nofollow, noarchive, nosnippet"
+    # Main app: no eval(). TinyMCE iframe is allowed eval below (isolated document).
+    Header always set Content-Security-Policy "default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; font-src 'self' data: https://fonts.gstatic.com; img-src 'self' data: blob: https: http:; connect-src 'self' https: http: ws: wss: blob:; frame-src 'self' https: http: blob:; worker-src 'self' blob:; media-src 'self' blob: https: http:; object-src 'none'; base-uri 'self'; form-action 'self'; frame-ancestors 'self'"
+    <Files "tinymce-editor.html">
+        Header always unset Content-Security-Policy
+        Header always set Content-Security-Policy "default-src 'self'; script-src 'self' 'unsafe-inline' 'unsafe-eval'; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; font-src 'self' data: https://fonts.gstatic.com; img-src 'self' data: https: http: blob:; media-src 'self' blob: https: http:; connect-src 'self' https: http:; frame-src 'self' https: http: blob:; frame-ancestors 'self'"
+    </Files>
+    # health.php: allow Mermaid CDN (same as Help Guides) for architecture diagram
+    <Files "health.php">
+        Header always unset Content-Security-Policy
+        Header always set Content-Security-Policy "default-src 'self'; script-src 'self' https://cdn.jsdelivr.net; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; font-src 'self' data: https://fonts.gstatic.com; img-src 'self' data: blob: https: http:; connect-src 'self' https: http: ws: wss: blob:; frame-src 'self' https: http: blob:; worker-src 'self' blob:; media-src 'self' blob: https: http:; object-src 'none'; base-uri 'self'; form-action 'self'; frame-ancestors 'self'"
+    </Files>
+    <FilesMatch "(?i)^(index\.html|BUILD_INFO\.json|sw-cache-first\.php)$">
+        Header set Cache-Control "no-cache, no-store, must-revalidate"
+        Header set Pragma "no-cache"
+        Header set Expires "0"
+    </FilesMatch>
+    <FilesMatch "(?i)\.(?:js|css|woff2?|ttf|eot|png|jpe?g|gif|svg|ico|webp)$">
+        Header set Cache-Control "public, max-age=31536000, immutable"
+    </FilesMatch>
+    # health.php companions must revalidate (override immutable above)
+    <FilesMatch "(?i)^(health\.js|health\.css)$">
+        Header set Cache-Control "no-cache, must-revalidate"
+    </FilesMatch>
+</IfModule>
+
+# Compress text assets so the home-page JS/CSS/JSON payloads transfer faster
+<IfModule mod_deflate.c>
+    AddOutputFilterByType DEFLATE text/html text/plain text/xml text/css text/javascript application/javascript application/json application/xml image/svg+xml
 </IfModule>

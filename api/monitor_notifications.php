@@ -43,6 +43,8 @@ try {
             }
             if (preg_match('/^\/monitor\/(\d+)\/logs$/', $path, $matches)) {
                 handleGetEmailLogs($matches[1]);
+            } elseif ($path === '/timezone') {
+                handleGetMonitorNotificationTimezone();
             } elseif (preg_match('/^\/monitor\/(\d+)$/', $path, $matches)) {
                 handleGetNotificationRules($matches[1]);
             } elseif (preg_match('/^\/rule\/(\d+)$/', $path, $matches)) {
@@ -73,7 +75,9 @@ try {
             break;
             
         case 'PUT':
-            if (preg_match('/^\/(\d+)$/', $path, $matches)) {
+            if ($path === '/timezone') {
+                handleUpdateMonitorNotificationTimezone();
+            } elseif (preg_match('/^\/(\d+)$/', $path, $matches)) {
                 handleUpdateNotificationRule($matches[1]);
             } else {
                 sendJSON(['error' => 'Invalid endpoint. Use /{id}'], 404);
@@ -447,15 +451,29 @@ function handleUpdateNotificationRule($ruleId) {
         
         $allowedFields = ['status_trigger', 'time_window_start', 'time_window_end', 'days_of_week', 
                          'subject_template', 'body_template', 'from_name', 'from_email', 'is_enabled', 'name'];
+        $nullableRuleFields = ['time_window_start', 'time_window_end', 'days_of_week', 'from_name', 'from_email'];
         foreach ($allowedFields as $field) {
-            if (isset($data[$field])) {
-                if ($field === 'days_of_week' && is_array($data[$field])) {
-                    $fields[] = "$field = ?";
-                    $values[] = implode(',', $data[$field]);
-                } else {
-                    $fields[] = "$field = ?";
-                    $values[] = $data[$field];
+            if (!array_key_exists($field, $data)) {
+                continue;
+            }
+            if (in_array($field, $nullableRuleFields, true)) {
+                $value = $data[$field];
+                if ($field === 'days_of_week' && is_array($value)) {
+                    $value = implode(',', $value);
                 }
+                $fields[] = "$field = ?";
+                $values[] = ($value === '' || $value === null) ? null : $value;
+                continue;
+            }
+            if (!isset($data[$field])) {
+                continue;
+            }
+            if ($field === 'days_of_week' && is_array($data[$field])) {
+                $fields[] = "$field = ?";
+                $values[] = implode(',', $data[$field]);
+            } else {
+                $fields[] = "$field = ?";
+                $values[] = $data[$field];
             }
         }
 
@@ -604,6 +622,10 @@ function handleImportNotificationRules($monitorId) {
                 continue;
             }
             $sort++;
+            $sortOrder = isset($r['sort_order']) ? (int)$r['sort_order'] : $sort;
+            if ($sortOrder < 1) {
+                $sortOrder = $sort;
+            }
 
             $ruleName = trim((string)($r['name'] ?? ''));
             if ($ruleName === '') {
@@ -699,7 +721,7 @@ function handleImportNotificationRules($monitorId) {
             $insertRule->execute([
                 (int)$monitorId,
                 $ruleName,
-                $sort,
+                $sortOrder,
                 $statusTrigger,
                 $twStart,
                 $twEnd,
@@ -922,6 +944,36 @@ function handleMoveNotificationRule($ruleId) {
     } catch (PDOException $e) {
         if ($db->inTransaction()) $db->rollBack();
         sendJSON(['error' => 'Database error: ' . $e->getMessage()], 500);
+    }
+}
+
+function handleGetMonitorNotificationTimezone(): void {
+    sendJSON([
+        'success' => true,
+        'timezone' => getMonitorNotificationTimezoneInfo(),
+    ]);
+}
+
+function handleUpdateMonitorNotificationTimezone(): void {
+    requireAdmin();
+    $data = getJSONInput();
+    $tz = isset($data['timezone']) ? trim((string)$data['timezone']) : null;
+    if ($tz === null) {
+        sendJSON(['error' => 'timezone is required (use empty string for server default)'], 400);
+        return;
+    }
+    try {
+        $dstCorrection = null;
+        if (array_key_exists('dst_correction', $data)) {
+            $dstCorrection = !empty($data['dst_correction']);
+        }
+        setMonitorNotificationTimezone($tz === '' ? null : $tz, $dstCorrection);
+        sendJSON([
+            'success' => true,
+            'timezone' => getMonitorNotificationTimezoneInfo(),
+        ]);
+    } catch (InvalidArgumentException $e) {
+        sendJSON(['error' => $e->getMessage()], 400);
     }
 }
 

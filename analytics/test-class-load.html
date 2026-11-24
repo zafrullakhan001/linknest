@@ -1,0 +1,49 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>Test Class Load</title>
+</head>
+<body>
+    <h1>Test LinkLatencyScanner Class Load</h1>
+    <div id="result"></div>
+    
+    <script>
+        window.ANALYTICS_CONFIG = {
+            enabled: true,
+            sampleRate: 1.0,
+            collectUrl: 'http://localhost:9333/api/metrics/collect',
+            apiUrl: 'http://localhost:9333/api',
+            userId: 1,
+            sessionId: 'test',
+            beaconUrls: []
+        };
+        
+        function checkClass() {
+            const result = document.getElementById('result');
+            if (typeof LinkLatencyScanner !== 'undefined') {
+                result.innerHTML = '<p style="color: green;">✓ LinkLatencyScanner class is loaded!</p>';
+                result.innerHTML += '<p>Testing instantiation...</p>';
+                try {
+                    const scanner = new LinkLatencyScanner(window.ANALYTICS_CONFIG);
+                    result.innerHTML += '<p style="color: green;">✓ Scanner instantiated successfully!</p>';
+                    result.innerHTML += '<p>Found links: ' + scanner.findLinks().length + '</p>';
+                } catch (e) {
+                    result.innerHTML += '<p style="color: red;">✗ Error: ' + e.message + '</p>';
+                }
+            } else {
+                result.innerHTML = '<p style="color: red;">✗ LinkLatencyScanner class is NOT loaded</p>';
+            }
+        }
+        
+        // Check immediately
+        setTimeout(checkClass, 100);
+        
+        // Check after script loads
+        window.addEventListener('load', () => {
+            setTimeout(checkClass, 2000);
+        });
+    </script>
+    
+    <script src="dashboard/link-latency-scanner.js" defer></script>
+</body>
+</html>

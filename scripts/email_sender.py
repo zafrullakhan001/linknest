@@ -18,6 +18,12 @@ import os
 import sys
 from typing import List, Optional, Sequence, Tuple
 
+# Embeddable CPython (bin/python + python*._pth) does not put this script's
+# folder on sys.path, so linknest_worker_lib would otherwise fail to import.
+_scripts_dir = os.path.dirname(os.path.abspath(__file__))
+if _scripts_dir not in sys.path:
+    sys.path.insert(0, _scripts_dir)
+
 from linknest_worker_lib import (
     DEFAULT_DB_PATH,
     day_of_week_active,
@@ -25,13 +31,18 @@ from linknest_worker_lib import (
     ensure_monitors_schema,
     get_smtp_config,
     is_in_maintenance_window,
+    monitor_notification_now,
     normalize_email_list,
     notifications_paused,
     now_ts,
     open_db,
     time_window_active,
+    resolve_app_name,
+    expand_app_placeholders,
     send_smtp_email,
     ln_render_monitor_notification_html,
+    _ln_ensure_monitor_email_subject_has_status,
+    _monitor_email_details_from_body,
 )
 
 
@@ -142,13 +153,7 @@ def main() -> int:
     ensure_monitors_schema(conn)
     smtp_cfg = get_smtp_config(conn)
     dedupe_window_seconds = _get_dedupe_window_seconds(conn)
-    app_name = "LinkNest"
-    try:
-        row = conn.execute("SELECT value FROM settings WHERE key = 'app_name' LIMIT 1").fetchone()
-        if row and row["value"]:
-            app_name = str(row["value"]).strip()
-    except Exception:
-        pass
+    app_name = resolve_app_name(conn)
 
     if notifications_paused(conn):
         if args.verbose:
@@ -261,7 +266,12 @@ def main() -> int:
                         (now_ts(), "suppressed: rule disabled/missing", outbox_id),
                     )
                     continue
-                if not time_window_active(rule["time_window_start"], rule["time_window_end"]) or not day_of_week_active(rule["days_of_week"]):
+                notify_now = monitor_notification_now(conn)
+                if not time_window_active(
+                    rule["time_window_start"],
+                    rule["time_window_end"],
+                    notify_now,
+                ) or not day_of_week_active(rule["days_of_week"], notify_now):
                     conn.execute(
                         "UPDATE email_outbox SET send_after = ?, last_error = ? WHERE id = ?",
                         (now_ts() + 60, "postponed: outside rule window", outbox_id),
@@ -294,41 +304,52 @@ def main() -> int:
                 )
                 continue
 
+            mrow = None
+            if monitor_id is not None:
+                mrow = conn.execute("SELECT * FROM monitors WHERE id = ? LIMIT 1", (int(monitor_id),)).fetchone()
+
+            subject = _ln_ensure_monitor_email_subject_has_status(
+                str(subject or ""),
+                str(status_trigger or ""),
+                str(mrow["name"]) if mrow and mrow["name"] is not None else None,
+            )
+
             # Now we can attempt a send.
             html_body = None
             try:
                 # Use LinkNest HTML template (like legacy PHP emails) for BOTH legacy and rule-based notifications.
-                mrow = None
-                if monitor_id is not None:
-                    mrow = conn.execute("SELECT * FROM monitors WHERE id = ? LIMIT 1", (int(monitor_id),)).fetchone()
                 monitor_name = str(mrow["name"]) if mrow and mrow["name"] is not None else "Monitor"
                 target = str(mrow["target"]) if mrow and mrow["target"] is not None else ""
                 rt = None
                 if mrow is not None:
                     rt = mrow["last_response_time"]
+                body_text = str(r["body"] or "")
                 html_body = ln_render_monitor_notification_html(
                     monitor_name=monitor_name,
                     target=target,
                     status=str(status_trigger or ""),
-                    subject=str(subject or ""),
-                    message_text=str(r["body"] or ""),
+                    details=_monitor_email_details_from_body(body_text),
                     response_time_ms=(f"{int(rt)} ms" if rt not in (None, "", False) else None),
                     app_name=app_name,
+                    db_conn=conn,
                 )
             except Exception:
                 # Never fail sending because of HTML rendering issues; plain-text fallback will still send.
                 html_body = None
 
+            subject = expand_app_placeholders(subject, app_name)
             ok, err = send_smtp_email(
                 smtp_cfg=smtp_cfg,
                 to_list=to_list,
                 cc_list=cc_list,
                 subject=subject,
-                body=str(r["body"]),
+                body=expand_app_placeholders(str(r["body"] or ""), app_name),
                 html_body=html_body,
                 from_name=(str(r["from_name"]) if r["from_name"] is not None else None),
                 from_email=(str(r["from_email"]) if r["from_email"] is not None else None),
                 timeout_seconds=int(args.smtp_timeout),
+                db_conn=conn,
+                app_name=app_name,
             )
 
             attempt_n = int(r["attempts"] or 0) + 1

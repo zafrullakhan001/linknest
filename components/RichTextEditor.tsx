@@ -1,4 +1,9 @@
 import React, { useRef, useEffect, useState } from 'react';
+import { useEscapeToClose } from '../hooks/useEscapeToClose';
+import { EmojiPickerPopover } from './EmojiPickerPanel';
+import { ensureRichTextFontsLoaded, RICH_TEXT_FONT_GROUPS, RICH_TEXT_FONTS } from '../utils/richTextFonts';
+import { MediaPickerModal } from './MediaPickerModal';
+import { resolveApiBase } from '../services/apiHelpers';
 
 interface RichTextEditorProps {
     value: string;
@@ -7,42 +12,163 @@ interface RichTextEditorProps {
     className?: string;
 }
 
-const EMOJI_CATEGORIES = {
-    servers: ['🖥️', '💾', '🖨️', '📡', '🔄', '⚙️', '🔧', '🛠️', '📦', '🗄️', '🗃️', '📊', '📈', '📉', '🔌', '🔋', '⚡', '🌐', '🌍', '🌎', '🖱️', '⌨️', '🖲️', '💿', '💽', '📀', '📼', '📷', '📸', '📹', '🎥'],
-    cloud: ['☁️', '🌥️', '⛅', '🌤️', '☀️', '🌦️', '🌧️', '⛈️', '🌩️', '🌨️', '❄️', '☂️', '☔', '🌈', '🌊', '💧', '💨', '🌪️', '🌀', '🌫️'],
-    onprem: ['🏢', '🏭', '🏗️', '🏛️', '🏘️', '🏠', '🏡', '🏚️', '🏙️', '🌆', '🌇', '🌃', '🌉', '🌁', '🗼', '🗽', '⛪', '🕌', '🕍', '🛕'],
-    hospital: ['🏥', '⚕️', '🩺', '💊', '💉', '🩹', '🩼', '🦽', '🦼', '🚑', '🚨', '🏨', '👨‍⚕️', '👩‍⚕️', '🧑‍⚕️', '👨‍🔬', '👩‍🔬', '🧑‍🔬', '🔬', '🧪', '🫀', '🫁', '🧠', '🦷', '🦴'],
-    technology: ['💻', '⌨️', '🖱️', '🖲️', '🖨️', '🖥️', '📱', '📲', '💾', '💿', '📀', '📼', '📷', '📸', '📹', '🎥', '📽️', '🎞️', '📺', '📻', '📟', '☎️', '📞', '📠', '📧'],
-    network: ['🌐', '📡', '📶', '📞', '☎️', '📠', '📧', '📨', '📩', '📤', '📥', '📦', '📪', '📫', '📬', '📭', '📮', '🗳️', '📯', '📜', '🔗', '⛓️', '🔌', '💡', '⚡'],
-    security: ['🔐', '🔒', '🔓', '🔑', '🗝️', '🛡️', '⚔️', '🗡️', '🔪', '🛠️', '🔧', '🔩', '⚙️', '⛓️', '🔗', '🔫', '💣', '🧨', '🎯', '🚨', '🚔', '🚓', '👮', '🕵️', '🦹'],
-    data: ['📊', '📈', '📉', '📋', '📌', '📍', '🗂️', '📁', '📂', '🗂️', '🗄️', '🗃️', '📑', '📃', '📄', '📜', '📰', '📓', '📔', '📒', '📕', '📗', '📘', '📙', '📚'],
-    communication: ['💬', '💭', '🗨️', '🗯️', '💢', '👤', '👥', '🗣️', '👂', '👃', '👀', '👁️', '👄', '💋', '💌', '💍', '💎', '🎁', '🎉', '🎊'],
-    popular: ['😀', '😃', '😄', '😁', '😆', '😅', '🤣', '😂', '🙂', '🙃', '😉', '😊', '😇', '🥰', '😍', '🤩', '😘', '😗', '😚', '😙', '😋', '😛', '😜', '🤪', '😝'],
-    objects: ['📱', '⌚', '📷', '📹', '🎥', '📺', '📻', '🔊', '🔉', '🔈', '🔇', '📢', '📣', '📯', '🔔', '🔕', '📻', '📡', '💻', '🖥️', '🖨️', '⌨️', '🖱️', '🖲️', '🖱️'],
-    symbols: ['❤️', '🧡', '💛', '💚', '💙', '💜', '🖤', '🤍', '🤎', '💔', '❣️', '💕', '💞', '💓', '💗', '💖', '💘', '💝', '💟', '☮️', '✝️', '☪️', '🕉️', '☸️', '✡️']
-};
-
 export const RichTextEditor: React.FC<RichTextEditorProps> = ({
     value,
     onChange,
     placeholder = 'Enter text...',
     className = ''
 }) => {
+    useEffect(() => {
+        ensureRichTextFontsLoaded();
+    }, []);
+
     const editorRef = useRef<HTMLDivElement>(null);
     const savedRangeRef = useRef<Range | null>(null);
     const isInternalUpdateRef = useRef(false);
     const fileInputRef = useRef<HTMLInputElement>(null);
+    const emojiBtnRef = useRef<HTMLButtonElement>(null);
     const [showEmojiPicker, setShowEmojiPicker] = useState(false);
-    const [emojiActiveTab, setEmojiActiveTab] = useState<string>('popular');
-    const [emojiSearchTerm, setEmojiSearchTerm] = useState('');
+    const [showMediaPicker, setShowMediaPicker] = useState(false);
+    const [showCodeView, setShowCodeView] = useState(false);
+    const [codeViewValue, setCodeViewValue] = useState(value || '');
+    const [copied, setCopied] = useState(false);
+    const [showTableDialog, setShowTableDialog] = useState(false);
+    const [tableRows, setTableRows] = useState(3);
+    const [tableCols, setTableCols] = useState(3);
+    const [showSectionColorPicker, setShowSectionColorPicker] = useState(false);
+    const [showLinkDialog, setShowLinkDialog] = useState(false);
+    const [linkUrl, setLinkUrl] = useState('');
+    const [linkText, setLinkText] = useState('');
+    const [linkOpenNewTab, setLinkOpenNewTab] = useState(true);
+    const [showPasteWordDialog, setShowPasteWordDialog] = useState(false);
+    const [pasteWordContent, setPasteWordContent] = useState('');
+    const [listItemSpaceEnabled, setListItemSpaceEnabled] = useState(false);
+    const [listItemSpaceLevel, setListItemSpaceLevel] = useState(0);
+    const [showListItemSpaceMenu, setShowListItemSpaceMenu] = useState(false);
+
+    useEscapeToClose(showPasteWordDialog, () => {
+        setShowPasteWordDialog(false);
+        setPasteWordContent('');
+    });
+    useEscapeToClose(showLinkDialog, () => {
+        setShowLinkDialog(false);
+        setLinkUrl('');
+        setLinkText('');
+    });
+    useEscapeToClose(showTableDialog, () => setShowTableDialog(false));
+    useEscapeToClose(showListItemSpaceMenu, () => setShowListItemSpaceMenu(false));
+
+    // Function to format/beautify HTML
+    const formatHTML = (html: string): string => {
+        if (!html || !html.trim()) return '';
+        
+        try {
+            // Use a temporary div to parse and format HTML
+            const tempDiv = document.createElement('div');
+            tempDiv.innerHTML = html;
+            
+            const formatElement = (element: Element | Node, indent: number = 0): string => {
+                const indentStr = '  '.repeat(indent);
+                let result = '';
+                
+                if (element.nodeType === Node.TEXT_NODE) {
+                    const text = element.textContent;
+                    if (text) {
+                        const trimmed = text.trim();
+                        if (trimmed) {
+                            // Preserve line breaks in text nodes
+                            const lines = text.split('\n');
+                            const nonEmptyLines = lines.filter(line => line.trim());
+                            if (nonEmptyLines.length > 0) {
+                                result += indentStr + trimmed + '\n';
+                            }
+                        }
+                    }
+                } else if (element.nodeType === Node.ELEMENT_NODE) {
+                    const el = element as Element;
+                    const tagName = el.tagName.toLowerCase();
+                    
+                    // Get attributes and format them nicely
+                    const attrs: string[] = [];
+                    for (let i = 0; i < el.attributes.length; i++) {
+                        const attr = el.attributes[i];
+                        attrs.push(`${attr.name}="${attr.value.replace(/"/g, '&quot;')}"`);
+                    }
+                    const attrStr = attrs.length > 0 ? ' ' + attrs.join(' ') : '';
+                    
+                    // Self-closing tags
+                    const selfClosing = ['br', 'hr', 'img', 'input', 'meta', 'link', 'area', 'base', 'col', 'embed', 'source', 'track', 'wbr'];
+                    
+                    if (selfClosing.includes(tagName)) {
+                        result += `${indentStr}<${tagName}${attrStr} />\n`;
+                    } else {
+                        const children = Array.from(el.childNodes);
+                        const hasTextChildren = children.some(child => 
+                            child.nodeType === Node.TEXT_NODE && child.textContent?.trim()
+                        );
+                        const hasElementChildren = children.some(child => 
+                            child.nodeType === Node.ELEMENT_NODE
+                        );
+                        
+                        if (hasElementChildren || (hasTextChildren && children.length > 1)) {
+                            // Has children - format with indentation
+                            result += `${indentStr}<${tagName}${attrStr}>\n`;
+                            children.forEach(child => {
+                                result += formatElement(child, indent + 1);
+                            });
+                            result += `${indentStr}</${tagName}>\n`;
+                        } else if (hasTextChildren && children.length === 1) {
+                            // Single text child - inline format
+                            const textContent = children[0].textContent?.trim() || '';
+                            if (textContent.length < 80) {
+                                // Short text - keep on one line
+                                result += `${indentStr}<${tagName}${attrStr}>${textContent}</${tagName}>\n`;
+                            } else {
+                                // Long text - break into multiple lines
+                                result += `${indentStr}<${tagName}${attrStr}>\n`;
+                                result += '  '.repeat(indent + 1) + textContent + '\n';
+                                result += `${indentStr}</${tagName}>\n`;
+                            }
+                        } else {
+                            // No children - self-closing format
+                            result += `${indentStr}<${tagName}${attrStr}></${tagName}>\n`;
+                        }
+                    }
+                }
+                
+                return result;
+            };
+            
+            let formatted = '';
+            const childNodes = Array.from(tempDiv.childNodes);
+            
+            if (childNodes.length === 0) {
+                return html;
+            }
+            
+            childNodes.forEach(node => {
+                formatted += formatElement(node, 0);
+            });
+            
+            return formatted.trim() || html;
+        } catch (e) {
+            // If formatting fails, return original HTML
+            console.warn('HTML formatting failed:', e);
+            return html;
+        }
+    };
 
     useEffect(() => {
         // Only update if the change came from outside (not from user input)
-        if (editorRef.current && value !== editorRef.current.innerHTML && !isInternalUpdateRef.current) {
+        if (showCodeView) {
+            // In code view, update the textarea value
+            setCodeViewValue(value || '');
+        } else if (editorRef.current && value !== editorRef.current.innerHTML && !isInternalUpdateRef.current) {
+            // In visual view, update the editor content
             editorRef.current.innerHTML = value || '';
         }
         isInternalUpdateRef.current = false;
-    }, [value]);
+    }, [value, showCodeView]);
 
     const handleInput = () => {
         if (editorRef.current) {
@@ -51,12 +177,49 @@ export const RichTextEditor: React.FC<RichTextEditorProps> = ({
         }
     };
 
+    const readListItemSpaceLevel = (li: Element | null): number => {
+        if (!li) return 0;
+        const fromData = parseInt(li.getAttribute('data-ln-space') || '', 10);
+        if (fromData >= 1 && fromData <= 5) return fromData;
+        for (let i = 5; i >= 1; i -= 1) {
+            if (li.classList.contains(`ln-li-space-${i}`)) return i;
+        }
+        if (li.classList.contains('ln-li-space')) return 1;
+        return 0;
+    };
+
+    const syncListItemSpaceUi = (range: Range | null) => {
+        if (!range || !editorRef.current) {
+            setListItemSpaceEnabled(false);
+            setListItemSpaceLevel(0);
+            return;
+        }
+        const node = range.commonAncestorContainer;
+        const el = node instanceof Element ? node : node.parentElement;
+        const li = el?.closest('li');
+        const inEditor = !!(li && editorRef.current.contains(li));
+        setListItemSpaceEnabled(inEditor);
+        setListItemSpaceLevel(inEditor ? readListItemSpaceLevel(li) : 0);
+    };
+
     const saveSelection = () => {
         const selection = window.getSelection();
         if (selection && selection.rangeCount > 0 && editorRef.current) {
             const range = selection.getRangeAt(0);
             if (editorRef.current.contains(range.commonAncestorContainer)) {
+                // Toolbar focus often collapses the live selection. Keep a prior
+                // non-collapsed editor range so heading/font controls can still apply.
+                if (
+                    range.collapsed &&
+                    savedRangeRef.current &&
+                    !savedRangeRef.current.collapsed &&
+                    editorRef.current.contains(savedRangeRef.current.commonAncestorContainer)
+                ) {
+                    syncListItemSpaceUi(range);
+                    return;
+                }
                 savedRangeRef.current = range.cloneRange();
+                syncListItemSpaceUi(range);
             }
         }
     };
@@ -96,6 +259,26 @@ export const RichTextEditor: React.FC<RichTextEditorProps> = ({
         return null;
     };
 
+    /** Remove CSS properties from descendants so wrapper/heading styles can take effect on pasted HTML. */
+    const clearStylePropertiesOnDescendants = (root: HTMLElement, properties: string[]) => {
+        if (!properties.length) return;
+        root.querySelectorAll('*').forEach((node) => {
+            const el = node as HTMLElement;
+            if (!el.style) return;
+            properties.forEach((prop) => el.style.removeProperty(prop));
+            if (!el.getAttribute('style')?.trim()) {
+                el.removeAttribute('style');
+            }
+        });
+    };
+
+    const stylePropertiesFromDeclaration = (styleDecl: string): string[] => {
+        return styleDecl
+            .split(';')
+            .map((part) => part.split(':')[0]?.trim().toLowerCase())
+            .filter((prop): prop is string => Boolean(prop));
+    };
+
     const wrapSelection = (tagName: string, attributes: Record<string, string> = {}) => {
         if (!editorRef.current) return;
 
@@ -115,6 +298,10 @@ export const RichTextEditor: React.FC<RichTextEditorProps> = ({
             }
             return;
         }
+
+        const conflictingProps = attributes.style
+            ? stylePropertiesFromDeclaration(attributes.style)
+            : [];
 
         if (range.collapsed) {
             // No selection, just insert the element
@@ -137,6 +324,7 @@ export const RichTextEditor: React.FC<RichTextEditorProps> = ({
             }
         } else {
             // Has selection, wrap it
+            let wrapped: HTMLElement | null = null;
             try {
                 const element = document.createElement(tagName);
                 Object.entries(attributes).forEach(([key, value]) => {
@@ -147,6 +335,7 @@ export const RichTextEditor: React.FC<RichTextEditorProps> = ({
                     }
                 });
                 range.surroundContents(element);
+                wrapped = element;
             } catch (e) {
                 // surroundContents failed, try alternative
                 const contents = range.extractContents();
@@ -160,6 +349,24 @@ export const RichTextEditor: React.FC<RichTextEditorProps> = ({
                 });
                 element.appendChild(contents);
                 range.insertNode(element);
+                wrapped = element;
+            }
+
+            // Pasted HTML often has nested spans with absolute font-size/family/color;
+            // clear those so the newly applied wrapper style is visible.
+            if (wrapped && conflictingProps.length > 0) {
+                clearStylePropertiesOnDescendants(wrapped, conflictingProps);
+            }
+
+            if (wrapped) {
+                const selection = window.getSelection();
+                if (selection) {
+                    const newRange = document.createRange();
+                    newRange.selectNodeContents(wrapped);
+                    selection.removeAllRanges();
+                    selection.addRange(newRange);
+                    savedRangeRef.current = newRange.cloneRange();
+                }
             }
         }
 
@@ -234,8 +441,49 @@ export const RichTextEditor: React.FC<RichTextEditorProps> = ({
     };
 
     const applyHeading = (level: string) => {
+        if (!editorRef.current) return;
+
+        editorRef.current.focus();
+        restoreSelection();
+
         const tagName = `h${level}`;
-        wrapSelection(tagName, {});
+        try {
+            // Use formatBlock so headings replace the block instead of nesting invalid wrappers
+            document.execCommand('formatBlock', false, tagName);
+        } catch (e) {
+            console.warn('formatBlock heading failed, falling back to wrap', e);
+            wrapSelection(tagName, {});
+            return;
+        }
+
+        // Strip paste font sizing so editor heading CSS can apply
+        const selection = window.getSelection();
+        if (selection && selection.rangeCount > 0) {
+            let node: Node | null = selection.getRangeAt(0).commonAncestorContainer;
+            if (node.nodeType === Node.TEXT_NODE) {
+                node = node.parentNode;
+            }
+            while (node && node !== editorRef.current) {
+                if (node.nodeType === Node.ELEMENT_NODE) {
+                    const el = node as HTMLElement;
+                    const tag = el.tagName.toLowerCase();
+                    if (tag === tagName || /^h[1-6]$/.test(tag)) {
+                        clearStylePropertiesOnDescendants(el, ['font-size', 'font-family', 'font-weight', 'line-height']);
+                        el.style.removeProperty('font-size');
+                        el.style.removeProperty('font-family');
+                        el.style.removeProperty('font-weight');
+                        el.style.removeProperty('line-height');
+                        break;
+                    }
+                }
+                node = node.parentNode;
+            }
+        }
+
+        setTimeout(() => {
+            handleInput();
+            saveSelection();
+        }, 0);
     };
 
     const insertLink = () => {
@@ -247,43 +495,131 @@ export const RichTextEditor: React.FC<RichTextEditorProps> = ({
         const selection = window.getSelection();
         const selectedText = selection && selection.rangeCount > 0 ? selection.toString() : '';
 
-        const url = prompt('Enter URL:', selectedText || '');
-        if (url && url.trim()) {
-            const linkText = selectedText || url;
-            const linkUrl = url.startsWith('http://') || url.startsWith('https://') ? url : `https://${url}`;
+        // Check if we're editing an existing link
+        let existingLink: HTMLAnchorElement | null = null;
+        if (selection && selection.rangeCount > 0) {
+            const range = selection.getRangeAt(0);
+            let node = range.commonAncestorContainer;
+            if (node.nodeType === Node.TEXT_NODE) {
+                node = node.parentNode as Node;
+            }
+            while (node && node !== editorRef.current) {
+                if (node.nodeType === Node.ELEMENT_NODE && (node as HTMLElement).tagName.toLowerCase() === 'a') {
+                    existingLink = node as HTMLAnchorElement;
+                    break;
+                }
+                node = node.parentNode as Node;
+            }
+        }
 
-            const range = getCurrentRange();
-            if (range) {
+        if (existingLink) {
+            // Editing existing link
+            setLinkUrl(existingLink.href);
+            setLinkText(existingLink.textContent || '');
+            setLinkOpenNewTab(existingLink.target === '_blank');
+        } else {
+            // New link
+            setLinkUrl('');
+            setLinkText(selectedText);
+            setLinkOpenNewTab(true);
+        }
+
+        setShowLinkDialog(true);
+    };
+
+    const handleInsertLink = () => {
+        if (!linkUrl.trim()) {
+            alert('Please enter a URL');
+            return;
+        }
+
+        if (!editorRef.current) return;
+        editorRef.current.focus();
+        restoreSelection();
+
+        const selection = window.getSelection();
+        const selectedText = selection && selection.rangeCount > 0 ? selection.toString() : '';
+
+        // Check if we're editing an existing link
+        let existingLink: HTMLAnchorElement | null = null;
+        if (selection && selection.rangeCount > 0) {
+            const range = selection.getRangeAt(0);
+            let node = range.commonAncestorContainer;
+            if (node.nodeType === Node.TEXT_NODE) {
+                node = node.parentNode as Node;
+            }
+            while (node && node !== editorRef.current) {
+                if (node.nodeType === Node.ELEMENT_NODE && (node as HTMLElement).tagName.toLowerCase() === 'a') {
+                    existingLink = node as HTMLAnchorElement;
+                    break;
+                }
+                node = node.parentNode as Node;
+            }
+        }
+
+        const trimmedUrl = linkUrl.trim();
+        const looksLikeEmail = /^[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}$/.test(trimmedUrl);
+        const finalUrl = looksLikeEmail
+            ? `mailto:${trimmedUrl}`
+            : (trimmedUrl.startsWith('http://') || trimmedUrl.startsWith('https://') || trimmedUrl.startsWith('mailto:') || trimmedUrl.startsWith('tel:') || trimmedUrl.startsWith('#'))
+                ? trimmedUrl
+                : `https://${trimmedUrl}`;
+        const finalText = linkText.trim() || selectedText || (looksLikeEmail ? trimmedUrl : finalUrl);
+        const openNewTab = linkOpenNewTab && !/^(mailto|tel):/i.test(finalUrl);
+
+        const range = getCurrentRange();
+        if (range) {
+            if (existingLink) {
+                // Update existing link
+                existingLink.href = finalUrl;
+                existingLink.textContent = finalText;
+                if (openNewTab) {
+                    existingLink.target = '_blank';
+                    existingLink.rel = 'noopener noreferrer';
+                } else {
+                    existingLink.removeAttribute('target');
+                    existingLink.removeAttribute('rel');
+                }
+            } else {
                 if (!range.collapsed && selectedText) {
                     // Replace selected text with link
                     range.deleteContents();
                     const link = document.createElement('a');
-                    link.href = linkUrl;
-                    link.target = '_blank';
-                    link.rel = 'noopener noreferrer';
-                    link.textContent = linkText;
+                    link.href = finalUrl;
+                    link.textContent = finalText;
+                    if (openNewTab) {
+                        link.target = '_blank';
+                        link.rel = 'noopener noreferrer';
+                    }
                     range.insertNode(link);
                     range.collapse(false);
                 } else {
                     // Insert link at cursor
                     const link = document.createElement('a');
-                    link.href = linkUrl;
-                    link.target = '_blank';
-                    link.rel = 'noopener noreferrer';
-                    link.textContent = linkText;
+                    link.href = finalUrl;
+                    link.textContent = finalText;
+                    if (openNewTab) {
+                        link.target = '_blank';
+                        link.rel = 'noopener noreferrer';
+                    }
                     range.insertNode(link);
                     range.collapse(false);
                 }
-                const sel = window.getSelection();
-                if (sel) {
-                    sel.removeAllRanges();
-                    sel.addRange(range);
-                }
-                setTimeout(() => {
-                    handleInput();
-                }, 0);
             }
+            const sel = window.getSelection();
+            if (sel) {
+                sel.removeAllRanges();
+                sel.addRange(range);
+            }
+            setTimeout(() => {
+                handleInput();
+            }, 0);
         }
+
+        setShowLinkDialog(false);
+        setLinkUrl('');
+        setLinkText('');
+        setLinkOpenNewTab(true);
     };
 
     const insertHTML = (html: string) => {
@@ -356,6 +692,614 @@ export const RichTextEditor: React.FC<RichTextEditorProps> = ({
         setShowEmojiPicker(false);
     };
 
+    const insertList = (ordered: boolean = false) => {
+        if (!editorRef.current) return;
+        editorRef.current.focus();
+        restoreSelection();
+
+        const range = getCurrentRange();
+        if (!range) return;
+
+        const listTag = ordered ? 'ol' : 'ul';
+        const list = document.createElement(listTag);
+        list.className = ordered 
+            ? 'list-decimal list-inside space-y-1 ml-2' 
+            : 'list-disc list-inside space-y-1 ml-2';
+
+        const listItem = document.createElement('li');
+        const selectedText = range.toString().trim() || 'List item';
+        listItem.textContent = selectedText;
+
+        if (!range.collapsed) {
+            range.deleteContents();
+        }
+        list.appendChild(listItem);
+        range.insertNode(list);
+        range.setStartAfter(listItem);
+        range.collapse(true);
+
+        const sel = window.getSelection();
+        if (sel) {
+            sel.removeAllRanges();
+            sel.addRange(range);
+        }
+
+        setTimeout(() => {
+            handleInput();
+        }, 0);
+    };
+
+    const getListItemFromSelection = (): HTMLLIElement | null => {
+        const range = getCurrentRange() || savedRangeRef.current;
+        if (!range || !editorRef.current) return null;
+        const node = range.commonAncestorContainer;
+        const el = node instanceof Element ? node : node.parentElement;
+        const li = el?.closest('li');
+        if (!li || !editorRef.current.contains(li)) return null;
+        return li as HTMLLIElement;
+    };
+
+    const applyListItemSpace = (level: number) => {
+        if (!editorRef.current) return;
+        editorRef.current.focus();
+        restoreSelection();
+        const li = getListItemFromSelection();
+        if (!li) return;
+        li.classList.remove('ln-li-space');
+        for (let i = 1; i <= 5; i += 1) {
+            li.classList.remove(`ln-li-space-${i}`);
+        }
+        li.removeAttribute('data-ln-space');
+        li.style.removeProperty('margin-bottom');
+        if (level >= 1 && level <= 5) {
+            li.classList.add(`ln-li-space-${level}`);
+            li.setAttribute('data-ln-space', String(level));
+            li.style.marginBottom = `${level}em`;
+        }
+        setShowListItemSpaceMenu(false);
+        handleInput();
+        saveSelection();
+        syncListItemSpaceUi(getCurrentRange() || savedRangeRef.current);
+    };
+
+    const insertTable = (rows: number = 3, cols: number = 3) => {
+        if (!editorRef.current) return;
+        editorRef.current.focus();
+        restoreSelection();
+
+        const range = getCurrentRange();
+        if (!range) return;
+
+        const table = document.createElement('table');
+        table.className = 'min-w-full border-collapse border border-slate-300 dark:border-slate-600';
+        table.style.margin = '1em 0';
+
+        // Create header row
+        const thead = document.createElement('thead');
+        const headerRow = document.createElement('tr');
+        headerRow.className = 'bg-slate-100 dark:bg-slate-800';
+        for (let i = 0; i < cols; i++) {
+            const th = document.createElement('th');
+            th.className = 'border border-slate-300 dark:border-slate-600 px-4 py-2 text-left font-semibold';
+            th.textContent = `Header ${i + 1}`;
+            headerRow.appendChild(th);
+        }
+        thead.appendChild(headerRow);
+        table.appendChild(thead);
+
+        // Create body rows
+        const tbody = document.createElement('tbody');
+        for (let i = 0; i < rows - 1; i++) {
+            const tr = document.createElement('tr');
+            for (let j = 0; j < cols; j++) {
+                const td = document.createElement('td');
+                td.className = 'border border-slate-300 dark:border-slate-600 px-4 py-2';
+                td.textContent = `Cell ${i + 1}-${j + 1}`;
+                tr.appendChild(td);
+            }
+            tbody.appendChild(tr);
+        }
+        table.appendChild(tbody);
+
+        if (!range.collapsed) {
+            range.deleteContents();
+        }
+        range.insertNode(table);
+        range.setStartAfter(table);
+        range.collapse(true);
+
+        const sel = window.getSelection();
+        if (sel) {
+            sel.removeAllRanges();
+            sel.addRange(range);
+        }
+
+        setTimeout(() => {
+            handleInput();
+        }, 0);
+    };
+
+    const insertSection = (bgColor: string = '#f1f5f9') => {
+        if (!editorRef.current) return;
+        editorRef.current.focus();
+        restoreSelection();
+
+        const range = getCurrentRange();
+        if (!range) return;
+
+        const section = document.createElement('div');
+        section.className = 'rounded-lg p-4 space-y-2';
+        section.style.backgroundColor = bgColor;
+        section.style.margin = '1em 0';
+
+        const selectedText = range.toString().trim() || 'Section content';
+        const p = document.createElement('p');
+        p.textContent = selectedText;
+        section.appendChild(p);
+
+        if (!range.collapsed) {
+            range.deleteContents();
+        }
+        range.insertNode(section);
+        range.setStart(p, 0);
+        range.setEnd(p, 0);
+
+        const sel = window.getSelection();
+        if (sel) {
+            sel.removeAllRanges();
+            sel.addRange(range);
+        }
+
+        setTimeout(() => {
+            handleInput();
+        }, 0);
+    };
+
+    const insertBlockquote = () => {
+        if (!editorRef.current) return;
+        editorRef.current.focus();
+        restoreSelection();
+
+        const range = getCurrentRange();
+        if (!range) return;
+
+        const blockquote = document.createElement('blockquote');
+        blockquote.className = 'border-l-4 border-brand-500 pl-4 italic my-4 text-slate-600 dark:text-slate-400';
+        const selectedText = range.toString().trim() || 'Quote text';
+        blockquote.textContent = selectedText;
+
+        if (!range.collapsed) {
+            range.deleteContents();
+        }
+        range.insertNode(blockquote);
+        range.setStart(blockquote, 0);
+        range.setEnd(blockquote, 0);
+
+        const sel = window.getSelection();
+        if (sel) {
+            sel.removeAllRanges();
+            sel.addRange(range);
+        }
+
+        setTimeout(() => {
+            handleInput();
+        }, 0);
+    };
+
+    const insertCodeBlock = () => {
+        if (!editorRef.current) return;
+        editorRef.current.focus();
+        restoreSelection();
+
+        const range = getCurrentRange();
+        if (!range) return;
+
+        const code = document.createElement('code');
+        code.className = 'bg-slate-100 dark:bg-slate-800 px-2 py-1 rounded text-sm font-mono';
+        const selectedText = range.toString().trim() || 'code';
+        code.textContent = selectedText;
+
+        if (!range.collapsed) {
+            range.deleteContents();
+        }
+        range.insertNode(code);
+        range.setStart(code, 0);
+        range.setEnd(code, 0);
+
+        const sel = window.getSelection();
+        if (sel) {
+            sel.removeAllRanges();
+            sel.addRange(range);
+        }
+
+        setTimeout(() => {
+            handleInput();
+        }, 0);
+    };
+
+    const insertColumns = (numColumns: number = 2) => {
+        if (!editorRef.current) return;
+        editorRef.current.focus();
+        restoreSelection();
+
+        const range = getCurrentRange();
+        if (!range) return;
+
+        const container = document.createElement('div');
+        container.className = 'grid gap-4 my-4';
+        container.style.gridTemplateColumns = `repeat(${numColumns}, 1fr)`;
+        container.style.margin = '1em 0';
+
+        // Create columns
+        for (let i = 0; i < numColumns; i++) {
+            const column = document.createElement('div');
+            column.className = 'space-y-2';
+            const p = document.createElement('p');
+            p.textContent = `Column ${i + 1} content`;
+            column.appendChild(p);
+            container.appendChild(column);
+        }
+
+        if (!range.collapsed) {
+            range.deleteContents();
+        }
+        range.insertNode(container);
+        
+        // Set cursor in first column
+        const firstColumn = container.firstChild as HTMLElement;
+        if (firstColumn) {
+            const firstP = firstColumn.querySelector('p');
+            if (firstP) {
+                range.setStart(firstP, 0);
+                range.setEnd(firstP, 0);
+            }
+        }
+
+        const sel = window.getSelection();
+        if (sel) {
+            sel.removeAllRanges();
+            sel.addRange(range);
+        }
+
+        setTimeout(() => {
+            handleInput();
+        }, 0);
+    };
+
+    const increaseIndent = () => {
+        if (!editorRef.current) return;
+        editorRef.current.focus();
+        restoreSelection();
+
+        const range = getCurrentRange();
+        if (!range) return;
+
+        const selection = window.getSelection();
+        if (!selection || selection.rangeCount === 0) return;
+
+        // Get all selected nodes
+        const selectedNodes: Node[] = [];
+        if (range.collapsed) {
+            // No selection, get the current block element
+            let node: Node | null = range.commonAncestorContainer;
+            while (node && node !== editorRef.current) {
+                if (node.nodeType === Node.ELEMENT_NODE) {
+                    const element = node as HTMLElement;
+                    const tagName = element.tagName.toLowerCase();
+                    if (['p', 'div', 'h1', 'h2', 'h3', 'h4', 'h5', 'h6', 'li', 'blockquote'].includes(tagName)) {
+                        selectedNodes.push(node);
+                        break;
+                    }
+                }
+                node = node.parentNode;
+            }
+        } else {
+            // Has selection, get all block elements in range
+            const walker = document.createTreeWalker(
+                range.commonAncestorContainer,
+                NodeFilter.SHOW_ELEMENT,
+                {
+                    acceptNode: (node: Node) => {
+                        if (node.nodeType === Node.ELEMENT_NODE) {
+                            const element = node as HTMLElement;
+                            const tagName = element.tagName.toLowerCase();
+                            if (['p', 'div', 'h1', 'h2', 'h3', 'h4', 'h5', 'h6', 'li', 'blockquote'].includes(tagName)) {
+                                if (range.intersectsNode(node)) {
+                                    return NodeFilter.FILTER_ACCEPT;
+                                }
+                            }
+                        }
+                        return NodeFilter.FILTER_SKIP;
+                    }
+                }
+            );
+
+            let node;
+            while (node = walker.nextNode()) {
+                selectedNodes.push(node);
+            }
+        }
+
+        // If no block elements found, wrap selection in a div
+        if (selectedNodes.length === 0) {
+            const wrapper = document.createElement('div');
+            wrapper.style.marginLeft = '2em';
+            wrapper.style.paddingLeft = '1em';
+            wrapper.style.borderLeft = '2px solid #cbd5e1';
+            
+            if (!range.collapsed) {
+                try {
+                    range.surroundContents(wrapper);
+                } catch (e) {
+                    const contents = range.extractContents();
+                    wrapper.appendChild(contents);
+                    range.insertNode(wrapper);
+                }
+            } else {
+                const p = document.createElement('p');
+                p.textContent = '\u00A0'; // Non-breaking space
+                wrapper.appendChild(p);
+                range.insertNode(wrapper);
+                range.setStart(p, 0);
+                range.setEnd(p, 0);
+            }
+        } else {
+            // Increase indent for each selected block element
+            selectedNodes.forEach((node) => {
+                if (node.nodeType === Node.ELEMENT_NODE) {
+                    const element = node as HTMLElement;
+                    const currentMarginLeft = parseInt(window.getComputedStyle(element).marginLeft) || 0;
+                    const currentPaddingLeft = parseInt(window.getComputedStyle(element).paddingLeft) || 0;
+                    const indentAmount = 2; // em units
+                    
+                    element.style.marginLeft = `${currentMarginLeft / 16 + indentAmount}em`;
+                    if (currentPaddingLeft === 0) {
+                        element.style.paddingLeft = '1em';
+                        element.style.borderLeft = '2px solid #cbd5e1';
+                    }
+                }
+            });
+        }
+
+        setTimeout(() => {
+            handleInput();
+        }, 0);
+    };
+
+    const decreaseIndent = () => {
+        if (!editorRef.current) return;
+        editorRef.current.focus();
+        restoreSelection();
+
+        const range = getCurrentRange();
+        if (!range) return;
+
+        const selection = window.getSelection();
+        if (!selection || selection.rangeCount === 0) return;
+
+        // Get all selected nodes
+        const selectedNodes: Node[] = [];
+        if (range.collapsed) {
+            // No selection, get the current block element
+            let node: Node | null = range.commonAncestorContainer;
+            while (node && node !== editorRef.current) {
+                if (node.nodeType === Node.ELEMENT_NODE) {
+                    const element = node as HTMLElement;
+                    const tagName = element.tagName.toLowerCase();
+                    if (['p', 'div', 'h1', 'h2', 'h3', 'h4', 'h5', 'h6', 'li', 'blockquote'].includes(tagName)) {
+                        selectedNodes.push(node);
+                        break;
+                    }
+                }
+                node = node.parentNode;
+            }
+        } else {
+            // Has selection, get all block elements in range
+            const walker = document.createTreeWalker(
+                range.commonAncestorContainer,
+                NodeFilter.SHOW_ELEMENT,
+                {
+                    acceptNode: (node: Node) => {
+                        if (node.nodeType === Node.ELEMENT_NODE) {
+                            const element = node as HTMLElement;
+                            const tagName = element.tagName.toLowerCase();
+                            if (['p', 'div', 'h1', 'h2', 'h3', 'h4', 'h5', 'h6', 'li', 'blockquote'].includes(tagName)) {
+                                if (range.intersectsNode(node)) {
+                                    return NodeFilter.FILTER_ACCEPT;
+                                }
+                            }
+                        }
+                        return NodeFilter.FILTER_SKIP;
+                    }
+                }
+            );
+
+            let node;
+            while (node = walker.nextNode()) {
+                selectedNodes.push(node);
+            }
+        }
+
+        // Decrease indent for each selected block element
+        selectedNodes.forEach((node) => {
+            if (node.nodeType === Node.ELEMENT_NODE) {
+                const element = node as HTMLElement;
+                const currentMarginLeft = parseInt(window.getComputedStyle(element).marginLeft) || 0;
+                const indentAmount = 2; // em units
+                const newMarginLeft = Math.max(0, currentMarginLeft / 16 - indentAmount);
+                
+                if (newMarginLeft === 0) {
+                    element.style.marginLeft = '';
+                    element.style.paddingLeft = '';
+                    element.style.borderLeft = '';
+                } else {
+                    element.style.marginLeft = `${newMarginLeft}em`;
+                }
+            }
+        });
+
+        setTimeout(() => {
+            handleInput();
+        }, 0);
+    };
+
+    const cleanWordHTML = (html: string): string => {
+        if (!html) return '';
+
+        // Minimal cleaning - only remove Word-specific XML namespaces and attributes
+        // Preserve ALL formatting, spacing, styles, margins, padding, etc.
+        let cleaned = html;
+        
+        // Remove Word-specific XML namespaces from tags (but keep content)
+        cleaned = cleaned.replace(/xmlns:o="[^"]*"/gi, '');
+        cleaned = cleaned.replace(/xmlns:w="[^"]*"/gi, '');
+        cleaned = cleaned.replace(/xmlns:m="[^"]*"/gi, '');
+        cleaned = cleaned.replace(/xmlns:v="[^"]*"/gi, '');
+        cleaned = cleaned.replace(/xmlns="[^"]*"/gi, '');
+        
+        // Remove Word's o:p tags (but preserve their content)
+        cleaned = cleaned.replace(/<o:p[^>]*>/gi, '');
+        cleaned = cleaned.replace(/<\/o:p>/gi, '');
+        
+        // Remove Word-specific attributes (but keep all style attributes)
+        cleaned = cleaned.replace(/\s+lang="[^"]*"/gi, '');
+        cleaned = cleaned.replace(/\s+xml:lang="[^"]*"/gi, '');
+        cleaned = cleaned.replace(/\s+o:p="[^"]*"/gi, '');
+        
+        // Remove Word-specific comments
+        cleaned = cleaned.replace(/<!--[\s\S]*?-->/g, '');
+        
+        // Remove Word-specific class names but preserve all styles
+        // Use regex to remove Mso* classes from class attributes
+        cleaned = cleaned.replace(/\s+class="([^"]*Mso[^"]*|Mso[^"]*)"([^>]*)>/gi, (match, classAttr, rest) => {
+            // Remove Mso classes but keep other classes
+            const classes = classAttr.split(' ').filter((cls: string) => 
+                !cls.startsWith('Mso') && 
+                !cls.startsWith('ms-') &&
+                cls !== 'MsoNormal' &&
+                cls !== 'MsoListParagraph' &&
+                cls.trim() !== ''
+            );
+            if (classes.length > 0) {
+                return ` class="${classes.join(' ')}"${rest}>`;
+            } else {
+                return rest + '>';
+            }
+        });
+        
+        // Also handle class attributes that might have Mso in the middle
+        cleaned = cleaned.replace(/\s+class="([^"]*)\s+Mso[^\s"]*([^"]*)"/gi, (match, before, after) => {
+            const classes = (before + ' ' + after).split(' ').filter((cls: string) => 
+                !cls.startsWith('Mso') && 
+                !cls.startsWith('ms-') &&
+                cls !== 'MsoNormal' &&
+                cls !== 'MsoListParagraph' &&
+                cls.trim() !== ''
+            );
+            if (classes.length > 0) {
+                return ` class="${classes.join(' ')}"`;
+            } else {
+                return '';
+            }
+        });
+        
+        // Preserve ALL spacing, margins, padding, fonts, colors, etc.
+        // Don't remove or modify any style attributes
+        
+        // Preserve non-breaking spaces
+        cleaned = cleaned.replace(/\u00A0/g, '&nbsp;');
+        
+        return cleaned;
+    };
+
+    const handlePasteFromWord = (e?: React.ClipboardEvent) => {
+        if (e) {
+            e.preventDefault();
+        }
+
+        if (!editorRef.current) return;
+
+        // If dialog is shown, get content from dialog
+        if (showPasteWordDialog) {
+            const cleanedHTML = cleanWordHTML(pasteWordContent);
+            insertHTML(cleanedHTML);
+            setShowPasteWordDialog(false);
+            setPasteWordContent('');
+            return;
+        }
+
+        // Try to get clipboard data
+        const getClipboardData = async () => {
+            try {
+                if (navigator.clipboard && navigator.clipboard.readText) {
+                    const text = await navigator.clipboard.readText();
+                    if (text) {
+                        // Check if it looks like HTML (Word usually pastes HTML)
+                        if (text.includes('<') || text.includes('&nbsp;') || text.includes('Mso')) {
+                            setPasteWordContent(text);
+                            setShowPasteWordDialog(true);
+                        } else {
+                            // Plain text, just insert it
+                            insertHTML(text.replace(/\n/g, '<br />'));
+                        }
+                    }
+                } else if (e && e.clipboardData) {
+                    const html = e.clipboardData.getData('text/html');
+                    const text = e.clipboardData.getData('text/plain');
+                    
+                    if (html && (html.includes('Mso') || html.includes('mso-'))) {
+                        // Word content detected
+                        setPasteWordContent(html);
+                        setShowPasteWordDialog(true);
+                    } else if (html) {
+                        // Regular HTML, clean it
+                        const cleaned = cleanWordHTML(html);
+                        insertHTML(cleaned);
+                    } else if (text) {
+                        // Plain text
+                        insertHTML(text.replace(/\n/g, '<br />'));
+                    }
+                }
+            } catch (err) {
+                console.error('Error reading clipboard:', err);
+                // Fallback: show dialog for manual paste
+                setShowPasteWordDialog(true);
+            }
+        };
+
+        getClipboardData();
+    };
+
+    const handlePaste = (e: React.ClipboardEvent) => {
+        const clipboardData = e.clipboardData;
+        const html = clipboardData.getData('text/html');
+        const text = clipboardData.getData('text/plain');
+
+        // Check if it's Word content
+        if (html && (html.includes('Mso') || html.includes('mso-') || html.includes('xmlns:o') || html.includes('xmlns:w'))) {
+            e.preventDefault();
+            // Clean it minimally to preserve formatting
+            const cleaned = cleanWordHTML(html);
+            insertHTML(cleaned);
+            return;
+        }
+
+        // For regular HTML, preserve it as-is (minimal cleaning)
+        if (html) {
+            e.preventDefault();
+            const cleaned = cleanWordHTML(html);
+            insertHTML(cleaned);
+            return;
+        }
+
+        // For plain text, convert newlines to breaks
+        if (text && !html) {
+            e.preventDefault();
+            insertHTML(text.replace(/\n/g, '<br />'));
+            return;
+        }
+    };
+
     const handleImageUpload = async (event: React.ChangeEvent<HTMLInputElement>) => {
         const file = event.target.files?.[0];
         if (!file) return;
@@ -379,19 +1323,9 @@ export const RichTextEditor: React.FC<RichTextEditorProps> = ({
         formData.append('image', file);
 
         try {
-            // Resolve API base dynamically (same pattern as other services)
-            let apiBase = '/api';
-            if (typeof window !== 'undefined') {
-                const path = window.location.pathname || '';
-                if (path !== '/' && path.length > 1) {
-                    const cleanPath = path.replace(/\/[^/]*$/, '').replace(/\/$/, '');
-                    if (cleanPath && cleanPath !== '/') {
-                        apiBase = `${cleanPath}/api`;
-                    }
-                }
-            }
+            const apiBase = resolveApiBase();
             
-            const response = await fetch(`${apiBase}/uploads.php/rich-text-image`, {
+            const response = await fetch(`${apiBase}/uploads/rich-text-image`, {
                 method: 'POST',
                 body: formData,
                 credentials: 'include'
@@ -443,28 +1377,6 @@ export const RichTextEditor: React.FC<RichTextEditorProps> = ({
             }
         }
     };
-
-    const emojiCategories = [
-        { id: 'popular', name: 'Popular', emojis: EMOJI_CATEGORIES.popular },
-        { id: 'servers', name: 'Servers', emojis: EMOJI_CATEGORIES.servers },
-        { id: 'cloud', name: 'Cloud', emojis: EMOJI_CATEGORIES.cloud },
-        { id: 'technology', name: 'Tech', emojis: EMOJI_CATEGORIES.technology },
-        { id: 'network', name: 'Network', emojis: EMOJI_CATEGORIES.network },
-        { id: 'security', name: 'Security', emojis: EMOJI_CATEGORIES.security },
-        { id: 'data', name: 'Data', emojis: EMOJI_CATEGORIES.data },
-        { id: 'hospital', name: 'Medical', emojis: EMOJI_CATEGORIES.hospital },
-        { id: 'onprem', name: 'On-Prem', emojis: EMOJI_CATEGORIES.onprem },
-        { id: 'communication', name: 'Chat', emojis: EMOJI_CATEGORIES.communication },
-        { id: 'objects', name: 'Objects', emojis: EMOJI_CATEGORIES.objects },
-        { id: 'symbols', name: 'Symbols', emojis: EMOJI_CATEGORIES.symbols }
-    ];
-
-    const allEmojis = emojiCategories.flatMap(cat => cat.emojis);
-    const uniqueEmojis = Array.from(new Set(allEmojis));
-
-    const filteredEmojis = emojiSearchTerm
-        ? uniqueEmojis.filter(emoji => emoji.includes(emojiSearchTerm))
-        : emojiCategories.find(cat => cat.id === emojiActiveTab)?.emojis || [];
 
     return (
         <div className={`rich-text-editor ${className}`}>
@@ -549,7 +1461,6 @@ export const RichTextEditor: React.FC<RichTextEditorProps> = ({
                 {/* Headings */}
                 <div className="flex items-center gap-1 border-r border-slate-300 dark:border-slate-600 pr-2 mr-1">
                     <select
-                        onFocus={saveSelection}
                         onMouseDown={(e) => {
                             e.stopPropagation();
                             saveSelection();
@@ -609,7 +1520,7 @@ export const RichTextEditor: React.FC<RichTextEditorProps> = ({
                 </div>
 
                 {/* Hyperlink */}
-                <div className="flex items-center gap-1 border-r border-slate-300 dark:border-slate-600 pr-2 mr-1">
+                <div className="flex items-center gap-1 border-r border-slate-300 dark:border-slate-600 pr-2 mr-1 relative">
                     <button
                         type="button"
                         onMouseDown={(e) => {
@@ -627,12 +1538,85 @@ export const RichTextEditor: React.FC<RichTextEditorProps> = ({
                             <path strokeLinecap="round" strokeLinejoin="round" d="M13.828 10.172a4 4 0 00-5.656 0l-4 4a4 4 0 105.656 5.656l1.102-1.101m-.758-4.899a4 4 0 005.656 0l4-4a4 4 0 00-5.656-5.656l-1.1 1.1" />
                         </svg>
                     </button>
+                    {showLinkDialog && (
+                        <>
+                            <div 
+                                className="fixed inset-0 z-[9998]" 
+                                onClick={() => {
+                                    setShowLinkDialog(false);
+                                    setLinkUrl('');
+                                    setLinkText('');
+                                    setLinkOpenNewTab(true);
+                                }}
+                            ></div>
+                            <div 
+                                className="absolute z-[9999] bg-white dark:bg-slate-800 border-2 border-slate-200 dark:border-slate-700 rounded-xl shadow-2xl p-4"
+                                style={{ top: '100%', left: 0, marginTop: '4px', width: '320px' }}
+                                onClick={(e) => e.stopPropagation()}
+                            >
+                                <h4 className="text-sm font-semibold text-slate-900 dark:text-white mb-3">Insert Link</h4>
+                                <div className="space-y-3">
+                                    <div>
+                                        <label className="block text-xs text-slate-600 dark:text-slate-400 mb-1">URL</label>
+                                        <input
+                                            type="text"
+                                            value={linkUrl}
+                                            onChange={(e) => setLinkUrl(e.target.value)}
+                                            placeholder="https://example.com or name@example.com"
+                                            className="w-full px-2 py-1.5 text-sm bg-slate-50 dark:bg-slate-900 border border-slate-300 dark:border-slate-600 rounded focus:outline-none focus:ring-2 focus:ring-brand-500"
+                                            autoFocus
+                                        />
+                                    </div>
+                                    <div>
+                                        <label className="block text-xs text-slate-600 dark:text-slate-400 mb-1">Link Text</label>
+                                        <input
+                                            type="text"
+                                            value={linkText}
+                                            onChange={(e) => setLinkText(e.target.value)}
+                                            placeholder="Link text"
+                                            className="w-full px-2 py-1.5 text-sm bg-slate-50 dark:bg-slate-900 border border-slate-300 dark:border-slate-600 rounded focus:outline-none focus:ring-2 focus:ring-brand-500"
+                                        />
+                                    </div>
+                                    <div className="flex items-center gap-2">
+                                        <input
+                                            type="checkbox"
+                                            id="link-open-new-tab"
+                                            checked={linkOpenNewTab}
+                                            onChange={(e) => setLinkOpenNewTab(e.target.checked)}
+                                            className="w-4 h-4 text-brand-600 border-slate-300 rounded focus:ring-brand-500"
+                                        />
+                                        <label htmlFor="link-open-new-tab" className="text-xs text-slate-700 dark:text-slate-300 cursor-pointer">
+                                            Open in new tab
+                                        </label>
+                                    </div>
+                                    <div className="flex gap-2 pt-2">
+                                        <button
+                                            onClick={handleInsertLink}
+                                            className="flex-1 px-3 py-1.5 bg-brand-600 hover:bg-brand-500 text-white rounded text-sm font-medium transition-colors"
+                                        >
+                                            Insert
+                                        </button>
+                                        <button
+                                            onClick={() => {
+                                                setShowLinkDialog(false);
+                                                setLinkUrl('');
+                                                setLinkText('');
+                                                setLinkOpenNewTab(true);
+                                            }}
+                                            className="px-3 py-1.5 bg-slate-200 dark:bg-slate-700 hover:bg-slate-300 dark:hover:bg-slate-600 text-slate-700 dark:text-slate-200 rounded text-sm font-medium transition-colors"
+                                        >
+                                            Cancel
+                                        </button>
+                                    </div>
+                                </div>
+                            </div>
+                        </>
+                    )}
                 </div>
 
                 {/* Font Size */}
                 <div className="flex items-center gap-1 border-r border-slate-300 dark:border-slate-600 pr-2 mr-1">
                     <select
-                        onFocus={saveSelection}
                         onMouseDown={(e) => {
                             e.stopPropagation();
                             saveSelection();
@@ -661,7 +1645,6 @@ export const RichTextEditor: React.FC<RichTextEditorProps> = ({
                 {/* Font Family */}
                 <div className="flex items-center gap-1 border-r border-slate-300 dark:border-slate-600 pr-2 mr-1">
                     <select
-                        onFocus={saveSelection}
                         onMouseDown={(e) => {
                             e.stopPropagation();
                             saveSelection();
@@ -677,17 +1660,19 @@ export const RichTextEditor: React.FC<RichTextEditorProps> = ({
                         defaultValue=""
                     >
                         <option value="">Font</option>
-                        <option value="Arial">Arial</option>
-                        <option value="Helvetica">Helvetica</option>
-                        <option value="Times New Roman">Times New Roman</option>
-                        <option value="Courier New">Courier New</option>
-                        <option value="Verdana">Verdana</option>
-                        <option value="Georgia">Georgia</option>
-                        <option value="Palatino">Palatino</option>
-                        <option value="Garamond">Garamond</option>
-                        <option value="Comic Sans MS">Comic Sans MS</option>
-                        <option value="Trebuchet MS">Trebuchet MS</option>
-                        <option value="Impact">Impact</option>
+                        {RICH_TEXT_FONT_GROUPS.map((group) => (
+                            <optgroup key={group} label={group}>
+                                {RICH_TEXT_FONTS.filter((font) => font.group === group).map((font) => (
+                                    <option
+                                        key={font.label}
+                                        value={font.cssFamily}
+                                        style={{ fontFamily: font.cssFamily }}
+                                    >
+                                        {font.label}
+                                    </option>
+                                ))}
+                            </optgroup>
+                        ))}
                     </select>
                 </div>
 
@@ -695,7 +1680,6 @@ export const RichTextEditor: React.FC<RichTextEditorProps> = ({
                 <div className="flex items-center gap-1 border-r border-slate-300 dark:border-slate-600 pr-2 mr-1">
                     <input
                         type="color"
-                        onFocus={saveSelection}
                         onMouseDown={(e) => {
                             e.stopPropagation();
                             saveSelection();
@@ -712,7 +1696,6 @@ export const RichTextEditor: React.FC<RichTextEditorProps> = ({
                 <div className="flex items-center gap-1 border-r border-slate-300 dark:border-slate-600 pr-2 mr-1">
                     <input
                         type="color"
-                        onFocus={saveSelection}
                         onMouseDown={(e) => {
                             e.stopPropagation();
                             saveSelection();
@@ -780,6 +1763,361 @@ export const RichTextEditor: React.FC<RichTextEditorProps> = ({
                     </button>
                 </div>
 
+                {/* Indent */}
+                <div className="flex items-center gap-1 border-r border-slate-300 dark:border-slate-600 pr-2 mr-1">
+                    <button
+                        type="button"
+                        onMouseDown={(e) => {
+                            e.preventDefault();
+                            saveSelection();
+                        }}
+                        onClick={(e) => {
+                            e.preventDefault();
+                            decreaseIndent();
+                        }}
+                        className="p-1.5 hover:bg-slate-200 dark:hover:bg-slate-700 rounded transition-colors"
+                        title="Decrease Indent"
+                    >
+                        <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" strokeWidth={2} stroke="currentColor" className="w-4 h-4">
+                            <path strokeLinecap="round" strokeLinejoin="round" d="M11.25 9l-3 3m0 0l3 3m-3-3h7.5M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
+                        </svg>
+                    </button>
+                    <button
+                        type="button"
+                        onMouseDown={(e) => {
+                            e.preventDefault();
+                            saveSelection();
+                        }}
+                        onClick={(e) => {
+                            e.preventDefault();
+                            increaseIndent();
+                        }}
+                        className="p-1.5 hover:bg-slate-200 dark:hover:bg-slate-700 rounded transition-colors"
+                        title="Increase Indent"
+                    >
+                        <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" strokeWidth={2} stroke="currentColor" className="w-4 h-4">
+                            <path strokeLinecap="round" strokeLinejoin="round" d="M12.75 15l3-3m0 0l-3-3m3 3h-7.5M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
+                        </svg>
+                    </button>
+                </div>
+
+                {/* Lists */}
+                <div className="flex items-center gap-1 border-r border-slate-300 dark:border-slate-600 pr-2 mr-1 relative">
+                    <button
+                        type="button"
+                        onMouseDown={(e) => {
+                            e.preventDefault();
+                            saveSelection();
+                        }}
+                        onClick={(e) => {
+                            e.preventDefault();
+                            insertList(false);
+                        }}
+                        className="p-1.5 hover:bg-slate-200 dark:hover:bg-slate-700 rounded transition-colors"
+                        title="Bullet List"
+                    >
+                        <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" strokeWidth={2} stroke="currentColor" className="w-4 h-4">
+                            <path strokeLinecap="round" strokeLinejoin="round" d="M8 6h13M8 12h13m-13 6h13M3 6h.01M3 12h.01M3 18h.01" />
+                        </svg>
+                    </button>
+                    <button
+                        type="button"
+                        onMouseDown={(e) => {
+                            e.preventDefault();
+                            saveSelection();
+                        }}
+                        onClick={(e) => {
+                            e.preventDefault();
+                            insertList(true);
+                        }}
+                        className="p-1.5 hover:bg-slate-200 dark:hover:bg-slate-700 rounded transition-colors"
+                        title="Numbered List"
+                    >
+                        <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" strokeWidth={2} stroke="currentColor" className="w-4 h-4">
+                            <path strokeLinecap="round" strokeLinejoin="round" d="M7 20l4-16m2 16l4-16M6 9h14M4 15h14" />
+                        </svg>
+                    </button>
+                    <button
+                        type="button"
+                        disabled={!listItemSpaceEnabled}
+                        onMouseDown={(e) => {
+                            e.preventDefault();
+                            saveSelection();
+                        }}
+                        onClick={(e) => {
+                            e.preventDefault();
+                            if (!listItemSpaceEnabled) return;
+                            setShowListItemSpaceMenu((open) => !open);
+                        }}
+                        className={`p-1.5 rounded transition-colors inline-flex items-center gap-0.5 ${
+                            !listItemSpaceEnabled
+                                ? 'opacity-40 cursor-not-allowed'
+                                : listItemSpaceLevel > 0
+                                  ? 'bg-slate-200 dark:bg-slate-700'
+                                  : 'hover:bg-slate-200 dark:hover:bg-slate-700'
+                        }`}
+                        title="Space after list item"
+                    >
+                        <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" strokeWidth={2} stroke="currentColor" className="w-4 h-4">
+                            <path strokeLinecap="round" strokeLinejoin="round" d="M4 5h16M4 19h16M12 8v8m0 0l-2.5-2.5M12 16l2.5-2.5" />
+                        </svg>
+                        <span className="text-[10px] font-semibold leading-none min-w-[0.7rem]">
+                            {listItemSpaceLevel > 0 ? listItemSpaceLevel : ''}
+                        </span>
+                        <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" strokeWidth={2} stroke="currentColor" className="w-3 h-3">
+                            <path strokeLinecap="round" strokeLinejoin="round" d="M19.5 8.25l-7.5 7.5-7.5-7.5" />
+                        </svg>
+                    </button>
+                    {showListItemSpaceMenu && listItemSpaceEnabled && (
+                        <>
+                            <div
+                                className="fixed inset-0 z-[9998]"
+                                onClick={() => setShowListItemSpaceMenu(false)}
+                            />
+                            <div
+                                className="absolute z-[9999] bg-white dark:bg-slate-800 border-2 border-slate-200 dark:border-slate-700 rounded-lg shadow-xl py-1 min-w-[7.5rem]"
+                                style={{ top: '100%', right: 0, marginTop: '4px' }}
+                                onClick={(e) => e.stopPropagation()}
+                            >
+                                <div className="px-2 py-1 text-[10px] font-semibold uppercase tracking-wide text-slate-500 dark:text-slate-400">
+                                    Space after item
+                                </div>
+                                {[0, 1, 2, 3, 4, 5].map((level) => (
+                                    <button
+                                        key={level}
+                                        type="button"
+                                        onMouseDown={(e) => e.preventDefault()}
+                                        onClick={() => applyListItemSpace(level)}
+                                        className={`w-full text-left px-3 py-1.5 text-sm hover:bg-slate-100 dark:hover:bg-slate-700 ${
+                                            listItemSpaceLevel === level
+                                                ? 'font-semibold text-brand-600 dark:text-brand-400'
+                                                : 'text-slate-700 dark:text-slate-200'
+                                        }`}
+                                    >
+                                        {level === 0 ? 'None' : String(level)}
+                                    </button>
+                                ))}
+                            </div>
+                        </>
+                    )}
+                </div>
+
+                {/* Table */}
+                <div className="flex items-center gap-1 border-r border-slate-300 dark:border-slate-600 pr-2 mr-1 relative">
+                    <button
+                        type="button"
+                        onMouseDown={(e) => {
+                            e.preventDefault();
+                            saveSelection();
+                        }}
+                        onClick={(e) => {
+                            e.preventDefault();
+                            setShowTableDialog(true);
+                        }}
+                        className="p-1.5 hover:bg-slate-200 dark:hover:bg-slate-700 rounded transition-colors"
+                        title="Insert Table"
+                    >
+                        <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" strokeWidth={2} stroke="currentColor" className="w-4 h-4">
+                            <path strokeLinecap="round" strokeLinejoin="round" d="M3 10h18M3 14h18m-9-4v8m-7 0h14a2 2 0 002-2V8a2 2 0 00-2-2H5a2 2 0 00-2 2v8a2 2 0 002 2z" />
+                        </svg>
+                    </button>
+                    {showTableDialog && (
+                        <>
+                            <div 
+                                className="fixed inset-0 z-[9998]" 
+                                onClick={() => setShowTableDialog(false)}
+                            ></div>
+                            <div 
+                                className="absolute z-[9999] bg-white dark:bg-slate-800 border-2 border-slate-200 dark:border-slate-700 rounded-xl shadow-2xl p-4"
+                                style={{ top: '100%', left: 0, marginTop: '4px' }}
+                                onClick={(e) => e.stopPropagation()}
+                            >
+                                <h4 className="text-sm font-semibold text-slate-900 dark:text-white mb-3">Insert Table</h4>
+                                <div className="space-y-3">
+                                    <div>
+                                        <label className="block text-xs text-slate-600 dark:text-slate-400 mb-1">Rows</label>
+                                        <input
+                                            type="number"
+                                            min="1"
+                                            max="20"
+                                            value={tableRows}
+                                            onChange={(e) => setTableRows(parseInt(e.target.value) || 3)}
+                                            className="w-full px-2 py-1 text-sm bg-slate-50 dark:bg-slate-900 border border-slate-300 dark:border-slate-600 rounded"
+                                        />
+                                    </div>
+                                    <div>
+                                        <label className="block text-xs text-slate-600 dark:text-slate-400 mb-1">Columns</label>
+                                        <input
+                                            type="number"
+                                            min="1"
+                                            max="20"
+                                            value={tableCols}
+                                            onChange={(e) => setTableCols(parseInt(e.target.value) || 3)}
+                                            className="w-full px-2 py-1 text-sm bg-slate-50 dark:bg-slate-900 border border-slate-300 dark:border-slate-600 rounded"
+                                        />
+                                    </div>
+                                    <div className="flex gap-2">
+                                        <button
+                                            onClick={() => {
+                                                insertTable(tableRows, tableCols);
+                                                setShowTableDialog(false);
+                                            }}
+                                            className="flex-1 px-3 py-1.5 bg-brand-600 hover:bg-brand-500 text-white rounded text-sm font-medium transition-colors"
+                                        >
+                                            Insert
+                                        </button>
+                                        <button
+                                            onClick={() => setShowTableDialog(false)}
+                                            className="px-3 py-1.5 bg-slate-200 dark:bg-slate-700 hover:bg-slate-300 dark:hover:bg-slate-600 text-slate-700 dark:text-slate-200 rounded text-sm font-medium transition-colors"
+                                        >
+                                            Cancel
+                                        </button>
+                                    </div>
+                                </div>
+                            </div>
+                        </>
+                    )}
+                </div>
+
+                {/* Section with Background */}
+                <div className="flex items-center gap-1 border-r border-slate-300 dark:border-slate-600 pr-2 mr-1 relative">
+                    <button
+                        type="button"
+                        onMouseDown={(e) => {
+                            e.preventDefault();
+                            saveSelection();
+                        }}
+                        onClick={(e) => {
+                            e.preventDefault();
+                            setShowSectionColorPicker(!showSectionColorPicker);
+                        }}
+                        className="p-1.5 hover:bg-slate-200 dark:hover:bg-slate-700 rounded transition-colors"
+                        title="Insert Section with Background"
+                    >
+                        <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" strokeWidth={2} stroke="currentColor" className="w-4 h-4">
+                            <path strokeLinecap="round" strokeLinejoin="round" d="M3.75 6.75h16.5M3.75 12h16.5m-16.5 5.25h16.5" />
+                        </svg>
+                    </button>
+                    {showSectionColorPicker && (
+                        <>
+                            <div 
+                                className="fixed inset-0 z-[9998]" 
+                                onClick={() => setShowSectionColorPicker(false)}
+                            ></div>
+                            <div 
+                                className="absolute z-[9999] bg-white dark:bg-slate-800 border-2 border-slate-200 dark:border-slate-700 rounded-xl shadow-2xl p-4"
+                                style={{ top: '100%', left: 0, marginTop: '4px', width: '280px' }}
+                                onClick={(e) => e.stopPropagation()}
+                            >
+                                <h4 className="text-sm font-semibold text-slate-900 dark:text-white mb-3">Section Background Color</h4>
+                                <div className="grid grid-cols-6 gap-2 mb-3">
+                                    {['#f1f5f9', '#fef3c7', '#dbeafe', '#e0e7ff', '#fce7f3', '#dcfce7', '#fef2f2', '#f0fdf4', '#f0f9ff', '#faf5ff', '#fff7ed', '#fefce8'].map((color) => (
+                                        <button
+                                            key={color}
+                                            onClick={() => {
+                                                insertSection(color);
+                                                setShowSectionColorPicker(false);
+                                            }}
+                                            className="w-8 h-8 rounded border-2 border-slate-300 dark:border-slate-600 hover:scale-110 transition-transform"
+                                            style={{ backgroundColor: color }}
+                                            title={color}
+                                        />
+                                    ))}
+                                </div>
+                                <div className="flex items-center gap-2">
+                                    <input
+                                        type="color"
+                                        id="section-color-picker"
+                                        defaultValue="#f1f5f9"
+                                        onChange={(e) => {
+                                            insertSection(e.target.value);
+                                            setShowSectionColorPicker(false);
+                                        }}
+                                        className="w-10 h-10 border border-slate-300 dark:border-slate-600 rounded cursor-pointer"
+                                    />
+                                    <label htmlFor="section-color-picker" className="text-xs text-slate-600 dark:text-slate-400">Custom Color</label>
+                                </div>
+                            </div>
+                        </>
+                    )}
+                </div>
+
+                {/* Blockquote & Code */}
+                <div className="flex items-center gap-1 border-r border-slate-300 dark:border-slate-600 pr-2 mr-1">
+                    <button
+                        type="button"
+                        onMouseDown={(e) => {
+                            e.preventDefault();
+                            saveSelection();
+                        }}
+                        onClick={(e) => {
+                            e.preventDefault();
+                            insertBlockquote();
+                        }}
+                        className="p-1.5 hover:bg-slate-200 dark:hover:bg-slate-700 rounded transition-colors"
+                        title="Insert Blockquote"
+                    >
+                        <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" strokeWidth={2} stroke="currentColor" className="w-4 h-4">
+                            <path strokeLinecap="round" strokeLinejoin="round" d="M8.625 12a.375.375 0 11-.75 0 .375.375 0 01.75 0zm0 0H8.25m4.125 0a.375.375 0 11-.75 0 .375.375 0 01.75 0zm0 0H12m4.125 0a.375.375 0 11-.75 0 .375.375 0 01.75 0zm0 0h-.375M21 12c0 4.556-4.03 8.25-9 8.25a9.764 9.764 0 01-2.555-.337A5.972 5.972 0 015.41 20.97a5.969 5.969 0 01-.474-.065 4.48 4.48 0 00.978-2.025c.09-.457-.133-.901-.467-1.226C3.93 16.178 3 14.189 3 12c0-4.556 4.03-8.25 9-8.25s9 3.694 9 8.25z" />
+                        </svg>
+                    </button>
+                    <button
+                        type="button"
+                        onMouseDown={(e) => {
+                            e.preventDefault();
+                            saveSelection();
+                        }}
+                        onClick={(e) => {
+                            e.preventDefault();
+                            insertCodeBlock();
+                        }}
+                        className="p-1.5 hover:bg-slate-200 dark:hover:bg-slate-700 rounded transition-colors"
+                        title="Insert Code Block"
+                    >
+                        <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" strokeWidth={2} stroke="currentColor" className="w-4 h-4">
+                            <path strokeLinecap="round" strokeLinejoin="round" d="M17.25 6.75L22.5 12l-5.25 5.25m-10.5 0L1.5 12l5.25-5.25m7.5-3l-4.5 16.5" />
+                        </svg>
+                    </button>
+                </div>
+
+                {/* Columns */}
+                <div className="flex items-center gap-1 border-r border-slate-300 dark:border-slate-600 pr-2 mr-1">
+                    <button
+                        type="button"
+                        onMouseDown={(e) => {
+                            e.preventDefault();
+                            saveSelection();
+                        }}
+                        onClick={(e) => {
+                            e.preventDefault();
+                            insertColumns(2);
+                        }}
+                        className="p-1.5 hover:bg-slate-200 dark:hover:bg-slate-700 rounded transition-colors"
+                        title="Insert 2 Columns"
+                    >
+                        <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" strokeWidth={2} stroke="currentColor" className="w-4 h-4">
+                            <path strokeLinecap="round" strokeLinejoin="round" d="M9 4.5v15m6-15v15m-10.5 0h15a2.25 2.25 0 002.25-2.25V6.75A2.25 2.25 0 0019.5 4.5h-15a2.25 2.25 0 00-2.25 2.25v10.5A2.25 2.25 0 004.5 19.5z" />
+                        </svg>
+                    </button>
+                    <button
+                        type="button"
+                        onMouseDown={(e) => {
+                            e.preventDefault();
+                            saveSelection();
+                        }}
+                        onClick={(e) => {
+                            e.preventDefault();
+                            insertColumns(3);
+                        }}
+                        className="p-1.5 hover:bg-slate-200 dark:hover:bg-slate-700 rounded transition-colors"
+                        title="Insert 3 Columns"
+                    >
+                        <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" strokeWidth={2} stroke="currentColor" className="w-4 h-4">
+                            <path strokeLinecap="round" strokeLinejoin="round" d="M3.75 6.75h16.5M3.75 12h16.5m-16.5 5.25h16.5" />
+                        </svg>
+                    </button>
+                </div>
+
                 {/* Date/Time */}
                 <div className="flex items-center gap-1 border-r border-slate-300 dark:border-slate-600 pr-2 mr-1">
                     <button
@@ -817,6 +2155,7 @@ export const RichTextEditor: React.FC<RichTextEditorProps> = ({
                 {/* Emoji Picker */}
                 <div className="flex items-center gap-1 border-r border-slate-300 dark:border-slate-600 pr-2 mr-1 relative">
                     <button
+                        ref={emojiBtnRef}
                         type="button"
                         onMouseDown={(e) => {
                             e.preventDefault();
@@ -831,94 +2170,12 @@ export const RichTextEditor: React.FC<RichTextEditorProps> = ({
                     >
                         <span className="text-lg">😀</span>
                     </button>
-                    {showEmojiPicker && (
-                        <>
-                            <div 
-                                className="fixed inset-0 z-[9998]" 
-                                onClick={() => setShowEmojiPicker(false)}
-                            ></div>
-                            <div 
-                                className="absolute z-[9999] bg-white dark:bg-slate-800 border-2 border-slate-200 dark:border-slate-700 rounded-xl shadow-2xl w-96 max-h-[500px] flex flex-col overflow-hidden"
-                                style={{ top: '100%', left: 0, marginTop: '4px' }}
-                                onClick={(e) => e.stopPropagation()}
-                            >
-                                {/* Search */}
-                                <div className="p-2 border-b border-slate-100 dark:border-slate-700 bg-gradient-to-r from-slate-50 to-white dark:from-slate-900/50 dark:to-slate-800">
-                                    <input
-                                        type="text"
-                                        value={emojiSearchTerm}
-                                        onChange={(e) => {
-                                            setEmojiSearchTerm(e.target.value);
-                                            if (e.target.value) {
-                                                setEmojiActiveTab('');
-                                            }
-                                        }}
-                                        placeholder="Search emojis..."
-                                        className="w-full text-sm px-3 py-2 bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-lg focus:outline-none focus:ring-2 focus:ring-brand-500 text-slate-900 dark:text-white"
-                                        autoFocus
-                                    />
-                                </div>
-
-                                {/* Tabs */}
-                                {!emojiSearchTerm && (
-                                    <div className="flex border-b border-slate-200 dark:border-slate-700 overflow-x-auto">
-                                        {emojiCategories.map(category => (
-                                            <button
-                                                key={category.id}
-                                                onClick={() => {
-                                                    setEmojiActiveTab(category.id);
-                                                    setEmojiSearchTerm('');
-                                                }}
-                                                className={`px-3 py-2 text-xs font-medium whitespace-nowrap border-b-2 transition-colors ${emojiActiveTab === category.id
-                                                    ? 'border-brand-500 text-brand-600 dark:text-brand-400 bg-brand-50 dark:bg-brand-900/20'
-                                                    : 'border-transparent text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-slate-200 hover:border-slate-300 dark:hover:border-slate-600'
-                                                    }`}
-                                            >
-                                                {category.name}
-                                            </button>
-                                        ))}
-                                    </div>
-                                )}
-
-                                {/* Emoji Grid */}
-                                <div className="flex-1 overflow-y-auto p-3">
-                                    {filteredEmojis.length > 0 ? (
-                                        <div className="flex flex-wrap gap-1.5">
-                                            {filteredEmojis.map((emoji, idx) => (
-                                                <button
-                                                    key={idx}
-                                                    type="button"
-                                                    onClick={() => insertEmoji(emoji)}
-                                                    className="text-2xl hover:bg-brand-100 dark:hover:bg-brand-900/30 p-2 rounded-lg transition-all hover:scale-110"
-                                                >
-                                                    {emoji}
-                                                </button>
-                                            ))}
-                                        </div>
-                                    ) : emojiSearchTerm ? (
-                                        <div className="text-center py-8 text-sm text-slate-500 dark:text-slate-400">
-                                            No emojis found. Try a different search term.
-                                        </div>
-                                    ) : null}
-                                </div>
-
-                                {/* Footer */}
-                                <div className="p-2 border-t border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-900/50 flex items-center justify-center">
-                                    <a
-                                        href="https://emojipedia.org"
-                                        target="_blank"
-                                        rel="noopener noreferrer"
-                                        className="text-xs text-brand-600 dark:text-brand-400 hover:text-brand-700 dark:hover:text-brand-300 flex items-center gap-1.5"
-                                    >
-                                        <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" strokeWidth={2} stroke="currentColor" className="w-3.5 h-3.5">
-                                            <path strokeLinecap="round" strokeLinejoin="round" d="M13.5 6H5.25A2.25 2.25 0 003 8.25v10.5A2.25 2.25 0 005.25 21h10.5A2.25 2.25 0 0018 18.75V10.5m-10.5 6L21 3m0 0h-5.25M21 3v5.25" />
-                                        </svg>
-                                        Get more emojis from Emojipedia
-                                    </a>
-                                </div>
-                            </div>
-                        </>
-                    )}
+                    <EmojiPickerPopover
+                        open={showEmojiPicker}
+                        onClose={() => setShowEmojiPicker(false)}
+                        onSelect={insertEmoji}
+                        anchorRef={emojiBtnRef}
+                    />
                 </div>
 
                 {/* Image Upload */}
@@ -941,10 +2198,27 @@ export const RichTextEditor: React.FC<RichTextEditorProps> = ({
                             fileInputRef.current?.click();
                         }}
                         className="p-1.5 hover:bg-slate-200 dark:hover:bg-slate-700 rounded transition-colors"
-                        title="Insert Image"
+                        title="Upload Image"
                     >
                         <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" strokeWidth={2} stroke="currentColor" className="w-4 h-4">
                             <path strokeLinecap="round" strokeLinejoin="round" d="M2.25 15.75l5.159-5.159a2.25 2.25 0 013.182 0l5.159 5.159m-1.5-1.5l1.409-1.409a2.25 2.25 0 013.182 0l2.909 2.909m-18 3.75h16.5a1.5 1.5 0 001.5-1.5V6a1.5 1.5 0 00-1.5-1.5H3.75A1.5 1.5 0 002.25 6v12a1.5 1.5 0 001.5 1.5zm10.5-11.25h.008v.008h-.008V8.25zm.375 0a.375.375 0 11-.75 0 .375.375 0 01.75 0z" />
+                        </svg>
+                    </button>
+                    <button
+                        type="button"
+                        onMouseDown={(e) => {
+                            e.preventDefault();
+                            saveSelection();
+                        }}
+                        onClick={(e) => {
+                            e.preventDefault();
+                            setShowMediaPicker(true);
+                        }}
+                        className="p-1.5 hover:bg-slate-200 dark:hover:bg-slate-700 rounded transition-colors"
+                        title="Media Library"
+                    >
+                        <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" strokeWidth={2} stroke="currentColor" className="w-4 h-4">
+                            <path strokeLinecap="round" strokeLinejoin="round" d="M2.25 12.75V12A2.25 2.25 0 014.5 9.75h15A2.25 2.25 0 0121.75 12v.75m-8.69-6.44l-2.12-2.12a1.5 1.5 0 00-1.061-.44H4.5A2.25 2.25 0 002.25 6v12a2.25 2.25 0 002.25 2.25h15A2.25 2.25 0 0021.75 18V9a2.25 2.25 0 00-2.25-2.25h-5.379a1.5 1.5 0 01-1.06-.44z" />
                         </svg>
                     </button>
                 </div>
@@ -1036,24 +2310,284 @@ export const RichTextEditor: React.FC<RichTextEditorProps> = ({
                 >
                     Clear
                 </button>
+
+                {/* Paste from Word */}
+                <div className="flex items-center gap-1 border-r border-slate-300 dark:border-slate-600 pr-2 mr-1">
+                    <button
+                        type="button"
+                        onMouseDown={(e) => {
+                            e.preventDefault();
+                            saveSelection();
+                        }}
+                        onClick={(e) => {
+                            e.preventDefault();
+                            handlePasteFromWord();
+                        }}
+                        className="px-2 py-1 text-xs bg-white dark:bg-slate-900 border border-slate-300 dark:border-slate-600 rounded hover:bg-slate-50 dark:hover:bg-slate-800 transition-colors"
+                        title="Paste from Word"
+                    >
+                        📋 Word
+                    </button>
+                </div>
+
+                {/* Code View Toggle */}
+                <div className="flex items-center gap-1 border-l border-slate-300 dark:border-slate-600 pl-2 ml-1">
+                    <button
+                        type="button"
+                        onClick={(e) => {
+                            e.preventDefault();
+                            if (showCodeView) {
+                                // Switching from code view to visual view
+                                const htmlCode = codeViewValue;
+                                if (editorRef.current) {
+                                    editorRef.current.innerHTML = htmlCode;
+                                    isInternalUpdateRef.current = true;
+                                    onChange(htmlCode);
+                                }
+                            } else {
+                                // Switching from visual view to code view - format the HTML
+                                const currentHtml = editorRef.current?.innerHTML || value || '';
+                                const formattedHtml = formatHTML(currentHtml);
+                                setCodeViewValue(formattedHtml);
+                                // Update the value with formatted HTML
+                                if (formattedHtml !== currentHtml) {
+                                    isInternalUpdateRef.current = true;
+                                    onChange(formattedHtml);
+                                }
+                            }
+                            setShowCodeView(!showCodeView);
+                        }}
+                        className={`px-2 py-1 text-xs bg-white dark:bg-slate-900 border border-slate-300 dark:border-slate-600 rounded hover:bg-slate-50 dark:hover:bg-slate-800 transition-colors flex items-center gap-1 ${
+                            showCodeView ? 'bg-brand-100 dark:bg-brand-900/30 text-brand-600 dark:text-brand-400 border-brand-300 dark:border-brand-700' : ''
+                        }`}
+                        title={showCodeView ? 'Switch to Visual Editor' : 'Switch to Code View'}
+                    >
+                        {showCodeView ? (
+                            <>
+                                <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" strokeWidth={2} stroke="currentColor" className="w-4 h-4">
+                                    <path strokeLinecap="round" strokeLinejoin="round" d="M2.036 12.322a1.012 1.012 0 010-.639C3.423 7.51 7.36 4.5 12 4.5c4.638 0 8.573 3.007 9.963 7.178.07.207.07.431 0 .639C20.577 16.49 16.64 19.5 12 19.5c-4.638 0-8.573-3.007-9.963-7.178z" />
+                                    <path strokeLinecap="round" strokeLinejoin="round" d="M15 12a3 3 0 11-6 0 3 3 0 016 0z" />
+                                </svg>
+                                Visual
+                            </>
+                        ) : (
+                            <>
+                                <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" strokeWidth={2} stroke="currentColor" className="w-4 h-4">
+                                    <path strokeLinecap="round" strokeLinejoin="round" d="M17.25 6.75L22.5 12l-5.25 5.25m-10.5 0L1.5 12l5.25-5.25m7.5-3l-4.5 16.5" />
+                                </svg>
+                                Code
+                            </>
+                        )}
+                    </button>
+                </div>
             </div>
 
-            {/* Editor */}
-            <div
-                ref={editorRef}
-                contentEditable
-                onInput={handleInput}
-                onBlur={handleInput}
-                onMouseUp={saveSelection}
-                onKeyUp={saveSelection}
-                className="min-h-[60px] bg-slate-50 dark:bg-slate-900 border-2 border-slate-200 dark:border-slate-700 rounded-b-lg px-3 py-2 text-sm text-slate-900 dark:text-white focus:border-brand-500 focus:outline-none focus:ring-2 focus:ring-brand-500/50 transition-all"
-                style={{
-                    whiteSpace: 'pre-wrap',
-                    wordBreak: 'break-word'
-                }}
-                data-placeholder={placeholder}
-                suppressContentEditableWarning
-            />
+            {/* Editor - Visual or Code View */}
+            {showCodeView && (
+                <div className="relative">
+                    <textarea
+                        value={codeViewValue}
+                        onChange={(e) => {
+                            setCodeViewValue(e.target.value);
+                            // Update the parent component in real-time
+                            onChange(e.target.value);
+                        }}
+                        className="w-full min-h-[200px] bg-slate-900 dark:bg-slate-950 border-2 border-slate-200 dark:border-slate-700 rounded-b-lg px-3 py-2 text-sm text-green-400 font-mono focus:border-brand-500 focus:outline-none focus:ring-2 focus:ring-brand-500/50 transition-all resize-y"
+                        style={{
+                            fontFamily: 'monospace',
+                            lineHeight: '1.5',
+                            tabSize: 2
+                        }}
+                        placeholder="Enter HTML code here..."
+                        spellCheck={false}
+                    />
+                    <div className="absolute top-2 right-2 flex gap-2">
+                        <button
+                            type="button"
+                            onClick={() => {
+                                // Format the HTML code
+                                const formatted = formatHTML(codeViewValue);
+                                setCodeViewValue(formatted);
+                                onChange(formatted);
+                            }}
+                            className="px-3 py-1.5 text-xs bg-slate-700 hover:bg-slate-600 text-white rounded-lg font-medium transition-colors flex items-center gap-1.5 shadow-lg"
+                            title="Format HTML Code"
+                        >
+                            <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" strokeWidth={2} stroke="currentColor" className="w-4 h-4">
+                                <path strokeLinecap="round" strokeLinejoin="round" d="M3.75 6.75h16.5M3.75 12h16.5m-16.5 5.25h16.5" />
+                            </svg>
+                            Format
+                        </button>
+                        <button
+                            type="button"
+                            onClick={async () => {
+                                try {
+                                    // Try modern clipboard API first
+                                    if (navigator.clipboard && navigator.clipboard.writeText) {
+                                        await navigator.clipboard.writeText(codeViewValue);
+                                        setCopied(true);
+                                        setTimeout(() => setCopied(false), 2000);
+                                    } else {
+                                        // Fallback for browsers that don't support clipboard API
+                                        const textArea = document.createElement('textarea');
+                                        textArea.value = codeViewValue;
+                                        textArea.style.position = 'fixed';
+                                        textArea.style.left = '-999999px';
+                                        textArea.style.top = '-999999px';
+                                        document.body.appendChild(textArea);
+                                        textArea.focus();
+                                        textArea.select();
+                                        
+                                        try {
+                                            const successful = document.execCommand('copy');
+                                            if (successful) {
+                                                setCopied(true);
+                                                setTimeout(() => setCopied(false), 2000);
+                                            } else {
+                                                throw new Error('execCommand copy failed');
+                                            }
+                                        } finally {
+                                            document.body.removeChild(textArea);
+                                        }
+                                    }
+                                } catch (err) {
+                                    console.error('Failed to copy:', err);
+                                    // Try fallback method
+                                    try {
+                                        const textArea = document.createElement('textarea');
+                                        textArea.value = codeViewValue;
+                                        textArea.style.position = 'fixed';
+                                        textArea.style.left = '-999999px';
+                                        textArea.style.top = '-999999px';
+                                        document.body.appendChild(textArea);
+                                        textArea.focus();
+                                        textArea.select();
+                                        
+                                        const successful = document.execCommand('copy');
+                                        document.body.removeChild(textArea);
+                                        
+                                        if (successful) {
+                                            setCopied(true);
+                                            setTimeout(() => setCopied(false), 2000);
+                                        } else {
+                                            alert('Failed to copy to clipboard. Please copy manually.');
+                                        }
+                                    } catch (fallbackErr) {
+                                        console.error('Fallback copy also failed:', fallbackErr);
+                                        alert('Failed to copy to clipboard. Please select and copy manually (Ctrl+C or Cmd+C).');
+                                    }
+                                }
+                            }}
+                            className="px-3 py-1.5 text-xs bg-brand-600 hover:bg-brand-500 text-white rounded-lg font-medium transition-colors flex items-center gap-1.5 shadow-lg"
+                            title="Copy HTML Code"
+                        >
+                            {copied ? (
+                                <>
+                                    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor" className="w-4 h-4">
+                                        <path fillRule="evenodd" d="M16.704 4.153a.75.75 0 01.143 1.052l-8 10.5a.75.75 0 01-1.127.075l-4.5-4.5a.75.75 0 011.06-1.06l3.894 3.893 7.48-9.817a.75.75 0 011.05-.143z" clipRule="evenodd" />
+                                    </svg>
+                                    Copied!
+                                </>
+                            ) : (
+                                <>
+                                    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor" className="w-4 h-4">
+                                        <path d="M7 3.5A1.5 1.5 0 018.5 2h3.879a1.5 1.5 0 011.06.44l3.122 3.12A1.5 1.5 0 0117 6.622V12.5a1.5 1.5 0 01-1.5 1.5h-1v-3.379a3 3 0 00-.879-2.121L10.5 5.379A3 3 0 008.379 4.5H7v-1z" />
+                                        <path d="M4.5 6A1.5 1.5 0 003 7.5v9A1.5 1.5 0 004.5 18h7a1.5 1.5 0 001.5-1.5v-5.879a1.5 1.5 0 00-.44-1.06L9.44 6.44A1.5 1.5 0 008.378 6H4.5z" />
+                                    </svg>
+                                    Copy HTML
+                                </>
+                            )}
+                        </button>
+                    </div>
+                    <div className="absolute bottom-2 left-2 text-xs text-slate-400 dark:text-slate-500 bg-slate-800/80 dark:bg-slate-900/80 px-2 py-1 rounded">
+                        HTML Code View - Edit directly or copy to clipboard
+                    </div>
+                </div>
+            )}
+            {!showCodeView && (
+                <div
+                    ref={editorRef}
+                    contentEditable
+                    onInput={handleInput}
+                    onBlur={handleInput}
+                    onMouseUp={saveSelection}
+                    onKeyUp={saveSelection}
+                    onPaste={handlePaste}
+                    className="min-h-[60px] bg-slate-50 dark:bg-slate-900 border-2 border-slate-200 dark:border-slate-700 rounded-b-lg px-3 py-2 text-sm text-slate-900 dark:text-white focus:border-brand-500 focus:outline-none focus:ring-2 focus:ring-brand-500/50 transition-all"
+                    style={{
+                        whiteSpace: 'pre-wrap',
+                        wordBreak: 'break-word'
+                    }}
+                    data-placeholder={placeholder}
+                    suppressContentEditableWarning
+                />
+            )}
+
+            {/* Paste from Word Dialog */}
+            {showPasteWordDialog && (
+                <>
+                    <div 
+                        className="fixed inset-0 z-[9998] bg-black/50" 
+                        onClick={() => {
+                            setShowPasteWordDialog(false);
+                            setPasteWordContent('');
+                        }}
+                    ></div>
+                    <div 
+                        className="fixed z-[9999] bg-white dark:bg-slate-800 border-2 border-slate-200 dark:border-slate-700 rounded-xl shadow-2xl p-6"
+                        style={{ 
+                            top: '50%', 
+                            left: '50%', 
+                            transform: 'translate(-50%, -50%)',
+                            width: '90%',
+                            maxWidth: '600px',
+                            maxHeight: '80vh',
+                            overflow: 'auto'
+                        }}
+                        onClick={(e) => e.stopPropagation()}
+                    >
+                        <h4 className="text-lg font-semibold text-slate-900 dark:text-white mb-3">Paste from Word</h4>
+                        <p className="text-sm text-slate-600 dark:text-slate-400 mb-4">
+                            Paste your Word content below. The formatting will be cleaned automatically.
+                        </p>
+                        <textarea
+                            value={pasteWordContent}
+                            onChange={(e) => setPasteWordContent(e.target.value)}
+                            placeholder="Paste your Word content here (Ctrl+V or Cmd+V)..."
+                            className="w-full h-64 px-3 py-2 text-sm bg-slate-50 dark:bg-slate-900 border border-slate-300 dark:border-slate-600 rounded focus:outline-none focus:ring-2 focus:ring-brand-500 font-mono"
+                            autoFocus
+                            onPaste={(e) => {
+                                e.preventDefault();
+                                const text = e.clipboardData.getData('text/plain');
+                                const html = e.clipboardData.getData('text/html');
+                                setPasteWordContent(html || text);
+                            }}
+                        />
+                        <div className="flex gap-2 mt-4">
+                            <button
+                                onClick={() => {
+                                    const cleanedHTML = cleanWordHTML(pasteWordContent);
+                                    insertHTML(cleanedHTML);
+                                    setShowPasteWordDialog(false);
+                                    setPasteWordContent('');
+                                }}
+                                className="flex-1 px-4 py-2 bg-brand-600 hover:bg-brand-500 text-white rounded text-sm font-medium transition-colors"
+                            >
+                                Paste Cleaned Content
+                            </button>
+                            <button
+                                onClick={() => {
+                                    setShowPasteWordDialog(false);
+                                    setPasteWordContent('');
+                                }}
+                                className="px-4 py-2 bg-slate-200 dark:bg-slate-700 hover:bg-slate-300 dark:hover:bg-slate-600 text-slate-700 dark:text-slate-200 rounded text-sm font-medium transition-colors"
+                            >
+                                Cancel
+                            </button>
+                        </div>
+                    </div>
+                </>
+            )}
 
             <style>{`
                 .rich-text-editor [contenteditable][data-placeholder]:empty:before {
@@ -1071,7 +2605,81 @@ export const RichTextEditor: React.FC<RichTextEditorProps> = ({
                 .rich-text-editor h5 { font-size: 0.83em; font-weight: bold; margin: 1.5em 0; }
                 .rich-text-editor h6 { font-size: 0.75em; font-weight: bold; margin: 1.67em 0; }
                 .rich-text-editor img { max-width: 100%; height: auto; display: block; margin: 0.5em 0; }
+                .rich-text-editor video { max-width: 100%; width: 100%; height: auto; min-height: 180px; display: block; margin: 0.75em 0; background: #0f172a; }
+                .rich-text-editor audio { width: 100%; display: block; margin: 0.75em 0; }
+                .rich-text-editor ul, .rich-text-editor ol { margin: 1em 0; padding-left: 2em; }
+                .rich-text-editor ul { list-style-type: disc; }
+                .rich-text-editor ol { list-style-type: decimal; }
+                .rich-text-editor li { margin: 0.25em 0; }
+                .rich-text-editor li.ln-li-space,
+                .rich-text-editor li.ln-li-space-1,
+                .rich-text-editor li[data-ln-space="1"] { margin-bottom: 1em; }
+                .rich-text-editor li.ln-li-space-2,
+                .rich-text-editor li[data-ln-space="2"] { margin-bottom: 2em; }
+                .rich-text-editor li.ln-li-space-3,
+                .rich-text-editor li[data-ln-space="3"] { margin-bottom: 3em; }
+                .rich-text-editor li.ln-li-space-4,
+                .rich-text-editor li[data-ln-space="4"] { margin-bottom: 4em; }
+                .rich-text-editor li.ln-li-space-5,
+                .rich-text-editor li[data-ln-space="5"] { margin-bottom: 5em; }
+                .rich-text-editor table { 
+                    width: 100%; 
+                    border-collapse: collapse; 
+                    margin: 1em 0; 
+                    border: 1px solid #cbd5e1;
+                }
+                .rich-text-editor table th, 
+                .rich-text-editor table td { 
+                    border: 1px solid #cbd5e1; 
+                    padding: 0.5em 1em; 
+                    text-align: left;
+                }
+                .rich-text-editor table th { 
+                    background-color: #f1f5f9; 
+                    font-weight: 600;
+                }
+                .rich-text-editor blockquote { 
+                    border-left: 4px solid #4f46e5; 
+                    padding-left: 1em; 
+                    margin: 1em 0; 
+                    font-style: italic; 
+                    color: #64748b;
+                }
+                .rich-text-editor code { 
+                    background-color: #f1f5f9; 
+                    padding: 0.125em 0.25em; 
+                    border-radius: 0.25rem; 
+                    font-family: monospace; 
+                    font-size: 0.875em;
+                }
+                .rich-text-editor div[style*="background-color"] {
+                    border-radius: 0.5rem;
+                    padding: 1em;
+                    margin: 1em 0;
+                }
+                .rich-text-editor .grid {
+                    display: grid;
+                    gap: 1rem;
+                    margin: 1em 0;
+                }
+                .rich-text-editor .grid > div {
+                    min-height: 2em;
+                }
+                @media (max-width: 768px) {
+                    .rich-text-editor .grid {
+                        grid-template-columns: 1fr !important;
+                    }
+                }
             `}</style>
+            <MediaPickerModal
+                open={showMediaPicker}
+                onClose={() => setShowMediaPicker(false)}
+                onInsertHtml={(html) => {
+                    editorRef.current?.focus();
+                    restoreSelection();
+                    insertHTML(html);
+                }}
+            />
         </div>
     );
 };

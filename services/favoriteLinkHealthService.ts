@@ -1,12 +1,17 @@
 import { LinkHealth } from '../types';
+import { isLikelyClientNetworkError, networkHealthResult } from './linkHealthService';
+import { resolveApiBase } from './apiHelpers';
 
-const API_BASE: string =
-    (typeof import.meta !== 'undefined' && (import.meta as any).env && (import.meta as any).env.VITE_API_BASE) ||
-    '/api';
+function healthApi(path: string): string {
+    const base = resolveApiBase().replace(/\/$/, '');
+    const suffix = path.startsWith('/') ? path : `/${path}`;
+    return `${base}${suffix}`;
+}
 
 export interface LinkHealthCheckResult {
     linkId: string;
-    health: LinkHealth;
+    health: LinkHealth | null;
+    skipped?: boolean;
     latency?: number; // Local latency (roundtrip from browser to server) in milliseconds
     serverLatency?: number; // Server-side latency (time taken by server to check URL) in milliseconds
 }
@@ -29,7 +34,7 @@ class FavoriteLinkHealthService {
             const controller = new AbortController();
             const timeoutId = setTimeout(() => controller.abort(), 10000); // 10 second timeout for the backend call
 
-            const response = await fetch(`${API_BASE}/linkhealth/check`, {
+            const response = await fetch(healthApi('/linkhealth/check'), {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
                 credentials: 'include',
@@ -45,6 +50,17 @@ class FavoriteLinkHealthService {
 
             const data = await response.json();
             const localLatency = Math.round(performance.now() - startTime);
+
+            // SSH / VNC / non-HTTP links are skipped by the API
+            if (data.skipped || !data.health) {
+                return {
+                    linkId,
+                    health: null,
+                    skipped: true,
+                    latency: localLatency,
+                    serverLatency: 0
+                };
+            }
 
             return {
                 linkId,
@@ -69,13 +85,16 @@ class FavoriteLinkHealthService {
                 };
             }
 
+            const network = isLikelyClientNetworkError(error);
             return {
                 linkId,
                 health: {
-                    status: 'broken',
-                    httpCode: null,
-                    error: error.message || 'Failed to check link',
-                    checkedAt: Date.now()
+                    ...(network ? networkHealthResult() : {
+                        status: 'unknown',
+                        httpCode: null,
+                        error: error.message || 'Failed to check link',
+                        checkedAt: Date.now()
+                    }),
                 },
                 latency: localLatency,
                 serverLatency: 0
@@ -123,8 +142,9 @@ class FavoriteLinkHealthService {
 
                 const batchResults = await Promise.all(batchPromises);
 
-                // Store results
+                // Store results (omit skipped ssh:// / vnc://)
                 batchResults.forEach(result => {
+                    if (result.skipped || !result.health) return;
                     results.set(result.linkId, result);
                 });
 
@@ -170,15 +190,20 @@ class FavoriteLinkHealthService {
             case 'healthy':
             case 'accessible':
             case 'restricted':
-                return 'bg-emerald-500'; // Show all accessible/online statuses as green
+                return 'bg-[var(--ln-health-online)]';
             case 'broken':
-                return 'bg-red-500';
+                return 'bg-[var(--ln-health-broken)]';
+            case 'network':
+                return 'bg-[var(--ln-health-network)]';
+            case 'redirected':
+                return 'bg-[var(--ln-health-redirected)]';
+            case 'unknown':
             case 'timeout':
-                return 'bg-orange-500';
+                return 'bg-[var(--ln-health-unknown)]';
             case 'checking':
-                return 'bg-blue-500 animate-pulse';
+                return 'bg-[var(--ln-health-checking)] animate-pulse';
             default:
-                return 'bg-slate-400';
+                return 'bg-[var(--ln-health-unknown)]';
         }
     }
 
@@ -196,6 +221,7 @@ class FavoriteLinkHealthService {
      */
     getStatusDisplay(httpCode?: number | null, status?: string): string {
         if (status === 'timeout') return 'Timeout';
+        if (status === 'network') return 'Unreachable';
         if (status === 'checking') return 'Checking...';
         if (httpCode) return `${httpCode}`;
         return '';

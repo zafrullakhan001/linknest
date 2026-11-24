@@ -1,0 +1,4 @@
+username,email,saml_nameid,displayName
+john.doe,john.doe@example.com,john.doe@idp.example.com,John Doe
+jane.smith,jane.smith@example.com,jane.smith@idp.example.com,Jane Smith
+admin.user,admin.user@example.com,admin.user@idp.example.com,Admin User

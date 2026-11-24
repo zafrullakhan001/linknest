@@ -1,0 +1,211 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Test Link Scanner</title>
+    <style>
+        body {
+            font-family: Arial, sans-serif;
+            max-width: 1200px;
+            margin: 50px auto;
+            padding: 20px;
+            background: #f5f5f5;
+        }
+        .container {
+            background: white;
+            padding: 30px;
+            border-radius: 10px;
+            box-shadow: 0 2px 10px rgba(0,0,0,0.1);
+        }
+        h1 { color: #333; }
+        .test-link {
+            display: block;
+            margin: 10px 0;
+            padding: 10px;
+            background: #e3f2fd;
+            border-left: 4px solid #2196f3;
+            text-decoration: none;
+            color: #1976d2;
+        }
+        .test-link:hover {
+            background: #bbdefb;
+        }
+        #status {
+            margin-top: 20px;
+            padding: 15px;
+            background: #f5f5f5;
+            border-radius: 5px;
+            font-family: monospace;
+            font-size: 12px;
+            max-height: 400px;
+            overflow-y: auto;
+        }
+        .log-success { color: green; }
+        .log-error { color: red; }
+        .log-info { color: blue; }
+        button {
+            padding: 10px 20px;
+            background: #2196f3;
+            color: white;
+            border: none;
+            border-radius: 5px;
+            cursor: pointer;
+            margin: 5px;
+        }
+        button:hover {
+            background: #1976d2;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <h1>🧪 Link Scanner Test Page</h1>
+        <p>This page has test links to verify the link scanner is working.</p>
+        
+        <h2>Test Links:</h2>
+        <a href="https://google.com" class="test-link">Google.com</a>
+        <a href="https://github.com" class="test-link">GitHub.com</a>
+        <a href="https://stackoverflow.com" class="test-link">StackOverflow.com</a>
+        <a href="https://example.com" class="test-link">Example.com</a>
+        <a href="https://httpbin.org/delay/1" class="test-link">HTTPBin (1s delay)</a>
+        
+        <div style="margin-top: 20px;">
+            <button onclick="testScanner()">Test Scanner Manually</button>
+            <button onclick="checkConfig()">Check Config</button>
+            <button onclick="testAPI()">Test Collection API</button>
+            <button onclick="clearLog()">Clear Log</button>
+        </div>
+        
+        <div id="status"></div>
+    </div>
+
+    <!-- Load analytics config and scripts -->
+    <script>
+        // Simulate analytics config
+        window.ANALYTICS_CONFIG = {
+            enabled: true,
+            sampleRate: 1.0,
+            collectUrl: 'http://localhost:9333/api/metrics/collect',
+            apiUrl: 'http://localhost:9333/api',
+            userId: 1,
+            sessionId: 'test-' + Date.now(),
+            beaconUrls: [],
+            countryCode: 'US',
+            region: 'Test',
+            city: 'Test City',
+            latitude: 0,
+            longitude: 0
+        };
+        
+        function log(message, type = 'info') {
+            const status = document.getElementById('status');
+            const timestamp = new Date().toLocaleTimeString();
+            const className = 'log-' + type;
+            status.innerHTML += `<div class="${className}">[${timestamp}] ${message}</div>`;
+            status.scrollTop = status.scrollHeight;
+        }
+        
+        function clearLog() {
+            document.getElementById('status').innerHTML = '';
+        }
+        
+        function checkConfig() {
+            log('Checking ANALYTICS_CONFIG...', 'info');
+            log('Config: ' + JSON.stringify(window.ANALYTICS_CONFIG, null, 2), 'info');
+            log('Config enabled: ' + (window.ANALYTICS_CONFIG && window.ANALYTICS_CONFIG.enabled), 
+                window.ANALYTICS_CONFIG && window.ANALYTICS_CONFIG.enabled ? 'success' : 'error');
+        }
+        
+        async function testAPI() {
+            log('Testing collection API...', 'info');
+            
+            const testMetric = {
+                url: 'https://test-api.com',
+                measurement_type: 'client',
+                full_response_time: 150,
+                dns_lookup_time: 10,
+                tcp_connection_time: 20,
+                tls_handshake_time: 30,
+                time_to_first_byte: 80,
+                download_time: 0,
+                http_status_code: 200,
+                device_type: 'desktop',
+                browser_name: 'Chrome',
+                browser_version: '120',
+                os_name: 'Windows',
+                screen_resolution: '1920x1080',
+                connection_type: '4g',
+                user_id: 1,
+                session_id: 'test-' + Date.now()
+            };
+            
+            try {
+                const response = await fetch(window.ANALYTICS_CONFIG.collectUrl, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify(testMetric)
+                });
+                
+                const data = await response.json();
+                
+                if (response.ok && data.success) {
+                    log('✓ API test successful!', 'success');
+                    log('Response: ' + JSON.stringify(data), 'info');
+                } else {
+                    log('✗ API test failed: ' + (data.error || 'Unknown error'), 'error');
+                }
+            } catch (error) {
+                log('✗ API test error: ' + error.message, 'error');
+            }
+        }
+        
+        async function testScanner() {
+            log('Testing link scanner...', 'info');
+            
+            // Check if scanner script is loaded
+            if (typeof LinkLatencyScanner === 'undefined') {
+                log('✗ LinkLatencyScanner not found. Loading script...', 'error');
+                
+                // Try to load the script
+                const script = document.createElement('script');
+                script.src = '/linknest/public/js/link-latency-scanner.js';
+                script.onload = () => {
+                    log('✓ Script loaded, initializing scanner...', 'success');
+                    setTimeout(() => {
+                        const scanner = new LinkLatencyScanner(window.ANALYTICS_CONFIG);
+                        scanner.scanAllLinks();
+                    }, 500);
+                };
+                script.onerror = () => {
+                    log('✗ Failed to load script from: ' + script.src, 'error');
+                };
+                document.head.appendChild(script);
+                return;
+            }
+            
+            log('✓ LinkLatencyScanner found', 'success');
+            
+            const scanner = new LinkLatencyScanner(window.ANALYTICS_CONFIG);
+            const links = scanner.findLinks();
+            log('Found ' + links.length + ' links to test', 'info');
+            log('Links: ' + links.join(', '), 'info');
+            
+            scanner.scanAllLinks();
+        }
+        
+        // Auto-test on load
+        window.addEventListener('load', () => {
+            setTimeout(() => {
+                log('Page loaded. Running auto-test...', 'info');
+                checkConfig();
+                testAPI();
+                setTimeout(() => testScanner(), 1000);
+            }, 1000);
+        });
+    </script>
+    
+    <!-- Load the actual scanner script -->
+    <script src="/linknest/public/js/link-latency-scanner.js" defer></script>
+</body>
+</html>

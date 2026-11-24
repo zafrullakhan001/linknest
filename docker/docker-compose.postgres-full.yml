@@ -1,0 +1,44 @@
+# PostgreSQL 18 with extensions: TimescaleDB, pg_cron, pg_stat_statements,
+# PostGIS, postgres_fdw, intarray. (ZomboDB not included; see README_POSTGRES_FULL.md.)
+#
+# Start:  docker compose -f docker/docker-compose.postgres-full.yml up -d
+# Build:  docker compose -f docker/docker-compose.postgres-full.yml build
+# Stop:   docker compose -f docker/docker-compose.postgres-full.yml down
+# Logs:   docker compose -f docker/docker-compose.postgres-full.yml logs -f PG-full
+#
+# Optional: set host port via env. From project root:
+#   $env:PG_FULL_HOST_PORT="5440"; docker compose -f docker/docker-compose.postgres-full.yml up -d
+#   PG_FULL_HOST_PORT=5440 docker compose -f docker/docker-compose.postgres-full.yml up -d
+
+services:
+  PG-full:
+    build:
+      context: .
+      dockerfile: Dockerfile.postgres-full
+    image: linknest/postgres-full:latest-pg18
+    container_name: PG-full
+    command: >
+      postgres
+      -c log_timezone=UTC
+      -c TimeZone=UTC
+      -c shared_preload_libraries=timescaledb,pg_cron,pg_stat_statements
+      -c cron.database_name=${PG_CRON_DATABASE:-linknest_analytics}
+    environment:
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: postgres
+      POSTGRES_DB: linknest_analytics
+      PGTZ: UTC
+    ports:
+      - "${PG_FULL_HOST_PORT:-5434}:5432"
+    volumes:
+      - postgres_full_data:/var/lib/postgresql/data
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U postgres -d linknest_analytics"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 30s
+
+volumes:
+  postgres_full_data:

@@ -10,12 +10,13 @@ chrome.runtime.onMessage.addListener(function (request, sender, sendResponse) {
   if (typeof window !== 'undefined') {
     window.BrowserLauncherProExtension = {
       available: true,
-      version: '3.0'
+      version: '3.2',
+      features: ['launch', 'incognito', 'newWindow', 'bookmarks']
     };
 
     // Also dispatch a custom event
     window.dispatchEvent(new CustomEvent('BrowserLauncherProReady', {
-      detail: { version: '3.0' }
+      detail: { version: '3.2', features: ['launch', 'incognito', 'newWindow', 'bookmarks'] }
     }));
   }
 })();
@@ -24,7 +25,7 @@ chrome.runtime.onMessage.addListener(function (request, sender, sendResponse) {
 window.addEventListener('message', function (event) {
   // Security: Only accept messages with the expected type
   if (event.data && event.data.type === 'BROWSER_LAUNCHER_OPEN') {
-    const { url, browserId, timestamp } = event.data;
+    const { url, browserId, timestamp, options } = event.data;
 
     // Validate URL
     try {
@@ -51,7 +52,9 @@ window.addEventListener('message', function (event) {
     chrome.runtime.sendMessage({
       action: 'openLinkInBrowser',
       url: url,
-      browserId: browserId
+      browserId: browserId,
+      inPrivate: !!(options && (options.inPrivate || options.incognito || options.private)),
+      newWindow: !!(options && (options.newWindow || options.fullWindow || options.windowType === 'normal'))
     }, (response) => {
       // Log the result but don't send another response to page
       // (we already sent an immediate response above)
@@ -72,7 +75,9 @@ window.addEventListener('message', function (event) {
     window.postMessage({
       type: 'BROWSER_LAUNCHER_CHECK_RESPONSE',
       available: true,
-      version: '3.0',
+      version: '3.2',
+      name: 'Browser Launcher Pro',
+      features: ['launch', 'incognito', 'newWindow', 'bookmarks', 'bookmarksWrite', 'browsers'],
       timestamp: event.data.timestamp
     }, '*');
   }
@@ -93,6 +98,39 @@ window.addEventListener('message', function (event) {
           type: 'BROWSER_LAUNCHER_BROWSERS_LIST',
           browsers: [],
           error: response ? response.error : 'Failed to fetch browsers',
+          timestamp: timestamp,
+          success: false
+        }, '*');
+      }
+    });
+  }
+
+  // Handle bookmarks sync for LinkNest Your Bookmarks / Fav Organizer
+  if (event.data && event.data.type === 'BROWSER_LAUNCHER_GET_BOOKMARKS') {
+    const timestamp = event.data.timestamp;
+    chrome.runtime.sendMessage({ action: 'getBookmarks' }, (response) => {
+      if (chrome.runtime.lastError) {
+        window.postMessage({
+          type: 'BROWSER_LAUNCHER_BOOKMARKS_LIST',
+          bookmarks: [],
+          error: chrome.runtime.lastError.message || 'Extension messaging failed',
+          timestamp: timestamp,
+          success: false
+        }, '*');
+        return;
+      }
+      if (response && response.success && Array.isArray(response.bookmarks)) {
+        window.postMessage({
+          type: 'BROWSER_LAUNCHER_BOOKMARKS_LIST',
+          bookmarks: response.bookmarks,
+          timestamp: timestamp,
+          success: true
+        }, '*');
+      } else {
+        window.postMessage({
+          type: 'BROWSER_LAUNCHER_BOOKMARKS_LIST',
+          bookmarks: [],
+          error: (response && response.error) || 'Failed to fetch bookmarks',
           timestamp: timestamp,
           success: false
         }, '*');

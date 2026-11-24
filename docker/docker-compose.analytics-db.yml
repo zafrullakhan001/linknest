@@ -1,0 +1,39 @@
+# PostgreSQL + TimescaleDB for Linknest Analytics
+# Database: linknest_analytics | Port: 5433 | Password: password
+#
+# Start:  docker compose -f docker/docker-compose.analytics-db.yml up -d
+# Stop:   docker compose -f docker/docker-compose.analytics-db.yml down
+# Logs:   docker compose -f docker/docker-compose.analytics-db.yml logs -f analytics-db
+#
+# Init scripts in init-analytics-db/ run on first start only (01-schema.sql, 02-location-lookup.sql).
+
+services:
+  analytics-db:
+    image: timescale/timescaledb:latest-pg18
+    container_name: linknest-analytics-db
+    command: >
+      postgres
+      -c log_timezone=UTC
+      -c TimeZone=UTC
+    environment:
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: password
+      POSTGRES_DB: linknest_analytics
+      PGTZ: UTC
+    ports:
+      - "5433:5432"
+    volumes:
+      - analytics_pg_data:/var/lib/postgresql/data
+      # Mount repo so init scripts can run schema from analytics/schema.sql
+      - ..:/app:ro
+      - ./init-analytics-db:/docker-entrypoint-initdb.d:ro
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U postgres -d linknest_analytics"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 45s
+
+volumes:
+  analytics_pg_data:

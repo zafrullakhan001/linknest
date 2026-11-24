@@ -1,0 +1,12 @@
+{
+  "enabled": true,
+  "name": "Contoso Bookmark Sync",
+  "appName": "Contoso",
+  "appUrl": "https://intranet.contoso.com/linknest",
+  "logo": "branding/logo.png",
+  "locked": true,
+  "allowedOrigins": [
+    "https://intranet.contoso.com"
+  ],
+  "syncDefaultOn": false
+}

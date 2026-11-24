@@ -1,6 +1,6 @@
 # LinkNest Docker Deployment Guide
 
-**Single Container Architecture**: This deployment uses ONE container that includes PHP 8.2, Apache, and SQLite - everything runs together for simplicity and efficiency.
+**Single Container Architecture**: This deployment uses ONE container that includes PHP 8.4, Apache, and SQLite - everything runs together for simplicity and efficiency.
 
 This guide explains how to deploy LinkNest using Docker with all optimizations enabled.
 

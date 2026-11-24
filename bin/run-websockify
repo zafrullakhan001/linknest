@@ -1,0 +1,17 @@
+#!/usr/bin/env bash
+# LinkNest VNC gateway launcher — vendored websockify via python3 -m
+ROOT="$(cd "$(dirname "$0")/.." && pwd)"
+PACKAGES="$(cd "$(dirname "$0")" && pwd)/python-packages"
+export PYTHONPATH="${PACKAGES}${PYTHONPATH:+:$PYTHONPATH}"
+
+if [[ -n "${VNC_GATEWAY_PYTHON:-}" ]]; then
+  exec "$VNC_GATEWAY_PYTHON" -m websockify "$@"
+fi
+if command -v python3 >/dev/null 2>&1; then
+  exec python3 -m websockify "$@"
+fi
+if command -v python >/dev/null 2>&1; then
+  exec python -m websockify "$@"
+fi
+echo "websockify launcher: python3 not found. Install Python and: python3 -m pip install --target=\"${PACKAGES}\" websockify" >&2
+exit 1

@@ -138,6 +138,26 @@ if not exist "%PROJECT_ROOT%\services" (
     xcopy "%PROJECT_ROOT%\services\*" "%BUNDLE_DIR%\services\" /E /I /Y >nul
 )
 
+REM hooks / utils (Vite source imports — required for rebuild + App Updates UI)
+if exist "%PROJECT_ROOT%\hooks" (
+    xcopy "%PROJECT_ROOT%\hooks\*" "%BUNDLE_DIR%\hooks\" /E /I /Y >nul
+    echo ✓ hooks/ copied
+)
+if not exist "%PROJECT_ROOT%\utils" (
+    echo [ERROR] utils directory not found!
+    set "FILE_ERROR=1"
+) else (
+    xcopy "%PROJECT_ROOT%\utils\*" "%BUNDLE_DIR%\utils\" /E /I /Y >nul
+    echo ✓ utils/ copied
+)
+if exist "%PROJECT_ROOT%\docs" (
+    xcopy "%PROJECT_ROOT%\docs\*" "%BUNDLE_DIR%\docs\" /E /I /Y >nul
+    echo ✓ docs/ copied
+)
+if exist "%PROJECT_ROOT%\AGENTS.md" (
+    copy /Y "%PROJECT_ROOT%\AGENTS.md" "%BUNDLE_DIR%\AGENTS.md" >nul
+)
+
 if !FILE_ERROR! EQU 1 (
     echo.
     echo ERROR: Required source files are missing! Bundle creation failed.

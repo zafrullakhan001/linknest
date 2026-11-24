@@ -6,6 +6,262 @@
 
 require_once __DIR__ . '/config.php';
 
+/**
+ * Message shown when folder clone is blocked in Docker or WSL.
+ */
+function linknestCloneUnavailableMessage(): string
+{
+    return 'Clone is not available in WSL. Use a host filesystem install or Docker.';
+}
+
+/**
+ * Directory where Docker folder clones are written (sibling of html, not DocumentRoot).
+ */
+function linknestCloneDockerInstancesRoot(): string
+{
+    return '/var/www/clones';
+}
+
+/**
+ * Public browser URL for a clone folder.
+ * Docker publishes 8090/8443; Apache inside the container listens on 80/443.
+ */
+function linknestClonePublicUrl(string $folderName): string
+{
+    $folderName = trim($folderName, "/\\");
+    $https = (!empty($_SERVER['HTTPS']) && $_SERVER['HTTPS'] !== 'off')
+        || ((string) ($_SERVER['SERVER_PORT'] ?? '') === '443')
+        || (isset($_SERVER['HTTP_X_FORWARDED_PROTO']) && strtolower((string) $_SERVER['HTTP_X_FORWARDED_PROTO']) === 'https');
+    $protocol = $https ? 'https' : 'http';
+    $host = trim((string) ($_SERVER['HTTP_HOST'] ?? 'localhost'));
+    if (strpos($host, ':') === false && function_exists('linknestCloneIsDocker') && linknestCloneIsDocker()) {
+        $host .= $https ? ':8443' : ':8090';
+    }
+    return $protocol . '://' . $host . '/' . $folderName . '/';
+}
+
+/**
+ * Prefer a Docker-reachable URL when the stored value is host-style (no published port).
+ */
+function linknestRewriteDockerCloneUrl(string $url, string $folderName): string
+{
+    $public = linknestClonePublicUrl($folderName);
+    if ($folderName === '') {
+        return $url;
+    }
+    if ($url === '') {
+        return $public;
+    }
+    if (!function_exists('linknestCloneIsDocker') || !linknestCloneIsDocker()) {
+        return $url;
+    }
+    $parsed = parse_url($url);
+    $host = strtolower((string) ($parsed['host'] ?? ''));
+    $port = $parsed['port'] ?? null;
+    if (($host === 'localhost' || $host === '127.0.0.1') && $port === null) {
+        return $public;
+    }
+    return $url;
+}
+
+/**
+ * Folder names that must not be used for clones (main-app URL prefixes).
+ *
+ * @return list<string>
+ */
+function linknestCloneReservedFolderNames(): array
+{
+    $names = function_exists('linknestReservedUrlSegments')
+        ? linknestReservedUrlSegments()
+        : ['api', 'uploads', 'dist', 'assets', 'node_modules', 'vendor', 'public', 'data', 'bin', 'scripts', 'docs'];
+    $names = array_merge($names, [
+        'html', 'clones', 'apache', 'favicon.ico', 'index.php', 'index.html',
+        'components', 'contexts', 'services', 'hooks', 'utils', 'land', 'extensions',
+    ]);
+    $out = [];
+    foreach ($names as $name) {
+        $key = strtolower((string) $name);
+        if ($key !== '') {
+            $out[$key] = $key;
+        }
+    }
+    return array_values($out);
+}
+
+/**
+ * True when this PHP process is running inside a container.
+ * Checked before WSL because Docker Desktop kernels often contain "microsoft".
+ */
+function linknestCloneIsDocker(): bool
+{
+    if (getenv('LINKNEST_DOCKER') === '1' || getenv('SSH_GATEWAY_DOCKER') === '1') {
+        return true;
+    }
+    if (is_file('/.dockerenv')) {
+        return true;
+    }
+    if (is_readable('/proc/1/cgroup')) {
+        $cgroup = @file_get_contents('/proc/1/cgroup');
+        if (is_string($cgroup) && $cgroup !== '' && (
+            stripos($cgroup, 'docker') !== false
+            || stripos($cgroup, 'containerd') !== false
+            || stripos($cgroup, 'kubepods') !== false
+        )) {
+            return true;
+        }
+    }
+    return false;
+}
+
+/**
+ * True when PHP is running in WSL (not Windows XAMPP, not a Docker container).
+ */
+function linknestCloneIsWsl(): bool
+{
+    if (defined('PHP_OS_FAMILY') && PHP_OS_FAMILY === 'Windows') {
+        return false;
+    }
+    if (getenv('WSL_DISTRO_NAME') || getenv('WSL_INTEROP') || getenv('WSLENV')) {
+        return true;
+    }
+    $release = php_uname('r');
+    if (stripos($release, 'microsoft') !== false || stripos($release, 'WSL') !== false) {
+        return true;
+    }
+    if (is_readable('/proc/version')) {
+        $version = @file_get_contents('/proc/version');
+        if (is_string($version) && $version !== '' && (
+            stripos($version, 'microsoft') !== false
+            || stripos($version, 'WSL') !== false
+        )) {
+            return true;
+        }
+    }
+    return false;
+}
+
+/**
+ * Detect whether clone may run on this install.
+ *
+ * @return array{runtime: string, cloneAllowed: bool, message: string|null}
+ */
+function linknestGetCloneRuntimeEnvironment(): array
+{
+    $unavailable = linknestCloneUnavailableMessage();
+
+    if (linknestCloneIsWsl()) {
+        $nodeBin = trim((string) @shell_exec('command -v node 2>/dev/null'));
+        $npmBin = trim((string) @shell_exec('command -v npm 2>/dev/null'));
+        $clonesRoot = linknestCloneDockerInstancesRoot();
+        $writable = is_dir($clonesRoot) && is_writable($clonesRoot);
+        if ($nodeBin === '' || $npmBin === '') {
+            return [
+                'runtime' => 'docker',
+                'cloneAllowed' => false,
+                'message' => 'Clone in Docker needs Node.js/npm in the image. Redeploy with the current Dockerfile, then try again.',
+            ];
+        }
+        if (!$writable) {
+            return [
+                'runtime' => 'docker',
+                'cloneAllowed' => false,
+                'message' => 'Clone in Docker needs a writable ' . $clonesRoot . ' directory.',
+            ];
+        }
+        return [
+            'runtime' => 'docker',
+            'cloneAllowed' => true,
+            'message' => null,
+        ];
+    }
+
+    if (linknestCloneIsWsl()) {
+        return [
+            'runtime' => 'wsl',
+            'cloneAllowed' => false,
+            'message' => $unavailable,
+        ];
+    }
+
+    return [
+        'runtime' => 'host',
+        'cloneAllowed' => true,
+        'message' => null,
+    ];
+}
+
+/**
+ * Allowed Clone Instance presets.
+ *
+ * @return list<string>
+ */
+function linknestClonePresetIds(): array
+{
+    return ['empty', 'structure', 'full', 'demo'];
+}
+
+/**
+ * Resolve a clone preset from the API payload or legacy copy checkboxes.
+ */
+function linknestNormalizeClonePreset($preset, $copyAssets = false, $copyDatabase = false): string
+{
+    $preset = is_string($preset) ? strtolower(trim($preset)) : '';
+    if (in_array($preset, linknestClonePresetIds(), true)) {
+        return $preset;
+    }
+    if ($copyDatabase && $copyAssets) {
+        return 'full';
+    }
+    if ($copyDatabase) {
+        return 'structure';
+    }
+    return 'empty';
+}
+
+/**
+ * Copy / sanitize flags for a clone preset.
+ *
+ * @return array{copyAssets: bool, copyDatabase: bool, copyAllUploads: bool, sanitizeStructure: bool, runDemo: bool}
+ */
+function linknestClonePresetOptions(string $preset): array
+{
+    switch (linknestNormalizeClonePreset($preset)) {
+        case 'full':
+            return [
+                'copyAssets' => true,
+                'copyDatabase' => true,
+                'copyAllUploads' => true,
+                'sanitizeStructure' => false,
+                'runDemo' => false,
+            ];
+        case 'structure':
+            return [
+                'copyAssets' => true,
+                'copyDatabase' => true,
+                'copyAllUploads' => true,
+                'sanitizeStructure' => true,
+                'runDemo' => false,
+            ];
+        case 'demo':
+            return [
+                'copyAssets' => false,
+                'copyDatabase' => false,
+                'copyAllUploads' => false,
+                'sanitizeStructure' => false,
+                'runDemo' => true,
+            ];
+        case 'empty':
+        default:
+            return [
+                'copyAssets' => false,
+                'copyDatabase' => false,
+                'copyAllUploads' => false,
+                'sanitizeStructure' => false,
+                'runDemo' => false,
+            ];
+    }
+}
+
 class CloneService {
     private $db;
     private $cloneId;
@@ -13,23 +269,68 @@ class CloneService {
     private $traceLogFile;
     private $startTime;
     
-    public function __construct($cloneId = null) {
+    public function __construct($cloneId = null, $enableTraceLog = true) {
         $this->db = getDB();
         $this->cloneId = $cloneId;
         $this->startTime = microtime(true);
+        $this->statusFile = null;
+        $this->traceLogFile = null;
         if ($cloneId) {
             $this->statusFile = __DIR__ . '/../clone_status_' . $cloneId . '.json';
-            $this->traceLogFile = __DIR__ . '/../clone_trace_' . $cloneId . '.log';
-            // Initialize trace log
-            $this->writeTraceLog("=== CLONE PROCESS STARTED ===");
-            $this->writeTraceLog("Clone ID: $cloneId");
-            $this->writeTraceLog("Start Time: " . date('Y-m-d H:i:s'));
-            $this->writeTraceLog("PHP Version: " . PHP_VERSION);
-            $this->writeTraceLog("Memory Limit: " . ini_get('memory_limit'));
-            $this->writeTraceLog("Max Execution Time: " . ini_get('max_execution_time'));
-            $this->writeTraceLog("Current Memory Usage: " . $this->formatBytes(memory_get_usage(true)));
-            $this->writeTraceLog("Peak Memory Usage: " . $this->formatBytes(memory_get_peak_usage(true)));
+            // Only enable trace logging if requested (set to false when just reading status)
+            if ($enableTraceLog) {
+                $this->traceLogFile = __DIR__ . '/../clone_trace_' . $cloneId . '.log';
+                // Initialize trace log
+                $this->writeTraceLog("=== CLONE PROCESS STARTED ===");
+                $this->writeTraceLog("Clone ID: $cloneId");
+                $this->writeTraceLog("Start Time: " . date('Y-m-d H:i:s'));
+                $this->writeTraceLog("PHP Version: " . PHP_VERSION);
+                $this->writeTraceLog("Memory Limit: " . ini_get('memory_limit'));
+                $this->writeTraceLog("Max Execution Time: " . ini_get('max_execution_time'));
+                $this->writeTraceLog("Current Memory Usage: " . $this->formatBytes(memory_get_usage(true)));
+                $this->writeTraceLog("Peak Memory Usage: " . $this->formatBytes(memory_get_peak_usage(true)));
+            }
         }
+        $this->prepareCloneDbConnection();
+    }
+
+    private function prepareCloneDbConnection(): void
+    {
+        if (!$this->db) {
+            return;
+        }
+        try {
+            $this->db->exec('PRAGMA busy_timeout = 15000');
+            $this->db->setAttribute(PDO::ATTR_TIMEOUT, 15);
+        } catch (Throwable $e) {
+            // Connection still usable; retries handle SQLITE_BUSY.
+        }
+    }
+
+    private function cloneDbExecute(PDOStatement $stmt, array $params): bool
+    {
+        $delayUs = 50000;
+        $last = null;
+        for ($attempt = 1; $attempt <= 8; $attempt++) {
+            try {
+                return $stmt->execute($params);
+            } catch (PDOException $e) {
+                $last = $e;
+                $msg = $e->getMessage();
+                $busy = stripos($msg, 'database is locked') !== false
+                    || stripos($msg, 'SQLITE_BUSY') !== false;
+                if (!$busy || $attempt === 8) {
+                    throw $e;
+                }
+                $this->writeTraceLog("SQLite busy on attempt $attempt, retrying: $msg", 'WARNING');
+                usleep($delayUs);
+                $delayUs = min($delayUs * 2, 500000);
+            }
+        }
+        if ($last) {
+            throw $last;
+        }
+        return false;
     }
     
     /**
@@ -50,6 +351,37 @@ class CloneService {
         error_log("CloneService[{$this->cloneId}]: $message");
     }
     
+    /**
+     * Normalize host for clone URL (fix common typos like locahost -> localhost).
+     * @param string $host HTTP_HOST or URL host part
+     * @return string Normalized host
+     */
+    private function normalizeCloneHost($host) {
+        $host = trim($host);
+        if (strpos($host, ':') !== false) {
+            $parts = explode(':', $host, 2);
+            $parts[0] = $this->normalizeCloneHost($parts[0]);
+            return $parts[0] . ':' . $parts[1];
+        }
+        $typos = ['locahost' => 'localhost', 'localhos' => 'localhost', 'localhot' => 'localhost', '127.0.0.1' => 'localhost'];
+        $lower = strtolower($host);
+        return $typos[$lower] ?? $host;
+    }
+
+    /**
+     * Rebuild URL from parse_url() result (with optional path normalization).
+     * @param array $parsed Result of parse_url()
+     * @return string URL
+     */
+    private function buildUrlFromParsed(array $parsed) {
+        $scheme = $parsed['scheme'] ?? 'http';
+        $host = $parsed['host'] ?? '';
+        $port = isset($parsed['port']) ? ':' . $parsed['port'] : '';
+        $path = isset($parsed['path']) ? $parsed['path'] : '/';
+        $path = rtrim($path, '/') . '/';
+        return $scheme . '://' . $host . $port . $path;
+    }
+
     /**
      * Format bytes to human readable format
      */
@@ -159,6 +491,7 @@ class CloneService {
      * Update progress and log message
      */
     private function updateProgress($step, $progress, $message, $logs = []) {
+        $progress = (int) round(max(0, min(100, (float) $progress)));
         $this->writeTraceLog("PROGRESS UPDATE: Step=$step, Progress=$progress%, Message=$message", 'PROGRESS');
         
         $status = [
@@ -188,7 +521,7 @@ class CloneService {
                 $stmt = $this->db->prepare('UPDATE clones SET status = ?, progress = ?, error_message = ? WHERE id = ?');
                 $errorMsg = ($step === 'error') ? $message : null;
                 $statusValue = ($step === 'error') ? 'failed' : (($step === 'complete') ? 'completed' : 'running');
-                $stmt->execute([$statusValue, $progress, $errorMsg, $this->cloneId]);
+                $this->cloneDbExecute($stmt, [$statusValue, $progress, $errorMsg, $this->cloneId]);
                 $this->writeTraceLog("Database updated: status=$statusValue, progress=$progress", 'DEBUG');
             } catch (PDOException $e) {
                 $this->writeTraceLog("ERROR: Failed to update clone progress in database: " . $e->getMessage(), 'ERROR');
@@ -286,11 +619,35 @@ class CloneService {
     /**
      * Execute clone operation
      */
-    public function executeClone($folderName, $sourcePath, $targetPath, $copyAssets, $copyDatabase, $createdBy = null) {
+    public function executeClone($folderName, $sourcePath, $targetPath, $copyAssets, $copyDatabase, $createdBy = null, $preset = null) {
+        $preset = linknestNormalizeClonePreset($preset, $copyAssets, $copyDatabase);
+        $presetOpts = linknestClonePresetOptions($preset);
+        $copyAssets = $presetOpts['copyAssets'];
+        $copyDatabase = $presetOpts['copyDatabase'];
+
         $this->writeTraceLog("=== EXECUTE CLONE STARTED ===", 'INFO');
         $this->writeTraceLog("Parameters: folderName=$folderName, sourcePath=$sourcePath, targetPath=$targetPath", 'INFO');
-        $this->writeTraceLog("Options: copyAssets=" . ($copyAssets ? 'true' : 'false') . ", copyDatabase=" . ($copyDatabase ? 'true' : 'false'), 'INFO');
+        $this->writeTraceLog("Preset: $preset", 'INFO');
+        $this->writeTraceLog("Options: copyAssets=" . ($copyAssets ? 'true' : 'false') . ", copyDatabase=" . ($copyDatabase ? 'true' : 'false') . ", copyAllUploads=" . ($presetOpts['copyAllUploads'] ? 'true' : 'false'), 'INFO');
         $this->writeTraceLog("Created by user ID: " . ($createdBy ?? 'null'), 'INFO');
+
+        $runtimeEnv = linknestGetCloneRuntimeEnvironment();
+        $this->writeTraceLog("Runtime environment: " . $runtimeEnv['runtime'] . ", cloneAllowed=" . ($runtimeEnv['cloneAllowed'] ? 'true' : 'false'), 'INFO');
+        if (!$runtimeEnv['cloneAllowed']) {
+            $blocked = $runtimeEnv['message'] ?? linknestCloneUnavailableMessage();
+            $this->writeTraceLog("ERROR: Clone blocked on runtime " . $runtimeEnv['runtime'] . ": $blocked", 'ERROR');
+            $logs = $this->addLog("ERROR: $blocked", []);
+            $this->updateProgress('error', 0, $blocked, $logs);
+            if ($this->cloneId) {
+                try {
+                    $stmt = $this->db->prepare('UPDATE clones SET status = ?, error_message = ? WHERE id = ?');
+                    $stmt->execute(['failed', $blocked, $this->cloneId]);
+                } catch (PDOException $dbError) {
+                    $this->writeTraceLog("ERROR: Failed to update database with runtime block: " . $dbError->getMessage(), 'ERROR');
+                }
+            }
+            throw new Exception($blocked);
+        }
         
         // Get URL from database early (use stored URL instead of generating)
         $url = null;
@@ -313,10 +670,20 @@ class CloneService {
         
         // Fallback to default URL generation if not found
         if (!$url) {
-            $protocol = (!empty($_SERVER['HTTPS']) && $_SERVER['HTTPS'] !== 'off') ? 'https' : 'http';
-            $host = $_SERVER['HTTP_HOST'] ?? 'localhost';
-            $url = "$protocol://$host/$folderName/";
+            $url = function_exists('linknestClonePublicUrl')
+                ? linknestClonePublicUrl($folderName)
+                : (( (!empty($_SERVER['HTTPS']) && $_SERVER['HTTPS'] !== 'off') ? 'https' : 'http')
+                    . '://' . $this->normalizeCloneHost($_SERVER['HTTP_HOST'] ?? 'localhost') . "/$folderName/");
             $this->writeTraceLog("Using generated default URL: $url", 'INFO');
+        } else {
+            // Normalize host in stored URL (fix typos like locahost -> localhost)
+            $parsed = parse_url($url);
+            if (!empty($parsed['host'])) {
+                $fixedHost = $this->normalizeCloneHost($parsed['host']);
+                $parsed['host'] = $fixedHost;
+                $url = $this->buildUrlFromParsed($parsed);
+                $this->writeTraceLog("Normalized URL from database: $url", 'INFO');
+            }
         }
         
         $logs = [];
@@ -406,14 +773,25 @@ class CloneService {
                 'index.css',
                 'App.tsx',
                 'types.ts',
+                'novnc.d.ts',
+                'index.vite.html',
                 'router.php',
+                'landing.php',
+                's.php',
+                'sw-cache-first.php',
                 '.htaccess',
                 '.gitignore',
                 'README.md',
                 'BUNDLE_DEPLOYMENT_GUIDE.md',
                 'bulk-import-template.csv',
                 'section-links-import-template.csv',
-                'metadata.json'
+                'staging-ai-import-template.csv',
+                'staging-ai-prompt-guide.md',
+                'metadata.json',
+                'AGENTS.md',
+                'package-for-deployment.bat',
+                'redeploy-docker.bat',
+                'redeploy-docker.sh'
             ];
             
             $copiedCount = 0;
@@ -445,10 +823,21 @@ class CloneService {
             }
             $this->writeTraceLog("Root files copy completed: $copiedCount copied, $skippedCount skipped, $failedCount failed", 'INFO');
             $logs = $this->addLog("Copied $copiedCount root files", $logs);
+
+            if (linknestCloneIsDocker()) {
+                $viteHtml = $realSourcePath . DIRECTORY_SEPARATOR . 'index.vite.html';
+                if (is_file($viteHtml)) {
+                    @copy($viteHtml, $targetDir . DIRECTORY_SEPARATOR . 'index.html');
+                    $logs = $this->addLog('Restored Vite source index.html for Docker clone build', $logs);
+                }
+                $this->writeDockerCloneHtaccess($targetDir, $folderName);
+                $logs = $this->addLog('Wrote subdirectory .htaccess for /' . $folderName . '/', $logs);
+            }
             
             // Copy directories
             $this->writeTraceLog("Starting to copy directories", 'INFO');
-            $directories = ['api', 'components', 'contexts', 'services', 'src', 'docker', 'docs', 'land'];
+            // Include utils (frontend helpers) and public (static JS / SW assets)
+            $directories = ['api', 'analytics', 'bin', 'components', 'config', 'contexts', 'hooks', 'migrations', 'services', 'src', 'utils', 'public', 'docker', 'docs', 'land'];
             $this->writeTraceLog("Directories to copy: " . implode(', ', $directories), 'DEBUG');
             
             foreach ($directories as $index => $dir) {
@@ -477,6 +866,9 @@ class CloneService {
                     $logs = $this->addLog("Created $dir directory", $logs);
                 }
             }
+
+            $this->updateProgress('configuring', 36, 'Isolating session cookies...', $logs);
+            $logs = $this->writeInstallIsolation($targetDir, $folderName, $url, $logs);
             
             // Copy scripts
             $scriptsDir = $realSourcePath . DIRECTORY_SEPARATOR . 'scripts';
@@ -490,10 +882,10 @@ class CloneService {
                 $logs = $this->addLog("Scripts copied (took {$scriptsCopyTime}s)", $logs);
             }
             
-            // Copy assets if requested
-            if ($copyAssets) {
-                $this->writeTraceLog("STEP: Copying assets", 'INFO');
-                $logs = $this->addLog("Copying assets...", $logs);
+            // Copy uploads: full/structure copy the whole folder; legacy logo-only when copyAssets without all-uploads
+            if ($presetOpts['copyAllUploads'] || $copyAssets) {
+                $this->writeTraceLog("STEP: Copying uploads", 'INFO');
+                $logs = $this->addLog($presetOpts['copyAllUploads'] ? 'Copying all uploads...' : 'Copying branding assets...', $logs);
                 $uploadsDir = $realSourcePath . DIRECTORY_SEPARATOR . 'uploads';
                 $targetUploadsDir = $targetDir . DIRECTORY_SEPARATOR . 'uploads';
                 
@@ -501,32 +893,37 @@ class CloneService {
                 $this->writeTraceLog("Target uploads directory: $targetUploadsDir", 'DEBUG');
                 
                 if (is_dir($uploadsDir)) {
-                    $this->writeTraceLog("Uploads directory exists, searching for asset files", 'DEBUG');
-                    $logoFiles = glob($uploadsDir . DIRECTORY_SEPARATOR . 'logo_*.*');
-                    $faviconFiles = glob($uploadsDir . DIRECTORY_SEPARATOR . 'favicon_*.*');
-                    
-                    $this->writeTraceLog("Found " . count($logoFiles) . " logo files and " . count($faviconFiles) . " favicon files", 'INFO');
-                    
-                    $assetCount = 0;
-                    foreach (array_merge($logoFiles, $faviconFiles) as $assetFile) {
-                        $destAsset = $targetUploadsDir . DIRECTORY_SEPARATOR . basename($assetFile);
-                        $assetSize = filesize($assetFile);
-                        $this->writeTraceLog("Copying asset: " . basename($assetFile) . " (" . $this->formatBytes($assetSize) . ")", 'DEBUG');
-                        if (copy($assetFile, $destAsset)) {
-                            $assetCount++;
-                            $this->writeTraceLog("Asset copied: " . basename($assetFile), 'DEBUG');
-                        } else {
-                            $error = error_get_last();
-                            $this->writeTraceLog("WARNING: Failed to copy asset: " . basename($assetFile) . " - " . ($error['message'] ?? 'Unknown error'), 'WARNING');
+                    if ($presetOpts['copyAllUploads']) {
+                        $logs = $this->copyDirectory($uploadsDir, $targetUploadsDir, $logs);
+                        $logs = $this->addLog("Copied uploads directory", $logs);
+                    } else {
+                        $this->writeTraceLog("Uploads directory exists, searching for asset files", 'DEBUG');
+                        $logoFiles = glob($uploadsDir . DIRECTORY_SEPARATOR . 'logo_*.*') ?: [];
+                        $faviconFiles = glob($uploadsDir . DIRECTORY_SEPARATOR . 'favicon_*.*') ?: [];
+                        
+                        $this->writeTraceLog("Found " . count($logoFiles) . " logo files and " . count($faviconFiles) . " favicon files", 'INFO');
+                        
+                        $assetCount = 0;
+                        foreach (array_merge($logoFiles, $faviconFiles) as $assetFile) {
+                            $destAsset = $targetUploadsDir . DIRECTORY_SEPARATOR . basename($assetFile);
+                            $assetSize = filesize($assetFile);
+                            $this->writeTraceLog("Copying asset: " . basename($assetFile) . " (" . $this->formatBytes($assetSize) . ")", 'DEBUG');
+                            if (copy($assetFile, $destAsset)) {
+                                $assetCount++;
+                                $this->writeTraceLog("Asset copied: " . basename($assetFile), 'DEBUG');
+                            } else {
+                                $error = error_get_last();
+                                $this->writeTraceLog("WARNING: Failed to copy asset: " . basename($assetFile) . " - " . ($error['message'] ?? 'Unknown error'), 'WARNING');
+                            }
                         }
+                        $this->writeTraceLog("Asset copy completed: $assetCount files copied", 'INFO');
+                        $logs = $this->addLog("Copied $assetCount asset files", $logs);
                     }
-                    $this->writeTraceLog("Asset copy completed: $assetCount files copied", 'INFO');
-                    $logs = $this->addLog("Copied $assetCount asset files", $logs);
                 } else {
                     $this->writeTraceLog("Uploads directory not found: $uploadsDir", 'DEBUG');
                 }
             } else {
-                $this->writeTraceLog("Asset copy not requested (copyAssets=false)", 'DEBUG');
+                $this->writeTraceLog("Upload copy not requested for preset $preset", 'DEBUG');
             }
             
             // Copy database if requested
@@ -648,8 +1045,8 @@ class CloneService {
                                 $this->writeTraceLog("Clones table not found in target database (skipping)", 'DEBUG');
                                 $logs = $this->addLog("Clones table not found in target database (skipping)", $logs);
                             }
-                            // Re-encrypt LDAP password with target database's encryption key
-                            if ($plainLdapPassword !== null && !empty(trim($plainLdapPassword))) {
+                            // Re-encrypt LDAP password with target database's encryption key (full mirror only)
+                            if (!$presetOpts['sanitizeStructure'] && $plainLdapPassword !== null && !empty(trim($plainLdapPassword))) {
                                 try {
                                     $this->writeTraceLog("Re-encrypting LDAP password for target database...", 'INFO');
                                     $logs = $this->addLog("Re-encrypting LDAP password...", $logs);
@@ -771,6 +1168,21 @@ class CloneService {
             $logs = $this->addLog("Initializing database schema in cloned instance...", $logs);
             $this->initializeTargetDatabase($targetDir, $logs);
 
+            $destDb = $targetDir . DIRECTORY_SEPARATOR . 'data' . DIRECTORY_SEPARATOR . 'linknest.db';
+            if ($presetOpts['sanitizeStructure']) {
+                $this->writeTraceLog("STEP: Applying structure preset (drop users and private content)", 'INFO');
+                $this->updateProgress('configuring', 52, 'Applying structure preset...', $logs);
+                $logs = $this->applyStructurePreset($destDb, $logs);
+            }
+            if ($presetOpts['runDemo']) {
+                $this->writeTraceLog("STEP: Seeding demo data", 'INFO');
+                $this->updateProgress('configuring', 53, 'Generating demo data...', $logs);
+                $logs = $this->runDemoDataSeed($targetDir, $logs);
+            }
+
+            $this->writeTraceLog("STEP: Retargeting branding paths for /$folderName", 'INFO');
+            $logs = $this->retargetCloneBranding($targetDir, $folderName, $logs);
+
             $this->updateProgress('configuring', 55, 'Creating configuration...', $logs);
             
             // Step 4: Create .env file
@@ -781,7 +1193,11 @@ class CloneService {
             
             $envContent = "# LinkNest Environment Variables\n";
             $envContent .= "# Base path for the application\n";
-            $envContent .= "VITE_BASE_PATH=/$folderName\n";
+            if (linknestCloneIsDocker()) {
+                $envContent .= "VITE_BASE_PATH=./\n";
+            } else {
+                $envContent .= "VITE_BASE_PATH=/$folderName\n";
+            }
             $envContent .= "\n";
             $envContent .= "# Optional: HTTPS Configuration\n";
             $envContent .= "# VITE_PROTOCOL=https\n";
@@ -792,7 +1208,8 @@ class CloneService {
             $envContent .= "# GEMINI_API_KEY=your-api-key-here\n";
             
             $this->writeTraceLog(".env content length: " . strlen($envContent) . " bytes", 'DEBUG');
-            $this->writeTraceLog(".env content preview: VITE_BASE_PATH=/$folderName", 'DEBUG');
+            $viteBase = linknestCloneIsDocker() ? './' : "/$folderName";
+            $this->writeTraceLog(".env content preview: VITE_BASE_PATH=$viteBase", 'DEBUG');
             
             $result = file_put_contents($envPath, $envContent);
             if ($result === false) {
@@ -801,7 +1218,7 @@ class CloneService {
             } else {
                 $this->writeTraceLog(".env file created successfully: $result bytes written", 'INFO');
             }
-            $logs = $this->addLog("Created .env with VITE_BASE_PATH=/$folderName", $logs);
+            $logs = $this->addLog("Created .env with VITE_BASE_PATH=$viteBase", $logs);
             
             // Step 5: Install dependencies
             $this->writeTraceLog("STEP 5: Installing npm dependencies", 'INFO');
@@ -825,7 +1242,7 @@ class CloneService {
             $npmStart = microtime(true);
             $output = [];
             $returnVar = 0;
-            exec('npm install 2>&1', $output, $returnVar);
+            exec($this->cloneNpmCommandPrefix() . 'npm install 2>&1', $output, $returnVar);
             $npmTime = number_format(microtime(true) - $npmStart, 2);
             
             $this->writeTraceLog("npm install completed in {$npmTime}s with exit code: $returnVar", 'INFO');
@@ -869,7 +1286,10 @@ class CloneService {
             $buildStart = microtime(true);
             $output = [];
             $returnVar = 0;
-            exec('npm run build 2>&1', $output, $returnVar);
+            $buildCmd = linknestCloneIsDocker()
+                ? $this->cloneNpmCommandPrefix() . 'VITE_BASE_PATH=./ npm run build 2>&1'
+                : 'npm run build 2>&1';
+            exec($buildCmd, $output, $returnVar);
             $buildTime = number_format(microtime(true) - $buildStart, 2);
             
             $this->writeTraceLog("npm run build completed in {$buildTime}s with exit code: $returnVar", 'INFO');
@@ -880,15 +1300,28 @@ class CloneService {
             
             if ($returnVar !== 0) {
                 $errorOutput = implode("\n", $output);
-                $this->writeTraceLog("WARNING: npm run build failed with exit code $returnVar", 'WARNING');
-                $this->writeTraceLog("Build error output: $errorOutput", 'WARNING');
-                $logs = $this->addLog("WARNING: npm run build failed", $logs);
+                $this->writeTraceLog("ERROR: npm run build failed with exit code $returnVar", 'ERROR');
+                $this->writeTraceLog("Build error output: $errorOutput", 'ERROR');
+                $logs = $this->addLog("ERROR: npm run build failed", $logs);
                 $logs = $this->addLog($errorOutput, $logs);
+                if (linknestCloneIsDocker()) {
+                    chdir($oldCwd);
+                    throw new Exception("npm run build failed: " . substr($errorOutput, 0, 400));
+                }
                 $logs = $this->addLog("Clone completed but build failed. You may need to run 'npm run build' manually.", $logs);
             } else {
                 $this->writeTraceLog("Build completed successfully", 'INFO');
                 $logs = $this->addLog("Build completed successfully", $logs);
-                
+                $builtIndex = $targetDir . DIRECTORY_SEPARATOR . 'dist' . DIRECTORY_SEPARATOR . 'index.html';
+                $rootIndex = $targetDir . DIRECTORY_SEPARATOR . 'index.html';
+                if (is_file($builtIndex)) {
+                    @copy($builtIndex, $rootIndex);
+                    $logs = $this->addLog("Installed dist/index.html as the clone home page", $logs);
+                }
+                if (linknestCloneIsDocker()) {
+                    $logs = $this->publishDockerCloneDistAssets($targetDir, $logs);
+                }
+
                 // Clean up node_modules
                 $nodeModulesDir = $targetDir . DIRECTORY_SEPARATOR . 'node_modules';
                 $this->writeTraceLog("Checking for node_modules directory: $nodeModulesDir", 'DEBUG');
@@ -917,10 +1350,18 @@ class CloneService {
             
             $readmeContent = "# $folderName - LinkNest Instance\n\n";
             $readmeContent .= "This is a cloned instance of LinkNest deployed to /$folderName/\n\n";
+            $readmeContent .= "Clone preset: $preset\n\n";
+            $readmeContent .= "Login sessions use a unique cookie name and path for this folder, so logging in or out here does not affect the source instance on the same host.\n\n";
             $readmeContent .= "## Quick Start\n\n";
             $readmeContent .= "1. The application has been built and is ready to use\n";
             $readmeContent .= "2. Access it at: $url\n";
-            $readmeContent .= "3. Default admin credentials: admin / admin123\n\n";
+            if ($preset === 'full') {
+                $readmeContent .= "3. Use the same login as the source instance\n\n";
+            } elseif ($preset === 'demo') {
+                $readmeContent .= "3. Admin: admin / admin123. Demo users (demo1–demo10) use password: password\n\n";
+            } else {
+                $readmeContent .= "3. Default admin credentials: admin / admin123\n\n";
+            }
             $readmeContent .= "## Database\n\n";
             $readmeContent .= "The database file will be created at: data/linknest.db\n\n";
             $readmeContent .= "## Configuration\n\n";
@@ -943,7 +1384,7 @@ class CloneService {
                 $this->writeTraceLog("Updating database with completion status", 'DEBUG');
                 try {
                     $stmt = $this->db->prepare('UPDATE clones SET status = ?, progress = 100, completed_at = ?, url = ? WHERE id = ?');
-                    $stmt->execute(['completed', time(), $url, $this->cloneId]);
+                    $this->cloneDbExecute($stmt, ['completed', time(), $url, $this->cloneId]);
                     $this->writeTraceLog("Database updated successfully", 'INFO');
                 } catch (PDOException $e) {
                     $this->writeTraceLog("ERROR: Failed to update database with completion: " . $e->getMessage(), 'ERROR');
@@ -1058,6 +1499,63 @@ class CloneService {
     }
     
     /**
+     * Status JSON is written even when SQLite is busy. Heal stale DB rows from it.
+     */
+    private static function syncCloneRowFromStatusFile(array $row): array
+    {
+        $id = (int) ($row['id'] ?? 0);
+        if ($id < 1) {
+            return $row;
+        }
+        $statusFile = __DIR__ . '/../clone_status_' . $id . '.json';
+        if (!is_file($statusFile)) {
+            return $row;
+        }
+        $file = json_decode((string) @file_get_contents($statusFile), true);
+        if (!is_array($file)) {
+            return $row;
+        }
+        $step = (string) ($file['step'] ?? '');
+        $fileProgress = isset($file['progress']) ? (int) $file['progress'] : null;
+        if ($step === 'complete' || $step === 'completed' || ($fileProgress !== null && $fileProgress >= 100 && $step !== 'error')) {
+            $row['status'] = 'completed';
+            $row['progress'] = 100;
+            if (empty($row['completed_at'])) {
+                $row['completed_at'] = $file['timestamp'] ?? time();
+            }
+            self::persistHealedCloneState($id, 'completed', 100, null, (int) $row['completed_at']);
+            return $row;
+        }
+        if ($step === 'error') {
+            $row['status'] = 'failed';
+            $row['error_message'] = $file['message'] ?? ($row['error_message'] ?? 'Clone failed');
+            self::persistHealedCloneState($id, 'failed', (int) ($row['progress'] ?? 0), (string) $row['error_message'], null);
+            return $row;
+        }
+        if ($fileProgress !== null && in_array((string) ($row['status'] ?? ''), ['running', 'pending'], true)) {
+            $row['progress'] = max((int) ($row['progress'] ?? 0), $fileProgress);
+        }
+        return $row;
+    }
+
+    private static function persistHealedCloneState(int $id, string $status, int $progress, ?string $error, $completedAt): void
+    {
+        try {
+            $db = getDB();
+            $db->exec('PRAGMA busy_timeout = 15000');
+            if ($status === 'completed') {
+                $stmt = $db->prepare('UPDATE clones SET status = ?, progress = ?, error_message = NULL, completed_at = COALESCE(completed_at, ?) WHERE id = ? AND status != ?');
+                $stmt->execute([$status, $progress, $completedAt ?: time(), $id, 'completed']);
+            } else {
+                $stmt = $db->prepare('UPDATE clones SET status = ?, progress = ?, error_message = ? WHERE id = ?');
+                $stmt->execute([$status, $progress, $error, $id]);
+            }
+        } catch (Throwable $e) {
+            error_log('clone heal persist failed: ' . $e->getMessage());
+        }
+    }
+
+    /**
      * Get all clones
      */
     public static function getAllClones() {
@@ -1070,7 +1568,13 @@ class CloneService {
             }
             $stmt->execute();
             $result = $stmt->fetchAll(PDO::FETCH_ASSOC);
-            return is_array($result) ? $result : [];
+            if (!is_array($result)) {
+                return [];
+            }
+            foreach ($result as $i => $row) {
+                $result[$i] = self::syncCloneRowFromStatusFile($row);
+            }
+            return $result;
         } catch (Exception $e) {
             error_log("Error in getAllClones: " . $e->getMessage());
             error_log("Stack trace: " . $e->getTraceAsString());
@@ -1079,6 +1583,311 @@ class CloneService {
             error_log("Fatal error in getAllClones: " . $e->getMessage());
             return [];
         }
+    }
+
+    /**
+     * After clone, drop source-folder branding URLs and stale caches.
+     * Favicon/logo stay as /uploads/file (the new instance prefixes its own folder at request time).
+     * Missing files are cleared so the default tab icon is used instead of 404s.
+     */
+    private function retargetCloneBranding($targetDir, $folderName, $logs = [])
+    {
+        $targetDir = rtrim(str_replace(['/', '\\'], DIRECTORY_SEPARATOR, (string) $targetDir), DIRECTORY_SEPARATOR);
+        $uploadsDir = $targetDir . DIRECTORY_SEPARATOR . 'uploads';
+        $cacheDir = $targetDir . DIRECTORY_SEPARATOR . 'data' . DIRECTORY_SEPARATOR . 'cache';
+        $destDb = $targetDir . DIRECTORY_SEPARATOR . 'data' . DIRECTORY_SEPARATOR . 'linknest.db';
+
+        if (is_dir($cacheDir)) {
+            foreach (glob($cacheDir . DIRECTORY_SEPARATOR . '*.json') ?: [] as $cacheFile) {
+                @unlink($cacheFile);
+            }
+            $this->writeTraceLog('Cleared settings/response cache in clone data/cache', 'INFO');
+            $logs = $this->addLog('Cleared branding cache for the new folder', $logs);
+        }
+
+        if (!is_file($destDb)) {
+            return $logs;
+        }
+
+        $canonicalUpload = static function (string $url): string {
+            $url = trim($url);
+            if ($url === '' || strncmp($url, 'data:', 5) === 0) {
+                return $url;
+            }
+            if (preg_match('#^https?://#i', $url)) {
+                $path = (string) (parse_url($url, PHP_URL_PATH) ?: '');
+                $url = $path !== '' ? $path : $url;
+            }
+            $url = str_replace('\\', '/', $url);
+            $url = preg_replace('#^/[^/]+/uploads/#', '/uploads/', $url) ?? $url;
+            if (!str_starts_with($url, '/uploads/') && preg_match('#(?:^|/)uploads/([^/]+)$#', $url, $m)) {
+                $url = '/uploads/' . $m[1];
+            }
+            return $url;
+        };
+
+        try {
+            $db = new PDO('sqlite:' . $destDb);
+            $db->setAttribute(PDO::ATTR_ERRMODE, PDO::ERRMODE_EXCEPTION);
+            $hasSettings = $db->query("SELECT name FROM sqlite_master WHERE type='table' AND name='settings'")->fetchColumn();
+            if (!$hasSettings) {
+                $db = null;
+                return $logs;
+            }
+
+            $db->prepare('DELETE FROM settings WHERE key = ?')->execute(['gateway_http_proxy_base']);
+
+            $keys = ['favicon', 'logo_image', 'header_logo_image'];
+            $stmt = $db->prepare('SELECT key, value FROM settings WHERE key IN (' . implode(',', array_fill(0, count($keys), '?')) . ')');
+            $stmt->execute($keys);
+            $upd = $db->prepare('UPDATE settings SET value = ?, updated_at = ? WHERE key = ?');
+            $now = time();
+            $cleared = 0;
+            $kept = 0;
+
+            while ($row = $stmt->fetch(PDO::FETCH_ASSOC)) {
+                $key = (string) ($row['key'] ?? '');
+                $raw = trim((string) ($row['value'] ?? ''));
+                if ($raw === '') {
+                    continue;
+                }
+                $next = $canonicalUpload($raw);
+                if ($next === '' || strncmp($next, 'data:', 5) === 0) {
+                    if ($next !== $raw) {
+                        $upd->execute([$next, $now, $key]);
+                    }
+                    continue;
+                }
+                if (str_starts_with($next, '/uploads/')) {
+                    $filename = basename($next);
+                    $disk = $uploadsDir . DIRECTORY_SEPARATOR . $filename;
+                    if ($filename === '' || !preg_match('/^[a-zA-Z0-9._-]+$/', $filename) || !is_file($disk)) {
+                        $upd->execute(['', $now, $key]);
+                        $cleared++;
+                        continue;
+                    }
+                    $next = '/uploads/' . $filename;
+                }
+                if ($next !== $raw) {
+                    $upd->execute([$next, $now, $key]);
+                }
+                $kept++;
+            }
+
+            $db = null;
+            $this->writeTraceLog("Retargeted branding for /$folderName (kept=$kept, cleared-missing=$cleared)", 'INFO');
+            $logs = $this->addLog(
+                $cleared > 0
+                    ? "Branding paths retargeted for /$folderName ($cleared missing upload(s) cleared — default icon will be used)"
+                    : "Branding paths retargeted for /$folderName",
+                $logs
+            );
+        } catch (Exception $e) {
+            $this->writeTraceLog('WARNING: retargetCloneBranding failed: ' . $e->getMessage(), 'WARNING');
+            $logs = $this->addLog('WARNING: Could not retarget branding paths: ' . $e->getMessage(), $logs);
+        }
+
+        return $logs;
+    }
+
+    /**
+     * After files are copied, initialize schema and apply structure/demo sanitization.
+     * Used by Admin clone and by scripts/apply-clone-preset.php.
+     */
+    public function applyPostCopyPreset($targetDir, $preset, $folderName = '')
+    {
+        $preset = linknestNormalizeClonePreset($preset);
+        $opts = linknestClonePresetOptions($preset);
+        $this->initializeTargetDatabase($targetDir, []);
+        $destDb = $targetDir . DIRECTORY_SEPARATOR . 'data' . DIRECTORY_SEPARATOR . 'linknest.db';
+        if ($opts['sanitizeStructure']) {
+            $this->applyStructurePreset($destDb, []);
+        }
+        if ($opts['runDemo']) {
+            $this->runDemoDataSeed($targetDir, []);
+        }
+        $this->retargetCloneBranding($targetDir, is_string($folderName) ? $folderName : '');
+    }
+
+    /**
+     * Give this clone its own session cookie name/path, session files, and system token
+     * so login/logout on the same host does not share the source instance.
+     */
+    private function writeInstallIsolation($targetDir, $folderName, $url, $logs = [])
+    {
+        try {
+            $info = linknestWriteInstallIdentity($targetDir, (string) $folderName, is_string($url) ? $url : null);
+            $this->writeTraceLog("Install isolation written: session={$info['sessionName']} path={$info['cookiePath']}", 'INFO');
+            $logs = $this->addLog("Isolated login cookie: {$info['sessionName']} (path {$info['cookiePath']})", $logs);
+            $logs = $this->addLog("Isolated PHP session files and system token for this clone", $logs);
+        } catch (Throwable $e) {
+            $this->writeTraceLog("WARNING: Failed to write install identity: " . $e->getMessage(), 'WARNING');
+            $logs = $this->addLog("WARNING: Could not write install identity (session isolation)", $logs);
+        }
+        return $logs;
+    }
+
+    /**
+     * Structure preset: keep public/authenticated tiles and links, drop users and private content.
+     */
+    private function applyStructurePreset($destDb, $logs = [])
+    {
+        if (!is_file($destDb)) {
+            $this->writeTraceLog("WARNING: Structure preset skipped — database not found: $destDb", 'WARNING');
+            return $this->addLog("WARNING: Structure preset skipped (no database)", $logs);
+        }
+
+        try {
+            $db = new PDO('sqlite:' . $destDb);
+            $db->setAttribute(PDO::ATTR_ERRMODE, PDO::ERRMODE_EXCEPTION);
+            $db->exec('PRAGMA foreign_keys = OFF');
+            $db->beginTransaction();
+
+            $tableExists = function (string $name) use ($db): bool {
+                $stmt = $db->prepare("SELECT name FROM sqlite_master WHERE type='table' AND name = ?");
+                $stmt->execute([$name]);
+                return (bool)$stmt->fetchColumn();
+            };
+            $tableHasColumn = function (string $table, string $column) use ($db): bool {
+                $cols = $db->query("PRAGMA table_info({$table})")->fetchAll(PDO::FETCH_ASSOC);
+                return in_array($column, array_column($cols, 'name'), true);
+            };
+
+            foreach (['tiles', 'tabs', 'sections', 'links'] as $table) {
+                if (!$tableExists($table) || !$tableHasColumn($table, 'visibility')) {
+                    continue;
+                }
+                $deleted = $db->exec("DELETE FROM {$table} WHERE visibility = 'private'");
+                $this->writeTraceLog("Structure: deleted $deleted private row(s) from $table", 'INFO');
+            }
+            if ($tableExists('tiles') && $tableHasColumn('tiles', 'source_tab')) {
+                $deleted = $db->exec("DELETE FROM tiles WHERE source_tab = 'staging'");
+                $this->writeTraceLog("Structure: deleted $deleted staging tile(s)", 'INFO');
+            }
+            foreach (['tiles', 'tabs', 'sections', 'links'] as $table) {
+                if (!$tableExists($table)) {
+                    continue;
+                }
+                if ($tableHasColumn($table, 'allowed_users')) {
+                    $db->exec("UPDATE {$table} SET allowed_users = NULL");
+                }
+                if ($tableHasColumn($table, 'allowed_groups')) {
+                    $db->exec("UPDATE {$table} SET allowed_groups = NULL");
+                }
+            }
+
+            $adminId = null;
+            if ($tableExists('users')) {
+                $adminRow = $db->query('SELECT id FROM users WHERE is_admin = 1 ORDER BY id ASC LIMIT 1')->fetch(PDO::FETCH_ASSOC);
+                if ($adminRow) {
+                    $adminId = (int)$adminRow['id'];
+                    $db->prepare('DELETE FROM users WHERE id != ?')->execute([$adminId]);
+                    $hash = password_hash('admin123', PASSWORD_DEFAULT);
+                    try {
+                        $db->prepare('UPDATE users SET username = ?, email = ?, password_hash = ?, is_admin = 1, is_approved = 1, auth_source = ? WHERE id = ?')
+                            ->execute(['admin', 'admin@linknest.local', $hash, 'local', $adminId]);
+                    } catch (PDOException $e) {
+                        $db->prepare('UPDATE users SET username = ?, email = ?, password_hash = ?, is_admin = 1, is_approved = 1 WHERE id = ?')
+                            ->execute(['admin', 'admin@linknest.local', $hash, $adminId]);
+                    }
+                    $this->writeTraceLog("Structure: kept admin user id=$adminId and reset to admin / admin123", 'INFO');
+                }
+            }
+            if ($adminId && $tableExists('tiles') && $tableHasColumn('tiles', 'user_id')) {
+                $db->prepare('UPDATE tiles SET user_id = ?')->execute([$adminId]);
+            }
+
+            $clearTables = [
+                'user_preferences',
+                'user_custom_timezones',
+                'user_alarms',
+                'category_visibility_presets',
+                'user_ssh_connections',
+                'user_vnc_connections',
+                'user_notes',
+                'user_blocked_sharers',
+                'user_link_favorites',
+                'user_tile_favorites',
+                'user_tile_permissions',
+                'user_monitor_permissions',
+                'user_roles',
+                'user_group_members',
+                'tile_share_invitations',
+                'tile_visits',
+                'tile_visit_counters',
+                'tile_visit_visitors',
+                'tile_visit_daily',
+                'page_visit_daily',
+                'app_presence',
+                'tile_presence',
+                'tile_versions',
+                'tile_messages',
+                'email_outbox',
+                'user_audit_log',
+                'short_url_rotation_logs',
+                'clones',
+            ];
+            foreach ($clearTables as $table) {
+                if (!$tableExists($table)) {
+                    continue;
+                }
+                $db->exec("DELETE FROM {$table}");
+            }
+
+            if ($tableExists('settings')) {
+                foreach (['ldap_enabled', 'ldap_auth_enabled', 'saml_enabled', 'saml_auth_enabled'] as $key) {
+                    $db->prepare('UPDATE settings SET value = ?, updated_at = ? WHERE key = ?')->execute(['0', time(), $key]);
+                }
+                foreach (['ldap_bind_password', 'smtp_password', 'smtp_pass', 'mail_password'] as $key) {
+                    $db->prepare('DELETE FROM settings WHERE key = ?')->execute([$key]);
+                }
+            }
+
+            $db->commit();
+            $db->exec('PRAGMA foreign_keys = ON');
+            $db = null;
+            $logs = $this->addLog("Structure preset applied: public/authenticated tiles kept; users reset to admin / admin123", $logs);
+        } catch (Exception $e) {
+            $this->writeTraceLog("ERROR: Structure preset failed: " . $e->getMessage(), 'ERROR');
+            $logs = $this->addLog("ERROR: Structure preset failed: " . $e->getMessage(), $logs);
+            throw $e;
+        }
+
+        return $logs;
+    }
+
+    /**
+     * Demo preset: seed presentation tiles/users via generate_demo_data.php in the clone folder.
+     */
+    private function runDemoDataSeed($targetDir, $logs = [])
+    {
+        $script = $targetDir . DIRECTORY_SEPARATOR . 'scripts' . DIRECTORY_SEPARATOR . 'generate_demo_data.php';
+        if (!is_file($script)) {
+            throw new Exception('Demo preset requires scripts/generate_demo_data.php in the cloned instance');
+        }
+
+        $php = PHP_BINARY ?: 'php';
+        $oldCwd = getcwd();
+        $this->writeTraceLog("Running demo seed in $targetDir", 'INFO');
+        $logs = $this->addLog("Generating demo data (this may take a minute)...", $logs);
+        chdir($targetDir);
+        $output = [];
+        $returnVar = 0;
+        $cmd = escapeshellarg($php) . ' ' . escapeshellarg($script) . ' --yes 2>&1';
+        exec($cmd, $output, $returnVar);
+        chdir($oldCwd);
+
+        foreach ($output as $line) {
+            $this->writeTraceLog("  demo: $line", 'DEBUG');
+        }
+        if ($returnVar !== 0) {
+            $errorOutput = implode("\n", $output);
+            $this->writeTraceLog("ERROR: Demo data generation failed with exit code $returnVar", 'ERROR');
+            throw new Exception("Demo data generation failed: " . substr($errorOutput, 0, 400));
+        }
+
+        $this->writeTraceLog("Demo data generation completed", 'INFO');
+        return $this->addLog("Demo data generated (demo users use password: password; admin / admin123)", $logs);
     }
 
     /**
@@ -1112,6 +1921,80 @@ class CloneService {
             $this->writeTraceLog("WARNING: Failed to initialize target DB: " . $e->getMessage(), 'WARNING');
         }
         return $logs;
+    }
+
+    private function cloneNpmCommandPrefix(): string
+    {
+        if (!linknestCloneIsDocker()) {
+            return '';
+        }
+        $path = getenv('PATH') ?: '/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin';
+        if (strpos($path, '/usr/local/bin') === false) {
+            $path = '/usr/local/bin:' . $path;
+        }
+        return 'HOME=/var/www PATH=' . escapeshellarg($path)
+            . ' npm_config_strict_ssl=false NODE_TLS_REJECT_UNAUTHORIZED=0 ';
+    }
+
+    /**
+     * Apache AliasMatch maps /{folder}/assets/... onto the clone root, but Vite
+     * emits those files under dist/. Symlink the public build dirs so requests
+     * resolve even if vhost rewrite is missing.
+     */
+    private function publishDockerCloneDistAssets(string $targetDir, array $logs): array
+    {
+        $dist = $targetDir . DIRECTORY_SEPARATOR . 'dist';
+        if (!is_dir($dist)) {
+            return $logs;
+        }
+        foreach (['assets', 'tinymce', 'js'] as $dir) {
+            $src = $dist . DIRECTORY_SEPARATOR . $dir;
+            $dest = $targetDir . DIRECTORY_SEPARATOR . $dir;
+            if (!is_dir($src) || file_exists($dest)) {
+                continue;
+            }
+            if (@symlink('dist' . DIRECTORY_SEPARATOR . $dir, $dest)) {
+                $this->writeTraceLog("Linked $dir -> dist/$dir", 'INFO');
+                $logs = $this->addLog("Linked $dir to dist/$dir", $logs);
+            } else {
+                $this->writeTraceLog("WARNING: Could not symlink $dir -> dist/$dir", 'WARNING');
+            }
+        }
+        foreach (['ssh-session-shared-worker.js', 'ssh-session-keepalive.html', 'sw-cache-first.js', 'tinymce-editor.html'] as $file) {
+            $src = $dist . DIRECTORY_SEPARATOR . $file;
+            $dest = $targetDir . DIRECTORY_SEPARATOR . $file;
+            if (!is_file($src) || file_exists($dest)) {
+                continue;
+            }
+            @symlink('dist' . DIRECTORY_SEPARATOR . $file, $dest);
+        }
+        return $logs;
+    }
+
+    private function writeDockerCloneHtaccess($targetDir, $folderName): void
+    {
+        $ht = "# LinkNest Docker clone — subdirectory at /{$folderName}/\n";
+        $ht .= "Options -Indexes -MultiViews +FollowSymLinks\n";
+        $ht .= "DirectoryIndex dist/index.html index.html\n";
+        $ht .= "<IfModule mod_headers.c>\n";
+        $ht .= "    Header always set X-Robots-Tag \"noindex, nofollow, noarchive, nosnippet\"\n";
+        $ht .= "</IfModule>\n";
+        $ht .= "<IfModule mod_rewrite.c>\n";
+        $ht .= "    RewriteEngine On\n";
+        $ht .= "    RewriteCond %{REQUEST_FILENAME} -f [OR]\n";
+        $ht .= "    RewriteCond %{REQUEST_FILENAME} -d\n";
+        $ht .= "    RewriteRule ^ - [L]\n";
+        $ht .= "    RewriteRule ^api/(.*)\$ api/index.php?path=\$1 [BCTLS,L,QSA]\n";
+        $ht .= "    RewriteRule ^s/([A-Za-z0-9]+)\$ s.php?code=\$1 [L,QSA]\n";
+        $ht .= "    RewriteRule (^|/)robots\\.txt\$ robots.txt [L]\n";
+        $ht .= "    RewriteRule ^assets/(.*)\$ dist/assets/\$1 [L]\n";
+        $ht .= "    RewriteRule (^|/)tinymce/(.*)\$ dist/tinymce/\$2 [L]\n";
+        $ht .= "    RewriteRule (^|/)ssh-session-shared-worker\\.js\$ dist/ssh-session-shared-worker.js [L]\n";
+        $ht .= "    RewriteRule (^|/)ssh-session-keepalive\\.html\$ dist/ssh-session-keepalive.html [L]\n";
+        $ht .= "    RewriteRule (^|/)tinymce-editor\\.html\$ dist/tinymce-editor.html [L]\n";
+        $ht .= "    RewriteRule . dist/index.html [L]\n";
+        $ht .= "</IfModule>\n";
+        @file_put_contents($targetDir . DIRECTORY_SEPARATOR . '.htaccess', $ht);
     }
 }
 

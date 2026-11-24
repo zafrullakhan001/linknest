@@ -1,0 +1,42 @@
+# PostgreSQL 18 with TimescaleDB and extensions: pg_cron, pg_stat_statements,
+# PostGIS, postgres_fdw, intarray. (ZomboDB is archived and PG13-only; see README.)
+ARG BASE_IMAGE=timescale/timescaledb:latest-pg18
+FROM ${BASE_IMAGE}
+
+USER root
+
+# Enable Alpine edge for postgresql18-contrib and postgis
+RUN set -ex; \
+    echo "https://dl-cdn.alpinelinux.org/alpine/edge/main" >> /etc/apk/repositories; \
+    echo "https://dl-cdn.alpinelinux.org/alpine/edge/community" >> /etc/apk/repositories; \
+    apk update
+
+# Install contrib (intarray, postgres_fdw, pg_stat_statements) and PostGIS
+RUN set -ex; \
+    apk add --no-cache \
+        postgresql18-contrib \
+        postgis
+
+# Copy Alpine extension libs/sql into server tree (server uses /usr/local, Alpine uses /usr)
+RUN set -ex; \
+    cp -a /usr/lib/postgresql18/*.so /usr/local/lib/postgresql/ 2>/dev/null || true; \
+    cp -a /usr/share/postgresql18/extension/* /usr/local/share/postgresql/extension/ 2>/dev/null || true
+
+# Build and install pg_cron from source (skip LLVM bitcode so we don't need clang)
+RUN set -ex; \
+    apk add --no-cache build-base git postgresql18-dev; \
+    git clone --depth 1 --branch v1.6.7 https://github.com/citusdata/pg_cron.git /tmp/pg_cron; \
+    cd /tmp/pg_cron; \
+    make with_llvm=no; \
+    make with_llvm=no install; \
+    cd /; \
+    rm -rf /tmp/pg_cron; \
+    apk del --purge build-base git postgresql18-dev
+
+# Init script: create all extensions on first run
+COPY init-postgres-full/01-extensions.sql /docker-entrypoint-initdb.d/
+
+USER postgres
+
+# shared_preload_libraries must include timescaledb, pg_cron, pg_stat_statements
+# (set in docker-compose via postgres -c)

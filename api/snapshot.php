@@ -92,6 +92,13 @@ try {
         'method' => $method,
         'size' => filesize($destPath)
     ];
+    
+    // Add custom message if provided
+    $customMessage = $GLOBALS['snapshot_custom_message'] ?? null;
+    if (!empty($customMessage)) {
+        $metadata['message'] = $customMessage;
+    }
+    
     file_put_contents($destPath . '.json', json_encode($metadata, JSON_PRETTY_PRINT));
     
     // Clean up old backups (keep last 30 days)

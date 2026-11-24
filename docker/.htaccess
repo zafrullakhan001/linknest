@@ -1,8 +1,14 @@
 # Enable directory access and file serving
-Options -Indexes +FollowSymLinks
+# MultiViews maps /api/tiles/... onto tiles.php and 403s PATH_INFO with spaces.
+Options -Indexes -MultiViews +FollowSymLinks
+
+# Set default charset to UTF-8
+AddDefaultCharset UTF-8
 
 # Set proper MIME types for JavaScript modules - MUST be before rewrite rules
 <IfModule mod_mime.c>
+    AddCharset UTF-8 .html .htm .php .css .js .json .txt .xml
+
     # JavaScript files
     AddType application/javascript .js
     AddType application/javascript .mjs
@@ -27,16 +33,48 @@ Options -Indexes +FollowSymLinks
     Header set Content-Type "application/javascript; charset=utf-8"
 </FilesMatch>
 
+# Pass Authorization to PHP so MCP Bearer tokens survive CGI/FastCGI/rewrite.
+<IfModule mod_setenvif.c>
+    SetEnvIf Authorization "(.+)" HTTP_AUTHORIZATION=$1
+</IfModule>
+<IfModule mod_cgi.c>
+    CGIPassAuth On
+</IfModule>
+
 # Enable PHP for API routes
 <IfModule mod_rewrite.c>
     RewriteEngine On
+    RewriteCond %{HTTP:Authorization} .
+    RewriteRule .* - [E=HTTP_AUTHORIZATION:%{HTTP:Authorization}]
     
+    # robots.txt must never fall through to the SPA
+    RewriteRule (^|/)robots\.txt$ robots.txt [L]
+    
+    # Allow SSH/VNC gateway WebSocket proxy paths (handled in VirtualHost)
+    RewriteCond %{REQUEST_URI} ^/_ln_sshgw/
+    RewriteRule . - [L]
+    RewriteCond %{REQUEST_URI} ^/_ln_vncgw/
+    RewriteRule . - [L]
+
     # FIRST: Allow direct access to dist/ directory and its files (including assets)
     RewriteCond %{REQUEST_URI} ^/dist/
     RewriteRule . - [L]
     
     # Allow direct access to uploads/ directory
     RewriteCond %{REQUEST_URI} ^/uploads/
+    RewriteRule . - [L]
+
+    # XAMPP DBs may still request /{oldFolder}/uploads/... ; Docker main app is at /.
+    # Skip when /{name}/ is a real in-container clone under /var/www/clones.
+    RewriteCond /var/www/clones/$1 !-d
+    RewriteRule ^([^/]+)/uploads/(.*)$ /uploads/$2 [L]
+
+    # Browser Launcher Pro integration (not bundled by Vite)
+    RewriteCond %{REQUEST_URI} ^/land/
+    RewriteRule . - [L]
+
+    # Bookmark Sync / unpacked extension files
+    RewriteCond %{REQUEST_URI} ^/extensions/
     RewriteRule . - [L]
     
     # SECOND: Serve static assets from dist/assets/ (rewrite /assets/ to /dist/assets/)
@@ -48,17 +86,47 @@ Options -Indexes +FollowSymLinks
     # Also handle direct requests to /dist/assets/ (allow direct access)
     RewriteCond %{REQUEST_URI} ^/dist/assets/
     RewriteRule . - [L]
+
+    # SSH SharedWorker (Vite public/ → dist/); avoid SPA HTML 404 for worker fetch
+    RewriteCond %{REQUEST_URI} ssh-session-shared-worker\.js$
+    RewriteCond %{REQUEST_FILENAME} !-f
+    RewriteRule (^|/)ssh-session-shared-worker\.js$ dist/ssh-session-shared-worker.js [L]
+
+    # SSH session keeper helper page
+    RewriteCond %{REQUEST_URI} ssh-session-keepalive\.html$
+    RewriteCond %{REQUEST_FILENAME} !-f
+    RewriteRule (^|/)ssh-session-keepalive\.html$ dist/ssh-session-keepalive.html [L]
+
+    # TinyMCE iframe host (Vite public/ → dist/)
+    RewriteCond %{REQUEST_URI} tinymce-editor\.html$
+    RewriteCond %{REQUEST_FILENAME} !-f
+    RewriteRule (^|/)tinymce-editor\.html$ dist/tinymce-editor.html [L]
+
+    # TinyMCE self-hosted runtime (Vite public/tinymce → dist/tinymce)
+    # Without this, /tinymce/*.js returns the HTML 404 page and TinyMCE fails to load.
+    RewriteCond %{REQUEST_URI} /tinymce/
+    RewriteCond %{REQUEST_FILENAME} !-f
+    RewriteRule (^|/)tinymce/(.*)$ dist/tinymce/$2 [L]
+
+    # Mermaid (Help & About diagrams) — Vite public/vendor → dist/vendor
+    RewriteCond %{REQUEST_URI} /vendor/mermaid\.min\.js$
+    RewriteCond %{REQUEST_FILENAME} !-f
+    RewriteRule (^|/)vendor/mermaid\.min\.js$ dist/vendor/mermaid.min.js [L]
     
     # Route API requests to api/index.php
     RewriteCond %{REQUEST_URI} ^/api/
     RewriteCond %{REQUEST_URI} !^/api/index\.php
     RewriteCond %{REQUEST_FILENAME} !-f
-    RewriteRule ^api/(.*)$ api/index.php?path=$1 [L,QSA]
+    # BCTLS escapes spaces/CTL in $1 so category names with spaces are not 403'd.
+    RewriteRule ^api/(.*)$ api/index.php?path=$1 [BCTLS,L,QSA]
+
+    # Recyclable short URLs: /s/{code} → s.php
+    RewriteRule ^s/([A-Za-z0-9]+)$ s.php?code=$1 [L,QSA]
     
     # Redirect /index.tsx to dist/index.html (serve compiled version)
     RewriteCond %{DOCUMENT_ROOT}/dist/index.html -f
     RewriteCond %{REQUEST_URI} ^/index\.tsx$
-    RewriteRule ^index\.tsx$ /dist/index.html [L,R=301]
+    RewriteRule ^index\.tsx$ /dist/index.html [L]
     
     # Block direct access to other source files in production (return 404)
     RewriteCond %{DOCUMENT_ROOT}/dist/index.html -f
@@ -66,6 +134,10 @@ Options -Indexes +FollowSymLinks
     RewriteCond %{REQUEST_URI} !^/dist
     RewriteCond %{REQUEST_URI} !^/api
     RewriteCond %{REQUEST_URI} !^/assets
+    RewriteCond %{REQUEST_URI} !^/land
+    RewriteCond %{REQUEST_URI} !^/extensions
+    RewriteCond %{REQUEST_URI} !^/tinymce
+    RewriteCond %{REQUEST_URI} !/vendor/
     RewriteCond %{REQUEST_URI} !^/index\.tsx$
     RewriteRule . - [R=404,L]
     
@@ -80,17 +152,11 @@ Options -Indexes +FollowSymLinks
     RewriteCond %{REQUEST_URI} ^$
     RewriteRule ^(.*)$ /dist/index.html [L]
     
-    # Block access to source index.html in production
+    # Serve built index via internal rewrite (no 301 — browsers cache permanent redirects)
     RewriteCond %{DOCUMENT_ROOT}/dist/index.html -f
     RewriteCond %{REQUEST_URI} ^/index\.(html|tsx)$
     RewriteCond %{REQUEST_URI} !^/dist/
-    RewriteRule ^index\.(html|tsx)$ dist/index.html [L,R=301]
-    
-    # Block direct access to root index.html or index.tsx in production (redirect to dist)
-    RewriteCond %{DOCUMENT_ROOT}/dist/index.html -f
-    RewriteCond %{REQUEST_URI} ^/index\.(html|tsx)$
-    RewriteCond %{REQUEST_URI} !^/dist/
-    RewriteRule ^index\.(html|tsx)$ dist/index.html [L,R=301]
+    RewriteRule ^index\.(html|tsx)$ dist/index.html [L]
     
     # Serve other static files from dist/ if they exist
     RewriteCond %{REQUEST_FILENAME} !-f
@@ -103,7 +169,17 @@ Options -Indexes +FollowSymLinks
     # Production: Force serve dist/index.html for all other SPA routes
     RewriteCond %{DOCUMENT_ROOT}/dist/index.html -f
     RewriteCond %{REQUEST_URI} !^/api
+    RewriteCond %{REQUEST_URI} !^/s/
     RewriteCond %{REQUEST_URI} !^/dist
+    RewriteCond %{REQUEST_URI} !^/land/
+    RewriteCond %{REQUEST_URI} !^/extensions/
+    RewriteCond %{REQUEST_URI} !^/docs/
+    RewriteCond %{REQUEST_URI} !^/_ln_sshgw/
+    RewriteCond %{REQUEST_URI} !^/_ln_vncgw/
+    RewriteCond %{REQUEST_URI} !/tinymce/
+    RewriteCond %{REQUEST_URI} !tinymce-editor\.html$
+    RewriteCond %{REQUEST_URI} !ssh-session-shared-worker\.js$
+    RewriteCond %{REQUEST_URI} !ssh-session-keepalive\.html$
     RewriteCond %{REQUEST_URI} !^/?$
     RewriteCond %{REQUEST_URI} !\.(js|css|png|jpg|jpeg|gif|ico|svg|woff|woff2|ttf|eot)$
     RewriteCond %{REQUEST_FILENAME} !-f
@@ -115,6 +191,7 @@ Options -Indexes +FollowSymLinks
     RewriteCond %{REQUEST_FILENAME} !-f
     RewriteCond %{REQUEST_FILENAME} !-d
     RewriteCond %{REQUEST_URI} !^/api
+    RewriteCond %{REQUEST_URI} !^/s/
     RewriteRule . index.html [L]
 </IfModule>
 
@@ -123,3 +200,21 @@ Options -Indexes +FollowSymLinks
     DirectoryIndex dist/index.html index.html
 </IfModule>
 
+# Prevent browsers / proxies from sticking on an old SPA shell after deploy.
+<IfModule mod_headers.c>
+    Header always set X-Robots-Tag "noindex, nofollow, noarchive, nosnippet"
+    Header always set Content-Security-Policy "default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; font-src 'self' data: https://fonts.gstatic.com; img-src 'self' data: blob: https: http:; connect-src 'self' https: http: ws: wss: blob:; frame-src 'self' https: http: blob:; worker-src 'self' blob:; media-src 'self' blob: https: http:; object-src 'none'; base-uri 'self'; form-action 'self'; frame-ancestors 'self'"
+    <Files "tinymce-editor.html">
+        Header always unset Content-Security-Policy
+        Header always set Content-Security-Policy "default-src 'self'; script-src 'self' 'unsafe-inline' 'unsafe-eval'; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; font-src 'self' data: https://fonts.gstatic.com; img-src 'self' data: https: http: blob:; media-src 'self' blob: https: http:; connect-src 'self' https: http:; frame-src 'self' https: http: blob:; frame-ancestors 'self'"
+    </Files>
+    <Files "health.php">
+        Header always unset Content-Security-Policy
+        Header always set Content-Security-Policy "default-src 'self'; script-src 'self' https://cdn.jsdelivr.net; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; font-src 'self' data: https://fonts.gstatic.com; img-src 'self' data: blob: https: http:; connect-src 'self' https: http: ws: wss: blob:; frame-src 'self' https: http: blob:; worker-src 'self' blob:; media-src 'self' blob: https: http:; object-src 'none'; base-uri 'self'; form-action 'self'; frame-ancestors 'self'"
+    </Files>
+    <FilesMatch "(?i)^(index\.html|BUILD_INFO\.json|sw-cache-first\.php)$">
+        Header set Cache-Control "no-cache, no-store, must-revalidate"
+        Header set Pragma "no-cache"
+        Header set Expires "0"
+    </FilesMatch>
+</IfModule>

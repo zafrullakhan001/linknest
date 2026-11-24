@@ -1,0 +1,122 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <title>Landing Page Simulation</title>
+    <style>
+        body { font-family: Arial; padding: 20px; background: #f5f5f5; }
+        .container { background: white; padding: 20px; border-radius: 10px; max-width: 800px; margin: 0 auto; }
+        .link { display: block; margin: 10px 0; padding: 10px; background: #e3f2fd; border-left: 4px solid #2196f3; }
+        #log { margin-top: 20px; padding: 15px; background: #1e1e1e; color: #0f0; font-family: monospace; font-size: 12px; max-height: 400px; overflow-y: auto; }
+        .log-success { color: #4caf50; }
+        .log-error { color: #f44336; }
+        .log-info { color: #2196f3; }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <h1>🧪 Landing Page Simulation</h1>
+        <p>This simulates your actual landing page with real links.</p>
+        
+        <h2>Test Links:</h2>
+        <a href="https://example.com" class="link">Example.com</a>
+        <a href="https://portal.example.com" class="link">Portal.example.com</a>
+        <a href="https://mail.example.com" class="link">Mail.example.com</a>
+        <a href="https://reports.example.com" class="link">Reports.example.com</a>
+        <a href="https://admin.example.com" class="link">Admin.example.com</a>
+        
+        <div id="log"></div>
+    </div>
+
+    <!-- Simulate landing.php analytics config -->
+    <script>
+        window.ANALYTICS_CONFIG = {
+            enabled: true,
+            sampleRate: 1.0,
+            collectUrl: 'http://localhost:9333/api/metrics/collect',
+            apiUrl: 'http://localhost:9333/api',
+            userId: 1,
+            sessionId: 'sim-' + Date.now(),
+            beaconUrls: [],
+            countryCode: 'US',
+            region: 'Test',
+            city: 'Test City',
+            latitude: 0,
+            longitude: 0
+        };
+        
+        function log(message, type = 'info') {
+            const logDiv = document.getElementById('log');
+            const timestamp = new Date().toLocaleTimeString();
+            const className = 'log-' + type;
+            logDiv.innerHTML += `<div class="${className}">[${timestamp}] ${message}</div>`;
+            logDiv.scrollTop = logDiv.scrollHeight;
+            console.log(`[${type.toUpperCase()}] ${message}`);
+        }
+        
+        // Override console.log to capture all messages
+        const originalLog = console.log;
+        console.log = function(...args) {
+            originalLog.apply(console, args);
+            if (args[0] && args[0].includes('[Analytics]')) {
+                log(args.join(' '), 'info');
+            }
+        };
+        
+        // Monitor fetch requests
+        const originalFetch = window.fetch;
+        window.fetch = function(...args) {
+            const url = args[0];
+            if (url.includes('/api/metrics/collect')) {
+                log('Sending metric to: ' + url, 'info');
+                return originalFetch.apply(this, args)
+                    .then(response => {
+                        log('API Response: ' + response.status, response.ok ? 'success' : 'error');
+                        return response;
+                    })
+                    .catch(error => {
+                        log('API Error: ' + error.message, 'error');
+                        throw error;
+                    });
+            }
+            return originalFetch.apply(this, args);
+        };
+        
+        log('Page loaded. Waiting for scanner...', 'info');
+    </script>
+    
+    <!-- Load the actual scanner script from main app -->
+    <script src="http://localhost/linknest/public/js/link-latency-scanner.js" defer></script>
+    
+    <script>
+        // Monitor when script loads
+        window.addEventListener('load', () => {
+            setTimeout(() => {
+                log('Page fully loaded', 'info');
+                
+                if (typeof LinkLatencyScanner !== 'undefined') {
+                    log('✓ LinkLatencyScanner class is loaded!', 'success');
+                } else {
+                    log('✗ LinkLatencyScanner class NOT loaded', 'error');
+                    log('Trying to load script manually...', 'info');
+                    
+                    const script = document.createElement('script');
+                    script.src = 'http://localhost/linknest/public/js/link-latency-scanner.js';
+                    script.onload = () => {
+                        log('✓ Script loaded manually', 'success');
+                        if (typeof LinkLatencyScanner !== 'undefined') {
+                            log('✓ LinkLatencyScanner now available!', 'success');
+                            const scanner = new LinkLatencyScanner(window.ANALYTICS_CONFIG);
+                            scanner.scanAllLinks();
+                        }
+                    };
+                    script.onerror = () => {
+                        log('✗ Failed to load script', 'error');
+                    };
+                    document.head.appendChild(script);
+                }
+            }, 3000);
+        });
+    </script>
+</body>
+</html>

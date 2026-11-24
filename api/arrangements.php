@@ -3,10 +3,11 @@ require_once __DIR__ . '/config.php';
 
 $method = $_SERVER['REQUEST_METHOD'];
 $path = $_SERVER['PATH_INFO'] ?? $_SERVER['REDIRECT_PATH_INFO'] ?? '';
+$path = $path === '' ? '/' : ('/' . ltrim($path, '/'));
 
 switch ($method) {
     case 'GET':
-        if ($path === '' || $path === '/') {
+        if ($path === '/' || $path === '') {
             handleGetArrangement();
         } elseif ($path === '/categories' || $path === '/categories/') {
             handleGetCategoryArrangement();
@@ -17,7 +18,7 @@ switch ($method) {
         
     case 'POST':
     case 'PUT':
-        if ($path === '' || $path === '/') {
+        if ($path === '/' || $path === '') {
             handleSaveArrangement();
         } elseif ($path === '/categories' || $path === '/categories/') {
             handleSaveCategoryArrangement();
@@ -32,6 +33,13 @@ switch ($method) {
 
 function handleGetArrangement() {
     // Global arrangement - no authentication required
+    $cached = responseCacheGet('arrangements_global_tiles');
+    if (is_array($cached)) {
+        responseCacheHitHeader(true);
+        sendJSON($cached);
+        return;
+    }
+
     $db = getDB();
     
     // Get global tile arrangement (user_id = 0 for global)
@@ -46,19 +54,28 @@ function handleGetArrangement() {
             'groupName' => $row['group_name']
         ];
     }
-    
+
+    responseCacheSet('arrangements_global_tiles', $arrangement);
+    responseCacheHitHeader(false);
     sendJSON($arrangement);
 }
 
 function handleSaveArrangement() {
-    // Require admin access to save global arrangement
-    requireAdmin();
     $data = getJSONInput();
     
     if (!isset($data['arrangement']) || !is_array($data['arrangement'])) {
         sendJSON(['error' => 'Invalid arrangement data'], 400);
     }
     
+    $scope = isset($data['scope']) && $data['scope'] === 'private' ? 'private' : 'global';
+    
+    if ($scope === 'private') {
+        handleSavePrivateArrangement($data['arrangement']);
+        return;
+    }
+    
+    // Global arrangement: require admin access
+    requireAdmin();
     $db = getDB();
     
     // Ensure the table exists with correct schema
@@ -172,6 +189,8 @@ function handleSaveArrangement() {
         error_log('Successfully saved ' . $count . ' tile arrangements (and updated tiles.position)');
         error_log('Normalized all tile positions to be sequential (0, 1, 2, ...)');
         
+        invalidateGuestTilesListCache();
+        responseCacheInvalidate('arrangements_global_tiles');
         sendJSON(['success' => true, 'count' => $count]);
         
     } catch (PDOException $e) {
@@ -195,25 +214,158 @@ function handleSaveArrangement() {
     }
 }
 
-function handleGetCategoryArrangement() {
-    // Global arrangement - no authentication required
+/**
+ * Save arrangement for private tab: only tiles owned by the current user.
+ * Requires authentication (not admin). Updates only those tiles' group/position.
+ */
+function handleSavePrivateArrangement(array $arrangement) {
+    $user = requireAuth();
     $db = getDB();
     
-    // Get global category arrangement (user_id = 0 for global)
-    $stmt = $db->prepare('SELECT category_name, position, visible_from, expires_at FROM category_arrangements WHERE user_id = 0 ORDER BY position ASC');
-    $stmt->execute();
+    // Ensure the table exists with correct schema
+    try {
+        $db->exec('CREATE TABLE IF NOT EXISTS tile_arrangements (
+            user_id INTEGER NOT NULL DEFAULT 0,
+            tile_id TEXT NOT NULL,
+            position INTEGER NOT NULL,
+            group_name TEXT,
+            PRIMARY KEY (user_id, tile_id),
+            FOREIGN KEY (tile_id) REFERENCES tiles(id) ON DELETE CASCADE
+        )');
+    } catch (PDOException $e) {
+        error_log('Table creation check: ' . $e->getMessage());
+    }
     
-    $arrangement = [];
-    while ($row = $stmt->fetch()) {
-        $arrangement[] = [
-            'categoryName' => $row['category_name'],
-            'position' => (int)$row['position'],
-            'visibleFrom' => $row['visible_from'] ?: null,
-            'expiresAt' => $row['expires_at'] ?: null
+    $userId = (int) $user['id'];
+    $checkStmt = $db->prepare('SELECT id, user_id FROM tiles WHERE id = ? AND deleted_at IS NULL AND archived_at IS NULL');
+    $updateTileStmt = $db->prepare('UPDATE tiles SET "group" = ?, position = ? WHERE id = ? AND user_id = ?');
+    
+    $owned = [];
+    foreach ($arrangement as $item) {
+        if (!isset($item['tileId']) || !isset($item['position'])) {
+            continue;
+        }
+        $tileId = $item['tileId'];
+        $checkStmt->execute([$tileId]);
+        $row = $checkStmt->fetch();
+        if (!$row) {
+            error_log('Private arrangement: tile not found or deleted/archived: ' . $tileId);
+            continue;
+        }
+        if (!isset($row['user_id']) || (int) $row['user_id'] !== $userId) {
+            sendJSON(['error' => 'Only your own private tiles can be reordered within the Private tab.'], 403);
+            return;
+        }
+        $owned[] = [
+            'tileId' => $tileId,
+            'position' => (int) $item['position'],
+            'groupName' => $item['groupName'] ?? 'General',
         ];
     }
     
-    sendJSON($arrangement);
+    $db->beginTransaction();
+    try {
+        $deleteStmt = $db->prepare('DELETE FROM tile_arrangements WHERE user_id = ?');
+        $deleteStmt->execute([$userId]);
+        
+        $insertStmt = $db->prepare('INSERT OR REPLACE INTO tile_arrangements (user_id, tile_id, position, group_name) VALUES (?, ?, ?, ?)');
+        $count = 0;
+        foreach ($owned as $idx => $item) {
+            $insertStmt->execute([$userId, $item['tileId'], $idx, $item['groupName']]);
+            $updateTileStmt->execute([$item['groupName'], $idx, $item['tileId'], $userId]);
+            $count++;
+        }
+        $db->commit();
+        sendJSON(['success' => true, 'count' => $count]);
+    } catch (PDOException $e) {
+        $db->rollBack();
+        error_log('Private arrangement save error: ' . $e->getMessage());
+        sendJSON(['error' => 'Failed to save tile arrangement', 'details' => $e->getMessage()], 500);
+    } catch (Exception $e) {
+        $db->rollBack();
+        error_log('Private arrangement save error (non-PDO): ' . $e->getMessage());
+        sendJSON(['error' => 'Failed to save tile arrangement: ' . $e->getMessage()], 500);
+    }
+}
+
+function handleGetCategoryArrangement() {
+    // Global arrangement - no authentication required
+    try {
+        $db = getDB();
+        
+        // Check if table exists, create if it doesn't
+        try {
+            $tableCheck = $db->query("SELECT name FROM sqlite_master WHERE type='table' AND name='category_arrangements'");
+            $tableExists = false;
+            if ($tableCheck) {
+                $result = $tableCheck->fetchColumn();
+                $tableExists = ($result !== false);
+            }
+            
+            if (!$tableExists) {
+                // Table doesn't exist, create it
+                $db->exec('CREATE TABLE IF NOT EXISTS category_arrangements (
+                    user_id INTEGER NOT NULL DEFAULT 0,
+                    category_name TEXT NOT NULL,
+                    position INTEGER NOT NULL,
+                    visible_from TEXT,
+                    expires_at TEXT,
+                    PRIMARY KEY (user_id, category_name)
+                )');
+            }
+        } catch (PDOException $tableError) {
+            error_log("Category arrangement: Table check/create error: " . $tableError->getMessage());
+            // Try to create table anyway
+            try {
+                $db->exec('CREATE TABLE IF NOT EXISTS category_arrangements (
+                    user_id INTEGER NOT NULL DEFAULT 0,
+                    category_name TEXT NOT NULL,
+                    position INTEGER NOT NULL,
+                    visible_from TEXT,
+                    expires_at TEXT,
+                    PRIMARY KEY (user_id, category_name)
+                )');
+            } catch (PDOException $createError) {
+                error_log("Category arrangement: Failed to create table: " . $createError->getMessage());
+            }
+        }
+        
+        // Get global category arrangement (user_id = 0 for global)
+        $stmt = $db->prepare('SELECT category_name, position, visible_from, expires_at FROM category_arrangements WHERE user_id = 0 ORDER BY position ASC');
+        if ($stmt) {
+            $stmt->execute();
+            
+            $arrangement = [];
+            while ($row = $stmt->fetch(PDO::FETCH_ASSOC)) {
+                $arrangement[] = [
+                    'categoryName' => $row['category_name'],
+                    'position' => (int)$row['position'],
+                    'visibleFrom' => $row['visible_from'] ?: null,
+                    'expiresAt' => $row['expires_at'] ?: null
+                ];
+            }
+            
+            sendJSON($arrangement);
+        } else {
+            // If prepare failed, return empty array
+            error_log("Category arrangement: Failed to prepare statement");
+            sendJSON([]);
+        }
+        
+    } catch (PDOException $e) {
+        error_log("Category arrangement PDO error: " . $e->getMessage() . " | Code: " . $e->getCode());
+        error_log("Category arrangement error trace: " . $e->getTraceAsString());
+        // Return empty array on error instead of crashing
+        sendJSON([]);
+    } catch (Exception $e) {
+        error_log("Category arrangement error: " . $e->getMessage() . " | File: " . $e->getFile() . " | Line: " . $e->getLine());
+        error_log("Category arrangement error trace: " . $e->getTraceAsString());
+        sendJSON([]);
+    } catch (Throwable $e) {
+        error_log("Category arrangement fatal error: " . $e->getMessage() . " | File: " . $e->getFile() . " | Line: " . $e->getLine());
+        error_log("Category arrangement error trace: " . $e->getTraceAsString());
+        sendJSON([]);
+    }
 }
 
 function handleSaveCategoryArrangement() {

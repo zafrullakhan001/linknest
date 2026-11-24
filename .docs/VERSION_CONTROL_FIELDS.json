@@ -1,0 +1,238 @@
+{
+    "VERSION_CONTROL_CAPTURED_FIELDS": {
+        "description": "This JSON shows all fields captured in the version control system for tiles",
+        "TILE_LEVEL_FIELDS": {
+            "id": "tile_unique_id",
+            "title": "Tile Title",
+            "description": "Tile description text",
+            "htmlContent": "<p>Rich HTML content</p>",
+            "emoji": "🎯",
+            "themeColor": "#3b82f6",
+            "group": "Category Name",
+            "visibility": "public | authenticated | private",
+            "allowedUsers": [
+                "user_id_1",
+                "user_id_2"
+            ],
+            "isHyperlink": true,
+            "hyperlinkUrl": "https://example.com",
+            "openInNewTab": true,
+            "browser": "chrome | firefox | edge | default",
+            "visibleFrom": "2026-01-01 00:00:00",
+            "expiresAt": "2026-12-31 23:59:59",
+            "TILE_STYLING": {
+                "tileBackgroundColor": "#ffffff",
+                "tileGradientEnabled": true,
+                "tileGradientColors": [
+                    "#3b82f6",
+                    "#8b5cf6",
+                    "#ec4899"
+                ],
+                "tileGradientColorPositions": [
+                    0,
+                    50,
+                    100
+                ],
+                "tileGradientDirection": 45,
+                "tileGradientType": "linear | radial",
+                "tileBorderRadius": 12,
+                "tileTextColor": "#000000"
+            }
+        },
+        "MESSAGES": [
+            {
+                "id": "msg_unique_id",
+                "content": "Important announcement text",
+                "type": "info | warning | error | success",
+                "startDate": "2026-01-01 00:00:00",
+                "endDate": "2026-12-31 23:59:59",
+                "isActive": true,
+                "priority": 1,
+                "textColor": "#ffffff",
+                "fontStyle": "normal | italic | bold",
+                "displayLocation": "both | tile | detail",
+                "animationType": "rollover | fade | slide",
+                "delayBefore": 2.5
+            }
+        ],
+        "TABS": [
+            {
+                "id": "tab_unique_id",
+                "title": "Tab Name",
+                "position": 0,
+                "textColor": "#3b82f6",
+                "visibleFrom": "2026-01-01 00:00:00",
+                "expiresAt": "2026-12-31 23:59:59",
+                "sections": [
+                    {
+                        "id": "section_unique_id",
+                        "title": "Section Title",
+                        "textColor": "#000000",
+                        "visibleFrom": "2026-01-01 00:00:00",
+                        "expiresAt": "2026-12-31 23:59:59",
+                        "forceStackedView": false,
+                        "position": 0,
+                        "links": [
+                            {
+                                "id": "link_unique_id",
+                                "label": "Link Label",
+                                "url": "https://example.com",
+                                "icon": "🔗",
+                                "textColor": "#3b82f6",
+                                "visibility": "public | authenticated | private",
+                                "allowedUsers": [
+                                    "user_id_1",
+                                    "user_id_2"
+                                ],
+                                "notes": "Internal notes about this link",
+                                "tooltip": "Tooltip text shown on hover",
+                                "visibleFrom": "2026-01-01 00:00:00",
+                                "expiresAt": "2026-12-31 23:59:59",
+                                "browser": "chrome | firefox | edge | default",
+                                "position": 0,
+                                "richTextContent": "<p>Rich text description</p>",
+                                "isFavorite": false
+                            }
+                        ],
+                        "richTextContent": [
+                            {
+                                "id": "richtext_unique_id",
+                                "content": "<p>Rich text block content</p>",
+                                "position": 0
+                            }
+                        ]
+                    }
+                ]
+            }
+        ],
+        "FIELDS_EXCLUDED_FROM_COMPARISON": {
+            "description": "These fields are NOT compared when detecting changes (they are metadata/transient)",
+            "excluded_fields": [
+                "createdAt",
+                "created_at",
+                "updatedAt",
+                "updated_at",
+                "deletedAt",
+                "deleted_at",
+                "archivedAt",
+                "archived_at",
+                "user_id",
+                "userId",
+                "canView",
+                "can_view",
+                "canEdit",
+                "can_edit",
+                "canDelete",
+                "can_delete",
+                "hasRoleAccess",
+                "has_role_access",
+                "isFavorite",
+                "is_favorite",
+                "health"
+            ]
+        },
+        "VERSION_METADATA": {
+            "description": "Additional metadata stored with each version (not part of tile data)",
+            "version_number": 1,
+            "created_at": 1737478800,
+            "user_id": "user_who_created_version",
+            "changelog_summary": "Auto-generated summary of changes",
+            "is_temp": false,
+            "is_locked": false
+        },
+        "EXAMPLE_COMPLETE_VERSION": {
+            "id": "example_tile_001",
+            "title": "My Dashboard Links",
+            "description": "Quick access to important resources",
+            "htmlContent": null,
+            "emoji": "📊",
+            "themeColor": "#3b82f6",
+            "group": "Work Tools",
+            "visibility": "authenticated",
+            "allowedUsers": [],
+            "isHyperlink": false,
+            "hyperlinkUrl": null,
+            "openInNewTab": false,
+            "browser": null,
+            "visibleFrom": null,
+            "expiresAt": null,
+            "tileBackgroundColor": "#1e293b",
+            "tileGradientEnabled": true,
+            "tileGradientColors": [
+                "#1e293b",
+                "#334155"
+            ],
+            "tileGradientColorPositions": [
+                0,
+                100
+            ],
+            "tileGradientDirection": 135,
+            "tileGradientType": "linear",
+            "tileBorderRadius": 16,
+            "tileTextColor": "#ffffff",
+            "messages": [
+                {
+                    "id": "msg_001",
+                    "content": "Updated with new links!",
+                    "type": "info",
+                    "startDate": "2026-01-21 00:00:00",
+                    "endDate": "2026-01-28 23:59:59",
+                    "isActive": true,
+                    "priority": 1,
+                    "textColor": "#60a5fa",
+                    "fontStyle": "normal",
+                    "displayLocation": "both",
+                    "animationType": "rollover",
+                    "delayBefore": 0
+                }
+            ],
+            "tabs": [
+                {
+                    "id": "tab_001",
+                    "title": "Development",
+                    "position": 0,
+                    "textColor": "#60a5fa",
+                    "visibleFrom": null,
+                    "expiresAt": null,
+                    "sections": [
+                        {
+                            "id": "section_001",
+                            "title": "Code Repositories",
+                            "textColor": null,
+                            "visibleFrom": null,
+                            "expiresAt": null,
+                            "forceStackedView": false,
+                            "position": 0,
+                            "links": [
+                                {
+                                    "id": "link_001",
+                                    "label": "GitHub",
+                                    "url": "https://github.com",
+                                    "icon": "🐙",
+                                    "textColor": null,
+                                    "visibility": "public",
+                                    "allowedUsers": [],
+                                    "notes": "Main code repository",
+                                    "tooltip": "View all repositories",
+                                    "visibleFrom": null,
+                                    "expiresAt": null,
+                                    "browser": "chrome",
+                                    "position": 0,
+                                    "richTextContent": null,
+                                    "isFavorite": false
+                                }
+                            ],
+                            "richTextContent": [
+                                {
+                                    "id": "rt_001",
+                                    "content": "<p>Access all development tools here</p>",
+                                    "position": 0
+                                }
+                            ]
+                        }
+                    ]
+                }
+            ]
+        }
+    }
+}

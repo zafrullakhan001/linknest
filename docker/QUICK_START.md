@@ -48,7 +48,7 @@ In LinkNest, go to **SMTP Settings** and set:
 
 ## What's Included
 
-✅ PHP 8.2 with Apache  
+✅ PHP 8.4 with Apache (GD, LDAP, zip, OPcache)  
 ✅ SQLite with all optimizations (WAL mode, memory mapping, caching)  
 ✅ OPcache enabled for PHP performance  
 ✅ All database indexes for optimal queries  

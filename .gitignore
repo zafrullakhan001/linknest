@@ -11,6 +11,9 @@ ldap_debug.log
 # Dependencies
 node_modules/
 
+# Local Python environment / scripts
+bin/
+
 # Build outputs
 dist/
 dist-ssr/
@@ -36,9 +39,21 @@ uploads/
 uploads/*
 
 # Deployment bundles and artifacts
+*.zip
+*.zip.*
+*.zip.[0-9][0-9][0-9]
+linknest-deploy-*/
+linknest-remote-widgets-runtime-*/
+linknest-docker-deploy-*/
+docker-deploy-package/
 *-deployment-*/
 test-bundle/
 bundle-*/
+
+# Clone job temp status / elevated helpers (local-only)
+clone_status_*.json
+clone_temp_*.bat
+clone_elevated_*.ps1
 
 # Copy/backup directories
 * copy/
@@ -53,6 +68,11 @@ bundle-*/
 *.cache
 opcache/
 sessions/
+
+# Python bytecode (do not ship — Docker workers recreate these as root)
+__pycache__/
+*.py[cod]
+*$py.class
 
 # Docker
 docker/volumes/
@@ -71,6 +91,7 @@ docker/*.crt
 # IDE and Editor files
 .vscode/*
 !.vscode/extensions.json
+.cursor/mcp.json
 .idea/
 *.iml
 *.ipr
@@ -91,6 +112,9 @@ docker/*.crt
 .cache/
 
 # OS specific files
+
+# Self-hosted TinyMCE runtime (copied from node_modules via postinstall)
+public/tinymce/
 
 # Windows
 Thumbs.db
@@ -123,3 +147,7 @@ Temporary Items
 .fuse_hidden*
 .directory
 .Trash-*
+
+# Vendored Python packages for VNC gateway (install with scripts/install-websockify.ps1)
+bin/python-packages/
+!bin/python-packages/.gitkeep

@@ -1,0 +1,4 @@
+# Monitorv2 Dashboard (Python) - optional dependencies
+# Install: pip install -r requirements-monitorv2-dashboard.txt
+psycopg2-binary>=2.9.0
+flask>=2.3.0

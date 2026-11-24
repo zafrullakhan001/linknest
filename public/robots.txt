@@ -1,0 +1,5 @@
+# LinkNest is not a public website. Search engines must not crawl or index it.
+# Copied to dist/ by Vite. Google only honors this file at the site origin
+# (https://host/robots.txt). Subfolder installs also send X-Robots-Tag / meta robots.
+User-agent: *
+Disallow: /

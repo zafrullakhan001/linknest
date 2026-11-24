@@ -1,45 +1,31 @@
-import React, { useState, useEffect } from 'react';
-import { FaTimes, FaPalette } from 'react-icons/fa';
+import React, { useState, useEffect, useRef } from 'react';
+import { FaTimes, FaPalette, FaDownload, FaUpload } from 'react-icons/fa';
 import { userPreferencesService } from '../services/userPreferencesService';
+import { useEscapeToClose } from '../hooks/useEscapeToClose';
+import {
+    DEFAULT_FONT_FAMILY,
+    DEFAULT_MONITOR_TILE_STYLES,
+    PHP_SERVER_MONITOR_TILE_STYLES,
+    hasMonitorTileStylePreferences,
+    readCachedMonitorTileStyles,
+    tileStylesFromPreferences,
+    tileStylesToPreferences,
+    writeCachedMonitorTileStyles,
+} from '../utils/monitorTileStyles';
+import type { TileStyle } from '../utils/monitorTileStyles';
 
-export interface TileStyle {
-    // UP State
-    upBackgroundColor: string;
-    upTextColor: string;
-    upUseGradient: boolean;
-    upGradientStart: string;
-    upGradientEnd: string;
-    upFontFamily: string;
-    
-    // DOWN State
-    downBackgroundColor: string;
-    downTextColor: string;
-    downUseGradient: boolean;
-    downGradientStart: string;
-    downGradientEnd: string;
-    downFontFamily: string;
-
-    // WARNING State
-    warningBackgroundColor: string;
-    warningTextColor: string;
-    warningUseGradient: boolean;
-    warningGradientStart: string;
-    warningGradientEnd: string;
-    warningFontFamily: string;
-
-    // Shared
-    borderRadius: number;
-}
+export type { TileStyle } from '../utils/monitorTileStyles';
 
 interface MonitoringTileStyleModalProps {
     isOpen: boolean;
     onClose: () => void;
     onStylesChange: (styles: TileStyle) => void;
+    initialStyles?: TileStyle;
 }
 
-const DEFAULT_FONT_FAMILY = 'system-ui, -apple-system, Segoe UI, Roboto, Arial, sans-serif';
 const FONT_OPTIONS: { label: string; value: string }[] = [
     { label: 'System (Default)', value: DEFAULT_FONT_FAMILY },
+    { label: 'Helvetica Neue (PHP Server Monitor)', value: '"Helvetica Neue", Helvetica, Arial, sans-serif' },
     { label: 'Arial', value: 'Arial, Helvetica, sans-serif' },
     { label: 'Segoe UI', value: '"Segoe UI", Tahoma, Geneva, Verdana, sans-serif' },
     { label: 'Verdana', value: 'Verdana, Geneva, sans-serif' },
@@ -49,78 +35,47 @@ const FONT_OPTIONS: { label: string; value: string }[] = [
     { label: 'Courier New', value: '"Courier New", Courier, monospace' },
 ];
 
-const defaultStyles: TileStyle = {
-    upBackgroundColor: '#10b981', // emerald-600
-    upTextColor: '#ffffff',
-    upUseGradient: false,
-    upGradientStart: '#10b981',
-    upGradientEnd: '#059669',
-    upFontFamily: DEFAULT_FONT_FAMILY,
-    downBackgroundColor: '#dc2626', // red-600
-    downTextColor: '#ffffff',
-    downUseGradient: false,
-    downGradientStart: '#dc2626',
-    downGradientEnd: '#b91c1c',
-    downFontFamily: DEFAULT_FONT_FAMILY,
-    warningBackgroundColor: '#f59e0b', // amber-500
-    warningTextColor: '#ffffff',
-    warningUseGradient: true,
-    warningGradientStart: '#f59e0b',
-    warningGradientEnd: '#d97706',
-    warningFontFamily: DEFAULT_FONT_FAMILY,
-    borderRadius: 16, // matches Tailwind rounded-2xl
-};
+const defaultStyles: TileStyle = DEFAULT_MONITOR_TILE_STYLES;
 
 export const MonitoringTileStyleModal: React.FC<MonitoringTileStyleModalProps> = ({
     isOpen,
     onClose,
-    onStylesChange
+    onStylesChange,
+    initialStyles
 }) => {
-    const [styles, setStyles] = useState<TileStyle>(defaultStyles);
-    const [isLoading, setIsLoading] = useState(true);
+    const [styles, setStyles] = useState<TileStyle>(initialStyles || readCachedMonitorTileStyles);
+    const [isLoading, setIsLoading] = useState(false);
     const [isSaving, setIsSaving] = useState(false);
+    const fileInputRef = useRef<HTMLInputElement>(null);
+
+    useEscapeToClose(isOpen, onClose);
 
     useEffect(() => {
-        if (isOpen) {
-            loadStyles();
+        if (!isOpen) return;
+        if (initialStyles) {
+            setStyles(initialStyles);
+            setIsLoading(false);
         }
+        void loadStyles(!initialStyles);
+        // Seed once per open from parent/cache; do not re-run when live preview updates parent.
+        // eslint-disable-next-line react-hooks/exhaustive-deps
     }, [isOpen]);
 
-    const loadStyles = async () => {
-        setIsLoading(true);
+    const loadStyles = async (showSpinner: boolean) => {
+        if (showSpinner) setIsLoading(true);
         try {
             const preferences = await userPreferencesService.getPreferences();
-            
-            const loadedStyles: TileStyle = {
-                upBackgroundColor: preferences['monitor_tile_up_bg'] as string || defaultStyles.upBackgroundColor,
-                upTextColor: preferences['monitor_tile_up_text'] as string || defaultStyles.upTextColor,
-                upUseGradient: preferences['monitor_tile_up_gradient'] === 'true' || preferences['monitor_tile_up_gradient'] === true,
-                upGradientStart: preferences['monitor_tile_up_gradient_start'] as string || defaultStyles.upGradientStart,
-                upGradientEnd: preferences['monitor_tile_up_gradient_end'] as string || defaultStyles.upGradientEnd,
-                upFontFamily: preferences['monitor_tile_up_font'] as string || defaultStyles.upFontFamily,
-                downBackgroundColor: preferences['monitor_tile_down_bg'] as string || defaultStyles.downBackgroundColor,
-                downTextColor: preferences['monitor_tile_down_text'] as string || defaultStyles.downTextColor,
-                downUseGradient: preferences['monitor_tile_down_gradient'] === 'true' || preferences['monitor_tile_down_gradient'] === true,
-                downGradientStart: preferences['monitor_tile_down_gradient_start'] as string || defaultStyles.downGradientStart,
-                downGradientEnd: preferences['monitor_tile_down_gradient_end'] as string || defaultStyles.downGradientEnd,
-                downFontFamily: preferences['monitor_tile_down_font'] as string || defaultStyles.downFontFamily,
-                warningBackgroundColor: preferences['monitor_tile_warning_bg'] as string || defaultStyles.warningBackgroundColor,
-                warningTextColor: preferences['monitor_tile_warning_text'] as string || defaultStyles.warningTextColor,
-                warningUseGradient: preferences['monitor_tile_warning_gradient'] === 'true' || preferences['monitor_tile_warning_gradient'] === true,
-                warningGradientStart: preferences['monitor_tile_warning_gradient_start'] as string || defaultStyles.warningGradientStart,
-                warningGradientEnd: preferences['monitor_tile_warning_gradient_end'] as string || defaultStyles.warningGradientEnd,
-                warningFontFamily: preferences['monitor_tile_warning_font'] as string || defaultStyles.warningFontFamily,
-                borderRadius: Number.isFinite(parseFloat(preferences['monitor_tile_radius'] as any))
-                    ? Math.max(0, Math.min(48, parseFloat(preferences['monitor_tile_radius'] as any)))
-                    : defaultStyles.borderRadius,
-            };
-            
-            setStyles(loadedStyles);
-            onStylesChange(loadedStyles);
+            if (hasMonitorTileStylePreferences(preferences)) {
+                const loadedStyles = tileStylesFromPreferences(preferences);
+                writeCachedMonitorTileStyles(loadedStyles);
+                setStyles(loadedStyles);
+                onStylesChange(loadedStyles);
+            }
         } catch (error) {
             console.error('Failed to load tile styles:', error);
-            setStyles(defaultStyles);
-            onStylesChange(defaultStyles);
+            const fallback = initialStyles || readCachedMonitorTileStyles();
+            setStyles(fallback);
+            onStylesChange(fallback);
         } finally {
             setIsLoading(false);
         }
@@ -129,28 +84,8 @@ export const MonitoringTileStyleModal: React.FC<MonitoringTileStyleModalProps> =
     const handleSave = async () => {
         setIsSaving(true);
         try {
-            await userPreferencesService.updatePreferences({
-                'monitor_tile_up_bg': styles.upBackgroundColor,
-                'monitor_tile_up_text': styles.upTextColor,
-                'monitor_tile_up_gradient': styles.upUseGradient ? 'true' : 'false',
-                'monitor_tile_up_gradient_start': styles.upGradientStart,
-                'monitor_tile_up_gradient_end': styles.upGradientEnd,
-                'monitor_tile_up_font': styles.upFontFamily,
-                'monitor_tile_down_bg': styles.downBackgroundColor,
-                'monitor_tile_down_text': styles.downTextColor,
-                'monitor_tile_down_gradient': styles.downUseGradient ? 'true' : 'false',
-                'monitor_tile_down_gradient_start': styles.downGradientStart,
-                'monitor_tile_down_gradient_end': styles.downGradientEnd,
-                'monitor_tile_down_font': styles.downFontFamily,
-                'monitor_tile_warning_bg': styles.warningBackgroundColor,
-                'monitor_tile_warning_text': styles.warningTextColor,
-                'monitor_tile_warning_gradient': styles.warningUseGradient ? 'true' : 'false',
-                'monitor_tile_warning_gradient_start': styles.warningGradientStart,
-                'monitor_tile_warning_gradient_end': styles.warningGradientEnd,
-                'monitor_tile_warning_font': styles.warningFontFamily,
-                'monitor_tile_radius': String(styles.borderRadius),
-            });
-            
+            await userPreferencesService.updatePreferences(tileStylesToPreferences(styles));
+            writeCachedMonitorTileStyles(styles);
             onStylesChange(styles);
             onClose();
         } catch (error) {
@@ -167,6 +102,129 @@ export const MonitoringTileStyleModal: React.FC<MonitoringTileStyleModalProps> =
 
     const resetToDefaults = () => {
         setStyles(defaultStyles);
+        onStylesChange(defaultStyles);
+    };
+
+    const applyPhpServerMonitorProfile = () => {
+        setStyles(PHP_SERVER_MONITOR_TILE_STYLES);
+        onStylesChange(PHP_SERVER_MONITOR_TILE_STYLES);
+    };
+
+    const exportStyles = () => {
+        try {
+            const exportData = {
+                version: '1.0',
+                exportedAt: new Date().toISOString(),
+                styles: styles
+            };
+            
+            const jsonString = JSON.stringify(exportData, null, 2);
+            const blob = new Blob([jsonString], { type: 'application/json' });
+            const url = URL.createObjectURL(blob);
+            const link = document.createElement('a');
+            link.href = url;
+            link.download = `monitor-tile-styles-${new Date().toISOString().split('T')[0]}.json`;
+            document.body.appendChild(link);
+            link.click();
+            document.body.removeChild(link);
+            URL.revokeObjectURL(url);
+        } catch (error) {
+            console.error('Failed to export styles:', error);
+            alert('Failed to export styles. Please try again.');
+        }
+    };
+
+    const handleImportClick = () => {
+        fileInputRef.current?.click();
+    };
+
+    const handleFileImport = (event: React.ChangeEvent<HTMLInputElement>) => {
+        const file = event.target.files?.[0];
+        if (!file) return;
+
+        const reader = new FileReader();
+        reader.onload = (e) => {
+            try {
+                const content = e.target?.result as string;
+                const importedData = JSON.parse(content);
+                
+                // Support both direct style objects and wrapped objects with metadata
+                const importedStyles: TileStyle = importedData.styles || importedData;
+                
+                // Validate that all required fields are present
+                const requiredFields: (keyof TileStyle)[] = [
+                    'upBackgroundColor', 'upTextColor', 'upUseGradient', 'upGradientStart', 
+                    'upGradientEnd', 'upFontFamily',
+                    'downBackgroundColor', 'downTextColor', 'downUseGradient', 'downGradientStart',
+                    'downGradientEnd', 'downFontFamily',
+                    'warningBackgroundColor', 'warningTextColor', 'warningUseGradient', 
+                    'warningGradientStart', 'warningGradientEnd', 'warningFontFamily',
+                    'borderRadius'
+                ];
+                
+                const missingFields = requiredFields.filter(field => !(field in importedStyles));
+                if (missingFields.length > 0) {
+                    alert(`Invalid style file. Missing required fields: ${missingFields.join(', ')}`);
+                    return;
+                }
+                
+                // Validate types
+                if (typeof importedStyles.borderRadius !== 'number') {
+                    importedStyles.borderRadius = Number(importedStyles.borderRadius) || defaultStyles.borderRadius;
+                }
+                
+                // Clamp borderRadius
+                importedStyles.borderRadius = Math.max(0, Math.min(48, importedStyles.borderRadius));
+                
+                // Validate boolean fields
+                if (typeof importedStyles.upUseGradient !== 'boolean') {
+                    importedStyles.upUseGradient = importedStyles.upUseGradient === 'true' || importedStyles.upUseGradient === true;
+                }
+                if (typeof importedStyles.downUseGradient !== 'boolean') {
+                    importedStyles.downUseGradient = importedStyles.downUseGradient === 'true' || importedStyles.downUseGradient === true;
+                }
+                if (typeof importedStyles.warningUseGradient !== 'boolean') {
+                    importedStyles.warningUseGradient = importedStyles.warningUseGradient === 'true' || importedStyles.warningUseGradient === true;
+                }
+                
+                setStyles(importedStyles);
+                // Notify parent component of the imported styles
+                onStylesChange(importedStyles);
+                
+                // Show success message and auto-save
+                if (window.confirm('Styles imported successfully! Would you like to save them now?')) {
+                    // Create a save function that uses the imported styles
+                    const saveImportedStyles = async () => {
+                        setIsSaving(true);
+                        try {
+                            await userPreferencesService.updatePreferences(tileStylesToPreferences(importedStyles));
+                            writeCachedMonitorTileStyles(importedStyles);
+                            
+                            alert('Styles saved successfully!');
+                        } catch (error) {
+                            console.error('Failed to save imported styles:', error);
+                            alert('Failed to save imported styles. Please try again.');
+                        } finally {
+                            setIsSaving(false);
+                        }
+                    };
+                    
+                    saveImportedStyles();
+                } else {
+                    alert('Styles loaded. Click "Save Styles" to apply them permanently.');
+                }
+            } catch (error) {
+                console.error('Failed to import styles:', error);
+                alert('Failed to import styles. Please ensure the file is a valid JSON format.');
+            }
+        };
+        
+        reader.readAsText(file);
+        
+        // Reset file input
+        if (fileInputRef.current) {
+            fileInputRef.current.value = '';
+        }
     };
 
     if (!isOpen) return null;
@@ -259,7 +317,7 @@ export const MonitoringTileStyleModal: React.FC<MonitoringTileStyleModalProps> =
                                         />
                                     </div>
                                     <p className="text-xs text-slate-500 dark:text-slate-400 mt-2">
-                                        Applies to monitor tiles in the dashboard (tiles/compact views).
+                                        Applies to monitor tiles, compact view, and PHP Server Monitor status board.
                                     </p>
                                 </div>
                                 <div className="flex items-center justify-center">
@@ -763,13 +821,46 @@ export const MonitoringTileStyleModal: React.FC<MonitoringTileStyleModalProps> =
                 </div>
 
                 {/* Footer */}
-                <div className="p-4 bg-slate-50 dark:bg-[#252525] border-t border-slate-100 dark:border-[#333] flex items-center justify-between">
-                    <button
-                        onClick={resetToDefaults}
-                        className="px-4 py-2 text-sm font-medium text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-white transition-colors"
-                    >
-                        Reset to Defaults
-                    </button>
+                <div className="p-4 bg-slate-50 dark:bg-[#252525] border-t border-slate-100 dark:border-[#333] flex flex-wrap items-center justify-between gap-3">
+                    <div className="flex flex-wrap items-center gap-3">
+                        <button
+                            onClick={resetToDefaults}
+                            className="px-4 py-2 text-sm font-medium text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-white transition-colors"
+                            title="LinkNest default greens and reds"
+                        >
+                            Reset to Defaults
+                        </button>
+                        <button
+                            type="button"
+                            onClick={applyPhpServerMonitorProfile}
+                            className="px-4 py-2 text-sm font-medium text-emerald-700 dark:text-emerald-400 hover:text-emerald-900 dark:hover:text-emerald-200 transition-colors"
+                            title="Classic PHP Server Monitor green / red / amber profile"
+                        >
+                            PHP Server Monitor
+                        </button>
+                        <div className="h-6 w-px bg-slate-300 dark:bg-slate-600"></div>
+                        <button
+                            onClick={exportStyles}
+                            className="px-4 py-2 text-sm font-medium text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-white transition-colors flex items-center gap-2"
+                        >
+                            <FaDownload size={14} />
+                            Export JSON
+                        </button>
+                        <button
+                            onClick={handleImportClick}
+                            className="px-4 py-2 text-sm font-medium text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-white transition-colors flex items-center gap-2"
+                        >
+                            <FaUpload size={14} />
+                            Import JSON
+                        </button>
+                        <input
+                            ref={fileInputRef}
+                            type="file"
+                            accept=".json,application/json"
+                            onChange={handleFileImport}
+                            className="hidden"
+                        />
+                    </div>
                     <div className="flex gap-3">
                         <button
                             onClick={onClose}

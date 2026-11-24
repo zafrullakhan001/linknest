@@ -1450,6 +1450,89 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
   // Handle link opening from third-party landing pages
   if (request.action === 'openLinkInBrowser') {
     const { url, browserId } = request;
+    const inPrivate = !!(request.inPrivate || request.incognito || (request.options && (request.options.inPrivate || request.options.incognito)));
+    const newWindow = !!(request.newWindow || request.fullWindow || (request.options && (request.options.newWindow || request.options.fullWindow || request.options.windowType === 'normal')));
+
+    const privateFlagForBrowser = (id) => {
+      const key = String(id || '').toLowerCase();
+      if (key.includes('edge')) return '--inprivate';
+      if (key.includes('firefox')) return '--private-window';
+      if (key.includes('opera')) return '--private';
+      return '--incognito'; // chrome, brave, default
+    };
+
+    const openCurrentBrowserIncognito = (targetUrl, done) => {
+      try {
+        const parsed = new URL(targetUrl);
+        if (parsed.protocol !== 'http:' && parsed.protocol !== 'https:') {
+          done({ success: false, error: 'Only http(s) URLs can open in Incognito / InPrivate' });
+          return;
+        }
+      } catch (_err) {
+        done({ success: false, error: 'Invalid URL' });
+        return;
+      }
+      chrome.windows.create({ url: targetUrl, incognito: true }, (win) => {
+        if (chrome.runtime.lastError) {
+          const msg = chrome.runtime.lastError.message || 'Failed to open Incognito window';
+          const hint =
+            /incognito/i.test(msg)
+              ? ' Enable “Allow in Incognito” for Browser Launcher Pro in chrome://extensions (or edge://extensions), then try again.'
+              : '';
+          done({ success: false, error: msg + hint });
+          return;
+        }
+        done({ success: true, message: 'Opened in Incognito / InPrivate window', windowId: win && win.id });
+      });
+    };
+
+    const openCurrentBrowserWindow = (targetUrl, done) => {
+      try {
+        const parsed = new URL(targetUrl);
+        if (parsed.protocol !== 'http:' && parsed.protocol !== 'https:') {
+          done({ success: false, error: 'Only http(s) URLs can open in a full browser window' });
+          return;
+        }
+      } catch (_err) {
+        done({ success: false, error: 'Invalid URL' });
+        return;
+      }
+      chrome.windows.create({ url: targetUrl, type: 'normal', focused: true }, (win) => {
+        if (chrome.runtime.lastError) {
+          done({ success: false, error: chrome.runtime.lastError.message || 'Failed to open browser window' });
+          return;
+        }
+        done({ success: true, message: 'Opened in a full browser window', windowId: win && win.id });
+      });
+    };
+
+    const idKey = String(browserId || '').toLowerCase().trim();
+    const useCurrentIncognito =
+      inPrivate &&
+      (!idKey ||
+        idKey === 'default' ||
+        idKey === 'current' ||
+        idKey === 'this' ||
+        idKey === 'same');
+
+    if (useCurrentIncognito) {
+      openCurrentBrowserIncognito(url, sendResponse);
+      return true;
+    }
+
+    const useCurrentFullWindow =
+      newWindow &&
+      !inPrivate &&
+      (!idKey ||
+        idKey === 'default' ||
+        idKey === 'current' ||
+        idKey === 'this' ||
+        idKey === 'same');
+
+    if (useCurrentFullWindow) {
+      openCurrentBrowserWindow(url, sendResponse);
+      return true;
+    }
 
     // Map browserId to command setting
     const browserMap = {
@@ -1467,14 +1550,25 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
       'chrome-dev': 'wslChromeDevPath',
       'firefox': 'wslFirefoxPath',
       'opera': 'wslOperaPath',
-      'brave': 'wslBravePath'
+      'brave': 'wslBravePath',
+      // Friendly aliases from the page bridge
+      'edge': 'edgeStablePath',
+      'chrome': 'chromeStablePath'
     };
 
-    const commandSetting = browserMap[browserId];
+    const commandSetting = browserMap[browserId] || browserMap[idKey];
 
     // Function to execute the browser opening
     const executeOpen = async (command, isWsl) => {
       if (!command || command === 'NA') {
+        if (inPrivate) {
+          openCurrentBrowserIncognito(url, sendResponse);
+          return;
+        }
+        if (newWindow) {
+          openCurrentBrowserWindow(url, sendResponse);
+          return;
+        }
         sendResponse({
           success: false,
           error: 'Browser path not configured for ' + browserId
@@ -1482,13 +1576,19 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
         return;
       }
 
+      const privateFlag = inPrivate ? privateFlagForBrowser(browserId || idKey) : '';
+
       // Prepare command based on WSL or local
       let finalCommand;
       if (isWsl) {
         finalCommand = await prepareWSLCommand(command);
-        finalCommand = `${finalCommand} "${url}"`;
+        finalCommand = privateFlag
+          ? `${finalCommand} ${privateFlag} "${url}"`
+          : `${finalCommand} "${url}"`;
       } else {
-        finalCommand = `"${command}" "${url}"`;
+        finalCommand = privateFlag
+          ? `"${command}" ${privateFlag} "${url}"`
+          : `"${command}" "${url}"`;
       }
 
       console.log('Opening link in browser:', finalCommand);
@@ -1502,8 +1602,14 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
       }, (response) => {
         if (chrome.runtime.lastError) {
           console.error('Native messaging error:', chrome.runtime.lastError.message);
+          if (inPrivate) {
+            openCurrentBrowserIncognito(url, () => {});
+          }
         } else if (response && response.result && response.result.startsWith("Error:")) {
           console.error('Browser launch error:', response.result);
+          if (inPrivate) {
+            openCurrentBrowserIncognito(url, () => {});
+          }
         } else {
           console.log('Browser launched successfully');
         }
@@ -1511,9 +1617,10 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
     };
 
     if (commandSetting) {
-      // Standard browser
+      // Standard browser (local path keys are not always wsl-prefixed)
       chrome.storage.local.get([commandSetting], function (result) {
-        executeOpen(result[commandSetting], commandSetting.startsWith('wsl'));
+        const isWsl = commandSetting.startsWith('wsl') || String(browserId || '').includes('wsl');
+        executeOpen(result[commandSetting], isWsl);
       });
     } else {
       // Check for custom browser
@@ -1529,6 +1636,10 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
           // Determine if WSL based on platform setting or path
           const isWsl = customBrowser.platform === 'wsl' || (customBrowser.path && customBrowser.path.startsWith('/'));
           executeOpen(customBrowser.path, isWsl);
+        } else if (inPrivate) {
+          openCurrentBrowserIncognito(url, sendResponse);
+        } else if (newWindow) {
+          openCurrentBrowserWindow(url, sendResponse);
         } else {
           sendResponse({
             success: false,
@@ -1585,6 +1696,56 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
       sendResponse({ success: true, browsers: availableBrowsers });
     });
     return true;
+  }
+
+  // Flatten Chrome bookmark tree for LinkNest Sync / Fav Organizer
+  if (request.action === 'getBookmarks') {
+    const flattenBookmarks = (nodes, out) => {
+      if (!Array.isArray(nodes)) return;
+      for (const node of nodes) {
+        if (!node) continue;
+        if (node.url && (String(node.url).startsWith('http://') || String(node.url).startsWith('https://'))) {
+          out.push({
+            title: (node.title && String(node.title).trim()) || node.url,
+            url: String(node.url)
+          });
+        }
+        if (node.children && node.children.length) {
+          flattenBookmarks(node.children, out);
+        }
+      }
+    };
+
+    try {
+      if (!chrome.bookmarks || typeof chrome.bookmarks.getTree !== 'function') {
+        sendResponse({
+          success: false,
+          error:
+            'Bookmarks API unavailable. Add the "bookmarks" permission to the extension manifest, reload the extension, or use Import HTML.'
+        });
+        return false;
+      }
+
+      chrome.bookmarks.getTree((tree) => {
+        if (chrome.runtime.lastError) {
+          sendResponse({
+            success: false,
+            error: chrome.runtime.lastError.message || 'Failed to read bookmarks'
+          });
+          return;
+        }
+        const bookmarks = [];
+        flattenBookmarks(tree, bookmarks);
+        sendResponse({ success: true, bookmarks: bookmarks });
+      });
+      return true;
+    } catch (err) {
+      sendResponse({
+        success: false,
+        error: (err && err.message) || 'Failed to read bookmarks'
+      });
+      return false;
+    }
   }
 });
 

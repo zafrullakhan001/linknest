@@ -1,12 +1,15 @@
 import React, { createContext, useContext, useState, useEffect, ReactNode } from 'react';
 import { authService, User } from '../services/authService';
+import { webauthnService } from '../services/webauthnService';
 
 interface AuthContextType {
   user: User | null;
   loading: boolean;
-  login: (username: string, password: string, authMethod?: 'local' | 'ldap', rememberMe?: boolean) => Promise<void>;
-  register: (username: string, email: string, password: string) => Promise<void>;
+  login: (username: string, password: string, authMethod?: 'local' | 'ldap' | 'auto', rememberMe?: boolean, ldapServerIndex?: number, signal?: AbortSignal) => Promise<void>;
+  loginWithPasskey: (rememberMe?: boolean) => Promise<void>;
+  register: (username: string, email: string, password: string, confirmPassword?: string) => Promise<{ pending: boolean; message?: string }>;
   logout: () => Promise<void>;
+  refreshUser: () => Promise<void>;
   isAuthenticated: boolean;
 }
 
@@ -24,13 +27,18 @@ export const AuthProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
       .finally(() => setLoading(false));
   }, []);
 
-  const login = async (username: string, password: string, authMethod?: 'local' | 'ldap', rememberMe?: boolean) => {
-    const user = await authService.login(username, password, authMethod, rememberMe);
+  const login = async (username: string, password: string, authMethod?: 'local' | 'ldap' | 'auto', rememberMe?: boolean, ldapServerIndex?: number, signal?: AbortSignal) => {
+    const user = await authService.login(username, password, authMethod, rememberMe, ldapServerIndex, signal);
     setUser(user);
   };
 
-  const register = async (username: string, email: string, password: string) => {
-    const result = await authService.register(username, email, password);
+  const loginWithPasskey = async (rememberMe?: boolean) => {
+    const user = await webauthnService.loginWithPasskey(!!rememberMe);
+    setUser(user);
+  };
+
+  const register = async (username: string, email: string, password: string, confirmPassword?: string) => {
+    const result = await authService.register(username, email, password, confirmPassword);
     // Don't set user if pending approval
     if (!result.pending) {
       // This shouldn't happen with new approval system, but handle it
@@ -45,13 +53,20 @@ export const AuthProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
     setUser(null);
   };
 
+  const refreshUser = async () => {
+    const u = await authService.getCurrentUser();
+    setUser(u);
+  };
+
   return (
     <AuthContext.Provider value={{
       user,
       loading,
       login,
+      loginWithPasskey,
       register,
       logout,
+      refreshUser,
       isAuthenticated: !!user
     }}>
       {children}
@@ -66,4 +81,3 @@ export const useAuth = () => {
   }
   return context;
 };
-

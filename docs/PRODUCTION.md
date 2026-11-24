@@ -60,6 +60,12 @@ Whenever you make changes to the frontend code:
 
 Make sure to set any required environment variables (like `GEMINI_API_KEY`) in your `.env` file before building.
 
+## In-app updates (XAMPP)
+
+Admins can apply GitHub Releases from the UI (bell / **Admin → App Updates**) without a manual ZIP deploy.
+
+See **[APP_UPDATES.md](APP_UPDATES.md)** for publishing (`scripts/publish-update-release.ps1`) and applying updates.
+
 ## Troubleshooting
 
 ### Build fails

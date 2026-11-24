@@ -1,9 +1,12 @@
 <!DOCTYPE html>
-<html lang="en">
+<html lang="en" xmlns="http://www.w3.org/1999/xhtml">
 
 <head>
     <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <meta http-equiv="Content-Type" content="text/html; charset=UTF-8">
+    <meta http-equiv="X-UA-Compatible" content="IE=edge">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=5.0, user-scalable=yes">
+    <meta name="format-detection" content="telephone=no">
     <title>Browser Launcher Pro - Sample Landing Page</title>
     <style>
         * {
@@ -276,6 +279,140 @@
             text-align: center;
             color: #666;
         }
+
+        /* Mobile Responsive Styles */
+        @media (max-width: 768px) {
+            body {
+                padding: 10px;
+            }
+
+            .container {
+                padding: 20px;
+                border-radius: 8px;
+            }
+
+            h1 {
+                font-size: 1.8em;
+                word-wrap: break-word;
+            }
+
+            .subtitle {
+                font-size: 0.95em;
+            }
+
+            .section h2 {
+                font-size: 1.3em;
+            }
+
+            .link-grid {
+                grid-template-columns: 1fr;
+                gap: 10px;
+            }
+
+            .link-card {
+                padding: 15px;
+            }
+
+            .demo-buttons {
+                flex-direction: column;
+            }
+
+            .btn {
+                width: 100%;
+                padding: 14px 20px;
+                font-size: 0.95em;
+                margin-bottom: 10px;
+                min-height: 44px;
+                touch-action: manipulation;
+            }
+
+            .code-block {
+                padding: 15px;
+                font-size: 0.8em;
+                overflow-x: auto;
+                -webkit-overflow-scrolling: touch;
+            }
+
+            .test-area {
+                padding: 15px;
+            }
+
+            .input-group input,
+            .input-group select {
+                padding: 12px;
+                font-size: 16px; /* Prevents zoom on iOS */
+                min-height: 44px;
+                touch-action: manipulation;
+            }
+
+            .status {
+                padding: 12px;
+                font-size: 0.9em;
+            }
+
+            .info-box {
+                padding: 12px;
+                font-size: 0.9em;
+            }
+
+            footer {
+                font-size: 0.85em;
+                padding-top: 15px;
+            }
+
+            footer p {
+                margin: 8px 0;
+            }
+        }
+
+        @media (max-width: 480px) {
+            h1 {
+                font-size: 1.5em;
+            }
+
+            .container {
+                padding: 15px;
+            }
+
+            .section {
+                margin-bottom: 30px;
+            }
+
+            .code-block {
+                font-size: 0.75em;
+                padding: 12px;
+            }
+        }
+
+        /* Ensure proper text rendering */
+        body {
+            -webkit-font-smoothing: antialiased;
+            -moz-osx-font-smoothing: grayscale;
+            text-rendering: optimizeLegibility;
+        }
+
+        /* Fix emoji rendering */
+        * {
+            font-feature-settings: normal;
+        }
+
+        /* Ensure emojis display correctly */
+        body, h1, h2, h3, p, span, div, a, button {
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif, 'Apple Color Emoji', 'Segoe UI Emoji', 'Segoe UI Symbol', 'Noto Color Emoji', 'Twemoji Mozilla', 'EmojiOne Color', 'Android Emoji';
+            unicode-bidi: embed;
+        }
+
+        /* Force emoji rendering */
+        h1, h2, h3, .status, .btn, .link-card a {
+            font-variant-emoji: emoji;
+            text-rendering: optimizeLegibility;
+        }
+
+        /* Ensure emojis are not replaced by text */
+        * {
+            -webkit-font-feature-settings: "liga", "kern";
+            font-feature-settings: "liga", "kern";
+        }
     </style>
     <!-- Include the Browser Launcher Pro integration script -->
     <script src="browser-launcher-integration.js"></script>
@@ -285,6 +422,11 @@
     <div class="container">
         <h1>🚀 Browser Launcher Pro</h1>
         <p class="subtitle">Sample Landing Page - Open Links in Specific Browsers</p>
+        
+        <!-- Emoji Test Section (can be removed after verification) -->
+        <div style="background: #f0f0f0; padding: 10px; border-radius: 8px; margin-bottom: 20px; font-size: 14px;">
+            <strong>Emoji Test:</strong> If you see emojis below, encoding is working: 🚀 🔄 🧪 📋 💻 🔍 🔧 ✓ ✗ ⚠
+        </div>
 
         <!-- Extension Status -->
         <div id="extension-status" class="status warning">
@@ -532,6 +674,10 @@ console.log('Available browsers:', browsers);
     </div>
 
     <script>
+        // Verify UTF-8 encoding and emoji support
+        console.log('UTF-8 Test:', '🚀 🔄 🧪 📋 💻 🔍 🔧');
+        console.log('Emoji Support:', document.implementation.hasFeature('http://www.w3.org/TR/SVG11/feature#BasicStructure', '1.1'));
+        
         // Check extension status on page load
         window.addEventListener('load', function () {
             checkExtensionStatus();

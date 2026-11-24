@@ -8,11 +8,36 @@
 // Set content type to HTML
 header('Content-Type: text/html; charset=utf-8');
 
-// Database configuration - check_opcache.php is in root, so data/ is in same directory
-// Try linknest.db first (standard), then linknext.db as fallback
-$dbPath1 = __DIR__ . DIRECTORY_SEPARATOR . 'data' . DIRECTORY_SEPARATOR . 'linknest.db';
-$dbPath2 = __DIR__ . DIRECTORY_SEPARATOR . 'data' . DIRECTORY_SEPARATOR . 'linknext.db';
-define('DB_PATH', file_exists($dbPath1) ? $dbPath1 : (file_exists($dbPath2) ? $dbPath2 : $dbPath1));
+// Database configuration - Use config.php if available, otherwise try default paths
+// This works both in Docker (/var/www/html) and local development
+if (file_exists(__DIR__ . '/api/config.php')) {
+    // Load config.php but suppress any output/errors that might break the page
+    $oldErrorReporting = error_reporting(0);
+    $oldDisplayErrors = ini_get('display_errors');
+    ini_set('display_errors', 0);
+    
+    try {
+        require_once __DIR__ . '/api/config.php';
+        // DB_PATH and DB_DIR are now defined from config.php
+    } catch (Exception $e) {
+        // If config.php fails, fall through to default paths
+    }
+    
+    error_reporting($oldErrorReporting);
+    ini_set('display_errors', $oldDisplayErrors);
+}
+
+// Fallback: Use default Docker/standard paths if DB_PATH not defined
+if (!defined('DB_PATH')) {
+    // Try Docker path first (/var/www/html/data/linknest.db)
+    $dbPath1 = __DIR__ . DIRECTORY_SEPARATOR . 'data' . DIRECTORY_SEPARATOR . 'linknest.db';
+    $dbPath2 = __DIR__ . DIRECTORY_SEPARATOR . 'data' . DIRECTORY_SEPARATOR . 'linknext.db';
+    define('DB_PATH', file_exists($dbPath1) ? $dbPath1 : (file_exists($dbPath2) ? $dbPath2 : $dbPath1));
+}
+
+if (!defined('DB_DIR')) {
+    define('DB_DIR', dirname(DB_PATH));
+}
 
 // Get OPcache status
 $opcacheLoaded = extension_loaded('Zend OPcache');
@@ -116,6 +141,33 @@ try {
     $dbError = 'Error accessing database: ' . $e->getMessage();
 }
 
+// Get application name from settings (fallback to "LinkNest" if not found)
+$appName = 'LinkNest'; // Default fallback
+try {
+    if (isset($db) && $db) {
+        $stmt = $db->prepare("SELECT value FROM settings WHERE key = 'app_name' LIMIT 1");
+        $stmt->execute();
+        $row = $stmt->fetch();
+        if ($row && !empty($row['value'])) {
+            $appName = $row['value'];
+        }
+    } elseif (file_exists(DB_PATH)) {
+        // Try to get app_name directly if db connection wasn't established above
+        $tempDb = new PDO('sqlite:' . DB_PATH);
+        $tempDb->setAttribute(PDO::ATTR_ERRMODE, PDO::ERRMODE_EXCEPTION);
+        $stmt = $tempDb->prepare("SELECT value FROM settings WHERE key = 'app_name' LIMIT 1");
+        $stmt->execute();
+        $row = $stmt->fetch();
+        if ($row && !empty($row['value'])) {
+            $appName = $row['value'];
+        }
+        unset($tempDb);
+    }
+} catch (Exception $e) {
+    // If we can't get app_name, just use the default "LinkNest"
+    // This ensures the page still works even if there's a database issue
+}
+
 // Format bytes helper
 function formatBytes($bytes, $precision = 2) {
     $units = ['B', 'KB', 'MB', 'GB', 'TB'];
@@ -136,7 +188,7 @@ function formatNumber($number) {
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>LinkNest - System Status</title>
+    <title><?php echo htmlspecialchars($appName); ?> - System Status</title>
     <style>
         * {
             margin: 0;
@@ -364,7 +416,7 @@ function formatNumber($number) {
 <body>
     <div class="container">
         <div class="header">
-            <h1>🔍 LinkNest System Status</h1>
+            <h1>🔍 <?php echo htmlspecialchars($appName); ?> System Status</h1>
             <p>OPcache & SQLite Database Performance Dashboard</p>
         </div>
         
