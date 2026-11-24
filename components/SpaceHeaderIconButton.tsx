@@ -161,6 +161,13 @@ export const HeaderIcons = {
       <path d="M3.5 12.75a.75.75 0 00-1.5 0v2.5A2.75 2.75 0 004.75 18h10.5A2.75 2.75 0 0018 15.25v-2.5a.75.75 0 00-1.5 0v2.5c0 .69-.56 1.25-1.25 1.25H4.75c-.69 0-1.25-.56-1.25-1.25v-2.5z" />
     </svg>
   ),
+  /** Export / import tabs or sections as JSON inside a space */
+  transfer: (
+    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor" className={iconClass} aria-hidden="true">
+      <path fillRule="evenodd" d="M2.5 4.75A.75.75 0 013.25 4h10a.75.75 0 010 1.5h-10a.75.75 0 01-.75-.75zM2.5 10a.75.75 0 01.75-.75h10a.75.75 0 010 1.5h-10A.75.75 0 012.5 10zm0 5.25a.75.75 0 01.75-.75h6.5a.75.75 0 010 1.5h-6.5a.75.75 0 01-.75-.75z" clipRule="evenodd" />
+      <path d="M14.72 6.22a.75.75 0 011.06 0l2.25 2.25a.75.75 0 010 1.06l-2.25 2.25a.75.75 0 11-1.06-1.06l.97-.97H12.25a.75.75 0 010-1.5h3.44l-.97-.97a.75.75 0 010-1.06z" />
+    </svg>
+  ),
   ai: (
     <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor" className={iconClass} aria-hidden="true">
       <path d="M10 1.25a.75.75 0 01.67.415l1.31 2.652 2.926.425a.75.75 0 01.416 1.28l-2.117 2.063.5 2.912a.75.75 0 01-1.088.79L10 10.45l-2.617 1.337a.75.75 0 01-1.088-.79l.5-2.912L4.678 6.022a.75.75 0 01.416-1.28l2.926-.425L9.33 1.665A.75.75 0 0110 1.25z" />

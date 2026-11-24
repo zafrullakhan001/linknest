@@ -131,6 +131,7 @@ import { LinkInfoTopicsEditor } from './LinkInfoTopicsEditor';
 import { linkInfoTopicsToRichTextHtml, normalizeLinkContentTopics, normalizeLinkInfoTopics } from '../utils/linkInfoTopics';
 import { AddLinkMenu } from './AddLinkMenu';
 import { BulkAddLinksDialog } from './BulkAddLinksDialog';
+import { SpaceContentTransferDialog } from './SpaceContentTransferDialog';
 import { DeleteDuplicateLinksDialog } from './DeleteDuplicateLinksDialog';
 import { NotesPresetFormDialog, mergePresetNotesIntoHtml } from './NotesPresetFormDialog';
 import { getDisplayUrl, isHttpOrHttpsUrl, normalizeStoredLinkUrl, rewriteHtmlAnchorHrefs, viewerLinkDisplay, viewerLinkUrl, effectiveShowShortUrls } from '../utils/urlDisplay';
@@ -955,6 +956,7 @@ export const TileDetail: React.FC<TileDetailProps> = ({
     const tabJsonInputRef = useRef<HTMLInputElement>(null);
     const pendingSectionImportRef = useRef<{ tabId: string; sectionId: string } | null>(null);
     const pendingTabJsonImportAfterRef = useRef<string | null>(null);
+    const [showContentTransfer, setShowContentTransfer] = useState(false);
 
     // Edit State
     const [editTitle, setEditTitle] = useState(tile.title);
@@ -7661,7 +7663,7 @@ export const TileDetail: React.FC<TileDetailProps> = ({
                                             <span className="bg-slate-100 dark:bg-slate-800 px-3 py-1.5 rounded-lg text-slate-600 dark:text-slate-300 font-semibold">{totalLinks}</span>
                                         </div>
 
-                                        {(canQuickAddTabs || canQuickAddSections) && (
+                                        {(canQuickAddTabs || canQuickAddSections || tile.canEdit === true) && (
                                             <div className="flex items-center gap-1 bg-slate-100 dark:bg-slate-800 rounded-lg p-1 shrink-0">
                                                 {canQuickAddTabs && (
                                                     <button
@@ -7693,6 +7695,21 @@ export const TileDetail: React.FC<TileDetailProps> = ({
                                                             <path strokeLinecap="round" strokeLinejoin="round" d="M16.5 18.75v-4.5m2.25 2.25h-4.5" />
                                                         </svg>
                                                         <span className="hidden sm:inline">Section</span>
+                                                    </button>
+                                                )}
+                                                {tile.canEdit === true && (
+                                                    <button
+                                                        type="button"
+                                                        onClick={() => setShowContentTransfer(true)}
+                                                        className="px-2.5 py-1.5 text-xs font-medium rounded-md text-slate-600 dark:text-slate-400 hover:text-brand-600 dark:hover:text-brand-400 hover:bg-white dark:hover:bg-slate-700 transition-all inline-flex items-center gap-1.5"
+                                                        title="Export or import tabs and sections as JSON"
+                                                        aria-label="Transfer tabs and sections"
+                                                    >
+                                                        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor" className="w-4 h-4" aria-hidden>
+                                                            <path fillRule="evenodd" d="M2.5 4.75A.75.75 0 013.25 4h10a.75.75 0 010 1.5h-10a.75.75 0 01-.75-.75zM2.5 10a.75.75 0 01.75-.75h10a.75.75 0 010 1.5h-10A.75.75 0 012.5 10zm0 5.25a.75.75 0 01.75-.75h6.5a.75.75 0 010 1.5h-6.5a.75.75 0 01-.75-.75z" clipRule="evenodd" />
+                                                            <path d="M14.72 6.22a.75.75 0 011.06 0l2.25 2.25a.75.75 0 010 1.06l-2.25 2.25a.75.75 0 11-1.06-1.06l.97-.97H12.25a.75.75 0 010-1.5h3.44l-.97-.97a.75.75 0 010-1.06z" />
+                                                        </svg>
+                                                        <span className="hidden sm:inline">Transfer</span>
                                                     </button>
                                                 )}
                                             </div>
@@ -10595,6 +10612,28 @@ export const TileDetail: React.FC<TileDetailProps> = ({
                         onDelete={handleDeleteDuplicateLinks}
                     />
                 )}
+
+                {showContentTransfer && tile.canEdit === true && (
+                    <SpaceContentTransferDialog
+                        tabs={Array.isArray(tile.tabs) ? tile.tabs : []}
+                        spaceTitle={tile.title}
+                        canAddTabs={tile.canAddTabs !== false}
+                        canAddSections={tile.canAddSections !== false}
+                        canAddLinks={tile.canAddLinks !== false}
+                        onClose={() => setShowContentTransfer(false)}
+                        onImport={async (nextTabs) => {
+                            const updated: Tile = { ...tile, tabs: nextTabs };
+                            await saveTile(updated, true);
+                            onUpdateTiles(
+                                allTiles.map((t) => (t.id === tile.id ? updated : t)),
+                                true,
+                                false,
+                                true
+                            );
+                            alert('Imported into this space.');
+                        }}
+                    />
+                )}
             </>
         );
     }
@@ -11798,6 +11837,18 @@ export const TileDetail: React.FC<TileDetailProps> = ({
                                         onCollapseAll={collapseAllTabsAndSections}
                                     />
                                     <HierarchyViewSwitcher value={hierarchyView} onChange={changeHierarchyView} />
+                                    <button
+                                        type="button"
+                                        onClick={() => setShowContentTransfer(true)}
+                                        className="bg-white dark:bg-slate-800 border-2 border-slate-200 dark:border-slate-700 hover:border-brand-400 dark:hover:border-brand-500 text-slate-700 dark:text-slate-200 px-4 py-2.5 rounded-lg text-sm font-semibold transition-all flex items-center gap-2"
+                                        title="Export or import tabs and sections as JSON"
+                                    >
+                                        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor" className="w-4 h-4">
+                                            <path fillRule="evenodd" d="M2.5 4.75A.75.75 0 013.25 4h10a.75.75 0 010 1.5h-10a.75.75 0 01-.75-.75zM2.5 10a.75.75 0 01.75-.75h10a.75.75 0 010 1.5h-10A.75.75 0 012.5 10zm0 5.25a.75.75 0 01.75-.75h6.5a.75.75 0 010 1.5h-6.5a.75.75 0 01-.75-.75z" clipRule="evenodd" />
+                                            <path d="M14.72 6.22a.75.75 0 011.06 0l2.25 2.25a.75.75 0 010 1.06l-2.25 2.25a.75.75 0 11-1.06-1.06l.97-.97H12.25a.75.75 0 010-1.5h3.44l-.97-.97a.75.75 0 010-1.06z" />
+                                        </svg>
+                                        Transfer
+                                    </button>
                                     <button
                                         onClick={handleAddTab}
                                         className="bg-brand-600 hover:bg-brand-500 text-white px-5 py-2.5 rounded-lg text-sm font-semibold transition-all shadow-md hover:shadow-lg shadow-brand-500/30 hover:shadow-brand-500/40 flex items-center gap-2"
@@ -13888,6 +13939,33 @@ export const TileDetail: React.FC<TileDetailProps> = ({
                     aria-hidden={true}
                     onChange={handleTabJsonFile}
                 />
+
+                {showContentTransfer && tile.canEdit === true && (
+                    <SpaceContentTransferDialog
+                        tabs={isEditing ? editTabs : (Array.isArray(tile.tabs) ? tile.tabs : [])}
+                        spaceTitle={isEditing ? (editTitle || tile.title) : tile.title}
+                        canAddTabs={tile.canAddTabs !== false}
+                        canAddSections={tile.canAddSections !== false}
+                        canAddLinks={tile.canAddLinks !== false}
+                        onClose={() => setShowContentTransfer(false)}
+                        onImport={async (nextTabs) => {
+                            if (isEditing) {
+                                setEditTabs(nextTabs);
+                                alert('Imported into the editor. Save the space to keep these changes.');
+                                return;
+                            }
+                            const updated: Tile = { ...tile, tabs: nextTabs };
+                            await saveTile(updated, true);
+                            onUpdateTiles(
+                                allTiles.map((t) => (t.id === tile.id ? updated : t)),
+                                true,
+                                false,
+                                true
+                            );
+                            alert('Imported into this space.');
+                        }}
+                    />
+                )}
 
                         {/* Tab Visibility Dialog */}
                         {visibilityDialogTab && (() => {

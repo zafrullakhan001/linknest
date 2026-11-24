@@ -1,11 +1,12 @@
 import React, { lazy, Suspense, useCallback, useEffect, useState } from 'react';
 import { createPortal } from 'react-dom';
-import { Tile } from '../types';
+import { Tab, Tile } from '../types';
 import { User } from '../services/authService';
 import {
   archiveTile,
   cloneTile,
   deleteTile,
+  getTile,
   getTiles,
   saveTile,
   toggleFavorite,
@@ -27,6 +28,9 @@ const DeleteSharedSpaceDialog = lazy(() =>
 );
 const SpaceAiAnalysisDialog = lazy(() =>
   import('./SpaceAiAnalysisDialog').then((m) => ({ default: m.SpaceAiAnalysisDialog }))
+);
+const SpaceContentTransferDialog = lazy(() =>
+  import('./SpaceContentTransferDialog').then((m) => ({ default: m.SpaceContentTransferDialog }))
 );
 
 export interface SpaceViewHeaderActionsProps {
@@ -86,6 +90,7 @@ export const SpaceViewHeaderActions: React.FC<SpaceViewHeaderActionsProps> = ({
   const [showInfo, setShowInfo] = useState(false);
   const [showShare, setShowShare] = useState(false);
   const [showAi, setShowAi] = useState(false);
+  const [showTransfer, setShowTransfer] = useState(false);
   const [showSync, setShowSync] = useState(false);
   const [syncing, setSyncing] = useState(false);
   const [syncNote, setSyncNote] = useState('');
@@ -225,6 +230,23 @@ export const SpaceViewHeaderActions: React.FC<SpaceViewHeaderActionsProps> = ({
       alert('Failed to clone space. Please try again.');
     }
   }, [isAuthenticated, onAuthRequired, onUpdateTiles, tile.canEdit, tile.id, user?.is_admin]);
+
+  const handleContentTransferImport = useCallback(
+    async (nextTabs: Tab[]) => {
+      const updated: Tile = { ...tile, tabs: nextTabs };
+      await saveTile(updated, true);
+      const fresh = await getTile(tile.id);
+      const merged = fresh ?? updated;
+      onUpdateTiles(
+        allTiles.map((t) => (t.id === tile.id ? merged : t)),
+        true,
+        false,
+        true
+      );
+      alert('Imported into this space.');
+    },
+    [allTiles, onUpdateTiles, tile]
+  );
 
   const handleDelete = useCallback(async () => {
     if (!isAuthenticated) {
@@ -435,6 +457,15 @@ export const SpaceViewHeaderActions: React.FC<SpaceViewHeaderActionsProps> = ({
           )}
           {canEdit && (
             <SpaceHeaderIconButton
+              title="Export or import tabs and sections as JSON"
+              label="Transfer"
+              onClick={() => setShowTransfer(true)}
+            >
+              {HeaderIcons.transfer}
+            </SpaceHeaderIconButton>
+          )}
+          {canEdit && (
+            <SpaceHeaderIconButton
               title={linkedToSource ? `Source ${tile.syncSource?.baseUrl}` : 'Link this space to another instance'}
               label="Source"
               onClick={() => setShowSync(true)}
@@ -614,6 +645,16 @@ export const SpaceViewHeaderActions: React.FC<SpaceViewHeaderActionsProps> = ({
                           onClick={() => {
                             closeMenu();
                             void exportTileToFileAsync(tile);
+                          }}
+                        />
+                      )}
+                      {canEdit && (
+                        <SpaceHeaderDrawerButton
+                          label="Transfer tabs & sections"
+                          icon={HeaderIcons.transfer}
+                          onClick={() => {
+                            closeMenu();
+                            setShowTransfer(true);
                           }}
                         />
                       )}
@@ -895,6 +936,19 @@ export const SpaceViewHeaderActions: React.FC<SpaceViewHeaderActionsProps> = ({
             onClose={() => setShowAi(false)}
             onApplied={handleAppliedAi}
             onImported={handleImportedAi}
+          />
+        </Suspense>
+      )}
+      {showTransfer && canEdit && (
+        <Suspense fallback={null}>
+          <SpaceContentTransferDialog
+            tabs={Array.isArray(tile.tabs) ? tile.tabs : []}
+            spaceTitle={tile.title}
+            canAddTabs={tile.canAddTabs !== false}
+            canAddSections={tile.canAddSections !== false}
+            canAddLinks={tile.canAddLinks !== false}
+            onClose={() => setShowTransfer(false)}
+            onImport={handleContentTransferImport}
           />
         </Suspense>
       )}
